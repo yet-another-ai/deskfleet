@@ -354,8 +354,10 @@ impl D3D11Encoder {
         pic_params.pictureStruct = NV_ENC_PIC_STRUCT::NV_ENC_PIC_STRUCT_FRAME;
 
         if self.force_keyframe {
-            pic_params.encodePicFlags = NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_FORCEIDR.0
-                | NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_OUTPUT_SPSPPS.0;
+            // Bindgen represents this C enum as `i32`. The picture-params field is `u32`.
+            pic_params.encodePicFlags = (NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_FORCEIDR.0
+                | NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_OUTPUT_SPSPPS.0)
+                as u32;
             self.force_keyframe = false;
         }
 
@@ -385,7 +387,7 @@ impl D3D11Encoder {
 
         let mut pic_params = NV_ENC_PIC_PARAMS::default();
         pic_params.version = NV_ENC_PIC_PARAMS_VER;
-        pic_params.encodePicFlags = NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_EOS.0;
+        pic_params.encodePicFlags = NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_EOS.0 as u32;
 
         // SAFETY: the loaded function receives this live session and correctly versioned, initialized NVENC structures.
         let status = unsafe { encode(self.encoder, &raw mut pic_params) };
