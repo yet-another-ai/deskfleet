@@ -168,6 +168,8 @@ impl Terminal {
                 .master
                 .take_writer()
                 .map_err(|error| backend("open writer", error))?;
+            #[cfg(windows)]
+            let writer = reply_conpty_cursor(writer)?;
             let child = pair
                 .slave
                 .spawn_command(command)
@@ -325,6 +327,19 @@ fn send_event(
             _ = cancelled.changed() => false,
         }
     })
+}
+
+#[cfg(windows)]
+fn reply_conpty_cursor(mut writer: Box<dyn Write + Send>) -> Result<Box<dyn Write + Send>> {
+    // portable-pty 0.9 sets PSEUDOCONSOLE_INHERIT_CURSOR. ConPTY writes
+    // ESC[6n and will not run the child until the host answers.
+    writer
+        .write_all(b"\x1b[1;1R")
+        .map_err(|error| backend("cursor report", error))?;
+    writer
+        .flush()
+        .map_err(|error| backend("cursor report", error))?;
+    Ok(writer)
 }
 
 fn read_output(

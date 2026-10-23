@@ -11,6 +11,8 @@ authenticated local daemon signaling connection used by desktop streaming.
 backend uses `portable-pty`, exposed through the thin `NativeTerminal` napi-rs
 binding. Spawn, write, resize, wait, and termination run outside Node's event
 loop. The daemon continuously consumes native output even with no viewer.
+On Windows, that backend asks ConPTY to inherit the cursor. The daemon answers
+the initial device-status request so the child process is allowed to start.
 
 The UI creates machine-scoped terminals in the daemon user's home directory,
 in a Workspace's first path with **Open terminal in default directory**, or in
