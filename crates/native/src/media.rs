@@ -310,7 +310,11 @@ fn capture_loop(
         Ok(())
     })();
     // Release encoder registrations while their capture textures still exist.
-    drop(encoder);
+    // The Linux stub has no destructor, so `drop(encoder)` fails clippy there.
+    // Ending this scope still drops Windows and macOS encoders before stop.
+    {
+        let _encoder = encoder.take();
+    }
     let stopped = capture.stop().map_err(MediaError::from);
     result.and(stopped)
 }

@@ -10,7 +10,7 @@ rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustf
 node = "24.21.0"
 pnpm = "12.14.0"
 "cargo:cargo-shear" = "1.13.5"
-cmake = "3.31.12"
+cmake = "4.4.4"
 
 [env]
 # Missing platform files are skipped; macOS uses the Apple native toolchain.

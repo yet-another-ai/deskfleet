@@ -146,7 +146,7 @@ try {
 
 ## Builds and checks
 
-The locked CMake 3.31 toolchain builds the bundled Opus source. Cargo forces
+The locked CMake 4.4 toolchain builds the bundled Opus source. Cargo forces
 static Opus linkage and bypasses pkg-config so the SEA addon does not depend on
 a separately installed libopus. Windows NVENC loads the NVIDIA driver at runtime;
 building its bundled header bindings requires LLVM/libclang and the Windows SDK.
