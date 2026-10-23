@@ -8,6 +8,7 @@ import { captureDisplays, supportedVideoCodecs, type NativePeer, type PeerConfig
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
 import { MAX_CONTROL_MESSAGE_BYTES, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
 import { parseControlRequest, readControlRequestId } from "./control-request.ts"
+import { endControlSocket } from "./control-socket.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
@@ -117,12 +118,7 @@ class ControlConnection {
             const result = await this.#handle(request)
             if (request.method === "shutdown") {
               // Flush the acknowledgement before shutdown closes client sockets.
-              await new Promise<void>(resolve => {
-                const flushed = () => { this.#socket.off("close", flushed); resolve() }
-                if (this.#socket.destroyed) return resolve()
-                this.#socket.once("close", flushed)
-                this.#socket.end(JSON.stringify({ id: request.id, result }) + "\n", flushed)
-              })
+              await endControlSocket(this.#socket, JSON.stringify({ id: request.id, result }) + "\n")
               this.#onShutdownRequested?.()
               return
             }
@@ -130,7 +126,7 @@ class ControlConnection {
           } catch (error) {
             this.#send({ id, error: message(error) })
             if (!this.#authenticated) {
-              await new Promise<void>(resolve => this.#socket.end(resolve))
+              await endControlSocket(this.#socket)
               return
             }
           }

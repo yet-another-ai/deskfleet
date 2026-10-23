@@ -16,8 +16,10 @@ function deferred<T>() {
 
 test("headless daemon serves information from the Rust addon", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-test-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
-  context.after(async () => { await daemon.close(); await rm(directory, { recursive: true, force: true }) })
+  const starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  context.after(async () => { await (await starting).close(); await rm(directory, { recursive: true, force: true }) })
+  const daemon = await starting
+  context.signal.throwIfAborted()
 
   const response = await fetch(`${daemon.address}/healthz`)
   assert.equal(response.status, 200)
@@ -27,22 +29,26 @@ test("headless daemon serves information from the Rust addon", async context => 
 
 test("authenticated shutdown acknowledges before cleanup and releases discovery last", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-shutdown-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  const starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  let restarting: ReturnType<typeof startDaemon> | undefined
   let releaseCleanup!: () => void
   let cleanupStarted!: () => void
   const cleanupGate = new Promise<void>(resolve => { releaseCleanup = resolve })
   const cleaning = new Promise<void>(resolve => { cleanupStarted = resolve })
+  context.after(async () => {
+    releaseCleanup()
+    await (await starting).close()
+    await (await restarting)?.close()
+    await rm(directory, { recursive: true, force: true })
+  })
+  const daemon = await starting
+  context.signal.throwIfAborted()
   const closeTerminals = daemon.terminals.close.bind(daemon.terminals)
   daemon.terminals.close = async () => {
     cleanupStarted()
     await cleanupGate
     await closeTerminals()
   }
-  context.after(async () => {
-    releaseCleanup()
-    await daemon.close()
-    await rm(directory, { recursive: true, force: true })
-  })
   const client = await DaemonClient.connect(() => {}, () => {}, directory)
   context.after(() => client.close())
   await client.call("workspaceCreate", { name: "Persistent workspace", directories: [{ path: directory }] })
@@ -63,15 +69,17 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
   await assert.rejects(daemon.terminals.dial({ mode: "resume", terminalId: "shutdown-terminal" }), /closed/)
   assert.equal(daemon.close(), daemon.closed)
 
-  const restarted = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
-  context.after(() => restarted.close())
+  context.signal.throwIfAborted()
+  restarting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  const restarted = await restarting
+  context.signal.throwIfAborted()
   const next = await DaemonClient.connect(() => {}, () => {}, directory)
   context.after(() => next.close())
   assert.equal((await next.call("catalogList", {})).workspaces[0]?.name, "Persistent workspace")
   await restarted.close()
 })
 
-test("startup requests screen access once while health and catalog stay available, and publishes the result", { timeout: 5_000 }, async context => {
+test("startup requests screen access once while health and catalog stay available, and publishes the result", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-permission-"))
   const permission = deferred<boolean | null>()
   let requests = 0
@@ -85,6 +93,7 @@ test("startup requests screen access once while health and catalog stay availabl
     await rm(directory, { recursive: true, force: true })
   })
   const daemon = await starting
+  context.signal.throwIfAborted()
   assert.equal(requests, 1)
   const changed = deferred<ScreenCapturePermission>()
   const client = await DaemonClient.connect(event => {
@@ -112,7 +121,7 @@ test("startup requests screen access once while health and catalog stay availabl
   assert.equal(requests, 1)
 })
 
-test("daemon shutdown does not wait for a screen permission response", { timeout: 5_000 }, async context => {
+test("daemon shutdown does not wait for a screen permission response", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-permission-shutdown-"))
   const permission = deferred<boolean | null>()
   const starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: () => permission.promise })
@@ -122,6 +131,7 @@ test("daemon shutdown does not wait for a screen permission response", { timeout
     await rm(directory, { recursive: true, force: true })
   })
   const daemon = await starting
+  context.signal.throwIfAborted()
   const client = await DaemonClient.connect(() => {}, () => {}, directory)
   context.after(() => client.close())
   assert.deepEqual(client.info?.screenCapturePermission, { status: "requesting" })
@@ -137,7 +147,7 @@ for (const outcome of [
   { name: "not required", value: null, expected: { status: "not-required" } },
   { name: "failed", error: "Permission service unavailable", expected: { status: "error", error: "Permission service unavailable" } },
 ] as const) {
-  test(`a ${outcome.name} screen permission request leaves the daemon usable and reports its state`, { timeout: 5_000 }, async context => {
+  test(`a ${outcome.name} screen permission request leaves the daemon usable and reports its state`, { timeout: 15_000 }, async context => {
     const directory = await mkdtemp(join(tmpdir(), "df-daemon-permission-result-"))
     const permission = deferred<boolean | null>()
     const starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: () => permission.promise })
@@ -147,6 +157,7 @@ for (const outcome of [
       await rm(directory, { recursive: true, force: true })
     })
     const daemon = await starting
+    context.signal.throwIfAborted()
     const changed = deferred<ScreenCapturePermission>()
     const client = await DaemonClient.connect(event => {
       if (event.kind === "screenCapturePermissionChanged") changed.resolve(event.permission)

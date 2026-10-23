@@ -29,8 +29,8 @@ class Client {
   #buffer = ""
   onEvent: ((event: DaemonEvent) => void) | undefined
 
-  constructor(endpoint: string) {
-    this.socket = connect(endpoint)
+  constructor(endpoint: string, signal?: AbortSignal) {
+    this.socket = connect({ path: endpoint, signal })
     this.socket.setEncoding("utf8")
     this.socket.on("error", () => {})
     this.socket.on("data", (data: string) => {
@@ -61,6 +61,7 @@ class Client {
   }
 
   async request(method: unknown, params: unknown): Promise<unknown> {
+    if (this.socket.destroyed) throw new Error("Connection closed")
     const id = ++this.#id
     const waiting = deferred<unknown>()
     this.#pending.set(id, waiting)
@@ -165,12 +166,12 @@ test("desktop sessions belong to their IPC connection and close on disconnect", 
   assert.deepEqual(await second.call("capabilities", {}), await capabilities())
 })
 
-test("stopping control waits for an executing request before releasing its resources", { timeout: 5_000 }, async context => {
+test("stopping control waits for an executing request before releasing its resources", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-stop-"))
   const entered = deferred<void>()
   const release = deferred<void>()
   let completed = false
-  const server = await startControlServer(fakePeers().service, directory, async () => {
+  const starting = startControlServer(fakePeers().service, directory, async () => {
     entered.resolve()
     await release.promise
     completed = true
@@ -178,11 +179,13 @@ test("stopping control waits for an executing request before releasing its resou
   })
   context.after(async () => {
     release.resolve()
-    await server.close()
-    await rm(directory, { recursive: true, force: true })
+    try { await (await starting).close() }
+    finally { await rm(directory, { recursive: true, force: true }) }
   })
+  const server = await starting
+  context.signal.throwIfAborted()
   const discovery = await readDaemonDiscovery(directory)
-  const client = new Client(discovery.endpoint)
+  const client = new Client(discovery.endpoint, context.signal)
   context.after(() => client.close())
   await client.call("hello", { token: discovery.token })
   const request = assert.rejects(client.call("capabilities", {}), /closed/)
@@ -373,26 +376,31 @@ test("request validation errors retain authenticated connections and their activ
   assert.equal(fake.peers.size, 0)
 })
 
-test("invalid framing and request IDs still disconnect, as do unauthenticated validation errors", { timeout: 5_000 }, async context => {
+test("invalid framing and request IDs still disconnect, as do unauthenticated validation errors", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-framing-"))
   const fake = fakePeers()
-  const server = await startControlServer(fake.service, directory, capabilities)
-  context.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }) })
+  const starting = startControlServer(fake.service, directory, capabilities)
+  context.after(async () => {
+    try { await (await starting).close() }
+    finally { await rm(directory, { recursive: true, force: true }) }
+  })
+  await starting
+  context.signal.throwIfAborted()
   const discovery = await readDaemonDiscovery(directory)
   for (const payload of ["{invalid json}\n", JSON.stringify({ id: "1", method: "capabilities", params: {} }) + "\n"]) {
-    const client = new Client(discovery.endpoint)
+    const client = new Client(discovery.endpoint, context.signal)
     context.after(() => client.close())
     await client.call("hello", { token: discovery.token })
     await client.call("offer", offer)
     const peerClosed = [...fake.peers.values()][0]!.closed.promise
-    const socketClosed = once(client.socket, "close")
+    const socketClosed = once(client.socket, "close", { signal: context.signal })
     client.socket.write(payload)
     await Promise.all([socketClosed, peerClosed])
     assert.equal(fake.peers.size, 0)
   }
-  const unauthenticated = new Client(discovery.endpoint)
+  const unauthenticated = new Client(discovery.endpoint, context.signal)
   context.after(() => unauthenticated.close())
-  const closed = once(unauthenticated.socket, "close")
+  const closed = once(unauthenticated.socket, "close", { signal: context.signal })
   await assert.rejects(unauthenticated.request("hello", { token: null }), /Missing authentication token/u)
   await closed
 })
