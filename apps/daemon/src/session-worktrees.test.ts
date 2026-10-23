@@ -26,6 +26,8 @@ async function repository(path: string): Promise<void> {
   await writeFile(join(path, "frontend", "source.txt"), "original frontend\n")
   await writeFile(join(path, "backend", "source.txt"), "original backend\n")
   await git(path, "init", "--initial-branch=main")
+  // Git for Windows otherwise checks LF blobs out as CRLF.
+  await git(path, "config", "core.autocrlf", "false")
   await git(path, "add", ".")
   await git(path, "-c", "user.name=deskfleet test", "-c", "user.email=test@example.invalid", "commit", "--no-gpg-sign", "-m", "initial")
 }

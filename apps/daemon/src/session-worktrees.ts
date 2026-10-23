@@ -29,6 +29,12 @@ async function git(args: string[]): Promise<string> {
   return (await execute("git", args, { encoding: "utf8", maxBuffer: 1024 * 1024 })).stdout.replace(/\r?\n$/u, "")
 }
 
+/** Git for Windows prints worktree paths with forward slashes and its own casing. */
+function pathsMatch(left: string, right: string): boolean {
+  if (process.platform !== "win32") return left === right
+  return left.replaceAll("\\", "/").toLowerCase() === right.replaceAll("\\", "/").toLowerCase()
+}
+
 async function sourceDirectory(path: string): Promise<SourceDirectory> {
   const directory = await realpath(path)
   let root: string
@@ -150,7 +156,7 @@ export class ManagedSessionWorktrees {
     while (manifest.worktrees.length) {
       const worktree = manifest.worktrees[manifest.worktrees.length - 1]!
       const registered = (await git(["--git-dir", worktree.repository, "worktree", "list", "--porcelain", "-z"]))
-        .split("\0").some(record => record === `worktree ${worktree.path}`)
+        .split("\0").some(record => record.startsWith("worktree ") && pathsMatch(record.slice("worktree ".length), worktree.path))
       if (registered) await git(["--git-dir", worktree.repository, "worktree", "remove", "--force", worktree.path])
       else await rm(worktree.path, { recursive: true, force: true })
       manifest.worktrees.pop()

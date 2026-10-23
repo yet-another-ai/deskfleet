@@ -83,17 +83,21 @@ export class TerminalHistory {
     const staging = join(directory, `.creating-${randomUUID()}`)
     await mkdir(staging, { mode: 0o700 })
     let file: FileHandle | undefined
+    let published = false
     try {
       file = await open(join(staging, "output.bin"), "wx+", 0o600)
       const history = new TerminalHistory(staging, file, { terminal: { ...terminal } }, 0)
       await history.save(terminal)
       await file.sync()
+      // Windows refuses to rename a directory that still contains an open file.
+      await file.close()
+      file = undefined
       await rename(staging, path)
-      history.#directory = path
-      return history
+      published = true
+      return new TerminalHistory(path, await open(join(path, "output.bin"), "r+"), { terminal: { ...terminal } }, 0)
     } catch (error) {
       await file?.close()
-      await rm(staging, { recursive: true, force: true })
+      await rm(published ? path : staging, { recursive: true, force: true })
       throw error
     }
   }
