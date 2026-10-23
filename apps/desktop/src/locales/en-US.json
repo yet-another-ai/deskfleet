@@ -20,6 +20,9 @@
   "settings": {
     "preferences": "Preferences",
     "thisComputer": "This computer",
+    "launchAtStartup": "Launch at startup",
+    "launchAtStartupDescription": "Open deskfleet automatically when you log in.",
+    "launchAtStartupUnavailable": "Available in the installed app on macOS and Windows.",
     "runLocalAgent": "Run local Agent",
     "stopsTerminals": "Turning it off also stops its terminals.",
     "sections": "Settings sections",

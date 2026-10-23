@@ -13,6 +13,8 @@ const api: DeskfleetDesktopApi = {
   settings: {
     get: async () => ({ enabled: true, status: "stopped" }),
     setLocalAgentEnabled: async (enabled) => ({ enabled, status: enabled ? "running" : "stopped" }),
+    getLaunchAtStartup: async () => ({ available: false, enabled: false }),
+    setLaunchAtStartup: async (enabled) => ({ available: true, enabled }),
     onChanged: () => () => {},
   },
   catalog: {

@@ -5,7 +5,8 @@ import { DEFAULT_LOCALE, isAppLocale, LOCALE_ARGUMENT_PREFIX } from "../shared/i
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import { TERMINAL_SESSION_EVENT, type TerminalSessionEvent } from "../shared/terminal.ts"
 import { CATALOG_CHANGED_EVENT } from "../shared/catalog.ts"
-import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type LocalAgentState, type LocalAgentSettingsResult } from "../shared/local-agent.ts"
+import type { LocalAgentState } from "../shared/local-agent.ts"
+import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type SettingsResult } from "../shared/settings.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -17,8 +18,8 @@ async function invokeDesktop<T>(method: string, params?: unknown): Promise<T> {
   return result.value
 }
 
-async function invokeSettings(method: "get" | "setLocalAgentEnabled", enabled?: boolean): Promise<LocalAgentState> {
-  const result = await ipcRenderer.invoke(SETTINGS_CHANNEL, method, enabled) as LocalAgentSettingsResult<LocalAgentState>
+async function invokeSettings<T>(method: "get" | "setLocalAgentEnabled" | "getLaunchAtStartup" | "setLaunchAtStartup", enabled?: boolean): Promise<T> {
+  const result = await ipcRenderer.invoke(SETTINGS_CHANNEL, method, enabled) as SettingsResult<T>
   if (!result.ok) throw new Error(result.error)
   return result.value
 }
@@ -39,6 +40,8 @@ const api: DeskfleetDesktopApi = {
   settings: {
     get: () => invokeSettings("get"),
     setLocalAgentEnabled: (enabled) => invokeSettings("setLocalAgentEnabled", enabled),
+    getLaunchAtStartup: () => invokeSettings("getLaunchAtStartup"),
+    setLaunchAtStartup: (enabled) => invokeSettings("setLaunchAtStartup", enabled),
     onChanged: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, state: LocalAgentState) => listener(state)
       ipcRenderer.on(SETTINGS_CHANGED_EVENT, handler)

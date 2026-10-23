@@ -96,7 +96,7 @@ machines start collapsed and report when they were last seen.
 | `/terminals/:terminalId` | A terminal session's owner, cwd, and terminal surface |
 | `/machines/:machineId/terminals` | Terminal tabs and the empty terminal workspace |
 | `/machines/:machineId/desktop` | A machine's remote desktop surface, or why it is unavailable |
-| `/settings/preferences` | Preferences, including the local Agent under This computer |
+| `/settings/preferences` | Preferences, including launch at startup and the local Agent under This computer |
 
 A Workspace page's New session action makes that Workspace the composer's target.
 Worktree links and lookups only resolve Session-owned contexts.
@@ -104,8 +104,9 @@ Worktree links and lookups only resolve Session-owned contexts.
 Settings routes (`meta.fullWindow`) replace the sidebar and details panel with
 two panels: the sections on the left and the selected section on the right.
 Section links replace their history entry, so **Back to app** or Escape returns
-to the page Settings opened from. **Preferences → This computer** holds the
-local Agent startup preference, run state, and retry.
+to the page Settings opened from. **Preferences → This computer** contains
+**Launch at startup** alongside the local Agent startup preference, run state,
+and retry.
 
 The details panel has two tabs:
 
@@ -208,6 +209,20 @@ The process exits only through:
 `src/main/lifecycle.ts` owns this rule. To exit the process, call its `quit()`
 rather than `app.quit()`. A second launch shows the existing window instead of
 starting another client.
+
+## Launch at startup
+
+**Settings → Preferences → Launch at startup** opens the desktop client when the
+user logs in. Packaged macOS and Windows apps use Electron's
+`app.getLoginItemSettings()` and `app.setLoginItemSettings()`; the OS owns the
+preference, and Settings reads it again after each change. Windows also honors
+startup entries disabled in Task Manager. The switch is unavailable on Linux
+and in development runs, which use Electron's executable instead of an installed
+deskfleet app. macOS login items require a signed and notarized app to work
+reliably; see [Electron's login item documentation](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings-macos-windows).
+
+This launches the client with its normal window and respects the separate
+**Run local Agent** preference described below.
 
 ## Local Agent
 

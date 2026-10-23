@@ -9,7 +9,7 @@ import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/deskt
 import { keepRunningInBackground } from "../../src/main/lifecycle.ts"
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
 import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
-import { attachLocalAgentSettings, installLocalAgentSettings, publishLocalAgentState } from "../../src/main/local-agent-settings.ts"
+import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
 import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
 import type { DeskfleetDesktopApi } from "../../src/shared/desktop-api.ts"
@@ -47,7 +47,7 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
       await new Promise(resolve => setTimeout(resolve, 25))
     }
   }
-  const toggle = () => document.querySelector<HTMLButtonElement>('main [role="switch"]')
+  const toggle = () => document.querySelector<HTMLButtonElement>('main [role="switch"][aria-labelledby="local-agent-label"]')
   const settingsButton = () => document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]')
   const addWorkspace = () => document.querySelector<HTMLButtonElement>('button[aria-label="Add workspace"]')
   const sidebarWorkspace = () => [...document.querySelectorAll("aside a")].some(link => link.textContent?.trim() === "Local Agent smoke")
@@ -146,7 +146,7 @@ void app.whenReady().then(async () => {
     publishLocalAgentState,
   )
   installDesktopMediaIpc()
-  installLocalAgentSettings(controller)
+  installSettings(controller)
   // Quitting the app closes the daemon it hosts, as client.ts does on will-quit.
   const exit = () => { void controller.close().finally(() => app.exit(0)) }
   process.on("message", exit)
@@ -171,7 +171,7 @@ void app.whenReady().then(async () => {
     },
   })
   attachDesktopMedia(window)
-  attachLocalAgentSettings(window)
+  attachSettings(window)
   window.webContents.on("render-process-gone", (_event, details) => process.send?.({ error: `Renderer exited: ${details.reason}` }))
   await window.loadURL(BUNDLED_RENDERER_URL)
   const result = await window.webContents.executeJavaScript(`(${exerciseSettings.toString()})(${JSON.stringify(context)})`) as LocalAgentSmokeResult

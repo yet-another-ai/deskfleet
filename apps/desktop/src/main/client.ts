@@ -7,7 +7,7 @@ import { setMainLocale } from "./i18n.ts"
 import { keepRunningInBackground } from "./lifecycle.ts"
 import { LocalAgentController } from "./local-agent-controller.ts"
 import { createLocalAgentRuntime } from "./local-agent-runtime.ts"
-import { installLocalAgentSettings, publishLocalAgentState } from "./local-agent-settings.ts"
+import { installSettings, publishLocalAgentState } from "./settings.ts"
 import {
   denyChromiumPermissions,
   installRendererProtocol,
@@ -41,7 +41,7 @@ function start(): void {
       createLocalAgentRuntime({ directory: daemonControlDirectory() }),
       publishLocalAgentState,
     )
-    installLocalAgentSettings(localAgent)
+    installSettings(localAgent)
     // The hosted daemon outlives windows but not the app. Exit once it has
     // released its sessions, terminals, and discovery.
     let closing: Promise<void> | undefined
