@@ -1,0 +1,14 @@
+DROP TABLE cp_peers;
+DROP TABLE cp_commands;
+DROP TABLE cp_events;
+DROP TABLE cp_sessions;
+DROP TABLE cp_catalogs;
+DROP TABLE cp_machines;
+DROP TABLE cp_invites;
+DROP TABLE cp_members;
+DROP TABLE cp_teams;
+DROP TABLE cp_login_codes;
+DROP TABLE cp_login_attempts;
+DROP TABLE cp_login_sessions;
+DROP TABLE cp_users;
+DELETE FROM cp_migrations WHERE version=1;

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "apps/server",
+    "crates/control-store",
     "crates/capture",
     "crates/encoder",
     "crates/model",
@@ -31,6 +32,7 @@ deskfleet-nvenc-sys = { path = "crates/nvenc-sys" }
 deskfleet-model = { path = "crates/model" }
 deskfleet-migration = { path = "crates/migration" }
 deskfleet-store = { path = "crates/store" }
+deskfleet-control-store = { path = "crates/control-store" }
 deskfleet-native = { path = "crates/native" }
 deskfleet-protocol = { path = "crates/protocol" }
 

@@ -26,3 +26,6 @@ impl HealthResponse {
         }
     }
 }
+
+/// Authenticated control-plane contracts.
+pub mod control;

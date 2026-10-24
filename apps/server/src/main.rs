@@ -1,6 +1,5 @@
 use actix_web::{App, HttpServer, web};
-use deskfleet_server::{config::ServerConfig, configure};
-use deskfleet_store::Catalog;
+use deskfleet_server::{AppState, config::ServerConfig, configure};
 use tracing_subscriber::EnvFilter;
 
 #[actix_web::main]
@@ -11,18 +10,26 @@ async fn main() -> std::io::Result<()> {
         )
         .try_init()
         .map_err(std::io::Error::other)?;
-
     let config = ServerConfig::from_env()?;
-    let database = deskfleet_store::connect(&config.database_url)
-        .await
-        .map_err(std::io::Error::other)?;
-    let catalog = web::Data::new(Catalog::new(database));
-    let server = HttpServer::new(move || App::new().app_data(catalog.clone()).configure(configure))
-        .bind(config.bind_addr)?;
-
+    let bind = config.bind_addr;
+    let origins = config.web_origins.clone();
+    let state = web::Data::new(AppState::new(config).await.map_err(std::io::Error::other)?);
+    let server = HttpServer::new(move || {
+        let mut cors = actix_cors::Cors::default()
+            .allowed_methods(["GET", "POST", "PATCH", "DELETE"])
+            .allowed_headers(["authorization", "content-type"])
+            .max_age(3600);
+        for origin in &origins {
+            cors = cors.allowed_origin(origin);
+        }
+        App::new()
+            .wrap(cors)
+            .app_data(state.clone())
+            .configure(configure)
+    })
+    .bind(bind)?;
     for address in server.addrs() {
-        tracing::info!(%address, "deskfleet server listening");
+        tracing::info!(%address,"deskfleet server listening");
     }
-
     server.run().await
 }

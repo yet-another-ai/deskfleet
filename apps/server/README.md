@@ -1,84 +1,142 @@
 # deskfleet server
 
-The Actix Web backend initializes a persistent SeaORM resource catalog and
-exposes `GET /healthz` for process liveness. Catalog HTTP operations and daemon
-synchronization are not yet exposed.
+An API-only Actix Web control plane backed by PostgreSQL. It owns OIDC identities,
+application sessions, Teams and roles, machine enrollment, management RPC routing,
+trusted WebRTC signaling, and read replicas of daemon catalogs and Agent journals.
+The independently deployed Vue Web frontend and Electron use the same API.
+Execution, provider processes, files, PTYs, and terminal output stay on the daemon.
+See the [backend scope](../../agents/docs/backend.md) and
+[WebRTC authorization](../../agents/docs/webrtc-security.md).
 
-The [backend implementation scope](../../agents/docs/backend.md) defines the next
-release: an API-only service using PostgreSQL, OIDC, Team membership, machine
-enrollment, authenticated management/signaling, synchronized Agent history, and
-reversible Session archive/restore with data retention. Permanent Session
-deletion is not a first-release user-facing operation.
-The Vue Web frontend is hosted separately and shares UI components with Electron.
-The SQLite configuration below describes the currently implemented server;
-PostgreSQL support is planned, not yet available.
+## Run and configure
 
-## Run
-
-From the repository root:
+Use PostgreSQL 17 or later and the locked repository toolchain:
 
 ```sh
-mise run dev
+DATABASE_URL='postgres://deskfleet:password@127.0.0.1:5432/deskfleet' \
+DESKFLEET_OIDC_ISSUER='https://identity.example.com' \
+DESKFLEET_OIDC_CLIENT_ID='deskfleet' \
+DESKFLEET_OIDC_CLIENT_SECRET='from-your-identity-provider' \
+DESKFLEET_PUBLIC_URL='https://api.example.com' \
+DESKFLEET_OIDC_RETURN_TO='https://app.example.com/auth/callback,http://127.0.0.1:*/auth/callback' \
+DESKFLEET_WEB_ORIGINS='https://app.example.com' \
+mise exec -- cargo run -p deskfleet-server --locked
 ```
 
-The default listener is `127.0.0.1:8080`.
+Register `https://api.example.com/api/auth/callback` as the OIDC provider's exact
+redirect URI. `DESKFLEET_OIDC_RETURN_TO` is a comma-separated allowlist of final
+application callbacks. Browser URLs must match exactly. The one supported
+wildcard, `http://127.0.0.1:*/auth/callback`, allows Electron's ephemeral loopback
+port; it does not permit other hosts, paths, queries, or credentials. The OIDC
+callback redirects with a short-lived one-use `#loginCode`. The initiating client
+exchanges it together with the `loginVerifier` returned by `/api/auth/start`.
+
+| Variable | Meaning |
+| --- | --- |
+| `DATABASE_URL` | Required PostgreSQL connection URL. SQLite is rejected. |
+| `DESKFLEET_BIND_ADDR` | IP and port; defaults to `127.0.0.1:8080`. |
+| `DESKFLEET_PUBLIC_URL` | Stable external API origin and server identity; defaults to `http://127.0.0.1:8080`. |
+| `DESKFLEET_OIDC_ISSUER` | OIDC discovery issuer. Without it, login is unavailable; there is no authentication bypass. |
+| `DESKFLEET_OIDC_CLIENT_ID` | Required when an issuer is configured. |
+| `DESKFLEET_OIDC_CLIENT_SECRET` | Confidential OIDC client secret, when required by the IdP. |
+| `DESKFLEET_OIDC_RETURN_TO` | Comma-separated application callback allowlist. |
+| `DESKFLEET_WEB_ORIGINS` | Comma-separated browser origins permitted by CORS. |
+| `DESKFLEET_STUN_URLS` | Optional comma-separated STUN URLs. |
+| `DESKFLEET_TURN_URLS` | Optional comma-separated TURN/TURNS URLs. |
+| `DESKFLEET_TURN_SECRET` | Required with TURN URLs; shared with coturn's REST credential mechanism. |
+| `RUST_LOG` | Log filter; defaults to `info`. |
+
+For official hosting, run one server instance behind a TLS reverse proxy that
+supports WebSocket upgrades, request bodies of at least 64 MiB, and idle periods
+longer than the 20-second heartbeat. Serve the Web application separately. Store
+PostgreSQL data on persistent storage and supply database/OIDC/TURN secrets via
+the deployment's secret mechanism. `DESKFLEET_PUBLIC_URL` must remain stable.
+Live socket routing and pending SDP exchanges are process-local, so this release
+requires one central instance; adding instances needs shared routing first.
+
+`GET /healthz` reports process liveness and protocol version. Database migrations
+and configured OIDC discovery complete before the HTTP listener starts. Database,
+migration, or discovery failures stop startup. Actix handles graceful shutdown.
+
+## Authentication and API
+
+All protected HTTP requests use `Authorization: Bearer <opaque token>`. OIDC
+Authorization Code flow uses PKCE, state, nonce, and ID token signature, issuer,
+audience, and expiration validation. PostgreSQL stores hashes of application,
+machine, invitation, and exchange tokens; it stores OIDC flow state with short expirations. Application sessions last 30 days; machine credentials
+remain valid until administrator revocation. Daemons persist their enrollment
+credential locally, and clients persist their application session securely.
+
+The `/api` routes cover:
+
+- `/auth/start`, `/auth/callback`, `/auth/exchange`, `/auth/logout`, and `/me`.
+- `/teams`, membership/role management, invitations, and `/invites/accept`.
+- Team machine enrollment/listing and administrator machine removal.
+- `/machines/{id}/rpc` for an explicit management-method allowlist, including
+  Session create, archive, restore, configuration, and operation receipt lookup.
+- Machine catalog, Session snapshots, paginated events, and command audit reads.
+- `/daemon/me`, `/daemon/catalog`, and `/daemon/history` with machine credentials.
+- `/peers` creation, immutable offer/answer exchange, ICE candidate forwarding,
+  desktop stream start, and revocation.
+
+Admins manage members/roles and remove machines. All members can enroll their
+machines and operate resources on team machines. No route exposes permanent
+Session deletion. Archive snapshots and Agent command receipts remain available
+when a machine is offline; terminal output is never uploaded.
+
+History ingestion writes a snapshot, event page, and command snapshot atomically.
+The acknowledged `lastEventSeq` is the contiguous persisted event cursor, while
+`snapshot.session.lastEventSeq` can be ahead during initial synchronization.
+Repeated event pages are idempotent; conflicting content or gaps are rejected.
+Older snapshots cannot overwrite newer snapshots or command receipts. Session lists and command audits use `after` decimal ID cursors and `limit`
+(default 200, maximum 1000), returning `{sessions,nextCursor?}` or
+`{commands,nextCursor?}`. Session lists also accept `archiveState` with `all`,
+`active`, `archiving`, or `archived`. Resource
+IDs remain daemon-local inside payloads and are scoped by the central machine ID.
+
+Clients and daemons connect to `/api/client/ws` and `/api/daemon/ws`. Their first
+message is `{ "type": "authenticate", "token": "..." }`; tokens never appear in
+URLs. A daemon reconnect receives all still-valid peer grants for reconciliation.
+WS authentication/access failures close with 4401/4403; transient routing replacement
+uses 1012. Explicit revocation has an independent shutdown path if outbound queues
+are full. Transport loss alone preserves existing WebRTC peers until their fixed
+24-hour deadline; it never stops tasks or shells.
+
+TURN credentials use expiring coturn REST usernames and HMAC-SHA1 passwords. The
+trusted center binds each exact SDP exchange and ICE generation to one actor,
+Team, target machine, and purpose. The WebRTC stacks perform certificate fingerprint
+verification during DTLS. Failed negotiation requires a new peer authorization.
+
+The Rust wire source is `crates/protocol/src/control.rs`; its generated type-only
+bindings are `crates/protocol/control.ts`:
 
 ```sh
-DESKFLEET_BIND_ADDR=127.0.0.1:9090 RUST_LOG=info mise run dev
+mise exec -- cargo run -p deskfleet-protocol --example export_types -- --check
 ```
 
-`DESKFLEET_BIND_ADDR` accepts an IP address and port, including IPv6 addresses such
-as `[::1]:8080`. Hostnames are not accepted. Invalid values fail at startup. Port
-`0` requests an available port, and the startup log reports the actual address.
-Actix handles shutdown signals using its standard graceful shutdown behavior.
+## Database migrations
 
-## Database and migrations
-
-`DATABASE_URL` defaults to `sqlite://deskfleet.db?mode=rwc`, creating a SQLite
-database in the process's working directory. The root database and its journal
-files are ignored by Git. Set an explicit path for persistent deployments:
+The central `deskfleet-control-store` crate has a separate PostgreSQL `cp_*`
+schema. It does not reuse or import daemon SQLite tables. Startup applies explicit
+numbered SQL under a transaction and advisory lock; schema versions are tracked
+in `cp_migrations`. Back up PostgreSQL before schema changes. The central migration
+example supports `up`, `status`, and `down`; `down` of version 1 drops central tables
+and their data. The daemon's `db:migrate` task manages a different SQLite database.
 
 ```sh
-DATABASE_URL=sqlite:///var/lib/deskfleet/catalog.db?mode=rwc mise run dev
+mise exec -- cargo run -p deskfleet-control-store --example migrate -- status
 ```
 
-The parent directory must already exist. `sqlite::memory:` is useful for isolated
-tests. Startup opens one shared connection and applies all pending migrations
-before the HTTP listener binds; database or migration failures stop startup.
+## Verification
 
-The schema contains teams, machines, workspaces, worktrees, and ordered directory
-bindings. Resource IDs are database-assigned signed 64-bit integers and serialize
-as decimal strings in shared JSON models. Resource names need not be unique.
-Foreign keys reject orphaned records and parent deletion while children remain;
-deleting a worktree also deletes its directory bindings. Worktree writes are
-transactional. See [catalog persistence](../../agents/docs/architecture.md#catalog-persistence)
-for ownership and PostgreSQL preparation.
-
-Manage migrations with the same `DATABASE_URL` used by the server:
+Unit tests need no PostgreSQL. Explicit integration tests require a real instance;
+they never substitute SQLite. Each run creates uniquely scoped fixture identities.
 
 ```sh
-mise run db:migrate
-mise run db:migrate -- status
-mise run db:migrate -- down
+mise exec -- cargo test -p deskfleet-protocol -p deskfleet-server -p deskfleet-control-store --locked
+TEST_DATABASE_URL='postgres://postgres:password@127.0.0.1:5432/deskfleet_test' \
+  mise exec -- cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored
 ```
 
-`down` reverts the latest migration; reverting the initial catalog migration
-deletes all catalog tables and their data. The CLI is an optional feature of
-`deskfleet-migration`, so it is not compiled into the server. Explicit migrations
-own the schema; startup does not infer changes from entity definitions. The
-layout follows the [SeaORM migration workflow](https://www.sea-ql.org/SeaORM/docs/migration/setting-up-migration/).
-
-## Liveness
-
-```sh
-curl http://127.0.0.1:8080/healthz
-```
-
-The JSON response includes `status`, the server `version`, and `protocol_version`.
-This route reports process liveness.
-
-## Check
-
-```sh
-mise exec -- cargo test -p deskfleet-model -p deskfleet-migration -p deskfleet-store -p deskfleet-server --locked
-```
+The backend smoke script additionally exercises a fixture OIDC provider, the live
+HTTP/WebSocket server, daemon synchronization, and actual WebRTC data channels.

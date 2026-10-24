@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 deskfleet-model.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+ts-rs = { version = "11", features = ["serde-json-impl"] }
 
 [lints]
 workspace = true

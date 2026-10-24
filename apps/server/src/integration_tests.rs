@@ -1,0 +1,235 @@
+//! HTTP authorization and signaling tests backed by a real PostgreSQL instance.
+use super::*;
+use actix_web::{App, http::StatusCode, test};
+use deskfleet_protocol::control::ControlMessage;
+use serde_json::{Value, json};
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_http_permissions_replication_and_signaling() {
+    let state = web::Data::new(
+        AppState::new(ServerConfig {
+            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
+            public_url: "https://control.test".into(),
+            web_origins: vec![],
+            oidc: None,
+            stun_urls: vec![],
+            turn_urls: vec![],
+            turn_secret: None,
+        })
+        .await
+        .unwrap(),
+    );
+    let issuer = format!("https://test/{}", uuid::Uuid::new_v4());
+    let user = state
+        .store
+        .oidc_user(&issuer, "owner", "Owner", Some("owner@test.example"), true)
+        .await
+        .unwrap();
+    let outside = state
+        .store
+        .oidc_user(&issuer, "outside", "Outside", None, false)
+        .await
+        .unwrap();
+    let login = state.store.new_session(&user.id).await.unwrap();
+    let outsider = state.store.new_session(&outside.id).await.unwrap();
+    let token = login["token"].as_str().unwrap();
+    let outside_token = outsider["token"].as_str().unwrap();
+    let app = test::init_service(App::new().app_data(state.clone()).configure(configure)).await;
+    macro_rules! call {
+        ($method:ident,$path:expr,$token:expr,$body:expr) => {
+            test::call_service(
+                &app,
+                test::TestRequest::$method()
+                    .uri($path)
+                    .insert_header(("Authorization", format!("Bearer {}", $token)))
+                    .set_json($body)
+                    .to_request(),
+            )
+            .await
+        };
+    }
+    let response =
+        test::call_service(&app, test::TestRequest::get().uri("/api/me").to_request()).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let error: Value = test::read_body_json(response).await;
+    assert_eq!(error["error"]["code"], "unauthorized");
+    assert_eq!(
+        call!(
+            post,
+            "/api/auth/start",
+            token,
+            &json!({"returnTo":"http://127.0.0.1:4455/auth/callback"})
+        )
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let team: Value = test::read_body_json(call!(
+        post,
+        "/api/teams",
+        token,
+        &json!({"name":"API team"})
+    ))
+    .await;
+    let team_id = team["id"].as_str().unwrap();
+    let path = format!("/api/teams/{team_id}/machines");
+    assert_eq!(
+        call!(get, &path, outside_token, &json!({})).status(),
+        StatusCode::FORBIDDEN
+    );
+    let enrollment: Value = test::read_body_json(call!(
+        post,
+        &path,
+        token,
+        &json!({"name":"Machine","originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"})
+    ))
+    .await;
+    let machine_id = enrollment["machine"]["id"].as_str().unwrap();
+    let machine_token = enrollment["token"].as_str().unwrap();
+    let me: Value =
+        test::read_body_json(call!(get, "/api/daemon/me", machine_token, &json!({}))).await;
+    assert_eq!(me["machine"]["id"], machine_id);
+    assert_eq!(me["serverId"], "https://control.test");
+    assert_eq!(
+        call!(
+            post,
+            "/api/daemon/catalog",
+            token,
+            &json!({"snapshot":{"machineId":"1"}})
+        )
+        .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call!(
+            post,
+            "/api/daemon/catalog",
+            machine_token,
+            &json!({"snapshot":{"machineId":"2"}})
+        )
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(call!(post,"/api/daemon/catalog",machine_token,&json!({"snapshot":{"machineId":"1","workspaces":[]},"providers":{"templates":[{"id":"x","name":"X","binaryPath":"hidden"}],"providers":[{"id":"1","template":"x","name":"X","env":{"SECRET":"hidden"}}]}})).status(),StatusCode::OK);
+    let catalog: Value = test::read_body_json(call!(
+        get,
+        &format!("/api/machines/{machine_id}/catalog"),
+        token,
+        &json!({})
+    ))
+    .await;
+    assert!(catalog["providers"]["providers"][0].get("env").is_none());
+    assert!(
+        catalog["providers"]["templates"][0]
+            .get("binaryPath")
+            .is_none()
+    );
+    let create = json!({"teamId":team_id,"machineId":machine_id,"purpose":"agent"});
+    assert_eq!(
+        call!(post, "/api/peers", token, &create).status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    let (send, mut receive) = tokio::sync::mpsc::channel(128);
+    let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
+    state
+        .hub
+        .add_daemon(machine_id, "fixture", send, shutdown)
+        .await;
+    let hub = state.hub.clone();
+    let machine = machine_id.to_owned();
+    let worker = actix_web::rt::spawn(async move {
+        while let Some(hub::Outbound::Message(message)) = receive.recv().await {
+            if let ControlMessage::Request {
+                id,
+                method,
+                params,
+                actor,
+            } = message
+            {
+                let result = if method == "peer.offer" {
+                    json!({"sdp":crate::peers::tests::sdp()})
+                } else {
+                    assert_eq!(method, "_deskfleet/session/archive");
+                    assert_eq!(params["sessionId"], "1");
+                    assert!(actor.is_some());
+                    json!({"archiveState":"archived"})
+                };
+                hub.response(&machine, "fixture", &id, Ok(result)).await;
+            }
+        }
+    });
+    let grant: Value = test::read_body_json(call!(post, "/api/peers", token, &create)).await;
+    let peer_id = grant["peerId"].as_str().unwrap();
+    assert!(uuid::Uuid::parse_str(peer_id).is_ok());
+    let auth = &grant["authorization"];
+    let expires =
+        chrono::DateTime::parse_from_rfc3339(auth["expiresAt"].as_str().unwrap()).unwrap();
+    let issued = chrono::DateTime::parse_from_rfc3339(auth["issuedAt"].as_str().unwrap()).unwrap();
+    assert_eq!((expires - issued).num_seconds(), 86400);
+    assert_eq!(auth["actor"]["userId"], user.id);
+    let offer_path = format!("/api/peers/{peer_id}/offer");
+    let offer = json!({"sdp":crate::peers::tests::sdp()});
+    assert_eq!(
+        call!(post, &offer_path, outside_token, &offer).status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call!(post, &offer_path, token, &json!({"sdp":"invalid"})).status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call!(post, &offer_path, token, &offer).status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        call!(post, &offer_path, token, &offer).status(),
+        StatusCode::OK
+    );
+    let changed =
+        json!({"sdp":crate::peers::tests::sdp().replace("ice-ufrag:one","ice-ufrag:changed")});
+    assert_eq!(
+        call!(post, &offer_path, token, &changed).status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call!(
+            post,
+            &format!("/api/peers/{peer_id}/start"),
+            token,
+            &json!({"displayId":"1"})
+        )
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call!(
+            post,
+            &format!("/api/machines/{machine_id}/rpc"),
+            token,
+            &json!({"method":"session/prompt","params":{}})
+        )
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(call!(post,&format!("/api/machines/{machine_id}/rpc"),token,&json!({"method":"_deskfleet/session/archive","params":{"sessionId":"1","operationId":"fixture"}})).status(),StatusCode::OK);
+    assert_eq!(
+        call!(post, "/api/auth/logout", token, &json!({})).status(),
+        StatusCode::OK
+    );
+    assert!(
+        state
+            .store
+            .valid_machine_peers(machine_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        call!(get, "/api/me", token, &json!({})).status(),
+        StatusCode::UNAUTHORIZED
+    );
+    state.hub.remove_daemon(machine_id, "fixture").await;
+    worker.abort();
+    state.store.close().await.unwrap();
+}

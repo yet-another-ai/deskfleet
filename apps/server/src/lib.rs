@@ -1,15 +1,126 @@
-//! HTTP entry points for the deskfleet control plane.
-
+//! API-only control plane: trusted identity/signaling and PostgreSQL read replicas.
+mod api;
+pub mod auth;
 pub mod config;
+pub mod error;
+mod hub;
+mod peers;
+mod websocket;
 
 use actix_web::{web, web::ServiceConfig};
-use deskfleet_protocol::HealthResponse;
+use config::ServerConfig;
+use deskfleet_control_store::ControlStore;
+use deskfleet_protocol::{HealthResponse, control::ControlMessage};
+use error::Result;
+use std::sync::Arc;
 
-/// Register the currently implemented HTTP routes.
-pub fn configure(config: &mut ServiceConfig) {
-    config.route("/healthz", web::get().to(health));
+pub struct AppState {
+    pub store: ControlStore,
+    pub config: ServerConfig,
+    pub oidc: Option<Arc<auth::Oidc>>,
+    hub: hub::Hub,
+    peers: peers::Negotiations,
 }
-
+impl AppState {
+    pub async fn new(config: ServerConfig) -> Result<Self> {
+        let store = ControlStore::connect(&config.database_url).await?;
+        let oidc = match config.oidc.clone() {
+            Some(c) => Some(Arc::new(auth::Oidc::discover(c).await?)),
+            None => None,
+        };
+        Ok(Self {
+            store,
+            config,
+            oidc,
+            hub: hub::Hub::default(),
+            peers: peers::Negotiations::default(),
+        })
+    }
+    async fn notify_team(&self, team: &str, message: ControlMessage) {
+        if let Ok(users) = self.store.team_user_ids(team).await {
+            self.hub.notify_users(&users, message).await;
+        }
+    }
+}
+pub fn configure(config: &mut ServiceConfig) {
+    config.app_data(
+        web::JsonConfig::default()
+            .limit(64 * 1024 * 1024)
+            .error_handler(|_, _| error::ApiError::bad("invalid or oversized JSON body").into()),
+    );
+    config.app_data(
+        web::QueryConfig::default()
+            .error_handler(|_, _| error::ApiError::bad("invalid query parameters").into()),
+    );
+    config.route("/healthz", web::get().to(health));
+    config.service(
+        web::scope("/api")
+            .route("/auth/start", web::post().to(auth::start))
+            .route("/auth/callback", web::get().to(auth::callback))
+            .route("/auth/exchange", web::post().to(auth::exchange))
+            .route("/auth/logout", web::post().to(auth::logout))
+            .route("/me", web::get().to(auth::me))
+            .route("/teams", web::get().to(api::teams))
+            .route("/teams", web::post().to(api::create_team))
+            .route("/teams/{teamId}", web::patch().to(api::rename_team))
+            .route("/teams/{teamId}", web::delete().to(api::delete_team))
+            .route("/teams/{teamId}/members", web::get().to(api::members))
+            .route(
+                "/teams/{teamId}/members/{userId}",
+                web::patch().to(api::change_member),
+            )
+            .route(
+                "/teams/{teamId}/members/{userId}",
+                web::delete().to(api::remove_member),
+            )
+            .route("/teams/{teamId}/invites", web::post().to(api::invite))
+            .route("/invites/accept", web::post().to(api::accept_invite))
+            .route("/teams/{teamId}/machines", web::get().to(api::machines))
+            .route("/teams/{teamId}/machines", web::post().to(api::enroll))
+            .route(
+                "/machines/{machineId}",
+                web::delete().to(api::remove_machine),
+            )
+            .route("/machines/{machineId}/rpc", web::post().to(api::rpc))
+            .route("/machines/{machineId}/catalog", web::get().to(api::catalog))
+            .route(
+                "/machines/{machineId}/sessions",
+                web::get().to(api::sessions),
+            )
+            .route(
+                "/machines/{machineId}/sessions/{sessionId}",
+                web::get().to(api::snapshot),
+            )
+            .route(
+                "/machines/{machineId}/sessions/{sessionId}/events",
+                web::get().to(api::events),
+            )
+            .route(
+                "/machines/{machineId}/sessions/{sessionId}/commands",
+                web::get().to(api::commands),
+            )
+            .route(
+                "/machines/{machineId}/commands/{operationId}",
+                web::get().to(api::command),
+            )
+            .route("/daemon/me", web::get().to(api::daemon_me))
+            .route("/daemon/catalog", web::post().to(api::sync_catalog))
+            .route("/daemon/history", web::post().to(api::sync_history))
+            .route("/daemon/ws", web::get().to(websocket::daemon))
+            .route("/client/ws", web::get().to(websocket::client))
+            .route("/peers", web::post().to(peers::create))
+            .route("/peers/{peerId}", web::delete().to(peers::close))
+            .route("/peers/{peerId}/offer", web::post().to(peers::offer))
+            .route(
+                "/peers/{peerId}/candidate",
+                web::post().to(peers::candidate),
+            )
+            .route("/peers/{peerId}/start", web::post().to(peers::start)),
+    );
+}
 async fn health() -> web::Json<HealthResponse> {
     web::Json(HealthResponse::ok(env!("CARGO_PKG_VERSION")))
 }
+
+#[cfg(test)]
+mod integration_tests;
