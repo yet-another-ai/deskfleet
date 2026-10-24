@@ -414,6 +414,8 @@
     "teamName": "Team name",
     "alreadyEnrolled": "This computer is already enrolled with {server}, team {team}.",
     "enrollThisMachine": "Connect this computer to the team",
+    "reenrollThisMachine": "Reconnect this computer to the team",
+    "enrollmentRevoked": "This computer was removed from its team. Reconnecting starts with empty data and retains its previous local data.",
     "headlessEnrollment": "Enroll a daemon using the machine enrollment command, or connect this computer from the desktop app.",
     "teamSettings": "Team settings",
     "close": "Close",

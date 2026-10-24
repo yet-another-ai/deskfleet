@@ -50,3 +50,47 @@ test("browses synchronized history with the machine offline and isolates equal l
   expect(view.text()).not.toContain("Message from 101")
   expect(central.createPeer).not.toHaveBeenCalled()
 })
+
+function enrollmentFixture(revoked: boolean, initiallySignedIn = true) {
+  let signedIn = initiallySignedIn
+  let enrollment = { configured: true, connected: false, revoked, serverUrl: "https://fleet.example", machineId: "old-machine", teamId: "original-team", identity: { originId: "old-origin", machineId: "1" }, machineName: "This computer" }
+  const state = () => ({ serverUrl: "https://fleet.example", user: signedIn ? { id: "u1", name: "Ada" } : undefined })
+  const central = {
+    status: vi.fn(async () => state()), setServer: vi.fn(async () => state()),
+    login: vi.fn(async () => { signedIn = true }),
+    teams: vi.fn(async () => [{ id: "other-team", name: "Another team", role: "admin" }, { id: "original-team", name: "Original team", role: "admin" }]),
+    machines: vi.fn(async () => []), onEvent: () => () => {},
+    localEnrollment: vi.fn(async () => enrollment),
+    enrollLocal: vi.fn(async (teamId: string) => { enrollment = { ...enrollment, teamId, machineId: "fresh-machine", identity: { originId: "fresh-origin", machineId: "1" }, revoked: false }; return enrollment }),
+  } as unknown as CentralApi
+  return { central, revoke: () => { enrollment = { ...enrollment, revoked: true } } }
+}
+
+test("signing back in offers the original team and re-registers a revoked computer", async () => {
+  const f = enrollmentFixture(true, false)
+  view = mount(AccountShell, { props: { host: { ...host, central: f.central } }, global: { plugins: [i18n] } })
+  await flushPromises()
+  await view.get('form').trigger("submit")
+  await flushPromises()
+  expect(view.get('select[aria-label="Team"]').element).toHaveProperty("value", "original-team")
+  expect(view.text()).toContain("This computer was removed from its team")
+  const button = view.findAll("button").find(button => button.text() === "Reconnect this computer to the team")!
+  await button.trigger("click")
+  await flushPromises()
+  expect(f.central.enrollLocal).toHaveBeenCalledExactlyOnceWith("original-team")
+  expect(view.text()).not.toContain("This computer was removed from its team")
+  expect(view.text()).toContain("This computer is already enrolled")
+})
+
+test("an active registration stays protected and Refresh discovers its later revocation", async () => {
+  const f = enrollmentFixture(false)
+  view = mount(AccountShell, { props: { host: { ...host, central: f.central } }, global: { plugins: [i18n] } })
+  await flushPromises()
+  expect(view.text()).not.toContain("Reconnect this computer to the team")
+  expect(view.text()).toContain("This computer is already enrolled")
+  f.revoke()
+  await view.findAll("button").find(button => button.text() === "Refresh")!.trigger("click")
+  await flushPromises()
+  expect(view.text()).toContain("Reconnect this computer to the team")
+  expect(f.central.enrollLocal).not.toHaveBeenCalled()
+})

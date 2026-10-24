@@ -414,6 +414,8 @@
     "teamName": "团队名称",
     "alreadyEnrolled": "此电脑已加入 {server} 的团队 {team}。",
     "enrollThisMachine": "将此电脑连接到团队",
+    "reenrollThisMachine": "将此电脑重新连接到团队",
+    "enrollmentRevoked": "此电脑已被团队移除。重新连接后将使用新的空白数据，原有本地数据会保留。",
     "headlessEnrollment": "使用机器注册命令加入 daemon，或在桌面应用中连接此电脑。",
     "teamSettings": "团队设置",
     "close": "关闭",

@@ -10,7 +10,7 @@ export type Team = Omit<WireTeam, "role"> & { role: "admin" | "member" }
 export interface TeamMember { userId: string; name: string; email?: string | null; role: "admin" | "member" }
 export type Machine = Omit<WireMachine, "capabilities" | "lastSeenAt"> & { capabilities: Record<string, unknown>; lastSeenAt?: WireMachine["lastSeenAt"] }
 export interface LocalEnrollment {
-  configured: boolean; connected: boolean; serverUrl?: string; machineId?: string; teamId?: string
+  configured: boolean; connected: boolean; revoked: boolean; serverUrl?: string; machineId?: string; teamId?: string
   identity: { originId: string; machineId: string }; machineName: string
 }
 export interface PeerGrant { peerId: string; authorization: PeerAuthorization; iceServers: RTCIceServer[] }

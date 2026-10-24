@@ -3,9 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
 import { HttpCentralClient, type SavedAccount } from "@deskfleet/client/http-central"
-import type { CentralApi, LocalEnrollment, Machine } from "@deskfleet/client/central"
+import type { CentralApi, LocalEnrollment } from "@deskfleet/client/central"
 import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
+import { enrollLocalMachine } from "./local-enrollment.ts"
 
 export const CENTRAL_CHANNEL = "deskfleet:central"
 export const CENTRAL_EVENT = "deskfleet:central-event"
@@ -64,7 +65,7 @@ async function authorize(client: HttpCentralClient, openAuthorization: (url: str
   } finally { clearTimeout(timeout); server.close(); server.closeAllConnections() }
 }
 
-async function daemonCall(method: "centralStatus" | "centralEnroll", params: unknown): Promise<LocalEnrollment> {
+async function daemonCall(method: "centralStatus" | "centralPrepareEnrollment" | "centralEnroll", params: unknown): Promise<LocalEnrollment> {
   const client = await DaemonClient.connect(() => {}, () => {})
   try { return await client.call(method, params as never) as LocalEnrollment }
   finally { client.close() }
@@ -74,16 +75,11 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
   const path = join(app.getPath("userData"), "account.json")
   const client = new HttpCentralClient({ account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal) })
   const localEnrollment = () => daemonCall("centralStatus", {})
-  const enrollLocal = async (teamId: string): Promise<LocalEnrollment> => {
-    const current = await localEnrollment()
-    if (current.configured) throw new Error("This machine is already enrolled")
-    const result = await client.request<{ machine: Machine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, {
-      name: current.machineName, originId: current.identity.originId, localMachineId: current.identity.machineId,
-      capabilities: { desktop: process.platform !== "linux" },
-    })
-    const { serverUrl } = await client.status()
-    return daemonCall("centralEnroll", { serverUrl, machineId: result.machine.id, teamId, token: result.token })
-  }
+  const enrollLocal = (teamId: string) => enrollLocalMachine(client, {
+    status: localEnrollment,
+    prepare: () => daemonCall("centralPrepareEnrollment", {}),
+    enroll: credentials => daemonCall("centralEnroll", credentials),
+  }, teamId)
   const methods: Record<string, (...args: never[]) => unknown> = Object.fromEntries([
     "status", "setServer", "login", "logout", "teams", "createTeam", "enrollHeadless", "members", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "machines", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
   ].map(method => [method, (client[method as keyof HttpCentralClient] as (...args: never[]) => unknown).bind(client)]))
