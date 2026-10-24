@@ -15,6 +15,7 @@ export declare class NativeCatalog {
   agentSnapshot(sessionId: string): Promise<string>
   agentHistory(sessionId: string, afterSeq: string, limit: number): Promise<string>
   agentCommand(operationId: string): Promise<string>
+  agentCommands(sessionId: string): Promise<string>
   agentCommit(transaction: string): Promise<string>
   agentCreateSession(request: string): Promise<string>
   close(): Promise<void>

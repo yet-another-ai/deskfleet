@@ -601,3 +601,97 @@ async fn session_context_is_recorded_at_creation_and_immutable() {
     );
     local.close().await.unwrap();
 }
+
+#[tokio::test]
+async fn archive_state_and_browser_audit_persist_without_losing_the_owned_context() {
+    let file = File::new();
+    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let created = create(&local).await;
+    let worktree = local
+        .attach_session_worktree(
+            created.session.id,
+            DirectoryBindings::new(vec![DirectoryBinding {
+                path: "/retained-worktree".into(),
+            }])
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.session.archive_state, ArchiveState::Active);
+    let mut archive = command(&local, Some(created.session.id)).await;
+    archive.method = "_deskfleet/session/archive".into();
+    archive.actor = AgentActor {
+        kind: ActorKind::User,
+        user_id: Some("alice".into()),
+        device_id: Some("browser".into()),
+        source_machine: None,
+    };
+    let mut session = created.session;
+    for state in [ArchiveState::Archiving, ArchiveState::Archived] {
+        let mut commit = transaction(&session);
+        session.archive_state = state;
+        session.lifecycle = SessionLifecycle::Ready;
+        commit.session = Some(session.clone());
+        commit.command = Some(archive.clone());
+        commit.events = vec![event(session.id, EventKind::Session, &session)];
+        session = local.agent_commit(commit).await.unwrap().session.unwrap();
+    }
+    archive.status = CommandStatus::Completed;
+    archive.completed_at = Some(TIME.into());
+    let mut commit = transaction(&session);
+    commit.command = Some(archive.clone());
+    commit.events = vec![event(session.id, EventKind::Command, &archive)];
+    session = local.agent_commit(commit).await.unwrap().session.unwrap();
+    let history = local
+        .agent_history(session.id, 0.into(), 100)
+        .await
+        .unwrap();
+    let commands = local.agent_commands(session.id).await.unwrap();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands.last(), Some(&archive));
+    assert!(
+        serde_json::to_value(&archive.actor)
+            .unwrap()
+            .get("sourceMachine")
+            .is_none()
+    );
+    assert!(matches!(
+        local.delete_workspace(session.workspace_id).await,
+        Err(StoreError::WorkspaceHasSessions { .. })
+    ));
+    local.close().await.unwrap();
+
+    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    assert_eq!(
+        local
+            .agent_snapshot(session.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .session,
+        session
+    );
+    assert_eq!(
+        local
+            .agent_history(session.id, 0.into(), 100)
+            .await
+            .unwrap(),
+        history
+    );
+    assert_eq!(local.agent_commands(session.id).await.unwrap(), commands);
+    assert!(
+        local.snapshot().await.unwrap().workspaces[0]
+            .worktrees
+            .contains(&worktree)
+    );
+    let mut restore = transaction(&session);
+    session.archive_state = ArchiveState::Active;
+    restore.session = Some(session.clone());
+    restore.events = vec![event(session.id, EventKind::Session, &session)];
+    local.agent_commit(restore).await.unwrap();
+    let restored = local.agent_snapshot(session.id).await.unwrap().unwrap();
+    assert_eq!(restored.session.archive_state, ArchiveState::Active);
+    assert!(restored.runs.is_empty());
+    assert_eq!(local.agent_commands(session.id).await.unwrap(), commands);
+    local.close().await.unwrap();
+}

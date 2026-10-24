@@ -136,6 +136,119 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   return { catalog, service, provider, providers, actor, bob, create, snapshot, sessionId, read, submit, directory, repository }
 }
 
+test("archive retains files and history, cancels approval, and restore waits for explicit input", async t => {
+  const f = await setup(t)
+  const browser: AgentActor = { kind: "user", userId: "browser-user", deviceId: "browser-device" }
+  const worktree = (await f.catalog.sessionWorktree(f.sessionId))!
+  const cwd = worktree.directories[0]!.path
+  await writeFile(join(cwd, "README.md"), "uncommitted changes\n")
+  await writeFile(join(cwd, "untracked.txt"), "untracked content\n")
+  await f.submit("hold", browser).result
+  await until(f.read, () => f.provider.prompts.length === 1)
+  await f.submit("queued", browser).result
+  const permissionResult = f.provider.askPermission()
+  const before = await until(f.read, state => state.permissions.some(permission => permission.state === "pending"))
+  const pendingPermission = before.permissions.find(permission => permission.state === "pending")!
+  const closed: string[] = []
+  f.service.onSessionArchive(async id => { closed.push(id) })
+  const archive = { sessionId: f.sessionId, operationId: randomUUID() }
+  const archived = await f.service.handle("_deskfleet/session/archive", archive, browser) as AgentSnapshot
+  assert.equal(archived.session.archiveState, "archived")
+  assert.equal(archived.session.lifecycle, "ready")
+  assert.deepEqual(closed, [worktree.id])
+  assert.deepEqual((await permissionResult).outcome, { outcome: "cancelled" })
+  assert.equal(archived.permissions.find(permission => permission.id === pendingPermission.id)?.state, "cancelled")
+  assert.equal(archived.inputs.length, 2)
+  assert.equal(archived.inputs[1]!.state, "pending")
+  assert.deepEqual(archived.inputs[0]!.author, browser)
+  assert.ok(archived.runs.every(run => run.state === "stopped"))
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "uncommitted changes\n")
+  assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "untracked content\n")
+  assert.deepEqual(await f.catalog.sessionWorktree(f.sessionId), worktree)
+  assert.deepEqual(await f.service.handle("_deskfleet/session/archive", archive, browser), archived)
+  const calls = [
+    ["_deskfleet/session/resume", {}],
+    ["_deskfleet/session/configure", { model: "second" }],
+    ["_deskfleet/input/submit", { content: [{ type: "text", text: "blocked" }], delivery: "backlog" }],
+    ["_deskfleet/permission/respond", { permissionId: pendingPermission.id, optionId: "allow" }],
+    ["_deskfleet/input/retry", { inputId: archived.inputs[1]!.id }],
+  ] as const
+  for (const [method, params] of calls) {
+    await assert.rejects(f.service.handle(method, { sessionId: f.sessionId, operationId: randomUUID(), ...params }, browser), /Restore this Session/u)
+  }
+  await assert.rejects(f.service.withActiveSession(f.sessionId, async () => { throw new Error("must not start") }), /Restore this Session/u)
+  const commands = await f.service.journal.commands(f.sessionId)
+  assert.equal(commands.find(command => command.operationId === archive.operationId)?.status, "completed")
+  const events = await f.service.journal.history(f.sessionId, "0", 200)
+  assert.ok(events.some(event => event.kind === "command" && "operationId" in event.payload && event.payload.operationId === archive.operationId && event.payload.status === "completed"))
+  assert.ok(events.some(event => event.kind === "acp"))
+  await f.service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, browser)
+  assert.equal(f.provider.clients.length, 1)
+  const restored = await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, browser) as AgentSnapshot
+  assert.equal(restored.session.archiveState, "active")
+  assert.equal(restored.session.id, archived.session.id)
+  assert.equal(restored.inputs[1]!.state, "pending")
+  assert.deepEqual(f.provider.prompts, ["hold"])
+  assert.equal(f.provider.clients.length, 1)
+  await f.submit("new explicit request", browser).result
+  await until(f.read, () => f.provider.prompts.length === 2)
+  assert.deepEqual(f.provider.prompts, ["hold", "queued"])
+  assert.deepEqual(f.provider.resumes, ["provider-conversation"])
+})
+
+test("failed archive retains archiving admission state and retry survives daemon restart", async t => {
+  const f = await setup(t)
+  let failures = 1
+  f.service.onSessionArchive(async () => { if (failures-- > 0) throw new Error("PTY close failed") })
+  const failed = { sessionId: f.sessionId, operationId: randomUUID() }
+  await assert.rejects(f.service.handle("_deskfleet/session/archive", failed, f.actor), /resources could not all be closed/u)
+  assert.equal((await f.read()).session.archiveState, "archiving")
+  assert.equal((await f.service.journal.command(failed.operationId))?.status, "failed")
+  await assert.rejects(f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor), /Finish archiving/u)
+  await assert.rejects(f.submit("blocked while archiving").result, /Restore this Session/u)
+  assert.ok(await f.catalog.sessionWorktree(f.sessionId))
+  await f.service.close()
+  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  await restarted.init()
+  try {
+    assert.equal((await restarted.journal.read(f.sessionId)).session.archiveState, "archiving")
+    let closed = false
+    restarted.onSessionArchive(async () => { closed = true })
+    const archived = await restarted.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor) as AgentSnapshot
+    assert.equal(archived.session.archiveState, "archived")
+    assert.equal(closed, true)
+    assert.equal(f.provider.clients.length, 1)
+    const restored = await restarted.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor) as AgentSnapshot
+    assert.equal(restored.session.archiveState, "active")
+    assert.equal(f.provider.clients.length, 1)
+  } finally { await restarted.close() }
+})
+
+test("archive serializes with terminal admission and never completes before resource closure", async t => {
+  const f = await setup(t)
+  let releaseAdmission!: () => void
+  let releaseClosure!: () => void
+  const admission = new Promise<void>(resolve => { releaseAdmission = resolve })
+  const closure = new Promise<void>(resolve => { releaseClosure = resolve })
+  let admitted = false
+  let closing = false
+  t.after(() => { releaseAdmission(); releaseClosure() })
+  f.service.onSessionArchive(async () => { closing = true; await closure })
+  const dial = f.service.withActiveSession(f.sessionId, async () => { admitted = true; await admission })
+  await until(f.read, () => admitted)
+  let completed = false
+  const archive = f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+    .then(result => { completed = true; return result as AgentSnapshot })
+  assert.equal(closing, false)
+  releaseAdmission()
+  await dial
+  await until(f.read, state => closing && state.session.archiveState === "archiving")
+  assert.equal(completed, false)
+  await assert.rejects(f.service.withActiveSession(f.sessionId, async () => {}), /Restore this Session/u)
+  releaseClosure()
+  assert.equal((await archive).session.archiveState, "archived")
+})
+
 test("concurrent users share durable backlog and retries do not duplicate inputs or worktrees", async t => {
   const f = await setup(t)
   const again = await f.service.handle("_deskfleet/session/create", f.create, f.actor) as AgentSnapshot
@@ -154,7 +267,7 @@ test("concurrent users share durable backlog and retries do not duplicate inputs
   f.provider.finish()
   state = await until(f.read, state => state.turns.length === 2 && state.turns[1]?.state === "running" && f.provider.prompts.length === 2)
   assert.deepEqual(f.provider.prompts, ["hold", "next"])
-  assert.equal(state.inputs[1]?.author.sourceMachine.id, "2")
+  assert.equal(state.inputs[1]?.author.sourceMachine?.id, "2")
   const events = await f.service.journal.history(f.sessionId, "0", 200)
   assert.deepEqual(events.map(event => event.seq), events.map((_, i) => String(i + 1)))
   assert.ok(events.some(event => event.kind === "acp"))

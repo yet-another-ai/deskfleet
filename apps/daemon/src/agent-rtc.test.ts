@@ -27,7 +27,7 @@ class Sessions implements AgentChannelSessions {
   async handle(method: AgentMethod, params: any, actor: AgentActor): Promise<unknown> {
     if (method === "_deskfleet/session/list") return [{ deviceId: actor.deviceId }]
     if (method === "_deskfleet/session/subscribe") return {
-      session: { id: "1", workspaceId: "1", title: "Transport fixture", provider: "fixture", context: "worktree", lifecycle: "ready", createdAt, updatedAt: createdAt, lastEventSeq: String(this.sequence) },
+      session: { id: "1", workspaceId: "1", title: "Transport fixture", provider: "fixture", context: "worktree", lifecycle: "ready", archiveState: "active", createdAt, updatedAt: createdAt, lastEventSeq: String(this.sequence) },
       runs: [], inputs: [], turns: [], permissions: this.permissions.map(permission => ({ ...permission })),
     } satisfies AgentSnapshot
     if (method === "_deskfleet/permission/respond") {

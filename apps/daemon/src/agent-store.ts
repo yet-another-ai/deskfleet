@@ -10,12 +10,17 @@ export interface AgentPersistence {
   agentSnapshot(sessionId: string): Promise<string>
   agentHistory(sessionId: string, afterSeq: string, limit: number): Promise<string>
   agentCommand(operationId: string): Promise<string>
+  agentCommands(sessionId: string): Promise<string>
   agentCommit(transaction: string): Promise<string>
   agentCreateSession(request: string): Promise<string>
 }
 
 export const timestamp = () => new Date().toISOString()
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+export function requireActiveSession(session: AgentSessionRecord): void {
+  if (session.archiveState !== "active") throw new Error("Restore this Session before starting or changing its execution")
+}
 
 /** The journal's queue orders commits, never the lifetime of an ACP request. */
 export class AgentJournal {
@@ -38,6 +43,21 @@ export class AgentJournal {
   }
   async command(operationId: string): Promise<AgentCommand | null> {
     return JSON.parse(await this.native.agentCommand(operationId))
+  }
+  async commands(sessionId: string): Promise<AgentCommand[]> {
+    return JSON.parse(await this.native.agentCommands(sessionId))
+  }
+  /** Publish receipt changes so synchronization observes outcomes after domain events. */
+  async saveCommand(command: AgentCommand): Promise<void> {
+    if (!command.sessionId) { await this.commit(undefined, { command }); return }
+    const sessionId = command.sessionId
+    await this.serial(sessionId, async () => {
+      const snapshot = JSON.parse(await this.native.agentSnapshot(sessionId)) as AgentSnapshot | null
+      await this.commit(snapshot ?? undefined, {
+        command,
+        ...(snapshot ? { events: [this.event(sessionId, "command", command, { commandId: command.id })] } : {}),
+      })
+    })
   }
   async history(id: string, afterSeq: string, limit = 100): Promise<AgentEvent[]> {
     return JSON.parse(await this.native.agentHistory(id, afterSeq, Math.max(1, Math.min(limit, 200))))

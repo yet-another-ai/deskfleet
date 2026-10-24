@@ -33,12 +33,18 @@ class ConfigurationProvider implements AgentProvider {
   onSetOption?: (params: acp.SetSessionConfigOptionRequest) => void
   changes: acp.SetSessionConfigOptionRequest[] = []
   prompts: { model: string; effort: string }[] = []
+  connections = 0
+  closes = 0
+  newSessionWait?: Promise<void>
+  closeWait?: Promise<void>
 
   async connect(_config: unknown, client: AgentClient): Promise<AgentConnection> {
+    this.connections++
     this.client = client
     return {
       initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {} } } },
       newSession: async () => {
+        await this.newSessionWait
         this.model = "first"
         this.effort = "high"
         if (this.notifyOpeningOptions) await client.onUpdate({
@@ -72,7 +78,7 @@ class ConfigurationProvider implements AgentProvider {
       },
       steer: async () => ({ outcome: "inactive" }),
       cancel: async () => {},
-      close: async () => {},
+      close: async () => { this.closes++; await this.closeWait },
     }
   }
 
@@ -178,6 +184,36 @@ for (const response of ["missing", "empty"] as const) {
   })
 }
 
+test("a second archive closes configuration discovery opened after restoring a failed Session", async t => {
+  const provider = new ConfigurationProvider()
+  provider.newSessionOptions = "missing"
+  const f = await setup(t, provider, { model: "second" })
+  const change = (method: "_deskfleet/session/archive" | "_deskfleet/session/restore") => f.service.handle(method, {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.service.actor()) as Promise<AgentSnapshot>
+  await change("_deskfleet/session/archive")
+  await change("_deskfleet/session/restore")
+  let releaseDiscovery!: () => void
+  let releaseClose!: () => void
+  provider.newSessionWait = new Promise<void>(resolve => { releaseDiscovery = resolve })
+  provider.closeWait = new Promise<void>(resolve => { releaseClose = resolve })
+  try {
+    const discovery = assert.rejects(f.configuration(), /configuration discovery was stopped/u)
+    await until(f.read, () => provider.connections === 2)
+    let finished = false
+    const archive = change("_deskfleet/session/archive").then(result => { finished = true; return result })
+    await until(f.read, state => provider.closes === 2 && state.session.archiveState === "archiving")
+    assert.equal(finished, false)
+    releaseClose()
+    assert.equal((await archive).session.archiveState, "archived")
+    await discovery
+    assert.deepEqual(provider.prompts, [])
+  } finally {
+    releaseDiscovery()
+    releaseClose()
+  }
+})
+
 test("configuration received while opening supplies options omitted from the new-session response", async t => {
   const provider = new ConfigurationProvider()
   provider.newSessionOptions = "missing"
@@ -221,10 +257,16 @@ test("a queued notification from before configure cannot replace the newer expli
   const f = await setup(t, provider)
   let release!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
-  const blocked = f.service.journal.serial(f.sessionId, () => gate)
-  const notified = provider.notify(options("first", "low"))
+  let blocked: Promise<void> | undefined
+  let notified: Promise<void> | undefined
+  const unsubscribe = f.service.onEvent(event => {
+    if (event.kind !== "command" || !("method" in event.payload) || event.payload.method !== "_deskfleet/session/configure") return
+    unsubscribe()
+    blocked = f.service.journal.serial(f.sessionId, () => gate)
+    notified = provider.notify(options("first", "low"))
+  })
   provider.onSetOption = () => { setImmediate(release) }
-  const configured = await f.configure({ model: "second" })
+  const configured = await f.configure({ model: "second" }).finally(release)
   await Promise.all([blocked, notified])
   assert.equal(configured.models?.currentValue, "second")
   assert.equal(configured.reasoningEfforts?.currentValue, "high")

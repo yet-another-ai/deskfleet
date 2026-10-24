@@ -238,6 +238,16 @@ impl NativeCatalog {
     }
 
     #[napi]
+    pub async fn agent_commands(&self, session_id: String) -> Result<String> {
+        json(
+            self.catalog
+                .agent_commands(parse_id(session_id)?)
+                .await
+                .map_err(native_error)?,
+        )
+    }
+
+    #[napi]
     pub async fn agent_commit(&self, transaction: String) -> Result<String> {
         let transaction = serde_json::from_str(&transaction).map_err(native_error)?;
         json(

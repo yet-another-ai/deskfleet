@@ -246,6 +246,7 @@ pub(super) async fn save_session(
         &[
             ("session_id", session.id.as_i64().into()),
             ("lifecycle", session.lifecycle.as_str().into()),
+            ("archive_state", session.archive_state.as_str().into()),
             ("last_event_seq", session.last_event_seq.as_i64().into()),
         ],
         session,

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import type * as acp from "@agentclientprotocol/sdk"
 import { supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
-import { AgentJournal, errorMessage, timestamp } from "./agent-store.ts"
+import { AgentJournal, errorMessage, requireActiveSession, timestamp } from "./agent-store.ts"
 import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 
 import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
@@ -40,6 +40,7 @@ export class AgentRuntime {
   #recovering?: Promise<void>
   #delivery?: Promise<void>
   readonly #permissions = new Map<string, (response: acp.RequestPermissionResponse) => void>()
+  readonly #discoveries = new Set<{ controller: AbortController; signal: AbortSignal; pending: Promise<AgentConfiguration> }>()
 
   constructor(journal: AgentJournal, catalog: DaemonCatalog, resolveProvider: ResolveAgentProvider, sessionId: string) {
     this.journal = journal
@@ -60,19 +61,35 @@ export class AgentRuntime {
     // requires that its launch settings still exist.
     try { this.#providerName = this.#resolveProvider(providerId).config.name } catch {}
     const identity = { id: providerId, name: this.#providerName ?? providerId }
-    if (this.running || !snapshot.session.error) return agentConfiguration(this.#configuration ?? saved.options, identity)
+    if (snapshot.session.archiveState !== "active" || this.running || !snapshot.session.error) return agentConfiguration(this.#configuration ?? saved.options, identity)
     // Discover alternatives without resuming the failed conversation, changing
     // its saved selection, or releasing any pending inputs.
     let available: AgentConfiguration
     if (this.#availableConfiguration?.length) available = agentConfiguration(this.#availableConfiguration, identity)
     else {
+      const previousStop = this.#stop
+      await previousStop
       const catalog = await this.#catalog.native.snapshot()
       const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
       if (!worktree?.directories[0]) throw new Error("Session worktree is unavailable")
-      available = await readAgentConfiguration({ provider: providerId, ...saved.selection }, worktree.directories[0].path,
-        { ...this.#resolveProvider(providerId), signal, recoverSelection: true,
-          onOptions: options => { this.#availableConfiguration = options },
-        })
+      const discovery = await this.journal.serial(this.sessionId, async () => {
+        requireActiveSession((await this.journal.read(this.sessionId)).session)
+        if (this.#stop === previousStop) {
+          this.#stop = undefined
+          this.#stopping = false
+        }
+        const controller = new AbortController()
+        const discoverySignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
+        const pending = readAgentConfiguration({ provider: providerId, ...saved.selection }, worktree.directories[0]!.path,
+          { ...this.#resolveProvider(providerId), signal: discoverySignal, recoverSelection: true,
+            onOptions: options => { this.#availableConfiguration = options },
+          })
+        const discovery = { controller, signal: discoverySignal, pending }
+        this.#discoveries.add(discovery)
+        return discovery
+      })
+      try { available = await discovery.pending }
+      finally { this.#discoveries.delete(discovery) }
     }
     if (available.models && saved.selection.model !== undefined) available.models.currentValue = saved.selection.model
     if (available.reasoningEfforts && saved.selection.reasoningEffort !== undefined) available.reasoningEfforts.currentValue = saved.selection.reasoningEffort
@@ -80,6 +97,7 @@ export class AgentRuntime {
   }
 
   async configure(selection: AgentConfigurationSelection): Promise<AgentConfiguration> {
+    requireActiveSession((await this.journal.read(this.sessionId)).session)
     if (this.#configuring || this.#active || this.#dispatching) throw new Error("Wait for the current turn before changing the Agent configuration")
     // Pause backlog dispatch through startup and every provider configuration call.
     this.#configuring = true
@@ -90,6 +108,7 @@ export class AgentRuntime {
       await this.#starting?.catch(() => {})
       await this.start(selection)
       const snapshot = await this.journal.read(this.sessionId)
+      requireActiveSession(snapshot.session)
       if (this.#active || snapshot.turns.some(liveTurn)) throw new Error("Wait for the current turn before changing the Agent configuration")
       const sessionId = snapshot.session.providerSessionId!
       await applyAgentConfiguration(this.#connection!, sessionId, this.#configuration ?? [], selection,
@@ -111,7 +130,8 @@ export class AgentRuntime {
     })
   }
 
-  start(selection?: AgentConfigurationSelection): Promise<void> {
+  async start(selection?: AgentConfigurationSelection): Promise<void> {
+    requireActiveSession((await this.journal.read(this.sessionId)).session)
     if (this.#stopping && this.#stop) {
       const stopping = this.#stop
       return stopping.then(() => {
@@ -134,6 +154,7 @@ export class AgentRuntime {
     this.#stop = undefined
     this.#configurationEpoch++
     const snapshot = await this.journal.read(this.sessionId)
+    requireActiveSession(snapshot.session)
     if (snapshot.session.lifecycle !== "ready") throw new Error("Session is not available for execution")
     await this.#active?.completion
     const savedConfiguration = await savedAgentConfiguration(this.journal, this.sessionId)
@@ -149,11 +170,12 @@ export class AgentRuntime {
       sessionId: this.sessionId, generation: Math.max(0, ...snapshot.runs.map(run => run.generation)) + 1,
       state: "starting", startedAt: timestamp(),
     }
-    this.#run = run
     await this.journal.serial(this.sessionId, async () => {
       const current = await this.journal.read(this.sessionId)
+      requireActiveSession(current.session)
       await this.journal.commit(current, { runs: [run], events: [this.journal.event(this.sessionId, "run", run)] })
     })
+    this.#run = run
     try {
       // Resolve at process launch so edits apply to the next run, while an
       // existing process keeps the settings with which it was started.
@@ -198,6 +220,7 @@ export class AgentRuntime {
       run.state = "running"
       await this.journal.serial(this.sessionId, async () => {
         const current = await this.journal.read(this.sessionId)
+        requireActiveSession(current.session)
         const session = {
           ...current.session, providerSessionId, lifecycle: "ready" as const, error: undefined, updatedAt: timestamp(),
           capabilities: { steering: supportsSteering(connection.initialization), resume: !!capabilities?.sessionCapabilities?.resume },
@@ -263,6 +286,11 @@ export class AgentRuntime {
     try {
       await this.journal.serial(this.sessionId, async () => {
         const snapshot = await this.journal.read(this.sessionId)
+        if (snapshot.session.archiveState !== "active") {
+          permission.state = "cancelled"
+          permission.resolvedAt = timestamp()
+          resolve({ outcome: { outcome: "cancelled" } })
+        }
         await this.journal.commit(snapshot, { permissions: [permission], events: [this.journal.event(this.sessionId, "permission", permission)] })
       })
       const abort = () => { void this.cancelPermissions(permission.id).catch(error => console.error("Permission cancellation failed", error)) }
@@ -301,7 +329,7 @@ export class AgentRuntime {
     const delivery = (async () => {
       try {
         const snapshot = await this.journal.read(this.sessionId)
-        if (snapshot.session.lifecycle !== "ready") return
+        if (snapshot.session.archiveState !== "active" || snapshot.session.lifecycle !== "ready") return
         const input = snapshot.inputs.filter(input => input.state === "pending").sort((a, b) => Number(BigInt(a.acceptedSeq) - BigInt(b.acceptedSeq)))[0]
         if (input) {
           await this.#launch(input.id, await systemCommand(this.journal, this.sessionId, input.id))
@@ -353,6 +381,8 @@ export class AgentRuntime {
         return input
       })
       const snapshot = await this.journal.read(this.sessionId)
+      requireActiveSession(snapshot.session)
+      if (!this.running) throw new Error("Agent stopped before delivery")
       sent = true
       const result = await connection.steer({ sessionId: snapshot.session.providerSessionId!, prompt: input.content }, command.id)
       if (result.outcome === "inactive") {
@@ -369,6 +399,7 @@ export class AgentRuntime {
   }
 
   #claim(snapshot: AgentSnapshot, inputId: string, command: AgentCommand, alreadyClaimed = false): AgentInput {
+    requireActiveSession(snapshot.session)
     const input = snapshot.inputs.find(input => input.id === inputId)
     if (!input || (input.state !== "pending" && !(alreadyClaimed && input.state === "dispatching" && input.dispatchCommandId === command.id))) {
       throw new Error("This input has already been handled")
@@ -394,7 +425,7 @@ export class AgentRuntime {
       return input
     })
     const snapshot = await this.journal.read(this.sessionId)
-    if (!this.running || this.#connection !== connection) {
+    if (snapshot.session.archiveState !== "active" || !this.running || this.#connection !== connection) {
       await this.#finish(turn, inputId, command, undefined, new Error("Agent stopped before delivery"), false)
       return
     }
@@ -481,13 +512,25 @@ export class AgentRuntime {
     })
   }
 
-  stop(): Promise<void> { return this.#stop ??= this.#stopRun() }
+  stop(): Promise<void> {
+    if (this.#stop) return this.#stop
+    const stopping = this.#stopRun()
+    this.#stop = stopping
+    void stopping.catch(() => { if (this.#stop === stopping) this.#stop = undefined })
+    return stopping
+  }
   async #stopRun(): Promise<void> {
     this.#stopping = true
+    const discoveries = [...this.#discoveries]
+    for (const discovery of discoveries) discovery.controller.abort(new Error("Agent configuration discovery was stopped"))
     // Startup can be awaiting session/new or resume. Closing its connection
     // must be able to reject that RPC before we wait for startup to finish.
     if (this.#starting) await this.#connection?.close()
     await this.#starting?.catch(() => {})
+    await Promise.all(discoveries.map(async discovery => {
+      try { await discovery.pending }
+      catch (error) { if (error !== discovery.signal.reason) throw error }
+    }))
     await this.#recovering
     await this.cancelPermissions()
     const connection = this.#connection

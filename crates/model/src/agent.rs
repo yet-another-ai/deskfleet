@@ -46,6 +46,17 @@ states!(SessionLifecycle {
     ProvisionFailed => "provision_failed",
     Deleting => "deleting",
 });
+states!(ArchiveState {
+    Active => "active",
+    Archiving => "archiving",
+    Archived => "archived",
+});
+
+impl Default for ArchiveState {
+    fn default() -> Self {
+        Self::Active
+    }
+}
 states!(RunState {
     Starting => "starting",
     Running => "running",
@@ -114,7 +125,8 @@ pub struct AgentActor {
     pub kind: ActorKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
-    pub source_machine: MachineReference,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_machine: Option<MachineReference>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
 }
@@ -138,6 +150,9 @@ pub struct AgentSessionRecord {
     #[serde(default)]
     pub context: SessionContext,
     pub lifecycle: SessionLifecycle,
+    /// Independent of provisioning and provider process state.
+    #[serde(default)]
+    pub archive_state: ArchiveState,
     pub last_event_seq: AgentSequence,
     pub created_at: String,
     pub updated_at: String,

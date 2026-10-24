@@ -5,7 +5,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk"
 import { codexProvider } from "./agents/codex.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
-import { AgentJournal, errorMessage, timestamp, type AgentPersistence } from "./agent-store.ts"
+import { AgentJournal, errorMessage, requireActiveSession, timestamp, type AgentPersistence } from "./agent-store.ts"
 import { AgentRuntime, type ResolveAgentProvider } from "./agent-runtime.ts"
 import type { AgentProviders } from "./agent-providers.ts"
 import { GitInspection } from "./git-inspection.ts"
@@ -50,6 +50,8 @@ export class AgentSessions {
   readonly #git = new GitInspection()
   readonly #runtimes = new Map<string, AgentRuntime>()
   readonly #operations = new Map<string, Promise<unknown>>()
+  readonly #transitions = new Map<string, Promise<unknown>>()
+  readonly #archiveListeners = new Set<(worktreeId: string) => Promise<void>>()
   readonly #discovery = new Set<Promise<unknown>>()
   readonly #closing = new AbortController()
   #closed = false
@@ -91,6 +93,23 @@ export class AgentSessions {
   }
 
   onEvent(listener: (event: AgentEvent) => void): () => void { return this.journal.onEvent(listener) }
+  onSessionArchive(listener: (worktreeId: string) => Promise<void>): () => void {
+    this.#archiveListeners.add(listener)
+    return () => this.#archiveListeners.delete(listener)
+  }
+  async requireActive(sessionId: string): Promise<AgentSnapshot> {
+    const snapshot = await this.journal.read(sessionId)
+    requireActiveSession(snapshot.session)
+    return snapshot
+  }
+  /** Serialize resource admission with archive, without holding a database transaction. */
+  withActiveSession<T>(sessionId: string, action: () => Promise<T>): Promise<T> {
+    return this.journal.serial(sessionId, async () => {
+      await this.requireActive(sessionId)
+      if (this.#closed) throw new Error("Agent service is stopping")
+      return action()
+    })
+  }
   actor(): AgentActor { return this.journal.actor() }
   #runtime(sessionId: string): AgentRuntime {
     let runtime = this.#runtimes.get(sessionId)
@@ -170,15 +189,17 @@ export class AgentSessions {
     const existing = await this.journal.command(operationId)
     if (existing) {
       if (existing.method !== method || canonical(existing.actor) !== canonical(actor) || canonical(existing.params) !== canonical(params)) {
-        await this.journal.commit(undefined, { command: {
+        await this.journal.saveCommand({
           id: await this.journal.id(), operationId, actor, method, params, isCanonical: false,
+          sessionId: existing.sessionId,
           conflictingCommandId: existing.id, status: "rejected", error: "Operation ID was reused with different parameters or identity",
           receivedAt: timestamp(), completedAt: timestamp(),
-        } })
+        })
         throw new Error("Operation ID was reused with different parameters or identity")
       }
       if (existing.status === "completed") return existing.result
       if (method === "_deskfleet/session/create" && existing.sessionId) return this.journal.read(existing.sessionId)
+      if ((method === "_deskfleet/session/archive" || method === "_deskfleet/session/restore") && existing.status === "accepted" && existing.sessionId) return this.#transition(existing)
       if (method === "_deskfleet/session/delete" && existing.status === "accepted" && existing.sessionId) {
         if ((await this.journal.list()).some(session => session.id === existing.sessionId)) return this.#delete(existing)
         await this.#complete(existing, null)
@@ -194,11 +215,13 @@ export class AgentSessions {
     }
     try {
       if (method === "_deskfleet/session/create") return await this.#create(command)
-      await this.journal.commit(undefined, { command })
+      await this.journal.saveCommand(command)
       const sessionId = command.sessionId!
       const session = (await this.journal.read(sessionId)).session
       if (this.#closed) throw new Error("Agent service is stopping")
       if (session.lifecycle === "deleting" && method !== "_deskfleet/session/delete") throw new Error("Session deletion is in progress")
+      if (method === "_deskfleet/session/archive" || method === "_deskfleet/session/restore") return await this.#transition(command)
+      if (method !== "_deskfleet/session/delete") requireActiveSession(session)
       if (method === "_deskfleet/session/configure") {
         validateAgentConfigurationSelection(params)
         const result = await this.#runtime(sessionId).configure(params as AgentConfigurationSelection)
@@ -223,14 +246,14 @@ export class AgentSessions {
     } catch (error) {
       const saved = await this.journal.command(operationId)
       if (!saved || saved.status === "accepted") {
-        await this.journal.commit(undefined, { command: { ...(saved ?? command), status: "failed", error: errorMessage(error), completedAt: timestamp() } })
+        await this.journal.saveCommand({ ...(saved ?? command), status: "failed", error: errorMessage(error), completedAt: timestamp() })
       }
       throw error
     }
   }
 
   async #complete(command: AgentCommand, result: unknown): Promise<void> {
-    await this.journal.commit(undefined, { command: { ...command, status: "completed", result, completedAt: timestamp() } })
+    await this.journal.saveCommand({ ...command, status: "completed", result, completedAt: timestamp() })
   }
 
   #receipt(command: AgentCommand, inputId?: string): AgentReceipt {
@@ -279,6 +302,7 @@ export class AgentSessions {
     const receipt = this.#receipt(command, inputId)
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
+      requireActiveSession(snapshot.session)
       if (snapshot.session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
       if (!runtime.running && !resumable(snapshot)) throw new Error("This agent cannot resume the saved conversation")
       const input: AgentInput = {
@@ -328,6 +352,7 @@ export class AgentSessions {
     const receipt = this.#receipt(command, inputId)
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
+      requireActiveSession(snapshot.session)
       const previous = snapshot.inputs.find(input => input.id === inputId)
       if (!previous) throw new Error("Input was not found")
       let input = previous
@@ -359,11 +384,13 @@ export class AgentSessions {
     let selected = false
     const result = await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
+      requireActiveSession(snapshot.session)
       const previous = snapshot.permissions.find(permission => permission.id === permissionId)
       if (!previous) throw new Error("Permission request was not found")
       if (!previous.request.options.some(option => option.optionId === optionId)) throw new Error("Unknown permission option")
       if (previous.state !== "pending") {
-        await this.journal.commit(snapshot, { command: { ...command, status: "completed", result: previous, completedAt: timestamp() } })
+        const completed = { ...command, status: "completed" as const, result: previous, completedAt: timestamp() }
+        await this.journal.commit(snapshot, { command: completed, events: [this.journal.event(sessionId, "command", completed)] })
         return previous
       }
       const permission: AgentPermission = { ...previous, state: "resolved", optionId, decisionCommandId: command.id, actor: command.actor, resolvedAt: timestamp() }
@@ -381,6 +408,7 @@ export class AgentSessions {
     const receipt = this.#receipt(command)
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
+      requireActiveSession(snapshot.session)
       const previous = snapshot.turns.find(turn => turn.id === turnId)
       if (!previous) throw new Error("Turn was not found")
       const turn = liveTurn(previous.state) ? { ...previous, state: "cancelling" as const } : previous
@@ -388,6 +416,50 @@ export class AgentSessions {
     })
     await this.#runtime(sessionId).cancel(turnId)
     return receipt
+  }
+
+  #transition(command: AgentCommand): Promise<AgentSnapshot> {
+    const sessionId = command.sessionId!
+    const previous = this.#transitions.get(sessionId) ?? Promise.resolve()
+    const next = previous.catch(() => {}).then(async () => {
+      if (command.method === "_deskfleet/session/archive") await this.#archive(sessionId)
+      else await this.journal.serial(sessionId, async () => {
+        const snapshot = await this.journal.read(sessionId)
+        if (snapshot.session.archiveState === "archiving") throw new Error("Finish archiving this Session before restoring it")
+        if (snapshot.session.archiveState === "active") return
+        const session = { ...snapshot.session, archiveState: "active" as const, updatedAt: timestamp() }
+        await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
+      })
+      const snapshot = await this.journal.read(sessionId)
+      await this.#complete(command, snapshot)
+      return snapshot
+    })
+    this.#transitions.set(sessionId, next)
+    void next.finally(() => { if (this.#transitions.get(sessionId) === next) this.#transitions.delete(sessionId) }).catch(() => {})
+    return next
+  }
+
+  async #archive(sessionId: string): Promise<void> {
+    const needed = await this.journal.serial(sessionId, async () => {
+      const snapshot = await this.journal.read(sessionId)
+      if (snapshot.session.archiveState === "archived") return false
+      if (!["ready", "provision_failed"].includes(snapshot.session.lifecycle)) throw new Error("Wait for Session provisioning or deletion before archiving")
+      const session = { ...snapshot.session, archiveState: "archiving" as const, updatedAt: timestamp() }
+      await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
+      return true
+    })
+    if (!needed) return
+    const worktree = await this.#catalog.sessionWorktree(sessionId)
+    const closures = [this.#runtime(sessionId).stop()]
+    if (worktree) for (const listener of this.#archiveListeners) closures.push(Promise.resolve().then(() => listener(worktree.id)))
+    const results = await Promise.allSettled(closures)
+    const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    if (errors.length) throw new AggregateError(errors, "Session resources could not all be closed; retry archive")
+    await this.journal.serial(sessionId, async () => {
+      const snapshot = await this.journal.read(sessionId)
+      const session = { ...snapshot.session, archiveState: "archived" as const, updatedAt: timestamp() }
+      await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
+    })
   }
 
   async #delete(command: AgentCommand): Promise<null> {

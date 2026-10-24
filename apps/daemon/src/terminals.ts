@@ -201,6 +201,17 @@ export class TerminalSessions {
     await Promise.all(owned.map(session => this.hangup(session.summary.id)))
   }
 
+  /** Stop Session-owned PTYs, retaining their final bytes, identity, and metadata. */
+  async stopOwned(worktreeId: string): Promise<void> {
+    if (this.#closed) throw new Error("Terminal sessions are closed")
+    await this.init()
+    await Promise.allSettled(this.#spawning.values())
+    const owned = [...this.#sessions.values()].filter(session => session.summary.worktreeId === worktreeId)
+    const results = await Promise.allSettled(owned.map(session => this.#stop(session)))
+    const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    if (errors.length) throw new AggregateError(errors, "Could not stop all Session terminals")
+  }
+
   close(): Promise<void> {
     this.#closed = true
     return this.#closing ??= (async () => {
@@ -235,7 +246,8 @@ export class TerminalSessions {
   }
 
   #stop(session: Session): Promise<void> {
-    return session.stopping ??= (async () => {
+    if (session.stopping) return session.stopping
+    const stopping = (async () => {
       if (!session.native) return
       session.stopRequested = true
       if (session.summary.status === "running") session.summary.status = "interrupted"
@@ -244,6 +256,9 @@ export class TerminalSessions {
       await session.history.save(session.summary, session.error)
       this.#changed(session)
     })()
+    session.stopping = stopping
+    void stopping.catch(() => { if (session.stopping === stopping) session.stopping = undefined })
+    return stopping
   }
 
   async #drain(session: Session): Promise<void> {

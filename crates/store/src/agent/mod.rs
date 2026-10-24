@@ -148,6 +148,31 @@ impl LocalCatalog {
         .await
     }
 
+    /// Current audit receipts for one Session, including failed and rejected requests.
+    pub async fn agent_commands(
+        &self,
+        id: AgentSessionId,
+    ) -> Result<Vec<AgentCommand>, StoreError> {
+        let db = self.catalog.database().begin().await?;
+        if scoped_session(&db, self.machine.id.as_i64(), id)
+            .await?
+            .is_none()
+        {
+            return Err(StoreError::NotFound {
+                kind: "agent session",
+                id: id.as_i64(),
+            });
+        }
+        let commands = records(
+            &db,
+            "SELECT record_json FROM agent_commands WHERE session_id = ? ORDER BY id",
+            vec![id.as_i64().into()],
+        )
+        .await?;
+        db.commit().await?;
+        Ok(commands)
+    }
+
     /// Bind the accepted create command to its catalog Session in one transaction.
     /// Provisioning the Git worktree follows only after this transaction succeeds.
     pub async fn agent_create_session(
@@ -190,6 +215,7 @@ impl LocalCatalog {
             title: request.title,
             context: request.context,
             lifecycle: SessionLifecycle::Provisioning,
+            archive_state: ArchiveState::Active,
             last_event_seq: 0.into(),
             created_at: request.command.received_at.clone(),
             updated_at: request.command.received_at.clone(),

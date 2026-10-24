@@ -87,12 +87,83 @@ async function fixture(context: TestContext) {
     return { channel, dialed, messages, errors, request, ack }
   }
   const dial = () => sessions.dial({ mode: "create", terminalId: randomUUID(), cols: 80, rows: 24 })
-  return { sessions, spawned, configs, client, dial }
+  return { sessions, spawned, configs, client, dial, directory }
 }
 
 function output(messages: TerminalMessage[]) {
   return messages.flatMap(message => "event" in message && message.event.kind === "output" ? [message.event] : [])
 }
+
+test("archiving stops only owned PTYs and retains their final output and identity across restart", async context => {
+  const f = await fixture(context)
+  const owned = await f.sessions.dial({ mode: "create", terminalId: randomUUID(), cols: 80, rows: 24, worktreeId: "30" })
+  const unrelated = await f.dial()
+  assert.equal(owned.cwd, unrelated.cwd)
+  const events: string[] = []
+  f.sessions.onChange(event => events.push(event.kind))
+  const bytes = Buffer.from("retained before archive\r\n")
+  const tail = Buffer.from("final output while closing\r\n")
+  const native = f.spawned[0]!
+  native.emit({ kind: "data", data: bytes })
+  const close = native.close.bind(native)
+  native.close = async () => { if (!native.closed) native.emit({ kind: "data", data: tail }); await close() }
+  await f.sessions.stopOwned("30")
+  assert.equal(native.closed, true)
+  assert.equal(f.spawned[1]!.closed, false)
+  assert.equal(f.sessions.list().length, 2)
+  assert.equal(f.sessions.snapshot(owned.id).summary.status, "interrupted")
+  assert.deepEqual(await f.sessions.read(owned.id, 0, bytes.length + tail.length), Buffer.concat([bytes, tail]))
+  assert.equal(events.includes("terminalHungup"), false)
+  await assert.rejects(f.sessions.input(owned.id, Buffer.from("ignored")), /not running/u)
+  await f.sessions.dial({ mode: "resume", terminalId: owned.id })
+  assert.equal(f.spawned.length, 2)
+  await f.sessions.stopOwned("30")
+  await f.sessions.close()
+  const restored = new TerminalSessions({ directory: f.directory, factory: async () => { throw new Error("Reading must not spawn a PTY") } })
+  context.after(() => restored.close())
+  await restored.init()
+  assert.equal(restored.snapshot(owned.id).summary.worktreeId, "30")
+  assert.deepEqual(await restored.read(owned.id, 0, bytes.length + tail.length), Buffer.concat([bytes, tail]))
+})
+
+test("a failed archive terminal stop retains the record and can be retried", async context => {
+  const f = await fixture(context)
+  const owned = await f.sessions.dial({ mode: "create", terminalId: randomUUID(), cols: 80, rows: 24, worktreeId: "31" })
+  const native = f.spawned[0]!
+  const close = native.close.bind(native)
+  let failures = 1
+  native.close = async () => { if (failures-- > 0) throw new Error("Temporary close failure"); await close() }
+  await assert.rejects(f.sessions.stopOwned("31"), /Could not stop/u)
+  assert.equal(native.closed, false)
+  assert.equal(f.sessions.list().length, 1)
+  await f.sessions.stopOwned("31")
+  assert.equal(native.closed, true)
+  assert.equal(f.sessions.snapshot(owned.id).summary.status, "interrupted")
+})
+
+test("archive waits for a Session terminal being created before stopping it", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-terminal-archive-"))
+  const native = new FakeTerminal()
+  let release!: () => void
+  const barrier = new Promise<void>(resolve => { release = resolve })
+  let creating = false
+  const sessions = new TerminalSessions({ directory, factory: async () => {
+    creating = true
+    await barrier
+    return native as NativeTerminal
+  } })
+  context.after(async () => { release(); await sessions.close(); await rm(directory, { recursive: true, force: true }) })
+  const dial = sessions.dial({ mode: "create", terminalId: randomUUID(), cols: 80, rows: 24, worktreeId: "32" })
+  await until(() => creating)
+  let completed = false
+  const stop = sessions.stopOwned("32").then(() => { completed = true })
+  assert.equal(completed, false)
+  release()
+  const terminal = await dial
+  await stop
+  assert.equal(native.closed, true)
+  assert.equal(sessions.snapshot(terminal.id).summary.status, "interrupted")
+})
 
 async function receiveAll(client: ReturnType<Awaited<ReturnType<typeof fixture>>["client"]>, sessionId: string, end: number): Promise<Buffer> {
   let index = 0

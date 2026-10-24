@@ -10,7 +10,7 @@ export const AGENT_MESSAGE_BYTES = 32 * 1024 * 1024
 export interface AgentActor {
   kind: "local_token" | "user" | "system"
   userId?: string
-  sourceMachine: { originId: string; id: string }
+  sourceMachine?: { originId: string; id: string }
   deviceId?: string
 }
 
@@ -26,6 +26,8 @@ export interface AgentSessionRecord {
   /** A generated worktree, or the Workspace's own directories used in place. */
   context: AgentSessionContext
   lifecycle: "provisioning" | "ready" | "provision_failed" | "deleting"
+  /** Archiving blocks execution while resource closure is pending or failed. */
+  archiveState: "active" | "archiving" | "archived"
   lastEventSeq: string
   createdAt: string
   updatedAt: string
@@ -160,6 +162,9 @@ export interface AgentMethods {
   "_deskfleet/permission/respond": { params: AgentMutation & { permissionId: string; optionId: string }; result: AgentPermission }
   "_deskfleet/session/resume": { params: AgentMutation; result: AgentSnapshot }
   "_deskfleet/session/stop": { params: AgentMutation; result: AgentSnapshot }
+  "_deskfleet/session/archive": { params: AgentMutation; result: AgentSnapshot }
+  "_deskfleet/session/restore": { params: AgentMutation; result: AgentSnapshot }
+  /** Internal maintenance only; not exposed by the client DataChannel facade. */
   "_deskfleet/session/delete": { params: AgentMutation; result: null }
   "_deskfleet/command/get": { params: { operationId: string }; result: AgentCommand | null }
 }
