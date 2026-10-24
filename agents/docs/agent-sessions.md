@@ -1,6 +1,6 @@
 # Agent Session persistence and ACP transport
 
-The daemon owns persistent Codex Sessions, their provider processes, and their
+The daemon owns persistent Agent Sessions, their provider processes, and their
 conversation journal. Electron uses the same ACP DataChannel facade intended for
 remote clients. This document owns the collaboration, persistence, and transport
 contract; [architecture](architecture.md) owns the resource hierarchy.
@@ -17,7 +17,7 @@ leaves the Agent running and its approvals pending.
 flowchart LR
     A[Client A] <-->|ACP over DataChannel| D[Daemon Session service]
     B[Client B] <-->|ACP over DataChannel| D
-    D <-->|One ACP connection per running Session| P[Codex ACP adapter]
+    D <-->|One ACP connection per running Session| P[Agent / ACP adapter]
     D --> S[SQLite catalog and Session journal]
     S -.->|Future history synchronization| C[Central server]
 ```
@@ -32,6 +32,40 @@ preserves the Session and its files. Explicit deletion removes a worktree
 Session's disposable checkouts before deleting the catalog resource; a directory
 Session's files are never removed. The new-session composer offers both contexts
 and remembers the last choice on that device.
+
+## Provider configuration
+
+Each daemon owns its machine's provider settings in
+`<daemon directory>/agent-providers.json`. Settings → Agents lists those providers
+and supports adding, editing, and removing them over authenticated local IPC.
+The initial configuration contains a Codex provider. Removing all providers
+leaves the machine unconfigured until one is added; startup does not recreate
+deleted entries.
+
+A provider has a stable ID, a template, a display name, an optional icon, an
+optional binary path, and environment overrides. Icons are bundled catalog slugs;
+omitting one uses the template's default icon. Icon selection affects display
+only and does not change execution. The Codex template runs the installed Codex CLI
+through the bundled ACP bridge; its default binary is `codex`. The ACP template
+runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
+default binary. Blank paths use the template default. Overrides are added to the
+daemon's inherited environment at process startup. Template selection is
+immutable after creation because it determines the launch and configuration
+contract; the name, icon, path, and environment remain editable.
+
+The desktop bundles monochrome marks from
+[`@lobehub/icons-static-svg`](https://github.com/lobehub/lobe-icons) for its
+searchable icon chooser. Icons follow the interface color and work offline.
+The selected mark appears in provider settings, the composer, and Session links.
+
+New Sessions select one configured provider and persist its ID in `provider`.
+The daemon checks that ID before allocating a Session. Each process launch,
+including resume after a stop or daemon restart, resolves the saved ID to the
+latest configuration. Editing or removing a provider leaves its running
+processes and existing Session history intact. A removed provider cannot start
+new processes, so resuming one of its stopped Sessions records an explicit
+startup error. Provider environment values stay in machine settings and are
+never copied into Session creation commands or the conversation journal.
 
 ## Identity and audit
 
@@ -230,7 +264,7 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | --- | --- |
 | `initialize` | Negotiate protocol, facade capabilities, byte limit, and catalog identity |
 | `_deskfleet/session/list` | Read persisted Session summaries |
-| `_deskfleet/session/create` | Idempotently create a worktree or directory Session and start Codex; return snapshot |
+| `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID and start it; return snapshot |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
 | `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
 | `_deskfleet/git/status` | Inspect the Session's captured checkouts, branch/HEAD, and staged/unstaged/untracked files |
@@ -317,6 +351,6 @@ restart without using paid inference. File changes made outside the provider
 also update an open diff when their status letters and line counts stay equal.
 
 Remote account enrollment, scoped peer authorization, HTTPS cached history,
-central synchronization, attachments, and provider configuration controls are
-subsequent work. Synchronization will use qualified Session IDs and event
-watermarks; the executing daemon remains the single journal writer.
+central synchronization, and attachments are subsequent work. Synchronization
+will use qualified Session IDs and event watermarks; the executing daemon
+remains the single journal writer.

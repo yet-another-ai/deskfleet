@@ -7,7 +7,11 @@ import { useTerminalsStore } from "../../stores/terminals.ts"
 import LiveTerminal, { type TerminalConnection } from "./LiveTerminal.vue"
 
 /** Tabs over one owner's shells; the parent decides how the active tab is stored. */
-const props = defineProps<{ terminals: Pick<TerminalSummary, "id" | "cwd">[]; create: () => Promise<Pick<TerminalSummary, "id">> }>()
+const props = defineProps<{
+  terminals: Pick<TerminalSummary, "id" | "cwd">[]
+  create: () => Promise<Pick<TerminalSummary, "id">>
+  ensureTerminal?: () => Promise<Pick<TerminalSummary, "id">>
+}>()
 const activeId = defineModel<string | undefined>("activeId")
 const store = useTerminalsStore()
 const { t } = useI18n()
@@ -47,11 +51,11 @@ async function select(id: string, focus = false): Promise<void> {
   }
 }
 
-async function create(): Promise<void> {
+async function create(start = props.create): Promise<void> {
   if (creating.value) return
   creating.value = true
   error.value = null
-  try { await select((await props.create()).id) }
+  try { await select((await start()).id) }
   catch (reason) { failed(reason) }
   finally { creating.value = false }
 }
@@ -93,7 +97,10 @@ function follow(ids: string[], previous: string[]): void {
 const ids = () => props.terminals.map(({ id }) => id)
 watch(ids, (next, previous) => follow(next, previous))
 // The parent's model listener is attached once mounted.
-onMounted(() => follow(ids(), []))
+onMounted(() => {
+  follow(ids(), [])
+  if (!props.terminals.length && props.ensureTerminal) void create(props.ensureTerminal)
+})
 </script>
 
 <template>
@@ -148,7 +155,7 @@ onMounted(() => follow(ids(), []))
         :title="t('terminal.newTab')"
         :disabled="creating"
         class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text disabled:op-40"
-        @click="create"
+        @click="create()"
       ><Plus :size="15" aria-hidden="true" /></button>
       <slot name="actions" />
     </div>
@@ -171,7 +178,7 @@ onMounted(() => follow(ids(), []))
         type="button"
         :disabled="creating"
         class="catalog-button"
-        @click="create"
+        @click="create()"
       >{{ t("terminal.newTab") }}</button>
     </div>
   </div>

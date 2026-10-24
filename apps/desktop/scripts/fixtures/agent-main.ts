@@ -172,8 +172,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     await click("Show terminal")
     const panel = () => document.querySelector<HTMLElement>('[aria-label="Session terminals"]')
     await until(() => !!panel(), "Session terminal panel")
-    await click("New shell", () => panel()!)
-    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Session shell connection")
+    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Automatically created Session shell connection")
     const screen = () => panel()?.querySelector(".xterm-rows")?.textContent ?? ""
     await until(() => screen().trim().length > 0, "Session shell prompt")
     // Type through xterm's own input element, as a user would.
@@ -183,6 +182,21 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     const shells = await api.terminal.list()
     require(shells.length === 1 && shells[0]!.worktreeId === worktreeId, "The Session shell must belong to the Session's Worktree")
     require(!document.querySelector('aside a[href^="#/terminals/"]'), "Session shells must stay out of the sidebar")
+    await click("Hide terminal", () => panel()!)
+    await until(() => !panel(), "Hidden Session terminal panel")
+    await click("Show terminal")
+    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Reattached Session shell")
+    const reattached = await api.terminal.list()
+    require(reattached.length === 1 && reattached[0]!.id === shells[0]!.id, "Reopening the panel must reuse its existing shell")
+    const hangup = panel()!.querySelector<HTMLButtonElement>('button[aria-label^="Hang up "]')
+    require(hangup, "Session shell close button was missing")
+    hangup.click()
+    await until(() => !panel() && !!button("Show terminal"), "Closing the last shell hides the panel")
+    require((await api.terminal.list()).length === 0, "Closing the last tab must hang up the shell")
+    await click("Show terminal")
+    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Reopening the empty panel creates a shell")
+    const recreated = await api.terminal.list()
+    require(recreated.length === 1 && recreated[0]!.id !== shells[0]!.id && recreated[0]!.worktreeId === worktreeId, "The reopened panel must create exactly one new shell in the same Session Worktree")
   }
   require(sessionId && workspaceId && worktreeId, "Session resource identities were missing")
   const permissionId = conversation()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id")!

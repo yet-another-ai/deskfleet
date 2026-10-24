@@ -9,6 +9,7 @@ export class DesktopMediaController {
   readonly #emit: (event: DesktopEvent) => void
   readonly #emitTerminal: (event: TerminalSessionEvent) => void
   readonly #emitCatalog: () => void
+  readonly #emitProviders: () => void
   readonly #sessions = new Set<string>()
   #connection: Promise<DaemonClient> | null = null
   #disposed = false
@@ -17,10 +18,12 @@ export class DesktopMediaController {
     emit: (event: DesktopEvent) => void,
     emitTerminal: (event: TerminalSessionEvent) => void = () => {},
     emitCatalog: () => void = () => {},
+    emitProviders: () => void = () => {},
   ) {
     this.#emit = emit
     this.#emitTerminal = emitTerminal
     this.#emitCatalog = emitCatalog
+    this.#emitProviders = emitProviders
   }
 
   async invoke(method: string, params: unknown): Promise<unknown> {
@@ -34,6 +37,10 @@ export class DesktopMediaController {
       case "terminalDial":
       case "terminalHangup":
       case "catalogList":
+      case "providerList":
+      case "providerCreate":
+      case "providerUpdate":
+      case "providerRemove":
       case "directoryList":
       case "workspaceCreate":
       case "workspaceUpdate":
@@ -99,6 +106,7 @@ export class DesktopMediaController {
       (event) => {
         if (this.#connection !== connection) return
         if (event.kind === "catalogChanged") this.#emitCatalog()
+        else if (event.kind === "providersChanged") this.#emitProviders()
         else if (event.kind === "terminalChanged" || event.kind === "terminalHungup") this.#emitTerminal(event)
         else if ("sessionId" in event && this.#sessions.has(event.sessionId)) this.#emit(event)
       },

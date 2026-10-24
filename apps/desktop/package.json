@@ -19,6 +19,7 @@
   "devDependencies": {
     "@deskfleet/daemon": "workspace:*",
     "@intlify/unplugin-vue-i18n": "11.2.7",
+    "@lobehub/icons-static-svg": "1.98.0",
     "@lucide/vue": "1.59.0",
     "@types/markdown-it": "14.2.0",
     "@types/node": "24.19.2",

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUp, Bot, Check, ChevronDown, CornerDownRight, Folder, FolderOpen, GitBranch, Monitor, Square } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CornerDownRight, Folder, FolderOpen, GitBranch, Monitor, Square } from "@lucide/vue"
 import { onClickOutside, useTextareaAutosize } from "@vueuse/core"
 import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
@@ -7,6 +7,7 @@ import { RouterLink } from "vue-router"
 import type { AgentSessionContext } from "../../../../../../daemon/src/agent-protocol.ts"
 import type { AgentSessionSummary, WorktreeSummary } from "../../stores/fleet-types.ts"
 import type { WorkspaceLocation } from "../../stores/fleet.ts"
+import ProviderIcon from "../common/ProviderIcon.vue"
 const props = defineProps<{
   location: (WorkspaceLocation & { session?: AgentSessionSummary; worktree?: WorktreeSummary }) | null
   provider?: string
@@ -84,7 +85,9 @@ function keydown(event: KeyboardEvent): void {
     <div class="rounded-2xl border border-ui-border bg-ui-surface shadow-ui-card focus-within:border-ui-text-faint">
       <textarea ref="textarea" v-model="draft" rows="2" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @keydown="keydown" />
       <div class="flex items-center gap-2 px-3 pb-2.5">
-        <span v-if="location" class="inline-flex h-7 items-center gap-1.5 px-1 text-[13px] text-ui-text-muted" :title="t('composer.provider')" data-composer-context><Bot :size="15" :stroke-width="1.75" aria-hidden="true" />{{ provider ?? "Codex" }}</span>
+        <slot v-if="location" name="provider">
+          <span class="inline-flex h-7 items-center gap-1.5 px-1 text-[13px] text-ui-text-muted" :title="t('composer.provider')" data-composer-context><ProviderIcon :icon="location.session?.providerIcon" :template="location.session?.providerTemplate" :size="15" />{{ provider ?? t('providers.unavailable') }}</span>
+        </slot>
         <button v-if="canSteer && !empty" type="button" class="ui-text-button ml-auto cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</button>
         <button v-if="canCancel && empty" type="button" class="ml-auto inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-ui-action text-ui-action-text" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></button>
         <button v-else type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-ui-action text-ui-action-text disabled:cursor-default disabled:bg-ui-action-disabled disabled:text-ui-action-text" :class="!(canSteer && !empty) && 'ml-auto'" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></button>

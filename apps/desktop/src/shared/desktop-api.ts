@@ -5,6 +5,7 @@ import type { AppLocale } from "./i18n.ts"
 import type { SettingsApi } from "./settings.ts"
 import type { TerminalSignalingApi } from "./terminal.ts"
 import type { AgentSignalingApi } from "./agent.ts"
+import type { ProvidersApi } from "./providers.ts"
 
 /** The preload bridge exposed to the main renderer as `window.deskfleet`. */
 export interface DeskfleetDesktopApi {
@@ -16,4 +17,5 @@ export interface DeskfleetDesktopApi {
   desktop: DesktopMediaApi
   terminal: TerminalSignalingApi
   agent: AgentSignalingApi
+  providers: ProvidersApi
 }

@@ -40,7 +40,8 @@
     "retryLoad": "Reload settings",
     "screenCaptureRequesting": "Requesting access to record the screen and system audio…",
     "screenCaptureDenied": "Allow access in macOS System Settings → Privacy & Security → Screen & System Audio Recording, then turn the local Agent off and on.",
-    "screenCaptureError": "Could not request screen and system audio access. Turn the local Agent off and on to retry."
+    "screenCaptureError": "Could not request screen and system audio access. Turn the local Agent off and on to retry.",
+    "agents": "Agents"
   },
   "machine": {
     "offline": "Offline",
@@ -321,5 +322,50 @@
     },
     "sessionActions": "Session actions",
     "deleteDirectoryQuestion": "Delete this session and its conversation? Its working directory and files are left unchanged."
+  },
+  "providers": {
+    "choose": "Choose provider",
+    "manage": "Manage providers",
+    "noneConfigured": "Add a provider in Settings to start a session.",
+    "unavailable": "Provider unavailable",
+    "add": "Add provider",
+    "edit": "Edit provider",
+    "remove": "Remove provider",
+    "machines": "Agent provider machines",
+    "loading": "Loading providers…",
+    "offline": "Start the local Agent in Preferences to manage providers.",
+    "remoteUnavailable": "Provider settings are unavailable for this machine.",
+    "actions": "Actions for {name}",
+    "empty": "No providers yet",
+    "emptyDescription": "Add an agent provider to start sessions on this machine.",
+    "environmentCount": "No environment variables | {n} environment variable | {n} environment variables",
+    "removeQuestion": "Remove {name}?",
+    "removeDescription": "Running sessions will continue and conversation history will remain. New or resumed sessions can no longer use this provider.",
+    "template": "Template",
+    "templateFixed": "The template is fixed after creation.",
+    "name": "Name",
+    "nameRequired": "Enter a provider name.",
+    "binaryPath": "Binary path",
+    "binaryDefault": "Leave blank to use {binary} from PATH.",
+    "environment": "Environment variables",
+    "environmentDescription": "These variables are added to the process environment when the agent starts.",
+    "key": "Key",
+    "value": "Value",
+    "environmentKey": "Environment variable {n} key",
+    "environmentValue": "Environment variable {n} value",
+    "addEnvironment": "Add variable",
+    "removeEnvironment": "Remove environment variable {n}",
+    "invalidEnvironmentKey": "Each variable needs a name containing only letters, digits, and underscores, starting with a letter or underscore.",
+    "duplicateEnvironmentKey": "Environment variable names must be unique.",
+    "templateDescription": {
+      "codex": "Runs the installed Codex CLI through the built-in ACP bridge.",
+      "acp": "Runs an agent executable that supports ACP over standard input and output."
+    },
+    "icon": "Icon",
+    "iconDefault": "Template default",
+    "iconReset": "Use template default",
+    "iconSearch": "Search LLM icons",
+    "iconChoices": "LLM icons",
+    "iconNoResults": "No matching icons."
   }
 }

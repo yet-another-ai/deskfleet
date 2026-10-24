@@ -4,6 +4,7 @@ import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import { DesktopMediaController } from "./desktop-media-controller.ts"
 import { TERMINAL_SESSION_EVENT } from "../shared/terminal.ts"
 import { CATALOG_CHANGED_EVENT } from "../shared/catalog.ts"
+import { PROVIDERS_CHANGED_EVENT } from "../shared/providers.ts"
 
 const owners = new Map<WebContents, DesktopMediaController>()
 
@@ -35,6 +36,8 @@ export function attachDesktopMedia(window: BrowserWindow): void {
       if (!contents.isDestroyed()) contents.send(TERMINAL_SESSION_EVENT, event)
     }, () => {
       if (!contents.isDestroyed()) contents.send(CATALOG_CHANGED_EVENT)
+    }, () => {
+      if (!contents.isDestroyed()) contents.send(PROVIDERS_CHANGED_EVENT)
     }))
   }
   attach()

@@ -40,7 +40,8 @@
     "retryLoad": "重新加载设置",
     "screenCaptureRequesting": "正在请求屏幕与系统音频录制权限…",
     "screenCaptureDenied": "请在 macOS 系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许访问，然后关闭并重新开启本地 Agent。",
-    "screenCaptureError": "无法请求屏幕与系统音频录制权限。请关闭并重新开启本地 Agent 以重试。"
+    "screenCaptureError": "无法请求屏幕与系统音频录制权限。请关闭并重新开启本地 Agent 以重试。",
+    "agents": "Agents"
   },
   "machine": {
     "offline": "离线",
@@ -321,5 +322,50 @@
     },
     "sessionActions": "会话操作",
     "deleteDirectoryQuestion": "删除此会话及其对话记录？工作目录及其中的文件将保持不变。"
+  },
+  "providers": {
+    "choose": "选择 Provider",
+    "manage": "管理 Providers",
+    "noneConfigured": "请先在设置中添加 Provider，再创建会话。",
+    "unavailable": "Provider 不可用",
+    "add": "添加 Provider",
+    "edit": "编辑 Provider",
+    "remove": "移除 Provider",
+    "machines": "Agent Provider 所属机器",
+    "loading": "正在加载 Providers…",
+    "offline": "请在偏好设置中启动本地 Agent，以管理 Providers。",
+    "remoteUnavailable": "暂时无法管理这台机器的 Provider 设置。",
+    "actions": "{name} 的操作",
+    "empty": "尚无 Provider",
+    "emptyDescription": "添加 Agent Provider，以在这台机器上创建会话。",
+    "environmentCount": "{n} 个环境变量",
+    "removeQuestion": "移除 {name}？",
+    "removeDescription": "正在运行的会话会继续执行，对话历史也会保留。新建或恢复的会话将无法再使用此 Provider。",
+    "template": "模板",
+    "templateFixed": "创建后无法更改模板。",
+    "name": "名称",
+    "nameRequired": "请输入 Provider 名称。",
+    "binaryPath": "二进制路径",
+    "binaryDefault": "留空时使用 PATH 中的 {binary}。",
+    "environment": "环境变量",
+    "environmentDescription": "Agent 启动时会将这些变量追加到进程环境中。",
+    "key": "变量名",
+    "value": "值",
+    "environmentKey": "第 {n} 个环境变量的名称",
+    "environmentValue": "第 {n} 个环境变量的值",
+    "addEnvironment": "添加变量",
+    "removeEnvironment": "移除第 {n} 个环境变量",
+    "invalidEnvironmentKey": "每个变量都需要名称，只能包含字母、数字和下划线，并以字母或下划线开头。",
+    "duplicateEnvironmentKey": "环境变量名称不能重复。",
+    "templateDescription": {
+      "codex": "通过内置 ACP bridge 运行已安装的 Codex CLI。",
+      "acp": "运行通过标准输入和输出支持 ACP 的 Agent 可执行文件。"
+    },
+    "icon": "图标",
+    "iconDefault": "模板默认图标",
+    "iconReset": "使用模板默认图标",
+    "iconSearch": "搜索 LLM 图标",
+    "iconChoices": "LLM 图标",
+    "iconNoResults": "未找到匹配的图标。"
   }
 }

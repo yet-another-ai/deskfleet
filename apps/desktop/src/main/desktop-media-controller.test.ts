@@ -29,12 +29,37 @@ function fixture() {
   const emit = vi.fn()
   const emitTerminal = vi.fn()
   const emitCatalog = vi.fn()
-  const controller = new DesktopMediaController(emit, emitTerminal, emitCatalog)
+  const emitProviders = vi.fn()
+  const controller = new DesktopMediaController(emit, emitTerminal, emitCatalog, emitProviders)
   controllers.push(controller)
-  return { controller, client, emit, emitTerminal, emitCatalog, event: (value: DaemonEvent) => event(value), disconnect: () => disconnect(new Error("daemon stopped")) }
+  return { controller, client, emit, emitTerminal, emitCatalog, emitProviders, event: (value: DaemonEvent) => event(value), disconnect: () => disconnect(new Error("daemon stopped")) }
 }
 
 const offer = { sessionId: "first", codec: "h264", audio: false, sdp: "offer" }
+
+test("provider settings are validated and changes reach only their event stream", async () => {
+  const { controller, client, event, emit, emitCatalog, emitProviders } = fixture()
+  const provider = { template: "codex", name: "Work Codex", binaryPath: "/tools/codex", env: { CODEX_HOME: "/config/work" } }
+  const changes = { name: "Personal Codex", env: {} }
+  for (const [method, params] of [
+    ["providerList", {}],
+    ["providerCreate", { provider }],
+    ["providerUpdate", { providerId: "codex", changes }],
+    ["providerRemove", { providerId: "codex" }],
+  ] as const) {
+    await controller.invoke(method, params)
+    expect(client.call).toHaveBeenLastCalledWith(method, params)
+  }
+  await expect(controller.invoke("providerUpdate", { providerId: "codex", changes: { ...changes, template: "acp" } })).rejects.toThrow()
+  expect(client.call).toHaveBeenCalledTimes(4)
+  event({ kind: "providersChanged" })
+  expect(emitProviders).toHaveBeenCalledOnce()
+  expect(emit).not.toHaveBeenCalled()
+  expect(emitCatalog).not.toHaveBeenCalled()
+  controller.dispose()
+  event({ kind: "providersChanged" })
+  expect(emitProviders).toHaveBeenCalledOnce()
+})
 
 test("catalog operations share authenticated signaling without creating a peer", async () => {
   const { controller, client } = fixture()

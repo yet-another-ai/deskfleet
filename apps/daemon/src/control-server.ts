@@ -19,6 +19,7 @@ import { AgentSessions } from "./agent-sessions.ts"
 import { AgentChannel } from "./agent-channel.ts"
 import { AGENT_CHANNEL } from "./agent-protocol.ts"
 import type { AgentProvider } from "./agents/acp.ts"
+import { AgentProviders } from "./agent-providers.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
 export interface ControlPeers {
@@ -57,6 +58,7 @@ class ControlConnection {
   readonly #catalog: DaemonCatalog
   readonly #permissions: ScreenCapturePermissions
   readonly #agents: () => AgentSessions
+  readonly #providers: AgentProviders
   readonly #onShutdownRequested: (() => void) | undefined
   readonly #sessions = new Map<string, OwnedPeer>()
   readonly #dialed = new Set<string>()
@@ -64,7 +66,7 @@ class ControlConnection {
   #authenticated = false
   #closing: Promise<void> | undefined
 
-  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: ScreenCapturePermissions, agents: () => AgentSessions, onShutdownRequested?: () => void) {
+  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: ScreenCapturePermissions, agents: () => AgentSessions, providers: AgentProviders, onShutdownRequested?: () => void) {
     this.#socket = socket
     this.#token = token
     this.#peers = peers
@@ -73,6 +75,7 @@ class ControlConnection {
     this.#catalog = catalog
     this.#permissions = permissions
     this.#agents = agents
+    this.#providers = providers
     this.#onShutdownRequested = onShutdownRequested
     const unsubscribeTerminals = terminals.onChange(event => {
       if (event.kind === "terminalHungup") this.#dialed.delete(event.terminalId)
@@ -84,7 +87,10 @@ class ControlConnection {
     const unsubscribePermissions = permissions.onChange(permission => {
       if (this.#authenticated) this.#send({ event: { kind: "screenCapturePermissionChanged", permission } })
     })
-    this.#unsubscribe = () => { unsubscribeTerminals(); unsubscribeCatalog(); unsubscribePermissions() }
+    const unsubscribeProviders = providers.onChanged(() => {
+      if (this.#authenticated) this.#send({ event: { kind: "providersChanged" } })
+    })
+    this.#unsubscribe = () => { unsubscribeTerminals(); unsubscribeCatalog(); unsubscribePermissions(); unsubscribeProviders() }
     socket.on("error", () => {})
     socket.once("close", () => { void this.close().catch(error => console.error("Desktop session cleanup failed", error)) })
   }
@@ -157,6 +163,15 @@ class ControlConnection {
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")
     if (this.#closing) throw new Error("Local daemon connection is closed")
     switch (request.method) {
+      case "providerList":
+        return this.#providers.snapshot()
+      case "providerCreate":
+        return this.#providers.create(request.params.provider)
+      case "providerUpdate":
+        return this.#providers.update(request.params.providerId, request.params.changes)
+      case "providerRemove":
+        await this.#providers.remove(request.params.providerId)
+        return null
       case "shutdown":
         if (!this.#onShutdownRequested) throw new Error("Daemon shutdown is unavailable")
         return null
@@ -342,6 +357,7 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
 export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new ScreenCapturePermissions(), agentProvider?: AgentProvider) {
   const sessions = terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
   const catalog = new DaemonCatalog(directory)
+  const providers = new AgentProviders(directory, agentProvider)
   let agents: AgentSessions | undefined
   const agentService = () => {
     if (!agents) throw new Error("Agent service is not ready")
@@ -361,7 +377,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
   void initialized.catch(() => {})
   const server = createServer(socket => {
     if (stopping) { socket.destroy(); return }
-    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, permissions, agentService, onShutdownRequested)
+    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, permissions, agentService, providers, onShutdownRequested)
     connections.add(connection)
     const operation = initialized.then(() => connection.run()).catch(error => {
       if (published) console.error("Local desktop connection failed", error)
@@ -410,7 +426,8 @@ export async function startControlServer(peers: ControlPeers, directory: string,
     await catalog.init()
     // A Session's terminals end before its Worktree is removed.
     catalog.onSessionRelease(worktreeId => sessions.hangupOwned(worktreeId))
-    agents = new AgentSessions(catalog, catalog.native, agentProvider)
+    await providers.init()
+    agents = new AgentSessions(catalog, catalog.native, agentProvider, providers)
     await agents.init()
     await sessions.init()
     ready()

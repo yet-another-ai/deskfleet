@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { TerminalSessionEvent, TerminalSummary } from "../../../shared/terminal.ts"
 import { TerminalClient } from "../services/terminal-client.ts"
 import { useTerminalsStore } from "./terminals.ts"
+import { deferred } from "../test/desktop-media.ts"
 
 const shell: TerminalSummary = { id: "shell-1", title: "home", cwd: "/home/user", cols: 80, rows: 24, status: "running" }
 const stores: ReturnType<typeof useTerminalsStore>[] = []
@@ -56,6 +57,39 @@ test("catalog changes from another client update and remove only the matching sh
   expect(store.sessions.map(({ id, status }) => [id, status])).toEqual([["shell-1", "interrupted"], ["shell-2", "running"]])
   receive({ kind: "terminalHungup", terminalId: "shell-1" })
   expect(store.sessions.map(({ id }) => id)).toEqual(["shell-2"])
+})
+
+test("opening an empty panel first discovers existing shells and shares pending creation on reopen", async () => {
+  const listed = deferred<TerminalSummary[]>()
+  const list = vi.spyOn(window.deskfleet.terminal, "list").mockReturnValueOnce(listed.promise).mockResolvedValue([])
+  const created = deferred<TerminalSummary>()
+  const dial = vi.spyOn(window.deskfleet.terminal, "dial").mockReturnValue(created.promise)
+  const store = setup()
+  const opening = store.ensureWorktreeTerminal("31")
+  expect(dial).not.toHaveBeenCalled()
+  listed.resolve([{ ...shell, worktreeId: "31" }])
+  await expect(opening).resolves.toMatchObject({ id: shell.id })
+  expect(dial).not.toHaveBeenCalled()
+
+  const first = store.ensureWorktreeTerminal("32")
+  await vi.waitFor(() => expect(dial).toHaveBeenCalledOnce())
+  const reopened = store.ensureWorktreeTerminal("32")
+  created.resolve({ ...shell, id: "new-shell", worktreeId: "32" })
+  await expect(first).resolves.toMatchObject({ id: "new-shell" })
+  await expect(reopened).resolves.toMatchObject({ id: "new-shell" })
+  expect(dial).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ worktreeId: "32" }))
+  expect(list).toHaveBeenCalledTimes(2)
+})
+
+test("an unavailable terminal list leaves panel creation retryable without spawning a duplicate", async () => {
+  const list = vi.spyOn(window.deskfleet.terminal, "list").mockRejectedValue(new Error("Daemon unavailable"))
+  const dial = vi.spyOn(window.deskfleet.terminal, "dial")
+  const store = setup()
+  await expect(store.ensureWorktreeTerminal("31")).rejects.toThrow("Daemon unavailable")
+  expect(dial).not.toHaveBeenCalled()
+  list.mockResolvedValue([{ ...shell, worktreeId: "31" }])
+  await expect(store.ensureWorktreeTerminal("31")).resolves.toMatchObject({ id: shell.id })
+  expect(dial).not.toHaveBeenCalled()
 })
 
 test("reattaching dials the existing shell before using the data channel; detach does not hang up", async () => {

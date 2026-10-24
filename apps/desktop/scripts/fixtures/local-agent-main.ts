@@ -23,12 +23,14 @@ export interface LocalAgentSmokeContext {
   checkoutPath: string
   workspaceId?: string
   terminalId?: string
+  providerId?: string
 }
 
 export interface LocalAgentSmokeResult {
   workspaceId?: string
   terminalId?: string
   stoppedTerminalId?: string
+  providerId?: string
   daemonIdentity?: string
   /** Whether the hosted daemon kept serving after the last window closed. */
   survivedWindowClose?: boolean
@@ -67,6 +69,96 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
     require([...document.querySelectorAll('main [role="status"]')].some(element => element.textContent?.trim() === "Running"), "Settings must show Running while screen access is denied")
     require(document.querySelector('[data-screen-capture-permission="denied"]')!.getAttribute("role") === "alert", "Denied permission must be visible in Settings")
   }
+  function button(text: string, root: ParentNode = document): HTMLButtonElement {
+    const element = [...root.querySelectorAll("button")].find(button => button.textContent?.trim() === text)
+    require(element, `Missing ${text} button`)
+    return element
+  }
+  function input(selector: string, value: string): void {
+    const element = document.querySelector<HTMLInputElement>(selector)
+    require(element, `Missing ${selector} input`)
+    element.value = value
+    element.dispatchEvent(new Event("input", { bubbles: true }))
+  }
+  async function openProviders(): Promise<void> {
+    const link = [...document.querySelectorAll("nav a")].find(link => link.textContent?.trim() === "Agents") as HTMLAnchorElement | undefined
+    require(link, "Missing Agents settings section")
+    link.click()
+    await until(() => [...document.querySelectorAll("button")].some(button => button.textContent?.trim() === "Add provider" && !button.disabled), "Provider settings")
+  }
+  async function addProvider(): Promise<HTMLDialogElement> {
+    button("Add provider").click()
+    await until(() => !!document.querySelector('dialog[open] input[name="provider-name"]'), "Add provider dialog")
+    return document.querySelector<HTMLDialogElement>("dialog[open]")!
+  }
+  async function saveProvider(dialog: HTMLDialogElement): Promise<void> {
+    dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+    await until(() => !document.querySelector("dialog[open]"), "Saved provider")
+  }
+  async function chooseProviderIcon(dialog: HTMLDialogElement, icon: string): Promise<void> {
+    const trigger = dialog.querySelector<HTMLButtonElement>("button[aria-expanded]")
+    require(trigger && dialog.querySelector(`label[for="${trigger.id}"]`)?.textContent?.trim() === "Icon", "Missing provider icon picker")
+    trigger.click()
+    await until(() => trigger.getAttribute("aria-expanded") === "true" && !!dialog.querySelector('[name="provider-icon-search"]'), "Provider icon choices")
+    input('[name="provider-icon-search"]', icon)
+    await until(() => !!dialog.querySelector(`[data-provider-icon-choice="${icon}"]`) && [...dialog.querySelectorAll("[data-provider-icon-choice]")].every(choice => choice.getAttribute("data-provider-icon-choice")!.includes(icon)), "Filtered provider icon")
+    dialog.querySelector<HTMLButtonElement>(`[data-provider-icon-choice="${icon}"]`)!.click()
+    await until(() => trigger.getAttribute("aria-expanded") === "false" && !!trigger.querySelector(`[data-provider-icon="${icon}"]`), "Selected provider icon")
+  }
+  async function providerAction(id: string, action: string): Promise<void> {
+    const row = document.querySelector(`[data-provider-id="${id}"]`)
+    require(row, "Provider was not rendered")
+    row.querySelector<HTMLButtonElement>("button")!.click()
+    await until(() => !!row.querySelector('[role="menu"]'), "Provider actions")
+    button(action, row).click()
+    await until(() => !!document.querySelector("dialog[open]"), `${action} dialog`)
+  }
+  async function removeProvider(id: string): Promise<void> {
+    await providerAction(id, "Remove provider")
+    button("Remove provider", document.querySelector("dialog[open]")!).click()
+    await until(() => !document.querySelector("dialog[open]") && !document.querySelector(`[data-provider-id="${id}"]`), "Removed provider")
+    require(!(await api.providers.list()).providers.some(provider => provider.id === id), "Provider removal was not persisted")
+  }
+  async function exerciseProviders(): Promise<string> {
+    await openProviders()
+    let dialog = await addProvider()
+    const template = dialog.querySelector<HTMLSelectElement>("#provider-template")!
+    require(template.value === "codex", "New providers must offer the Codex template")
+    require(dialog.querySelector<HTMLInputElement>('[name="provider-binary"]')?.placeholder === "codex", "Blank Codex paths must show the default executable")
+    input('[name="provider-name"]', "Work Codex")
+    await chooseProviderIcon(dialog, "deepseek")
+    button("Add variable", dialog).click()
+    await until(() => !!dialog.querySelector("[data-environment-row]"), "Environment row")
+    input('[data-environment-row] input:first-child', "DESKFLEET_SMOKE_PROFILE")
+    input('[data-environment-row] input:nth-child(2)', "work")
+    await saveProvider(dialog)
+    const created = (await api.providers.list()).providers.find(provider => provider.name === "Work Codex")
+    require(created?.template === "codex" && created.icon === "deepseek" && created.binaryPath === undefined && created.env.DESKFLEET_SMOKE_PROFILE === "work", "Provider creation did not retain its template, icon, default path, and environment")
+    require(document.querySelector(`[data-provider-id="${created.id}"] [data-provider-icon="deepseek"]`), "Created provider did not display its selected icon")
+    await providerAction(created.id, "Edit provider")
+    dialog = document.querySelector<HTMLDialogElement>("dialog[open]")!
+    const fixedTemplate = dialog.querySelector<HTMLInputElement>("#provider-template")
+    require(fixedTemplate?.readOnly && fixedTemplate.value === "Codex" && !dialog.querySelector("select#provider-template"), "Existing provider templates must not be editable")
+    await chooseProviderIcon(dialog, "claude")
+    input('[name="provider-name"]', "Work Codex updated")
+    input('[name="provider-binary"]', `${context.checkoutPath}/custom-codex`)
+    input('[data-environment-row] input:nth-child(2)', "updated")
+    await saveProvider(dialog)
+    const edited = (await api.providers.list()).providers.find(provider => provider.id === created.id)
+    require(edited?.template === "codex" && edited.icon === "claude" && edited.name === "Work Codex updated" && edited.binaryPath === `${context.checkoutPath}/custom-codex` && edited.env.DESKFLEET_SMOKE_PROFILE === "updated", "Provider edits were not persisted")
+    require(document.querySelector(`[data-provider-id="${created.id}"] [data-provider-icon="claude"]`), "Edited provider did not display its updated icon")
+    dialog = await addProvider()
+    const acp = dialog.querySelector<HTMLSelectElement>("#provider-template")!
+    acp.value = "acp"
+    acp.dispatchEvent(new Event("change", { bubbles: true }))
+    await until(() => dialog.querySelector<HTMLInputElement>('[name="provider-binary"]')?.placeholder === "acp-agent", "ACP template defaults")
+    input('[name="provider-name"]', "Temporary ACP")
+    await saveProvider(dialog)
+    const temporary = (await api.providers.list()).providers.find(provider => provider.name === "Temporary ACP")
+    require(temporary?.template === "acp", "ACP provider template was not saved")
+    await removeProvider(temporary.id)
+    return created.id
+  }
   async function change(enabled: boolean): Promise<void> {
     await openSettings()
     require(toggle()!.getAttribute("aria-checked") === String(!enabled), "Switch preference did not match the previous state")
@@ -102,6 +194,17 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
   await until(() => !!addWorkspace() && addWorkspace()!.getAttribute("aria-disabled") !== "true", "Initial catalog connection")
   await openSettings()
   await verifyDeniedPermission()
+  let providerId: string | undefined
+  if (context.phase === "start") providerId = await exerciseProviders()
+  else {
+    await openProviders()
+    const provider = (await api.providers.list()).providers.find(provider => provider.id === context.providerId)
+    require(provider?.name === "Work Codex updated" && provider.template === "codex" && provider.icon === "claude" && provider.binaryPath === `${context.checkoutPath}/custom-codex` && provider.env.DESKFLEET_SMOKE_PROFILE === "updated", "Provider configuration did not survive the app restart")
+    require(document.querySelector(`[data-provider-id="${provider.id}"]`)?.textContent?.includes("Work Codex updated"), "Restored provider was not rendered")
+    require(document.querySelector(`[data-provider-id="${provider.id}"] [data-provider-icon="claude"]`), "Restored provider icon was not rendered")
+    await removeProvider(provider.id)
+    providerId = provider.id
+  }
   await leaveSettings()
   if (context.phase === "restart") {
     const workspace = (await api.catalog.list()).workspaces.find(value => value.id === context.workspaceId)
@@ -110,7 +213,7 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
     require(terminal?.status === "interrupted" && terminal.cwd === context.checkoutPath, "Quitting the app must stop its shells while preserving their history")
     await until(sidebarWorkspace, "Restored catalog sidebar")
     await change(false)
-    return { workspaceId: workspace.id, terminalId: terminal.id }
+    return { workspaceId: workspace.id, terminalId: terminal.id, providerId }
   }
 
   require((await api.catalog.list()).workspaces.length === 0, "The isolated catalog must start empty")
@@ -127,7 +230,7 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
   require(interrupted?.status === "interrupted", "Turning the local Agent off must stop its terminal process while preserving history")
   const survivor = await api.terminal.dial({ mode: "create", terminalId: crypto.randomUUID(), cwd: context.checkoutPath, cols: 80, rows: 24 })
   require(survivor.status === "running", "Native terminal did not start after restart")
-  return { workspaceId: workspace.id, terminalId: survivor.id, stoppedTerminalId: stoppedTerminal.id }
+  return { workspaceId: workspace.id, terminalId: survivor.id, stoppedTerminalId: stoppedTerminal.id, providerId }
 }
 
 const argument = process.argv.find(value => value.startsWith("--local-agent-smoke-context="))

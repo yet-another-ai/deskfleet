@@ -7,6 +7,8 @@ export interface AgentSessionSummary {
   title?: string
   /** The agent provider's user-facing name. */
   provider?: string
+  providerIcon?: string
+  providerTemplate?: string
   /** Absent until the Session's Agent metadata has loaded. */
   context?: AgentSessionContext
   /** Absent while provisioning or if context creation failed. */

@@ -5,6 +5,7 @@ import { DEFAULT_LOCALE, isAppLocale, LOCALE_ARGUMENT_PREFIX } from "../shared/i
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import { TERMINAL_SESSION_EVENT, type TerminalSessionEvent } from "../shared/terminal.ts"
 import { CATALOG_CHANGED_EVENT } from "../shared/catalog.ts"
+import { PROVIDERS_CHANGED_EVENT } from "../shared/providers.ts"
 import type { LocalAgentState } from "../shared/local-agent.ts"
 import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type SettingsResult } from "../shared/settings.ts"
 
@@ -61,6 +62,17 @@ const api: DeskfleetDesktopApi = {
   },
   filesystem: {
     listDirectories: (path) => invokeDesktop("directoryList", path === undefined ? {} : { path }),
+  },
+  providers: {
+    list: () => invokeDesktop("providerList", {}),
+    create: (provider) => invokeDesktop("providerCreate", { provider }),
+    update: (providerId, changes) => invokeDesktop("providerUpdate", { providerId, changes }),
+    remove: (providerId) => invokeDesktop("providerRemove", { providerId }),
+    onChanged: (listener) => {
+      const handler = () => listener()
+      ipcRenderer.on(PROVIDERS_CHANGED_EVENT, handler)
+      return () => ipcRenderer.removeListener(PROVIDERS_CHANGED_EVENT, handler)
+    },
   },
   agent: {
     offer: (options) => invokeDesktop("agentOffer", options),

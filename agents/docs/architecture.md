@@ -8,9 +8,9 @@ This document describes the planned system. The current implementation contains
 the Rust resource model, a SeaORM catalog with SQLite persistence, an Actix Web
 liveness endpoint, and a TypeScript daemon library calling a napi-rs addon.
 The desktop client manages workspace directory configuration and persistent
-Codex Sessions with conversation history, a shared backlog, steering, and
+Agent Sessions with conversation history, a shared backlog, steering, and
 approvals. The daemon runs from source, as a SEA executable, or inside the desktop app; it exposes native
-information and a local health endpoint, and runs Codex CLI sessions through ACP.
+information and a local health endpoint, and runs configured agents through ACP.
 Agent clients use an ACP facade over DataChannel;
 the daemon owns execution, audit, and SQLite history. Native WebRTC peers,
 DataChannels, and on-demand capture/encoding are available through the daemon's
@@ -238,7 +238,15 @@ context at startup; later edits to the Workspace must not silently retarget a
 running session. Additional directories are exposed through the provider's
 supported configuration or tools.
 
-The first provider connects Codex CLI through the bundled
+Settings also has an **Agents** section for the target machine's providers.
+The daemon owns their names, templates, binary paths, and environment overrides
+in `<daemon directory>/agent-providers.json`. Templates are immutable after
+creation. A Session retains its configured provider ID, and each new provider
+process resolves the current settings. Editing or removing a provider does not
+stop existing processes or delete their history; a removed provider cannot
+start again. Configuration values remain outside the Session journal.
+
+The Codex template connects Codex CLI through the bundled
 [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp). The shared
 `AgentProvider` interface accepts a user-facing name, an optional binary path,
 and environment overrides. Provider-specific code selects the process; the
@@ -246,6 +254,12 @@ and environment overrides. Provider-specific code selects the process; the
 initialization, session creation, prompts, cancellation, and session updates.
 Codex uses the installed CLI and its credentials. The adapter runs as a child
 process; the SEA executable reuses its bundled Node runtime.
+The generic ACP template launches a stdio ACP executable directly. Empty binary
+paths use the template default (`codex` or `acp-agent`), and configured environment
+values extend the executing daemon's inherited environment. New installations
+start with a default Codex provider; the new-session composer chooses among the
+machine's configured providers. See [Agent Sessions](agent-sessions.md) for
+configuration and lifecycle details.
 
 The current agent CLI creates one ACP session per prompt invocation. With
 `--workspace-id`, it asks the running daemon to allocate a managed Session and

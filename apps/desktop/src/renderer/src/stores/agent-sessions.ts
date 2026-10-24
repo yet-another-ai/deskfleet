@@ -266,9 +266,9 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
 
-  async function create(workspaceId: string, title: string, context: AgentSessionContext): Promise<AgentSnapshot> {
+  async function create(workspaceId: string, title: string, context: AgentSessionContext, provider: string): Promise<AgentSnapshot> {
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
-    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", { workspaceId, title, provider: "codex", context })
+    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", { workspaceId, title, provider, context })
     snapshotReceived(snapshot)
     return snapshot
   }

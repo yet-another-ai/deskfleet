@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto"
 import type * as acp from "@agentclientprotocol/sdk"
-import { supportsSteering, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
+import { supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, timestamp } from "./agent-store.ts"
 import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
+export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
 const systemCommand = async (journal: AgentJournal, sessionId: string, inputId: string): Promise<AgentCommand> => ({
   id: await journal.id(), operationId: randomUUID(), actor: { ...journal.actor(), kind: "system" },
   sessionId, method: "dispatch", params: { inputId }, isCanonical: true,
@@ -17,7 +18,7 @@ export class AgentRuntime {
   readonly journal: AgentJournal
   readonly sessionId: string
   readonly #catalog: DaemonCatalog
-  readonly #provider: AgentProvider
+  readonly #resolveProvider: ResolveAgentProvider
   #connection?: AgentConnection
   #run?: AgentRun
   #active?: { turn: AgentTurn; completion: Promise<void> }
@@ -30,10 +31,10 @@ export class AgentRuntime {
   #delivery?: Promise<void>
   readonly #permissions = new Map<string, (response: acp.RequestPermissionResponse) => void>()
 
-  constructor(journal: AgentJournal, catalog: DaemonCatalog, provider: AgentProvider, sessionId: string) {
+  constructor(journal: AgentJournal, catalog: DaemonCatalog, resolveProvider: ResolveAgentProvider, sessionId: string) {
     this.journal = journal
     this.#catalog = catalog
-    this.#provider = provider
+    this.#resolveProvider = resolveProvider
     this.sessionId = sessionId
   }
 
@@ -76,7 +77,10 @@ export class AgentRuntime {
       await this.journal.commit(current, { runs: [run], events: [this.journal.event(this.sessionId, "run", run)] })
     })
     try {
-      const connection = await this.#provider.connect({ name: "Codex" }, {
+      // Resolve at process launch so edits apply to the next run, while an
+      // existing process keeps the settings with which it was started.
+      const { provider, config } = this.#resolveProvider(snapshot.session.provider)
+      const connection = await provider.connect(config, {
         onUpdate: params => this.#update(params, run.generation),
         requestPermission: (params, signal) => this.#permission(params, signal, run.generation),
         onClose: error => this.#connectionLost(error, run.generation),

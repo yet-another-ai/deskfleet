@@ -8,7 +8,8 @@ import { promisify } from "node:util"
 import { setTimeout as delay } from "node:timers/promises"
 import { test } from "node:test"
 import type * as acp from "@agentclientprotocol/sdk"
-import type { AgentClient, AgentConnection, AgentProvider } from "./agents/acp.ts"
+import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
+import { AgentProviders } from "./agent-providers.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import type { AgentActor, AgentReceipt, AgentSnapshot } from "./agent-protocol.ts"
@@ -25,14 +26,16 @@ class Provider implements AgentProvider {
   cwds: string[] = []
   cancelCount = 0
   clients: AgentClient[] = []
+  configs: AgentConfig[] = []
   closeCount = 0
   closeBarrier?: Promise<void>
   finishImmediately = false
   resumeWait?: { promise: Promise<void>; reject(error: Error): void }
   active?: { resolve: (result: acp.PromptResponse) => void; done: Promise<acp.PromptResponse> }
-  async connect(_config: unknown, client: AgentClient): Promise<AgentConnection> {
+  async connect(config: AgentConfig, client: AgentClient): Promise<AgentConnection> {
     this.client = client
     this.clients.push(client)
+    this.configs.push(structuredClone(config))
     return {
       initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } },
       newSession: async params => { this.cwds.push(params.cwd); return { sessionId: "provider-conversation" } },
@@ -91,7 +94,9 @@ async function setup(t: { after(callback: () => Promise<void>): void }) {
   await catalog.init()
   const workspace = await catalog.native.createWorkspace("Fixture", [{ path: repository }])
   const provider = new Provider()
-  const service = new AgentSessions(catalog, catalog.native, provider)
+  const providers = new AgentProviders(daemon, provider)
+  await providers.init()
+  const service = new AgentSessions(catalog, catalog.native, provider, providers)
   await service.init()
   const actor: AgentActor = { ...service.actor(), kind: "user", userId: "alice" }
   const bob: AgentActor = { ...actor, userId: "bob", sourceMachine: { originId: "other-origin", id: "2" } }
@@ -105,7 +110,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }) {
     const params = { sessionId, operationId: randomUUID(), content: [{ type: "text", text }], delivery, ...(turnId ? { turnId } : {}) }
     return { params, result: service.handle("_deskfleet/input/submit", params, who) as Promise<AgentReceipt> }
   }
-  return { catalog, service, provider, actor, bob, create, snapshot, sessionId, read, submit, directory, repository }
+  return { catalog, service, provider, providers, actor, bob, create, snapshot, sessionId, read, submit, directory, repository }
 }
 
 test("concurrent users share durable backlog and retries do not duplicate inputs or worktrees", async t => {
@@ -268,7 +273,7 @@ test("interrupted creation returns a full snapshot and deletion recovers a missi
     id: await f.service.journal.id(), operationId: params.operationId, actor: f.actor,
     workspaceId: params.workspaceId, method: "_deskfleet/session/create", params,
     isCanonical: true, status: "accepted", receivedAt: new Date().toISOString(),
-  }, params.workspaceId, "Interrupted", "worktree")
+  }, params.workspaceId, "Interrupted", "worktree", params.provider)
   const result = await f.service.handle("_deskfleet/session/create", params, f.actor) as AgentSnapshot
   assert.equal(result.session.id, created.id)
   assert.equal(result.session.lifecycle, "provisioning")
@@ -431,4 +436,56 @@ test("a message to an agent that cannot resume its conversation is rejected inst
   })
   await assert.rejects(f.submit("lost").result, /cannot resume/u)
   assert.equal((await f.read()).inputs.some(input => input.content.some(block => block.type === "text" && block.text === "lost")), false)
+})
+
+test("Sessions retain the chosen provider ID and read edited launch settings on the next run", async t => {
+  const f = await setup(t)
+  const configured = await f.providers.create({
+    template: "codex", name: "Work account", binaryPath: "/tools/work-codex",
+    env: { CODEX_HOME: "/work/account", TOKEN: "private-provider-value" },
+  })
+  const snapshot = await f.service.handle("_deskfleet/session/create", {
+    ...f.create, operationId: randomUUID(), provider: configured.id,
+  }, f.actor) as AgentSnapshot
+  const sessionId = snapshot.session.id
+  assert.equal(snapshot.session.provider, configured.id)
+  assert.deepEqual(f.provider.configs.at(-1), {
+    name: "Work account", binaryPath: "/tools/work-codex",
+    env: { CODEX_HOME: "/work/account", TOKEN: "private-provider-value" },
+  })
+  const launches = f.provider.configs.length
+  await f.providers.update(configured.id, { name: "Renamed account", binaryPath: "", env: { CODEX_HOME: "/work/updated" } })
+  assert.equal(f.provider.configs.length, launches)
+  assert.equal(f.provider.closeCount, 0)
+  await f.service.handle("_deskfleet/session/stop", { sessionId, operationId: randomUUID() }, f.actor)
+  await f.service.handle("_deskfleet/session/resume", { sessionId, operationId: randomUUID() }, f.actor)
+  assert.equal(f.provider.configs.length, launches + 1)
+  assert.deepEqual(f.provider.configs.at(-1), { name: "Renamed account", binaryPath: "codex", env: { CODEX_HOME: "/work/updated" } })
+  assert.equal((await f.service.journal.read(sessionId)).session.provider, configured.id)
+  assert.deepEqual(f.provider.resumes, ["provider-conversation"])
+  const journal = await f.service.journal.history(sessionId, "0")
+  assert.equal(JSON.stringify(journal).includes("private-provider-value"), false)
+})
+
+test("unknown providers cannot allocate Sessions and removing one preserves its running Session and history", async t => {
+  const f = await setup(t)
+  await assert.rejects(f.service.handle("_deskfleet/session/create", {
+    ...f.create, operationId: randomUUID(), provider: "missing",
+  }, f.actor), /provider.*(unavailable|not found)/iu)
+  assert.equal((await f.service.journal.list()).length, 1)
+  await f.providers.remove("codex")
+  assert.equal(f.provider.closeCount, 0)
+  f.provider.finishImmediately = true
+  await f.submit("still running").result
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  await assert.rejects(f.service.handle("_deskfleet/session/resume", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor), /provider.*(unavailable|not found)/iu)
+  const state = await f.read()
+  assert.equal(state.session.provider, "codex")
+  assert.equal(state.runs.at(-1)?.state, "failed")
+  assert.match(state.session.error ?? "", /provider.*(unavailable|not found)/iu)
+  assert.equal(state.turns[0]?.state, "completed")
+  assert.equal(f.provider.configs.length, 1)
 })

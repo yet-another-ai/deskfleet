@@ -17,6 +17,7 @@ export type AgentSessionContext = "worktree" | "directory"
 export interface AgentSessionRecord {
   id: string
   workspaceId: string
+  /** Stable ID of the configured provider on the executing machine. */
   provider: string
   providerSessionId?: string
   title: string
@@ -141,7 +142,7 @@ export interface AgentReceipt { operationId: string; commandId: string; inputId?
 export interface AgentMutation { sessionId: string; operationId: string }
 export interface AgentMethods {
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
-  "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider?: "codex"; context: AgentSessionContext }; result: AgentSnapshot }
+  "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider: string; context: AgentSessionContext }; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
   "_deskfleet/git/status": { params: { sessionId: string }; result: GitStatusSnapshot }

@@ -2,7 +2,7 @@
 import { PanelBottomClose } from "@lucide/vue"
 import { useEventListener } from "@vueuse/core"
 import { storeToRefs } from "pinia"
-import { computed, ref } from "vue"
+import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { WorktreeSummary } from "../../stores/fleet-types.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
@@ -27,6 +27,9 @@ const active = computed({
     if (id) terminals.selected[props.worktree.id] = id
     else delete terminals.selected[props.worktree.id]
   },
+})
+watch(() => props.worktree.terminals.length, (count, previous) => {
+  if (previous > 0 && count === 0) terminalPanelOpen.value = false
 })
 const minimum = 120
 const clamp = (height: number) => Math.round(Math.min(Math.max(height, minimum), window.innerHeight * 0.7))
@@ -63,7 +66,7 @@ function keyResize(event: KeyboardEvent): void {
       @pointerdown="startResize"
       @keydown="keyResize"
     />
-    <TerminalWorkspace v-model:active-id="active" :terminals="worktree.terminals" :create="() => terminals.create({ worktreeId: worktree.id })">
+    <TerminalWorkspace v-model:active-id="active" :terminals="worktree.terminals" :create="() => terminals.create({ worktreeId: worktree.id })" :ensure-terminal="() => terminals.ensureWorktreeTerminal(worktree.id)">
       <template #actions>
         <IconButton :icon="PanelBottomClose" :label="t('terminal.hidePanel')" @click="terminalPanelOpen = false" />
       </template>

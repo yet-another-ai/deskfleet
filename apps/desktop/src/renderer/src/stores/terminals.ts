@@ -14,6 +14,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const titles = ref<Record<string, string>>({})
   let client: TerminalClient | null = null
   let refreshing: Promise<void> | null = null
+  const opening = new Map<string, Promise<TerminalSummary>>()
   const unsubscribe = window.deskfleet.terminal.onSessionEvent((event) => {
     if (event.kind === "terminalChanged") remember(event.terminal)
     else sessions.value = sessions.value.filter(({ id }) => id !== event.terminalId)
@@ -60,6 +61,19 @@ export const useTerminalsStore = defineStore("terminals", () => {
     return summary
   }
 
+  /** Reopening a panel during startup shares its first shell instead of creating another. */
+  function ensureWorktreeTerminal(worktreeId: string): Promise<TerminalSummary> {
+    const pending = opening.get(worktreeId)
+    if (pending) return pending
+    const operation = (async () => {
+      await refresh()
+      if (error.value) throw new Error(error.value)
+      return sessions.value.find(terminal => terminal.worktreeId === worktreeId) ?? create({ worktreeId })
+    })().finally(() => { opening.delete(worktreeId) })
+    opening.set(worktreeId, operation)
+    return operation
+  }
+
   function attach(sessionId: string, listener: TerminalListener) {
     const active = connection()
     const unsubscribe = active.subscribe(sessionId, listener)
@@ -85,5 +99,5 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   onScopeDispose(() => { unsubscribe(); client?.close() })
-  return { sessions, state, error, selected, titles, refresh, create, attach, input, resize, hangup }
+  return { sessions, state, error, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup }
 })

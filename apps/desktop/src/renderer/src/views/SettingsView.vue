@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, SlidersHorizontal } from "@lucide/vue"
+import { ArrowLeft, Bot, SlidersHorizontal } from "@lucide/vue"
 import { onBeforeUnmount, onMounted } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRouter } from "vue-router"
@@ -17,6 +17,7 @@ function leave(): void {
 }
 
 function leaveOnEscape(event: KeyboardEvent): void {
+  if (event.defaultPrevented || document.querySelector("dialog[open]")) return
   if (event.key === "Escape") leave()
 }
 onMounted(() => window.addEventListener("keydown", leaveOnEscape))
@@ -36,6 +37,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", leaveOnEscape))
       </div>
       <div class="flex flex-col gap-0.5 px-2">
         <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
+        <SidebarLink :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
       </div>
     </nav>
     <div class="flex min-w-0 flex-1 flex-col">

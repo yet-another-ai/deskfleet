@@ -103,5 +103,5 @@ function remove(): void {
     </template>
   </div>
   <SessionComposer v-if="location" v-model="draft" :location="location" :provider="location.session.provider" :disabled="!connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
-  <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :worktree="terminalWorktree" />
+  <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" />
 </template>
