@@ -43,7 +43,7 @@ beforeEach(() => {
   pinia = createPinia(); setActivePinia(pinia)
   agents = useAgentSessionsStore()
   const providers = useProvidersStore()
-  providers.providers = [{ id: "codex", name: "Codex", template: "codex", env: {} }]
+  providers.providers = [{ id: "codex", name: "Codex", template: "codex" }]
   providers.selectedId = "codex"
   providers.ready = providers.loaded = true
   agents.sessions["30"] = agentSnapshot().session
@@ -94,7 +94,7 @@ test("changes a model before offering its supported reasoning choices", async ()
 
 test("switches configured providers without reusing another provider's model or accepting its pending response", async () => {
   const providers = useProvidersStore()
-  providers.providers.push({ id: "work-agent", name: "Work agent", template: "acp", icon: "claude", env: {} })
+  providers.providers.push({ id: "work-agent", name: "Work agent", template: "acp", icon: "claude" })
   agents.draftConfiguration = { provider: "codex", model: "retired-model", reasoningEffort: "high" }
   const previous = deferredConfiguration()
   const workConfiguration = { ...configuration("work-model"), provider: { id: "work-agent", name: "Work agent" } }

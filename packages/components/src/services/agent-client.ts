@@ -42,6 +42,7 @@ export class AgentClient {
   readonly #pending = new Map<number, PendingRequest>()
   #current: PeerSession | null = null
   #connecting: Promise<void> | null = null
+  #generation = 0
   #nextId = 0
 
   constructor(
@@ -59,14 +60,21 @@ export class AgentClient {
   connect(): Promise<void> {
     if (this.#connecting) return this.#connecting
     this.#state("connecting")
+    const generation = ++this.#generation
+    const id = crypto.randomUUID()
     const connecting = new Promise<void>((resolve, reject) => {
+      const begin = (iceServers: RTCIceServer[]) => {
+      if (generation !== this.#generation) {
+        void this.#api.close(id).catch(() => {})
+        reject(new Error("Connection was cancelled")); return
+      }
       try {
-        const peer = new RTCPeerConnection({ iceServers: [] })
+        const peer = new RTCPeerConnection({ iceServers })
         const channel = peer.createDataChannel(AGENT_CHANNEL, { ordered: true })
         channel.binaryType = "arraybuffer"
         channel.bufferedAmountLowThreshold = 64 * 1024
         const session: PeerSession = {
-          id: crypto.randomUUID(), peer, channel, unsubscribe: () => {}, resolve, reject,
+          id, peer, channel, unsubscribe: () => {}, resolve, reject,
           timeout: setTimeout(() => this.#fail(session, new Error("Agent connection timed out")), 20_000),
           offered: false, remoteReady: false, localCandidates: [], remoteCandidates: [],
           localSending: Promise.resolve(), remoteAdding: Promise.resolve(), sending: Promise.resolve(), queuedBytes: 0,
@@ -108,6 +116,9 @@ export class AgentClient {
         }
         void this.#negotiate(session).catch(error => this.#fail(session, errorOf(error)))
       } catch (error) { this.#state("error", errorOf(error).message); reject(errorOf(error)) }
+      }
+      if (this.#api.prepare) void this.#api.prepare(id).then(begin, error => { this.#state("error", errorOf(error).message); reject(errorOf(error)) })
+      else begin([])
     })
     this.#connecting = connecting
     void connecting.catch(() => { if (this.#connecting === connecting) this.#connecting = null })
@@ -268,6 +279,8 @@ export class AgentClient {
     this.#state("error", error.message)
   }
   close(): void {
+    ++this.#generation
+    this.#connecting = null
     if (this.#current) this.#release(this.#current, new Error("Agent connection closed"))
     this.#state("idle")
   }

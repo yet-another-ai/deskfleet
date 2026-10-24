@@ -1,11 +1,11 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { defineStore } from "pinia"
 import { onScopeDispose, ref } from "vue"
-import type { AgentProviderConfig } from "../../../../apps/daemon/src/provider-protocol.ts"
+import type { ProviderDisplay } from "@deskfleet/client/providers"
 
 /** The local daemon owns these settings; all windows refresh after a mutation. */
 export const useProvidersStore = defineStore("providers", () => {
-  const providers = ref<AgentProviderConfig[]>([])
+  const providers = ref<ProviderDisplay[]>([])
   const selectedId = ref("")
   const ready = ref(false)
   /** Keep the last known provider identity even if a later refresh disconnects. */
@@ -23,7 +23,7 @@ export const useProvidersStore = defineStore("providers", () => {
       try {
         do {
           refreshRequested = false
-          const snapshot = await platformClient.providers.list()
+          const snapshot = await (platformClient.providers.display?.() ?? platformClient.providers.list())
           if (disposed) return
           if (refreshRequested) continue
           providers.value = snapshot.providers

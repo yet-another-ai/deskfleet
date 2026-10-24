@@ -20,7 +20,7 @@ const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const router = useRouter()
 const location = computed(() => fleet.findWorkspace(props.workspaceId))
-const editable = computed(() => fleet.canManageCatalog && location.value?.machine.local)
+const editable = computed(() => fleet.canManageCatalog && location.value?.machine.online)
 const directories = computed(() => location.value?.workspace.directories ?? [])
 const editing = ref(false)
 const browseDirectories = platformClient.filesystem.listDirectories

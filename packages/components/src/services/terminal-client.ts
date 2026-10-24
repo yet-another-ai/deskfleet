@@ -11,7 +11,7 @@ import {
 
 export type TerminalConnectionState = "idle" | "connecting" | "connected" | "error"
 export type TerminalListener = (event: TerminalEvent, acknowledge: () => void) => void
-type TransportSignaling = Pick<TerminalSignalingApi, "offer" | "candidate" | "close" | "onEvent">
+type TransportSignaling = Pick<TerminalSignalingApi, "offer" | "candidate" | "close" | "onEvent" | "prepare">
 
 interface PendingRequest {
   resolve: (result: unknown) => void
@@ -69,6 +69,7 @@ export class TerminalClient {
   #nextId = 0
   #current: PeerSession | null = null
   #connecting: Promise<void> | null = null
+  #generation = 0
 
   constructor(
     api: TransportSignaling,
@@ -83,12 +84,19 @@ export class TerminalClient {
   connect(): Promise<void> {
     if (this.#connecting) return this.#connecting
     this.#state("connecting")
+    const generation = ++this.#generation
+    const id = crypto.randomUUID()
     const connecting = new Promise<void>((resolve, reject) => {
+      const begin = (iceServers: RTCIceServer[]) => {
+      if (generation !== this.#generation) {
+        void this.#api.close(id).catch(() => {})
+        reject(new Error("Connection was cancelled")); return
+      }
       try {
-        const peer = new RTCPeerConnection({ iceServers: [] })
+        const peer = new RTCPeerConnection({ iceServers })
         const channel = peer.createDataChannel(TERMINAL_CHANNEL, { ordered: true })
         const session: PeerSession = {
-          id: crypto.randomUUID(), peer, channel, unsubscribe: () => {},
+          id, peer, channel, unsubscribe: () => {},
           timeout: setTimeout(() => this.#fail(session, new Error("Terminal connection timed out")), 20_000),
           resolve, reject, offered: false, remoteReady: false,
           localCandidates: [], remoteCandidates: [],
@@ -131,6 +139,9 @@ export class TerminalClient {
         this.#state("error", errorOf(error).message)
         reject(errorOf(error))
       }
+      }
+      if (this.#api.prepare) void this.#api.prepare(id).then(begin, error => { this.#state("error", errorOf(error).message); reject(errorOf(error)) })
+      else begin([])
     })
     this.#connecting = connecting
     // A failed connection can be retried explicitly without replaying failed requests.
@@ -334,6 +345,8 @@ export class TerminalClient {
   }
 
   close(): void {
+    ++this.#generation
+    this.#connecting = null
     if (this.#current) this.#release(this.#current, new Error("Terminal connection closed"))
     this.#listeners.clear()
     this.#state("idle")

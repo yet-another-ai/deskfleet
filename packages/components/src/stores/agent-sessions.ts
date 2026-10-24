@@ -193,6 +193,16 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     return initialized
   }
   async function call<M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]): Promise<AgentMethods[M]["result"]> {
+    const controlled = platformClient.agent.control?.(method, params)
+    if (controlled) return controlled
+    const history = platformClient.agent.history
+    if (history && !history.available()) {
+      const values = params as { sessionId?: string; afterSeq?: string; limit?: number }
+      if (method === "_deskfleet/session/list") return await history.list() as AgentMethods[M]["result"]
+      if (method === "_deskfleet/session/subscribe") return await history.snapshot(values.sessionId!) as AgentMethods[M]["result"]
+      if (method === "_deskfleet/session/history") return await history.events(values.sessionId!, values.afterSeq!, values.limit ?? 100) as AgentMethods[M]["result"]
+      throw new Error("The machine is offline")
+    }
     await initialize()
     return client.call<AgentMethods[M]["result"]>(method, params)
   }
@@ -279,7 +289,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       }
       // Reuse the exact request identity when the first response was lost. The
       // daemon serializes duplicates, including a request still being accepted.
-      const result = await client.call(pending.method, pending.params)
+      const result = await call(pending.method, pending.params as AgentMethods[typeof pending.method]["params"])
       completeOperation(operationId)
       return result
     } finally {
@@ -326,16 +336,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     resolvePermissions()
   }
   async function stop(sessionId: string): Promise<void> { snapshotReceived(await mutation("_deskfleet/session/stop", { sessionId })) }
-  async function remove(sessionId: string): Promise<void> {
-    await mutation("_deskfleet/session/delete", { sessionId })
-    delete sessions.value[sessionId]
-    delete views.value[sessionId]
-    delete configurations.value[sessionId]
-    configurationSequences.delete(sessionId)
-    journals.delete(sessionId)
+  async function archive(sessionId: string): Promise<void> {
+    snapshotReceived(await mutation("_deskfleet/session/archive", { sessionId }))
+  }
+  async function restore(sessionId: string): Promise<void> {
+    snapshotReceived(await mutation("_deskfleet/session/restore", { sessionId }))
   }
   const gitStatus = (sessionId: string) => call("_deskfleet/git/status", { sessionId })
   const gitDiff = (request: GitDiffRequest) => call("_deskfleet/git/diff", request)
   onScopeDispose(() => { disposed = true; client.close() })
-  return { sessions, views, drafts, draftConfiguration, configurations, agentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, stop, remove, gitStatus, gitDiff }
+  return { sessions, views, drafts, draftConfiguration, configurations, agentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, stop, archive, restore, gitStatus, gitDiff }
 })

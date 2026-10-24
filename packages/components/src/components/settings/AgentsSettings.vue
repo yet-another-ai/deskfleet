@@ -15,7 +15,7 @@ const { t } = useI18n()
 const fleet = useFleetStore()
 const selectedMachineId = ref(fleet.machines.find(machine => machine.local)?.id ?? fleet.machines[0]?.id)
 const machine = computed(() => fleet.machines.find(value => value.id === selectedMachineId.value))
-const available = computed(() => !!machine.value?.local && machine.value.online)
+const available = computed(() => machine.value?.id === fleet.targetId && machine.value.online)
 const snapshot = ref<ProviderSnapshot | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -102,7 +102,7 @@ async function remove(): Promise<void> {
       <span v-if="!item.online" class="sr-only">{{ t("machine.offline") }}</span>
     </button>
   </nav>
-  <p v-if="!available" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t(machine?.local ? "providers.offline" : "providers.remoteUnavailable") }}</p>
+  <p v-if="!available" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t(machine?.id === fleet.targetId ? "providers.offline" : "providers.remoteUnavailable") }}</p>
   <div v-else>
     <div v-if="error" class="mb-4 flex items-center justify-between gap-4">
       <p role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>

@@ -1,7 +1,7 @@
 import type { AgentActor, AgentEvent, AgentInput, AgentPermission, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
 export const actor: AgentActor = { kind: "user", userId: "Ada", sourceMachine: { originId: "origin", id: "10" } }
 export function agentSnapshot(): AgentSnapshot {
-  return { session: { id: "30", workspaceId: "20", provider: "codex", title: "Fix tests", context: "worktree", lifecycle: "ready", lastEventSeq: "0", createdAt: "now", updatedAt: "now", capabilities: { steering: true, resume: true } }, runs: [], inputs: [], turns: [], permissions: [] }
+  return { session: { id: "30", workspaceId: "20", provider: "codex", title: "Fix tests", context: "worktree", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "now", updatedAt: "now", capabilities: { steering: true, resume: true } }, runs: [], inputs: [], turns: [], permissions: [] }
 }
 export function agentInput(overrides: Partial<AgentInput> = {}): AgentInput {
   return { id: "40", sessionId: "30", submissionCommandId: "50", author: actor, content: [{ type: "text", text: "Fix the tests" }], acceptedSeq: "1", state: "pending", requestedDelivery: "backlog", createdAt: "now", ...overrides }

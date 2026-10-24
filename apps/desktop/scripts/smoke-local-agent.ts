@@ -19,7 +19,7 @@ const daemonDirectory = join(directory, "daemon")
 const profileDirectory = join(directory, "profile")
 const checkoutPath = join(directory, "checkout")
 const rendererDirectory = join(appPath, "out/renderer")
-const preloadPath = join(appPath, "out/preload/index.cjs")
+const preloadPath = join(directory, "local-preload.cjs")
 const mainEntry = join(appPath, "out/main/index.js")
 let electron: ChildProcess | undefined
 let exited: Promise<void> | undefined
@@ -84,6 +84,7 @@ async function shutdownDaemon(): Promise<void> {
 }
 
 try {
+  await build({ entryPoints: [join(import.meta.dirname, "fixtures/local-preload.ts")], outfile: preloadPath, bundle: true, platform: "node", format: "cjs", external: ["electron"], target: "node24" })
   await Promise.all([stat(join(rendererDirectory, "index.html")), stat(preloadPath), stat(mainEntry)])
   await Promise.all([mkdir(checkoutPath), mkdir(profileDirectory)])
   await Promise.all([
@@ -104,7 +105,7 @@ try {
   await launchClient("disabled")
   assert.equal(await discoveryExists(), false, "Persisted disabled preference must prevent daemon startup")
   // A standalone daemon, such as the headless executable, is reused and outlives the app.
-  const external = await startDaemon(0, { controlDirectory: daemonDirectory, requestScreenCaptureAccess: async () => false })
+  const external = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: daemonDirectory, requestScreenCaptureAccess: async () => false })
   try {
     const identity = createHash("sha256").update(JSON.stringify(await readDaemonDiscovery(daemonDirectory))).digest("hex")
     assert.equal((await launchClient("external")).daemonIdentity, identity, "The app must reuse a separately running daemon")

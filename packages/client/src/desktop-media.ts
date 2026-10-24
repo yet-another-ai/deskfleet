@@ -18,7 +18,7 @@ export type {
 
 /** A local connection target; this is not an enrolled machine identity. */
 export interface LocalDesktopTarget {
-  id: "local-daemon"
+  id: string
   name: string
   online: boolean
   desktop: boolean
@@ -26,6 +26,7 @@ export interface LocalDesktopTarget {
 }
 
 export interface DesktopMediaApi {
+  prepare?(sessionId: string): Promise<RTCIceServer[]>
   target(): Promise<LocalDesktopTarget>
   capabilities(): Promise<DesktopCapabilities>
   offer(options: DesktopOffer): Promise<{ sdp: string }>

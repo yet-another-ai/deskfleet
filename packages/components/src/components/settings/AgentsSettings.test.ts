@@ -7,7 +7,7 @@ import { i18n } from "../../i18n/index.ts"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
 import AgentsSettings from "./AgentsSettings.vue"
 
-const fleet = reactive<{ machines: MachineSummary[] }>({ machines: [] })
+const fleet = reactive<{ machines: MachineSummary[]; targetId: string }>({ machines: [], targetId: "local-daemon" })
 vi.mock("../../stores/fleet.ts", () => ({ useFleetStore: () => fleet }))
 let wrapper: VueWrapper | undefined
 let changed: () => void

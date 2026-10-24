@@ -151,8 +151,11 @@ export function useDesktopConnection(api: DesktopMediaApi) {
         options.codec, RTCRtpReceiver.getCapabilities("video")?.codecs ?? [],
       )
       if (preferences.length === 0) throw new Error("The selected video codec is unavailable.")
-      const peer = new RTCPeerConnection({ iceServers: [] })
       const id = crypto.randomUUID()
+      const preparing = generation
+      const iceServers = api.prepare ? await api.prepare(id) : []
+      if (preparing !== generation) { await api.close(id); return }
+      const peer = new RTCPeerConnection({ iceServers })
       session = {
         id, peer, stream: new MediaStream(), unsubscribe: () => {},
         timeout: setTimeout(() => { if (session) fail(session, { kind: "timeout" }) }, 20_000),

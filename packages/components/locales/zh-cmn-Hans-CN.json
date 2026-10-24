@@ -340,7 +340,14 @@
       "other": "使用了 {n} 个工具"
     },
     "sessionActions": "会话操作",
-    "deleteDirectoryQuestion": "删除此会话及其对话记录？工作目录及其中的文件将保持不变。"
+    "deleteDirectoryQuestion": "删除此会话及其对话记录？工作目录及其中的文件将保持不变。",
+    "archive": "归档会话",
+    "restore": "恢复会话",
+    "retryArchive": "重试归档",
+    "archiveQuestion": "归档此会话？正在运行的 Agent 和终端将停止，对话和工作环境将保留。",
+    "restoreQuestion": "恢复此会话？发送新消息之前不会重新开始执行。",
+    "archived": "此会话已归档。恢复后可继续工作。",
+    "archiving": "正在归档会话。在运行资源关闭之前无法继续执行。"
   },
   "providers": {
     "choose": "选择 Provider",
@@ -392,5 +399,42 @@
     "iconSearch": "搜索 LLM 图标",
     "iconChoices": "LLM 图标",
     "iconNoResults": "未找到匹配的图标。"
+  },
+  "account": {
+    "team": "团队",
+    "machine": "机器",
+    "chooseMachine": "选择机器",
+    "signOut": "退出登录",
+    "signIn": "登录 deskfleet",
+    "server": "服务器地址",
+    "continueOidc": "通过身份提供商登录",
+    "signalingOffline": "服务器连接中断。现有对等连接可继续使用，直到授权到期。",
+    "addMachine": "连接机器",
+    "createTeam": "创建团队",
+    "teamName": "团队名称",
+    "alreadyEnrolled": "此电脑已加入 {server} 的团队 {team}。",
+    "enrollThisMachine": "将此电脑连接到团队",
+    "headlessEnrollment": "使用机器注册命令加入 daemon，或在桌面应用中连接此电脑。",
+    "teamSettings": "团队设置",
+    "close": "关闭",
+    "members": "成员",
+    "memberRole": "{name} 的角色",
+    "member": "成员",
+    "admin": "管理员",
+    "remove": "移除",
+    "removeQuestion": "将 {name} 从团队中移除？对方将无法继续访问团队机器。",
+    "inviteMember": "邀请成员",
+    "email": "邮箱地址",
+    "role": "角色",
+    "createInvite": "创建邀请",
+    "inviteCode": "邀请码",
+    "inviteInstructions": "将此邀请码发送给该邮箱的用户。邀请于 {expires} 过期。",
+    "joinTeam": "加入团队",
+    "enrollHeadless": "注册无界面机器",
+    "machineName": "机器名称",
+    "enrollmentIdentity": "在目标机器启动 daemon 并运行下方命令，然后填写输出的身份信息。",
+    "enrollmentSecret": "机器凭据仅在此处显示。请保密并在目标机器导入。",
+    "pasteCredentials": "将以下 JSON 粘贴到命令的标准输入中，然后发送输入结束信号。",
+    "enrollmentCredentials": "机器注册凭据"
   }
 }

@@ -59,8 +59,9 @@ function workspaceSummary(value: CatalogWorkspace): WorkspaceSummary {
 
 /** Local daemon resources; database IDs and connection targets have separate identities. */
 export const useFleetStore = defineStore("fleet", () => {
-  const localDesktopTarget = ref<LocalDesktopTarget>({ id: "local-daemon", name: "localhost", online: false, desktop: false })
-  const machines = ref<MachineSummary[]>([{ ...localDesktopTarget.value, local: true, terminals: [], workspaces: [] }])
+  const targetId = platformClient.target?.id ?? "local-daemon"
+  const localDesktopTarget = ref<LocalDesktopTarget>({ id: targetId, name: "localhost", online: false, desktop: false })
+  const machines = ref<MachineSummary[]>([{ ...localDesktopTarget.value, local: platformClient.target?.local ?? true, lastSeen: platformClient.target?.lastSeen, terminals: [], workspaces: [] }])
   const catalogIdentity = ref<{ teamId: string; machineId: string } | null>(null)
   const catalogError = ref<string | null>(null)
   const catalogLoading = ref(false)
@@ -70,7 +71,7 @@ export const useFleetStore = defineStore("fleet", () => {
   const terminals = useTerminalsStore()
   const agents = useAgentSessionsStore()
   const providers = useProvidersStore()
-  const localMachine = () => machines.value.find(({ id }) => id === "local-daemon")!
+  const localMachine = () => machines.value.find(({ id }) => id === targetId)!
   /** A terminal belongs to its owning Session Worktree, or to the machine. */
   function applyTerminals(): void {
     const machine = localMachine()
@@ -99,7 +100,6 @@ export const useFleetStore = defineStore("fleet", () => {
   }
   function applySessionMetadata(): void {
     for (const machine of machines.value) for (const workspace of machine.workspaces) {
-      if (!machine.local) continue
       const summaries = new Map(workspace.sessions.filter(session => session.worktree || agents.sessions[session.id]).map(session => [session.id, session]))
       for (const metadata of Object.values(agents.sessions)) {
         if (metadata.workspaceId !== workspace.id) continue
@@ -108,7 +108,7 @@ export const useFleetStore = defineStore("fleet", () => {
         Object.assign(summary, {
           title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
           providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
-          context: metadata.context,
+          context: metadata.context, archiveState: metadata.archiveState,
         })
         summaries.set(summary.id, summary)
       }
@@ -124,8 +124,8 @@ export const useFleetStore = defineStore("fleet", () => {
     localMachine().workspaces = snapshot.workspaces.map(workspaceSummary)
     applySessionMetadata()
     localMachine().name = snapshot.machineName
-    localMachine().online = true
-    localDesktopTarget.value = { ...localDesktopTarget.value, name: snapshot.machineName, online: true, error: undefined }
+    if (!platformClient.target) localMachine().online = true
+    localDesktopTarget.value = { ...localDesktopTarget.value, name: snapshot.machineName, online: localMachine().online, error: undefined }
     catalogReady.value = true
     catalogError.value = null
     reconcileTarget()
@@ -167,7 +167,7 @@ export const useFleetStore = defineStore("fleet", () => {
     await refreshLocalDesktop()
     await refreshLocalCatalog()
   }
-  const unsubscribe = platformClient.catalog.onChanged(() => { void refreshLocalCatalog(); void agents.refresh() })
+  const unsubscribe = platformClient.catalog.onChanged(() => { void refreshLocalCatalog(); void agents.refresh(); void terminals.refresh() })
   onScopeDispose(unsubscribe)
   const canManageCatalog = computed(() => localMachine().online && catalogReady.value)
   function requireLocalCatalog(): void {
@@ -176,7 +176,7 @@ export const useFleetStore = defineStore("fleet", () => {
   function requireWorkspace(id: string): WorkspaceLocation {
     requireLocalCatalog()
     const location = findWorkspace(id)
-    if (!location || !location.machine.local) throw new Error("Workspace is not on the local daemon")
+    if (!location || location.machine.id !== targetId) throw new Error("Workspace is not on the local daemon")
     return location
   }
   async function createWorkspace(name: string, directories: CatalogDirectory[]): Promise<CatalogWorkspace> {
@@ -220,7 +220,7 @@ export const useFleetStore = defineStore("fleet", () => {
   const newSessionTarget = computed(() => targetWorkspaceId.value ? findWorkspace(targetWorkspaceId.value) : null)
 
   return {
-    machines, catalogIdentity, catalogError, catalogLoading, canManageCatalog,
+    targetId, machines, catalogIdentity, catalogError, catalogLoading, canManageCatalog,
     localDesktopTarget, refreshLocalDesktop, refreshLocalCatalog, refreshLocal,
     createWorkspace, updateWorkspace, deleteWorkspace,
     newSessionTarget, findMachine, findWorkspace, findWorktree, findSession, findTerminal,

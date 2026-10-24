@@ -6,5 +6,5 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <span :title="t('agent.sourceMachine', { id: actor.sourceMachine.id })">{{ actor.userId ?? t(actor.kind === 'system' ? 'agent.system' : 'agent.localUser') }}</span>
+  <span :title="actor.sourceMachine ? t('agent.sourceMachine', { id: actor.sourceMachine.id }) : undefined">{{ actor.userId ?? t(actor.kind === 'system' ? 'agent.system' : 'agent.localUser') }}</span>
 </template>

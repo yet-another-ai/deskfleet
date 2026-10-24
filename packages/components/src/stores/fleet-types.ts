@@ -12,6 +12,7 @@ export interface AgentSessionSummary {
   providerIcon?: string
   providerTemplate?: string
   /** Absent until the Session's Agent metadata has loaded. */
+  archiveState?: "active" | "archiving" | "archived"
   context?: AgentSessionContext
   /** Absent while provisioning or if context creation failed. */
   worktree?: WorktreeSummary

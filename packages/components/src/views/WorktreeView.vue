@@ -15,7 +15,7 @@ const worktreeLabel = useWorktreeLabel()
 const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const location = computed(() => fleet.findWorktree(props.worktreeId))
-const available = computed(() => fleet.canManageCatalog && location.value?.machine.local)
+const available = computed(() => fleet.canManageCatalog && location.value?.machine.online)
 </script>
 
 <template>

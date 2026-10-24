@@ -16,7 +16,7 @@ const fleet = useFleetStore()
 const connection = useDesktopConnection(platformClient.desktop)
 const { state, failure, stream } = connection
 const machine = computed(() => fleet.findMachine(props.machineId))
-const local = computed(() => props.machineId === "local-daemon")
+const local = computed(() => props.machineId === fleet.targetId)
 const capabilities = shallowRef<DesktopCapabilities | null>(null)
 const loading = ref(false)
 const discoveryError = ref<string | null>(null)

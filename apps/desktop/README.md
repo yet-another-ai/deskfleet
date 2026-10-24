@@ -32,9 +32,10 @@ downloads its platform binary the first time it is resolved.
 | --- | --- | --- |
 | `src/main` | Electron main process | `out/main/index.js` (ESM) |
 | `src/preload` | Sandboxed preload | `out/preload/index.cjs` (CommonJS) |
-| `src/renderer` | Vue renderer | `out/renderer` |
+| `src/renderer` | Renderer bootstrap | `out/renderer` |
 | `src/shared` | Code imported by more than one process | Inlined into each bundle |
-| `src/locales` | Message catalogs for the main process and renderer | Inlined into each bundle |
+| `packages/components` | Shared Vue UI and locale catalogs for desktop and web | Inlined into renderer |
+| `packages/client` | Platform contracts and remote transport | Inlined into host bundles |
 | `build` | Packaging input and runtime window and tray images | Selected files in `app.asar` |
 
 Each process has its own Vite configuration (`vite.main.config.ts`,
@@ -42,35 +43,31 @@ Each process has its own Vite configuration (`vite.main.config.ts`,
 
 ## Interface layout
 
-`useFleetStore` loads the local daemon's persistent catalog through authenticated
-IPC. The desktop starts its bundled local Agent by default; use **Add workspace**
-beside the local machine. Supply its name and select at least one directory in
-the in-app folder picker. The picker browses the daemon's filesystem, with home,
-root, parent navigation, and a hidden-folder toggle. Selecting an existing path
-opens the picker to replace it; **Add directory** opens it for another path.
-Directories have no names; the first is the default. Move paths up or down to
-change their order and default. A new Workspace shows its directories and an
-empty Session list. Edit the Workspace to change its name and directories, or
-choose **New session** to target it in the composer. Worktrees are read-only
-execution contexts reached from their owning Session. They are created and
-removed by Session lifecycle operations. The catalog's main Worktree is internal
-storage for Workspace directories and is not a separate resource in the UI.
-Deleting a Workspace removes its catalog records, leaving source directories
-untouched; existing Sessions prevent deletion. The UI refreshes on catalog changes,
-window focus, and the explicit refresh action; failures retain the displayed
-catalog and show an error.
+The production client signs in to a configured backend through OIDC and selects
+a team and an enrolled machine. The Electron main process owns account HTTP and
+WebSocket connections and stores the application token using Electron safeStorage.
+A narrow preload adapter exposes operations and events without exposing that token
+to the renderer. The browser callback uses a temporary loopback listener and a
+client verifier bound to the one-time login code.
 
-The footer identifies this as local mode, without account or organization
-membership. Database Machine IDs remain distinct from the `local-daemon`
-connection target. The desktop route supports live WebRTC playback; **New
-terminal** opens a native PTY, and **Open terminal here** on a Workspace directory
-starts one at that path with machine scope. On a Session's Worktree page it opens
-a Session shell in that Session's bottom panel instead. The application
-does not display sample machines as live resources.
+The common UI in `packages/components` browses synchronized catalogs and history.
+Machine and Team selectors, member administration, invitation codes, and headless
+machine enrollment are shared with the independently deployed Web application.
+The desktop can also enroll its hosted daemon after selecting a Team; an existing
+enrollment is never silently reassigned.
 
-Accounts, organization switching, remote machine registration, and target
-pickers remain unimplemented. Placeholder controls
-use `IconButton`'s `placeholder` state or the `common.placeholderControl` title.
+Workspace creation and editing use the target daemon's filesystem browser through
+central management APIs. Directory ordering, Session-owned Worktrees, terminals,
+provider selection, and the conversation UI retain their existing behavior.
+Management uses authenticated HTTP; live Agent, Git, terminal, and desktop traffic
+uses an authorized WebRTC peer with server-provided STUN/TURN settings. Offline
+machines retain their synchronized catalog and readable conversation history.
+
+The selected machine has its own application state. Switching machines disposes
+that view's peers and caches without stopping the remote agents or terminals.
+Peer authorization expires independently of signaling: a server disconnection
+alone does not close established DataChannels, while revocation and the grant's
+24-hour deadline do.
 
 The window is frameless and has three columns. The sidebar holds the window
 toolbar (sidebar toggle, back, forward), the New session action, the resource
@@ -163,9 +160,9 @@ that decision and removes the choices.
 
 **Cancel turn** ends the current turn. **Stop agent** preserves the conversation,
 backlog, and Worktree. The next message resumes the saved provider session when
-supported; there is no separate resume control. **Delete session** removes its conversation and any generated
-checkouts; a working-directory Session's files are left in place;
-command audit remains in the daemon database. Navigating away, disconnecting, or
+supported; there is no separate resume control. **Archive session** closes execution and retains the conversation and working
+context. **Restore session** makes it available again without starting a provider
+or terminal. Session deletion is not exposed to users. Navigating away, disconnecting, or
 closing the window leaves the agent running; quitting the app stops it.
 
 The terminal button in a Session's header opens a resizable bottom panel of
@@ -214,8 +211,7 @@ keeps running.
 Electron's main process discovers the local daemon through
 `~/.deskfleet/daemon.json`. Set `DESKFLEET_DAEMON_DIRECTORY` in both processes to
 use an isolated instance. The preload carries signaling and control only;
-Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Central server signaling and
-keyboard/mouse control are not connected yet.
+Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Remote signaling goes through the backend; keyboard/mouse control remains separate work.
 
 See [media integration](../../agents/docs/media.md) for supported capture
 platforms, permissions, ownership, and the native pipeline.
@@ -285,7 +281,7 @@ isolated instance for both the client and its bundled daemon.
 
 ## Localization
 
-`src/locales/<locale>.json` holds one catalog per supported locale. Currently these
+`packages/components/locales/<locale>.json` holds one catalog per supported locale. Currently these
 are `en-US` and `zh-cmn-Hans-CN`. The main process selects the first supported
 locale from the OS language preferences and passes it to the preload through
 `additionalArguments`. The renderer reads it from `window.deskfleet.locale`.

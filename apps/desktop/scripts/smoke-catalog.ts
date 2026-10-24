@@ -12,7 +12,7 @@ const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-catalog
 const executable = createRequire(import.meta.url)("electron") as string
 const controlDirectory = join(directory, "daemon")
 const rendererDirectory = resolve(import.meta.dirname, "../out/renderer")
-const preloadPath = resolve(import.meta.dirname, "../out/preload/index.cjs")
+const preloadPath = join(directory, "local-preload.cjs")
 const checkoutPath = join(directory, "checkout")
 const initialPath = join(directory, "initial-checkout")
 const updatedPath = join(directory, "updated-checkout")
@@ -86,10 +86,11 @@ async function verifyShellDirectory(terminalId: string): Promise<void> {
 }
 
 try {
+  await build({ entryPoints: [join(import.meta.dirname, "fixtures/local-preload.ts")], outfile: preloadPath, bundle: true, platform: "node", format: "cjs", external: ["electron"], target: "node24" })
   await Promise.all([stat(join(rendererDirectory, "index.html")), stat(preloadPath)])
   await Promise.all([mkdir(checkoutPath), mkdir(initialPath), mkdir(updatedPath)])
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/catalog-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" })
-  daemon = await startDaemon(0, { controlDirectory, requestScreenCaptureAccess: async () => null })
+  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null })
   const created = await launchClient("create")
   assert.ok(created.terminalId)
   await verifyShellDirectory(created.terminalId)

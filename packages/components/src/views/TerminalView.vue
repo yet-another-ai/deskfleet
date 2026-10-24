@@ -34,17 +34,17 @@ const activeTerminal = computed({
   get: () => props.terminalId,
   set: (id) => {
     const replace = !machineTerminals.value.some(terminal => terminal.id === props.terminalId)
-    const to = id ? { name: "terminal", params: { terminalId: id } } : { name: "machine-terminals", params: { machineId: "local-daemon" } }
+    const to = id ? { name: "terminal", params: { terminalId: id } } : { name: "machine-terminals", params: { machineId: fleet.targetId } }
     void (replace ? router.replace(to) : router.push(to))
   },
 })
 // Retain the workspace while a hung-up terminal leaves the catalog and the route advances.
 const lastLocalTerminalId = ref<string>()
 watch(location, (value) => {
-  if (value?.machine.id === "local-daemon") lastLocalTerminalId.value = value.terminal.id
+  if (value?.machine.id === fleet.targetId) lastLocalTerminalId.value = value.terminal.id
 }, { immediate: true })
-const localWorkspace = computed(() => props.machineId === "local-daemon"
-  || location.value?.machine.id === "local-daemon"
+const localWorkspace = computed(() => props.machineId === fleet.targetId
+  || location.value?.machine.id === fleet.targetId
   || (props.terminalId !== undefined && props.terminalId === lastLocalTerminalId.value))
 const scope = computed(() => localWorkspace.value
   ? [fleet.localDesktopTarget.name]

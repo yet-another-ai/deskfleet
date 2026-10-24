@@ -20,7 +20,8 @@ const agents = useAgentSessionsStore()
 const providers = useProvidersStore()
 watch(() => fleet.localDesktopTarget.online, (online) => { if (online) void terminals.refresh() })
 const refresh = () => { void fleet.refreshLocal().then(() => {
-  if (fleet.localDesktopTarget.online) { void agents.refresh(); void providers.refresh() }
+  if (fleet.localDesktopTarget.online || platformClient.agent.history) void agents.refresh()
+  if (fleet.localDesktopTarget.online || platformClient.providers.display) void providers.refresh()
 }) }
 const unsubscribeSettings = platformClient.settings.onChanged(({ status }) => {
   if (status === "running" || status === "stopped" || status === "error") {

@@ -1,3 +1,4 @@
+import { installCentralAccount } from "./central-account.ts"
 import { app, powerMonitor } from "electron"
 import { join } from "node:path"
 import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
@@ -27,6 +28,7 @@ function start(): void {
     setMainLocale(resolveAppLocale(app.getPreferredSystemLanguages()))
     installRendererProtocol()
     installDesktopMediaIpc()
+    await installCentralAccount()
     denyChromiumPermissions()
     // The dev runner, service managers, and session shutdown stop the client with
     // signals. Electron's own handlers, installed during startup, request an

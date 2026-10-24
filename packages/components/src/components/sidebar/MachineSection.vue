@@ -36,7 +36,7 @@ async function workspaceCreated(id: string): Promise<void> {
 }
 
 async function createTerminal(): Promise<void> {
-  if (props.machine.id !== "local-daemon" || creating.value) return
+  if (props.machine.id !== fleet.targetId || creating.value) return
   creating.value = true
   createError.value = null
   try {
@@ -84,18 +84,18 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
         <IconButton
           :icon="SquareTerminal"
           :label="t('terminal.new')"
-          :placeholder="machine.id !== 'local-daemon'"
+          :placeholder="machine.id !== fleet.targetId"
           :disabled="creating"
           @click="createTerminal"
         />
-        <IconButton :icon="FolderPlus" :label="t('machine.addWorkspace')" :placeholder="!machine.local" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = true" />
+        <IconButton :icon="FolderPlus" :label="t('machine.addWorkspace')" :placeholder="false" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = true" />
       </div>
     </div>
     <p v-if="createError" role="alert" class="px-2.5 text-xs text-red-500">{{ createError }}</p>
-    <WorkspaceCreateDialog v-if="addingWorkspace && machine.local" @created="workspaceCreated" @cancel="addingWorkspace = false" />
+    <WorkspaceCreateDialog v-if="addingWorkspace" @created="workspaceCreated" @cancel="addingWorkspace = false" />
 
     <ul v-if="!collapsed" :id="listId">
-      <li v-if="machine.desktop || machine.id === 'local-daemon'">
+      <li v-if="machine.desktop || machine.id === fleet.targetId">
         <TreeLink
           :to="{ name: 'machine-desktop', params: { machineId: machine.id } }"
           :icon="MonitorPlay"
