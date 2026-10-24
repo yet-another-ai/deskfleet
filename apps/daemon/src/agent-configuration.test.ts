@@ -158,7 +158,10 @@ test("configuration failures and unsupported options close the connection", asyn
   })
 })
 
-test("a stalled ACP session request times out and closes its process", { timeout: 15_000 }, async () => {
+test("a stalled ACP session request times out and closes its process", { timeout: 15_000 }, async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] })
+  let ready!: () => void
+  const started = new Promise<void>(resolve => { ready = resolve })
   let closed = false
   const provider: AgentProvider = {
     id: "codex",
@@ -168,10 +171,22 @@ test("a stalled ACP session request times out and closes its process", { timeout
         args: [fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))],
         env: { DESKFLEET_TEST_AGENT_MODE: "wait-session" },
       }, client)
-      return { ...connection, async close() { await connection.close(); closed = true } }
+      return {
+        ...connection,
+        newSession(params) {
+          const pending = connection.newSession(params)
+          ready()
+          return pending
+        },
+        async close() { await connection.close(); closed = true },
+      }
     },
   }
-  await assert.rejects(readAgentConfiguration({ provider: "codex" }, process.cwd(), { provider, timeoutMs: 500 }), /timed out/)
+  const pending = assert.rejects(readAgentConfiguration({ provider: "codex" }, process.cwd(), { provider, timeoutMs: 500 }), /timed out/)
+  // Advance the deadline only once session/new is pending, regardless of startup speed.
+  await started
+  context.mock.timers.tick(500)
+  await pending
   assert.equal(closed, true)
 })
 
