@@ -1,18 +1,21 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import { setTimeout as delay } from "node:timers/promises"
-import type { LocalAgentState } from "../shared/local-agent.ts"
+import type { LocalAgentState, ScreenCapturePermission } from "../shared/local-agent.ts"
 
 export interface LocalAgentConnection {
   readonly closed: boolean
+  readonly screenCapturePermission: ScreenCapturePermission
   shutdown(): Promise<void>
   close(): void
 }
 
 export interface LocalAgentRuntime {
-  connect(onDisconnect: (error: Error) => void): Promise<LocalAgentConnection>
-  launch(): Promise<{ error?: Error }>
+  connect(onDisconnect: (error: Error) => void, onPermissionChanged: (permission: ScreenCapturePermission) => void): Promise<LocalAgentConnection>
+  /** Starts the daemon in this process; it is ready to accept connections once this resolves. */
+  start(): Promise<void>
   waitForShutdown(): Promise<void>
+  /** Stops a daemon this process started; a separately running daemon is left alone. */
+  close(): Promise<void>
 }
 
 function unavailable(error: unknown): boolean {
@@ -20,7 +23,7 @@ function unavailable(error: unknown): boolean {
     && (error.code === "ENOENT" || error.code === "ECONNREFUSED")
 }
 
-/** The preference owns explicit start/stop actions; client exit only detaches. */
+/** The preference owns explicit start/stop actions; quitting the app stops the daemon it hosts. */
 export class LocalAgentController {
   readonly #path: string
   readonly #runtime: LocalAgentRuntime
@@ -52,7 +55,7 @@ export class LocalAgentController {
       if (this.#state.enabled) await this.#start()
       else {
         this.#connection = await this.#connectIfRunning()
-        this.#update({ status: this.#connection ? "running" : "stopped" })
+        this.#update({ status: this.#connection ? "running" : "stopped", screenCapturePermission: this.#connection?.screenCapturePermission })
       }
     } catch (error) { this.#failed(error) }
     return this.state
@@ -81,13 +84,19 @@ export class LocalAgentController {
     connection?.close()
   }
 
+  /** Called when the app quits, after its windows have closed. */
+  async close(): Promise<void> {
+    this.detach()
+    await this.#runtime.close()
+  }
+
   #update(change: Partial<LocalAgentState>): void {
     this.#state = { ...this.#state, error: undefined, ...change }
     this.#emit(this.state)
   }
 
   #failed(error: unknown): void {
-    this.#update({ status: "error", error: error instanceof Error ? error.message : String(error) })
+    this.#update({ status: "error", error: error instanceof Error ? error.message : String(error), screenCapturePermission: undefined })
   }
 
   async #connectIfRunning(): Promise<LocalAgentConnection | undefined> {
@@ -99,6 +108,9 @@ export class LocalAgentController {
         if (this.#connection !== connection) return
         this.#connection = undefined
         if (this.#state.status !== "stopping") this.#failed(error)
+      }, permission => {
+        if (!connection || this.#connection !== connection) return
+        this.#update({ screenCapturePermission: permission })
       })
       return connection
     } catch (error) {
@@ -108,30 +120,24 @@ export class LocalAgentController {
   }
 
   async #start(): Promise<void> {
-    this.#update({ status: "starting" })
+    this.#update({ status: "starting", screenCapturePermission: undefined })
     this.#connection = await this.#connectIfRunning()
     if (!this.#connection) {
-      const launched = await this.#runtime.launch()
-      const deadline = Date.now() + 15_000
-      do {
-        this.#connection = await this.#connectIfRunning()
-        if (this.#connection) break
-        if (launched.error) throw launched.error
-        if (Date.now() >= deadline) throw new Error("Local Agent did not become ready; check daemon.log in the daemon directory")
-        await delay(100)
-      } while (!this.#connection)
+      await this.#runtime.start()
+      this.#connection = await this.#connectIfRunning()
+      if (!this.#connection) throw new Error("Local Agent did not become ready")
     }
-    this.#update({ status: "running" })
+    this.#update({ status: "running", screenCapturePermission: this.#connection.screenCapturePermission })
   }
 
   async #stop(): Promise<void> {
-    this.#update({ status: "stopping" })
+    this.#update({ status: "stopping", screenCapturePermission: undefined })
     this.#connection = await this.#connectIfRunning()
     if (this.#connection) {
       await this.#connection.shutdown()
       await this.#runtime.waitForShutdown()
       this.detach()
     }
-    this.#update({ status: "stopped" })
+    this.#update({ status: "stopped", screenCapturePermission: undefined })
   }
 }

@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { mkdir, mkdtemp, realpath, rm, stat } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { build } from "esbuild"
 import { startDaemon } from "../../daemon/src/daemon.ts"
 import type { CatalogSmokeContext, CatalogSmokeResult } from "./fixtures/catalog-main.ts"
@@ -14,12 +14,19 @@ const controlDirectory = join(directory, "daemon")
 const rendererDirectory = resolve(import.meta.dirname, "../out/renderer")
 const preloadPath = resolve(import.meta.dirname, "../out/preload/index.cjs")
 const checkoutPath = join(directory, "checkout")
+const initialPath = join(directory, "initial-checkout")
 const updatedPath = join(directory, "updated-checkout")
 let daemon: Awaited<ReturnType<typeof startDaemon>> | undefined
 let electron: ChildProcess | undefined
 let exited: Promise<void> | undefined
 let diagnostics = ""
 let clientNumber = 0
+
+function ancestors(path: string): string[] {
+  const paths = [path]
+  while (dirname(paths[0]!) !== paths[0]) paths.unshift(dirname(paths[0]!))
+  return paths
+}
 
 async function stopClient(): Promise<void> {
   if (!electron || electron.exitCode !== null || electron.signalCode !== null) return
@@ -30,7 +37,13 @@ async function stopClient(): Promise<void> {
 }
 
 async function launchClient(phase: CatalogSmokeContext["phase"], previous?: CatalogSmokeResult): Promise<CatalogSmokeResult> {
-  const context: CatalogSmokeContext = { phase, rendererDirectory, preloadPath, checkoutPath, updatedPath, ...previous }
+  const context: CatalogSmokeContext = {
+    phase, rendererDirectory, preloadPath, checkoutPath, initialPath, updatedPath,
+    checkoutAncestors: ancestors(checkoutPath),
+    initialAncestors: ancestors(initialPath),
+    updatedAncestors: ancestors(updatedPath),
+    ...previous,
+  }
   electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${join(directory, `profile-${++clientNumber}`)}`, `--catalog-smoke-context=${JSON.stringify(context)}`], {
     cwd: resolve(import.meta.dirname, "../../.."),
     env: { ...process.env, DESKFLEET_DAEMON_DIRECTORY: controlDirectory },
@@ -74,16 +87,16 @@ async function verifyShellDirectory(terminalId: string): Promise<void> {
 
 try {
   await Promise.all([stat(join(rendererDirectory, "index.html")), stat(preloadPath)])
-  await Promise.all([mkdir(checkoutPath), mkdir(updatedPath)])
+  await Promise.all([mkdir(checkoutPath), mkdir(initialPath), mkdir(updatedPath)])
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/catalog-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" })
-  daemon = await startDaemon(0, { controlDirectory })
+  daemon = await startDaemon(0, { controlDirectory, requestScreenCaptureAccess: async () => null })
   const created = await launchClient("create")
   assert.ok(created.terminalId)
   await verifyShellDirectory(created.terminalId)
   await daemon.terminals.hangup(created.terminalId)
   const restored = await launchClient("restore", created)
   assert.equal(restored.restored, true)
-  console.log("Production Electron catalog: workspace paths, automatic main worktree, default directory order and shell cwd, persistence, and deletion passed", restored)
+  console.log("Production Electron catalog: folder picker creation and editing, automatic main worktree, default directory order and shell cwd, persistence, and deletion passed", restored)
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error

@@ -1,7 +1,8 @@
 # deskfleet desktop
 
-`@deskfleet/desktop` is the Electron client for the machine daemon. Quitting the
-client leaves the daemon and its agent sessions running. The renderer uses Vue
+`@deskfleet/desktop` is the Electron client for the machine daemon, which it hosts
+in its main process. Closing the window leaves the app in the tray with the daemon
+and its agent sessions running; quitting the app stops them. The renderer uses Vue
 with vue-router, Pinia, VueUse, vue-i18n, UnoCSS, Lucide icons, and xterm.js.
 
 ## Development
@@ -16,6 +17,10 @@ mise run desktop:dev
 hot reload and rebuilds the main and preload bundles in watch mode. It restarts
 Electron when either bundle changes. Quitting from the tray menu or pressing
 Ctrl-C stops the watchers.
+
+Each dev restart quits Electron, which stops the hosted local Agent and starts it
+again with the rebuilt daemon code. This stops live terminals and agent runs;
+saved catalog, conversation, and terminal history remain.
 
 `mise run desktop:build` writes the production bundles to `out/`. Run them with
 `mise exec -- pnpm --filter @deskfleet/desktop exec electron .`. Electron
@@ -39,29 +44,33 @@ Each process has its own Vite configuration (`vite.main.config.ts`,
 
 `useFleetStore` loads the local daemon's persistent catalog through authenticated
 IPC. The desktop starts its bundled local Agent by default; use **Add workspace**
-beside the local machine. Supply its name and at least one absolute directory path.
+beside the local machine. Supply its name and select at least one directory in
+the in-app folder picker. The picker browses the daemon's filesystem, with home,
+root, parent navigation, and a hidden-folder toggle. Selecting an existing path
+opens the picker to replace it; **Add directory** opens it for another path.
 Directories have no names; the first is the default. Move paths up or down to
-change their order and default. Creating a Workspace creates its main Worktree
-automatically. Edit the Workspace to change its name and directories. Worktrees
-are read-only execution contexts: the main one uses actual configured directories,
-and Session-owned ones are created and removed by Session lifecycle operations.
+change their order and default. A new Workspace shows its directories and an
+empty Session list. Edit the Workspace to change its name and directories, or
+choose **New session** to target it in the composer. Worktrees are read-only
+execution contexts reached from their owning Session. They are created and
+removed by Session lifecycle operations. The catalog's main Worktree is internal
+storage for Workspace directories and is not a separate resource in the UI.
 Deleting a Workspace removes its catalog records, leaving source directories
-untouched; active Sessions prevent deletion. The UI refreshes on catalog changes,
+untouched; existing Sessions prevent deletion. The UI refreshes on catalog changes,
 window focus, and the explicit refresh action; failures retain the displayed
 catalog and show an error.
 
 The footer identifies this as local mode, without account or organization
 membership. Database Machine IDs remain distinct from the `local-daemon`
 connection target. The desktop route supports live WebRTC playback; **New
-terminal** opens a native PTY, and **Open terminal here** on a worktree directory
-starts one at that path. Those terminals retain machine scope. The application
+terminal** opens a native PTY, and **Open terminal here** on a Workspace directory
+starts one at that path with machine scope. On a Session's Worktree page it opens
+a Session shell in that Session's bottom panel instead. The application
 does not display sample machines as live resources.
 
-Accounts, organization switching, remote machine registration, target
-and provider pickers, Send, Git inspection, file diffs, and session transcripts
-remain unimplemented.
-Placeholder controls are labelled, `aria-disabled`, and do nothing. They use
-`IconButton`'s `placeholder` state or the `common.placeholderControl` title.
+Accounts, organization switching, remote machine registration, additional agent
+providers, Git inspection, and file diffs remain unimplemented. Placeholder controls
+use `IconButton`'s `placeholder` state or the `common.placeholderControl` title.
 
 The window is frameless and has three columns. The sidebar holds the window
 toolbar (sidebar toggle, back, forward), the New session action, the resource
@@ -73,52 +82,102 @@ The Windows and Linux controls overlay the window's top-right corner, which the
 rightmost header reserves with `.titlebar-overlay-inset`
 (`src/main/window-chrome.ts`).
 
-The tree follows the resource model: machines contain workspaces, workspaces
-contain worktrees, and each worktree lists its agent sessions. Terminal sessions
-appear under whichever machine, workspace, or worktree owns them. Machines with a
+The tree follows the resource model: machines contain workspaces, and workspaces
+list their Sessions. Each Session exposes its associated Worktree. Machine terminals
+appear under the machine; a Session's terminals stay in its bottom panel. Machines with a
 graphical session list Remote desktop first; headless machines omit it. Offline
 machines start collapsed and report when they were last seen.
 
 | Route | View |
 | --- | --- |
-| `/` | New session: a composer targeting a machine, workspace, worktree, and provider |
-| `/workspaces/:workspaceId` | Workspace name, ordered directories, default-directory terminal, and deletion |
-| `/worktrees/:worktreeId` | Directory bindings, agent sessions, and terminals of one worktree |
-| `/sessions/:sessionId` | A session's title, location, and composer |
-| `/terminals/:terminalId` | A terminal session's owner, cwd, and terminal surface |
+| `/` | New session: a composer targeting a machine, workspace, and provider |
+| `/workspaces/:workspaceId` | Workspace name, ordered directories, Sessions, default-directory terminal, and deletion |
+| `/worktrees/:worktreeId` | Directory bindings and the owning Session of a session Worktree |
+| `/sessions/:sessionId` | Conversation, tools, permissions, candidate backlog, composer, and agent lifecycle |
+| `/terminals/:terminalId` | A machine terminal's tab; a Session terminal redirects to its Session's panel |
 | `/machines/:machineId/terminals` | Terminal tabs and the empty terminal workspace |
 | `/machines/:machineId/desktop` | A machine's remote desktop surface, or why it is unavailable |
-| `/settings/preferences` | Preferences, including the local Agent under This computer |
+| `/settings/preferences` | Preferences, including launch at startup and the local Agent under This computer |
 
-A worktree page's New session action makes that worktree the new session's
-target.
+A Workspace page's New session action makes that Workspace the composer's target.
+Worktree links and lookups only resolve Session-owned contexts.
 
 Settings routes (`meta.fullWindow`) replace the sidebar and details panel with
 two panels: the sections on the left and the selected section on the right.
 Section links replace their history entry, so **Back to app** or Escape returns
-to the page Settings opened from. **Preferences → This computer** holds the
-local Agent startup preference, run state, and retry.
+to the page Settings opened from. **Preferences → This computer** contains
+**Launch at startup** alongside the local Agent startup preference, run state,
+and retry.
 
 The details panel has two tabs:
 
 - **Details** lists the resource's owner and properties: a session's provider, a
-  terminal's scope and cwd, or a machine's display. Resources in a worktree also
-  list its directory bindings with each checkout's branch and HEAD.
+  terminal's scope and cwd, or a machine's display. Workspace details show its
+  configured directories; Session and Worktree details show the Session's paths
+  with each checkout's branch and HEAD when available.
 - **Changes** lists the worktree's uncommitted Git changes, grouped by checkout,
   with status letters as in `git status --short` and line counts. It is empty for
   machine and workspace terminals and for desktops, which belong to no worktree.
 
 `useRouteResource` resolves the route to that resource. The new session page
-describes its target worktree.
+describes its target Workspace.
+
+## Agent sessions
+
+Install and authenticate Codex CLI on the daemon's machine before sending a
+prompt. The bundled ACP adapter uses that CLI and its credentials. **New session**
+creates a persistent Session for the selected Workspace, then submits the prompt.
+The composer's context menu chooses **New worktree**, isolated Git checkouts from
+each directory's committed HEAD, or **Working directory**, which works in the
+Workspace's directories with their uncommitted changes. The last choice is
+remembered. Provisioning failures remain visible with their error and can be
+deleted; they do not expose a usable Worktree.
+
+Click the Agent summary in the composer to open a menu with Agent, Model, and
+Reasoning rows. Each row opens a submenu of choices with the current choice
+checked. Codex is the currently connected provider; model and effort
+choices come from its ACP configuration options. New-session selections are
+remembered on the device and applied before the first prompt. In an existing
+Session, the menu reads and updates that Session's provider configuration.
+Model changes refresh the available reasoning choices. Failed requests keep the
+confirmed selection visible and offer a retry.
+
+The conversation shows streamed text, tool calls, plans, and permission requests.
+Messages submitted during a turn enter the shared candidate backlog. **Steer now**
+can send a new message or a selected candidate to the active turn when the provider
+supports it. Pending candidates can be withdrawn; confirmed delivery failures can
+be retried. Uncertain delivery requires checking the recorded result before
+submitting again. The UI displays each input's author and source machine, plus the
+operator who steered it. A permission answered by another client immediately shows
+that decision and removes the choices.
+
+**Cancel turn** ends the current turn. **Stop agent** preserves the conversation,
+backlog, and Worktree. The next message resumes the saved provider session when
+supported; there is no separate resume control. **Delete session** removes its conversation and any generated
+checkouts; a working-directory Session's files are left in place;
+command audit remains in the daemon database. Navigating away, disconnecting, or
+closing the window leaves the agent running; quitting the app stops it.
+
+The terminal button in a Session's header opens a resizable bottom panel of
+shells in that Session's Worktree. Its open state and height are remembered per
+device. Leaving the Session detaches these shells; deleting it hangs them up. Restarting the daemon retains history
+and marks interrupted runs; the next message resumes them.
+
+`useAgentSessionsStore` subscribes to snapshots and replays the committed event
+journal in sequence order. Reconnecting checks pending operation IDs instead of
+submitting prompts again. Local drafts remain in the running client until their
+submission is confirmed. `AgentClient` carries ACP JSON-RPC over the ordered
+`deskfleet-acp` DataChannel; preload and main only carry SDP/ICE signaling. See
+[Agent Sessions](../../agents/docs/agent-sessions.md) for persistence and concurrency.
 
 ## Terminal
 
 `TerminalSurface` wraps xterm.js and its fit addon. It fits the terminal to its
 container on resize and disposes of it on unmount. The terminal view remounts it
-for each terminal session. The real local machine lists daemon-owned sessions in
-tabs and supports dialing new or existing shells, live input/output, resize,
-reattachment, and explicit hangup. Switching tabs, leaving the view or quitting
-Electron leaves shells running. Closing a tab hangs up only its shell and removes
+for each terminal session. The real local machine lists its machine-scoped
+sessions in tabs and supports dialing new or existing shells, live input/output, resize,
+reattachment, and explicit hangup. Switching tabs, leaving the view or closing
+the window leaves shells running. Closing a tab hangs up only its shell and removes
 its daemon history. Daemon shutdown terminates processes while preserving their
 history; after restart they appear interrupted and read-only. xterm.js uses an injected
 stylesheet, which the renderer CSP's `style-src 'unsafe-inline'` permits. It
@@ -127,8 +186,9 @@ loads only with the terminal route's chunk.
 The data-only connection reuses authenticated SDP/ICE signaling without media
 tracks or screen capture. Dial/hangup uses signaling and remains available without
 a data peer. Output is acknowledged after xterm consumes it, and reconnecting
-replays full persisted history. The visible scrollback starts at 5,000 lines;
-**Load more history** increases it without changing the daemon's retention. See
+replays full persisted history. The visible scrollback is 5,000 lines, without
+changing the daemon's retention; it will become a Terminal setting. Tabs show
+the connection as an icon and use the title the running program reports. See
 [terminal integration](../../agents/docs/terminals.md) for the wire contract and
 the remaining cross-machine signaling work.
 
@@ -169,27 +229,48 @@ The process exits only through:
 rather than `app.quit()`. A second launch shows the existing window instead of
 starting another client.
 
+## Launch at startup
+
+**Settings → Preferences → Launch at startup** opens the desktop client when the
+user logs in. Packaged macOS and Windows apps use Electron's
+`app.getLoginItemSettings()` and `app.setLoginItemSettings()`; the OS owns the
+preference, and Settings reads it again after each change. Windows also honors
+startup entries disabled in Task Manager. The switch is unavailable on Linux
+and in development runs, which use Electron's executable instead of an installed
+deskfleet app. macOS login items require a signed and notarized app to work
+reliably; see [Electron's login item documentation](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings-macos-windows).
+
+This launches the client with its normal window and respects the separate
+**Run local Agent** preference described below.
+
 ## Local Agent
 
 **Settings → Preferences → Run local Agent** is enabled by default. The main process stores
 `localAgentEnabled` in `settings.json` under Electron's `userData` directory.
-Enabling it starts the bundled daemon library in a detached Electron background
-process, or reuses the authenticated daemon already serving the same discovery
-directory. There is no separate Node.js or daemon installation to configure.
-The background process has no window, tray icon, or client single-instance lock.
-Its Chromium data is separate from the client's profile.
+Enabling it starts the bundled daemon library in the app's main process, or
+reuses the authenticated daemon already serving the same discovery directory,
+such as a standalone SEA. There is no separate Node.js or daemon installation
+to configure, and the app starts no separate daemon process.
+
+On macOS, a newly started Agent immediately requests screen/system-audio recording
+access. Settings shows a permission notice while access is pending, denied, or
+unavailable; granted access has no notice. The Agent's running status stays
+separate. If access was previously denied, enable it in System Settings → Privacy
+& Security → Screen & System Audio Recording, then turn the local Agent off and
+on. Waiting for consent or denying it leaves terminals and other Agent work
+available. Reusing an already running Agent does not repeat the request.
 
 Turning the switch off requests authenticated daemon shutdown, including active
-terminal processes, and waits for cleanup. Workspace data and terminal history
-remain on disk. Turning it back on reconnects the UI to the new daemon. A failed
+agent and terminal processes, and waits for cleanup. Workspace data, conversation
+history, and terminal history remain on disk. Turning it back on reconnects the UI to the new daemon. A failed
 start or stop appears in Settings with a retry action. Disabled startup does not
 terminate a daemon started separately; Settings reports it as running separately.
 
-Closing or quitting the client only disconnects its IPC connection. The daemon
-keeps running, including across development client reloads. After changing daemon
-code during development, toggle the local Agent off and on to load the new bundle.
-Logs go to `<daemon directory>/daemon.log`; discovery, SQLite data, and terminal
-history retain their usual locations. `DESKFLEET_DAEMON_DIRECTORY` selects an
+Closing the window keeps the app in the tray and the daemon running. Quitting
+the app from the tray, ending the OS session, or sending a termination signal
+shuts the hosted daemon down and waits for its cleanup before exiting; a reused
+standalone daemon is only disconnected. Daemon logs go to the app's output;
+discovery, SQLite data, and terminal history retain their usual locations. `DESKFLEET_DAEMON_DIRECTORY` selects an
 isolated instance for both the client and its bundled daemon.
 
 ## Localization
@@ -251,11 +332,10 @@ mise run desktop:package      # dmg and zip, NSIS, or AppImage for the host plat
 `out/`, including the `@deskfleet/daemon` library. The native addon is copied next
 to the main bundle and unpacked from ASAR for loading; installer builds use the
 release addon. The app has no runtime `node_modules` or external Node dependency.
-The same installed executable hosts the daemon with `--deskfleet-daemon` and
-the bundled Codex ACP adapter with `--deskfleet-codex-acp`, without using
-Electron's `RunAsNode` mode. The ACP host runs the adapter in a Node worker and
-exits after its Codex subprocess and streams have finished closing. Packages enable ASAR integrity
-validation and disable the `RunAsNode`, `NODE_OPTIONS`, and `--inspect` fuses.
+The app's main process hosts the daemon. The same installed executable runs the
+bundled Codex ACP adapter with `--codex-acp` in Electron's Node mode.
+The `RunAsNode` fuse stays enabled for that adapter process. Packages enable ASAR
+integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
 
@@ -273,25 +353,29 @@ mise run check:desktop        # Vitest: main/shared in Node, renderer in happy-d
 mise run desktop:smoke-media  # real Chromium/native H.264 decode; no screen capture
 mise run desktop:smoke-terminal  # real PTY I/O, resize, and reattachment over WebRTC
 mise run desktop:smoke-catalog  # built renderer CRUD, SQLite persistence, and directory shell cwd
-mise run desktop:smoke-local-agent  # Settings toggle, daemon reuse, and independent process lifetime
+mise run desktop:smoke-agent  # conversation, backlog, steering, permissions, and restart recovery
+mise run desktop:smoke-startup  # client, daemon, and bundled adapter entry-point routing
+mise run desktop:smoke-local-agent  # Settings toggle, hosted daemon lifetime, and standalone reuse
 ```
 
 The catalog smoke uses an isolated daemon database and Electron profiles. It
-drives the production Vapor Workspace form and preload, changes the default by
+drives the production Vapor Workspace form, folder picker, and preload, changes the default by
 reordering paths, opens a real shell in that directory, and reopens the client to
 verify the saved catalog before deleting it.
 
 The local Agent smoke uses a temporary profile and daemon directory with the real
-built renderer, preload, Settings controller, and bundled daemon host. It verifies
+built renderer, preload, Settings controller, and hosted daemon. It verifies
 default startup, switching off and on, catalog refresh, terminal interruption on
-shutdown, terminal survival after client exit, reuse by another client, and the
-persisted disabled preference on a third launch.
+shutdown, the daemon surviving its window but not the app, a fresh daemon on
+relaunch, the persisted disabled preference, and reuse of a standalone daemon
+that outlives the app.
 
-With an installed, authenticated Codex CLI, run
-`mise exec -- node apps/desktop/scripts/smoke-agent-configuration.ts` after building
-the desktop app. This starts the production Electron daemon in an isolated
-directory and checks dynamic model discovery, model switching, and reasoning
-effort changes through its bundled ACP subprocess without sending a prompt.
+The Agent Session smoke drives the production renderer through real WebRTC,
+SQLite persistence, and managed Git checkouts with a scripted ACP provider. It
+checks streaming, shared backlog steering, permission decisions, leaving and
+returning to the session, and history recovery after restarting both daemon and
+client. The startup smoke checks entry-point routing and initializes the bundled
+Codex adapter without paid inference.
 
 vue-tsc uses the TypeScript compiler API, which TypeScript 7 does not provide. The
 package therefore installs TypeScript 6 under the `typescript` name. The root

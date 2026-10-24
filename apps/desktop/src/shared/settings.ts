@@ -1,0 +1,16 @@
+import type { LocalAgentSettingsApi } from "./local-agent.ts"
+
+export const SETTINGS_CHANNEL = "deskfleet:settings"
+export const SETTINGS_CHANGED_EVENT = "deskfleet:settings-changed"
+
+export interface LaunchAtStartupState {
+  available: boolean
+  enabled: boolean
+}
+
+export type SettingsResult<T> = { ok: true; value: T } | { ok: false; error: string }
+
+export interface SettingsApi extends LocalAgentSettingsApi {
+  getLaunchAtStartup(): Promise<LaunchAtStartupState>
+  setLaunchAtStartup(enabled: boolean): Promise<LaunchAtStartupState>
+}

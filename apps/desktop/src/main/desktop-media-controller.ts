@@ -1,6 +1,5 @@
 import { hostname } from "node:os"
 import { validateControlParams } from "../../../daemon/src/control-request.ts"
-import type { AgentConfiguration, AgentConfigurationParams } from "../shared/agent-configuration.ts"
 import type { DesktopEvent, LocalDesktopTarget } from "../shared/desktop-media.ts"
 import type { TerminalSessionEvent } from "../shared/terminal.ts"
 import { DaemonClient } from "./daemon-client.ts"
@@ -11,7 +10,6 @@ export class DesktopMediaController {
   readonly #emitTerminal: (event: TerminalSessionEvent) => void
   readonly #emitCatalog: () => void
   readonly #sessions = new Set<string>()
-  readonly #configurationClients = new Set<DaemonClient>()
   #connection: Promise<DaemonClient> | null = null
   #disposed = false
 
@@ -32,12 +30,11 @@ export class DesktopMediaController {
         return this.#target()
       case "capabilities":
         return (await this.#connect()).call("capabilities", {})
-      case "agentConfiguration":
-        return this.#agentConfiguration(validateControlParams(method, params))
       case "terminalList":
       case "terminalDial":
       case "terminalHangup":
       case "catalogList":
+      case "directoryList":
       case "workspaceCreate":
       case "workspaceUpdate":
       case "workspaceDelete": {
@@ -45,6 +42,7 @@ export class DesktopMediaController {
         return (await this.#connect()).call(method, request)
       }
       case "offer":
+      case "agentOffer":
       case "terminalOffer": {
         const offer = validateControlParams(method, params)
         if (this.#sessions.has(offer.sessionId)) throw new Error("Desktop session already exists")
@@ -85,27 +83,9 @@ export class DesktopMediaController {
   dispose(): void {
     this.#disposed = true
     this.#sessions.clear()
-    for (const client of this.#configurationClients) client.close()
-    this.#configurationClients.clear()
     const connection = this.#connection
     this.#connection = null
     void connection?.then((client) => client.close(), () => {})
-  }
-
-  async #agentConfiguration(params: AgentConfigurationParams): Promise<AgentConfiguration> {
-    // Agent startup can take longer than ordinary signaling timeouts, so keep
-    // discovery off the daemon's sequential connection used by this window.
-    const client = await DaemonClient.connect(() => {}, () => {})
-    if (this.#disposed) {
-      client.close()
-      throw new Error("Desktop connection was cancelled")
-    }
-    this.#configurationClients.add(client)
-    try {
-      return await client.call("agentConfiguration", params)
-    } finally {
-      if (this.#configurationClients.delete(client)) client.close()
-    }
   }
 
   #requireSession(id: string): void {
@@ -120,7 +100,7 @@ export class DesktopMediaController {
         if (this.#connection !== connection) return
         if (event.kind === "catalogChanged") this.#emitCatalog()
         else if (event.kind === "terminalChanged" || event.kind === "terminalHungup") this.#emitTerminal(event)
-        else if (this.#sessions.has(event.sessionId)) this.#emit(event)
+        else if ("sessionId" in event && this.#sessions.has(event.sessionId)) this.#emit(event)
       },
       (error) => {
         if (this.#connection !== connection) return

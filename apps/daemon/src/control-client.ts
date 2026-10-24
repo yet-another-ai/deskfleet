@@ -16,6 +16,19 @@ interface PendingRequest {
   timeout: ReturnType<typeof setTimeout>
 }
 
+/** Peer loss arrives as a socket error before `close`. Report one disconnection. */
+function disconnectError(error: NodeJS.ErrnoException): Error {
+  if (
+    error.code === "ECONNRESET" ||
+    error.code === "EPIPE" ||
+    error.code === "ECONNABORTED" ||
+    error.code === "EOF"
+  ) {
+    return new Error("The local daemon disconnected")
+  }
+  return error
+}
+
 /** One authenticated connection owns only this window's transient media peers. */
 export class DaemonClient {
   readonly #socket: Socket
@@ -37,7 +50,7 @@ export class DaemonClient {
     this.#socket = createConnection(discovery.endpoint)
     this.#socket.setEncoding("utf8")
     this.#socket.on("data", (chunk: string) => this.#receive(chunk))
-    this.#socket.on("error", (error) => this.#end(error))
+    this.#socket.on("error", (error: NodeJS.ErrnoException) => this.#end(disconnectError(error)))
     this.#socket.on("close", () => this.#end(new Error("The local daemon disconnected")))
   }
 
@@ -75,7 +88,7 @@ export class DaemonClient {
       const timeout = setTimeout(() => {
         // A timed-out mutation may still be running. Closing releases its peers.
         this.#end(new Error(`Daemon ${method} request timed out`))
-      }, method === "workspaceSessionCreate" || method === "workspaceSessionDestroy" ? 120_000 : method === "agentConfiguration" ? 60_000 : 15_000)
+      }, method === "workspaceSessionCreate" || method === "workspaceSessionDestroy" ? 120_000 : 15_000)
       this.#pending.set(id, {
         resolve: (value) => resolve(value as ControlMethods[M]["result"]),
         reject,

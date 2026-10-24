@@ -1,29 +1,36 @@
-import { useLocalStorage } from "@vueuse/core"
 import { computed, onScopeDispose, ref, watch } from "vue"
-import type { AgentConfiguration, AgentConfigurationParams } from "../../../../shared/agent-configuration.ts"
+import type { AgentConfiguration } from "../../../../shared/agent-configuration.ts"
+import { useAgentSessionsStore, type AgentSelection } from "../../stores/agent-sessions.ts"
 
-/** Draft choices; the daemon resolves the available options through the selected agent. */
-export function useAgentConfiguration(worktreeId: () => string | undefined) {
-  const selection = useLocalStorage<Omit<AgentConfigurationParams, "worktreeId">>("deskfleet.agent-configuration", { provider: "codex" })
-  const configuration = ref<AgentConfiguration | null>(null)
+/** Draft choices are local preferences; existing Sessions always use their live agent. */
+export function useAgentConfiguration(target: () => { workspaceId?: string; sessionId?: string }) {
+  const agents = useAgentSessionsStore()
+  const discovered = ref<AgentConfiguration | null>(null)
+  const configuration = computed(() => target().sessionId ? agents.configurations[target().sessionId!] ?? null : discovered.value)
+  const selection = computed(() => target().sessionId ? undefined : agents.draftConfiguration)
   const expanded = ref(false)
   const loading = ref(false)
   const error = ref<string | null>(null)
   let requestId = 0
   onScopeDispose(() => { ++requestId })
 
-  async function configure(choices = selection.value): Promise<void> {
+  async function configure(choices?: AgentSelection): Promise<void> {
     const currentRequest = ++requestId
+    const { workspaceId, sessionId } = target()
     loading.value = true
     error.value = null
     try {
-      const result = await window.deskfleet.agents.configuration({ ...choices, worktreeId: worktreeId() })
+      const result = sessionId
+        ? choices ? await agents.configureSession(sessionId, { model: choices.model, reasoningEffort: choices.reasoningEffort }) : await agents.sessionConfiguration(sessionId)
+        : await agents.agentConfiguration({ ...(choices ?? agents.draftConfiguration), workspaceId })
       if (currentRequest !== requestId) return
-      configuration.value = result
-      selection.value = {
-        provider: result.provider.id,
-        model: result.models?.currentValue,
-        reasoningEffort: result.reasoningEfforts?.currentValue,
+      if (!sessionId) {
+        discovered.value = result
+        agents.draftConfiguration = {
+          provider: result.provider.id,
+          model: result.models?.currentValue,
+          reasoningEffort: result.reasoningEfforts?.currentValue,
+        }
       }
     } catch (cause) {
       if (currentRequest === requestId) error.value = cause instanceof Error ? cause.message : String(cause)
@@ -36,30 +43,25 @@ export function useAgentConfiguration(worktreeId: () => string | undefined) {
     expanded.value = !expanded.value
     if (expanded.value && !configuration.value && !loading.value) void configure()
   }
-
   function changeModel(model: string): Promise<void> {
     // Let the agent select a supported effort for the new model.
-    return configure({ provider: selection.value.provider, model })
+    return configure({ provider: "codex", model })
   }
-
   function changeReasoningEffort(reasoningEffort: string): Promise<void> {
-    return configure({ ...selection.value, reasoningEffort })
+    return configure({ provider: "codex", ...(!target().sessionId && { model: configuration.value?.models?.currentValue }), reasoningEffort })
   }
-
   function reload(): Promise<void> {
-    return configure({ provider: selection.value.provider })
+    return configure(target().sessionId ? undefined : { provider: "codex" })
   }
-
-  watch(worktreeId, () => {
+  watch(() => [target().workspaceId, target().sessionId], () => {
     ++requestId
-    configuration.value = null
+    discovered.value = null
     error.value = null
     loading.value = false
     if (expanded.value) void configure()
   })
 
-  const modelName = computed(() => configuration.value?.models?.options.find(option => option.id === configuration.value?.models?.currentValue)?.name ?? selection.value.model)
-  const reasoningEffort = computed(() => configuration.value?.reasoningEfforts?.currentValue ?? selection.value.reasoningEffort)
-
+  const modelName = computed(() => configuration.value?.models?.options.find(option => option.id === configuration.value?.models?.currentValue)?.name ?? selection.value?.model)
+  const reasoningEffort = computed(() => configuration.value?.reasoningEfforts?.currentValue ?? selection.value?.reasoningEffort)
   return { configuration, expanded, loading, error, modelName, reasoningEffort, toggle, changeModel, changeReasoningEffort, reload }
 }

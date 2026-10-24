@@ -21,7 +21,7 @@ export type CatalogRequest = {
   [M in keyof CatalogMethods]: { method: M; params: CatalogMethods[M]["params"] }
 }[keyof CatalogMethods]
 
-function resourceId(value: unknown): void {
+export function resourceId(value: unknown): void {
   if (typeof value !== "string" || !/^[1-9][0-9]{0,18}$/u.test(value) || BigInt(value) > 9_223_372_036_854_775_807n) {
     throw new Error("Invalid catalog resource ID")
   }

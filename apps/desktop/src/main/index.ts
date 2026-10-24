@@ -1,17 +1,16 @@
-import { isMainThread, workerData } from "node:worker_threads"
-import { CODEX_ACP_HOST_ARGUMENT, DAEMON_HOST_ARGUMENT } from "../shared/daemon-launch.ts"
+import { fileURLToPath } from "node:url"
+import { CODEX_ACP_ARGUMENT, configureCodexAdapterHost, runCodexAdapter } from "@deskfleet/daemon/codex"
 
-// Await routing before Electron becomes ready: the daemon sets its own data
-// directory and must never acquire the client's single-instance lock.
-if (!isMainThread && workerData === CODEX_ACP_HOST_ARGUMENT) {
-  const { runCodexAcpHost } = await import("@deskfleet/daemon/codex-acp-host")
-  await runCodexAcpHost()
-} else if (process.argv.includes(CODEX_ACP_HOST_ARGUMENT)) {
-  const { startCodexAcpHost } = await import("./codex-acp-host.ts")
-  void startCodexAcpHost(import.meta.filename)
-} else if (process.argv.includes(DAEMON_HOST_ARGUMENT)) {
-  const { startDaemonHost } = await import("./daemon-host.ts")
-  startDaemonHost()
+// Await routing before Electron becomes ready: the adapter runs in Electron's
+// Node mode and must never acquire the client's single-instance lock.
+if (process.argv.includes(CODEX_ACP_ARGUMENT)) {
+  await runCodexAdapter()
 } else {
+  // The daemon hosted by this app starts Codex through the same executable.
+  configureCodexAdapterHost({
+    command: process.execPath,
+    args: [fileURLToPath(import.meta.url), CODEX_ACP_ARGUMENT],
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  })
   await import("./client.ts")
 }

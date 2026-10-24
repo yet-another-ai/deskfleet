@@ -1,6 +1,6 @@
 import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "./terminal-protocol.ts"
 import type { CatalogEvent, CatalogMethods } from "./catalog-protocol.ts"
-import type { AgentConfiguration, AgentConfigurationParams } from "./agent-configuration-protocol.ts"
+import type { FilesystemMethods } from "./filesystem-protocol.ts"
 
 /** Provisional local IPC contract. Media and terminal bytes stay on WebRTC. */
 export type VideoCodec = "h264" | "h265" | "av1"
@@ -50,20 +50,27 @@ export type DesktopEvent =
   | { sessionId: string; kind: "stateChanged"; state: string }
   | { sessionId: string; kind: "error"; error: string }
 
+export interface ScreenCapturePermission {
+  status: "requesting" | "granted" | "denied" | "not-required" | "error"
+  error?: string
+}
+
 export interface LocalDaemonInfo {
   name: string
   desktop: boolean
+  screenCapturePermission: ScreenCapturePermission
 }
 
 export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent
+  | { kind: "screenCapturePermissionChanged"; permission: ScreenCapturePermission }
 
-export interface ControlMethods extends CatalogMethods {
-  agentConfiguration: { params: AgentConfigurationParams; result: AgentConfiguration }
+export interface ControlMethods extends CatalogMethods, FilesystemMethods {
   hello: { params: { token: string }; result: LocalDaemonInfo }
   shutdown: { params: Record<string, never>; result: null }
   capabilities: { params: Record<string, never>; result: DesktopCapabilities }
   offer: { params: DesktopOffer; result: { sdp: string } }
   terminalOffer: { params: TerminalOffer; result: { sdp: string } }
+  agentOffer: { params: TerminalOffer; result: { sdp: string } }
   terminalList: { params: Record<string, never>; result: TerminalSummary[] }
   terminalDial: { params: TerminalDial; result: TerminalSummary }
   terminalHangup: { params: { terminalId: string }; result: null }

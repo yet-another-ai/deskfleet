@@ -6,15 +6,18 @@ and access terminals or desktops on the machine doing the work.
 
 This document describes the planned system. The current implementation contains
 the Rust resource model, a SeaORM catalog with SQLite persistence, an Actix Web
-liveness endpoint, and an independent TypeScript daemon calling a napi-rs addon.
-The desktop client manages workspace directory configuration through the daemon.
-The daemon runs from source or a SEA
-executable, exposes native information and a local health endpoint, and runs
-Codex CLI sessions through ACP. Native WebRTC peers, DataChannels, and on-demand
-capture/encoding are available through the daemon's native API. The Electron
-client uses authenticated local IPC for desktop signaling and Chromium WebRTC
-for decoding and playback in its sandboxed Vue renderer. It stays in the tray
-independently of the daemon.
+liveness endpoint, and a TypeScript daemon library calling a napi-rs addon.
+The desktop client manages workspace directory configuration and persistent
+Codex Sessions with conversation history, a shared backlog, steering, and
+approvals. The daemon runs from source, as a SEA executable, or inside the desktop app; it exposes native
+information and a local health endpoint, and runs Codex CLI sessions through ACP.
+Agent clients use an ACP facade over DataChannel;
+the daemon owns execution, audit, and SQLite history. Native WebRTC peers,
+DataChannels, and on-demand capture/encoding are available through the daemon's
+native API. The Electron client uses authenticated local IPC for desktop signaling
+and Chromium WebRTC
+for decoding and playback in its sandboxed Vue renderer. The app hosts the
+daemon in its main process and stays in the tray after its windows close.
 
 ## Components
 
@@ -56,7 +59,6 @@ Team
     TerminalSessions [machine scope]
     Workspace
       Ordered directory paths [one or more; first is default]
-      Main Worktree [the configured directories]
       AgentSessions
         Managed Worktree [created and removed with the Session]
       TerminalSessions [machine, workspace, or worktree scope]
@@ -67,26 +69,33 @@ Team
 | Team | Membership and shared access boundary |
 | Machine | An enrolled daemon installation and its OS user execution context |
 | Workspace | A named, machine-local configuration of one or more ordered directory paths |
-| Worktree | The permanent main context or a temporary execution context owned by one Session |
+| Worktree | An execution context owned by one Session; the catalog also keeps an internal main context for Workspace directories |
 | Directory binding | An unnamed path with a stable position; position zero is the default directory |
 | AgentSession | A workspace session with its captured execution context and provider identity |
 | TerminalSession | A terminal owned by one Machine, Workspace, or Worktree, with a separate cwd |
 
 A Workspace must be created with at least one existing directory. Its paths are
 ordered and have no user-assigned aliases; the first path is the default working
-directory. Creating the Workspace also creates exactly one main Worktree in the
-same transaction. The main Worktree uses the actual configured directories.
-Updating the Workspace changes this main context without retargeting existing
-Session contexts.
+directory. The catalog stores these paths in one internal main Worktree created
+in the same transaction. The UI presents them as Workspace directories, without
+exposing that storage record as a separate Worktree. A new Workspace has no
+Sessions to display. New-session composition targets the Workspace; an existing
+Session exposes its own Worktree. Updating the Workspace changes its configured
+directories without retargeting existing Session contexts.
 
-Worktrees are not independently maintained resources. Each managed Session
-allocates its own Worktree automatically; destroying that Session removes its
-owned Worktree. For Git-backed contexts, the daemon creates detached Git worktrees
+Worktrees are not independently maintained resources. Each Session record owns
+one Worktree record, created and destroyed with it. Creating a Session chooses
+its context. A **worktree** Session allocates generated checkouts; destroying it
+removes them. A **directory** Session records the Workspace's current paths and
+works in them directly, including their uncommitted changes and non-Git
+directories; destroying it removes only its records, never those files. The
+choice is immutable. Sessions sharing directories are not isolated from each
+other or from the user's own edits. For worktree contexts, the daemon creates detached Git worktrees
 from the configured checkouts' HEAD commits, grouping paths in the same checkout
 and preserving subdirectory positions. Uncommitted source changes are not copied.
-The first derived path is the Session's default working directory. Workspace
-paths may be non-Git for main-context terminals; creating an isolated Session
-requires Git-backed paths with a commit.
+The first path is the Session's default working directory. Workspace paths may
+be non-Git for main-context terminals and directory Sessions; creating a worktree
+Session requires Git-backed paths with a commit.
 
 For example:
 
@@ -96,7 +105,6 @@ Machine: development-box
     Directories:
       /code/storefront-web  [default]
       /code/storefront-api
-    Main Worktree: the two configured directories
     Session: investigate checkout failures
       Worktree: automatically generated checkouts for this Session
 ```
@@ -163,7 +171,15 @@ The daemon validates Workspace paths as absolute, existing directories. Committe
 changes broadcast `catalogChanged` to authenticated clients. Removing a Workspace
 never removes its configured directories from the filesystem.
 
-Session creation allocates a durable Session ID and creates Git worktrees beneath
+Workspace forms choose paths through a reusable in-app folder dialog. Its browser
+callback lists directories on the target daemon over authenticated IPC, returning
+the current path, parent, home, roots, and child directories. The client treats
+these paths as opaque, so browsing uses the executing machine's filesystem and
+path conventions. The current client connects this dialog to the local daemon;
+remote routing can supply the same browser callback when connected. It does not
+use the operating system's folder picker.
+
+Worktree Session creation allocates a durable Session ID and creates Git worktrees beneath
 `<daemon directory>/session-worktrees/<session ID>/`. A manifest records generated
 paths for cleanup after restart. Failure rolls back generated checkouts. Explicit
 Session destruction removes those disposable checkouts, including their local
@@ -175,34 +191,46 @@ The Electron renderer consumes these operations through its narrow preload bridg
 It displays real local resources and supports opening a machine-owned terminal
 at a selected binding's path. The working directory does not change terminal
 ownership. Accounts, organizations, remote enrollment, central catalog HTTP
-operations, daemon synchronization, and agent-session UI are not yet connected.
+operations, and daemon synchronization are not yet connected. The Agent UI lists
+persisted Session metadata and exposes each Session's Worktree when provisioning
+has succeeded. Failed provisioning remains visible without a fabricated Worktree.
 Daemon terminal transcripts retain their existing storage.
 
 ## Daemon and session lifecycle
 
-The daemon runs independently of Electron, normally as the OS user whose files,
-credentials, and tools the agents use. Closing the app or losing a connection
-must leave ongoing work running. Local clients connect over authenticated IPC,
-such as a Unix-domain socket or Windows named pipe.
+The daemon runs as the OS user whose files, credentials, and tools the agents
+use. Closing a window or losing a connection must leave ongoing work running.
+Local clients connect over authenticated IPC, such as a Unix-domain socket or
+Windows named pipe.
 
 Desktop Settings has a persistent **Run local Agent** preference, enabled by
-default. The client consumes `@deskfleet/daemon` as a library bundled into the
-application. It starts a detached instance of its own Electron executable in a
-daemon-only host mode, using the bundled native addon and runtime. This process
-has no UI or client single-instance lock and has a separate Chromium profile.
-The standalone Node.js SEA remains the headless distribution of the same daemon.
+default. The app bundles `@deskfleet/daemon` and starts it in its own main
+process, with the bundled native addon and runtime. The daemon's lifetime is the
+app's: it keeps running while the app sits in the tray with no windows, and the
+app waits for its cleanup before exiting. The app never spawns a separate daemon
+process. The standalone Node.js SEA is the headless distribution of the same
+daemon and runs independently of any desktop app.
 
-Startup reuses an authenticated daemon already owning the discovery directory.
-Explicitly disabling the preference sends authenticated shutdown and waits for
-the discovery lease to be released after cleanup. It ends live terminal processes
-but retains catalog and terminal history. Client exit only detaches, leaving the
-daemon alive. Disabling auto-start does not kill an independently started daemon
-when a client next launches. Startup/shutdown errors and retries appear in Settings.
+After acquiring discovery and initializing local IPC, the daemon requests the
+OS permissions needed by its implemented desktop capture capabilities. On macOS
+this is screen/system-audio recording consent, requested in the process hosting
+the daemon before a remote client uses it. Permission prompts and denial must not
+block headless operations. Settings displays permission status separately from
+daemon availability; capture and encoding still start only on explicit use.
 
-The desktop client stays resident in the system tray (the macOS menu bar or the
-Windows notification area). Closing its window or using an ordinary quit command
-hides it. The tray menu, OS session end, or a termination signal exits the client
-process.
+Startup reuses an authenticated daemon already owning the discovery directory,
+such as a standalone SEA, instead of hosting another. Explicitly disabling the
+preference sends authenticated shutdown and waits for the discovery lease to be
+released after cleanup. It ends live terminal processes but retains catalog and
+terminal history. Quitting the app closes the daemon it hosts in the same way;
+a reused standalone daemon is only disconnected. Disabling auto-start does not
+kill a separately started daemon when the app next launches. Startup/shutdown
+errors and retries appear in Settings.
+
+The desktop app stays resident in the system tray (the macOS menu bar or the
+Windows notification area), so its daemon and notifications stay available.
+Closing its window or using an ordinary quit command hides it. The tray menu,
+OS session end, or a termination signal quits the app and its hosted daemon.
 
 The daemon is the ACP client and owns local agent processes or adapter
 connections. Each AgentSession belongs to a Workspace and captures its Worktree execution
@@ -217,25 +245,7 @@ and environment overrides. Provider-specific code selects the process; the
 [ACP TypeScript SDK](https://agentclientprotocol.com/libraries/typescript) handles
 initialization, session creation, prompts, cancellation, and session updates.
 Codex uses the installed CLI and its credentials. The adapter runs as a child
-process; the SEA executable reuses its bundled Node runtime. The desktop daemon
-injects an adapter launch using its own Electron executable and an ACP-only app
-entry point. This entry loads the bundled adapter without the client UI or daemon
-services and works with Electron's RunAsNode fuse disabled. A Node worker owns
-the adapter's event loop so its Codex subprocess finishes closing before the
-Electron host exits. Source TypeScript
-entry paths are used only by the standalone development daemon.
-
-The desktop composer discovers model and reasoning choices through the local
-daemon's `agentConfiguration` request. The daemon resolves the selected Worktree's
-first directory from its catalog, or uses the home directory before a target is
-selected. Each discovery creates a temporary ACP session, reads the provider's
-configuration selectors, applies draft selections in model-then-reasoning order,
-and closes the provider process. It sends no prompt and allocates no managed
-Session or Worktree. Discovery times out after 45 seconds and is cancelled when
-the requesting client disconnects. These selections configure a draft; updating
-running AgentSessions belongs to the future session API. The renderer saves draft
-choices per device. Discovery uses a separate IPC connection so agent startup
-does not delay terminal operations or catalog refreshes.
+process; the SEA executable reuses its bundled Node runtime.
 
 The current agent CLI creates one ACP session per prompt invocation. With
 `--workspace-id`, it asks the running daemon to allocate a managed Session and
@@ -254,16 +264,29 @@ sessions, imported history, resumed sessions, and attachment to an existing CLI
 process are distinct capabilities. ACP alone does not guarantee live attachment;
 a tmux connection can expose the CLI without providing structured ACP control.
 
-Agent events feed deskfleet's session view and stored history. Preserve the
-provider's session identifier and relevant provider metadata alongside the
-common conversation, tool, approval, and state events. Credentials remain on the
-executing machine. ACP approval callbacks do not confine agents that execute
-tools directly.
+The [Agent Session service](agent-sessions.md) persists provider identity,
+inputs, execution turns, command audit, permissions, and an ordered event journal
+in the daemon's SQLite catalog. Clients connect to a daemon ACP facade over
+DataChannel; the daemon remains the sole ACP client toward each provider process.
+Credentials remain on the executing machine. ACP approval callbacks do not confine
+agents that execute tools directly.
 
-Reconnecting clients attach to the current session without resubmitting prompts.
-Multiple observers must not produce conflicting control or approval responses;
-the control policy will be defined with the session API. Disconnect never grants
-approval.
+The composer discovers model and reasoning choices from the provider through the
+same ACP DataChannel facade. Draft discovery uses a temporary provider session in
+the Workspace's default directory without creating a managed Session or Worktree.
+Session creation applies the selected configuration before delivering prompts;
+existing Session controls operate on that Session's provider connection.
+Configuration options and confirmed changes use the existing ACP event journal
+so attached viewers can follow them.
+
+All authorized users and devices can operate on a Session concurrently, without
+control ownership or transfer. Commands record the initiating user and source
+machine separately from the executing machine. Pending inputs appear in a shared
+candidate backlog; users can also explicitly steer the active turn when the
+provider supports it. The daemon coordinates input delivery and permission
+decisions, with the first valid response resolving each permission request.
+Reconnecting clients attach by journal cursor without resubmitting inputs.
+Disconnect never grants approval or stops the Session.
 
 Daemon restart recovery depends on the provider and terminal backend. Reconcile
 stored history with available processes and report interrupted sessions. On
@@ -281,9 +304,10 @@ created on demand.
 | Presence, history synchronization, and WebRTC signaling | Authenticated WebSocket or HTTPS streams |
 | Terminal dial, hangup, catalog and lifecycle events | Authenticated signaling; IPC for the local client |
 | Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel |
+| Agent prompts, steering, permissions, and live Session events | ACP and deskfleet extensions over WebRTC DataChannel |
 | Desktop video/audio | WebRTC media tracks |
 | Desktop input | WebRTC DataChannel |
-| Local client operations | Authenticated IPC |
+| Local discovery, catalog operations, and signaling | Authenticated IPC; Agent and terminal streams use DataChannels |
 
 Deploy STUN and TURN alongside signaling. TURN provides relay access when peers
 cannot connect directly. Desktop streaming, terminal traffic, and bulk results
@@ -326,9 +350,11 @@ Its placement and provider configuration will be selected during integration.
 The central server stores synchronized conversation and tool history, not just
 session names. The daemon retains unsynchronized events during server outages.
 Synchronization must tolerate retries and distinguish incomplete history from a
-complete recording. Catalog persistence uses SQLite through SeaORM; the history
-event format and replay mechanism remain to be defined when implementing history
-persistence.
+complete recording. The [Agent Session persistence design](agent-sessions.md)
+extends the SQLite/SeaORM catalog with command audit and a per-Session sequence.
+The daemon commits events before publishing them; the server synchronizes a
+qualified Session identity and completeness watermark. The owning daemon remains
+the single writer even when multiple clients operate concurrently.
 
 Live commands require an available target machine. Terminal output is persisted
 on the owning daemon until explicit hangup so a different client can reconstruct
@@ -410,9 +436,10 @@ and [agent guide](../../AGENTS.md) for repository conventions.
 
 ## Next milestone
 
-Daemon/native packaging and the first ACP provider are implemented. Next add a
-second ACP provider and authenticated WebRTC with direct and TURN-relayed terminal
-access.
+Daemon/native packaging, persistent Codex Sessions, the ACP DataChannel facade,
+and the conversation UI with a shared backlog, steering, and permissions are
+implemented. Remote enrollment and authenticated signaling will extend the same
+client contract across machines, including direct and TURN-relayed access.
 
 Then complete one workflow: enroll a headless machine, register a workspace and
 a worktree spanning frontend/backend directories, run an agent, inspect its Git
@@ -422,7 +449,7 @@ synchronized history remains available while the machine is offline.
 
 MCP coordination and desktop control follow that workflow. Remaining choices
 include provider distribution, terminal backends, Linux capture/encoding,
-authenticated signaling, and session history persistence.
+authenticated signaling, and central history synchronization.
 
 ## References
 

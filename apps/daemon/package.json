@@ -6,9 +6,10 @@
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/index.ts",
-    "./codex-acp-host": "./src/codex-acp-host.ts",
+    "./codex": "./src/agents/codex.ts",
     "./control-client": "./src/control-client.ts",
-    "./control-discovery": "./src/control-discovery.ts"
+    "./control-discovery": "./src/control-discovery.ts",
+    "./agent-protocol": "./src/agent-protocol.ts"
   },
   "dependencies": {
     "@agentclientprotocol/codex-acp": "2.2.2",

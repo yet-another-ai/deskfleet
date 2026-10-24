@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk"
 import { readAgentConfiguration } from "./agent-configuration.ts"
 import { connectAcpProcess, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
-import { DaemonClient } from "./control-client.ts"
-import { validateControlParams } from "./control-request.ts"
-import { startControlServer } from "./control-server.ts"
+import { DaemonCatalog } from "./catalog.ts"
+import { AgentSessions } from "./agent-sessions.ts"
+import { validateAgentConfigurationParams } from "./agent-configuration-protocol.ts"
 
 function options(model = "first", effort = "high"): acp.SessionConfigOption[] {
   return [{
@@ -39,6 +39,8 @@ function fakeProvider(overrides: Partial<AgentConnection> = {}) {
       else effort = String(params.value)
       return { configOptions: options(model, effort) }
     },
+    async resume() { assert.fail("Discovery must never resume") },
+    async steer() { assert.fail("Discovery must never steer") },
     async prompt() { assert.fail("Configuration discovery must never prompt") },
     async cancel() {},
     async close() { closed++ },
@@ -110,48 +112,47 @@ test("a stalled ACP session request times out and closes its process", { timeout
   assert.equal(closed, true)
 })
 
-test("configuration IPC resolves cwd from the catalog and rejects unknown worktrees", async context => {
+test("configuration discovery uses the target workspace without allocating a Session", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-agent-config-"))
   const fake = fakeProvider()
-  const server = await startControlServer({ async create() { assert.fail() }, async close() {} }, directory, undefined, undefined, undefined, fake.provider)
-  context.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }) })
-  const client = await DaemonClient.connect(() => {}, () => {}, directory)
-  context.after(() => client.close())
-  const workspace = await client.call("workspaceCreate", { name: "Configuration target", directories: [{ path: directory }, { path: tmpdir() }] })
-  await client.call("agentConfiguration", { provider: "codex", worktreeId: workspace.worktrees[0]!.id })
+  const catalog = new DaemonCatalog(directory)
+  await catalog.init()
+  const service = new AgentSessions(catalog, catalog.native, fake.provider)
+  await service.init()
+  context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
+  const workspace = await catalog.native.createWorkspace("Configuration target", [{ path: directory }, { path: tmpdir() }])
+  await service.handle("_deskfleet/agent/configuration", { provider: "codex", workspaceId: workspace.id }, service.actor())
   assert.equal(fake.sessions[0]?.cwd, directory)
-  await client.call("agentConfiguration", { provider: "codex" })
+  await service.handle("_deskfleet/agent/configuration", { provider: "codex" }, service.actor())
   assert.equal(fake.sessions[1]?.cwd, homedir())
-  await assert.rejects(client.call("agentConfiguration", { provider: "codex", worktreeId: "99999" }), /Unknown local worktree/)
+  await assert.rejects(service.handle("_deskfleet/agent/configuration", { provider: "codex", workspaceId: "99999" }, service.actor()), /Unknown local workspace/)
   assert.equal(fake.connections, 2)
-  const snapshot = await client.call("catalogList", {})
-  assert.equal(snapshot.workspaces[0]?.worktrees.length, 1)
+  assert.equal((await catalog.native.snapshot()).workspaces[0]?.worktrees.length, 1)
+  assert.deepEqual(await service.journal.list(), [])
   assert.equal(fake.closed, 2)
 })
 
 test("configuration parameters reject unsupported agents and malformed choices", () => {
   for (const params of [
-    { provider: "unknown" }, { provider: "codex", worktreeId: "../file" },
+    { provider: "unknown" }, { provider: "codex", workspaceId: "../file" },
     { provider: "codex", model: 42 }, { provider: "codex", reasoningEffort: "" },
-  ]) assert.throws(() => validateControlParams("agentConfiguration", params))
-  assert.deepEqual(validateControlParams("agentConfiguration", { provider: "codex", worktreeId: "1", model: "model", reasoningEffort: "high" }), {
-    provider: "codex", worktreeId: "1", model: "model", reasoningEffort: "high",
-  })
+  ]) assert.throws(() => validateAgentConfigurationParams(params))
+  assert.doesNotThrow(() => validateAgentConfigurationParams({ provider: "codex", workspaceId: "1", model: "model", reasoningEffort: "high" }))
 })
 
-test("client disconnect closes a pending configuration process before control stops", async context => {
-  const directory = await mkdtemp(join(tmpdir(), "df-agent-config-disconnect-"))
+test("closing Agent service closes a pending discovery process", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-agent-config-close-"))
   let ready!: () => void
   const started = new Promise<void>(resolve => { ready = resolve })
   const fake = fakeProvider({ async newSession() { ready(); return new Promise(() => {}) } })
-  const server = await startControlServer({ async create() { assert.fail() }, async close() {} }, directory, undefined, undefined, undefined, fake.provider)
-  context.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }) })
-  const client = await DaemonClient.connect(() => {}, () => {}, directory)
-  context.after(() => client.close())
-  const pending = assert.rejects(client.call("agentConfiguration", { provider: "codex" }), /connection closed/i)
+  const catalog = new DaemonCatalog(directory)
+  await catalog.init()
+  const service = new AgentSessions(catalog, catalog.native, fake.provider)
+  await service.init()
+  context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
+  const pending = assert.rejects(service.handle("_deskfleet/agent/configuration", { provider: "codex" }, service.actor()), /service is stopping/i)
   await started
-  client.close()
+  await service.close()
   await pending
-  await server.stop()
   assert.equal(fake.closed, 1)
 })

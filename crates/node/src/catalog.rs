@@ -184,6 +184,82 @@ impl NativeCatalog {
     }
 
     #[napi]
+    pub async fn agent_identity(&self) -> Result<String> {
+        json(self.catalog.agent_identity().await.map_err(native_error)?)
+    }
+
+    #[napi]
+    pub async fn agent_allocate_id(&self) -> Result<String> {
+        self.catalog
+            .agent_allocate_id()
+            .await
+            .map(|id| id.to_string())
+            .map_err(native_error)
+    }
+
+    #[napi]
+    pub async fn agent_list(&self) -> Result<String> {
+        json(self.catalog.agent_list().await.map_err(native_error)?)
+    }
+
+    #[napi]
+    pub async fn agent_snapshot(&self, session_id: String) -> Result<String> {
+        json(
+            self.catalog
+                .agent_snapshot(parse_id(session_id)?)
+                .await
+                .map_err(native_error)?,
+        )
+    }
+
+    #[napi]
+    pub async fn agent_history(
+        &self,
+        session_id: String,
+        after_seq: String,
+        limit: u32,
+    ) -> Result<String> {
+        json(
+            self.catalog
+                .agent_history(parse_id(session_id)?, parse_id(after_seq)?, limit)
+                .await
+                .map_err(native_error)?,
+        )
+    }
+
+    #[napi]
+    pub async fn agent_command(&self, operation_id: String) -> Result<String> {
+        json(
+            self.catalog
+                .agent_command(&operation_id)
+                .await
+                .map_err(native_error)?,
+        )
+    }
+
+    #[napi]
+    pub async fn agent_commit(&self, transaction: String) -> Result<String> {
+        let transaction = serde_json::from_str(&transaction).map_err(native_error)?;
+        json(
+            self.catalog
+                .agent_commit(transaction)
+                .await
+                .map_err(native_error)?,
+        )
+    }
+
+    #[napi]
+    pub async fn agent_create_session(&self, request: String) -> Result<String> {
+        let request = serde_json::from_str(&request).map_err(native_error)?;
+        json(
+            self.catalog
+                .agent_create_session(request)
+                .await
+                .map_err(native_error)?,
+        )
+    }
+
+    #[napi]
     pub async fn close(&self) -> Result<()> {
         self.catalog.close().await.map_err(native_error)
     }
@@ -205,4 +281,8 @@ fn directory_bindings(directories: Vec<CatalogDirectory>) -> Result<DirectoryBin
             .collect(),
     )
     .map_err(native_error)
+}
+
+fn json(value: impl serde::Serialize) -> Result<String> {
+    serde_json::to_string(&value).map_err(native_error)
 }

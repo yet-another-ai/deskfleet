@@ -8,8 +8,9 @@ contain worktrees that group directories and agent sessions. Git state is shown
 alongside sessions, and agents coordinate across machines through MCP tools.
 
 The project is a Rust and TypeScript monorepo. The central backend uses Actix Web.
-The independent TypeScript daemon calls Rust through napi-rs and packages as a
-Node.js Single Executable Application (SEA). The Electron client uses Vue.
+The TypeScript daemon calls Rust through napi-rs. Headless machines run it as a
+Node.js Single Executable Application (SEA); the Electron app hosts it in its
+main process. The Electron client uses Vue.
 
 The current implementation includes resource types, a SeaORM catalog backed by
 SQLite, the server's `GET /healthz`, and an independent daemon with native platform

@@ -226,3 +226,22 @@ test("signaled hangup completes while a data-channel PTY write is blocked", asyn
   written()
   await writing
 })
+
+test("a Worktree terminal keeps its owner across restart and ends with that Worktree only", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-terminal-owner-"))
+  context.after(() => rm(directory, { recursive: true, force: true }))
+  const factory = async () => new FakeTerminal() as unknown as NativeTerminal
+  const first = new TerminalSessions({ directory, factory })
+  const owned = await first.dial({ mode: "create", terminalId: randomUUID(), cols: 80, rows: 24, cwd: homedir(), worktreeId: "7" })
+  const other = await first.dial({ mode: "create", terminalId: randomUUID(), cols: 80, rows: 24, cwd: homedir(), worktreeId: "8" })
+  const machine = await first.dial({ mode: "create", terminalId: randomUUID(), cols: 80, rows: 24 })
+  assert.equal(owned.worktreeId, "7")
+  assert.equal(machine.worktreeId, undefined)
+  await first.close()
+  const restarted = new TerminalSessions({ directory, factory })
+  context.after(() => restarted.close())
+  await restarted.init()
+  assert.equal(restarted.list().find(value => value.id === owned.id)?.worktreeId, "7", "ownership must survive restart")
+  await restarted.hangupOwned("7")
+  assert.deepEqual(restarted.list().map(value => value.id).sort(), [other.id, machine.id].sort())
+})

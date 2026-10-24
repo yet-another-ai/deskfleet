@@ -25,6 +25,7 @@ const platform = window.deskfleet.platform
     <div class="min-w-0 flex-1 truncate text-sm font-medium">
       <slot />
     </div>
+    <slot name="actions" />
     <IconButton
       :icon="PanelRight"
       :label="detailsOpen ? t('toolbar.hidePanel') : t('toolbar.showPanel')"

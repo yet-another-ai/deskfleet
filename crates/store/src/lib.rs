@@ -1,5 +1,6 @@
 //! Persistent resource catalog, separate from transport and shared domain types.
 
+mod agent;
 mod catalog;
 pub mod entities;
 mod local;
@@ -12,9 +13,15 @@ use deskfleet_model::DirectoryBindingsError;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
 use thiserror::Error;
 
-/// A database failure or invalid persisted directory collection.
+/// A database failure, missing resource, or invalid catalog update.
 #[derive(Debug, Error)]
 pub enum StoreError {
+    #[error("invalid agent record: {0}")]
+    AgentRecord(#[from] serde_json::Error),
+    #[error("invalid agent transaction: {0}")]
+    InvalidAgent(&'static str),
+    #[error("agent session changed since sequence {expected}; current sequence is {actual}")]
+    AgentConflict { expected: i64, actual: i64 },
     #[error(transparent)]
     Database(#[from] DbErr),
     #[error("invalid stored directory bindings: {0}")]

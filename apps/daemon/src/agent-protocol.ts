@@ -1,0 +1,163 @@
+import type { ContentBlock, RequestPermissionRequest, SessionNotification } from "@agentclientprotocol/sdk"
+
+import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+
+export const AGENT_CHANNEL = "deskfleet-acp"
+export const AGENT_CHUNK_BYTES = 16 * 1024
+export const AGENT_MESSAGE_BYTES = 32 * 1024 * 1024
+
+export interface AgentActor {
+  kind: "local_token" | "user" | "system"
+  userId?: string
+  sourceMachine: { originId: string; id: string }
+  deviceId?: string
+}
+
+export type AgentSessionContext = "worktree" | "directory"
+
+export interface AgentSessionRecord {
+  id: string
+  workspaceId: string
+  provider: string
+  providerSessionId?: string
+  title: string
+  /** A generated worktree, or the Workspace's own directories used in place. */
+  context: AgentSessionContext
+  lifecycle: "provisioning" | "ready" | "provision_failed" | "deleting"
+  lastEventSeq: string
+  createdAt: string
+  updatedAt: string
+  capabilities?: { steering: boolean; resume: boolean }
+  error?: string
+}
+
+export interface AgentRun {
+  sessionId: string
+  generation: number
+  state: "starting" | "running" | "stopping" | "stopped" | "interrupted" | "failed"
+  startedAt: string
+  endedAt?: string
+  error?: string
+}
+
+export interface AgentCommand {
+  id: string
+  operationId: string
+  actor: AgentActor
+  sessionId?: string
+  workspaceId?: string
+  method: string
+  params: Record<string, unknown>
+  isCanonical: boolean
+  conflictingCommandId?: string
+  status: "accepted" | "completed" | "rejected" | "failed" | "uncertain"
+  result?: unknown
+  error?: string
+  receivedAt: string
+  completedAt?: string
+}
+
+export interface AgentInput {
+  id: string
+  sessionId: string
+  submissionCommandId: string
+  author: AgentActor
+  content: ContentBlock[]
+  acceptedSeq: string
+  state: "pending" | "dispatching" | "delivered" | "failed" | "withdrawn" | "uncertain"
+  requestedDelivery: "backlog" | "steer"
+  requestedTurnId?: string
+  dispatchCommandId?: string
+  dispatcher?: AgentActor
+  actualDelivery?: "turn_start" | "steer"
+  turnId?: string
+  createdAt: string
+  deliveredAt?: string
+  error?: string
+}
+
+export interface AgentTurn {
+  id: string
+  sessionId: string
+  initialInputId: string
+  dispatchCommandId: string
+  runGeneration: number
+  state: "starting" | "running" | "cancelling" | "completed" | "cancelled" | "interrupted" | "failed"
+  startedAt: string
+  endedAt?: string
+  stopReason?: string
+  error?: string
+}
+
+export interface AgentPermission {
+  id: string
+  sessionId: string
+  runGeneration: number
+  turnId?: string
+  request: RequestPermissionRequest
+  state: "pending" | "resolved" | "cancelled"
+  decisionCommandId?: string
+  optionId?: string
+  actor?: AgentActor
+  createdAt: string
+  resolvedAt?: string
+}
+
+export interface AgentSnapshot {
+  session: AgentSessionRecord
+  runs: AgentRun[]
+  inputs: AgentInput[]
+  turns: AgentTurn[]
+  permissions: AgentPermission[]
+}
+
+export interface AgentEvent {
+  sessionId: string
+  seq: string
+  kind: "session" | "run" | "input" | "turn" | "permission" | "acp" | "command"
+  payload: AgentSessionRecord | AgentRun | AgentInput | AgentTurn | AgentPermission | AgentCommand | SessionNotification
+  createdAt: string
+  turnId?: string
+  inputId?: string
+  commandId?: string
+  runGeneration?: number
+}
+
+export type AgentEventDraft = Omit<AgentEvent, "seq">
+
+/** One native transaction; omitted row collections remain unchanged. */
+export interface AgentCommit {
+  sessionId?: string
+  expectedSeq?: string
+  session?: AgentSessionRecord
+  runs?: AgentRun[]
+  inputs?: AgentInput[]
+  turns?: AgentTurn[]
+  permissions?: AgentPermission[]
+  command?: AgentCommand
+  events?: AgentEventDraft[]
+}
+
+export interface AgentReceipt { operationId: string; commandId: string; inputId?: string; sessionId: string }
+export interface AgentMutation { sessionId: string; operationId: string }
+export interface AgentMethods {
+  "_deskfleet/agent/configuration": { params: AgentConfigurationParams; result: AgentConfiguration }
+  "_deskfleet/session/configuration": { params: { sessionId: string }; result: AgentConfiguration }
+  "_deskfleet/session/configure": { params: AgentMutation & AgentConfigurationSelection; result: AgentConfiguration }
+  "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
+  "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider?: "codex"; context: AgentSessionContext } & AgentConfigurationSelection; result: AgentSnapshot }
+  "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
+  "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
+  "_deskfleet/input/submit": { params: AgentMutation & { content: ContentBlock[]; delivery: "backlog" | "steer"; turnId?: string }; result: AgentReceipt }
+  "_deskfleet/input/steer": { params: AgentMutation & { inputId: string; turnId: string }; result: AgentReceipt }
+  "_deskfleet/input/withdraw": { params: AgentMutation & { inputId: string }; result: AgentReceipt }
+  "_deskfleet/input/retry": { params: AgentMutation & { inputId: string }; result: AgentReceipt }
+  "_deskfleet/turn/cancel": { params: AgentMutation & { turnId: string }; result: AgentReceipt }
+  "_deskfleet/permission/respond": { params: AgentMutation & { permissionId: string; optionId: string }; result: AgentPermission }
+  "_deskfleet/session/resume": { params: AgentMutation; result: AgentSnapshot }
+  "_deskfleet/session/stop": { params: AgentMutation; result: AgentSnapshot }
+  "_deskfleet/session/delete": { params: AgentMutation; result: null }
+  "_deskfleet/command/get": { params: { operationId: string }; result: AgentCommand | null }
+}
+
+export type AgentMethod = keyof AgentMethods

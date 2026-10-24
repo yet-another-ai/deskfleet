@@ -7,13 +7,15 @@ import AppSidebar from "./components/sidebar/AppSidebar.vue"
 import { useLayoutStore } from "./stores/layout.ts"
 import { useFleetStore } from "./stores/fleet.ts"
 import { useTerminalsStore } from "./stores/terminals.ts"
+import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 
 const { sidebarOpen, detailsOpen } = storeToRefs(useLayoutStore())
 const route = useRoute()
 const fleet = useFleetStore()
 const terminals = useTerminalsStore()
+const agents = useAgentSessionsStore()
 watch(() => fleet.localDesktopTarget.online, (online) => { if (online) void terminals.refresh() })
-const refresh = () => { void fleet.refreshLocal() }
+const refresh = () => { void fleet.refreshLocal().then(() => { if (fleet.localDesktopTarget.online) void agents.refresh() }) }
 const unsubscribeSettings = window.deskfleet.settings.onChanged(({ status }) => {
   if (status === "running" || status === "stopped" || status === "error") {
     refresh()

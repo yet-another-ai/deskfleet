@@ -1363,6 +1363,8 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
@@ -1409,8 +1411,11 @@ dependencies = [
  "deskfleet-migration",
  "deskfleet-model",
  "sea-orm",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

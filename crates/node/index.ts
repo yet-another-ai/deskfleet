@@ -67,3 +67,8 @@ export function supportedVideoCodecs(): Promise<string[]> {
 export function captureDisplays(): Promise<DisplayInfo[]> {
   return (bindings ??= loadBindings()).captureDisplays()
 }
+
+/** Request permission in the calling process; null means no upfront request on this platform. */
+export function requestScreenCaptureAccess(): Promise<boolean | null> {
+  return (bindings ??= loadBindings()).requestScreenCaptureAccess()
+}

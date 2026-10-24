@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SquarePen } from "@lucide/vue"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
@@ -8,20 +9,24 @@ import ResourcePath from "../components/chrome/ResourcePath.vue"
 import ConfirmDelete from "../components/catalog/ConfirmDelete.vue"
 import DirectoryList from "../components/catalog/DirectoryList.vue"
 import WorkspaceForm from "../components/catalog/WorkspaceForm.vue"
-import { useWorktreeLabel } from "../composables/useWorktreeLabel.ts"
+import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 
 const props = defineProps<{ workspaceId: string }>()
 const { t } = useI18n()
-const worktreeLabel = useWorktreeLabel()
+const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const router = useRouter()
 const location = computed(() => fleet.findWorkspace(props.workspaceId))
 const editable = computed(() => fleet.canManageCatalog && location.value?.machine.local)
-const main = computed(() => location.value?.workspace.worktrees.find(worktree => worktree.sessionId === undefined))
-const directories = computed(() => main.value?.directories ?? [])
+const directories = computed(() => location.value?.workspace.directories ?? [])
 const editing = ref(false)
+const browseDirectories = window.deskfleet.filesystem.listDirectories
 watch(() => props.workspaceId, () => { editing.value = false })
+function startSession(): void {
+  fleet.targetWorkspace(props.workspaceId)
+  void router.push({ name: "new-session" })
+}
 async function save(name: string, paths: CatalogDirectory[]): Promise<void> {
   await fleet.updateWorkspace(props.workspaceId, name, paths)
   editing.value = false
@@ -50,19 +55,25 @@ async function remove(): Promise<void> {
           <h2 class="ui-section-title">{{ t("worktree.directories") }}</h2>
           <button type="button" class="catalog-button" :disabled="!editable || editing" @click="editing = true">{{ t("workspace.edit") }}</button>
         </div>
-        <WorkspaceForm v-if="editing" :key="workspaceId" class="rounded-lg border border-ui-border bg-ui-surface p-3" :initial="{ name: location.workspace.name, directories }" :submit-label="t('catalog.save')" :disabled="!editable" :save="save" @cancel="editing = false" />
+        <WorkspaceForm v-if="editing" :key="workspaceId" class="rounded-lg border border-ui-border bg-ui-surface p-3" :initial="{ name: location.workspace.name, directories }" :browse="browseDirectories" :machine-name="location.machine.name" :submit-label="t('catalog.save')" :disabled="!editable" :save="save" @cancel="editing = false" />
         <DirectoryList v-else :directories="directories" :disabled="!editable" default-action />
       </section>
       <section>
-        <h2 class="ui-section-title">{{ t("workspace.worktrees") }}</h2>
-        <ul class="ui-card">
-          <li v-for="worktree in location.workspace.worktrees" :key="worktree.id">
-            <RouterLink :to="{ name: 'worktree', params: { worktreeId: worktree.id } }" class="ui-card-row hover:bg-ui-hover">
-              <span class="min-w-0 flex-1 truncate">{{ worktreeLabel(worktree) }}</span>
-              <span class="text-xs text-ui-text-muted">{{ t("workspace.directoryCount", { count: worktree.directories.length }) }}</span>
+        <div class="flex items-center justify-between">
+          <h2 class="ui-section-title">{{ t("workspace.sessions") }}</h2>
+          <button type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover" @click="startSession">
+            <SquarePen :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("workspace.newSession") }}
+          </button>
+        </div>
+        <ul v-if="location.workspace.sessions.length" class="ui-card">
+          <li v-for="session in location.workspace.sessions" :key="session.id">
+            <RouterLink :to="{ name: 'session', params: { sessionId: session.id } }" class="ui-card-row hover:bg-ui-hover">
+              <span class="min-w-0 flex-1 truncate">{{ sessionLabel(session) }}</span>
+              <span v-if="session.provider" class="text-xs text-ui-text-muted">{{ session.provider }}</span>
             </RouterLink>
           </li>
         </ul>
+        <p v-else class="m-0 text-ui-text-muted">{{ t("workspace.noSessions") }}</p>
       </section>
       <section class="border-t border-ui-border pt-5">
         <ConfirmDelete :key="workspaceId" :label="t('workspace.delete')" :question="t('workspace.deleteQuestion', { name: location.workspace.name })" :disabled="!editable" :remove="remove" />

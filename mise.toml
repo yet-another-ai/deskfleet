@@ -10,7 +10,7 @@ rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustf
 node = "24.21.0"
 pnpm = "12.14.0"
 "cargo:cargo-shear" = "1.13.5"
-cmake = "3.31.12"
+cmake = "4.4.4"
 
 [env]
 # Missing platform files are skipped; macOS uses the Apple native toolchain.
@@ -115,8 +115,18 @@ description = "Verify local catalog forms, persistence, and directory terminals 
 depends = ["native:debug", "desktop:build"]
 run = "node apps/desktop/scripts/smoke-catalog.ts"
 
+[tasks."desktop:smoke-agent"]
+description = "Verify Agent conversations, backlog, steering, permissions, and durable replay in Electron"
+depends = ["native:debug", "desktop:build"]
+run = "node apps/desktop/scripts/smoke-agent.ts"
+
+[tasks."desktop:smoke-startup"]
+description = "Verify the actual Electron package entry and bundled Codex adapter startup"
+depends = ["desktop:build"]
+run = "node apps/desktop/scripts/smoke-startup.ts"
+
 [tasks."desktop:smoke-local-agent"]
-description = "Verify Settings startup, shutdown, and independent local Agent lifetime in Electron"
+description = "Verify Settings startup, shutdown, and the hosted local Agent lifetime in Electron"
 depends = ["native:debug", "desktop:build"]
 run = "node apps/desktop/scripts/smoke-local-agent.ts"
 

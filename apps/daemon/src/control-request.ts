@@ -1,6 +1,5 @@
 import type { ControlMethod, ControlMethods, ControlRequest } from "./control-protocol.ts"
-import { validateCatalogParams } from "./catalog-protocol.ts"
-import { validateAgentConfigurationParams } from "./agent-configuration-protocol.ts"
+import { resourceId, validateCatalogParams } from "./catalog-protocol.ts"
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected an object")
@@ -22,8 +21,10 @@ function uint(value: unknown, label: string, positive = false): void {
 export function validateControlParams<M extends ControlMethod>(method: M, value: unknown): ControlMethods[M]["params"] {
   const params = object(value)
   switch (method) {
-    case "agentConfiguration":
-      validateAgentConfigurationParams(params)
+    case "directoryList":
+      if (params.path !== undefined && (typeof params.path !== "string" || !params.path || params.path.includes("\0") || params.path.length > 4096)) {
+        throw new Error("Invalid directory path")
+      }
       break
     case "catalogList":
     case "workspaceCreate":
@@ -49,15 +50,17 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
         if ((params[key] as number) > 1000) throw new Error(`Invalid terminal ${key}`)
       }
       if (params.cwd !== undefined && (typeof params.cwd !== "string" || params.cwd.length > 4096)) throw new Error("Invalid terminal working directory")
+      if (params.worktreeId !== undefined) resourceId(params.worktreeId)
       break
     case "terminalHangup":
       sessionId(params.terminalId)
       break
     case "offer":
     case "terminalOffer":
+    case "agentOffer":
       sessionId(params.sessionId)
       if (typeof params.sdp !== "string" || !params.sdp || params.sdp.length > 192 * 1024) throw new Error("Invalid SDP offer")
-      if (method === "terminalOffer") break
+      if (method === "terminalOffer" || method === "agentOffer") break
       if (params.codec !== "h264" && params.codec !== "h265" && params.codec !== "av1") throw new Error("Invalid video codec")
       if (typeof params.audio !== "boolean") throw new Error("Invalid audio setting")
       break
@@ -83,16 +86,25 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
     case "close":
       sessionId(params.sessionId)
       break
-    default:
-      throw new Error("Unknown local daemon operation")
+    default: {
+      const operation = typeof method === "string" && /^[A-Za-z][A-Za-z0-9]{0,127}$/u.test(method) ? `: ${method}` : ""
+      throw new Error(`Unknown local daemon operation${operation}`)
+    }
   }
   return params as unknown as ControlMethods[M]["params"]
 }
 
-export function parseControlRequest(value: unknown): ControlRequest {
+/** A usable ID lets the server report operation errors without dropping the connection. */
+export function readControlRequestId(value: unknown): number {
   const request = object(value)
   if (!Number.isSafeInteger(request.id) || (request.id as number) < 0) throw new Error("Invalid request ID")
+  return request.id as number
+}
+
+export function parseControlRequest(value: unknown): ControlRequest {
+  const id = readControlRequestId(value)
+  const request = object(value)
   const method = request.method as ControlMethod
   const params = validateControlParams(method, request.params)
-  return { id: request.id, method, params } as ControlRequest
+  return { id, method, params } as ControlRequest
 }

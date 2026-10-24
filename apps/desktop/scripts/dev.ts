@@ -39,12 +39,13 @@ function waitForExit(child: ChildProcess, timeoutMs = 5_000): Promise<void> {
 
 async function terminateElectron(child: ChildProcess | null): Promise<void> {
   if (!child || child.exitCode !== null || child.signalCode !== null) return
-  const exited = waitForExit(child)
+  // The client hosts the local Agent; give it time to release sessions and discovery.
+  const exited = waitForExit(child, 15_000)
   if (process.platform === "win32") {
     await new Promise((resolveKill) => {
-      // The detached local Agent shares this executable but has its own lifetime.
-      // Killing the process tree would stop it on every desktop rebuild.
-      const killer = spawn("taskkill", ["/pid", String(child.pid), "/f"], {
+      // Windows has no graceful signal; end the tree so the hosted Agent's
+      // adapter and shell processes do not outlive the client.
+      const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
         stdio: "ignore",
         windowsHide: true
       })

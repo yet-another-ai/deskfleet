@@ -16,7 +16,7 @@ function deferred<T>() {
 
 test("native peers exchange binary and text DataChannel messages through the daemon", { timeout: 20_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "df-peers-test-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory })
+  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
   const left = await daemon.peers.create("left")
   const right = await daemon.peers.create("right")
   const opened = [deferred<void>(), deferred<void>()]

@@ -15,6 +15,8 @@ const emit = defineEmits<{
   ready: [size: { cols: number; rows: number }]
   input: [data: string]
   resize: [size: { cols: number; rows: number }]
+  /** The title the shell or running program sets with OSC 0 or 2. */
+  title: [title: string]
 }>()
 
 // Terminals stay dark in both themes; the background matches --ui-color-terminal.
@@ -38,6 +40,7 @@ const terminal = new Terminal({
 terminal.loadAddon(fit)
 const input = terminal.onData((data) => emit("input", data))
 const resize = terminal.onResize((size) => emit("resize", size))
+const title = terminal.onTitleChange((value) => emit("title", value))
 watch(() => props.interactive, (interactive) => {
   terminal.options.disableStdin = !interactive
   terminal.options.cursorBlink = interactive ?? false
@@ -53,7 +56,7 @@ onMounted(() => {
   emit("ready", { cols: terminal.cols, rows: terminal.rows })
 })
 useResizeObserver(container, () => fit.fit())
-onBeforeUnmount(() => { input.dispose(); resize.dispose(); terminal.dispose() })
+onBeforeUnmount(() => { input.dispose(); resize.dispose(); title.dispose(); terminal.dispose() })
 
 defineExpose({
   terminal,

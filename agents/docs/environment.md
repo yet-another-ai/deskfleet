@@ -24,8 +24,11 @@ versions and available platform metadata. `Cargo.lock` owns Rust dependencies;
 `pnpm-lock.yaml` owns JavaScript dependencies. Cargo's `rust-version` declares
 compiler requirements; it does not select the installed toolchain.
 
-Native media builds use locked CMake 3.31 to compile bundled Opus, plus the host C/C++
-toolchain. On macOS install the Xcode command-line tools. mise loads
+Native media builds use locked CMake 4.4 to compile bundled Opus, plus the host C/C++
+toolchain. CMake 4.2 or newer is required for the Visual Studio 18 2026 generator
+on current GitHub-hosted Windows runners. Cargo sets `CMAKE_POLICY_VERSION_MINIMUM`
+so the vendored Opus project, which still declares CMake 3.1, configures on CMake 4.
+On macOS install the Xcode command-line tools. mise loads
 `.config/build-env/macos.toml` to select Apple Clang for C/C++ and Rust linking,
 even if Nix's compiler wrappers precede it on `PATH`. It also clears the inherited
 `LIBRARY_PATH` for project commands so the addon links Apple's system libraries

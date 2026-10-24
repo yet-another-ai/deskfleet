@@ -1,250 +1,200 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentConfiguration } from "../../../../shared/agent-configuration.ts"
 import { i18n } from "../../i18n/index.ts"
+import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import SessionComposer from "./SessionComposer.vue"
 
 const storageKey = "deskfleet.agent-configuration"
 const wrappers: VueWrapper[] = []
-
+let pinia: ReturnType<typeof createPinia>
+let agents: ReturnType<typeof useAgentSessionsStore>
 function configuration(model = "sequoia", effort = "medium"): AgentConfiguration {
   return {
     provider: { id: "codex", name: "Codex" },
-    models: {
-      id: "model",
-      currentValue: model,
-      options: [{ id: "sequoia", name: "Sequoia" }, { id: "orbit", name: "Orbit" }],
-    },
-    reasoningEfforts: {
-      id: "reasoning_effort",
-      currentValue: effort,
-      options: [{ id: "medium", name: "Medium" }, { id: "high", name: "High" }],
-    },
+    models: { id: "model", currentValue: model, options: [{ id: "sequoia", name: "Sequoia" }, { id: "orbit", name: "Orbit" }] },
+    reasoningEfforts: { id: "reasoning_effort", currentValue: effort, options: [{ id: "medium", name: "Medium" }, { id: "high", name: "High" }] },
   }
 }
-
 function deferredConfiguration() {
   let resolve!: (value: AgentConfiguration) => void
   const promise = new Promise<AgentConfiguration>(done => { resolve = done })
   return { promise, resolve }
 }
-
-function render(worktreeId = "11") {
-  const view = mount(AgentConfigurationSelector, {
-    attachTo: document.body,
-    props: { worktreeId },
-    global: { plugins: [i18n] },
-  })
+function render(workspaceId = "11") {
+  const view = mount(AgentConfigurationSelector, { attachTo: document.body, props: { workspaceId }, global: { plugins: [i18n, pinia] } })
   wrappers.push(view)
   return view
 }
-
-const trigger = (view: VueWrapper) => view.get("button.ui-chip")
-const modelSelect = (view: VueWrapper) => view.findAll("select")[1]!
-const effortSelect = (view: VueWrapper) => view.findAll("select")[2]!
-
+const trigger = (view: VueWrapper) => view.get("[data-agent-configuration-trigger]")
+const row = (view: VueWrapper, control: string) => view.get(`[data-agent-control="${control}"]`)
+const options = (view: VueWrapper) => view.findAll('[role="menuitemradio"]')
+async function choose(view: VueWrapper, control: string, value: string): Promise<void> {
+  await row(view, control).trigger("click")
+  await view.get(`[role="menuitemradio"][data-value="${value}"]`).trigger("click")
+  await flushPromises()
+}
 beforeEach(() => {
   window.localStorage.clear()
-  vi.spyOn(window.deskfleet.agents, "configuration").mockResolvedValue(configuration())
+  pinia = createPinia(); setActivePinia(pinia)
+  agents = useAgentSessionsStore()
+  vi.spyOn(agents, "agentConfiguration").mockResolvedValue(configuration())
 })
-
 afterEach(() => {
   for (const view of wrappers.splice(0)) view.unmount()
-  vi.restoreAllMocks()
-  window.localStorage.clear()
+  disposePinia(pinia); vi.restoreAllMocks(); window.localStorage.clear()
   i18n.global.locale.value = "en-US"
 })
 
-test("discovers agent options only on expansion and displays three labeled selects", async () => {
+test("opens a compact three-row menu and dynamically populates checked submenus", async () => {
   const loaded = deferredConfiguration()
-  const api = vi.mocked(window.deskfleet.agents.configuration).mockReturnValueOnce(loaded.promise)
+  const api = vi.mocked(agents.agentConfiguration).mockReturnValueOnce(loaded.promise)
   const view = render()
   expect(api).not.toHaveBeenCalled()
-  expect(view.get('[role="group"]').isVisible()).toBe(false)
-
+  expect(view.find('[role="menu"]').exists()).toBe(false)
   await trigger(view).trigger("click")
-  expect(api).toHaveBeenCalledExactlyOnceWith({ provider: "codex", worktreeId: "11" })
-  expect(view.findAll("select")).toHaveLength(3)
-  expect(view.findAll("label").map(label => label.element.firstChild?.textContent?.trim())).toEqual(["Agent", "Model", "Reasoning effort"])
-  expect(document.activeElement).toBe(view.get("select").element)
-  expect(modelSelect(view).attributes("disabled")).toBeDefined()
-  expect(effortSelect(view).attributes("disabled")).toBeDefined()
+  expect(api).toHaveBeenCalledExactlyOnceWith({ provider: "codex", workspaceId: "11" })
+  expect(view.findAll("[data-agent-control]")).toHaveLength(3)
+  expect(row(view, "agent").text()).toBe("AgentCodex")
+  expect(document.activeElement).toBe(row(view, "agent").element)
+  expect(row(view, "model").attributes("disabled")).toBeDefined()
+  expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
   expect(view.get('[role="status"]').text()).toBe("Reading configuration from the agent…")
-
-  loaded.resolve(configuration())
-  await flushPromises()
-  expect(modelSelect(view).findAll("option").map(option => [option.attributes("value"), option.text()])).toEqual([["sequoia", "Sequoia"], ["orbit", "Orbit"]])
-  expect(modelSelect(view).element.value).toBe("sequoia")
-  expect(effortSelect(view).element.value).toBe("medium")
-  expect(modelSelect(view).attributes("disabled")).toBeUndefined()
-  expect(view.find('[role="status"]').exists()).toBe(false)
+  loaded.resolve(configuration()); await flushPromises()
+  expect(row(view, "model").text()).toBe("ModelSequoia")
+  expect(row(view, "reasoning").text()).toBe("ReasoningMedium")
+  await row(view, "model").trigger("click")
+  expect(options(view).map(option => [option.attributes("data-value"), option.text(), option.attributes("aria-checked")])).toEqual([["sequoia", "Sequoia", "true"], ["orbit", "Orbit", "false"]])
+  expect(document.activeElement).toBe(options(view)[0]!.element)
+  expect(view.find("select").exists()).toBe(false)
 })
 
-test("lets the agent resolve a new model's supported effort before changing that effort", async () => {
-  const view = render()
-  await trigger(view).trigger("click")
-  await flushPromises()
-  const next = {
-    ...configuration("orbit"),
-    reasoningEfforts: {
-      id: "reasoning_effort",
-      currentValue: "minimal",
-      options: [{ id: "minimal", name: "Minimal" }, { id: "careful", name: "Agent careful" }],
-    },
-  }
-  const api = vi.mocked(window.deskfleet.agents.configuration).mockResolvedValueOnce(next)
-  await modelSelect(view).setValue("orbit")
-  await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", worktreeId: "11" })
-  expect(effortSelect(view).element.value).toBe("minimal")
-  expect(effortSelect(view).findAll("option").map(option => option.text())).toEqual(["Minimal", "Agent careful"])
-
+test("changes a model before offering its supported reasoning choices", async () => {
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  const next = { ...configuration("orbit"), reasoningEfforts: { id: "reasoning_effort", currentValue: "minimal", options: [{ id: "minimal", name: "Minimal" }, { id: "careful", name: "Agent careful" }] } }
+  const api = vi.mocked(agents.agentConfiguration).mockResolvedValueOnce(next)
+  await choose(view, "model", "orbit")
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", workspaceId: "11" })
+  expect(row(view, "reasoning").attributes("data-value")).toBe("minimal")
+  await row(view, "reasoning").trigger("click")
+  expect(options(view).map(option => option.text())).toEqual(["Minimal", "Agent careful"])
   api.mockResolvedValueOnce({ ...next, reasoningEfforts: { ...next.reasoningEfforts, currentValue: "careful" } })
-  await effortSelect(view).setValue("careful")
-  await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", reasoningEffort: "careful", worktreeId: "11" })
-  expect(effortSelect(view).element.value).toBe("careful")
+  await choose(view, "reasoning", "careful")
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", reasoningEffort: "careful", workspaceId: "11" })
 })
 
-test("keeps confirmed model and effort after rejected changes and accepts a later retry", async () => {
-  const view = render()
-  await trigger(view).trigger("click")
-  await flushPromises()
+test("keeps confirmed choices after rejected changes and allows retry", async () => {
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
   const saved = window.localStorage.getItem(storageKey)
-  const api = vi.mocked(window.deskfleet.agents.configuration)
-
-  for (const [select, value, confirmed, message] of [
-    [modelSelect(view), "orbit", "sequoia", "Model change rejected"],
-    [effortSelect(view), "high", "medium", "Effort change rejected"],
-  ] as const) {
+  const api = vi.mocked(agents.agentConfiguration)
+  for (const [control, value, message] of [["model", "orbit", "Model change rejected"], ["reasoning", "high", "Effort change rejected"]]) {
     api.mockRejectedValueOnce(new Error(message))
-    select.element.value = value
-    select.element.dispatchEvent(new Event("change", { bubbles: true }))
-    // Check before Vue renders: production Vapor does not rerun an unchanged value binding.
-    expect(select.element.value).toBe(confirmed)
-    await flushPromises()
-    expect(modelSelect(view).element.value).toBe("sequoia")
-    expect(effortSelect(view).element.value).toBe("medium")
+    await choose(view, control!, value!)
+    expect(row(view, "model").attributes("data-value")).toBe("sequoia")
+    expect(row(view, "reasoning").attributes("data-value")).toBe("medium")
     expect(view.get('[role="alert"]').text()).toBe(message)
     expect(window.localStorage.getItem(storageKey)).toBe(saved)
   }
-
-  api.mockResolvedValueOnce(configuration("orbit"))
-  await modelSelect(view).setValue("orbit")
-  await flushPromises()
-  expect(modelSelect(view).element.value).toBe("orbit")
-  expect(view.find('[role="alert"]').exists()).toBe(false)
-
   api.mockResolvedValueOnce(configuration("orbit", "high"))
-  await effortSelect(view).setValue("high")
-  await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", reasoningEffort: "high", worktreeId: "11" })
-  expect(effortSelect(view).element.value).toBe("high")
-  expect(JSON.parse(window.localStorage.getItem(storageKey)!)).toEqual({ provider: "codex", model: "orbit", reasoningEffort: "high" })
+  await choose(view, "model", "orbit")
+  expect(row(view, "model").attributes("data-value")).toBe("orbit")
+  expect(view.find('[role="alert"]').exists()).toBe(false)
 })
 
-test("collapse and Escape keep the composer draft and selection and restore trigger focus", async () => {
+test("keyboard navigation, Escape and outside clicks preserve the draft and selection", async () => {
   const view = mount(SessionComposer, {
     attachTo: document.body,
-    props: { location: null },
-    global: { plugins: [i18n] },
-  })
-  wrappers.push(view)
+    props: { location: { machine: { id: "1", name: "Machine", local: true, online: true, desktop: false, terminals: [], workspaces: [] }, workspace: { id: "11", name: "Workspace", directories: [], sessions: [], terminals: [] } } },
+    global: { plugins: [i18n, pinia] },
+  }); wrappers.push(view)
   await view.get("textarea").setValue("Keep this unfinished task")
-  await trigger(view).trigger("click")
-  await flushPromises()
-  vi.mocked(window.deskfleet.agents.configuration).mockResolvedValueOnce(configuration("sequoia", "high"))
-  await effortSelect(view).setValue("high")
-  await flushPromises()
-  await view.get('button[aria-label="Collapse agent configuration"]').trigger("click")
-  expect(trigger(view).text()).toBe("Codex · Sequoia · High")
+  await trigger(view).trigger("click"); await flushPromises()
+  await row(view, "agent").trigger("keydown", { key: "ArrowDown" })
+  expect(document.activeElement).toBe(row(view, "model").element)
+  await row(view, "model").trigger("keydown", { key: "ArrowRight" })
+  expect(document.activeElement).toBe(options(view)[0]!.element)
+  await options(view)[0]!.trigger("keydown", { key: "ArrowDown" })
+  expect(document.activeElement).toBe(options(view)[1]!.element)
+  await options(view)[1]!.trigger("keydown", { key: "ArrowLeft" })
+  expect(document.activeElement).toBe(row(view, "model").element)
+  await row(view, "model").trigger("keydown", { key: "Escape" })
+  expect(view.find('[data-agent-configuration-menu]').exists()).toBe(false)
   expect(document.activeElement).toBe(trigger(view).element)
-
   await trigger(view).trigger("click")
-  await effortSelect(view).trigger("keydown", { key: "Escape" })
-  expect(view.get('[role="group"]').isVisible()).toBe(false)
-  expect(document.activeElement).toBe(trigger(view).element)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  await view.get("textarea").trigger("pointerdown")
+  await view.get("textarea").trigger("click")
+  expect(view.find('[data-agent-configuration-menu]').exists()).toBe(false)
   expect(view.get("textarea").element.value).toBe("Keep this unfinished task")
-  expect(effortSelect(view).element.value).toBe("high")
-  expect(window.deskfleet.agents.configuration).toHaveBeenCalledTimes(2)
+  expect(trigger(view).text()).toBe("Codex · Sequoia · Medium")
+  expect(agents.agentConfiguration).toHaveBeenCalledTimes(1)
 })
 
-test("remounting uses the saved selection when requesting fresh agent options", async () => {
-  const api = vi.mocked(window.deskfleet.agents.configuration).mockResolvedValue(configuration("orbit", "high"))
-  const first = render()
-  await trigger(first).trigger("click")
-  await flushPromises()
-  first.unmount()
-  wrappers.splice(wrappers.indexOf(first), 1)
-  expect(JSON.parse(window.localStorage.getItem(storageKey)!)).toEqual({ provider: "codex", model: "orbit", reasoningEffort: "high" })
-
+test("remounting uses saved draft choices while requesting fresh options", async () => {
+  const api = vi.mocked(agents.agentConfiguration).mockResolvedValue(configuration("orbit", "high"))
+  const first = render(); await trigger(first).trigger("click"); await flushPromises()
+  first.unmount(); wrappers.splice(wrappers.indexOf(first), 1)
   const second = render()
   expect(trigger(second).text()).toBe("Codex · orbit · High")
-  expect(api).toHaveBeenCalledTimes(1)
-  await trigger(second).trigger("click")
-  await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", reasoningEffort: "high", worktreeId: "11" })
-  expect(modelSelect(second).element.value).toBe("orbit")
-  expect(effortSelect(second).element.value).toBe("high")
+  await trigger(second).trigger("click"); await flushPromises()
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", reasoningEffort: "high", workspaceId: "11" })
 })
 
-test("reloads after a discovery error and represents missing agent controls as unavailable", async () => {
-  const api = vi.mocked(window.deskfleet.agents.configuration).mockRejectedValueOnce(new Error("Codex is not authenticated"))
-  const view = render()
-  await trigger(view).trigger("click")
-  await flushPromises()
+test("reloads after discovery errors and disables controls the agent does not support", async () => {
+  const api = vi.mocked(agents.agentConfiguration).mockRejectedValueOnce(new Error("Codex is not authenticated"))
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
   expect(view.get('[role="alert"]').text()).toBe("Codex is not authenticated")
-  expect(modelSelect(view).attributes("disabled")).toBeDefined()
-
   api.mockResolvedValueOnce({ provider: { id: "codex", name: "Codex" }, models: null, reasoningEfforts: null })
-  await view.get("button.catalog-button").trigger("click")
-  await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", worktreeId: "11" })
-  expect(view.find('[role="alert"]').exists()).toBe(false)
-  expect(modelSelect(view).text()).toBe("Unavailable")
-  expect(effortSelect(view).text()).toBe("Unavailable")
-  expect(modelSelect(view).attributes("disabled")).toBeDefined()
-  expect(effortSelect(view).attributes("disabled")).toBeDefined()
+  await view.findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11" })
+  expect(row(view, "model").text()).toBe("ModelUnavailable")
+  expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
 })
 
-test("ignores previous worktree responses and pending responses after unmount", async () => {
-  const stale = deferredConfiguration()
-  const current = deferredConfiguration()
-  const api = vi.mocked(window.deskfleet.agents.configuration)
-    .mockReturnValueOnce(stale.promise)
-    .mockReturnValueOnce(current.promise)
-  const view = render()
-  await trigger(view).trigger("click")
-  await view.setProps({ worktreeId: "22" })
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", worktreeId: "22" })
-  current.resolve(configuration("orbit", "high"))
-  await flushPromises()
-  stale.resolve(configuration())
-  await flushPromises()
-  expect(modelSelect(view).element.value).toBe("orbit")
-  expect(effortSelect(view).element.value).toBe("high")
-
-  const afterUnmount = deferredConfiguration()
-  api.mockReturnValueOnce(afterUnmount.promise)
-  await view.setProps({ worktreeId: "33" })
+test("ignores previous workspace responses and responses after unmount", async () => {
+  const stale = deferredConfiguration(); const current = deferredConfiguration()
+  const api = vi.mocked(agents.agentConfiguration).mockReturnValueOnce(stale.promise).mockReturnValueOnce(current.promise)
+  const view = render(); await trigger(view).trigger("click"); await view.setProps({ workspaceId: "22" })
+  current.resolve(configuration("orbit", "high")); await flushPromises()
+  stale.resolve(configuration()); await flushPromises()
+  expect(row(view, "model").attributes("data-value")).toBe("orbit")
+  const afterUnmount = deferredConfiguration(); api.mockReturnValueOnce(afterUnmount.promise)
+  await view.setProps({ workspaceId: "33" })
   const saved = window.localStorage.getItem(storageKey)
-  view.unmount()
-  wrappers.splice(wrappers.indexOf(view), 1)
-  afterUnmount.resolve(configuration())
-  await flushPromises()
+  view.unmount(); wrappers.splice(wrappers.indexOf(view), 1)
+  afterUnmount.resolve(configuration()); await flushPromises()
   expect(window.localStorage.getItem(storageKey)).toBe(saved)
 })
 
-test("localizes the control labels and known efforts while retaining agent model names", async () => {
+test("localizes menu labels and efforts while preserving agent model names", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
-  vi.mocked(window.deskfleet.agents.configuration).mockResolvedValue(configuration("orbit", "high"))
-  const view = render()
-  await trigger(view).trigger("click")
-  await flushPromises()
-  expect(view.get('[role="group"]').attributes("aria-label")).toBe("Agent 配置")
-  expect(view.findAll("label").map(label => label.element.firstChild?.textContent?.trim())).toEqual(["Agent", "模型", "推理强度"])
-  expect(effortSelect(view).findAll("option").map(option => option.text())).toEqual(["中", "高"])
-  await view.get('button[aria-label="收起 Agent 配置"]').trigger("click")
-  expect(trigger(view).text()).toBe("Codex · Orbit · 高")
+  vi.mocked(agents.agentConfiguration).mockResolvedValue(configuration("orbit", "high"))
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  expect(row(view, "model").text()).toBe("模型Orbit")
+  expect(row(view, "reasoning").text()).toBe("推理强度高")
+  await row(view, "reasoning").trigger("click")
+  expect(options(view).map(option => option.text())).toEqual(["中", "高"])
+})
+
+test("live session settings remain independent from saved draft preferences and reflect remote updates", async () => {
+  agents.draftConfiguration = { provider: "codex", model: "orbit", reasoningEffort: "high" }; await flushPromises()
+  const saved = window.localStorage.getItem(storageKey)
+  const read = vi.spyOn(agents, "sessionConfiguration").mockImplementation(async id => { const result = configuration(); agents.configurations[id] = result; return result })
+  const configure = vi.spyOn(agents, "configureSession").mockImplementation(async (id, choices) => { const result = configuration(choices.model ?? "sequoia", choices.reasoningEffort ?? "medium"); agents.configurations[id] = result; return result })
+  const view = render(); await view.setProps({ sessionId: "30" })
+  expect(trigger(view).text()).toBe("Codex")
+  await trigger(view).trigger("click"); await flushPromises()
+  expect(read).toHaveBeenCalledExactlyOnceWith("30")
+  expect(agents.agentConfiguration).not.toHaveBeenCalled()
+  expect(configure).not.toHaveBeenCalled()
+  await choose(view, "reasoning", "high")
+  expect(configure).toHaveBeenLastCalledWith("30", { model: undefined, reasoningEffort: "high" })
+  expect(window.localStorage.getItem(storageKey)).toBe(saved)
+  agents.configurations["30"] = configuration("orbit", "high"); await flushPromises()
+  expect(row(view, "model").attributes("data-value")).toBe("orbit")
+  await view.setProps({ disabled: true })
+  expect(row(view, "model").attributes("disabled")).toBeDefined()
+  expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
 })

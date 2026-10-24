@@ -9,6 +9,14 @@ export declare class NativeCatalog {
   createWorkspaceSession(workspaceId: string): Promise<CatalogWorkspaceSession>
   attachSessionWorktree(sessionId: string, directories: Array<CatalogDirectory>): Promise<CatalogWorktree>
   deleteWorkspaceSession(sessionId: string): Promise<void>
+  agentIdentity(): Promise<string>
+  agentAllocateId(): Promise<string>
+  agentList(): Promise<string>
+  agentSnapshot(sessionId: string): Promise<string>
+  agentHistory(sessionId: string, afterSeq: string, limit: number): Promise<string>
+  agentCommand(operationId: string): Promise<string>
+  agentCommit(transaction: string): Promise<string>
+  agentCreateSession(request: string): Promise<string>
   close(): Promise<void>
 }
 
@@ -130,6 +138,12 @@ export interface PeerEvent {
   isString?: boolean
   error?: string
 }
+
+/**
+ * Request this process's screen/system-audio access without starting capture.
+ * Resolves with null on platforms without an upfront permission request.
+ */
+export declare function requestScreenCaptureAccess(): Promise<boolean | null>
 
 /** Probe encoders on a worker thread; never required for headless operations. */
 export declare function supportedVideoCodecs(): Promise<Array<string>>

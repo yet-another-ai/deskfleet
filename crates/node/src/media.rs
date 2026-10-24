@@ -34,6 +34,15 @@ pub async fn capture_displays() -> Result<Vec<DisplayInfo>> {
         .collect())
 }
 
+/// Request this process's screen/system-audio access without starting capture.
+/// Resolves with null on platforms without an upfront permission request.
+#[napi]
+pub async fn request_screen_capture_access() -> Result<Option<bool>> {
+    media::request_screen_capture_access()
+        .await
+        .map_err(native_error)
+}
+
 #[napi(object)]
 pub struct DesktopConfig {
     pub display_id: u32,

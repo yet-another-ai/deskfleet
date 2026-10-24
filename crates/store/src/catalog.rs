@@ -229,7 +229,7 @@ impl Catalog {
     }
 }
 
-async fn require_workspace(
+pub(crate) async fn require_workspace(
     database: &impl ConnectionTrait,
     machine_id: MachineId,
     id: WorkspaceId,
@@ -244,7 +244,7 @@ async fn require_workspace(
         })
 }
 
-async fn require_session(
+pub(crate) async fn require_session(
     database: &impl ConnectionTrait,
     machine_id: MachineId,
     id: AgentSessionId,

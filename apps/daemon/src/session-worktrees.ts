@@ -29,6 +29,12 @@ async function git(args: string[]): Promise<string> {
   return (await execute("git", args, { encoding: "utf8", maxBuffer: 1024 * 1024 })).stdout.replace(/\r?\n$/u, "")
 }
 
+/** Git for Windows prints worktree paths with forward slashes and its own casing. */
+function pathsMatch(left: string, right: string): boolean {
+  if (process.platform !== "win32") return left === right
+  return left.replaceAll("\\", "/").toLowerCase() === right.replaceAll("\\", "/").toLowerCase()
+}
+
 async function sourceDirectory(path: string): Promise<SourceDirectory> {
   const directory = await realpath(path)
   let root: string
@@ -59,7 +65,7 @@ export class ManagedSessionWorktrees {
     this.#directory = resolve(directory, "session-worktrees")
   }
 
-  async create(workspaceId: string): Promise<ManagedWorkspaceSession> {
+  async create(workspaceId: string, allocated?: CatalogWorkspaceSession): Promise<ManagedWorkspaceSession> {
     const workspace = (await this.#catalog.snapshot()).workspaces.find(value => value.id === workspaceId)
     const main = workspace?.worktrees.find(worktree => !worktree.sessionId)
     if (!main || main.directories.length === 0) throw new Error("Workspace has no main directories")
@@ -67,7 +73,8 @@ export class ManagedSessionWorktrees {
     // usable for terminals but cannot supply isolated agent sessions.
     const sources: SourceDirectory[] = []
     for (const directory of main.directories) sources.push(await sourceDirectory(directory.path))
-    const session = await this.#catalog.createWorkspaceSession(workspaceId)
+    if (allocated && allocated.workspaceId !== workspaceId) throw new Error("Session belongs to a different workspace")
+    const session = allocated ?? await this.#catalog.createWorkspaceSession(workspaceId)
     const directory = this.#sessionDirectory(session.id)
     const manifest: Manifest = { sessionId: session.id, worktrees: [] }
     try {
@@ -96,12 +103,30 @@ export class ManagedSessionWorktrees {
     } catch (error) {
       try {
         await this.#removeOwned(manifest)
-        await this.#catalog.deleteWorkspaceSession(session.id)
+        if (!allocated) await this.#catalog.deleteWorkspaceSession(session.id)
       } catch (cleanup) {
         throw new AggregateError([error, cleanup], `Session ${session.id} creation failed and cleanup is incomplete`, { cause: error })
       }
       throw error
     }
+  }
+
+  /**
+   * Records the Workspace's current directories as the Session's execution
+   * context without generating checkouts; the agent works in those directories.
+   */
+  async useDirectories(allocated: CatalogWorkspaceSession): Promise<ManagedWorkspaceSession> {
+    const workspace = (await this.#catalog.snapshot()).workspaces.find(value => value.id === allocated.workspaceId)
+    const main = workspace?.worktrees.find(worktree => !worktree.sessionId)
+    if (!main || main.directories.length === 0) throw new Error("Workspace has no main directories")
+    for (const { path } of main.directories) {
+      let info
+      try { info = await stat(path) }
+      catch (error) { throw new Error(`Cannot access directory: ${path}`, { cause: error }) }
+      if (!info.isDirectory()) throw new Error(`Not a directory: ${path}`)
+    }
+    const worktree = await this.#catalog.attachSessionWorktree(allocated.id, main.directories.map(({ path }) => ({ path })))
+    return { ...allocated, worktree }
   }
 
   destroy(sessionId: string): Promise<void> {
@@ -118,7 +143,8 @@ export class ManagedSessionWorktrees {
     try { manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8")) as Manifest }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-      // A process may stop after allocating a session but before creating files.
+      // A Session using Workspace directories in place owns no files. A process
+      // may also stop after allocating a session but before creating files.
       await this.#catalog.deleteWorkspaceSession(sessionId)
       return
     }
@@ -150,7 +176,7 @@ export class ManagedSessionWorktrees {
     while (manifest.worktrees.length) {
       const worktree = manifest.worktrees[manifest.worktrees.length - 1]!
       const registered = (await git(["--git-dir", worktree.repository, "worktree", "list", "--porcelain", "-z"]))
-        .split("\0").some(record => record === `worktree ${worktree.path}`)
+        .split("\0").some(record => record.startsWith("worktree ") && pathsMatch(record.slice("worktree ".length), worktree.path))
       if (registered) await git(["--git-dir", worktree.repository, "worktree", "remove", "--force", worktree.path])
       else await rm(worktree.path, { recursive: true, force: true })
       manifest.worktrees.pop()

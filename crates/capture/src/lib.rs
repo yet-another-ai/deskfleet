@@ -20,6 +20,25 @@ pub use frame::{Frame, PixelFormat};
 pub use surface::NativeSurface;
 pub use types::{CaptureConfig, Display};
 
+/// Request screen and system-audio recording access for the current process.
+///
+/// On macOS, this prompts only when access has not yet been determined and
+/// returns whether access is granted. Other platforms return `None` without
+/// prompting. This does not enumerate displays or start capture.
+#[must_use]
+pub fn request_screen_capture_access() -> Option<bool> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
+
+        Some(CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 /// A handle to an active screen capture stream.
 pub struct CaptureStream {
     inner: backend::PlatformStream,

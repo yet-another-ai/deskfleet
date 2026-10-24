@@ -12,15 +12,18 @@ product website and user manual.
   requires ordered directory paths, with the first as default and no directory
   aliases. Its main Worktree uses those actual directories; other Worktrees are
   created and destroyed with their owning Session, never maintained separately.
+  A new Session either generates its own Git worktree or works directly in the
+  Workspace's directories; deleting the latter never touches those files.
   A TerminalSession can belong to a Machine, Workspace, or Worktree. Its working
   directory is a separate choice.
 - Cross-machine coordination belongs to agent-facing MCP tools. Do not introduce
   a global Project abstraction spanning machines.
 - The central backend is open-source Rust using Actix Web. Native capabilities
   live in Rust libraries, exposed through thin napi-rs bindings.
-- The machine daemon is an independent TypeScript/Node.js SEA process that works
-  on headless machines. The Electron app is a client; quitting it must not own
-  the daemon's lifetime.
+- The machine daemon is a TypeScript/Node.js library. Headless machines run it as
+  a standalone SEA process. The Electron app hosts it in the app's main process:
+  it outlives the app's windows, which close to the tray, and stops when the app
+  quits. Do not spawn a separate daemon process from the app.
 - ACP connects agent implementations. WebRTC carries peer data and media, with
   server-assisted signaling and TURN fallback.
 - `PROTOCOL_VERSION` remains `1` until maintainers explicitly declare the first

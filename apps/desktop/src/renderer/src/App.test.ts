@@ -13,7 +13,7 @@ async function mountApp(path = "/") {
   const pinia = createPinia()
   const wrapper = mount(App, {
     attachTo: document.body,
-    global: { plugins: [pinia, router, i18n], stubs: { LiveTerminal: { props: ["terminalId"], template: '<div data-terminal :data-id="terminalId" />' } } },
+    global: { plugins: [pinia, router, i18n], stubs: { Teleport: true, LiveTerminal: { props: ["terminalId"], template: '<div data-terminal :data-id="terminalId" />' } } },
   })
   mounted.push({ wrapper, pinia })
   await flushPromises()
@@ -21,13 +21,17 @@ async function mountApp(path = "/") {
 }
 function link(wrapper: VueWrapper, text: string) { return wrapper.findAll("a").find(a => a.text() === text)! }
 function button(wrapper: VueWrapper, text: string) { return wrapper.findAll("button").find(entry => entry.text() === text)! }
-const chips = (wrapper: VueWrapper) => wrapper.findAll(".ui-chip").map(chip => chip.text())
+const chips = (wrapper: VueWrapper) => wrapper.findAll("[data-composer-context]").map(chip => chip.text())
 function panel(wrapper: VueWrapper) { return wrapper.get('aside[aria-label="Details"]') }
 
 beforeEach(() => {
   window.localStorage.clear()
   vi.spyOn(window.deskfleet.catalog, "list").mockResolvedValue(catalogFixture())
   vi.spyOn(window.deskfleet.desktop, "target").mockResolvedValue({ id: "local-daemon", name: "test-host", online: true, desktop: true })
+  vi.spyOn(window.deskfleet.filesystem, "listDirectories").mockImplementation(async (path = "/") => ({
+    path, parentPath: path === "/" ? null : "/", homePath: "/", roots: [{ name: "/", path: "/" }],
+    directories: path === "/" ? ["notes", "code", "replacement"].map(name => ({ name, path: `/${name}`, hidden: false })) : [],
+  }))
 })
 afterEach(() => {
   for (const { wrapper, pinia } of mounted.splice(0)) { wrapper.unmount(); disposePinia(pinia) }
@@ -35,14 +39,17 @@ afterEach(() => {
   i18n.global.locale.value = "en-US"
 })
 
-test("the app shows automatic main and session worktrees without user-managed worktree names", async () => {
+test("the app targets a workspace and lists its sessions without exposing an internal main worktree", async () => {
   const wrapper = await mountApp()
-  expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "Main worktree", "Codex"])
-  expect(wrapper.get('[aria-label="Send (not available yet)"]').attributes("aria-disabled")).toBe("true")
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])
+  expect(wrapper.get<HTMLButtonElement>('[aria-label="Send"]').element.disabled).toBe(true)
   expect(wrapper.get("aside").text()).not.toContain("Example team")
   expect(link(wrapper, "storefront").attributes("href")).toBe(`#/workspaces/${workspaceId}`)
-  expect(link(wrapper, "Main worktree").attributes("href")).toBe(`#/worktrees/${mainWorktreeId}`)
-  expect(link(wrapper, `Session ${sessionId}`).attributes("href")).toBe(`#/worktrees/${sessionWorktreeId}`)
+  expect(link(wrapper, `Session ${sessionId}`).attributes("href")).toBe(`#/sessions/${sessionId}`)
+  expect(wrapper.find('a[href*="/worktrees/"]').exists()).toBe(false)
+  expect(wrapper.text()).not.toContain("Main worktree")
+  expect(panel(wrapper).text()).toContain("/code/web")
+  expect(panel(wrapper).text()).toContain("/code/api")
 })
 
 test("workspace creation opens a dialog, requires paths, supports choosing the first path by reordering, and retains input after failure", async () => {
@@ -53,13 +60,23 @@ test("workspace creation opens a dialog, requires paths, supports choosing the f
   await wrapper.get('input[name="workspace-name"]').setValue("notes")
   await wrapper.get("dialog form").trigger("submit")
   expect(create).not.toHaveBeenCalled()
-  expect(wrapper.get('dialog [role="alert"]').text()).toBe("Enter at least one directory path.")
+  expect(wrapper.get('dialog [role="alert"]').text()).toBe("Choose at least one directory.")
   expect(wrapper.find('input[name^="directory-name"]').exists()).toBe(false)
-  await wrapper.get('input[name="directory-path-0"]').setValue("/notes")
+  expect(wrapper.find('input[name^="directory-path"]').exists()).toBe(false)
+  await wrapper.get('button[name="directory-path-0"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('dialog [data-path="/notes"]').trigger("click")
+  await flushPromises()
+  await button(wrapper, "Select folder").trigger("click")
   await button(wrapper, "Add directory").trigger("click")
-  await wrapper.get('input[name="directory-path-1"]').setValue("/code")
+  await flushPromises()
+  await wrapper.get('dialog [aria-label="Home"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('dialog [data-path="/code"]').trigger("click")
+  await flushPromises()
+  await button(wrapper, "Select folder").trigger("click")
   await wrapper.get('[aria-label="Move directory 2 up"]').trigger("click")
-  expect((wrapper.get('input[name="directory-path-0"]').element as HTMLInputElement).value).toBe("/code")
+  expect(wrapper.get('button[name="directory-path-0"]').text()).toContain("/code")
   await wrapper.get("dialog form").trigger("submit")
   await flushPromises()
   expect(wrapper.get('dialog [role="alert"]').text()).toBe("Directory does not exist")
@@ -70,8 +87,15 @@ test("workspace creation opens a dialog, requires paths, supports choosing the f
   await wrapper.get("dialog form").trigger("submit")
   await vi.waitFor(() => expect(router.currentRoute.value.params.workspaceId).toBe("9007199254741003"))
   expect(wrapper.find("dialog").exists()).toBe(false)
-  expect(wrapper.get("main").text()).toContain("Main worktree")
+  expect(wrapper.get("main").text()).toContain("No sessions yet.")
+  expect(wrapper.get("main").text()).not.toContain("Main worktree")
+  expect(wrapper.get("main").find('a[href*="/worktrees/"]').exists()).toBe(false)
   expect(wrapper.get("main").text()).toContain("/code")
+  await link(wrapper, "New session").trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
+  expect(panel(wrapper).text()).toContain("/code")
+  expect(panel(wrapper).text()).toContain("/notes")
 })
 
 test("cancelling workspace creation closes its dialog without creating", async () => {
@@ -84,28 +108,49 @@ test("cancelling workspace creation closes its dialog without creating", async (
   expect(create).not.toHaveBeenCalled()
 })
 
-test("workspace edits update its automatic main directories without independent worktree maintenance", async () => {
+test("workspace edits update its configured directories without independent worktree maintenance", async () => {
   const value = catalogFixture().workspaces[0]!
   value.name = "renamed"
-  value.worktrees[0]!.directories = [{ path: "/code/api" }, { path: "/code/web" }]
+  value.worktrees[0]!.directories = [{ path: "/replacement" }, { path: "/code/web" }]
   const update = vi.spyOn(window.deskfleet.catalog, "updateWorkspace").mockResolvedValue(value)
   const wrapper = await mountApp(`/workspaces/${workspaceId}`)
   expect(button(wrapper, "Add worktree")).toBeUndefined()
   await button(wrapper, "Edit workspace").trigger("click")
   await wrapper.get('input[name="workspace-name"]').setValue("renamed")
+  await wrapper.get('button[name="directory-path-1"]').trigger("click")
+  await flushPromises()
+  expect(window.deskfleet.filesystem.listDirectories).toHaveBeenLastCalledWith("/code/api")
+  await wrapper.get('dialog [aria-label="Home"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('dialog [data-path="/replacement"]').trigger("click")
+  await flushPromises()
+  await button(wrapper, "Select folder").trigger("click")
   await wrapper.get('[aria-label="Move directory 2 up"]').trigger("click")
   await wrapper.get("main form").trigger("submit")
   await flushPromises()
-  expect(update).toHaveBeenCalledWith(workspaceId, "renamed", [{ path: "/code/api" }, { path: "/code/web" }])
+  expect(update).toHaveBeenCalledWith(workspaceId, "renamed", [{ path: "/replacement" }, { path: "/code/web" }])
   expect(wrapper.get("main header").text()).toBe("renamed test-host")
-  await link(wrapper, "Main worktree").trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("worktree"))
+  expect(wrapper.get("main").text()).toContain("/replacement")
+  expect(panel(wrapper).text()).toContain("/replacement")
   expect(button(wrapper, "Edit worktree")).toBeUndefined()
   expect(button(wrapper, "Delete worktree")).toBeUndefined()
-  expect(wrapper.get("main").text()).toContain("Manage workspace directories")
+  expect(wrapper.get("main").find('a[href*="/worktrees/"]').exists()).toBe(false)
 })
 
-test("workspace deletion requires confirmation and clears its main worktree", async () => {
+test("workspace New session chooses that workspace before opening the composer", async () => {
+  const snapshot = catalogFixture()
+  snapshot.workspaces.push({ id: "2", name: "notes", worktrees: [{ id: "3", workspaceId: "2", directories: [{ path: "/notes" }] }] })
+  vi.mocked(window.deskfleet.catalog.list).mockResolvedValue(snapshot)
+  const wrapper = await mountApp("/workspaces/2")
+  expect(wrapper.get("main").text()).toContain("No sessions yet.")
+  await button(wrapper, "New session").trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
+  expect(panel(wrapper).text()).toContain("/notes")
+  expect(panel(wrapper).text()).not.toContain("/code/web")
+})
+
+test("workspace deletion requires confirmation and clears its composer target", async () => {
   const remove = vi.spyOn(window.deskfleet.catalog, "deleteWorkspace").mockResolvedValue()
   const wrapper = await mountApp(`/workspaces/${workspaceId}`)
   await button(wrapper, "Delete workspace").trigger("click")
@@ -114,7 +159,7 @@ test("workspace deletion requires confirmation and clears its main worktree", as
   await button(wrapper, "Confirm deletion").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   expect(remove).toHaveBeenCalledWith(workspaceId)
-  expect(chips(wrapper)).toEqual(["Codex"])
+  expect(chips(wrapper)).toEqual([])
 })
 
 test.each([
@@ -143,9 +188,15 @@ test("refresh failure preserves directories and disables workspace mutations unt
   expect(button(wrapper, "Edit workspace").attributes("disabled")).toBeUndefined()
 })
 
-test("session worktrees are read-only and identified by session ID", async () => {
-  const wrapper = await mountApp(`/worktrees/${sessionWorktreeId}`)
-  expect(wrapper.get("main header").text()).toBe(`Session ${sessionId} test-host / storefront`)
+test("a session links to its own read-only worktree", async () => {
+  const wrapper = await mountApp(`/sessions/${sessionId}`)
+  expect(wrapper.get("main header").text()).toContain(`Session ${sessionId}`)
+  const worktreeLink = wrapper.get(`main a[href="#/worktrees/${sessionWorktreeId}"]`)
+  expect(worktreeLink.text()).toContain("Worktree")
+  await worktreeLink.trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("worktree"))
+  expect(wrapper.get("main header").text()).toContain("Worktree")
+  expect(wrapper.get("main").text()).toContain("/worktrees/api/session")
   expect(button(wrapper, "New session")).toBeUndefined()
   expect(button(wrapper, "Edit worktree")).toBeUndefined()
   expect(button(wrapper, "Delete worktree")).toBeUndefined()
@@ -153,10 +204,20 @@ test("session worktrees are read-only and identified by session ID", async () =>
   expect(panel(wrapper).text()).toContain("Git state has not been inspected.")
 })
 
-test("main worktree labels and the local footer use the active locale", async () => {
+test("the internal main worktree has no directly accessible page", async () => {
+  const wrapper = await mountApp(`/worktrees/${mainWorktreeId}`)
+  expect(wrapper.get("main").text()).toContain("This worktree does not exist.")
+  expect(wrapper.get("main").text()).not.toContain("/code/web")
+  expect(wrapper.find(`a[href="#/worktrees/${mainWorktreeId}"]`).exists()).toBe(false)
+})
+
+test("the localized composer and local footer do not expose an internal main worktree", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
   const wrapper = await mountApp()
-  expect(chips(wrapper)).toContain("主工作树")
+  expect(chips(wrapper)).toHaveLength(4)
+  expect(chips(wrapper)).toContain("新建工作树")
+  expect(chips(wrapper)).toContain("storefront")
+  expect(wrapper.text()).not.toContain("主工作树")
   expect(wrapper.get("footer").text()).toBe("本本地")
 })
 
@@ -175,6 +236,8 @@ test("settings replaces the app layout, returns to the previous page, and refres
   expect(view.find("aside").exists()).toBe(false)
   expect(view.get('main nav [aria-current="page"]').text()).toBe("Preferences")
   expect(view.get("main h1").text()).toBe("Preferences")
+  expect(view.get('main [role="switch"][aria-labelledby="launch-at-startup-label"]').attributes("disabled")).toBeDefined()
+  expect(view.get("#launch-at-startup-label").text()).toBe("Launch at startup")
   expect(view.get('main section[aria-labelledby="this-computer-heading"]').text()).toContain("Run local Agent")
   vi.mocked(window.deskfleet.catalog.list).mockClear()
   list.mockClear()

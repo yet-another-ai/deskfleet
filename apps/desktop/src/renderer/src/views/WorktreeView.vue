@@ -1,32 +1,28 @@
 <script setup lang="ts">
-import { SquarePen } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
-import { RouterLink, useRouter } from "vue-router"
+import { RouterLink } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import DirectoryList from "../components/catalog/DirectoryList.vue"
 import { useWorktreeLabel } from "../composables/useWorktreeLabel.ts"
+import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 
 const props = defineProps<{ worktreeId: string }>()
 const { t } = useI18n()
 const worktreeLabel = useWorktreeLabel()
+const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
-const router = useRouter()
 const location = computed(() => fleet.findWorktree(props.worktreeId))
 const available = computed(() => fleet.canManageCatalog && location.value?.machine.local)
-function startSession(): void {
-  fleet.targetWorktree(props.worktreeId)
-  void router.push({ name: "new-session" })
-}
 </script>
 
 <template>
   <PaneHeader>
     <template v-if="location">
-      {{ worktreeLabel(location.worktree) }}
-      <ResourcePath :segments="[location.machine.name, location.workspace.name]" />
+      {{ worktreeLabel(location.session) }}
+      <ResourcePath :segments="[location.machine.name, location.workspace.name, sessionLabel(location.session)]" />
     </template>
   </PaneHeader>
   <div v-if="!location" class="flex min-h-0 flex-1 items-center justify-center px-6 text-ui-text-muted">
@@ -37,22 +33,15 @@ function startSession(): void {
       <p v-if="!available" class="m-0 text-sm text-ui-text-muted">{{ t("catalog.offline") }}</p>
       <section>
         <h2 class="ui-section-title">{{ t("worktree.directories") }}</h2>
-        <DirectoryList :directories="location.worktree.directories" :disabled="!available" />
-        <RouterLink v-if="location.worktree.sessionId === undefined" :to="{ name: 'workspace', params: { workspaceId: location.workspace.id } }" class="mt-3 inline-block text-sm text-ui-accent">{{ t("worktree.manageWorkspace") }}</RouterLink>
+        <DirectoryList :directories="location.worktree.directories" :disabled="!available" :owner="{ sessionId: location.session.id, worktreeId: location.worktree.id }" />
       </section>
-      <section v-if="location.worktree.sessionId === undefined || location.worktree.sessions.length">
-        <div class="flex items-center justify-between">
-          <h2 class="ui-section-title">{{ t("worktree.sessions") }}</h2>
-          <button v-if="location.worktree.sessionId === undefined" type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover" @click="startSession">
-            <SquarePen :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("worktree.newSession") }}
-          </button>
-        </div>
-        <ul v-if="location.worktree.sessions.length" class="ui-card">
-          <li v-for="session in location.worktree.sessions" :key="session.id">
-            <RouterLink :to="{ name: 'session', params: { sessionId: session.id } }" class="ui-card-row hover:bg-ui-hover">{{ session.title }}</RouterLink>
+      <section>
+        <h2 class="ui-section-title">{{ t("worktree.session") }}</h2>
+        <ul class="ui-card">
+          <li>
+            <RouterLink :to="{ name: 'session', params: { sessionId: location.session.id } }" class="ui-card-row hover:bg-ui-hover">{{ sessionLabel(location.session) }}</RouterLink>
           </li>
         </ul>
-        <p v-else class="m-0 text-ui-text-muted">{{ t("worktree.noSessions") }}</p>
       </section>
     </div>
   </div>

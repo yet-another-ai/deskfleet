@@ -3,12 +3,14 @@ import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import type { RouteResource } from "../../composables/useRouteResource.ts"
 import { useWorktreeLabel } from "../../composables/useWorktreeLabel.ts"
-import type { MachineSummary, WorktreeSummary } from "../../stores/fleet-types.ts"
+import { useSessionLabel } from "../../composables/useSessionLabel.ts"
+import type { DirectoryBinding, MachineSummary } from "../../stores/fleet-types.ts"
 import DetailsList, { type DetailsRow } from "./DetailsList.vue"
 
 const props = defineProps<{ resource: RouteResource }>()
 const { t } = useI18n()
 const worktreeLabel = useWorktreeLabel()
+const sessionLabel = useSessionLabel()
 
 function machineStatus(machine: MachineSummary): string {
   return machine.online ? t("panel.online") : t("machine.offline")
@@ -24,14 +26,14 @@ const rows = computed<DetailsRow[]>(() => {
       return [
         machine,
         { label: t("panel.workspace"), value: resource.workspace.name },
+        { label: t("worktree.session"), value: sessionLabel(resource.session) },
         { label: t("panel.status"), value: machineStatus(resource.machine) },
       ]
     case "session":
       return [
-        { label: t("panel.provider"), value: resource.session.provider },
+        ...(resource.session.provider ? [{ label: t("panel.provider"), value: resource.session.provider }] : []),
         machine,
         { label: t("panel.workspace"), value: resource.workspace.name },
-        { label: t("panel.worktree"), value: worktreeLabel(resource.worktree) },
       ]
     case "terminal": {
       const scope = resource.worktree
@@ -43,7 +45,8 @@ const rows = computed<DetailsRow[]>(() => {
         { label: t("panel.scope"), value: scope },
         machine,
         ...(resource.workspace ? [{ label: t("panel.workspace"), value: resource.workspace.name }] : []),
-        ...(resource.worktree ? [{ label: t("panel.worktree"), value: worktreeLabel(resource.worktree) }] : []),
+        ...(resource.session ? [{ label: t("worktree.session"), value: sessionLabel(resource.session) }] : []),
+        ...(resource.worktree ? [{ label: t("panel.worktree"), value: worktreeLabel(resource.session) }] : []),
         { label: t("panel.cwd"), value: resource.terminal.cwd, code: true },
       ]
     }
@@ -65,9 +68,9 @@ const title = computed(() => {
     case "workspace":
       return resource.workspace.name
     case "worktree":
-      return worktreeLabel(resource.worktree)
+      return worktreeLabel(resource.session)
     case "session":
-      return resource.session.title
+      return sessionLabel(resource.session)
     case "terminal":
       return resource.terminal.title
     case "desktop":
@@ -75,9 +78,12 @@ const title = computed(() => {
   }
 })
 
-const worktree = computed<WorktreeSummary | undefined>(() =>
-  props.resource.kind === "desktop" || props.resource.kind === "workspace" ? undefined : props.resource.worktree,
-)
+const directories = computed<DirectoryBinding[]>(() => {
+  const resource = props.resource
+  if (resource.kind === "desktop") return []
+  if (resource.kind === "workspace") return resource.workspace.directories
+  return resource.worktree?.directories ?? []
+})
 </script>
 
 <template>
@@ -85,10 +91,10 @@ const worktree = computed<WorktreeSummary | undefined>(() =>
     <h2 class="m-0 break-words text-sm font-semibold">{{ title }}</h2>
     <DetailsList :rows="rows" />
 
-    <section v-if="worktree">
+    <section v-if="directories.length">
       <h3 class="ui-section-title">{{ t("panel.directories") }}</h3>
       <ul class="flex flex-col gap-3">
-        <li v-for="(directory, index) in worktree.directories" :key="index" class="text-[13px]">
+        <li v-for="(directory, index) in directories" :key="index" class="text-[13px]">
           <div v-if="index === 0" class="mb-1 text-xs text-ui-text-muted">{{ t("catalog.defaultDirectory") }}</div>
           <div class="break-all font-mono text-xs text-ui-text-muted select-text">
             {{ directory.path }}

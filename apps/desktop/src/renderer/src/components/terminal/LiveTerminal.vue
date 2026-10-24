@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef } from "vue"
+import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { TerminalSummary } from "../../../../../../daemon/src/terminal-protocol.ts"
-import { intlLocale, type AppLocale } from "../../../../shared/i18n.ts"
 import { decodeTerminalBytes } from "../../services/terminal-client.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import TerminalSurface from "./TerminalSurface.vue"
 
+export type TerminalConnection = "connecting" | "replaying" | "connected" | "disconnected" | "ended" | "error"
+
 const props = defineProps<{ terminalId: string }>()
-const { t, locale } = useI18n()
+/** The surrounding tab shows the connection and the title the running program reports. */
+const emit = defineEmits<{ connection: [state: TerminalConnection, label: string]; title: [title: string] }>()
+const { t } = useI18n()
 const terminals = useTerminalsStore()
 const surface = useTemplateRef<InstanceType<typeof TerminalSurface>>("surface")
 const attached = ref(false)
@@ -18,21 +21,21 @@ const interactive = ref(false)
 const error = ref<string | null>(null)
 const sessionStatus = ref<TerminalSummary["status"]>("running")
 const exitCode = ref<number | undefined>()
-const historyLines = ref(5_000)
-const formattedHistoryLines = computed(() => new Intl.NumberFormat(intlLocale(locale.value as AppLocale)).format(historyLines.value))
 let size = { cols: 80, rows: 24 }
 let attachment: ReturnType<typeof terminals.attach> | null = null
 let resizeTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 let activating: ReturnType<typeof terminals.attach> | null = null
 
-const status = computed(() => {
-  if (connecting.value) return t("terminal.connecting")
-  if (attached.value && !replayed.value) return t("terminal.replaying")
-  if (sessionStatus.value === "interrupted") return t("terminal.interrupted")
-  if (sessionStatus.value === "exited") return exitCode.value === undefined ? t("terminal.ended") : t("terminal.exited", { code: exitCode.value })
-  return attached.value ? t("terminal.connected") : t("terminal.disconnected")
+const connection = computed((): [TerminalConnection, string] => {
+  if (error.value) return ["error", error.value]
+  if (connecting.value) return ["connecting", t("terminal.connecting")]
+  if (attached.value && !replayed.value) return ["replaying", t("terminal.replaying")]
+  if (sessionStatus.value === "interrupted") return ["ended", t("terminal.interrupted")]
+  if (sessionStatus.value === "exited") return ["ended", exitCode.value === undefined ? t("terminal.ended") : t("terminal.exited", { code: exitCode.value })]
+  return attached.value ? ["connected", t("terminal.connected")] : ["disconnected", t("terminal.disconnected")]
 })
+watch(connection, ([state, label]) => emit("connection", state, label), { immediate: true })
 
 function failed(reason: unknown): void {
   if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason)
@@ -119,12 +122,6 @@ function input(data: string): void {
   if (interactive.value) void terminals.input(props.terminalId, data).catch(failed)
 }
 
-async function moreHistory(): Promise<void> {
-  historyLines.value = Math.min(0xffff_ffff, historyLines.value * 2)
-  await nextTick()
-  await connect()
-}
-
 onBeforeUnmount(() => {
   disposed = true
   clearTimeout(resizeTimer)
@@ -133,33 +130,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col gap-2">
-    <div class="flex flex-wrap items-center gap-3 text-xs text-ui-text-muted">
-      <span role="status">{{ status }}</span>
-      <button
-        v-if="!attached && !connecting"
-        type="button"
-        class="cursor-pointer rounded-md px-2 py-1 hover:bg-ui-hover hover:text-ui-text"
-        @click="connect"
-      >{{ t("terminal.reconnect") }}</button>
-      <span class="ml-auto" :title="t('terminal.historyRetained')">{{ t("terminal.historyLines", { count: formattedHistoryLines }) }}</span>
-      <button
-        type="button"
-        class="cursor-pointer rounded-md px-2 py-1 hover:bg-ui-hover hover:text-ui-text disabled:op-40"
-        :disabled="!attached || !replayed || connecting || historyLines >= 0xffff_ffff"
-        @click="moreHistory"
-      >{{ t("terminal.moreHistory") }}</button>
-    </div>
-    <p v-if="error" role="alert" class="m-0 text-xs text-red-500">{{ error }}</p>
-    <div class="min-h-0 flex-1 overflow-hidden rounded-xl bg-ui-terminal p-3">
-      <TerminalSurface
-        ref="surface"
-        :interactive="interactive"
-        :scrollback="historyLines"
-        @ready="ready"
-        @input="input"
-        @resize="resize"
-      />
-    </div>
+  <!-- History replay restores the program's title; scrollback size will become a Terminal setting. -->
+  <div class="min-h-0 flex-1 overflow-hidden bg-ui-terminal">
+    <TerminalSurface
+      ref="surface"
+      :interactive="interactive"
+      @ready="ready"
+      @input="input"
+      @resize="resize"
+      @title="title => emit('title', title)"
+    />
   </div>
 </template>

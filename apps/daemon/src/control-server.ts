@@ -7,14 +7,18 @@ import { join } from "node:path"
 import { captureDisplays, supportedVideoCodecs, type NativePeer, type PeerConfig } from "@deskfleet/native"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
 import { MAX_CONTROL_MESSAGE_BYTES, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
-import { parseControlRequest } from "./control-request.ts"
+import { parseControlRequest, readControlRequestId } from "./control-request.ts"
+import { endControlSocket } from "./control-socket.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
 import { DaemonCatalog } from "./catalog.ts"
-import { readAgentConfiguration } from "./agent-configuration.ts"
+import { listDirectories } from "./filesystem.ts"
+import { ScreenCapturePermissions } from "./screen-capture-permission.ts"
+import { AgentSessions } from "./agent-sessions.ts"
+import { AgentChannel } from "./agent-channel.ts"
+import { AGENT_CHANNEL } from "./agent-protocol.ts"
 import type { AgentProvider } from "./agents/acp.ts"
-import { codexProvider } from "./agents/codex.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
 export interface ControlPeers {
@@ -41,6 +45,7 @@ interface OwnedPeer {
   nativeId: string
   peer: Promise<NativePeer>
   terminal?: TerminalChannel
+  agent?: AgentChannel
 }
 
 class ControlConnection {
@@ -50,8 +55,8 @@ class ControlConnection {
   readonly #capabilities: Capabilities
   readonly #terminals: TerminalSessions
   readonly #catalog: DaemonCatalog
-  readonly #agentProvider: AgentProvider
-  readonly #abort = new AbortController()
+  readonly #permissions: ScreenCapturePermissions
+  readonly #agents: () => AgentSessions
   readonly #onShutdownRequested: (() => void) | undefined
   readonly #sessions = new Map<string, OwnedPeer>()
   readonly #dialed = new Set<string>()
@@ -59,14 +64,15 @@ class ControlConnection {
   #authenticated = false
   #closing: Promise<void> | undefined
 
-  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, agentProvider: AgentProvider, onShutdownRequested?: () => void) {
+  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: ScreenCapturePermissions, agents: () => AgentSessions, onShutdownRequested?: () => void) {
     this.#socket = socket
     this.#token = token
     this.#peers = peers
     this.#capabilities = capabilities
     this.#terminals = terminals
     this.#catalog = catalog
-    this.#agentProvider = agentProvider
+    this.#permissions = permissions
+    this.#agents = agents
     this.#onShutdownRequested = onShutdownRequested
     const unsubscribeTerminals = terminals.onChange(event => {
       if (event.kind === "terminalHungup") this.#dialed.delete(event.terminalId)
@@ -75,7 +81,10 @@ class ControlConnection {
     const unsubscribeCatalog = catalog.onChange(event => {
       if (this.#authenticated) this.#send({ event })
     })
-    this.#unsubscribe = () => { unsubscribeTerminals(); unsubscribeCatalog() }
+    const unsubscribePermissions = permissions.onChange(permission => {
+      if (this.#authenticated) this.#send({ event: { kind: "screenCapturePermissionChanged", permission } })
+    })
+    this.#unsubscribe = () => { unsubscribeTerminals(); unsubscribeCatalog(); unsubscribePermissions() }
     socket.on("error", () => {})
     socket.once("close", () => { void this.close().catch(error => console.error("Desktop session cleanup failed", error)) })
   }
@@ -101,26 +110,23 @@ class ControlConnection {
           const end = pending.indexOf(10)
           if (end < 0) break
           if (end > MAX_CONTROL_MESSAGE_BYTES) throw new Error("Local daemon request is too large")
-          const request = parseControlRequest(JSON.parse(pending.subarray(0, end).toString("utf8")))
+          const value: unknown = JSON.parse(pending.subarray(0, end).toString("utf8"))
+          const id = readControlRequestId(value)
           pending = pending.subarray(end + 1)
           try {
+            const request = parseControlRequest(value)
             const result = await this.#handle(request)
             if (request.method === "shutdown") {
               // Flush the acknowledgement before shutdown closes client sockets.
-              await new Promise<void>(resolve => {
-                const flushed = () => { this.#socket.off("close", flushed); resolve() }
-                if (this.#socket.destroyed) return resolve()
-                this.#socket.once("close", flushed)
-                this.#socket.end(JSON.stringify({ id: request.id, result }) + "\n", flushed)
-              })
+              await endControlSocket(this.#socket, JSON.stringify({ id: request.id, result }) + "\n")
               this.#onShutdownRequested?.()
               return
             }
             this.#send({ id: request.id, result })
           } catch (error) {
-            this.#send({ id: request.id, error: message(error) })
+            this.#send({ id, error: message(error) })
             if (!this.#authenticated) {
-              await new Promise<void>(resolve => this.#socket.end(resolve))
+              await endControlSocket(this.#socket)
               return
             }
           }
@@ -142,31 +148,44 @@ class ControlConnection {
       const expected = Buffer.from(this.#token)
       if (received.length !== expected.length || !timingSafeEqual(received, expected)) throw new Error("Local daemon authentication failed")
       this.#authenticated = true
-      return { name: hostname(), desktop: process.platform === "darwin" || process.platform === "win32" }
+      return {
+        name: hostname(),
+        desktop: process.platform === "darwin" || process.platform === "win32",
+        screenCapturePermission: this.#permissions.state,
+      }
     }
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")
     if (this.#closing) throw new Error("Local daemon connection is closed")
     switch (request.method) {
-      case "agentConfiguration":
-        return readAgentConfiguration(request.params, await this.#catalog.agentWorkingDirectory(request.params.worktreeId), {
-          provider: this.#agentProvider, signal: this.#abort.signal,
-        })
       case "shutdown":
         if (!this.#onShutdownRequested) throw new Error("Daemon shutdown is unavailable")
         return null
+      case "directoryList":
+        return listDirectories(request.params.path)
       case "catalogList":
       case "workspaceCreate":
       case "workspaceUpdate":
       case "workspaceDelete":
       case "workspaceSessionCreate":
-      case "workspaceSessionDestroy":
         return this.#catalog.handle(request)
+      case "workspaceSessionDestroy": {
+        const managed = (await this.#agents().journal.list()).some(session => session.id === request.params.sessionId)
+        if (managed) throw new Error("Delete Agent Sessions through the Agent Session service")
+        return this.#catalog.handle(request)
+      }
       case "capabilities":
         return this.#capabilities()
       case "terminalList":
         return this.#terminals.list()
       case "terminalDial": {
-        const terminal = await this.#terminals.dial(request.params)
+        let params = request.params
+        if (params.mode === "create" && params.worktreeId !== undefined) {
+          const { worktreeId } = params
+          const worktree = (await this.#catalog.native.snapshot()).workspaces.flatMap(workspace => workspace.worktrees).find(value => value.id === worktreeId)
+          if (!worktree?.sessionId || !worktree.directories[0]) throw new Error("Session worktree is unavailable")
+          params = { ...params, cwd: params.cwd ?? worktree.directories[0].path }
+        }
+        const terminal = await this.#terminals.dial(params)
         this.#dialed.add(terminal.id)
         return terminal
       }
@@ -174,7 +193,8 @@ class ControlConnection {
         await this.#terminals.hangup(request.params.terminalId)
         return null
       case "offer":
-      case "terminalOffer": {
+      case "terminalOffer":
+      case "agentOffer": {
         const { sessionId, sdp } = request.params
         if (this.#sessions.has(sessionId)) throw new Error("Desktop session already exists")
         if (this.#sessions.size >= 8) throw new Error("Too many desktop sessions")
@@ -196,6 +216,13 @@ class ControlConnection {
               id => this.#dialed.has(id),
             )
           }
+          if (request.method === "agentOffer") {
+            const agents = this.#agents()
+            owned.agent = new AgentChannel(agents, agents.actor(), bytes => peer.sendData(AGENT_CHANNEL, Buffer.from(bytes)), error => {
+              this.#send({ event: { sessionId, kind: "error", error: message(error) } })
+              void this.#closeSession(sessionId).catch(cleanup => console.error("Agent peer cleanup failed", cleanup))
+            })
+          }
           void this.#events(sessionId, owned, peer)
           return { sdp: await peer.answerOffer(sdp) }
         } catch (error) {
@@ -208,7 +235,7 @@ class ControlConnection {
         return null
       case "start": {
         const { sessionId, displayId, fps, bitrateBps } = request.params
-        if (this.#sessions.get(sessionId)?.terminal) throw new Error("Terminal peers cannot start desktop capture")
+        if (this.#sessions.get(sessionId)?.terminal || this.#sessions.get(sessionId)?.agent) throw new Error("Data-only peers cannot start desktop capture")
         await (await this.#session(sessionId)).startDesktop({ displayId, fps, bitrateBps })
         return null
       }
@@ -243,6 +270,10 @@ class ControlConnection {
           }
           if (event.kind === "dataChannelClosed") owned.terminal.close()
         }
+        if (owned.agent && event.label === AGENT_CHANNEL) {
+          if (event.kind === "data" && event.data) owned.agent.receive(event.data, event.isString === true)
+          if (event.kind === "dataChannelClosed") owned.agent.close()
+        }
         let outgoing: DesktopEvent | undefined
         if (event.kind === "iceCandidate" && event.candidate) outgoing = { sessionId, kind: "iceCandidate", candidate: event.candidate }
         if (event.kind === "stateChanged" && event.state) outgoing = { sessionId, kind: "stateChanged", state: event.state }
@@ -266,11 +297,11 @@ class ControlConnection {
     if (!owned) return
     this.#sessions.delete(sessionId)
     owned.terminal?.close()
+    owned.agent?.close()
     await this.#peers.close(owned.nativeId)
   }
 
   close(): Promise<void> {
-    this.#abort.abort(new Error("Local daemon connection closed"))
     this.#socket.destroy()
     this.#unsubscribe()
     this.#dialed.clear()
@@ -308,9 +339,14 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
   }
 }
 
-export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, agentProvider: AgentProvider = codexProvider) {
+export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new ScreenCapturePermissions(), agentProvider?: AgentProvider) {
   const sessions = terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
   const catalog = new DaemonCatalog(directory)
+  let agents: AgentSessions | undefined
+  const agentService = () => {
+    if (!agents) throw new Error("Agent service is not ready")
+    return agents
+  }
   await mkdir(directory, { recursive: true, mode: 0o700 })
   if (process.platform !== "win32") await chmod(directory, 0o700)
   const temporary = await mkdtemp(join(tmpdir(), "df-ipc-"))
@@ -325,7 +361,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
   void initialized.catch(() => {})
   const server = createServer(socket => {
     if (stopping) { socket.destroy(); return }
-    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, agentProvider, onShutdownRequested)
+    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, permissions, agentService, onShutdownRequested)
     connections.add(connection)
     const operation = initialized.then(() => connection.run()).catch(error => {
       if (published) console.error("Local desktop connection failed", error)
@@ -350,7 +386,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
         if (!terminals) await sessions.close()
       } finally {
         try {
-          await catalog.close()
+          try { await agents?.close() } finally { await catalog.close() }
         } finally {
           if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
           // Discovery remains owned until all daemon resources have finished closing.
@@ -372,6 +408,10 @@ export async function startControlServer(peers: ControlPeers, directory: string,
     // Recover only after owning discovery: a second daemon must never rewrite
     // the active daemon's terminal metadata while probing its endpoint.
     await catalog.init()
+    // A Session's terminals end before its Worktree is removed.
+    catalog.onSessionRelease(worktreeId => sessions.hangupOwned(worktreeId))
+    agents = new AgentSessions(catalog, catalog.native, agentProvider)
+    await agents.init()
     await sessions.init()
     ready()
     return { stop, close }

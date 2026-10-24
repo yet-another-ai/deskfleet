@@ -11,7 +11,8 @@ electronFuses:
   # Flipping fuses changes executable pages. Unsigned Apple Silicon builds need
   # a fresh ad-hoc signature or macOS terminates them with CODESIGNING/Invalid Page.
   resetAdHocDarwinSignature: true
-  runAsNode: false
+  # The bundled Codex ACP adapter uses Electron as its Node host.
+  runAsNode: true
   enableCookieEncryption: true
   enableNodeOptionsEnvironmentVariable: false
   enableNodeCliInspectArguments: false

@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Folder,
   FolderPlus,
-  FolderTree,
   MonitorPlay,
   SquareTerminal,
 } from "@lucide/vue"
@@ -13,7 +12,7 @@ import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import { intlLocale, type AppLocale } from "../../../../shared/i18n.ts"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
-import { useWorktreeLabel } from "../../composables/useWorktreeLabel.ts"
+import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import IconButton from "../common/IconButton.vue"
@@ -22,7 +21,7 @@ import TreeLink from "./TreeLink.vue"
 
 const props = defineProps<{ machine: MachineSummary }>()
 const { t, locale } = useI18n()
-const worktreeLabel = useWorktreeLabel()
+const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const terminals = useTerminalsStore()
 const router = useRouter()
@@ -118,26 +117,14 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
           <li v-for="terminal in workspace.terminals" :key="terminal.id">
             <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
           </li>
-          <li v-for="worktree in workspace.worktrees" :key="worktree.id">
+          <li v-for="session in workspace.sessions" :key="session.id">
+            <!-- A Session's shells open in its bottom panel, not the sidebar. -->
             <TreeLink
-              :to="{ name: 'worktree', params: { worktreeId: worktree.id } }"
-              :icon="FolderTree"
-              :label="worktreeLabel(worktree)"
+              :to="{ name: 'session', params: { sessionId: session.id } }"
+              :icon="Bot"
+              :label="sessionLabel(session)"
               :depth="1"
             />
-            <ul>
-              <li v-for="session in worktree.sessions" :key="session.id">
-                <TreeLink
-                  :to="{ name: 'session', params: { sessionId: session.id } }"
-                  :icon="Bot"
-                  :label="session.title"
-                  :depth="2"
-                />
-              </li>
-              <li v-for="terminal in worktree.terminals" :key="terminal.id">
-                <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="2" />
-              </li>
-            </ul>
           </li>
         </ul>
       </li>

@@ -12,7 +12,10 @@ publish.workspace = true
 deskfleet-migration.workspace = true
 deskfleet-model.workspace = true
 sea-orm.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tokio.workspace = true

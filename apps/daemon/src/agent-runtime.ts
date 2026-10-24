@@ -1,0 +1,440 @@
+import { randomUUID } from "node:crypto"
+import type * as acp from "@agentclientprotocol/sdk"
+import { supportsSteering, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
+import type { DaemonCatalog } from "./catalog.ts"
+import { AgentJournal, errorMessage, timestamp } from "./agent-store.ts"
+import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
+
+import { applyAgentConfiguration } from "./agent-configuration.ts"
+import { agentConfiguration, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+import { savedAgentConfiguration } from "./agent-session-configuration.ts"
+
+const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
+const systemCommand = async (journal: AgentJournal, sessionId: string, inputId: string): Promise<AgentCommand> => ({
+  id: await journal.id(), operationId: randomUUID(), actor: { ...journal.actor(), kind: "system" },
+  sessionId, method: "dispatch", params: { inputId }, isCanonical: true,
+  status: "accepted", receivedAt: timestamp(),
+})
+
+/** One provider process, independent of all viewers of the durable Session. */
+export class AgentRuntime {
+  readonly journal: AgentJournal
+  readonly sessionId: string
+  readonly #catalog: DaemonCatalog
+  readonly #provider: AgentProvider
+  #configuration?: acp.SessionConfigOption[]
+  #configuring = false
+  #connection?: AgentConnection
+  #run?: AgentRun
+  #active?: { turn: AgentTurn; completion: Promise<void> }
+  #dispatching = false
+  #pumpAgain = false
+  #stopping = false
+  #starting?: Promise<void>
+  #stop?: Promise<void>
+  #recovering?: Promise<void>
+  #delivery?: Promise<void>
+  readonly #permissions = new Map<string, (response: acp.RequestPermissionResponse) => void>()
+
+  constructor(journal: AgentJournal, catalog: DaemonCatalog, provider: AgentProvider, sessionId: string) {
+    this.journal = journal
+    this.#catalog = catalog
+    this.#provider = provider
+    this.sessionId = sessionId
+  }
+
+  get running(): boolean { return !!this.#connection && !this.#stopping && this.#run?.state === "running" }
+
+  async configuration(): Promise<AgentConfiguration> {
+    const options = this.#configuration ?? (await savedAgentConfiguration(this.journal, this.sessionId)).options
+    return agentConfiguration(options)
+  }
+
+  async configure(selection: AgentConfigurationSelection): Promise<AgentConfiguration> {
+    if (this.#configuring || this.#active || this.#dispatching) throw new Error("Wait for the current turn before changing the Agent configuration")
+    // Pause backlog dispatch through startup and every provider configuration call.
+    this.#configuring = true
+    try {
+      await this.start()
+      const snapshot = await this.journal.read(this.sessionId)
+      if (this.#active || snapshot.turns.some(liveTurn)) throw new Error("Wait for the current turn before changing the Agent configuration")
+      const sessionId = snapshot.session.providerSessionId!
+      await applyAgentConfiguration(this.#connection!, sessionId, this.#configuration ?? [], selection,
+        options => this.#recordConfiguration(sessionId, options))
+      return this.configuration()
+    } finally {
+      this.#configuring = false
+      void this.pump()
+    }
+  }
+
+  async #recordConfiguration(sessionId: string, options: acp.SessionConfigOption[]): Promise<void> {
+    this.#configuration = options
+    const notification: acp.SessionNotification = { sessionId, update: { sessionUpdate: "config_option_update", configOptions: options } }
+    await this.journal.serial(this.sessionId, async () => {
+      const snapshot = await this.journal.read(this.sessionId)
+      await this.journal.commit(snapshot, { events: [this.journal.event(this.sessionId, "acp", notification, { runGeneration: this.#run!.generation })] })
+    })
+  }
+
+  start(): Promise<void> {
+    if (this.#stopping && this.#stop) {
+      const stopping = this.#stop
+      return stopping.then(() => {
+        if (this.#stop === stopping) {
+          this.#stop = undefined
+          this.#stopping = false
+        }
+        return this.start()
+      })
+    }
+    if (this.#recovering) return this.#recovering.then(() => this.start())
+    if (this.running) return Promise.resolve()
+    if (this.#starting) return this.#starting
+    this.#starting = this.#start().finally(() => { this.#starting = undefined })
+    return this.#starting
+  }
+
+  async #start(): Promise<void> {
+    this.#stopping = false
+    this.#stop = undefined
+    const snapshot = await this.journal.read(this.sessionId)
+    if (snapshot.session.lifecycle !== "ready") throw new Error("Session is not available for execution")
+    await this.#active?.completion
+    const savedConfiguration = await savedAgentConfiguration(this.journal, this.sessionId)
+    const catalog = await this.#catalog.native.snapshot()
+    const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
+    if (!worktree?.directories[0]) throw new Error("Session worktree is unavailable")
+    const run: AgentRun = {
+      sessionId: this.sessionId, generation: Math.max(0, ...snapshot.runs.map(run => run.generation)) + 1,
+      state: "starting", startedAt: timestamp(),
+    }
+    this.#run = run
+    await this.journal.serial(this.sessionId, async () => {
+      const current = await this.journal.read(this.sessionId)
+      await this.journal.commit(current, { runs: [run], events: [this.journal.event(this.sessionId, "run", run)] })
+    })
+    try {
+      const connection = await this.#provider.connect({ name: "Codex" }, {
+        onUpdate: params => this.#update(params, run.generation),
+        requestPermission: (params, signal) => this.#permission(params, signal, run.generation),
+        onClose: error => this.#connectionLost(error, run.generation),
+      })
+      this.#connection = connection
+      if (this.#stopping) throw new Error("Agent startup was stopped")
+      const capabilities = connection.initialization.agentCapabilities
+      const additionalDirectories = worktree.directories.slice(1).map(directory => directory.path)
+      if (additionalDirectories.length && !capabilities?.sessionCapabilities?.additionalDirectories) {
+        throw new Error("This agent cannot use all of this Session's directories")
+      }
+      const params = { cwd: worktree.directories[0].path, mcpServers: [], ...(additionalDirectories.length ? { additionalDirectories } : {}) }
+      let providerSessionId = snapshot.session.providerSessionId
+      let configOptions: acp.SessionConfigOption[]
+      if (providerSessionId) {
+        if (!capabilities?.sessionCapabilities?.resume) throw new Error("This agent cannot resume the saved conversation")
+        configOptions = (await connection.resume({ ...params, sessionId: providerSessionId })).configOptions ?? []
+      } else {
+        const created = await connection.newSession(params)
+        providerSessionId = created.sessionId
+        configOptions = created.configOptions ?? []
+      }
+      configOptions = await applyAgentConfiguration(connection, providerSessionId, configOptions, savedConfiguration.selection)
+      await this.#recordConfiguration(providerSessionId, configOptions)
+      if (this.#stopping) throw new Error("Agent startup was stopped")
+      run.state = "running"
+      await this.journal.serial(this.sessionId, async () => {
+        const current = await this.journal.read(this.sessionId)
+        const session = {
+          ...current.session, providerSessionId, lifecycle: "ready" as const, error: undefined, updatedAt: timestamp(),
+          capabilities: { steering: supportsSteering(connection.initialization), resume: !!capabilities?.sessionCapabilities?.resume },
+        }
+        await this.journal.commit(current, { session, runs: [run], events: [
+          this.journal.event(this.sessionId, "session", session), this.journal.event(this.sessionId, "run", run),
+        ] })
+      })
+      void this.pump()
+    } catch (error) {
+      this.#stopping = true
+      await this.#connection?.close().catch(() => {})
+      this.#connection = undefined
+      run.state = "failed"
+      run.error = errorMessage(error)
+      run.endedAt = timestamp()
+      await this.journal.serial(this.sessionId, async () => {
+        const current = await this.journal.read(this.sessionId)
+        const session = { ...current.session, error: run.error, updatedAt: timestamp() }
+        await this.journal.commit(current, { session, runs: [run], events: [this.journal.event(this.sessionId, "run", run), this.journal.event(this.sessionId, "session", session)] })
+      })
+      throw error
+    }
+  }
+
+  async #update(params: acp.SessionNotification, generation: number): Promise<void> {
+    await this.journal.serial(this.sessionId, async () => {
+      if (params.update.sessionUpdate === "config_option_update") {
+        // Startup only commits configuration after every saved choice succeeds.
+        if (this.#run?.generation !== generation || this.#run.state !== "running" || this.#stopping) return
+        this.#configuration = params.update.configOptions
+      }
+      const snapshot = await this.journal.read(this.sessionId)
+      const turnId = this.#active?.turn.id
+      const session = params.update.sessionUpdate === "session_info_update" && params.update.title
+        ? { ...snapshot.session, title: params.update.title, updatedAt: timestamp() } : undefined
+      const events = [this.journal.event(this.sessionId, "acp", params, { runGeneration: generation, turnId })]
+      if (session) events.push(this.journal.event(this.sessionId, "session", session))
+      await this.journal.commit(snapshot, { session, events })
+    })
+  }
+
+  async #permission(request: acp.RequestPermissionRequest, signal: AbortSignal, generation: number): Promise<acp.RequestPermissionResponse> {
+    const permission: AgentPermission = {
+      id: await this.journal.id(), sessionId: this.sessionId, runGeneration: generation,
+      turnId: this.#active?.turn.id, request, state: "pending", createdAt: timestamp(),
+    }
+    let resolve!: (response: acp.RequestPermissionResponse) => void
+    const result = new Promise<acp.RequestPermissionResponse>(done => { resolve = done })
+    this.#permissions.set(permission.id, resolve)
+    try {
+      await this.journal.serial(this.sessionId, async () => {
+        const snapshot = await this.journal.read(this.sessionId)
+        await this.journal.commit(snapshot, { permissions: [permission], events: [this.journal.event(this.sessionId, "permission", permission)] })
+      })
+      const abort = () => { void this.cancelPermissions(permission.id).catch(error => console.error("Permission cancellation failed", error)) }
+      signal.addEventListener("abort", abort, { once: true })
+      if (signal.aborted || this.#stopping) abort()
+      try { return await result } finally { signal.removeEventListener("abort", abort) }
+    } finally { this.#permissions.delete(permission.id) }
+  }
+
+  resolvePermission(id: string, optionId: string): void {
+    this.#permissions.get(id)?.({ outcome: { outcome: "selected", optionId } })
+    this.#permissions.delete(id)
+  }
+
+  async cancelPermissions(id?: string, turnId?: string): Promise<void> {
+    await this.journal.serial(this.sessionId, async () => {
+      const snapshot = await this.journal.read(this.sessionId)
+      const permissions = snapshot.permissions.filter(permission => permission.state === "pending" && (!id || permission.id === id) && (!turnId || permission.turnId === turnId))
+        .map(permission => ({ ...permission, state: "cancelled" as const, resolvedAt: timestamp() }))
+      if (permissions.length) await this.journal.commit(snapshot, { permissions, events: permissions.map(permission => this.journal.event(this.sessionId, "permission", permission)) })
+      for (const permission of permissions) {
+        this.#permissions.get(permission.id)?.({ outcome: { outcome: "cancelled" } })
+        this.#permissions.delete(permission.id)
+      }
+    })
+  }
+
+  pump(): Promise<void> {
+    if (!this.running || this.#active || this.#configuring) return Promise.resolve()
+    if (this.#dispatching) {
+      this.#pumpAgain = true
+      return Promise.resolve()
+    }
+    this.#dispatching = true
+    let launched = false
+    const delivery = (async () => {
+      try {
+        const snapshot = await this.journal.read(this.sessionId)
+        if (snapshot.session.lifecycle !== "ready") return
+        const input = snapshot.inputs.filter(input => input.state === "pending").sort((a, b) => Number(BigInt(a.acceptedSeq) - BigInt(b.acceptedSeq)))[0]
+        if (input) {
+          await this.#launch(input.id, await systemCommand(this.journal, this.sessionId, input.id))
+          launched = true
+        }
+      } catch (error) { console.error("Agent dispatch failed", error) }
+    })().finally(() => {
+      this.#dispatching = false
+      this.#delivery = undefined
+      const again = this.#pumpAgain
+      this.#pumpAgain = false
+      if (launched || again) void this.pump()
+    })
+    this.#delivery = delivery
+    return delivery
+  }
+
+  /** Returns on delivery, not when the active prompt finishes. */
+  steer(inputId: string, command: AgentCommand, requestedTurnId?: string): Promise<void> {
+    if (!this.running || !this.#connection) return Promise.reject(new Error("Resume the Agent before steering"))
+    if (this.#configuring) return Promise.reject(new Error("Wait for the Agent configuration change before steering"))
+    if (this.#dispatching) return Promise.reject(new Error("Another input is being delivered; retry after it is accepted"))
+    this.#dispatching = true
+    const delivery = this.#steer(inputId, command, requestedTurnId).finally(() => {
+      this.#dispatching = false
+      this.#delivery = undefined
+      this.#pumpAgain = false
+      void this.pump()
+    })
+    this.#delivery = delivery
+    return delivery
+  }
+
+  async #steer(inputId: string, command: AgentCommand, requestedTurnId?: string): Promise<void> {
+    let sent = false
+    try {
+      const active = this.#active
+      if (active && requestedTurnId && active.turn.id !== requestedTurnId) throw new Error("The selected turn has already ended")
+      if (!active) {
+        await this.#launch(inputId, command, true)
+        return
+      }
+      const connection = this.#connection!
+      if (!supportsSteering(connection.initialization)) throw new Error("This agent does not support steering")
+      const input = await this.journal.serial(this.sessionId, async () => {
+        const snapshot = await this.journal.read(this.sessionId)
+        const input = this.#claim(snapshot, inputId, command, true)
+        await this.journal.commit(snapshot, { inputs: [input], command, events: [this.journal.event(this.sessionId, "input", input)] })
+        return input
+      })
+      const snapshot = await this.journal.read(this.sessionId)
+      sent = true
+      const result = await connection.steer({ sessionId: snapshot.session.providerSessionId!, prompt: input.content }, command.id)
+      if (result.outcome === "inactive") {
+        await active.completion
+        if (!this.running) throw new Error("The Agent stopped before this input could start")
+        await this.#launch(inputId, command, true)
+      } else {
+        await this.#delivered(inputId, command, active.turn.id, "steer")
+      }
+    } catch (error) {
+      await this.#inputError(inputId, command, error, sent)
+      throw error
+    }
+  }
+
+  #claim(snapshot: AgentSnapshot, inputId: string, command: AgentCommand, alreadyClaimed = false): AgentInput {
+    const input = snapshot.inputs.find(input => input.id === inputId)
+    if (!input || (input.state !== "pending" && !(alreadyClaimed && input.state === "dispatching" && input.dispatchCommandId === command.id))) {
+      throw new Error("This input has already been handled")
+    }
+    return { ...input, state: "dispatching", dispatchCommandId: command.id, dispatcher: command.actor, error: undefined }
+  }
+
+  async #launch(inputId: string, command: AgentCommand, alreadyClaimed = false): Promise<void> {
+    if (!this.running || !this.#connection || !this.#run || this.#active) throw new Error("Agent is not ready for a new turn")
+    const connection = this.#connection
+    const turn: AgentTurn = {
+      id: await this.journal.id(), sessionId: this.sessionId, initialInputId: inputId, dispatchCommandId: command.id,
+      runGeneration: this.#run.generation, state: "running", startedAt: timestamp(),
+    }
+    const input = await this.journal.serial(this.sessionId, async () => {
+      const snapshot = await this.journal.read(this.sessionId)
+      if (!this.running || snapshot.session.lifecycle !== "ready") throw new Error("Agent is stopping")
+      if (snapshot.turns.some(liveTurn)) throw new Error("The current turn has not finished")
+      const input = { ...this.#claim(snapshot, inputId, command, alreadyClaimed), turnId: turn.id, actualDelivery: "turn_start" as const }
+      await this.journal.commit(snapshot, { inputs: [input], turns: [turn], command, events: [
+        this.journal.event(this.sessionId, "input", input), this.journal.event(this.sessionId, "turn", turn),
+      ] })
+      return input
+    })
+    const snapshot = await this.journal.read(this.sessionId)
+    if (!this.running || this.#connection !== connection) {
+      await this.#finish(turn, inputId, command, undefined, new Error("Agent stopped before delivery"), false)
+      return
+    }
+    let done!: () => void
+    const completion = new Promise<void>(resolve => { done = resolve })
+    this.#active = { turn, completion }
+    void connection.prompt({ sessionId: snapshot.session.providerSessionId!, prompt: input.content }).then(
+      result => this.#finish(turn, inputId, command, result),
+      error => this.#finish(turn, inputId, command, undefined, error),
+    ).catch(error => console.error("Could not persist Agent turn completion", error)).finally(() => {
+      if (this.#active?.turn.id === turn.id) this.#active = undefined
+      done()
+      void this.pump()
+    })
+  }
+
+  async #delivered(inputId: string, command: AgentCommand, turnId: string, delivery: "steer" | "turn_start"): Promise<void> {
+    await this.journal.serial(this.sessionId, async () => {
+      const snapshot = await this.journal.read(this.sessionId)
+      const previous = snapshot.inputs.find(input => input.id === inputId)
+      if (!previous || previous.dispatchCommandId !== command.id) return
+      const input: AgentInput = { ...previous, state: "delivered", turnId, actualDelivery: delivery, deliveredAt: timestamp() }
+      const completed = { ...command, status: "completed" as const, completedAt: timestamp(), result: {
+        operationId: command.operationId, commandId: command.id, sessionId: this.sessionId, inputId, turnId, delivery,
+      } }
+      await this.journal.commit(snapshot, { inputs: [input], command: completed, events: [this.journal.event(this.sessionId, "input", input)] })
+    })
+  }
+
+  async #inputError(inputId: string, command: AgentCommand, error: unknown, uncertain = true): Promise<void> {
+    await this.journal.serial(this.sessionId, async () => {
+      const snapshot = await this.journal.read(this.sessionId)
+      const previous = snapshot.inputs.find(input => input.id === inputId)
+      if (!previous || previous.dispatchCommandId !== command.id) return
+      const state = uncertain ? "uncertain" : "failed"
+      const input: AgentInput = { ...previous, state, error: errorMessage(error) }
+      await this.journal.commit(snapshot, { inputs: [input], command: { ...command, status: state, error: input.error, completedAt: timestamp() }, events: [this.journal.event(this.sessionId, "input", input)] })
+    })
+  }
+
+  async #finish(turn: AgentTurn, inputId: string, command: AgentCommand, result?: acp.PromptResponse, error?: unknown, uncertain = true): Promise<void> {
+    await this.cancelPermissions(undefined, turn.id)
+    if (result) await this.#delivered(inputId, command, turn.id, "turn_start")
+    else await this.#inputError(inputId, command, error, uncertain)
+    await this.journal.serial(this.sessionId, async () => {
+      const snapshot = await this.journal.read(this.sessionId)
+      const current = snapshot.turns.find(value => value.id === turn.id)
+      if (!current || !liveTurn(current)) return
+      const finished: AgentTurn = {
+        ...current, state: error ? "interrupted" : result?.stopReason === "cancelled" ? "cancelled" : "completed",
+        endedAt: timestamp(), stopReason: result?.stopReason, error: error ? errorMessage(error) : undefined,
+      }
+      await this.journal.commit(snapshot, { turns: [finished], events: [this.journal.event(this.sessionId, "turn", finished)] })
+    })
+  }
+
+  async cancel(turnId: string): Promise<void> {
+    if (this.#active?.turn.id !== turnId || !this.#connection) return
+    const connection = this.#connection
+    const snapshot = await this.journal.read(this.sessionId)
+    if (this.#active?.turn.id !== turnId) return
+    await this.cancelPermissions(undefined, turnId)
+    if (this.#active?.turn.id === turnId && this.#connection === connection) await connection.cancel(snapshot.session.providerSessionId!)
+  }
+
+  #connectionLost(error: Error, generation: number): void {
+    if (this.#run?.generation !== generation || this.#stopping) return
+    this.#connection = undefined
+    const recovery = this.#lost(error, generation).catch(error => console.error("Agent recovery failed", error)).finally(() => {
+      if (this.#recovering === recovery) this.#recovering = undefined
+    })
+    this.#recovering = recovery
+  }
+
+  async #lost(error: Error, generation: number): Promise<void> {
+    await this.cancelPermissions()
+    await this.journal.serial(this.sessionId, async () => {
+      const snapshot = await this.journal.read(this.sessionId)
+      const previous = snapshot.runs.find(run => run.generation === generation)
+      if (!previous || !["starting", "running"].includes(previous.state)) return
+      const run: AgentRun = { ...previous, state: "interrupted", endedAt: timestamp(), error: error.message }
+      if (this.#run?.generation === generation) this.#run = run
+      await this.journal.commit(snapshot, { runs: [run], events: [this.journal.event(this.sessionId, "run", run)] })
+    })
+  }
+
+  stop(): Promise<void> { return this.#stop ??= this.#stopRun() }
+  async #stopRun(): Promise<void> {
+    this.#stopping = true
+    // Startup can be awaiting session/new or resume. Closing its connection
+    // must be able to reject that RPC before we wait for startup to finish.
+    if (this.#starting) await this.#connection?.close()
+    await this.#starting?.catch(() => {})
+    await this.#recovering
+    await this.cancelPermissions()
+    const connection = this.#connection
+    if (this.#active) await this.cancel(this.#active.turn.id)
+    await connection?.close()
+    await this.#delivery?.catch(() => {})
+    await this.#active?.completion
+    this.#connection = undefined
+    await this.journal.serial(this.sessionId, async () => {
+      const snapshot = await this.journal.read(this.sessionId)
+      if (!this.#run) return
+      this.#run = { ...this.#run, state: "stopped", endedAt: timestamp() }
+      await this.journal.commit(snapshot, { runs: [this.#run], events: [this.journal.event(this.sessionId, "run", this.#run)] })
+    })
+  }
+}

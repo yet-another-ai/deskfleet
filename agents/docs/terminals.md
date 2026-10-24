@@ -11,17 +11,33 @@ authenticated local daemon signaling connection used by desktop streaming.
 backend uses `portable-pty`, exposed through the thin `NativeTerminal` napi-rs
 binding. Spawn, write, resize, wait, and termination run outside Node's event
 loop. The daemon continuously consumes native output even with no viewer.
+On Windows, portable-pty asks ConPTY to inherit the cursor. ConPTY writes
+`ESC[6n` when the child connects and will not let that process run until the
+host reports a cursor position. The PTY reader answers that startup query with
+the origin of the still-empty session and removes the query from the output.
+Later cursor queries stay in the stream so the attached terminal can answer
+with the cursor it has rendered.
 
 The UI creates machine-scoped terminals in the daemon user's home directory,
 in a Workspace's first path with **Open terminal in default directory**, or in
 a selected directory with **Open terminal here**.
 The working directory is independent of resource ownership: those terminals
 remain under the local machine, and editing/deleting a Workspace does not retarget
-or close them. Local Workspace directory configuration is connected; remote machine
+or close them.
+
+A Session's terminals are owned by its Worktree. `terminalDial` accepts a
+`worktreeId`; the daemon rejects it unless the Worktree belongs to a Session and,
+without an explicit `cwd`, starts the shell in that Worktree's first directory.
+The owner is recorded in terminal metadata and survives daemon restart. These
+shells appear only in the Session's bottom panel, not in the sidebar or the
+machine terminal tabs. Leaving the Session detaches the panel; destroying the
+Session hangs up its terminals before the Worktree is removed. A future archived
+Session can release them the same way. Local Workspace directory configuration is connected; remote machine
 enrollment remains unimplemented.
 
 Navigating away detaches the view. Losing a peer, reloading the renderer, or
-quitting Electron closes the transport without terminating the shell. On startup
+closing the window closes the transport without terminating the shell. Quitting
+the app stops the daemon it hosts, which interrupts the shell. On startup
 the client lists daemon sessions; attaching an existing ID does not spawn a new
 process. One client can control a terminal at a time. Each shell has its own tab;
 switching tabs detaches the previous view without stopping that shell. Closing a
@@ -74,10 +90,12 @@ their acknowledged offset without discarding earlier output. An attachment
 receives `ready` after consuming the history present when it attached, allowing
 live input even if the process continues producing output.
 
-The renderer rebuilds its terminal from the recorded bytes. It initially keeps
-5,000 scrollback lines locally; **Load more history** increases that window and
-replays the retained daemon history. This client memory limit never truncates
-the daemon's files. History is terminal output, including control sequences;
+The renderer rebuilds its terminal from the recorded bytes and keeps 5,000
+scrollback lines locally. A future **Settings → Terminal → History size** will
+choose that window. This client memory limit never truncates the daemon's files.
+Each tab shows its connection as an icon, which reconnects a broken view, and
+titles itself with the title the running program sets (OSC 0/2), replayed from
+history after reattaching; until one is set it is numbered. History is terminal output, including control sequences;
 keystrokes that the shell does not echo are not recorded separately.
 
 ## Running and validation
@@ -85,7 +103,9 @@ keystrokes that the shell does not echo are not recorded separately.
 Start `mise run daemon:dev` and `mise run desktop:dev` separately. Use **New
 terminal** beside the real local machine and type directly into the terminal.
 Use the tab bar to switch shells or open another, and its hangup action to close
-one explicitly. Reopening a sidebar terminal attaches to its existing process.
+one explicitly. Reopening a sidebar terminal attaches to its existing process. A
+Session's terminal button opens its bottom panel with shells in that Session's
+Worktree.
 
 `mise run check` covers native PTY behavior, daemon lifetime and flow control,
 signaling ownership, and renderer input/output. `mise run desktop:smoke-terminal`

@@ -1,6 +1,5 @@
 export { startDaemon } from "./daemon.ts"
-export { createCodexProvider } from "./agents/codex.ts"
 export { DaemonClient } from "./control-client.ts"
 export { daemonControlDirectory, daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
 export type { ControlMethod, ControlMethods, DaemonDiscovery, DaemonEvent, LocalDaemonInfo } from "./control-protocol.ts"
-export type { AgentChoice, AgentConfigOption, AgentConfiguration, AgentConfigurationParams } from "./agent-configuration-protocol.ts"
+export type { AgentChoice, AgentConfigOption, AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"

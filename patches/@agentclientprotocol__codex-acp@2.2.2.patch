@@ -1,0 +1,34 @@
+diff --git a/dist/index.js b/dist/index.js
+index 3e927271d2e805d1b111dfa6082686c17b2f62ae..2ad93adff6e5c0049db0b0f1e53f6950a92d5cde 100755
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -42473,7 +42473,8 @@ var CodexAcpServer = class {
+       authMethods: getCodexAuthMethods(_params.clientCapabilities),
+       _meta: {
+         steering: {
+-          supported: true
++          supported: true,
++          supportsPromptRequired: true
+         },
+         // Only AIR gets the AIR extension, see `docs/air-extensions.md`.
+         ...this.capabilities.airClient ? {
+@@ -43856,6 +43857,9 @@ Check ${configPath} and project .codex directories, especially their config.toml
+         return { outcome: "injected" };
+       }
+     }
++    if (params._meta?.steering?.idleBehavior === "promptRequired") {
++      return { outcome: "promptRequired", reason: "noRunningTurn" };
++    }
+     return await this.startNewTurnFromSteering(params);
+   }
+   /**
+@@ -43994,7 +43998,8 @@ Check ${configPath} and project .codex directories, especially their config.toml
+     }
+     return {
+       sessionId,
+-      prompt
++      prompt,
++      _meta: params["_meta"]
+     };
+   }
+   createSessionConfigOptions(sessionState) {

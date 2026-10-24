@@ -31,8 +31,8 @@ pub struct LocalSnapshot {
 /// Its local team is a standalone ownership context, not account membership.
 /// The daemon must own its discovery endpoint before opening this database.
 pub struct LocalCatalog {
-    catalog: Catalog,
-    machine: Machine,
+    pub(crate) catalog: Catalog,
+    pub(crate) machine: Machine,
 }
 
 impl LocalCatalog {
@@ -79,6 +79,7 @@ impl LocalCatalog {
                 .await?
             }
         };
+        crate::agent::initialize(&transaction).await?;
         transaction.commit().await?;
         Ok(Self {
             catalog: Catalog::new(database),

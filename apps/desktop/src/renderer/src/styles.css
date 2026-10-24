@@ -27,6 +27,7 @@
   --ui-font-interface:
     -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC",
     "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --ui-font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -162,3 +163,68 @@ textarea {
 .catalog-button:hover:not(:disabled) { background: var(--ui-color-hover); }
 .catalog-button:disabled,
 .catalog-input:disabled { opacity: 0.5; cursor: default; }
+
+/* Agent-authored Markdown in the conversation. */
+.ui-markdown {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.ui-markdown > :first-child { margin-top: 0; }
+.ui-markdown > :last-child { margin-bottom: 0; }
+.ui-markdown :is(p, ul, ol, pre, blockquote, table) { margin: 0 0 0.875em; }
+.ui-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1.25em 0 0.5em;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.ui-markdown :is(h1, h2) { font-size: 1.125em; }
+.ui-markdown :is(ul, ol) { padding-left: 1.5em; }
+.ui-markdown ul { list-style: disc; }
+.ui-markdown ol { list-style: decimal; }
+.ui-markdown li + li { margin-top: 0.25em; }
+.ui-markdown li > :is(ul, ol) { margin: 0.25em 0 0; }
+.ui-markdown a { color: var(--ui-color-accent); }
+.ui-markdown a:hover { text-decoration: underline; }
+.ui-markdown code {
+  padding: 0.125em 0.375em;
+  border-radius: 0.3125rem;
+  background: var(--ui-color-badge);
+  font-family: var(--ui-font-mono);
+  font-size: 0.875em;
+}
+.ui-markdown pre {
+  overflow-x: auto;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--ui-color-border);
+  border-radius: 0.625rem;
+  background: var(--ui-color-surface);
+  line-height: 1.55;
+}
+.ui-markdown pre code {
+  padding: 0;
+  background: none;
+  font-size: 0.8125rem;
+}
+.ui-markdown blockquote {
+  padding-left: 0.875em;
+  border-left: 3px solid var(--ui-color-border);
+  color: var(--ui-color-text-muted);
+}
+.ui-markdown hr {
+  margin: 1.25em 0;
+  border-top: 1px solid var(--ui-color-border);
+}
+.ui-markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.9375em;
+}
+.ui-markdown :is(th, td) {
+  padding: 0.375em 0.75em;
+  border: 1px solid var(--ui-color-border);
+  text-align: left;
+}
+.ui-markdown th { font-weight: 600; }
+.ui-markdown img { max-width: 100%; border-radius: 0.5rem; }

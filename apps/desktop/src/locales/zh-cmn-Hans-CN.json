@@ -20,6 +20,9 @@
   "settings": {
     "preferences": "偏好设置",
     "thisComputer": "本机",
+    "launchAtStartup": "开机自启",
+    "launchAtStartupDescription": "登录系统时自动打开 deskfleet。",
+    "launchAtStartupUnavailable": "适用于 macOS 和 Windows 上已安装的应用。",
     "runLocalAgent": "运行本地 Agent",
     "stopsTerminals": "关闭后也会停止其终端。",
     "sections": "设置分类",
@@ -34,7 +37,10 @@
     "runningSeparately": "在外部运行",
     "retryStart": "重试启动",
     "retryStop": "重试停止",
-    "retryLoad": "重新加载设置"
+    "retryLoad": "重新加载设置",
+    "screenCaptureRequesting": "正在请求屏幕与系统音频录制权限…",
+    "screenCaptureDenied": "请在 macOS 系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许访问，然后关闭并重新开启本地 Agent。",
+    "screenCaptureError": "无法请求屏幕与系统音频录制权限。请关闭并重新开启本地 Agent 以重试。"
   },
   "machine": {
     "offline": "离线",
@@ -46,30 +52,38 @@
   },
   "newSession": {
     "heading": "开始智能体会话",
-    "noTarget": "选择要在其中启动会话的工作树。"
+    "noTarget": "选择要在其中启动会话的工作区。"
   },
   "worktree": {
     "notFound": "该工作树不存在。",
     "directories": "目录",
-    "sessions": "智能体会话",
-    "noSessions": "还没有智能体会话。",
-    "newSession": "新会话",
     "terminals": "终端",
     "noTerminals": "没有终端。",
     "openTerminal": "打开终端",
     "openTerminalAt": "在 {path} 中打开终端",
-    "main": "主工作树",
-    "sessionLabel": "会话 {id}",
-    "manageWorkspace": "管理工作区目录"
+    "session": "会话"
   },
   "session": {
     "notFound": "该会话不存在。",
-    "historyUnavailable": "会话记录尚不可用。"
+    "label": "会话 {id}",
+    "worktree": "工作树",
+    "directory": "工作目录"
   },
   "composer": {
     "label": "提示词",
     "placeholder": "描述要交给智能体的任务",
     "provider": "Agent",
+    "send": "发送",
+    "context": "会话上下文",
+    "contextChoice": "会话上下文：{context}",
+    "contextOption": {
+      "worktree": "新建工作树",
+      "directory": "工作目录"
+    },
+    "contextHint": {
+      "worktree": "从每个目录已提交的 HEAD 创建隔离的 Git 检出",
+      "directory": "直接在工作区目录中工作，包括未提交的更改"
+    },
     "model": "模型",
     "reasoningEffort": "推理强度",
     "configuration": "Agent 配置",
@@ -88,8 +102,7 @@
       "xhigh": "很高",
       "max": "最高",
       "ultra": "极高"
-    },
-    "send": "发送"
+    }
   },
   "terminal": {
     "new": "新建终端",
@@ -107,11 +120,12 @@
     "disconnected": "连接已断开，终端仍在目标机器上运行。",
     "reconnect": "重新连接",
     "interrupted": "Shell 已中断，挂断前仍可查看已保存的历史。",
-    "moreHistory": "加载更多历史",
-    "historyLines": "可回看 {count} 行",
-    "historyRetained": "完整历史保存在目标机器上，直到挂断此 Shell。",
     "ended": "进程已结束",
-    "exited": "进程已退出（{code}）"
+    "exited": "进程已退出（{code}）",
+    "sessionPanel": "会话终端",
+    "resizePanel": "调整终端面板高度",
+    "showPanel": "显示终端",
+    "hidePanel": "隐藏终端"
   },
   "desktop": {
     "notFound": "该机器不存在。",
@@ -146,7 +160,7 @@
     "details": "详情",
     "changes": "变更",
     "nothingSelected": "选择工作树、会话、终端或桌面以查看详情。",
-    "noWorktree": "仅显示工作树中资源的变更。",
+    "noWorktree": "Git 变更会显示在会话中。",
     "machine": "机器",
     "workspace": "工作区",
     "worktree": "工作树",
@@ -186,11 +200,10 @@
     "offline": "本机守护进程不可用，请刷新以重新连接。",
     "workspaceName": "名称",
     "directoryPath": "目录 {number}",
-    "absolutePath": "绝对路径",
     "removeDirectory": "移除目录 {number}",
     "addDirectory": "添加目录",
     "nameRequired": "请输入名称。",
-    "directoriesRequired": "请至少填写一个目录路径。",
+    "directoriesRequired": "请至少选择一个目录。",
     "create": "创建",
     "save": "保存",
     "saving": "保存中…",
@@ -199,15 +212,111 @@
     "defaultDirectory": "默认目录",
     "moveDirectoryUp": "上移目录 {number}",
     "moveDirectoryDown": "下移目录 {number}",
-    "newWorkspace": "新建工作区"
+    "newWorkspace": "新建工作区",
+    "duplicateDirectory": "此目录已添加。"
   },
   "workspace": {
     "notFound": "该工作区不存在。",
-    "worktrees": "工作树",
     "directoryCount": "{count} 个目录",
     "delete": "删除工作区",
     "deleteQuestion": "删除工作区“{name}”及其登记记录？磁盘上的目录将保留。",
     "edit": "编辑工作区",
-    "openDefaultTerminal": "在默认目录打开终端"
+    "openDefaultTerminal": "在默认目录打开终端",
+    "sessions": "会话",
+    "newSession": "新建会话",
+    "noSessions": "尚无会话。"
+  },
+  "folderPicker": {
+    "title": "选择文件夹",
+    "locations": "文件夹位置",
+    "location": "当前位置",
+    "home": "主目录",
+    "up": "上一级",
+    "loading": "正在加载文件夹…",
+    "retry": "重试",
+    "folders": "文件夹",
+    "openFolder": "打开 {name}",
+    "empty": "此位置没有文件夹。",
+    "showHidden": "显示隐藏文件夹",
+    "select": "选择此文件夹"
+  },
+  "agent": {
+    "conversation": "对话",
+    "localUser": "本地用户",
+    "system": "系统",
+    "sourceMachine": "机器 {id}",
+    "image": "Agent 图片",
+    "contentType": "{type} 内容",
+    "tool": "工具调用",
+    "thinking": "思考",
+    "plan": "计划",
+    "steered": "已引导当前轮次",
+    "backlog": "排队中",
+    "steer": "立即 Steer",
+    "withdraw": "撤回",
+    "retryInput": "重试投递",
+    "uncertainInput": "无法确认是否已投递。再次提交前请检查对话。",
+    "permissions": "权限",
+    "permissionRequired": "需要授权",
+    "backlogHint": "现在发送的消息会进入队列。",
+    "addToBacklog": "加入积压列表",
+    "cancelTurn": "取消当前轮次",
+    "stop": "停止 Agent",
+    "delete": "删除会话",
+    "stopQuestion": "停止此 Agent？对话和工作树会保留。",
+    "deleteQuestion": "删除此会话、对话记录及其托管工作树？",
+    "loading": "正在恢复对话…",
+    "disconnected": "连接已断开，Agent 会继续在其机器上运行。",
+    "reconnect": "重新连接",
+    "operationPending": "需要确认该操作的结果。",
+    "checkResult": "检查结果",
+    "empty": "发送消息开始工作。",
+    "toolStatus": {
+      "pending": "等待中",
+      "in_progress": "运行中",
+      "completed": "已完成",
+      "failed": "失败"
+    },
+    "inputState": {
+      "pending": "等待中",
+      "dispatching": "投递中",
+      "failed": "投递失败",
+      "uncertain": "投递结果不确定"
+    },
+    "runState": {
+      "starting": "正在启动 Agent…",
+      "stopping": "正在停止 Agent…"
+    },
+    "lifecycle": {
+      "provisioning": "正在准备工作树…",
+      "ready": "就绪",
+      "provision_failed": "工作树创建失败",
+      "deleting": "正在删除会话…"
+    },
+    "turnState": {
+      "completed": "本轮已完成",
+      "cancelled": "本轮已取消",
+      "interrupted": "本轮已中断",
+      "failed": "本轮执行失败"
+    },
+    "creating": "正在创建会话…",
+    "resumeUnavailable": "此提供方无法恢复该会话。请新建会话以继续工作。",
+    "inputInProgress": "处理中",
+    "awaitingApproval": "等待授权",
+    "copy": "复制消息",
+    "copied": "已复制",
+    "working": "工作中",
+    "workingFor": "已工作 {duration}",
+    "worked": "已完成",
+    "workedFor": "工作了 {duration}",
+    "summary": {
+      "execute": "运行了 {n} 条命令",
+      "edit": "编辑了 {n} 个文件",
+      "read": "读取了 {n} 个文件",
+      "search": "进行了 {n} 次搜索",
+      "other": "使用了 {n} 个工具"
+    },
+    "sessionActions": "会话操作",
+    "deleteDirectoryQuestion": "删除此会话及其对话记录？工作目录及其中的文件将保持不变。"
   }
 }

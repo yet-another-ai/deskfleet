@@ -1,11 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron"
-import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT, type DesktopEvent, type DesktopMediaResult } from "../shared/desktop-media.ts"
+import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT, type DesktopEvent, type DesktopMediaResult, type IceCandidate } from "../shared/desktop-media.ts"
 import type { DeskfleetDesktopApi } from "../shared/desktop-api.ts"
 import { DEFAULT_LOCALE, isAppLocale, LOCALE_ARGUMENT_PREFIX } from "../shared/i18n.ts"
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import { TERMINAL_SESSION_EVENT, type TerminalSessionEvent } from "../shared/terminal.ts"
 import { CATALOG_CHANGED_EVENT } from "../shared/catalog.ts"
-import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type LocalAgentState, type LocalAgentSettingsResult } from "../shared/local-agent.ts"
+import type { LocalAgentState } from "../shared/local-agent.ts"
+import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type SettingsResult } from "../shared/settings.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -17,10 +18,20 @@ async function invokeDesktop<T>(method: string, params?: unknown): Promise<T> {
   return result.value
 }
 
-async function invokeSettings(method: "get" | "setLocalAgentEnabled", enabled?: boolean): Promise<LocalAgentState> {
-  const result = await ipcRenderer.invoke(SETTINGS_CHANNEL, method, enabled) as LocalAgentSettingsResult<LocalAgentState>
+async function invokeSettings<T>(method: "get" | "setLocalAgentEnabled" | "getLaunchAtStartup" | "setLaunchAtStartup", enabled?: boolean): Promise<T> {
+  const result = await ipcRenderer.invoke(SETTINGS_CHANNEL, method, enabled) as SettingsResult<T>
   if (!result.ok) throw new Error(result.error)
   return result.value
+}
+
+const peerSignaling = {
+  candidate: (sessionId: string, candidate: IceCandidate) => invokeDesktop<void>("candidate", { sessionId, candidate }),
+  close: (sessionId: string) => invokeDesktop<void>("close", { sessionId }),
+  onEvent: (listener: (event: DesktopEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, event: DesktopEvent) => listener(event)
+    ipcRenderer.on(DESKTOP_MEDIA_EVENT, handler)
+    return () => ipcRenderer.removeListener(DESKTOP_MEDIA_EVENT, handler)
+  },
 }
 
 const api: DeskfleetDesktopApi = {
@@ -29,14 +40,13 @@ const api: DeskfleetDesktopApi = {
   settings: {
     get: () => invokeSettings("get"),
     setLocalAgentEnabled: (enabled) => invokeSettings("setLocalAgentEnabled", enabled),
+    getLaunchAtStartup: () => invokeSettings("getLaunchAtStartup"),
+    setLaunchAtStartup: (enabled) => invokeSettings("setLaunchAtStartup", enabled),
     onChanged: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, state: LocalAgentState) => listener(state)
       ipcRenderer.on(SETTINGS_CHANGED_EVENT, handler)
       return () => ipcRenderer.removeListener(SETTINGS_CHANGED_EVENT, handler)
     },
-  },
-  agents: {
-    configuration: (params) => invokeDesktop("agentConfiguration", params),
   },
   catalog: {
     list: () => invokeDesktop("catalogList", {}),
@@ -49,6 +59,13 @@ const api: DeskfleetDesktopApi = {
       return () => ipcRenderer.removeListener(CATALOG_CHANGED_EVENT, handler)
     },
   },
+  filesystem: {
+    listDirectories: (path) => invokeDesktop("directoryList", path === undefined ? {} : { path }),
+  },
+  agent: {
+    offer: (options) => invokeDesktop("agentOffer", options),
+    ...peerSignaling,
+  },
   terminal: {
     list: () => invokeDesktop("terminalList", {}),
     dial: (options) => invokeDesktop("terminalDial", options),
@@ -59,26 +76,14 @@ const api: DeskfleetDesktopApi = {
       return () => ipcRenderer.removeListener(TERMINAL_SESSION_EVENT, handler)
     },
     offer: (options) => invokeDesktop("terminalOffer", options),
-    candidate: (sessionId, candidate) => invokeDesktop("candidate", { sessionId, candidate }),
-    close: (sessionId) => invokeDesktop("close", { sessionId }),
-    onEvent: (listener) => {
-      const handler = (_event: Electron.IpcRendererEvent, event: DesktopEvent) => listener(event)
-      ipcRenderer.on(DESKTOP_MEDIA_EVENT, handler)
-      return () => ipcRenderer.removeListener(DESKTOP_MEDIA_EVENT, handler)
-    },
+    ...peerSignaling,
   },
   desktop: {
     target: () => invokeDesktop("target"),
     capabilities: () => invokeDesktop("capabilities"),
     offer: (options) => invokeDesktop("offer", options),
-    candidate: (sessionId, candidate) => invokeDesktop("candidate", { sessionId, candidate }),
     start: (options) => invokeDesktop("start", options),
-    close: (sessionId) => invokeDesktop("close", { sessionId }),
-    onEvent: (listener) => {
-      const handler = (_event: Electron.IpcRendererEvent, event: DesktopEvent) => listener(event)
-      ipcRenderer.on(DESKTOP_MEDIA_EVENT, handler)
-      return () => ipcRenderer.removeListener(DESKTOP_MEDIA_EVENT, handler)
-    },
+    ...peerSignaling,
   },
 }
 

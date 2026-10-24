@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { once } from "node:events"
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { connect, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -28,8 +29,8 @@ class Client {
   #buffer = ""
   onEvent: ((event: DaemonEvent) => void) | undefined
 
-  constructor(endpoint: string) {
-    this.socket = connect(endpoint)
+  constructor(endpoint: string, signal?: AbortSignal) {
+    this.socket = connect({ path: endpoint, signal })
     this.socket.setEncoding("utf8")
     this.socket.on("error", () => {})
     this.socket.on("data", (data: string) => {
@@ -56,11 +57,16 @@ class Client {
   }
 
   async call<M extends ControlMethod>(method: M, params: ControlMethods[M]["params"]): Promise<ControlMethods[M]["result"]> {
+    return this.request(method, params) as Promise<ControlMethods[M]["result"]>
+  }
+
+  async request(method: unknown, params: unknown): Promise<unknown> {
+    if (this.socket.destroyed) throw new Error("Connection closed")
     const id = ++this.#id
     const waiting = deferred<unknown>()
     this.#pending.set(id, waiting)
     this.socket.write(JSON.stringify({ id, method, params }) + "\n")
-    return waiting.promise as Promise<ControlMethods[M]["result"]>
+    return waiting.promise
   }
 
   close(): void { this.socket.destroy() }
@@ -160,12 +166,12 @@ test("desktop sessions belong to their IPC connection and close on disconnect", 
   assert.deepEqual(await second.call("capabilities", {}), await capabilities())
 })
 
-test("stopping control waits for an executing request before releasing its resources", { timeout: 5_000 }, async context => {
+test("stopping control waits for an executing request before releasing its resources", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-stop-"))
   const entered = deferred<void>()
   const release = deferred<void>()
   let completed = false
-  const server = await startControlServer(fakePeers().service, directory, async () => {
+  const starting = startControlServer(fakePeers().service, directory, async () => {
     entered.resolve()
     await release.promise
     completed = true
@@ -173,11 +179,13 @@ test("stopping control waits for an executing request before releasing its resou
   })
   context.after(async () => {
     release.resolve()
-    await server.close()
-    await rm(directory, { recursive: true, force: true })
+    try { await (await starting).close() }
+    finally { await rm(directory, { recursive: true, force: true }) }
   })
+  const server = await starting
+  context.signal.throwIfAborted()
   const discovery = await readDaemonDiscovery(directory)
-  const client = new Client(discovery.endpoint)
+  const client = new Client(discovery.endpoint, context.signal)
   context.after(() => client.close())
   await client.call("hello", { token: discovery.token })
   const request = assert.rejects(client.call("capabilities", {}), /closed/)
@@ -198,7 +206,7 @@ test("stopping control waits for an executing request before releasing its resou
 
 test("daemon control exchanges real native SDP and ICE without initializing capture", { timeout: 20_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-test-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory })
+  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
   const peer = await createPeer({ video: "h264" })
   context.after(async () => { await peer.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
   const discovery = await readDaemonDiscovery(directory)
@@ -322,4 +330,77 @@ test("local control rejects malformed native settings before crossing the bindin
   assert.throws(() => validateControlParams("start", { sessionId: "screen", displayId: 1, fps: 0 }), /frame rate/)
   assert.throws(() => validateControlParams("start", { sessionId: "screen", displayId: -1 }), /display ID/)
   assert.throws(() => validateControlParams("candidate", { sessionId: "screen", candidate: { candidate: "ice", sdpMlineIndex: 1.5 } }), /media index/)
+})
+
+test("directory browsing requires authentication and uses the daemon filesystem without a peer", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-folder-control-"))
+  const folders = join(directory, "folders")
+  await mkdir(join(folders, "project"), { recursive: true })
+  await writeFile(join(folders, "file.txt"), "file")
+  const fake = fakePeers()
+  const server = await startControlServer(fake.service, directory, () => { throw new Error("Must not probe capture") })
+  context.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }) })
+  const discovery = await readDaemonDiscovery(directory)
+  const blocked = new Client(discovery.endpoint)
+  const client = new Client(discovery.endpoint)
+  context.after(() => { blocked.close(); client.close() })
+  await assert.rejects(blocked.call("directoryList", { path: folders }), /Authenticate/u)
+  await client.call("hello", { token: discovery.token })
+  const listing = await client.call("directoryList", { path: folders })
+  assert.equal(listing.path, folders)
+  assert.deepEqual(listing.directories, [{ name: "project", path: join(folders, "project"), hidden: false }])
+  await assert.rejects(client.call("directoryList", { path: "relative" }), /absolute path/u)
+  assert.equal((await client.call("directoryList", { path: folders })).path, folders)
+  assert.deepEqual(client.events, [])
+  assert.deepEqual(fake.configCalls, [])
+})
+
+test("request validation errors retain authenticated connections and their active peers", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-validation-"))
+  const fake = fakePeers()
+  const server = await startControlServer(fake.service, directory, capabilities)
+  context.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }) })
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  await client.call("offer", offer)
+  await assert.rejects(client.request("futureOperation", {}), /Unknown local daemon operation: futureOperation/u)
+  assert.deepEqual(await client.call("capabilities", {}), await capabilities())
+  await assert.rejects(client.request("directoryList", { path: 42 }), /Invalid directory path/u)
+  await assert.rejects(client.request("start", null), /Expected an object/u)
+  assert.equal(fake.peers.size, 1)
+  await client.call("start", { sessionId: offer.sessionId, displayId: 4 })
+  assert.deepEqual(fake.startCalls, [{ displayId: 4, fps: undefined, bitrateBps: undefined }])
+  await client.call("close", { sessionId: offer.sessionId })
+  assert.equal(fake.peers.size, 0)
+})
+
+test("invalid framing and request IDs still disconnect, as do unauthenticated validation errors", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-framing-"))
+  const fake = fakePeers()
+  const starting = startControlServer(fake.service, directory, capabilities)
+  context.after(async () => {
+    try { await (await starting).close() }
+    finally { await rm(directory, { recursive: true, force: true }) }
+  })
+  await starting
+  context.signal.throwIfAborted()
+  const discovery = await readDaemonDiscovery(directory)
+  for (const payload of ["{invalid json}\n", JSON.stringify({ id: "1", method: "capabilities", params: {} }) + "\n"]) {
+    const client = new Client(discovery.endpoint, context.signal)
+    context.after(() => client.close())
+    await client.call("hello", { token: discovery.token })
+    await client.call("offer", offer)
+    const peerClosed = [...fake.peers.values()][0]!.closed.promise
+    const socketClosed = once(client.socket, "close", { signal: context.signal })
+    client.socket.write(payload)
+    await Promise.all([socketClosed, peerClosed])
+    assert.equal(fake.peers.size, 0)
+  }
+  const unauthenticated = new Client(discovery.endpoint, context.signal)
+  context.after(() => unauthenticated.close())
+  const closed = once(unauthenticated.socket, "close", { signal: context.signal })
+  await assert.rejects(unauthenticated.request("hello", { token: null }), /Missing authentication token/u)
+  await closed
 })

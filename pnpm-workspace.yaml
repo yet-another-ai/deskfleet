@@ -10,3 +10,6 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - '@agentclientprotocol/sdk@2.0.1'
+
+patchedDependencies:
+  '@agentclientprotocol/codex-acp@2.2.2': patches/@agentclientprotocol__codex-acp@2.2.2.patch

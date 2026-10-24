@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { LOCALE_ARGUMENT_PREFIX } from "../shared/i18n.ts"
 import { resolveRendererEntrypoint } from "../shared/renderer-security.ts"
 import { attachDesktopMedia } from "./desktop-media.ts"
-import { attachLocalAgentSettings } from "./local-agent-settings.ts"
+import { attachSettings } from "./settings.ts"
 import { getMainLocale } from "./i18n.ts"
 import type { BackgroundLifecycle } from "./lifecycle.ts"
 import { buildResourcePath } from "./paths.ts"
@@ -50,7 +50,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
   })
   mainWindow = window
   attachDesktopMedia(window)
-  attachLocalAgentSettings(window)
+  attachSettings(window)
   followSystemTheme(window, process.platform)
   window.once("closed", () => {
     if (mainWindow === window) mainWindow = null

@@ -20,6 +20,9 @@
   "settings": {
     "preferences": "Preferences",
     "thisComputer": "This computer",
+    "launchAtStartup": "Launch at startup",
+    "launchAtStartupDescription": "Open deskfleet automatically when you log in.",
+    "launchAtStartupUnavailable": "Available in the installed app on macOS and Windows.",
     "runLocalAgent": "Run local Agent",
     "stopsTerminals": "Turning it off also stops its terminals.",
     "sections": "Settings sections",
@@ -34,7 +37,10 @@
     "runningSeparately": "Running separately",
     "retryStart": "Retry start",
     "retryStop": "Retry stop",
-    "retryLoad": "Reload settings"
+    "retryLoad": "Reload settings",
+    "screenCaptureRequesting": "Requesting access to record the screen and system audio…",
+    "screenCaptureDenied": "Allow access in macOS System Settings → Privacy & Security → Screen & System Audio Recording, then turn the local Agent off and on.",
+    "screenCaptureError": "Could not request screen and system audio access. Turn the local Agent off and on to retry."
   },
   "machine": {
     "offline": "Offline",
@@ -46,32 +52,40 @@
   },
   "newSession": {
     "heading": "Start an agent session",
-    "noTarget": "Choose a worktree to start a session in."
+    "noTarget": "Choose a workspace to start a session in."
   },
   "worktree": {
     "notFound": "This worktree does not exist.",
     "directories": "Directories",
-    "sessions": "Agent sessions",
-    "noSessions": "No agent sessions yet.",
-    "newSession": "New session",
     "terminals": "Terminals",
     "noTerminals": "No terminals.",
     "openTerminal": "Open terminal",
     "openTerminalAt": "Open terminal in {path}",
-    "main": "Main worktree",
-    "sessionLabel": "Session {id}",
-    "manageWorkspace": "Manage workspace directories"
+    "session": "Session"
   },
   "session": {
     "notFound": "This session does not exist.",
-    "historyUnavailable": "Session history is not available yet."
+    "label": "Session {id}",
+    "worktree": "Worktree",
+    "directory": "Working directory"
   },
   "composer": {
     "label": "Prompt",
     "placeholder": "Describe a task for the agent",
     "provider": "Agent",
+    "send": "Send",
+    "context": "Session context",
+    "contextChoice": "Session context: {context}",
+    "contextOption": {
+      "worktree": "New worktree",
+      "directory": "Working directory"
+    },
+    "contextHint": {
+      "worktree": "Isolated Git checkouts from each directory's committed HEAD",
+      "directory": "Work in the Workspace's directories, including uncommitted changes"
+    },
     "model": "Model",
-    "reasoningEffort": "Reasoning effort",
+    "reasoningEffort": "Reasoning",
     "configuration": "Agent configuration",
     "configureAgent": "Configure agent: {selection}",
     "collapseConfiguration": "Collapse agent configuration",
@@ -88,8 +102,7 @@
       "xhigh": "Extra high",
       "max": "Max",
       "ultra": "Ultra"
-    },
-    "send": "Send"
+    }
   },
   "terminal": {
     "new": "New terminal",
@@ -107,11 +120,12 @@
     "disconnected": "Disconnected. The terminal keeps running on its machine.",
     "reconnect": "Reconnect",
     "interrupted": "Shell interrupted. Saved history is available until hangup.",
-    "moreHistory": "Load more history",
-    "historyLines": "Scrollback: {count} lines",
-    "historyRetained": "Complete history is saved on the machine until this shell is hung up.",
     "ended": "Process ended",
-    "exited": "Process exited ({code})"
+    "exited": "Process exited ({code})",
+    "sessionPanel": "Session terminals",
+    "resizePanel": "Resize terminal panel",
+    "showPanel": "Show terminal",
+    "hidePanel": "Hide terminal"
   },
   "desktop": {
     "notFound": "This machine does not exist.",
@@ -146,7 +160,7 @@
     "details": "Details",
     "changes": "Changes",
     "nothingSelected": "Select a worktree, session, terminal, or desktop to see its details.",
-    "noWorktree": "Changes are shown for resources in a worktree.",
+    "noWorktree": "Git changes are available within a session.",
     "machine": "Machine",
     "workspace": "Workspace",
     "worktree": "Worktree",
@@ -186,11 +200,10 @@
     "offline": "The local daemon is unavailable. Refresh to reconnect.",
     "workspaceName": "Name",
     "directoryPath": "Directory {number}",
-    "absolutePath": "Absolute path",
     "removeDirectory": "Remove directory {number}",
     "addDirectory": "Add directory",
     "nameRequired": "Enter a name.",
-    "directoriesRequired": "Enter at least one directory path.",
+    "directoriesRequired": "Choose at least one directory.",
     "create": "Create",
     "save": "Save",
     "saving": "Saving…",
@@ -199,15 +212,111 @@
     "defaultDirectory": "Default",
     "moveDirectoryUp": "Move directory {number} up",
     "moveDirectoryDown": "Move directory {number} down",
-    "newWorkspace": "New workspace"
+    "newWorkspace": "New workspace",
+    "duplicateDirectory": "This directory is already included."
   },
   "workspace": {
     "notFound": "This workspace does not exist.",
-    "worktrees": "Worktrees",
     "directoryCount": "{count} directories",
     "delete": "Delete workspace",
     "deleteQuestion": "Delete workspace “{name}” and its registration? Its directories remain on disk.",
     "edit": "Edit workspace",
-    "openDefaultTerminal": "Open terminal in default directory"
+    "openDefaultTerminal": "Open terminal in default directory",
+    "sessions": "Sessions",
+    "newSession": "New session",
+    "noSessions": "No sessions yet."
+  },
+  "folderPicker": {
+    "title": "Choose a folder",
+    "locations": "Folder locations",
+    "location": "Current location",
+    "home": "Home",
+    "up": "Up",
+    "loading": "Loading folders…",
+    "retry": "Retry",
+    "folders": "Folders",
+    "openFolder": "Open {name}",
+    "empty": "No folders in this location.",
+    "showHidden": "Show hidden folders",
+    "select": "Select folder"
+  },
+  "agent": {
+    "conversation": "Conversation",
+    "localUser": "Local user",
+    "system": "System",
+    "sourceMachine": "Machine {id}",
+    "image": "Agent image",
+    "contentType": "{type} content",
+    "tool": "Tool call",
+    "thinking": "Thinking",
+    "plan": "Plan",
+    "steered": "Steered the turn",
+    "backlog": "Queued",
+    "steer": "Steer now",
+    "withdraw": "Withdraw",
+    "retryInput": "Retry delivery",
+    "uncertainInput": "Delivery could not be confirmed. Check the conversation before submitting again.",
+    "permissions": "Permissions",
+    "permissionRequired": "Permission required",
+    "backlogHint": "Messages you send now are queued.",
+    "addToBacklog": "Add to backlog",
+    "cancelTurn": "Cancel turn",
+    "stop": "Stop agent",
+    "delete": "Delete session",
+    "stopQuestion": "Stop this agent? Its conversation and worktree will remain.",
+    "deleteQuestion": "Delete this session, its conversation, and its managed worktree?",
+    "loading": "Restoring conversation…",
+    "disconnected": "Connection lost. The agent continues on its machine.",
+    "reconnect": "Reconnect",
+    "operationPending": "The operation result needs to be checked.",
+    "checkResult": "Check result",
+    "empty": "Send a message to start working.",
+    "toolStatus": {
+      "pending": "Pending",
+      "in_progress": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "inputState": {
+      "pending": "Waiting",
+      "dispatching": "Sending",
+      "failed": "Delivery failed",
+      "uncertain": "Delivery uncertain"
+    },
+    "runState": {
+      "starting": "Starting agent…",
+      "stopping": "Stopping agent…"
+    },
+    "lifecycle": {
+      "provisioning": "Preparing worktree…",
+      "ready": "Ready",
+      "provision_failed": "Worktree creation failed",
+      "deleting": "Deleting session…"
+    },
+    "turnState": {
+      "completed": "Turn completed",
+      "cancelled": "Turn cancelled",
+      "interrupted": "Turn interrupted",
+      "failed": "Turn failed"
+    },
+    "creating": "Creating session…",
+    "resumeUnavailable": "This provider cannot resume this session. Start a new session to continue.",
+    "inputInProgress": "In progress",
+    "awaitingApproval": "Awaiting approval",
+    "copy": "Copy message",
+    "copied": "Copied",
+    "working": "Working",
+    "workingFor": "Working for {duration}",
+    "worked": "Worked",
+    "workedFor": "Worked for {duration}",
+    "summary": {
+      "execute": "Ran {n} command | Ran {n} commands",
+      "edit": "Edited {n} file | Edited {n} files",
+      "read": "Read {n} file | Read {n} files",
+      "search": "Ran {n} search | Ran {n} searches",
+      "other": "Used {n} tool | Used {n} tools"
+    },
+    "sessionActions": "Session actions",
+    "deleteDirectoryQuestion": "Delete this session and its conversation? Its working directory and files are left unchanged."
   }
 }

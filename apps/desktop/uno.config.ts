@@ -16,6 +16,7 @@ const colorNames = [
   "action-text",
   "action-disabled",
   "avatar",
+  "focus",
   "success",
   "warning",
   "danger",
@@ -25,12 +26,11 @@ const colorNames = [
 export default defineConfig({
   presets: [presetMini()],
   theme: {
+    fontFamily: { mono: "var(--ui-font-mono)" },
     colors: Object.fromEntries(colorNames.map((name) => [`ui-${name}`, `var(--ui-color-${name})`])),
     boxShadow: { "ui-card": "var(--ui-shadow-card)" },
   },
   shortcuts: {
-    "ui-chip":
-      "inline-flex h-7 items-center gap-1.5 rounded-lg border border-ui-border bg-ui-surface px-2.5 text-[13px]",
     "ui-badge": "rounded-md bg-ui-badge px-1.5 text-xs leading-5",
     "ui-section-title": "m-0 mb-2 text-[13px] font-medium text-ui-text-muted",
     "ui-card": "overflow-hidden rounded-xl border border-ui-border bg-ui-surface",

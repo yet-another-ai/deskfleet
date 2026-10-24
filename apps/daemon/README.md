@@ -1,7 +1,7 @@
 # deskfleet daemon
 
-`@deskfleet/daemon` is a TypeScript library with standalone and desktop-bundled
-process hosts. It runs independently of the desktop client's lifetime, reports
+`@deskfleet/daemon` is a TypeScript library. It runs as a standalone SEA process
+on headless machines or inside the desktop app's main process. It reports
 native platform information, serves a loopback health
 endpoint, owns a persistent workspace/worktree catalog, and runs Codex CLI
 sessions over ACP.
@@ -44,6 +44,10 @@ The CLI publishes its authenticated Unix socket or Windows named pipe in
 `DESKFLEET_DAEMON_DIRECTORY` to use another directory, with the same value in the
 Electron environment. Only one daemon can publish a live endpoint there. Local
 IPC initializes capture only when the client requests capabilities or a stream.
+On macOS, startup first requests screen/system-audio recording permission from
+the daemon process, without waiting for consent before serving other operations.
+The authenticated handshake and permission events report its status to Settings;
+denial does not stop the daemon. See [media permissions](../../agents/docs/media.md).
 Losing a client closes its peers, leaving the daemon, agent work, and terminal
 processes alive. The data-only terminal peer uses the same authenticated signaling
 path. Dial, hangup, catalog and lifecycle events use signaling; terminal bytes
@@ -62,9 +66,9 @@ without loading native daemon implementation modules. Authenticated `shutdown`
 acknowledges the request, stops new work, and closes resources before releasing
 discovery. Unauthenticated clients cannot request shutdown.
 
-Desktop Settings starts this library in a detached, windowless Electron process
-by default. Its runtime and native addon ship with the desktop application; the
-standalone SEA remains available for headless installations. Both hosts share
+Desktop Settings starts this library in the app's main process by default, and
+quitting the app stops it. Its runtime and native addon ship with the desktop
+application; the standalone SEA runs independently for headless installations. Both hosts share
 the same discovery, catalog, and terminal storage. See the
 [desktop guide](../desktop/README.md#local-agent) for the toggle and lifecycle.
 
@@ -81,6 +85,7 @@ The authenticated IPC connection supports these methods:
 | Method | Parameters | Result |
 | --- | --- | --- |
 | `catalogList` | none | Local context and all workspaces/worktrees |
+| `directoryList` | optional absolute `path` (defaults to daemon home) | Current path, parent, home, roots, and child directories |
 | `workspaceCreate` | `name`, `directories` | Workspace with its automatic main Worktree |
 | `workspaceUpdate` | `workspaceId`, `name`, `directories` | Workspace with its updated main context |
 | `workspaceDelete` | `workspaceId` | Empty result; rejects active Sessions |
@@ -99,6 +104,9 @@ the catalog.
 
 Electron exposes Workspace operations as `window.deskfleet.catalog` through the
 existing authenticated connection. Worktrees are read-only contexts in the UI.
+The folder picker uses `window.deskfleet.filesystem.listDirectories` on that
+connection. Directory enumeration and path handling run on the daemon; the
+renderer uses returned paths without applying its own operating system's rules.
 Managed Session creation derives detached Git worktrees from committed HEADs and
 maps each directory, including subdirectories, into them. Session destruction
 removes those generated checkouts (including local changes) and their catalog
@@ -115,6 +123,26 @@ The daemon uses the [Codex ACP adapter](https://github.com/agentclientprotocol/c
 to connect the installed Codex CLI to ACP. The adapter is a pinned pnpm dependency
 and ships inside the SEA executable. Install and authenticate Codex CLI before
 sending prompts; the daemon uses that CLI's credentials.
+
+The desktop **New session** flow creates a persistent Session and its isolated
+Git Worktree. Its conversation, queued inputs, runs, approval decisions, and
+command audit are stored in the same SQLite catalog. Closing a client leaves
+execution running; reopening replays the journal over the `deskfleet-acp`
+DataChannel. The composer can queue a message or steer the current turn, and a
+pending candidate can also be selected for steering. Stop retains the backlog;
+the next message, or an explicit `session/resume`, reuses the saved Codex
+conversation. Explicit deletion removes the owned
+checkouts and history while retaining command audit.
+
+Local IPC adds `agentOffer` for SDP/ICE signaling only. Conversation operations
+use the DataChannel extensions documented in
+[Agent Sessions](../../agents/docs/agent-sessions.md). Local token identity is
+audited today; remote account enrollment is separate work.
+
+Run `mise run desktop:smoke-agent` to verify the production Electron flow with
+real WebRTC, SQLite, and Git worktrees using a scripted provider and no paid
+inference. The one-shot CLI below remains useful independently of persistent
+desktop Sessions.
 
 After `mise run install`, check ACP initialization or run one prompt from source:
 
@@ -149,6 +177,21 @@ Electron client does not destroy the Session.
 
 The CLI cancels permission requests and emits `permission_cancelled` events.
 It has no approval UI; prompts requiring approval cannot proceed through it.
+
+The pinned adapter uses
+[`patches/@agentclientprotocol__codex-acp@2.2.2.patch`](../../patches/@agentclientprotocol__codex-acp@2.2.2.patch).
+It makes steering return `promptRequired` when the target turn ends, allowing the
+daemon to start and track the next prompt. See the
+[steering contract](../../agents/docs/agent-sessions.md#codex-steering-boundary)
+for capability negotiation and delivery semantics. Remove the patch when the
+pinned adapter provides that contract upstream.
+
+Source and SEA launches route adapter subprocesses through `--codex-acp` on their
+own entry point. The Electron daemon configures its bundled main entry as the
+adapter host and starts it with `ELECTRON_RUN_AS_NODE=1`, including from ASAR.
+That entry routes to the bundled adapter before loading Electron UI or daemon
+lifecycle code. Adapter processes use the same installed Codex binary selection
+and can terminate naturally when their ACP input closes.
 
 The packaged executable accepts the same arguments:
 

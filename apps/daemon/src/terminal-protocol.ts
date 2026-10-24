@@ -11,11 +11,14 @@ export interface TerminalSummary {
   rows: number
   status: "running" | "exited" | "interrupted"
   exitCode?: number
+  /** The Session Worktree that owns this terminal; absent for machine terminals. */
+  worktreeId?: string
 }
 
 /** Shell lifecycle belongs to authenticated signaling, independently of its data peer. */
 export type TerminalDial =
-  | { mode: "create"; terminalId: string; cols: number; rows: number; cwd?: string }
+  /** A Worktree terminal defaults to the Worktree's first directory and ends with its Session. */
+  | { mode: "create"; terminalId: string; cols: number; rows: number; cwd?: string; worktreeId?: string }
   | { mode: "resume"; terminalId: string }
 
 export type TerminalSessionEvent =

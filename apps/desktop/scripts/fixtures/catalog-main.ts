@@ -10,7 +10,11 @@ export interface CatalogSmokeContext {
   rendererDirectory: string
   preloadPath: string
   checkoutPath: string
+  initialPath: string
   updatedPath: string
+  checkoutAncestors: string[]
+  initialAncestors: string[]
+  updatedAncestors: string[]
   workspaceId?: string
   worktreeId?: string
 }
@@ -56,6 +60,31 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
     input.dispatchEvent(new Event("input", { bubbles: true }))
     return input
   }
+  function picker(): HTMLDialogElement | null {
+    return document.querySelector("[data-current-path]")?.closest("dialog") ?? null
+  }
+  async function chooseFolder(paths: string[]): Promise<void> {
+    await until(() => !!picker()?.open, "Folder picker")
+    require(picker()!.textContent?.includes("Choose a folder"), "Directory selection must use the custom folder dialog")
+    for (const path of paths) {
+      const currentPath = () => picker()?.querySelector("[data-current-path]")?.getAttribute("data-current-path")
+      if (currentPath() === path) continue
+      const destination = () => [...picker()!.querySelectorAll<HTMLButtonElement>("button[data-path]")]
+        .find(element => element.getAttribute("data-path") === path)
+      await until(() => !!destination() && !destination()!.disabled, `Folder ${path}`)
+      destination()!.click()
+      await until(() => currentPath() === path, `Browsing ${path}`)
+    }
+    await click("Select folder")
+    await until(() => !picker(), "Folder selection")
+  }
+  async function cancelFolder(): Promise<void> {
+    await until(() => !!picker()?.open, "Folder picker")
+    const cancel = [...picker()!.querySelectorAll("button")].find(element => element.textContent?.trim() === "Cancel")
+    require(cancel, "Folder picker must support cancellation")
+    cancel.click()
+    await until(() => !picker(), "Folder cancellation")
+  }
   async function snapshotWorkspace() {
     return (await api.catalog.list()).workspaces.find(workspace => workspace.name === "Catalog smoke renamed")
   }
@@ -71,8 +100,10 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
     await until(() => [...document.querySelectorAll("a")].some(link => link.textContent?.trim() === workspace.name), "Restored sidebar workspace")
     const link = [...document.querySelectorAll("a")].find(element => element.textContent?.trim() === workspace.name)!
     link.click()
-    await until(() => document.body.innerText.includes(context.updatedPath), "Restored workspace directory")
+    await until(() => location.hash.includes("/workspaces/") && !!document.querySelector("main")?.innerText.includes(context.updatedPath), "Restored workspace directory")
     require(!button("Add worktree") && !button("Delete worktree"), "Worktrees must not have manual maintenance controls")
+    require(!document.querySelector('a[href*="/worktrees/"]'), "The internal main worktree must not appear in workspace navigation")
+    require(document.querySelector("main")!.innerText.includes("No sessions yet."), "A restored workspace without sessions must show its empty session list")
     await click("Delete workspace")
     await click("Confirm deletion")
     await until(async () => (await api.catalog.list()).workspaces.length === 0, "Workspace deletion")
@@ -82,20 +113,42 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   require((await api.catalog.list()).workspaces.length === 0, "Smoke daemon catalog was not empty")
   await click("Add workspace")
   const workspaceInput = await fill("workspace-name", "Catalog smoke workspace")
-  require(!workspaceInput.form!.checkValidity(), "Workspace creation must require a directory")
-  require(!document.querySelector('input[name^="directory-name"]'), "Directories must have no name input")
-  await fill("directory-path-0", context.checkoutPath)
-  await click("Add directory")
-  await fill("directory-path-1", context.updatedPath)
   workspaceInput.form!.requestSubmit()
-  await until(() => location.hash.includes("/workspaces/"), "Workspace creation navigation")
+  await until(() => !!workspaceInput.form!.querySelector('[role="alert"]'), "Missing directory validation")
+  require(!document.querySelector('input[name^="directory-name"]'), "Directories must have no name input")
+  require(!document.querySelector('input[name^="directory-path"]'), "Workspace paths must be chosen through the folder picker")
+  await click("Directory 1")
+  await chooseFolder(context.checkoutAncestors)
+  await click("Add directory")
+  await cancelFolder()
+  require(!button("Directory 2"), "Cancelling folder selection must not add a binding")
+  await click("Add directory")
+  await chooseFolder(context.initialAncestors)
+  workspaceInput.form!.requestSubmit()
+  await until(() => location.hash.includes("/workspaces/") && !!document.querySelector("main")?.innerText.includes("No sessions yet."), "Workspace creation navigation")
   const created = (await api.catalog.list()).workspaces[0]!
   require(created.worktrees.length === 1 && !created.worktrees[0]!.sessionId, "Creation must automatically create exactly one main Worktree")
   require(created.worktrees[0]!.directories[0]?.path === context.checkoutPath, "Initial default must be the first configured path")
+  require(created.worktrees[0]!.directories[1]?.path === context.initialPath, "Folder selection must add the selected directory")
   require(!button("Add worktree"), "Workspace must not expose independent Worktree creation")
+  require(!document.querySelector('a[href*="/worktrees/"]'), "Creating a workspace must not expose its internal main worktree")
+  require(!document.body.innerText.includes("Main worktree"), "Workspace UI must not label a main worktree")
+  require(document.querySelector("main")!.innerText.includes("No sessions yet."), "New workspaces must show an empty session list")
+  await click("New session")
+  await until(() => location.hash === "#/", "Workspace new session navigation")
+  const targets = [...document.querySelectorAll("[data-composer-context]")].map(chip => chip.textContent?.trim())
+  // Machine, Workspace, the choice of a new Session context, and the provider.
+  require(targets.length === 4 && targets.includes(created.name) && targets.includes("New worktree") && targets.includes("Codex"), "The composer must target the selected workspace and provider without an existing worktree")
+  require(document.querySelector('aside[aria-label="Details"]')!.textContent?.includes(context.checkoutPath), "Composer details must show the workspace's configured directories")
+  const workspaceLink = [...document.querySelectorAll("a")].find(element => element.textContent?.trim() === created.name)
+  require(workspaceLink, "Created workspace must remain available in the sidebar")
+  workspaceLink.click()
+  await until(() => location.hash.includes("/workspaces/"), "Returning to workspace")
 
   await click("Edit workspace")
   const renameInput = await fill("workspace-name", "Catalog smoke renamed")
+  await click("Directory 2")
+  await chooseFolder(context.updatedAncestors)
   await click("Move directory 2 up")
   renameInput.form!.requestSubmit()
   await until(async () => !!await snapshotWorkspace() && !document.querySelector('input[name="workspace-name"]'), "Workspace update")

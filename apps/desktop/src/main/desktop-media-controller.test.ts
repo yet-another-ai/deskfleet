@@ -36,58 +36,6 @@ function fixture() {
 
 const offer = { sessionId: "first", codec: "h264", audio: false, sdp: "offer" }
 
-test("agent configuration validates requests and forwards dynamic agent options", async () => {
-  const { controller, client } = fixture()
-  await expect(controller.invoke("agentConfiguration", { provider: "codex", model: 42 })).rejects.toThrow("Invalid agent model")
-  expect(mock.connect).not.toHaveBeenCalled()
-
-  const configuration = {
-    provider: { id: "codex", name: "Codex" },
-    models: { id: "model", currentValue: "agent-model", options: [{ id: "agent-model", name: "Agent model" }] },
-    reasoningEfforts: { id: "reasoning_effort", currentValue: "high", options: [{ id: "high", name: "High" }] },
-  }
-  client.call.mockResolvedValue(configuration)
-  const params = { provider: "codex", worktreeId: "1", model: "agent-model", reasoningEffort: "high" }
-  await expect(controller.invoke("agentConfiguration", params)).resolves.toEqual(configuration)
-  expect(client.call).toHaveBeenCalledExactlyOnceWith("agentConfiguration", params)
-  expect(client.close).toHaveBeenCalledTimes(1)
-})
-
-test("slow agent discovery has a separate connection and closes when its window is disposed", async () => {
-  const { controller, client } = fixture()
-  let reject!: (error: Error) => void
-  const discovery = new Promise((_, fail) => { reject = fail })
-  const configurationClient = {
-    call: vi.fn().mockReturnValue(discovery),
-    close: vi.fn(() => reject(new Error("Desktop connection closed"))),
-  }
-  mock.connect.mockResolvedValueOnce(configurationClient).mockResolvedValueOnce(client)
-  const pending = controller.invoke("agentConfiguration", { provider: "codex" })
-
-  await expect(controller.invoke("catalogList", {})).resolves.toEqual({ sdp: "answer" })
-  expect(configurationClient.call).toHaveBeenCalledExactlyOnceWith("agentConfiguration", { provider: "codex" })
-  expect(client.call).toHaveBeenCalledExactlyOnceWith("catalogList", {})
-  expect(configurationClient.close).not.toHaveBeenCalled()
-  const rejected = expect(pending).rejects.toThrow("Desktop connection closed")
-  controller.dispose()
-  await rejected
-  expect(configurationClient.close).toHaveBeenCalledTimes(1)
-  expect(client.close).toHaveBeenCalledTimes(1)
-})
-
-test("agent discovery closes a connection that arrives after window disposal", async () => {
-  const { controller, client } = fixture()
-  let resolve!: (value: typeof client) => void
-  mock.connect.mockReturnValue(new Promise((res) => { resolve = res }))
-  const pending = controller.invoke("agentConfiguration", { provider: "codex" })
-  const rejected = expect(pending).rejects.toThrow("cancelled")
-  controller.dispose()
-  resolve(client)
-  await rejected
-  expect(client.close).toHaveBeenCalledTimes(1)
-  expect(client.call).not.toHaveBeenCalled()
-})
-
 test("catalog operations share authenticated signaling without creating a peer", async () => {
   const { controller, client } = fixture()
   const directories = [{ path: "/code/frontend" }]
@@ -117,12 +65,30 @@ test("catalog changes have their own event stream and stop after owner disposal"
   expect(emit).not.toHaveBeenCalled()
   expect(emitTerminal).not.toHaveBeenCalled()
 
+  event({ kind: "screenCapturePermissionChanged", permission: { status: "denied" } })
+  expect(emit).not.toHaveBeenCalled()
+  expect(emitTerminal).not.toHaveBeenCalled()
+  expect(emitCatalog).toHaveBeenCalledTimes(1)
+
   event({ kind: "terminalHungup", terminalId: "shell-1" })
   expect(emitCatalog).toHaveBeenCalledTimes(1)
   expect(emitTerminal).toHaveBeenCalledTimes(1)
   controller.dispose()
   event({ kind: "catalogChanged" })
   expect(emitCatalog).toHaveBeenCalledTimes(1)
+})
+
+test("folder browsing forwards opaque paths to the daemon without creating a peer", async () => {
+  const { controller, client } = fixture()
+  const listing = { path: "Z:\\work", parentPath: "Z:\\", homePath: "C:\\Users\\agent", roots: [], directories: [] }
+  client.call.mockResolvedValue(listing)
+  await expect(controller.invoke("directoryList", {})).resolves.toEqual(listing)
+  expect(client.call).toHaveBeenLastCalledWith("directoryList", {})
+  await expect(controller.invoke("directoryList", { path: "Z:\\work" })).resolves.toEqual(listing)
+  expect(client.call).toHaveBeenLastCalledWith("directoryList", { path: "Z:\\work" })
+  await expect(controller.invoke("directoryList", { path: 42 })).rejects.toThrow()
+  expect(client.call).toHaveBeenCalledTimes(2)
+  expect(mock.connect).toHaveBeenCalledTimes(1)
 })
 
 test("dial and hangup use authenticated signaling even without a data peer", async () => {
@@ -139,11 +105,11 @@ test("dial and hangup use authenticated signaling even without a data peer", asy
   await expect(controller.invoke("terminalHangup", { terminalId: "../other" })).rejects.toThrow("session ID")
 })
 
-test("terminal signaling reuses per-window peer ownership without requiring media settings", async () => {
+test.each(["terminalOffer", "agentOffer"] as const)("%s signaling reuses per-window peer ownership without requiring media settings", async (method) => {
   const { controller, client, event, emit } = fixture()
   const terminalOffer = { sessionId: "terminal-peer", sdp: "data-only-offer" }
-  await controller.invoke("terminalOffer", terminalOffer)
-  expect(client.call).toHaveBeenCalledWith("terminalOffer", terminalOffer)
+  await controller.invoke(method, terminalOffer)
+  expect(client.call).toHaveBeenCalledWith(method, terminalOffer)
   event({ sessionId: "terminal-peer", kind: "stateChanged", state: "connected" })
   expect(emit).toHaveBeenCalledWith({ sessionId: "terminal-peer", kind: "stateChanged", state: "connected" })
   await expect(controller.invoke("offer", { ...offer, sessionId: "terminal-peer" })).rejects.toThrow("already exists")

@@ -8,6 +8,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const sessions = ref<TerminalSummary[]>([])
   const state = ref<TerminalConnectionState>("idle")
   const error = ref<string | null>(null)
+  /** The tab last shown in each Session Worktree's terminal panel. */
+  const selected = ref<Record<string, string>>({})
+  /** The title each shell's running program last reported; replay restores it after reattaching. */
+  const titles = ref<Record<string, string>>({})
   let client: TerminalClient | null = null
   let refreshing: Promise<void> | null = null
   const unsubscribe = window.deskfleet.terminal.onSessionEvent((event) => {
@@ -44,9 +48,16 @@ export const useTerminalsStore = defineStore("terminals", () => {
     return refreshing
   }
 
-  async function create(cols = 80, rows = 24, cwd?: string): Promise<TerminalSummary> {
+  /** A `worktreeId` makes the terminal its Session's; without `cwd` it starts in the Worktree's first directory. */
+  async function create(options: { cwd?: string; worktreeId?: string; cols?: number; rows?: number } = {}): Promise<TerminalSummary> {
     error.value = null
-    return remember(await window.deskfleet.terminal.dial({ mode: "create", terminalId: crypto.randomUUID(), cols, rows, ...(cwd === undefined ? {} : { cwd }) }))
+    const { cols = 80, rows = 24, cwd, worktreeId } = options
+    const summary = remember(await window.deskfleet.terminal.dial({
+      mode: "create", terminalId: crypto.randomUUID(), cols, rows,
+      ...(cwd === undefined ? {} : { cwd }), ...(worktreeId === undefined ? {} : { worktreeId }),
+    }))
+    if (worktreeId !== undefined) selected.value[worktreeId] = summary.id
+    return summary
   }
 
   function attach(sessionId: string, listener: TerminalListener) {
@@ -70,8 +81,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
   async function hangup(sessionId: string): Promise<void> {
     await window.deskfleet.terminal.hangup(sessionId)
     sessions.value = sessions.value.filter(({ id }) => id !== sessionId)
+    delete titles.value[sessionId]
   }
 
   onScopeDispose(() => { unsubscribe(); client?.close() })
-  return { sessions, state, error, refresh, create, attach, input, resize, hangup }
+  return { sessions, state, error, selected, titles, refresh, create, attach, input, resize, hangup }
 })

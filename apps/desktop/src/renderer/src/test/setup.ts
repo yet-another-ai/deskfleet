@@ -4,12 +4,17 @@ import type { DeskfleetDesktopApi } from "../../../shared/desktop-api.ts"
 const api: DeskfleetDesktopApi = {
   platform: "linux",
   locale: "en-US",
-  agents: {
-    configuration: async () => { throw new Error("Agent unavailable") },
+  agent: {
+    offer: async () => { throw new Error("Daemon unavailable") },
+    candidate: async () => {},
+    close: async () => {},
+    onEvent: () => () => {},
   },
   settings: {
     get: async () => ({ enabled: true, status: "stopped" }),
     setLocalAgentEnabled: async (enabled) => ({ enabled, status: enabled ? "running" : "stopped" }),
+    getLaunchAtStartup: async () => ({ available: false, enabled: false }),
+    setLaunchAtStartup: async (enabled) => ({ available: true, enabled }),
     onChanged: () => () => {},
   },
   catalog: {
@@ -18,6 +23,9 @@ const api: DeskfleetDesktopApi = {
     updateWorkspace: async () => { throw new Error("Daemon unavailable") },
     deleteWorkspace: async () => { throw new Error("Daemon unavailable") },
     onChanged: () => () => {},
+  },
+  filesystem: {
+    listDirectories: async () => { throw new Error("Daemon unavailable") },
   },
   terminal: {
     list: async () => [],

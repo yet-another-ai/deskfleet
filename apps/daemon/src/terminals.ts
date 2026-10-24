@@ -103,14 +103,14 @@ export class TerminalSessions {
     terminalSize(options.cols, options.rows)
     const cwd = options.cwd ?? homedir()
     if (!cwd || !isAbsolute(cwd) || cwd.includes("\0")) throw new Error("Terminal working directory must be an absolute path")
-    const spawning = this.#spawn(options.terminalId, cwd, options.cols, options.rows)
+    const spawning = this.#spawn(options.terminalId, cwd, options.cols, options.rows, options.worktreeId)
     this.#spawning.set(options.terminalId, spawning)
     try { return await spawning }
     finally { this.#spawning.delete(options.terminalId) }
   }
 
-  async #spawn(id: string, cwd: string, cols: number, rows: number): Promise<TerminalSummary> {
-    const summary: TerminalSummary = { id, title: basename(cwd) || cwd, cwd, cols, rows, status: "running" }
+  async #spawn(id: string, cwd: string, cols: number, rows: number, worktreeId?: string): Promise<TerminalSummary> {
+    const summary: TerminalSummary = { id, title: basename(cwd) || cwd, cwd, cols, rows, status: "running", ...(worktreeId ? { worktreeId } : {}) }
     const history = await TerminalHistory.create(this.#directory, summary)
     let native: NativeTerminal
     try { native = await this.#factory({ cwd, cols, rows }) }
@@ -191,6 +191,14 @@ export class TerminalSessions {
       if (session.hangingUp === hangingUp) session.hangingUp = undefined
       throw error
     }
+  }
+
+  /** Hangs up every terminal a Session Worktree owns, before that Worktree is removed. */
+  async hangupOwned(worktreeId: string): Promise<void> {
+    await this.init()
+    await Promise.allSettled(this.#spawning.values())
+    const owned = [...this.#sessions.values()].filter(session => session.summary.worktreeId === worktreeId)
+    await Promise.all(owned.map(session => this.hangup(session.summary.id)))
   }
 
   close(): Promise<void> {

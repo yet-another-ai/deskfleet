@@ -4,9 +4,12 @@ import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouter } from "vue-router"
 import type { DirectoryBinding } from "../../stores/fleet-types.ts"
+import { useLayoutStore } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 
-const props = defineProps<{ directories: DirectoryBinding[]; disabled?: boolean; defaultAction?: boolean }>()
+/** With an `owner`, shells belong to that Session and open in its terminal panel. */
+const props = defineProps<{ directories: DirectoryBinding[]; disabled?: boolean; defaultAction?: boolean; owner?: { sessionId: string; worktreeId: string } }>()
+const layout = useLayoutStore()
 const { t } = useI18n()
 const router = useRouter()
 const terminals = useTerminalsStore()
@@ -17,9 +20,12 @@ async function open(cwd?: string): Promise<void> {
   error.value = null
   launching.value = true
   try {
-    // The cwd chooses a startup directory; ownership remains machine-scoped.
-    const terminal = await terminals.create(80, 24, cwd)
-    await router.push({ name: "terminal", params: { terminalId: terminal.id } })
+    // The cwd only chooses a startup directory; the owner decides the terminal's scope.
+    const terminal = await terminals.create({ cwd, worktreeId: props.owner?.worktreeId })
+    if (props.owner) {
+      layout.terminalPanelOpen = true
+      await router.push({ name: "session", params: { sessionId: props.owner.sessionId } })
+    } else await router.push({ name: "terminal", params: { terminalId: terminal.id } })
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { launching.value = false }
 }

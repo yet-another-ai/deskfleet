@@ -56,6 +56,11 @@ resource_id!(
     WorktreeId,
     AgentSessionId,
     TerminalSessionId,
+    AgentCommandId,
+    AgentInputId,
+    AgentTurnId,
+    AgentPermissionId,
+    AgentSequence,
 );
 
 #[cfg(test)]

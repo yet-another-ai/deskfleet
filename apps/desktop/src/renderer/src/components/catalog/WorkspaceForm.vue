@@ -2,12 +2,15 @@
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { CatalogDirectory } from "../../../../shared/catalog.ts"
+import type { DirectoryListing } from "../../../../shared/filesystem.ts"
 import DirectoryBindingsEditor from "./DirectoryBindingsEditor.vue"
 
 const props = defineProps<{
   initial?: { name: string; directories: CatalogDirectory[] }
   submitLabel: string
   disabled?: boolean
+  browse(path?: string): Promise<DirectoryListing>
+  machineName: string
   save(name: string, directories: CatalogDirectory[]): Promise<void>
 }>()
 const emit = defineEmits<{ cancel: [] }>()
@@ -36,7 +39,7 @@ async function submit(): Promise<void> {
       {{ t("catalog.workspaceName") }}
       <input v-model="name" name="workspace-name" required class="catalog-input" :disabled="saving || disabled" />
     </label>
-    <DirectoryBindingsEditor v-model="directories" :disabled="saving || disabled" />
+    <DirectoryBindingsEditor v-model="directories" :browse="browse" :machine-name="machineName" :disabled="saving || disabled" />
     <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
     <div class="flex justify-end gap-2">
       <button type="button" class="catalog-button" :disabled="saving" @click="emit('cancel')">{{ t("catalog.cancel") }}</button>

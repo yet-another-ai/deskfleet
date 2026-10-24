@@ -10,9 +10,11 @@ class FakeTerminal {
   rows = 30
   input: (data: string) => void = () => {}
   resized: (size: { cols: number; rows: number }) => void = () => {}
+  titled: (title: string) => void = () => {}
   subscription = { dispose: vi.fn() }
   onData = vi.fn((listener: typeof this.input) => { this.input = listener; return this.subscription })
   onResize = vi.fn((listener: typeof this.resized) => { this.resized = listener; return this.subscription })
+  onTitleChange = vi.fn((listener: typeof this.titled) => { this.titled = listener; return this.subscription })
   open = vi.fn()
   write = vi.fn()
   focus = vi.fn()
@@ -65,10 +67,12 @@ test("forwards terminal input and size changes and enables input only when attac
   expect(terminal.focus).toHaveBeenCalledOnce()
   terminal.input("\u0003")
   terminal.resized({ cols: 120, rows: 40 })
+  terminal.titled("node server.js")
+  expect(wrapper.emitted("title")).toEqual([["node server.js"]])
   expect(wrapper.emitted("input")).toEqual([["\u0003"]])
   expect(wrapper.emitted("resize")).toEqual([[{ cols: 120, rows: 40 }]])
   await wrapper.setProps({ interactive: false })
   expect(terminal.options.disableStdin).toBe(true)
   wrapper.unmount()
-  expect(terminal.subscription.dispose).toHaveBeenCalledTimes(2)
+  expect(terminal.subscription.dispose).toHaveBeenCalledTimes(3)
 })

@@ -17,6 +17,9 @@ const MAX_INPUT_BYTES: usize = 64 * 1024;
 #[cfg(unix)]
 mod unix;
 
+#[cfg(any(windows, test))]
+mod cursor_query;
+
 #[derive(Debug, thiserror::Error)]
 pub enum TerminalError {
     #[error("terminal dimensions must be positive")]
@@ -199,6 +202,8 @@ impl Terminal {
                         &reader_events,
                         &mut reader_cancelled,
                         &reader_runtime,
+                        #[cfg(windows)]
+                        &reader_handles,
                     ) {
                         send_event(
                             &reader_events,
@@ -327,23 +332,62 @@ fn send_event(
     })
 }
 
+#[cfg(windows)]
+const STARTUP_CURSOR_REPORT: &[u8] = b"\x1b[1;1R";
+
+/// Answer the startup cursor query once it has been read from ConPTY.
+#[cfg(windows)]
+fn reply_startup_cursor(writer: &Mutex<Option<Box<dyn Write + Send>>>) -> Result<()> {
+    let mut writer = lock(writer);
+    let writer = writer.as_mut().ok_or(TerminalError::Closed)?;
+    writer
+        .write_all(STARTUP_CURSOR_REPORT)
+        .map_err(|error| backend("cursor report", error))?;
+    writer
+        .flush()
+        .map_err(|error| backend("cursor report", error))?;
+    Ok(())
+}
+
 fn read_output(
     mut reader: Box<dyn Read + Send>,
     events: &mpsc::Sender<TerminalEvent>,
     cancelled: &mut watch::Receiver<bool>,
     runtime: &Handle,
+    #[cfg(windows)] handles: &Handles,
 ) -> Result<()> {
+    #[cfg(windows)]
+    let mut startup_query = cursor_query::StartupCursorQuery::default();
     let mut buffer = [0_u8; OUTPUT_CHUNK_BYTES];
     loop {
         match reader.read(&mut buffer) {
-            Ok(0) => break,
+            Ok(0) => {
+                #[cfg(windows)]
+                {
+                    let pending = startup_query.finish();
+                    if !pending.is_empty() {
+                        send_event(events, TerminalEvent::Data(pending), cancelled, runtime);
+                    }
+                }
+                break;
+            }
             Ok(length) => {
-                if !send_event(
-                    events,
-                    TerminalEvent::Data(buffer[..length].to_vec()),
-                    cancelled,
-                    runtime,
-                ) {
+                // Reply before queueing output. Queueing can wait on the consumer,
+                // and ConPTY will not run the child until the cursor report is written.
+                #[cfg(windows)]
+                let forward = {
+                    let observed = startup_query.observe(&buffer[..length]);
+                    if observed.answer {
+                        reply_startup_cursor(&handles.writer)?;
+                    }
+                    observed.forward
+                };
+                #[cfg(not(windows))]
+                let forward = buffer[..length].to_vec();
+                if forward.is_empty() {
+                    continue;
+                }
+                if !send_event(events, TerminalEvent::Data(forward), cancelled, runtime) {
                     break;
                 }
             }

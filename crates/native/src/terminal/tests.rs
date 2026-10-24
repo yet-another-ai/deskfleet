@@ -48,6 +48,16 @@ async fn output_precedes_exit_and_stream_end() {
         }
     }
     assert!(String::from_utf8_lossy(&output).contains("terminal-output"));
+    // ConPTY writes ESC[6n before the child runs and waits for a cursor report.
+    // Without that answer this test stays in `next` until the timeout.
+    #[cfg(windows)]
+    assert!(
+        !output
+            .windows(super::cursor_query::QUERY.len())
+            .any(|sequence| sequence == super::cursor_query::QUERY),
+        "startup cursor query must be consumed before it reaches the terminal: {}",
+        String::from_utf8_lossy(&output)
+    );
     assert_eq!(next(&terminal).await, None);
     terminal.close().await.expect("close exited terminal");
     terminal.close().await.expect("close twice");

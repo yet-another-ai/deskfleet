@@ -1,18 +1,27 @@
 import type * as acp from "@agentclientprotocol/sdk"
-import type { AgentConfigOption, AgentConfiguration, AgentConfigurationParams } from "./agent-configuration-protocol.ts"
+import { agentConfiguration, selectAgentOption, type AgentConfiguration, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { codexProvider } from "./agents/codex.ts"
 
-function selectOption(options: acp.SessionConfigOption[], category: string, id: string): AgentConfigOption | null {
-  const option = options.find(option => option.category === category && option.type === "select")
-    ?? options.find(option => option.id === id && option.type === "select")
-  if (!option || option.type !== "select") return null
-  return {
-    id: option.id,
-    currentValue: option.currentValue,
-    options: option.options.flatMap(value => "group" in value ? value.options : [value])
-      .map(value => ({ id: value.value, name: value.name })),
+/** A model change can replace the available reasoning choices and their default. */
+export async function applyAgentConfiguration(
+  agent: AgentConnection, sessionId: string, options: acp.SessionConfigOption[],
+  selection: AgentConfigurationSelection,
+  changed: (options: acp.SessionConfigOption[]) => void | Promise<void> = () => {},
+): Promise<acp.SessionConfigOption[]> {
+  for (const [category, id, value] of [
+    ["model", "model", selection.model],
+    ["thought_level", "reasoning_effort", selection.reasoningEffort],
+  ] as const) {
+    if (value === undefined) continue
+    const option = selectAgentOption(options, category, id)
+    if (!option || !option.options.some(choice => choice.id === value)) throw new Error(`Unsupported agent ${id}: ${value}`)
+    if (option.currentValue !== value) {
+      options = (await agent.setConfigOption({ sessionId, configId: option.id, value })).configOptions
+      await changed(options)
+    }
   }
+  return options
 }
 
 /** Discover draft choices without starting a prompt or allocating a managed worktree. */
@@ -38,24 +47,9 @@ export async function readAgentConfiguration(
     agent = await connecting
     signal.throwIfAborted()
     const session = await agent.newSession({ cwd, mcpServers: [] })
-    let options = session.configOptions ?? []
-    for (const [category, id, value] of [
-      ["model", "model", params.model],
-      ["thought_level", "reasoning_effort", params.reasoningEffort],
-    ] as const) {
-      signal.throwIfAborted()
-      if (value === undefined) continue
-      const option = selectOption(options, category, id)
-      if (!option || !option.options.some(choice => choice.id === value)) throw new Error(`Unsupported agent ${id}: ${value}`)
-      if (option.currentValue !== value) {
-        options = (await agent.setConfigOption({ sessionId: session.sessionId, configId: option.id, value })).configOptions
-      }
-    }
-    return {
-      provider: { id: provider.id, name: "Codex" },
-      models: selectOption(options, "model", "model"),
-      reasoningEfforts: selectOption(options, "thought_level", "reasoning_effort"),
-    }
+    const options = await applyAgentConfiguration(agent, session.sessionId, session.configOptions ?? [], params)
+    signal.throwIfAborted()
+    return agentConfiguration(options, provider.id)
   })()
   try {
     return await Promise.race([discovery, cancelled])

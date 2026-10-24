@@ -5,7 +5,7 @@ The transport and media implementation is adapted from
 `e4b963274b4afae8a7b8065d9efe5c6770bf9339`: its `rust/capture`, `rust/encoder`,
 `rust/nvenc`, `rust/nvenc-sys`, and `rust/streamer` code. The original streamer's
 process and JSON-RPC service are replaced by reusable Rust APIs and a thin
-napi-rs boundary. The independent TypeScript daemon owns peer sessions.
+napi-rs boundary. The TypeScript daemon owns peer sessions.
 
 ## Transport
 
@@ -48,6 +48,23 @@ creating a peer, or starting the daemon does not enumerate displays or probe
 video encoders. `captureDisplays()`, `supportedVideoCodecs()`, and
 `startDesktop()` are explicit operations. Capture requires an interactive
 graphical session and any platform recording permission.
+
+On macOS, the daemon requests Screen Recording consent as soon as startup owns
+discovery and local IPC is ready. `requestScreenCaptureAccess()` checks existing
+consent and requests it through CoreGraphics on a Rust worker; it does not start
+capture. This consent also covers the current ScreenCaptureKit system-audio
+stream. Waiting for or denying consent does not block agents, terminals, catalog
+operations, or daemon cleanup. Windows and Linux do not issue this request.
+
+The authenticated `hello` response includes `screenCapturePermission`, and
+`screenCapturePermissionChanged` events publish the result to connected clients.
+While the Agent runs, Desktop Settings shows pending, denied, or failed permission
+requests. Granted or unnecessary permissions have no notice; the Agent's running
+status stays separate.
+Previously denied access must be enabled in macOS System Settings under Privacy
+& Security → Screen & System Audio Recording; restart the local Agent afterward.
+Reconnecting a client reads the existing daemon's status without requesting again.
+Tests inject the permission request so ordinary test runs do not open OS dialogs.
 
 The native desktop pipeline owns capture and hardware encoding on one blocking
 worker, preserving D3D11 thread ownership and retained GPU surface lifetimes.
@@ -129,7 +146,7 @@ try {
 
 ## Builds and checks
 
-The locked CMake 3.31 toolchain builds the bundled Opus source. Cargo forces
+The locked CMake 4.4 toolchain builds the bundled Opus source. Cargo forces
 static Opus linkage and bypasses pkg-config so the SEA addon does not depend on
 a separately installed libopus. Windows NVENC loads the NVIDIA driver at runtime;
 building its bundled header bindings requires LLVM/libclang and the Windows SDK.

@@ -23,6 +23,7 @@ function metadata(value: unknown, id: string): Metadata {
     || !Number.isInteger(terminal.cols) || terminal.cols < 1 || terminal.cols > 1000
     || !Number.isInteger(terminal.rows) || terminal.rows < 1 || terminal.rows > 1000
     || (terminal.exitCode !== undefined && (!Number.isInteger(terminal.exitCode) || terminal.exitCode < 0))
+    || (terminal.worktreeId !== undefined && (typeof terminal.worktreeId !== "string" || !/^[1-9][0-9]*$/u.test(terminal.worktreeId)))
     || (record.error !== undefined && typeof record.error !== "string")) {
     throw new Error(`Invalid terminal history metadata: ${id}`)
   }
@@ -83,17 +84,21 @@ export class TerminalHistory {
     const staging = join(directory, `.creating-${randomUUID()}`)
     await mkdir(staging, { mode: 0o700 })
     let file: FileHandle | undefined
+    let published = false
     try {
       file = await open(join(staging, "output.bin"), "wx+", 0o600)
       const history = new TerminalHistory(staging, file, { terminal: { ...terminal } }, 0)
       await history.save(terminal)
       await file.sync()
+      // Windows refuses to rename a directory that still contains an open file.
+      await file.close()
+      file = undefined
       await rename(staging, path)
-      history.#directory = path
-      return history
+      published = true
+      return new TerminalHistory(path, await open(join(path, "output.bin"), "r+"), { terminal: { ...terminal } }, 0)
     } catch (error) {
       await file?.close()
-      await rm(staging, { recursive: true, force: true })
+      await rm(published ? path : staging, { recursive: true, force: true })
       throw error
     }
   }

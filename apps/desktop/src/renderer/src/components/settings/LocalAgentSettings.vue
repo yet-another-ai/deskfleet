@@ -33,6 +33,19 @@ const statusColor = computed(() => {
     default: return "bg-ui-text-faint"
   }
 })
+const screenCapture = computed(() => {
+  const permission = state.value?.screenCapturePermission
+  return state.value?.status === "running" && permission?.status !== "not-required" && permission?.status !== "granted" ? permission : undefined
+})
+const screenCaptureNeedsAction = computed(() => screenCapture.value?.status === "denied" || screenCapture.value?.status === "error")
+const screenCaptureLabel = computed(() => {
+  switch (screenCapture.value?.status) {
+    case "requesting": return t("settings.screenCaptureRequesting")
+    case "denied": return t("settings.screenCaptureDenied")
+    case "error": return t("settings.screenCaptureError")
+    default: return ""
+  }
+})
 
 async function load() {
   loading.value = true
@@ -49,10 +62,12 @@ async function load() {
 async function setEnabled(enabled: boolean) {
   saving.value = true
   requestError.value = null
+  const currentRevision = revision
   try {
-    state.value = await window.deskfleet.settings.setLocalAgentEnabled(enabled)
+    const next = await window.deskfleet.settings.setLocalAgentEnabled(enabled)
+    if (revision === currentRevision) state.value = next
   } catch (error) {
-    requestError.value = error instanceof Error ? error.message : String(error)
+    if (revision === currentRevision) requestError.value = error instanceof Error ? error.message : String(error)
   } finally { saving.value = false }
 }
 
@@ -83,5 +98,9 @@ onBeforeUnmount(unsubscribe)
       <span class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform" :class="state?.enabled && 'translate-x-4'" />
     </button>
   </SettingsRow>
+  <div v-if="screenCapture" :data-screen-capture-permission="screenCapture.status" class="mt-2 text-[13px]" :class="screenCaptureNeedsAction ? 'text-ui-warning' : 'text-ui-text-muted'" :role="screenCaptureNeedsAction ? 'alert' : 'status'">
+    <p class="m-0">{{ screenCaptureLabel }}</p>
+    <p v-if="screenCapture.status === 'error' && screenCapture.error" class="mb-0 mt-1 break-words">{{ screenCapture.error }}</p>
+  </div>
   <p v-if="requestError || state?.error" role="alert" class="m-0 mt-1 break-words text-[13px] text-ui-danger">{{ requestError || state?.error }}</p>
 </template>
