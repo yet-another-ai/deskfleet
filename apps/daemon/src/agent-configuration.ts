@@ -24,11 +24,11 @@ export async function applyAgentConfiguration(
   return options
 }
 
-/** Discover draft choices without starting a prompt or allocating a managed worktree. */
+/** Discover choices without starting a prompt or allocating a managed worktree. */
 export async function readAgentConfiguration(
   params: AgentConfigurationParams,
   cwd: string,
-  dependencies: { provider?: AgentProvider; signal?: AbortSignal; timeoutMs?: number } = {},
+  dependencies: { provider?: AgentProvider; signal?: AbortSignal; timeoutMs?: number; recoverSelection?: boolean } = {},
 ): Promise<AgentConfiguration> {
   if (params.provider !== "codex") throw new Error("Unsupported agent provider")
   const provider = dependencies.provider ?? codexProvider
@@ -47,7 +47,16 @@ export async function readAgentConfiguration(
     agent = await connecting
     signal.throwIfAborted()
     const session = await agent.newSession({ cwd, mcpServers: [] })
-    const options = await applyAgentConfiguration(agent, session.sessionId, session.configOptions ?? [], params)
+    let options = session.configOptions ?? []
+    if (dependencies.recoverSelection) {
+      // Recovery only inspects choices. A rejected saved model must not prevent
+      // selecting its replacement, and a stale effort must not hide model options.
+      const model = selectAgentOption(options, "model", "model")
+      if (model?.options.some(option => option.id === params.model)) {
+        try { options = await applyAgentConfiguration(agent, session.sessionId, options, { model: params.model }) }
+        catch { signal.throwIfAborted() }
+      }
+    } else options = await applyAgentConfiguration(agent, session.sessionId, options, params)
     signal.throwIfAborted()
     return agentConfiguration(options, provider.id)
   })()

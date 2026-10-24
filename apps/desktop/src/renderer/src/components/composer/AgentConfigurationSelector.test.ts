@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentConfiguration } from "../../../../shared/agent-configuration.ts"
 import { i18n } from "../../i18n/index.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
+import { agentSnapshot } from "../../test/agent.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import SessionComposer from "./SessionComposer.vue"
 
@@ -197,4 +198,79 @@ test("live session settings remain independent from saved draft preferences and 
   await view.setProps({ disabled: true })
   expect(row(view, "model").attributes("disabled")).toBeDefined()
   expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
+})
+
+test.each([
+  { model: "retired-model", effort: "retired-effort", control: "model", replacement: "orbit", summary: "Codex · retired-model · retired-effort", next: configuration("orbit") },
+  { model: "sequoia", effort: "retired-effort", control: "reasoning", replacement: "high", summary: "Codex · Sequoia · retired-effort", next: configuration("sequoia", "high") },
+])("replaces an unavailable saved $control without changing draft preferences", async ({ model, effort, control, replacement, summary, next }) => {
+  agents.draftConfiguration = { provider: "codex", model: "draft-model", reasoningEffort: "low" }; await flushPromises()
+  const saved = window.localStorage.getItem(storageKey)
+  vi.spyOn(agents, "sessionConfiguration").mockImplementation(async id => {
+    const result = configuration(model, effort)
+    agents.configurations[id] = result
+    return result
+  })
+  const configure = vi.spyOn(agents, "configureSession").mockImplementation(async id => {
+    agents.configurations[id] = next
+    return next
+  })
+  const view = render(); await view.setProps({ sessionId: "30" })
+  await trigger(view).trigger("click"); await flushPromises()
+  expect(trigger(view).text()).toBe(summary)
+  expect(row(view, control).attributes("disabled")).toBeUndefined()
+  await row(view, control).trigger("click")
+  expect(options(view).some(option => option.attributes("aria-checked") === "true")).toBe(false)
+  await view.get(`[role="menuitemradio"][data-value="${replacement}"]`).trigger("click"); await flushPromises()
+  expect(configure).toHaveBeenCalledExactlyOnceWith("30", {
+    model: control === "model" ? replacement : undefined,
+    reasoningEffort: control === "reasoning" ? replacement : undefined,
+  })
+  expect(row(view, control).attributes("data-value")).toBe(replacement)
+  expect(trigger(view).text()).not.toContain("retired-")
+  expect(agents.agentConfiguration).not.toHaveBeenCalled()
+  expect(window.localStorage.getItem(storageKey)).toBe(saved)
+})
+
+test("refreshes cached choices after a failed resume without duplicating pending reads", async () => {
+  agents.draftConfiguration = { provider: "codex", model: "draft-model", reasoningEffort: "low" }; await flushPromises()
+  const saved = window.localStorage.getItem(storageKey)
+  agents.sessions["30"] = { ...agentSnapshot().session, error: "Configured model is no longer available" }
+  agents.configurations["30"] = {
+    ...configuration("retired-model"),
+    models: { id: "model", currentValue: "retired-model", options: [{ id: "retired-model", name: "Retired model" }] },
+  }
+  const fresh = deferredConfiguration()
+  const read = vi.spyOn(agents, "sessionConfiguration")
+    .mockImplementation(async id => agents.configurations[id]!)
+    .mockImplementationOnce(async id => {
+      const result = await fresh.promise
+      agents.configurations[id] = result
+      return result
+    })
+  const configure = vi.spyOn(agents, "configureSession").mockImplementation(async id => {
+    const result = configuration("orbit")
+    agents.configurations[id] = result
+    return result
+  })
+  const view = render(); await view.setProps({ sessionId: "30" })
+  expect(trigger(view).text()).toBe("Codex · Retired model · Medium")
+  await trigger(view).trigger("click")
+  expect(read).toHaveBeenCalledExactlyOnceWith("30")
+  expect(row(view, "model").attributes("disabled")).toBeDefined()
+  await trigger(view).trigger("click"); await trigger(view).trigger("click")
+  expect(read).toHaveBeenCalledTimes(1)
+  fresh.resolve(configuration("retired-model")); await flushPromises()
+  expect(trigger(view).text()).toBe("Codex · retired-model · Medium")
+  await row(view, "model").trigger("click")
+  expect(options(view).map(option => option.attributes("data-value"))).toEqual(["sequoia", "orbit"])
+  expect(configure).not.toHaveBeenCalled()
+  await view.get('[role="menuitemradio"][data-value="orbit"]').trigger("click"); await flushPromises()
+  expect(configure).toHaveBeenCalledExactlyOnceWith("30", { model: "orbit", reasoningEffort: undefined })
+  expect(row(view, "model").attributes("data-value")).toBe("orbit")
+  expect(read).toHaveBeenCalledTimes(1)
+  await trigger(view).trigger("click"); await trigger(view).trigger("click"); await flushPromises()
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(agents.agentConfiguration).not.toHaveBeenCalled()
+  expect(window.localStorage.getItem(storageKey)).toBe(saved)
 })

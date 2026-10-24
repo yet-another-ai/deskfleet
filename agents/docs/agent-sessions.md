@@ -236,6 +236,8 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | `_deskfleet/session/configure` | Audit and apply model/reasoning changes to a Session |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
 | `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
+| `_deskfleet/git/status` | Inspect the Session's captured checkouts, branch/HEAD, and staged/unstaged/untracked files |
+| `_deskfleet/git/diff` | Read one changed file's patch by Session, repository, relative path, and change kind |
 | `_deskfleet/input/submit` | Persist text with operation ID and backlog/steer intent |
 | `_deskfleet/input/steer` | Claim a candidate and steer toward the observed turn |
 | `_deskfleet/input/retry` | Make a confirmed failed input pending again |
@@ -250,6 +252,14 @@ Original ACP notifications, including provider Session IDs, are carried in journ
 events and projected once by the renderer. The facade advertises only supported
 methods. Managed creation takes a Workspace whose directories determine `cwd`.
 
+Git reads require a ready Session and resolve its owned Worktree through the
+catalog, including captured paths for directory Sessions. They do not accept
+caller-supplied working directories, start a provider, require an operation ID,
+or append journal events. Repository IDs select only checkouts resolved from
+that Session's paths. Diffs distinguish index changes from working-tree changes
+and include untracked file previews. Binary files and truncated patches are
+reported explicitly. Checkout errors do not hide healthy checkout results.
+
 ### Provider configuration
 
 The composer's menu has Agent, Model, and Reasoning submenus. Codex is
@@ -262,10 +272,18 @@ New Session commands carry optional model and reasoning selections. Startup
 applies the model first, then an effort supported by that model, before draining
 the backlog. Confirmed configuration is retained as ACP `config_option_update`
 events and restored when the provider resumes. Until initial configuration
-succeeds, startup retries retain the choices from the create command.
+succeeds, ordinary startup retries retain the choices from the create command.
 
-Reading configuration does not start or resume a provider. Changing it is an
-audited, idempotent Session command; it resumes a stopped provider if needed.
+Reading configuration does not start or resume the managed Session. After a
+failed startup, it offers the provider's available choices while retaining the
+saved selection for display. If those choices are no longer in memory, a
+temporary discovery session retrieves them without delivering queued inputs or
+changing the saved configuration. An explicit replacement overrides the failing
+selection during startup; choosing another model lets that model supply its
+default reasoning effort unless the user also specifies an effort.
+
+Changing configuration is an audited, idempotent Session command; it resumes a
+stopped provider if needed.
 Changes require no active turn and pause backlog dispatch while the provider
 confirms the options. Attached clients project the committed updates,
 so a change from another client is reflected in an open selector.
@@ -297,6 +315,14 @@ leaves a visible operation with its original UUID; checking the result queries
 the daemon instead of blindly submitting again. Receiving an accepted input
 clears only the matching draft, preserving edits made while sending.
 
+The Changes tab reads live Git state through the same connection. Its polling
+belongs to the visible panel and pauses when the window is hidden. After each
+completed read it waits 1.5 seconds before refreshing status and the selected
+file's diff; equal status letters or line counts do not suppress a content
+refresh. Switching Sessions discards late results from the previous context.
+Read failures retain the last result with an error until a successful refresh.
+These snapshots are independent of the conversation journal and its cursors.
+
 Daemon restart marks lost live runs/turns interrupted, outstanding dispatches
 uncertain, and old permissions cancelled. Pending inputs remain queued until
 the next message resumes the agent. SQLite commit and provider dispatch cannot be one transaction;
@@ -317,7 +343,9 @@ backpressure, real native two-client WebRTC, and renderer interaction/projection
 `mise run desktop:smoke-agent` adds the production Electron renderer, real local
 signaling/WebRTC, SQLite and managed Git worktrees with an injected provider.
 The smoke covers creation, streaming, backlog/steering, shared approvals,
-navigation, client replacement, and daemon restart without using paid inference.
+navigation, client replacement, live Git status and diff previews, and daemon
+restart without using paid inference. File changes made outside the provider
+also update an open diff when their status letters and line counts stay equal.
 
 Remote account enrollment, scoped peer authorization, HTTPS cached history,
 central synchronization, attachments, and additional agent providers are

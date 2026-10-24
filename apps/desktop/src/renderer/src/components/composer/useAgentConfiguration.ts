@@ -41,7 +41,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
 
   function toggle(): void {
     expanded.value = !expanded.value
-    if (expanded.value && !configuration.value && !loading.value) void configure()
+    if (expanded.value && !loading.value && (target().sessionId || !configuration.value)) void configure()
   }
   function changeModel(model: string): Promise<void> {
     // Let the agent select a supported effort for the new model.
@@ -61,7 +61,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     if (expanded.value) void configure()
   })
 
-  const modelName = computed(() => configuration.value?.models?.options.find(option => option.id === configuration.value?.models?.currentValue)?.name ?? selection.value?.model)
+  const modelName = computed(() => configuration.value?.models?.options.find(option => option.id === configuration.value?.models?.currentValue)?.name ?? configuration.value?.models?.currentValue ?? selection.value?.model)
   const reasoningEffort = computed(() => configuration.value?.reasoningEfforts?.currentValue ?? selection.value?.reasoningEffort)
   return { configuration, expanded, loading, error, modelName, reasoningEffort, toggle, changeModel, changeReasoningEffort, reload }
 }

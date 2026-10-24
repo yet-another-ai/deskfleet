@@ -5,7 +5,7 @@ import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, timestamp } from "./agent-store.ts"
 import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 
-import { applyAgentConfiguration } from "./agent-configuration.ts"
+import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
 import { agentConfiguration, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
 
@@ -23,6 +23,7 @@ export class AgentRuntime {
   readonly #catalog: DaemonCatalog
   readonly #provider: AgentProvider
   #configuration?: acp.SessionConfigOption[]
+  #availableConfiguration?: acp.SessionConfigOption[]
   #configuring = false
   #connection?: AgentConnection
   #run?: AgentRun
@@ -45,9 +46,26 @@ export class AgentRuntime {
 
   get running(): boolean { return !!this.#connection && !this.#stopping && this.#run?.state === "running" }
 
-  async configuration(): Promise<AgentConfiguration> {
-    const options = this.#configuration ?? (await savedAgentConfiguration(this.journal, this.sessionId)).options
-    return agentConfiguration(options)
+  async configuration(signal?: AbortSignal): Promise<AgentConfiguration> {
+    await this.#starting?.catch(() => {})
+    signal?.throwIfAborted()
+    const saved = await savedAgentConfiguration(this.journal, this.sessionId)
+    const snapshot = await this.journal.read(this.sessionId)
+    if (this.running || !snapshot.session.error) return agentConfiguration(this.#configuration ?? saved.options)
+    // Discover alternatives without resuming the failed conversation, changing
+    // its saved selection, or releasing any pending inputs.
+    let available: AgentConfiguration
+    if (this.#availableConfiguration) available = agentConfiguration(this.#availableConfiguration)
+    else {
+      const catalog = await this.#catalog.native.snapshot()
+      const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
+      if (!worktree?.directories[0]) throw new Error("Session worktree is unavailable")
+      available = await readAgentConfiguration({ provider: "codex", ...saved.selection }, worktree.directories[0].path,
+        { provider: this.#provider, signal, recoverSelection: true })
+    }
+    if (available.models && saved.selection.model !== undefined) available.models.currentValue = saved.selection.model
+    if (available.reasoningEfforts && saved.selection.reasoningEffort !== undefined) available.reasoningEfforts.currentValue = saved.selection.reasoningEffort
+    return available
   }
 
   async configure(selection: AgentConfigurationSelection): Promise<AgentConfiguration> {
@@ -55,7 +73,10 @@ export class AgentRuntime {
     // Pause backlog dispatch through startup and every provider configuration call.
     this.#configuring = true
     try {
-      await this.start()
+      // A concurrent ordinary retry may still be trying the old choices. Wait
+      // for it, then let this explicit replacement control the next startup.
+      await this.#starting?.catch(() => {})
+      await this.start(selection)
       const snapshot = await this.journal.read(this.sessionId)
       if (this.#active || snapshot.turns.some(liveTurn)) throw new Error("Wait for the current turn before changing the Agent configuration")
       const sessionId = snapshot.session.providerSessionId!
@@ -77,7 +98,7 @@ export class AgentRuntime {
     })
   }
 
-  start(): Promise<void> {
+  start(selection?: AgentConfigurationSelection): Promise<void> {
     if (this.#stopping && this.#stop) {
       const stopping = this.#stop
       return stopping.then(() => {
@@ -85,23 +106,27 @@ export class AgentRuntime {
           this.#stop = undefined
           this.#stopping = false
         }
-        return this.start()
+        return this.start(selection)
       })
     }
-    if (this.#recovering) return this.#recovering.then(() => this.start())
+    if (this.#recovering) return this.#recovering.then(() => this.start(selection))
     if (this.running) return Promise.resolve()
     if (this.#starting) return this.#starting
-    this.#starting = this.#start().finally(() => { this.#starting = undefined })
+    this.#starting = this.#start(selection).finally(() => { this.#starting = undefined })
     return this.#starting
   }
 
-  async #start(): Promise<void> {
+  async #start(selection?: AgentConfigurationSelection): Promise<void> {
     this.#stopping = false
     this.#stop = undefined
     const snapshot = await this.journal.read(this.sessionId)
     if (snapshot.session.lifecycle !== "ready") throw new Error("Session is not available for execution")
     await this.#active?.completion
     const savedConfiguration = await savedAgentConfiguration(this.journal, this.sessionId)
+    // Changing models also accepts that model's default effort. An effort-only
+    // replacement keeps the saved model; ordinary retries keep both choices.
+    const requested = selection?.model !== undefined ? selection : { ...savedConfiguration.selection, ...selection }
+    this.#availableConfiguration = undefined
     const catalog = await this.#catalog.native.snapshot()
     const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
     if (!worktree?.directories[0]) throw new Error("Session worktree is unavailable")
@@ -138,7 +163,9 @@ export class AgentRuntime {
         providerSessionId = created.sessionId
         configOptions = created.configOptions ?? []
       }
-      configOptions = await applyAgentConfiguration(connection, providerSessionId, configOptions, savedConfiguration.selection)
+      this.#availableConfiguration = configOptions
+      configOptions = await applyAgentConfiguration(connection, providerSessionId, configOptions, requested,
+        options => { this.#availableConfiguration = options })
       await this.#recordConfiguration(providerSessionId, configOptions)
       if (this.#stopping) throw new Error("Agent startup was stopped")
       run.state = "running"

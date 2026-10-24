@@ -96,6 +96,29 @@ test("explicit check reuses an unknown operation's exact params instead of alloc
   expect(store.operations).toEqual({})
 })
 
+test("Git reads initialize the shared connection without creating mutation receipts or altering drafts", async () => {
+  const store = useAgentSessionsStore()
+  store.drafts["30"] = "Keep my draft"
+  const status = { sessionId: "30", repositories: [], directories: [] }
+  const request = { sessionId: "30", repositoryId: "checkout", path: "source.ts", kind: "staged" as const }
+  const diff = { ...request, patch: "+new\n", binary: false, truncated: false }
+  mock.call.mockImplementation(async (method: string) => {
+    if (method === "initialize") return {}
+    if (method === "_deskfleet/git/status") return status
+    if (method === "_deskfleet/git/diff") return diff
+  })
+  await expect(store.gitStatus("30")).resolves.toEqual(status)
+  await expect(store.gitDiff(request)).resolves.toEqual(diff)
+  expect(mock.call.mock.calls.map(([method]) => method)).toEqual(["initialize", "_deskfleet/git/status", "_deskfleet/git/diff"])
+  expect(mock.call).toHaveBeenCalledWith("_deskfleet/git/status", { sessionId: "30" })
+  expect(mock.call).toHaveBeenCalledWith("_deskfleet/git/diff", request)
+  mock.call.mockRejectedValueOnce(new Error("Checkout is unavailable"))
+  await expect(store.gitStatus("30")).rejects.toThrow("Checkout is unavailable")
+  expect(store.operations).toEqual({})
+  expect(store.views).toEqual({})
+  expect(store.drafts["30"]).toBe("Keep my draft")
+})
+
 
 test.each([false, true])("the rendered restoring indicator clears without further live events (history: %s)", async hasHistory => {
   const snapshot = agentSnapshot()

@@ -63,7 +63,7 @@ function selectAdjacent(event: KeyboardEvent, offset: number): void {
         <p v-else class="m-0 text-[13px] text-ui-text-muted">{{ t("panel.nothingSelected") }}</p>
       </template>
       <template v-else>
-        <GitChanges v-if="worktree" :worktree="worktree.worktree" />
+        <GitChanges v-if="worktree" :key="worktree.session.id" :session-id="worktree.session.id" :enabled="worktree.machine.local && worktree.machine.online" />
         <p v-else class="m-0 text-[13px] text-ui-text-muted">{{ t("panel.noWorktree") }}</p>
       </template>
     </div>

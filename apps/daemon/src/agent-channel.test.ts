@@ -102,6 +102,25 @@ test("AgentChannel reconstructs fragmented Unicode and sends ordered binary chun
   assert.deepEqual(h.failures, [])
 })
 
+test("AgentChannel forwards Git reads through the authenticated viewer without requiring a history subscription", async t => {
+  const h = attach()
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const status = { sessionId: "1", repositories: [], directories: [] }
+  const request = { sessionId: "1", repositoryId: "checkout", path: "中文 file.txt", kind: "unstaged" }
+  const diff = { ...request, patch: "@@ -1 +1 @@\n-old\n+new\n", binary: false, truncated: false }
+  h.sessions.handler = async method => method === "_deskfleet/git/status" ? status : diff
+  h.request("status", "_deskfleet/git/status", { sessionId: "1" })
+  h.request("diff", "_deskfleet/git/diff", request)
+  assert.deepEqual((await h.waitFor(message => message.id === "status")).result, status)
+  assert.deepEqual((await h.waitFor(message => message.id === "diff")).result, diff)
+  assert.deepEqual(h.sessions.calls, [
+    { method: "_deskfleet/git/status", params: { sessionId: "1" }, actor },
+    { method: "_deskfleet/git/diff", params: request, actor },
+  ])
+  assert.deepEqual(h.failures, [])
+})
+
 test("AgentChannel handles approvals and cancellation while another request awaits", async t => {
   const h = attach()
   t.after(() => h.channel.close())

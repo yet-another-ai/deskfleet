@@ -75,6 +75,26 @@ test("model change uses the provider's new effort choices and default", async ()
   assert.equal(fake.closed, 1)
 })
 
+test("recovery discovery lists a saved model's efforts without requiring its unavailable effort", async () => {
+  const fake = fakeProvider()
+  const result = await readAgentConfiguration({ provider: "codex", model: "second", reasoningEffort: "retired" }, process.cwd(), {
+    ...fake, recoverSelection: true,
+  })
+  assert.equal(result.models?.currentValue, "second")
+  assert.deepEqual(result.reasoningEfforts?.options.map(option => option.id), ["low", "medium"])
+  assert.deepEqual(fake.changes, [{ sessionId: "draft", configId: "chosen-model", value: "second" }])
+  assert.equal(fake.closed, 1)
+})
+
+test("recovery discovery still offers replacement models when the saved model is rejected", async () => {
+  const fake = fakeProvider({ async setConfigOption() { throw new Error("Model no longer available") } })
+  const result = await readAgentConfiguration({ provider: "codex", model: "second" }, process.cwd(), {
+    ...fake, recoverSelection: true,
+  })
+  assert.deepEqual(result.models?.options.map(option => option.id), ["first", "second"])
+  assert.equal(fake.closed, 1)
+})
+
 test("configuration failures and unsupported options close the connection", async context => {
   await context.test("unsupported effort after model change", async () => {
     const fake = fakeProvider()
