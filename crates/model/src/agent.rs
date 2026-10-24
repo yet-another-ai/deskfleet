@@ -9,10 +9,11 @@ use crate::{
 };
 
 macro_rules! states {
-    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
+    ($(#[$enum_attr:meta])* $name:ident { $($(#[$variant_attr:meta])* $variant:ident => $wire:literal),+ $(,)? }) => {
+        $(#[$enum_attr])*
         #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
         pub enum $name {
-            $(#[serde(rename = $wire)] $variant),+
+            $($(#[$variant_attr])* #[serde(rename = $wire)] $variant),+
         }
 
         impl $name {
@@ -28,17 +29,15 @@ states!(ActorKind {
     User => "user",
     System => "system",
 });
-states!(SessionContext {
-    Worktree => "worktree",
-    Directory => "directory",
-});
-
-/// Sessions recorded before the execution context was selectable used a worktree.
-impl Default for SessionContext {
-    fn default() -> Self {
-        Self::Worktree
+states!(
+    /// Sessions recorded before the execution context was selectable used a worktree.
+    #[derive(Default)]
+    SessionContext {
+        #[default]
+        Worktree => "worktree",
+        Directory => "directory",
     }
-}
+);
 
 states!(SessionLifecycle {
     Provisioning => "provisioning",
@@ -46,17 +45,16 @@ states!(SessionLifecycle {
     ProvisionFailed => "provision_failed",
     Deleting => "deleting",
 });
-states!(ArchiveState {
-    Active => "active",
-    Archiving => "archiving",
-    Archived => "archived",
-});
-
-impl Default for ArchiveState {
-    fn default() -> Self {
-        Self::Active
+states!(
+    #[derive(Default)]
+    ArchiveState {
+        #[default]
+        Active => "active",
+        Archiving => "archiving",
+        Archived => "archived",
     }
-}
+);
+
 states!(RunState {
     Starting => "starting",
     Running => "running",
