@@ -92,6 +92,56 @@ test("an unavailable terminal list leaves panel creation retryable without spawn
   expect(dial).not.toHaveBeenCalled()
 })
 
+test("a shell announced during a shared list request prevents automatic duplicate creation", async () => {
+  const listed = deferred<TerminalSummary[]>()
+  const list = vi.spyOn(window.deskfleet.terminal, "list").mockReturnValue(listed.promise)
+  const dial = vi.spyOn(window.deskfleet.terminal, "dial")
+  const store = setup()
+  const refreshing = store.refresh()
+  const opening = store.ensureWorktreeTerminal("31")
+  const existing = { ...shell, worktreeId: "31" }
+  receive({ kind: "terminalChanged", terminal: existing })
+  listed.resolve([])
+
+  await refreshing
+  await expect(opening).resolves.toEqual(existing)
+  expect(store.sessions).toEqual([existing])
+  expect(list).toHaveBeenCalledOnce()
+  expect(dial).not.toHaveBeenCalled()
+})
+
+test("a stale list preserves the latest terminal update and does not restore a hung-up shell", async () => {
+  const listed = deferred<TerminalSummary[]>()
+  vi.spyOn(window.deskfleet.terminal, "list").mockReturnValue(listed.promise)
+  const store = setup()
+  const refreshing = store.refresh()
+  receive({ kind: "terminalChanged", terminal: { ...shell, status: "interrupted" } })
+  const updated = { ...shell, title: "updated shell" }
+  receive({ kind: "terminalChanged", terminal: updated })
+  receive({ kind: "terminalChanged", terminal: { ...shell, id: "closed-shell" } })
+  receive({ kind: "terminalHungup", terminalId: "closed-shell" })
+  const unrelated = { ...shell, id: "other-shell" }
+  listed.resolve([shell, { ...shell, id: "closed-shell" }, unrelated])
+
+  await refreshing
+  expect(store.sessions).toEqual([updated, unrelated])
+})
+
+test("local creation and hangup survive a list response even before their catalog events arrive", async () => {
+  const listed = deferred<TerminalSummary[]>()
+  vi.spyOn(window.deskfleet.terminal, "list").mockReturnValue(listed.promise)
+  vi.spyOn(window.deskfleet.terminal, "dial").mockImplementation(async options => ({ ...shell, id: options.terminalId }))
+  vi.spyOn(window.deskfleet.terminal, "hangup").mockResolvedValue()
+  const store = setup()
+  const refreshing = store.refresh()
+  const created = await store.create()
+  await store.hangup(shell.id)
+  listed.resolve([shell])
+
+  await refreshing
+  expect(store.sessions).toEqual([created])
+})
+
 test("reattaching dials the existing shell before using the data channel; detach does not hang up", async () => {
   const dial = vi.spyOn(window.deskfleet.terminal, "dial").mockResolvedValue(shell)
   const hangup = vi.spyOn(window.deskfleet.terminal, "hangup")
