@@ -3,16 +3,16 @@ import { DaemonClient } from "./control-client.ts"
 import { centralUrl } from "./central-protocol.ts"
 
 /** Enrollment credentials arrive on stdin, never in process arguments or shell history. */
-export async function runMachineCli(command: "status" | "enroll", args: string[]): Promise<void> {
+export async function runMachineCli(command: "status" | "prepare-enrollment" | "enroll", args: string[]): Promise<void> {
   const { values } = parseArgs({ args, options: { "server-url": { type: "string" }, help: { type: "boolean", short: "h" } } })
   if (values.help) {
-    console.log(command === "status" ? "Usage: deskfleet-daemon status" : "Usage: deskfleet-daemon enroll --server-url <https://backend> < machine-credentials.json")
+    console.log(command === "enroll" ? "Usage: deskfleet-daemon enroll --server-url <https://backend> < machine-credentials.json" : `Usage: deskfleet-daemon ${command}`)
     return
   }
   const client = await DaemonClient.connect(() => {}, () => {})
   try {
-    if (command === "status") {
-      console.log(JSON.stringify(await client.call("centralStatus", {}), null, 2))
+    if (command !== "enroll") {
+      console.log(JSON.stringify(await client.call(command === "status" ? "centralStatus" : "centralPrepareEnrollment", {}), null, 2))
       return
     }
     if (!values["server-url"]) throw new Error("Provide --server-url and the enrollment JSON on stdin")

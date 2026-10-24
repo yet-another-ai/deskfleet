@@ -68,6 +68,7 @@ export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent | P
 
 export interface ControlMethods extends CatalogMethods, FilesystemMethods, ProviderMethods {
   centralStatus: { params: Record<string, never>; result: CentralStatus }
+  centralPrepareEnrollment: { params: Record<string, never>; result: CentralStatus }
   centralEnroll: { params: MachineEnrollment; result: CentralStatus }
   hello: { params: { token: string }; result: LocalDaemonInfo }
   shutdown: { params: Record<string, never>; result: null }

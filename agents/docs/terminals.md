@@ -92,7 +92,7 @@ rows, not pixel dimensions.
 ## Durable history
 
 The daemon saves the full output byte stream under
-`<daemon directory>/machine/terminals/<terminal ID>/output.bin`, with session metadata in
+`<active machine directory>/terminals/<terminal ID>/output.bin`, with session metadata in
 `session.json`. The default daemon directory is `~/.deskfleet`; the existing
 `DESKFLEET_DAEMON_DIRECTORY` override also selects history storage. Directories
 and files use private permissions. Output is flushed to disk before its offset

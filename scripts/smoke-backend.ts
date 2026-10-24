@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import type { CatalogSnapshot, CatalogWorkspace } from "../crates/node/index.ts"
 import { startDaemon } from "../apps/daemon/src/daemon.ts"
+import { DaemonClient } from "../apps/daemon/src/control-client.ts"
 import type { AgentCommand, AgentEvent, AgentSnapshot } from "../apps/daemon/src/agent-protocol.ts"
 import type { AgentProviderConfig, ProviderSnapshot } from "../apps/daemon/src/provider-protocol.ts"
 import type { TerminalSummary } from "../apps/daemon/src/terminal-protocol.ts"
@@ -226,6 +227,41 @@ try {
   await assert.rejects(rpc(machines[0]!, "_deskfleet/session/archive", { sessionId, operationId: randomUUID() }), /503/u)
   assert.equal((await readCentral()).snapshot.session.archiveState, "active")
   console.log("Offline Agent history remains readable, terminal output stays local, and offline archive is rejected")
+
+  const hostDirectory = join(directory, "daemon-0")
+  daemons[0] = await startDaemon(0, { controlDirectory: hostDirectory, agentProvider: providers[0], requestScreenCaptureAccess: async () => false })
+  const oldOrigin = daemons[0]!.central.status().identity.originId
+  await until(() => daemons[0]!.central.status(), value => value.connected, "machine restarts before removal")
+  await admin(`/machines/${machines[0]}`, undefined, "DELETE")
+  await until(() => daemons[0]!.central.status(), value => value.revoked, "machine is logged out after removal")
+  const host = await DaemonClient.connect(() => {}, () => {}, hostDirectory)
+  let freshOrigin: string
+  try {
+    const prepared = await host.call("centralPrepareEnrollment", {})
+    freshOrigin = prepared.identity.originId
+    assert.notEqual(freshOrigin, oldOrigin)
+    assert.equal(prepared.configured, false)
+    assert.equal(prepared.revoked, false)
+    assert.equal((await host.call("centralPrepareEnrollment", {})).identity.originId, freshOrigin)
+    const enrollment = await admin<{ machine: { id: string }; token: string }>(`/teams/${teamId}/machines`, {
+      name: "Re-enrolled machine", originId: freshOrigin, localMachineId: prepared.identity.machineId,
+    })
+    machines.push(enrollment.machine.id)
+    await host.call("centralEnroll", { serverUrl: backend, machineId: enrollment.machine.id, teamId, token: enrollment.token })
+    await until(() => daemons[0]!.central.status(), value => value.connected, "fresh machine joins the original team")
+    const catalog = await rpc<CatalogSnapshot>(enrollment.machine.id, "catalogList", {})
+    assert.equal(catalog.workspaces.length, 0)
+    assert.equal((await admin<{ sessions: unknown[] }>(`/machines/${enrollment.machine.id}/sessions`)).sessions.length, 0)
+    await assert.rejects(host.call("centralPrepareEnrollment", {}), /already enrolled/u)
+  } finally { host.close() }
+  assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "retained untracked smoke file\n")
+  const retainedGit = await execute("git", ["-C", cwd, "status", "--porcelain"])
+  assert.match(retainedGit.stdout, /README\.md/u)
+  assert.match(retainedGit.stdout, /untracked\.txt/u)
+  await daemons[0]!.close()
+  daemons[0] = await startDaemon(0, { controlDirectory: hostDirectory, agentProvider: providers[0], requestScreenCaptureAccess: async () => false })
+  assert.equal(daemons[0]!.central.status().identity.originId, freshOrigin)
+  console.log("A removed machine re-enrolls into its original team with empty data; retired worktree paths and history stay intact")
 } catch (error) {
   if (fixture.diagnostics()) console.error(fixture.diagnostics())
   throw error

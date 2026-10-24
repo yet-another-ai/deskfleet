@@ -198,11 +198,21 @@ SQL. Both stores have integration tests against their actual database engines.
 See the [server guide](../../apps/server/README.md) for configuration and migration
 commands.
 
-The standalone daemon opens `<daemon directory>/machine/catalog.db` through a
-thin `NativeCatalog` napi binding after acquiring discovery. The local catalog
+The daemon opens the active machine's `catalog.db` through a thin `NativeCatalog`
+napi binding after acquiring discovery. The initial directory is `machine/`;
+later registrations use `machines/<uuid>/`, selected by `active-machine.json`.
+The local catalog
 keeps its persistent origin and integer machine/resource IDs. Enrollment binds
 that origin to the central Team and Machine. Earlier unauthenticated development
 data outside `machine/` is not imported into the enrolled machine.
+
+Machine removal revokes its credential without removing the user's Team
+membership or stopping accepted execution. Explicit re-enrollment closes the
+old execution context and selects a new empty directory and origin. The old
+directory remains at its original path, preserving Git worktree registrations
+and history. The new identity may join the original Team or a different Team;
+it never imports the previous registration's resources. Valid registrations
+cannot be reset through this flow.
 
 Authenticated backend management exposes catalog queries, Workspace
 create/update/delete, and Session create/archive/restore. The daemon validates

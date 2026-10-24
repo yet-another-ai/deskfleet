@@ -14,12 +14,14 @@ export interface MachineCredentials {
   machineId: string
   teamId: string
   token: string
+  revoked?: boolean
 }
 
-export type MachineEnrollment = Omit<MachineCredentials, "serverId">
+export type MachineEnrollment = Omit<MachineCredentials, "serverId" | "revoked">
 export interface CentralStatus {
   configured: boolean
   connected: boolean
+  revoked: boolean
   serverUrl?: string
   machineId?: string
   teamId?: string

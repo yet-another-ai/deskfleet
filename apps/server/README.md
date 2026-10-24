@@ -67,6 +67,10 @@ audience, and expiration validation. PostgreSQL stores hashes of application,
 machine, invitation, and exchange tokens; it stores OIDC flow state with short expirations. Application sessions last 30 days; machine credentials
 remain valid until administrator revocation. Daemons persist their enrollment
 credential locally, and clients persist their application session securely.
+Machine removal leaves Team membership intact. A removed installation must
+prepare a fresh empty data directory and origin before enrolling again, including
+when returning to the same Team; the old machine's credentials and origin cannot
+be reused. Old replicas stay scoped to the removed central machine ID.
 
 The `/api` routes cover:
 

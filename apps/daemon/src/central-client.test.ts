@@ -27,6 +27,7 @@ test("local discovery grants only host setup and never imports development resou
   const status = await client.call("centralStatus", {})
   assert.equal(status.configured, false)
   assert.equal(status.connected, false)
+  assert.equal(status.revoked, false)
   for (const method of ["catalogList", "providerList", "terminalList"] as const) await assert.rejects(client.call(method, {}), /Sign in and select a team/)
   await assert.rejects(client.call("workspaceCreate", { name: "Unauthorized", directories: [{ path: directory }] }), /backend API/)
 })
@@ -91,4 +92,38 @@ test("final synchronization has a shared deadline when the backend stops respond
   await closing
   assert.equal(posts, 1)
   assert.ok(Date.now() - started < 2_000, "Shutdown must not wait for the normal 30-second sync timeout")
+})
+
+test("explicit credential rejection persists logout without treating transport loss as revocation", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-revoked-"))
+  context.after(() => rm(directory, { recursive: true, force: true }))
+  let requests = 0
+  const server = createServer((_request, response) => { requests++; response.writeHead(401).end() })
+  server.on("upgrade", (_request, socket) => socket.destroy())
+  server.listen(0, "127.0.0.1"); await once(server, "listening")
+  context.after(() => { server.closeAllConnections(); server.close() })
+  const path = join(directory, "central.json")
+  await writeFile(path, JSON.stringify({
+    serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    serverId: "server", teamId: "team", machineId: "machine", token: "revoked-secret",
+  }))
+  const unsubscribe = () => () => {}
+  const operations = {
+    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
+    providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
+  } as unknown as MachineOperations
+  const central = new CentralClient(directory, operations, {} as ControlPeers)
+  await central.init()
+  assert.equal(central.status().revoked, false)
+  await central.close()
+  assert.equal(central.status().revoked, true)
+  assert.equal(JSON.parse(await readFile(path, "utf8")).revoked, true)
+  const restored = new CentralClient(directory, operations, {} as ControlPeers)
+  await restored.init()
+  assert.equal(restored.status().configured, true)
+  assert.equal(restored.status().revoked, true)
+  assert.equal(restored.status().identity.originId, "origin")
+  await restored.close()
+  assert.equal(requests, 1, "A revoked registration must not upload again after restart")
 })

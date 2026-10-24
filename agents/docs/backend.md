@@ -47,6 +47,10 @@ the [server guide](../../apps/server/README.md),
   audit rules apply to a future delete operation, not to archive.
 - Treat existing unauthenticated local data as development data. The first
   release does not need a legacy resource/history import flow.
+- Re-enrollment after administrator removal uses a new empty machine directory
+  and installation identity. Retain the old directory in place without importing
+  its data. The user remains a Team member and can enroll the new identity into
+  the original Team after logging in again.
 
 ## Backend capabilities
 

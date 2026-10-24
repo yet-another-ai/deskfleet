@@ -55,6 +55,9 @@ Machine and Team selectors, member administration, invitation codes, and headles
 machine enrollment are shared with the independently deployed Web application.
 The desktop can also enroll its hosted daemon after selecting a Team; an existing
 enrollment is never silently reassigned.
+After administrator removal, local enrollment first stops the retired execution
+context and prepares a new empty directory and identity. The previous data stays
+at its original paths; the new registration can join the same Team again.
 
 Workspace creation and editing use the target daemon's filesystem browser through
 central management APIs. Directory ordering, Session-owned Worktrees, terminals,

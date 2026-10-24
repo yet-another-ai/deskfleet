@@ -40,6 +40,21 @@ Enrollment verifies the credential and its installation identity with the
 backend before persisting it. The credential never appears in command-line
 arguments or status output. HTTPS is required except for loopback development.
 
+Administrator removal logs the machine out and makes `status.revoked` true.
+Existing execution continues until shutdown or an explicit new registration.
+To register it again, first prepare a new empty machine directory:
+
+```sh
+deskfleet-daemon prepare-enrollment
+```
+
+This stops the old Agent and terminal processes, retains their data at its
+original paths, and prints a fresh identity. Use that identity in the enrollment
+dialog, then import the new credential. It can join the original Team or another
+Team. Electron performs this preparation when enrolling a removed local machine.
+An active registration cannot be overwritten. Old history, Provider settings,
+and Workspaces are not imported into the new registration.
+
 The daemon publishes a private Unix socket or Windows named pipe through
 `~/.deskfleet/daemon.json`. `DESKFLEET_DAEMON_DIRECTORY` selects another directory.
 Only one live daemon can own it. The discovery token permits host setup,
@@ -50,7 +65,9 @@ configuration nor IPC can enable that fixture path.
 
 ## Storage and process ownership
 
-Production machine data lives under `<daemon directory>/machine/`:
+The first production machine uses `<daemon directory>/machine/`. A subsequent
+registration uses a fresh `machines/<uuid>/` directory, selected by the host's
+`active-machine.json`. Every machine directory contains:
 
 - `central.json`: private machine registration and credential.
 - `catalog.db`: SQLite Workspace/Session ownership, conversation, and audit.
@@ -59,6 +76,8 @@ Production machine data lives under `<daemon directory>/machine/`:
 - `terminals/`: terminal metadata and full output transcripts.
 
 Earlier unauthenticated development data outside this namespace is not imported.
+Retired directories stay in place because Git worktrees and saved working
+directories contain absolute paths. A reset never renames or deletes them.
 Local integer IDs remain decimal strings and are qualified by the catalog origin
 and central machine identity. Equal IDs on different machines stay distinct.
 

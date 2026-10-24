@@ -30,6 +30,7 @@ export class CentralClient {
   #lastReceived = 0
   #requests = new Set<Promise<void>>()
   #enrolling = false
+  #revocation: Promise<void> | undefined
 
   constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000) {
     this.#shutdownTimeoutMs = shutdownTimeoutMs
@@ -58,7 +59,7 @@ export class CentralClient {
   status(): CentralStatus {
     const credentials = this.#credentials
     return {
-      configured: !!credentials, connected: this.#connected,
+      configured: !!credentials, connected: this.#connected, revoked: credentials?.revoked === true,
       ...(credentials ? { serverUrl: credentials.serverUrl, machineId: credentials.machineId, teamId: credentials.teamId } : {}),
       identity: this.#operations.agents.journal.identity, machineName: hostname(),
     }
@@ -81,17 +82,21 @@ export class CentralClient {
         throw new Error("Machine credentials do not match this daemon and selected team")
       }
       const credentials: MachineCredentials = { ...value, serverUrl, serverId: verified.serverId }
-      const temporary = `${this.#path}.tmp`
-      try {
-        await writeFile(temporary, JSON.stringify(credentials), { mode: 0o600 })
-        if (process.platform !== "win32") await chmod(temporary, 0o600)
-        await rename(temporary, this.#path)
-      } finally { await rm(temporary, { force: true }) }
+      await this.#save(credentials)
       this.#credentials = credentials
       this.#peers.bind(credentials)
       this.#connect()
       return this.status()
     } finally { this.#enrolling = false }
+  }
+
+  async #save(credentials: MachineCredentials): Promise<void> {
+    const temporary = `${this.#path}.tmp`
+    try {
+      await writeFile(temporary, JSON.stringify(credentials), { mode: 0o600 })
+      if (process.platform !== "win32") await chmod(temporary, 0o600)
+      await rename(temporary, this.#path)
+    } finally { await rm(temporary, { force: true }) }
   }
 
   async #http(path: string, body: unknown): Promise<unknown> {
@@ -109,7 +114,7 @@ export class CentralClient {
   }
 
   #connect(): void {
-    if (this.#stopping || this.#closed || !this.#credentials || this.#socket) return
+    if (this.#stopping || this.#closed || !this.#credentials || this.#credentials.revoked || this.#socket) return
     const url = new URL("/api/daemon/ws", this.#credentials.serverUrl)
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
     const socket = new WebSocket(url)
@@ -183,12 +188,19 @@ export class CentralClient {
     }
   }
 
-  async #revoked(): Promise<void> {
+  #revoked(): Promise<void> {
+    if (this.#revocation) return this.#revocation
     this.#sync.disable(); this.#connected = false
     clearTimeout(this.#retry); clearInterval(this.#heartbeat)
     const socket = this.#socket; this.#socket = undefined; socket?.close()
-    // Keep revoked registration on disk so a restart cannot silently re-enroll.
-    await this.#peers.closeAll()
+    const credentials = this.#credentials
+    if (credentials) this.#credentials = { ...credentials, revoked: true }
+    // Keep the retired identity and its data in place. A new registration must
+    // explicitly prepare a different, empty machine directory.
+    return this.#revocation = Promise.all([
+      this.#peers.closeAll(),
+      this.#credentials ? this.#save(this.#credentials) : undefined,
+    ]).then(() => {})
   }
 
   stop(): Promise<void> {
@@ -206,11 +218,11 @@ export class CentralClient {
   /** Called after Agent/PTY producers and their accepted management RPCs stop. */
   close(): Promise<void> {
     return this.#close ??= (async () => {
-      try { await this.stop() }
+      try { await this.stop(); await this.#revocation }
       finally {
         this.#unsubscribeTerminals()
         const deadline = setTimeout(() => this.#httpClosing.abort(new Error("Final history synchronization timed out")), this.#shutdownTimeoutMs)
-        try { await this.#sync.close(!!this.#credentials) }
+        try { await this.#sync.close(!!this.#credentials && !this.#credentials.revoked) }
         finally {
           clearTimeout(deadline)
           this.#httpClosing.abort()

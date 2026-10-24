@@ -51,6 +51,7 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
       }
       break
     case "centralStatus":
+    case "centralPrepareEnrollment":
     case "capabilities":
     case "terminalList":
     case "shutdown":

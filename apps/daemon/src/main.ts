@@ -27,7 +27,7 @@ async function main() {
     await runAgent(process.argv.slice(3))
     return
   }
-  if (process.argv[2] === "status" || process.argv[2] === "enroll") {
+  if (process.argv[2] === "status" || process.argv[2] === "prepare-enrollment" || process.argv[2] === "enroll") {
     await runMachineCli(process.argv[2], process.argv.slice(3))
     return
   }
@@ -42,6 +42,7 @@ async function main() {
     console.log("Usage: deskfleet-daemon [--port <0-65535>] [--info] [--help]")
     console.log("       deskfleet-daemon agent <codex|claude-code> --help")
     console.log("       deskfleet-daemon status")
+    console.log("       deskfleet-daemon prepare-enrollment")
     console.log("       deskfleet-daemon enroll --server-url <https://backend> < machine-credentials.json")
     return
   }

@@ -65,7 +65,8 @@ and the [backend scope](backend.md#session-archive-and-restore).
 ## Provider configuration
 
 Each daemon owns its machine's provider settings in
-`<daemon directory>/machine/agent-providers.json`. Settings → Agents lists those providers
+`agent-providers.json` in the active machine directory (initially
+`<daemon directory>/machine/`). Settings → Agents lists those providers
 and supports adding, editing, and removing them through authenticated backend
 management RPC to the target daemon.
 The initial configuration contains a Codex provider. Removing all providers
