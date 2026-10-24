@@ -1,8 +1,9 @@
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { app, powerMonitor } from "electron"
-import { startDaemon } from "@deskfleet/daemon"
+import { createCodexProvider, startDaemon } from "@deskfleet/daemon"
 import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
+import { CODEX_ACP_HOST_ARGUMENT } from "../shared/daemon-launch.ts"
 
 /** Run the daemon library without installing the desktop client's UI lifecycle. */
 export function startDaemonHost(): void {
@@ -22,7 +23,13 @@ export function startDaemonHost(): void {
     process.once("SIGINT", shutdown)
     process.once("SIGTERM", shutdown)
     powerMonitor.on("shutdown", shutdown)
-    return startDaemon()
+    return startDaemon(0, {
+      agentProvider: createCodexProvider({
+        command: process.execPath,
+        args: [...(app.isPackaged ? [] : [app.getAppPath()]), CODEX_ACP_HOST_ARGUMENT],
+        env: { ELECTRON_RUN_AS_NODE: undefined },
+      }),
+    })
   })
   function shutdown(): void {
     void daemon.then((running) => running.close()).catch(fail)

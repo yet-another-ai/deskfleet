@@ -71,8 +71,11 @@ test("losing the daemon rejects outstanding operations and reports disconnection
   cleanups.push(() => client.close())
   const socket = [...server.sockets][0]!
   socket.removeAllListeners("data")
+  const received = once(socket, "data")
   const pending = client.call("capabilities", {})
   const rejected = expect(pending).rejects.toThrow("disconnected")
+  // Drain the request before closing so the fixture produces EOF, not a reset.
+  await received
   socket.destroy()
   await rejected
   expect(disconnected).toHaveBeenCalledTimes(1)

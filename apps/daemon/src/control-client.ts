@@ -75,7 +75,7 @@ export class DaemonClient {
       const timeout = setTimeout(() => {
         // A timed-out mutation may still be running. Closing releases its peers.
         this.#end(new Error(`Daemon ${method} request timed out`))
-      }, method === "workspaceSessionCreate" || method === "workspaceSessionDestroy" ? 120_000 : 15_000)
+      }, method === "workspaceSessionCreate" || method === "workspaceSessionDestroy" ? 120_000 : method === "agentConfiguration" ? 60_000 : 15_000)
       this.#pending.set(id, {
         resolve: (value) => resolve(value as ControlMethods[M]["result"]),
         reject,

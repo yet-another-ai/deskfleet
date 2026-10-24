@@ -114,7 +114,7 @@ test("workspace deletion requires confirmation and clears its main worktree", as
   await button(wrapper, "Confirm deletion").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   expect(remove).toHaveBeenCalledWith(workspaceId)
-  expect(chips(wrapper)).toEqual([])
+  expect(chips(wrapper)).toEqual(["Codex"])
 })
 
 test.each([

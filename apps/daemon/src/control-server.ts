@@ -12,6 +12,9 @@ import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
 import { DaemonCatalog } from "./catalog.ts"
+import { readAgentConfiguration } from "./agent-configuration.ts"
+import type { AgentProvider } from "./agents/acp.ts"
+import { codexProvider } from "./agents/codex.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
 export interface ControlPeers {
@@ -47,6 +50,8 @@ class ControlConnection {
   readonly #capabilities: Capabilities
   readonly #terminals: TerminalSessions
   readonly #catalog: DaemonCatalog
+  readonly #agentProvider: AgentProvider
+  readonly #abort = new AbortController()
   readonly #onShutdownRequested: (() => void) | undefined
   readonly #sessions = new Map<string, OwnedPeer>()
   readonly #dialed = new Set<string>()
@@ -54,13 +59,14 @@ class ControlConnection {
   #authenticated = false
   #closing: Promise<void> | undefined
 
-  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, onShutdownRequested?: () => void) {
+  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, agentProvider: AgentProvider, onShutdownRequested?: () => void) {
     this.#socket = socket
     this.#token = token
     this.#peers = peers
     this.#capabilities = capabilities
     this.#terminals = terminals
     this.#catalog = catalog
+    this.#agentProvider = agentProvider
     this.#onShutdownRequested = onShutdownRequested
     const unsubscribeTerminals = terminals.onChange(event => {
       if (event.kind === "terminalHungup") this.#dialed.delete(event.terminalId)
@@ -141,6 +147,10 @@ class ControlConnection {
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")
     if (this.#closing) throw new Error("Local daemon connection is closed")
     switch (request.method) {
+      case "agentConfiguration":
+        return readAgentConfiguration(request.params, await this.#catalog.agentWorkingDirectory(request.params.worktreeId), {
+          provider: this.#agentProvider, signal: this.#abort.signal,
+        })
       case "shutdown":
         if (!this.#onShutdownRequested) throw new Error("Daemon shutdown is unavailable")
         return null
@@ -260,6 +270,7 @@ class ControlConnection {
   }
 
   close(): Promise<void> {
+    this.#abort.abort(new Error("Local daemon connection closed"))
     this.#socket.destroy()
     this.#unsubscribe()
     this.#dialed.clear()
@@ -297,7 +308,7 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
   }
 }
 
-export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void) {
+export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, agentProvider: AgentProvider = codexProvider) {
   const sessions = terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
   const catalog = new DaemonCatalog(directory)
   await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -314,7 +325,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
   void initialized.catch(() => {})
   const server = createServer(socket => {
     if (stopping) { socket.destroy(); return }
-    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, onShutdownRequested)
+    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, agentProvider, onShutdownRequested)
     connections.add(connection)
     const operation = initialized.then(() => connection.run()).catch(error => {
       if (published) console.error("Local desktop connection failed", error)

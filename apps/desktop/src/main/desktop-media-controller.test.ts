@@ -36,6 +36,58 @@ function fixture() {
 
 const offer = { sessionId: "first", codec: "h264", audio: false, sdp: "offer" }
 
+test("agent configuration validates requests and forwards dynamic agent options", async () => {
+  const { controller, client } = fixture()
+  await expect(controller.invoke("agentConfiguration", { provider: "codex", model: 42 })).rejects.toThrow("Invalid agent model")
+  expect(mock.connect).not.toHaveBeenCalled()
+
+  const configuration = {
+    provider: { id: "codex", name: "Codex" },
+    models: { id: "model", currentValue: "agent-model", options: [{ id: "agent-model", name: "Agent model" }] },
+    reasoningEfforts: { id: "reasoning_effort", currentValue: "high", options: [{ id: "high", name: "High" }] },
+  }
+  client.call.mockResolvedValue(configuration)
+  const params = { provider: "codex", worktreeId: "1", model: "agent-model", reasoningEffort: "high" }
+  await expect(controller.invoke("agentConfiguration", params)).resolves.toEqual(configuration)
+  expect(client.call).toHaveBeenCalledExactlyOnceWith("agentConfiguration", params)
+  expect(client.close).toHaveBeenCalledTimes(1)
+})
+
+test("slow agent discovery has a separate connection and closes when its window is disposed", async () => {
+  const { controller, client } = fixture()
+  let reject!: (error: Error) => void
+  const discovery = new Promise((_, fail) => { reject = fail })
+  const configurationClient = {
+    call: vi.fn().mockReturnValue(discovery),
+    close: vi.fn(() => reject(new Error("Desktop connection closed"))),
+  }
+  mock.connect.mockResolvedValueOnce(configurationClient).mockResolvedValueOnce(client)
+  const pending = controller.invoke("agentConfiguration", { provider: "codex" })
+
+  await expect(controller.invoke("catalogList", {})).resolves.toEqual({ sdp: "answer" })
+  expect(configurationClient.call).toHaveBeenCalledExactlyOnceWith("agentConfiguration", { provider: "codex" })
+  expect(client.call).toHaveBeenCalledExactlyOnceWith("catalogList", {})
+  expect(configurationClient.close).not.toHaveBeenCalled()
+  const rejected = expect(pending).rejects.toThrow("Desktop connection closed")
+  controller.dispose()
+  await rejected
+  expect(configurationClient.close).toHaveBeenCalledTimes(1)
+  expect(client.close).toHaveBeenCalledTimes(1)
+})
+
+test("agent discovery closes a connection that arrives after window disposal", async () => {
+  const { controller, client } = fixture()
+  let resolve!: (value: typeof client) => void
+  mock.connect.mockReturnValue(new Promise((res) => { resolve = res }))
+  const pending = controller.invoke("agentConfiguration", { provider: "codex" })
+  const rejected = expect(pending).rejects.toThrow("cancelled")
+  controller.dispose()
+  resolve(client)
+  await rejected
+  expect(client.close).toHaveBeenCalledTimes(1)
+  expect(client.call).not.toHaveBeenCalled()
+})
+
 test("catalog operations share authenticated signaling without creating a peer", async () => {
   const { controller, client } = fixture()
   const directories = [{ path: "/code/frontend" }]

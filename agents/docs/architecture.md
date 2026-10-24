@@ -217,7 +217,25 @@ and environment overrides. Provider-specific code selects the process; the
 [ACP TypeScript SDK](https://agentclientprotocol.com/libraries/typescript) handles
 initialization, session creation, prompts, cancellation, and session updates.
 Codex uses the installed CLI and its credentials. The adapter runs as a child
-process; the SEA executable reuses its bundled Node runtime.
+process; the SEA executable reuses its bundled Node runtime. The desktop daemon
+injects an adapter launch using its own Electron executable and an ACP-only app
+entry point. This entry loads the bundled adapter without the client UI or daemon
+services and works with Electron's RunAsNode fuse disabled. A Node worker owns
+the adapter's event loop so its Codex subprocess finishes closing before the
+Electron host exits. Source TypeScript
+entry paths are used only by the standalone development daemon.
+
+The desktop composer discovers model and reasoning choices through the local
+daemon's `agentConfiguration` request. The daemon resolves the selected Worktree's
+first directory from its catalog, or uses the home directory before a target is
+selected. Each discovery creates a temporary ACP session, reads the provider's
+configuration selectors, applies draft selections in model-then-reasoning order,
+and closes the provider process. It sends no prompt and allocates no managed
+Session or Worktree. Discovery times out after 45 seconds and is cancelled when
+the requesting client disconnects. These selections configure a draft; updating
+running AgentSessions belongs to the future session API. The renderer saves draft
+choices per device. Discovery uses a separate IPC connection so agent startup
+does not delay terminal operations or catalog refreshes.
 
 The current agent CLI creates one ACP session per prompt invocation. With
 `--workspace-id`, it asks the running daemon to allocate a managed Session and

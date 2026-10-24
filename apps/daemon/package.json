@@ -6,6 +6,7 @@
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/index.ts",
+    "./codex-acp-host": "./src/codex-acp-host.ts",
     "./control-client": "./src/control-client.ts",
     "./control-discovery": "./src/control-discovery.ts"
   },

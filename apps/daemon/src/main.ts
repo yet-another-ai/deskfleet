@@ -4,6 +4,7 @@ import { nativeInfo } from "@deskfleet/native"
 import { startDaemon } from "./daemon.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
 import { runAgent } from "./agent-cli.ts"
+import { runCodexAcpHost } from "./codex-acp-host.ts"
 
 function fail(error: unknown) {
   console.error(error instanceof Error ? error.message : String(error))
@@ -12,8 +13,7 @@ function fail(error: unknown) {
 
 async function main() {
   if (process.argv[2] === "--codex-acp") {
-    process.env.CODEX_PATH ||= "codex"
-    await import("@agentclientprotocol/codex-acp")
+    await runCodexAcpHost()
     return
   }
   if (process.argv[2] === "agent") {

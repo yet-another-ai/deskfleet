@@ -4,7 +4,10 @@ import { join } from "node:path"
 const mocks = vi.hoisted(() => ({
   mkdirSync: vi.fn(),
   startDaemon: vi.fn(),
+  createCodexProvider: vi.fn(() => ({ id: "codex" })),
   app: {
+    isPackaged: false,
+    getAppPath: vi.fn(() => "/desktop-app"),
     setPath: vi.fn(),
     setActivationPolicy: vi.fn(),
     whenReady: vi.fn<() => Promise<void>>(),
@@ -16,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("node:fs", () => ({ mkdirSync: mocks.mkdirSync }))
 vi.mock("electron", () => ({ app: mocks.app, powerMonitor: mocks.powerMonitor }))
-vi.mock("@deskfleet/daemon", () => ({ startDaemon: mocks.startDaemon }))
+vi.mock("@deskfleet/daemon", () => ({ startDaemon: mocks.startDaemon, createCodexProvider: mocks.createCodexProvider }))
 vi.mock("@deskfleet/daemon/control-discovery", () => ({ daemonControlDirectory: () => "/daemon-data" }))
 
 import { startDaemonHost } from "./daemon-host.ts"
@@ -32,7 +35,8 @@ beforeEach(() => {
   vi.spyOn(process, "once").mockReturnValue(process)
 })
 
-it("isolates Electron data and waits for daemon cleanup before exiting", async () => {
+it.each([false, true])("isolates Electron data, launches the bundled adapter, and waits for cleanup (packaged: %s)", async packaged => {
+  mocks.app.isPackaged = packaged
   const ready = pending()
   const closed = pending()
   const close = vi.fn(() => closed.promise)
@@ -46,6 +50,12 @@ it("isolates Electron data and waits for daemon cleanup before exiting", async (
   expect(mocks.startDaemon).not.toHaveBeenCalled()
   ready.resolve()
   await vi.waitFor(() => expect(mocks.startDaemon).toHaveBeenCalledOnce())
+  expect(mocks.createCodexProvider).toHaveBeenCalledWith({
+    command: process.execPath,
+    args: [...(packaged ? [] : ["/desktop-app"]), "--deskfleet-codex-acp"],
+    env: { ELECTRON_RUN_AS_NODE: undefined },
+  })
+  expect(mocks.startDaemon).toHaveBeenCalledWith(0, { agentProvider: { id: "codex" } })
 
   const beforeQuit = mocks.app.on.mock.calls.find(([event]) => event === "before-quit")?.[1]
   const preventDefault = vi.fn()

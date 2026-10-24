@@ -7,8 +7,9 @@ import { PeerSessions } from "./peers.ts"
 import { startControlServer } from "./control-server.ts"
 import { TerminalSessions } from "./terminals.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
+import type { AgentProvider } from "./agents/acp.ts"
 
-export async function startDaemon(port = 0, options: { controlDirectory?: string } = {}) {
+export async function startDaemon(port = 0, options: { controlDirectory?: string; agentProvider?: AgentProvider } = {}) {
   const native = nativeInfo()
   const peers = new PeerSessions()
   const controlDirectory = options.controlDirectory ?? daemonControlDirectory()
@@ -54,7 +55,7 @@ export async function startDaemon(port = 0, options: { controlDirectory?: string
     return closed
   }
   try {
-    control = await startControlServer(peers, controlDirectory, undefined, terminals, () => { void close() })
+    control = await startControlServer(peers, controlDirectory, undefined, terminals, () => { void close() }, options.agentProvider)
   } catch (error) {
     const cleanup = await Promise.allSettled([peers.closeAll(), terminals.close(), server[Symbol.asyncDispose]()])
     const failures = cleanup.flatMap(result => result.status === "rejected" ? [result.reason] : [])

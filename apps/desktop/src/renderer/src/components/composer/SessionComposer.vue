@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ArrowUp, Bot, Folder, FolderTree, Monitor } from "@lucide/vue"
+import { ArrowUp, Folder, FolderTree, Monitor } from "@lucide/vue"
 import { useTextareaAutosize } from "@vueuse/core"
 import { ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { WorktreeLocation } from "../../stores/fleet.ts"
 import { useWorktreeLabel } from "../../composables/useWorktreeLabel.ts"
+import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 
 defineProps<{
   location: WorktreeLocation | null
@@ -14,8 +15,6 @@ defineProps<{
 
 const { t } = useI18n()
 const worktreeLabel = useWorktreeLabel()
-// Codex is the only provider the daemon supports so far.
-const provider = "Codex"
 
 const draft = ref("")
 const textarea = useTemplateRef<HTMLTextAreaElement>("textarea")
@@ -26,24 +25,23 @@ const placeholderTitle = (label: string) => t("common.placeholderControl", { lab
 
 <template>
   <div class="mx-auto w-full max-w-3xl shrink-0 px-6 pb-5">
-    <div v-if="showTarget && location" class="mb-2 flex flex-wrap items-center gap-2">
-      <span class="ui-chip" :title="placeholderTitle(location.machine.name)">
-        <Monitor :size="15" :stroke-width="1.75" aria-hidden="true" />
-        <span class="font-medium">{{ location.machine.name }}</span>
-        <span v-if="location.machine.local" class="ui-badge">{{ t("machine.local") }}</span>
-      </span>
-      <span class="ui-chip" :title="placeholderTitle(location.workspace.name)">
-        <Folder :size="15" :stroke-width="1.75" aria-hidden="true" />
-        {{ location.workspace.name }}
-      </span>
-      <span class="ui-chip" :title="placeholderTitle(worktreeLabel(location.worktree))">
-        <FolderTree :size="15" :stroke-width="1.75" aria-hidden="true" />
-        {{ worktreeLabel(location.worktree) }}
-      </span>
-      <span class="ui-chip" :title="placeholderTitle(t('composer.provider'))">
-        <Bot :size="15" :stroke-width="1.75" aria-hidden="true" />
-        {{ provider }}
-      </span>
+    <div class="mb-2 flex flex-wrap items-center gap-2">
+      <template v-if="showTarget && location">
+        <span class="ui-chip" :title="placeholderTitle(location.machine.name)">
+          <Monitor :size="15" :stroke-width="1.75" aria-hidden="true" />
+          <span class="font-medium">{{ location.machine.name }}</span>
+          <span v-if="location.machine.local" class="ui-badge">{{ t("machine.local") }}</span>
+        </span>
+        <span class="ui-chip" :title="placeholderTitle(location.workspace.name)">
+          <Folder :size="15" :stroke-width="1.75" aria-hidden="true" />
+          {{ location.workspace.name }}
+        </span>
+        <span class="ui-chip" :title="placeholderTitle(worktreeLabel(location.worktree))">
+          <FolderTree :size="15" :stroke-width="1.75" aria-hidden="true" />
+          {{ worktreeLabel(location.worktree) }}
+        </span>
+      </template>
+      <AgentConfigurationSelector :worktree-id="location?.worktree.id" />
     </div>
 
     <div

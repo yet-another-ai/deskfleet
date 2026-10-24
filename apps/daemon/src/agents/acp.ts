@@ -20,6 +20,8 @@ export interface AgentProcess {
 }
 
 export interface AgentClient {
+  /** Cancels initialization and closes the provider process when the caller leaves. */
+  signal?: AbortSignal
   onUpdate(notification: acp.SessionNotification): void
   requestPermission?(
     params: acp.RequestPermissionRequest,
@@ -30,12 +32,14 @@ export interface AgentClient {
 export interface AgentConnection {
   readonly initialization: acp.InitializeResponse
   newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse>
+  setConfigOption(params: acp.SetSessionConfigOptionRequest): Promise<acp.SetSessionConfigOptionResponse>
   prompt(params: acp.PromptRequest): Promise<acp.PromptResponse>
   cancel(sessionId: string): Promise<void>
   close(): Promise<void>
 }
 
 export async function connectAcpProcess(launch: AgentProcess, client: AgentClient): Promise<AgentConnection> {
+  client.signal?.throwIfAborted()
   const child = spawn(launch.command, launch.args ?? [], {
     env: Object.fromEntries(
       [...Object.entries(process.env), ...Object.entries(launch.env ?? {})]
@@ -78,10 +82,19 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     // Give adapters time to stop their own agent subprocesses after stdin EOF.
     const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000)
     timeout.unref()
-    closing = exited.finally(() => clearTimeout(timeout))
+    closing = exited.finally(() => {
+      clearTimeout(timeout)
+      client.signal?.removeEventListener("abort", abort)
+    })
     return closing
   }
   void connection.closed.then(close)
+  function abort(): void {
+    connection.close(client.signal?.reason)
+    void close()
+  }
+  client.signal?.addEventListener("abort", abort, { once: true })
+  if (client.signal?.aborted) abort()
 
   const timeout = setTimeout(() => {
     connection.close(new Error(`${launch.command} ACP initialization timed out`))
@@ -99,6 +112,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     return {
       initialization,
       newSession: params => connection.agent.request(acp.methods.agent.session.new, params),
+      setConfigOption: params => connection.agent.request(acp.methods.agent.session.setConfigOption, params),
       prompt: params => connection.agent.request(acp.methods.agent.session.prompt, params),
       cancel: sessionId => connection.agent.notify(acp.methods.agent.session.cancel, { sessionId }),
       close,

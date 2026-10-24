@@ -35,6 +35,9 @@ const api: DeskfleetDesktopApi = {
       return () => ipcRenderer.removeListener(SETTINGS_CHANGED_EVENT, handler)
     },
   },
+  agents: {
+    configuration: (params) => invokeDesktop("agentConfiguration", params),
+  },
   catalog: {
     list: () => invokeDesktop("catalogList", {}),
     createWorkspace: (name, directories) => invokeDesktop("workspaceCreate", { name, directories }),

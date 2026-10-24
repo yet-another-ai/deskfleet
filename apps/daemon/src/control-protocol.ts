@@ -1,5 +1,6 @@
 import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "./terminal-protocol.ts"
 import type { CatalogEvent, CatalogMethods } from "./catalog-protocol.ts"
+import type { AgentConfiguration, AgentConfigurationParams } from "./agent-configuration-protocol.ts"
 
 /** Provisional local IPC contract. Media and terminal bytes stay on WebRTC. */
 export type VideoCodec = "h264" | "h265" | "av1"
@@ -57,6 +58,7 @@ export interface LocalDaemonInfo {
 export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent
 
 export interface ControlMethods extends CatalogMethods {
+  agentConfiguration: { params: AgentConfigurationParams; result: AgentConfiguration }
   hello: { params: { token: string }; result: LocalDaemonInfo }
   shutdown: { params: Record<string, never>; result: null }
   capabilities: { params: Record<string, never>; result: DesktopCapabilities }

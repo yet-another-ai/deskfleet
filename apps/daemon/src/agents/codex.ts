@@ -1,18 +1,22 @@
 import { isSea } from "node:sea"
-import { fileURLToPath } from "node:url"
-import { connectAcpProcess, type AgentProvider } from "./acp.ts"
+import { resolve } from "node:path"
+import { connectAcpProcess, type AgentProcess, type AgentProvider } from "./acp.ts"
 
-export const codexProvider: AgentProvider = {
-  id: "codex",
-  connect: (config, client) => connectAcpProcess({
-    command: process.execPath,
-    args: isSea()
-      ? ["--codex-acp"]
-      : [fileURLToPath(new URL("../main.ts", import.meta.url)), "--codex-acp"],
-    env: {
-      ...config.env,
-      // Always select the installed CLI rather than the adapter's bundled Codex.
-      CODEX_PATH: config.binaryPath || "codex",
-    },
-  }, client),
+/** Embedded hosts supply their own executable entry point for the ACP adapter. */
+export function createCodexProvider(launch?: AgentProcess): AgentProvider {
+  return {
+    id: "codex",
+    connect: (config, client) => connectAcpProcess({
+      command: launch?.command ?? process.execPath,
+      args: launch?.args ?? (isSea() ? ["--codex-acp"] : [resolve(import.meta.dirname, "../main.ts"), "--codex-acp"]),
+      env: {
+        ...launch?.env,
+        ...config.env,
+        // Always select the installed CLI rather than the adapter's bundled Codex.
+        CODEX_PATH: config.binaryPath || "codex",
+      },
+    }, client),
+  }
 }
+
+export const codexProvider = createCodexProvider()

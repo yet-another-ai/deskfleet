@@ -69,7 +69,26 @@
   "composer": {
     "label": "Prompt",
     "placeholder": "Describe a task for the agent",
-    "provider": "Agent provider",
+    "provider": "Agent",
+    "model": "Model",
+    "reasoningEffort": "Reasoning effort",
+    "configuration": "Agent configuration",
+    "configureAgent": "Configure agent: {selection}",
+    "collapseConfiguration": "Collapse agent configuration",
+    "loading": "Loading…",
+    "unavailable": "Unavailable",
+    "loadingConfiguration": "Reading configuration from the agent…",
+    "reloadConfiguration": "Reload from agent",
+    "efforts": {
+      "none": "None",
+      "minimal": "Minimal",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "xhigh": "Extra high",
+      "max": "Max",
+      "ultra": "Ultra"
+    },
     "send": "Send"
   },
   "terminal": {

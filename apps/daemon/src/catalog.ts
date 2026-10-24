@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises"
-import { hostname } from "node:os"
+import { homedir, hostname } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { openCatalog, type NativeCatalog } from "@deskfleet/native"
 import type { CatalogDirectory, CatalogEvent, CatalogMethods, CatalogRequest } from "./catalog-protocol.ts"
@@ -23,6 +23,16 @@ export class DaemonCatalog {
   onChange(listener: (event: CatalogEvent) => void): () => void {
     this.#listeners.add(listener)
     return () => this.#listeners.delete(listener)
+  }
+
+  async agentWorkingDirectory(worktreeId?: string): Promise<string> {
+    if (worktreeId === undefined) return homedir()
+    if (!this.#catalog) throw new Error("Local catalog is not available")
+    const snapshot = await this.#catalog.snapshot()
+    const worktree = snapshot.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.id === worktreeId)
+    const cwd = worktree?.directories[0]?.path
+    if (!cwd) throw new Error("Unknown local worktree")
+    return cwd
   }
 
   async handle(request: CatalogRequest): Promise<CatalogMethods[keyof CatalogMethods]["result"]> {

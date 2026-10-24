@@ -7,9 +7,15 @@ const exitFile = process.env.DESKFLEET_TEST_EXIT_FILE
 if (exitFile) process.once("exit", code => writeFileSync(exitFile, String(code)))
 
 let completePrompt: ((response: acp.PromptResponse) => void) | undefined
+let model = "fixture-model"
+const configOptions = (): acp.SessionConfigOption[] => [{
+  id: "model", name: "Model", type: "select", category: "model", currentValue: model,
+  options: [{ value: "fixture-model", name: "Fixture model" }, { value: "other-model", name: "Other model" }],
+}]
 const connection = acp.agent({ name: "deskfleet-test-agent" })
-  .onRequest(acp.methods.agent.initialize, ({ params }) => {
+  .onRequest(acp.methods.agent.initialize, async ({ params }) => {
     if (mode === "exit-init") process.exit(12)
+    if (mode === "wait-init") await new Promise(() => {})
     return {
       protocolVersion: acp.PROTOCOL_VERSION + (mode === "wrong-version" ? 1 : 0),
       agentInfo: { name: "deskfleet-test-agent", version: "1.0.0" },
@@ -24,10 +30,15 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
       },
     }
   })
-  .onRequest(acp.methods.agent.session.new, ({ params }) => ({
-    sessionId: "fixture-session",
-    _meta: { request: params },
-  }))
+  .onRequest(acp.methods.agent.session.new, async ({ params }) => {
+    if (mode === "wait-session") await new Promise(() => {})
+    return { sessionId: "fixture-session", configOptions: configOptions(), _meta: { request: params } }
+  })
+  .onRequest(acp.methods.agent.session.setConfigOption, ({ params }) => {
+    if (params.configId !== "model" || typeof params.value !== "string") throw new Error("Unknown configuration")
+    model = params.value
+    return { configOptions: configOptions() }
+  })
   .onRequest(acp.methods.agent.session.prompt, async ({ params, client }) => {
     const pending = mode === "wait"
       ? new Promise<acp.PromptResponse>(resolve => { completePrompt = resolve })

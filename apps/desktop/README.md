@@ -251,8 +251,10 @@ mise run desktop:package      # dmg and zip, NSIS, or AppImage for the host plat
 `out/`, including the `@deskfleet/daemon` library. The native addon is copied next
 to the main bundle and unpacked from ASAR for loading; installer builds use the
 release addon. The app has no runtime `node_modules` or external Node dependency.
-The same installed executable hosts the daemon with `--deskfleet-daemon`, without
-using Electron's `RunAsNode` mode. Packages enable ASAR integrity
+The same installed executable hosts the daemon with `--deskfleet-daemon` and
+the bundled Codex ACP adapter with `--deskfleet-codex-acp`, without using
+Electron's `RunAsNode` mode. The ACP host runs the adapter in a Node worker and
+exits after its Codex subprocess and streams have finished closing. Packages enable ASAR integrity
 validation and disable the `RunAsNode`, `NODE_OPTIONS`, and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
@@ -284,6 +286,12 @@ built renderer, preload, Settings controller, and bundled daemon host. It verifi
 default startup, switching off and on, catalog refresh, terminal interruption on
 shutdown, terminal survival after client exit, reuse by another client, and the
 persisted disabled preference on a third launch.
+
+With an installed, authenticated Codex CLI, run
+`mise exec -- node apps/desktop/scripts/smoke-agent-configuration.ts` after building
+the desktop app. This starts the production Electron daemon in an isolated
+directory and checks dynamic model discovery, model switching, and reasoning
+effort changes through its bundled ACP subprocess without sending a prompt.
 
 vue-tsc uses the TypeScript compiler API, which TypeScript 7 does not provide. The
 package therefore installs TypeScript 6 under the `typescript` name. The root

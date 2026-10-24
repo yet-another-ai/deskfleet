@@ -1,5 +1,6 @@
 import type { ControlMethod, ControlMethods, ControlRequest } from "./control-protocol.ts"
 import { validateCatalogParams } from "./catalog-protocol.ts"
+import { validateAgentConfigurationParams } from "./agent-configuration-protocol.ts"
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected an object")
@@ -21,6 +22,9 @@ function uint(value: unknown, label: string, positive = false): void {
 export function validateControlParams<M extends ControlMethod>(method: M, value: unknown): ControlMethods[M]["params"] {
   const params = object(value)
   switch (method) {
+    case "agentConfiguration":
+      validateAgentConfigurationParams(params)
+      break
     case "catalogList":
     case "workspaceCreate":
     case "workspaceUpdate":
