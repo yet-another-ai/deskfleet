@@ -76,8 +76,8 @@ function choose(control: Control, value: string): void {
 </script>
 
 <template>
-  <div ref="root" data-agent-configuration class="relative min-w-0" @keydown.esc.stop.prevent="collapse()">
-    <button ref="trigger" data-agent-configuration-trigger data-composer-context type="button" class="ui-chip max-w-full cursor-pointer hover:bg-ui-hover" :aria-label="t('composer.configureAgent', { selection: summary })" aria-haspopup="menu" :aria-expanded="expanded" :aria-controls="controlsId" @click="expand" @keydown.down.prevent="expand">
+  <div ref="root" data-agent-configuration class="relative flex min-w-0" @keydown.esc.stop.prevent="collapse()">
+    <button ref="trigger" data-agent-configuration-trigger data-composer-context type="button" class="ui-text-button min-w-0 max-w-full cursor-pointer leading-5 hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.configureAgent', { selection: summary })" aria-haspopup="menu" :aria-expanded="expanded" :aria-controls="controlsId" @click="expand" @keydown.down.prevent="expand">
       <Bot :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
       <span class="truncate">{{ summary }}</span>
       <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
