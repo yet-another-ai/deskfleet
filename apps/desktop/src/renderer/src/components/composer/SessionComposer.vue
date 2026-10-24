@@ -86,7 +86,11 @@ function keydown(event: KeyboardEvent): void {
       <textarea ref="textarea" v-model="draft" rows="2" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @keydown="keydown" />
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <slot v-if="location" name="provider">
-          <span class="inline-flex h-7 items-center gap-1.5 px-1 text-[13px] text-ui-text-muted" :title="t('composer.provider')" data-composer-context><ProviderIcon :icon="location.session?.providerIcon" :template="location.session?.providerTemplate" :size="15" />{{ provider ?? t('providers.unavailable') }}</span>
+          <span class="inline-flex h-7 items-center gap-1.5 px-1 text-[13px] text-ui-text-muted" :title="t('composer.provider')" data-composer-context>
+            <span v-if="!provider && !location.session?.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+            <ProviderIcon v-else :icon="location.session?.providerIcon" :template="location.session?.providerTemplate" :size="15" />
+            {{ provider ?? t(location.session?.providerUnavailable ? 'providers.unavailable' : 'composer.provider') }}
+          </span>
         </slot>
         <button v-if="canSteer && !empty" type="button" class="ui-text-button ml-auto cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</button>
         <button v-if="canCancel && empty" type="button" class="ml-auto inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-ui-action text-ui-action-text" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></button>

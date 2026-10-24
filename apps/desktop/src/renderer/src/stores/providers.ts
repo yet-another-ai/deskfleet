@@ -7,6 +7,8 @@ export const useProvidersStore = defineStore("providers", () => {
   const providers = ref<AgentProviderConfig[]>([])
   const selectedId = ref("")
   const ready = ref(false)
+  /** Keep the last known provider identity even if a later refresh disconnects. */
+  const loaded = ref(false)
   const loading = ref(false)
   const error = ref<string | null>(null)
   let refreshing: Promise<void> | null = null
@@ -26,6 +28,7 @@ export const useProvidersStore = defineStore("providers", () => {
           providers.value = snapshot.providers
           if (!providers.value.some(provider => provider.id === selectedId.value)) selectedId.value = providers.value[0]?.id ?? ""
           ready.value = true
+          loaded.value = true
           error.value = null
         } while (refreshRequested)
       } catch (reason) {
@@ -43,5 +46,5 @@ export const useProvidersStore = defineStore("providers", () => {
 
   const unsubscribe = window.deskfleet.providers.onChanged(() => { void refresh() })
   onScopeDispose(() => { disposed = true; unsubscribe() })
-  return { providers, selectedId, ready, loading, error, refresh }
+  return { providers, selectedId, ready, loaded, loading, error, refresh }
 })

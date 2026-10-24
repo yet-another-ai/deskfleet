@@ -2,12 +2,14 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentEvent, AgentSnapshot } from "../../../../daemon/src/agent-protocol.ts"
+import type { ProviderSnapshot } from "../../../../daemon/src/provider-protocol.ts"
 import App from "./App.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import { agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
 import { catalogFixture, workspaceId } from "./test/catalog.ts"
 import { useProvidersStore } from "./stores/providers.ts"
+import { deferred } from "./test/desktop-media.ts"
 const transport = vi.hoisted(() => ({ call: vi.fn(), receive: (_value: { method: string; params: unknown }) => {}, state: (_state: string) => {} }))
 vi.mock("./services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof transport.state, receive: typeof transport.receive) { transport.state = state; transport.receive = receive }
@@ -119,6 +121,39 @@ test("new sessions use the selected configured provider and show its name", asyn
   await flushPromises()
   expect(wrapper.get('[title="Agent provider"] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
   expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
+})
+
+test("restored sessions show pending provider identity until its configuration loads", async () => {
+  wrapper.unmount()
+  disposePinia(pinia)
+  const read = deferred<ProviderSnapshot>()
+  const list = vi.spyOn(window.deskfleet.providers, "list").mockReturnValueOnce(read.promise)
+  snapshot.session.provider = "work-codex"
+  const call = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/session/list"
+    ? Promise.resolve([structuredClone(snapshot.session)]) : call(method, params))
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  pinia = createPinia()
+  wrapper = mount(App, { global: { plugins: [pinia, router, i18n], stubs: { Teleport: true, LiveTerminal: true } } })
+  await flushPromises()
+  expect(wrapper.get('[title="Agent provider"]').text()).toBe("Agent provider")
+  expect(wrapper.find('[title="Agent provider"] [data-provider-pending]').exists()).toBe(true)
+  expect(wrapper.find('aside a[href="#/sessions/30"] [data-provider-pending]').exists()).toBe(true)
+  expect(wrapper.text()).not.toContain("Provider unavailable")
+
+  read.resolve({ templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: {} }] })
+  await flushPromises()
+  expect(wrapper.get('[title="Agent provider"]').text()).toBe("Work Codex")
+  expect(wrapper.get('[title="Agent provider"] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek")
+  expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek")
+  expect(wrapper.find('[title="Agent provider"] [data-provider-pending]').exists()).toBe(false)
+
+  list.mockResolvedValue({ templates: [], providers: [] })
+  await useProvidersStore(pinia).refresh()
+  await flushPromises()
+  expect(wrapper.get('[title="Agent provider"]').text()).toBe("Provider unavailable")
+  expect(wrapper.find('[title="Agent provider"] [data-provider-pending]').exists()).toBe(false)
+  expect(wrapper.find('aside a[href="#/sessions/30"] [data-provider-pending]').exists()).toBe(false)
 })
 
 test("an empty provider list links to Agents settings and prevents session creation", async () => {

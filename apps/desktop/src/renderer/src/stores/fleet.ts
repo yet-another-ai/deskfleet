@@ -106,7 +106,8 @@ export const useFleetStore = defineStore("fleet", () => {
         const provider = providers.providers.find(provider => provider.id === metadata.provider)
         Object.assign(summary, {
           title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
-          providerTemplate: provider?.template, context: metadata.context,
+          providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
+          context: metadata.context,
         })
         summaries.set(summary.id, summary)
       }
@@ -116,7 +117,7 @@ export const useFleetStore = defineStore("fleet", () => {
     applyTerminals()
   }
   watch(() => agents.sessions, applySessionMetadata, { deep: true })
-  watch(() => providers.providers, applySessionMetadata, { deep: true })
+  watch(() => [providers.providers, providers.loaded], applySessionMetadata, { deep: true })
   function applySnapshot(snapshot: CatalogSnapshot): void {
     catalogIdentity.value = { teamId: snapshot.teamId, machineId: snapshot.machineId }
     localMachine().workspaces = snapshot.workspaces.map(workspaceSummary)
