@@ -70,6 +70,45 @@ test("ACP cancels permissions when no decision handler is installed", { timeout:
   assert.deepEqual(result._meta?.permission, { outcome: { outcome: "cancelled" } })
 })
 
+test("ACP advertises only handled form questions and forwards the original request and answer", { timeout: 15_000 }, async context => {
+  const requests: acp.CreateElicitationRequest[] = []
+  const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "elicitation" } }, {
+    onUpdate() {},
+    async requestElicitation(request, signal) {
+      assert.equal(signal.aborted, false)
+      requests.push(request)
+      return { action: "accept", content: { direction: "left" } }
+    },
+  })
+  context.after(() => connection.close())
+  const capabilities = connection.initialization._meta?.clientCapabilities as acp.ClientCapabilities
+  assert.deepEqual(capabilities.elicitation, { form: {} })
+  const created = await connection.newSession(session)
+  const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+  assert.deepEqual(result._meta?.elicitation, { action: "accept", content: { direction: "left" } })
+  assert.equal(requests.length, 1)
+  const request = requests[0]!
+  assert.ok("sessionId" in request)
+  assert.equal(request.sessionId, created.sessionId)
+  assert.equal(request.toolCallId, "question-1")
+  assert.equal(request.mode, "form")
+})
+
+test("ACP cancels unsupported question modes, scopes, and missing handlers", { timeout: 15_000 }, async context => {
+  for (const mode of ["elicitation", "elicitation-url", "elicitation-request"]) {
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: mode } }, {
+      onUpdate() {},
+      ...(mode === "elicitation" ? {} : { async requestElicitation() { assert.fail("Unsupported request reached form handler") } }),
+    })
+    context.after(() => connection.close())
+    if (mode === "elicitation") assert.equal((connection.initialization._meta?.clientCapabilities as acp.ClientCapabilities).elicitation, undefined)
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    assert.deepEqual(result._meta?.elicitation, { action: "cancel" })
+    await connection.close()
+  }
+})
+
 test("ACP cancellation and close settle active prompts and stop the process", { timeout: 30_000 }, async context => {
   for (const action of ["cancel", "close"] as const) {
     await context.test(action, async () => {

@@ -10,8 +10,8 @@ mod resources;
 
 pub use directories::{DirectoryBinding, DirectoryBindings, DirectoryBindingsError};
 pub use ids::{
-    AgentCommandId, AgentInputId, AgentPermissionId, AgentSequence, AgentSessionId, AgentTurnId,
-    MachineId, TeamId, TerminalSessionId, WorkspaceId, WorktreeId,
+    AgentCommandId, AgentElicitationId, AgentInputId, AgentPermissionId, AgentSequence,
+    AgentSessionId, AgentTurnId, MachineId, TeamId, TerminalSessionId, WorkspaceId, WorktreeId,
 };
 pub use resources::{
     AgentSession, Machine, Team, TerminalScope, TerminalSession, Workspace, WorkspaceSession,

@@ -1,4 +1,5 @@
 import { homedir } from "node:os"
+import { createHash } from "node:crypto"
 import { readAgentConfiguration } from "./agent-configuration.ts"
 import { validateAgentConfigurationParams, validateAgentConfigurationSelection, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { ContentBlock } from "@agentclientprotocol/sdk"
@@ -76,6 +77,8 @@ export class AgentSessions {
           .map(input => ({ ...input, state: "uncertain" as const, error: "Daemon restarted before delivery was confirmed" }))
         const permissions = snapshot.permissions.filter(permission => permission.state === "pending")
           .map(permission => ({ ...permission, state: "cancelled" as const, resolvedAt: timestamp() }))
+        const elicitations = snapshot.elicitations.filter(row => row.state === "pending")
+          .map(row => ({ ...row, state: "cancelled" as const, response: { action: "cancel" as const }, resolvedAt: timestamp() }))
         const recovered = session.lifecycle === "provisioning"
           ? { ...session, lifecycle: "provision_failed" as const, error: "Session creation was interrupted", updatedAt: timestamp() } : undefined
         const events = [
@@ -83,9 +86,10 @@ export class AgentSessions {
           ...turns.map(row => this.journal.event(session.id, "turn", row)),
           ...inputs.map(row => this.journal.event(session.id, "input", row)),
           ...permissions.map(row => this.journal.event(session.id, "permission", row)),
+          ...elicitations.map(row => this.journal.event(session.id, "elicitation", row)),
           ...(recovered ? [this.journal.event(session.id, "session", recovered)] : []),
         ]
-        if (events.length) await this.journal.commit(snapshot, { session: recovered, runs, turns, inputs, permissions, events })
+        if (events.length) await this.journal.commit(snapshot, { session: recovered, runs, turns, inputs, permissions, elicitations, events })
       })
     }
   }
@@ -167,11 +171,15 @@ export class AgentSessions {
   }
 
   async #command(method: AgentMethod, params: Record<string, unknown>, actor: AgentActor, operationId: string): Promise<unknown> {
+    // Bind retries to the same answers without placing secret response values
+    // in the command audit, including rejected or malformed submissions.
+    const auditParams = method === "_deskfleet/elicitation/respond"
+      ? { ...params, response: { fingerprint: createHash("sha256").update(canonical(params.response)).digest("hex") } } : params
     const existing = await this.journal.command(operationId)
     if (existing) {
-      if (existing.method !== method || canonical(existing.actor) !== canonical(actor) || canonical(existing.params) !== canonical(params)) {
+      if (existing.method !== method || canonical(existing.actor) !== canonical(actor) || canonical(existing.params) !== canonical(auditParams)) {
         await this.journal.commit(undefined, { command: {
-          id: await this.journal.id(), operationId, actor, method, params, isCanonical: false,
+          id: await this.journal.id(), operationId, actor, method, params: auditParams, isCanonical: false,
           conflictingCommandId: existing.id, status: "rejected", error: "Operation ID was reused with different parameters or identity",
           receivedAt: timestamp(), completedAt: timestamp(),
         } })
@@ -188,7 +196,7 @@ export class AgentSessions {
       throw new Error(existing.error ?? "This operation was already accepted; refresh its recorded state before continuing")
     }
     const command: AgentCommand = {
-      id: await this.journal.id(), operationId, actor, method, params,
+      id: await this.journal.id(), operationId, actor, method, params: auditParams,
       isCanonical: true, status: "accepted", receivedAt: timestamp(),
       ...(method === "_deskfleet/session/create" ? { workspaceId: id(params.workspaceId, "Workspace ID") } : { sessionId: id(params.sessionId, "Session ID") }),
     }
@@ -208,6 +216,10 @@ export class AgentSessions {
       if (method === "_deskfleet/input/submit") return await this.#submit(command)
       if (method === "_deskfleet/input/steer" || method === "_deskfleet/input/withdraw" || method === "_deskfleet/input/retry") return await this.#inputAction(command)
       if (method === "_deskfleet/permission/respond") return await this.#decide(command)
+      if (method === "_deskfleet/elicitation/respond") {
+        id(params.elicitationId, "Question ID")
+        return await this.#runtime(sessionId).elicitations.respond(command, params.response)
+      }
       if (method === "_deskfleet/turn/cancel") return await this.#cancel(command)
       if (method === "_deskfleet/session/resume") {
         if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")

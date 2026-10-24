@@ -52,6 +52,18 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
     if (pending) {
       try { return await pending } finally { activePrompts.delete(params.sessionId) }
     }
+    if (mode?.startsWith("elicitation")) {
+      const scope = mode === "elicitation-request" ? { requestId: "configuration" } : { sessionId: params.sessionId, toolCallId: "question-1" }
+      const request: acp.CreateElicitationRequest = mode === "elicitation-url"
+        ? { ...scope, mode: "url", message: "Open a link", elicitationId: "link-1", url: "https://example.invalid" }
+        : { ...scope, mode: "form", message: "Choose a direction", requestedSchema: {
+            type: "object", required: ["direction"], properties: {
+              direction: { type: "string", oneOf: [{ const: "left", title: "Left" }, { const: "right", title: "Right" }] },
+            },
+          } }
+      const elicitation = await client.request(acp.methods.client.elicitation.create, request)
+      return { stopReason: "end_turn", _meta: { elicitation } }
+    }
     const permission = await client.request(acp.methods.client.session.requestPermission, {
       sessionId: params.sessionId,
       toolCall: { toolCallId: "write-1", title: "Write a file", kind: "edit" },

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
@@ -41,14 +41,16 @@ const unresolvedSubmission = computed(() => Object.values(agents.operations).som
 const pending = computed(() => Object.values(agents.operations).filter(operation => operation.sessionId === props.sessionId && operation.error))
 // Shells need the Session's own Worktree on this machine.
 const terminalWorktree = computed(() => location.value?.machine.local && snapshot.value?.session.lifecycle === "ready" ? location.value.worktree : undefined)
-const empty = computed(() => !view.value?.loading && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
+const empty = computed(() => !view.value?.loading && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
 const busy = ref(false)
 const actionError = ref<string | null>(null)
 const scroller = ref<HTMLElement | null>(null)
 const followBottom = ref(true)
 const scroll = () => { const el = scroller.value; if (el) followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 100 }
 watch(() => props.sessionId, id => { busy.value = false; actionError.value = null; followBottom.value = true; void agents.open(id) }, { immediate: true })
-watch(() => view.value?.events.length, async () => { if (followBottom.value) { await nextTick(); scroller.value?.scrollTo({ top: scroller.value.scrollHeight }) } })
+watch(() => [view.value?.events.length, view.value?.loading], () => {
+  if (!view.value?.loading && followBottom.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
+}, { flush: "post" })
 async function action(operation: () => Promise<unknown>): Promise<void> {
   if (busy.value) return
   const sessionId = props.sessionId
@@ -80,7 +82,7 @@ function remove(): void {
     <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
       <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
       <template v-else-if="snapshot">
-        <AgentConversation :events="view!.events" :snapshot="snapshot" />
+        <AgentConversation :events="view!.events" :snapshot="snapshot" :disabled="!connected || busy || !!view?.error" />
         <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
       </template>
     </div>

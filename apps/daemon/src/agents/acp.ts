@@ -27,6 +27,10 @@ export interface AgentClient {
     params: acp.RequestPermissionRequest,
     signal: AbortSignal,
   ): Promise<acp.RequestPermissionResponse>
+  requestElicitation?(
+    params: acp.CreateElicitationRequest,
+    signal: AbortSignal,
+  ): Promise<acp.CreateElicitationResponse>
 }
 
 export interface AgentConnection {
@@ -77,6 +81,15 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         throw error
       }
     })
+    .onRequest(acp.methods.client.elicitation.create, async ({ params, signal }) => {
+      if (!client.requestElicitation || !acp.CreateElicitationRequest.isForm(params) || !("sessionId" in params)) return { action: "cancel" }
+      try {
+        return await client.requestElicitation(params, signal)
+      } catch (error) {
+        connection.close(error)
+        throw error
+      }
+    })
     .connect(acp.ndJsonStream(
       Writable.toWeb(child.stdin!),
       Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
@@ -121,7 +134,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     const initialization = await connection.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
       clientInfo: { name: "deskfleet", version: "0.1.0" },
-      clientCapabilities: {},
+      clientCapabilities: client.requestElicitation ? { elicitation: { form: {} } } : {},
     })
     if (initialization.protocolVersion !== acp.PROTOCOL_VERSION) {
       throw new Error(`${launch.command} uses unsupported ACP protocol version ${initialization.protocolVersion}`)

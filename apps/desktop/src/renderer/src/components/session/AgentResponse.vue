@@ -9,7 +9,8 @@ import { elapsed, formatDuration } from "../../services/agent-format.ts"
 import AgentContent from "./AgentContent.vue"
 import AgentPlan from "./AgentPlan.vue"
 import AgentToolCall from "./AgentToolCall.vue"
-const props = defineProps<{ response: ConversationResponse }>()
+import AgentElicitation from "./AgentElicitation.vue"
+const props = defineProps<{ response: ConversationResponse; disabled?: boolean }>()
 const { t } = useI18n()
 const { now, pause, resume } = useNow({ controls: true, scheduler: callback => useIntervalFn(callback, 1000) })
 watch(() => props.response.live, live => live ? resume() : pause(), { immediate: true })
@@ -25,7 +26,7 @@ const answer = computed(() => {
 const steps = computed(() => answer.value ? props.response.steps.slice(0, -1) : props.response.steps)
 const toggled = ref<boolean | null>(null)
 watch(() => props.response.live, () => { toggled.value = null })
-const open = computed(() => !props.response.turn || (toggled.value ?? props.response.live))
+const open = computed(() => props.response.steps.some(step => step.kind === "elicitation" && step.elicitation.state === "pending") || !props.response.turn || (toggled.value ?? props.response.live))
 const summary = computed(() => props.response.live ? [] : summarizeTools(props.response.steps).map(({ kind, count }) => t(`agent.summary.${kind}`, { n: count }, count)))
 const outcome = computed(() => props.response.last && props.response.turn && ["cancelled", "interrupted", "failed"].includes(props.response.turn.state) ? props.response.turn : undefined)
 const thoughts = reactive(new Set<string>())
@@ -49,6 +50,7 @@ const toggleThought = (id: string) => thoughts.has(id) ? thoughts.delete(id) : t
       <div v-for="step in steps" :key="step.id" :data-conversation-entry="step.id">
         <AgentToolCall v-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="response.live" />
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
+        <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
         <div v-else-if="step.role === 'thought'" class="text-sm text-ui-text-muted">
           <button type="button" class="group/thought inline-flex cursor-pointer items-center gap-1 hover:text-ui-text" :aria-expanded="thoughts.has(step.id)" @click="toggleThought(step.id)">
             {{ t('agent.thinking') }}<ChevronRight :size="14" :stroke-width="2" class="opacity-0 transition-transform group-hover/thought:opacity-100" :class="thoughts.has(step.id) && 'rotate-90 opacity-100'" aria-hidden="true" />

@@ -1,7 +1,8 @@
 import { useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { onScopeDispose, ref } from "vue"
-import type { AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../../daemon/src/agent-protocol.ts"
+import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../../daemon/src/agent-protocol.ts"
+import type { ElicitationDraft } from "../services/agent-elicitation.ts"
 import { agentConfiguration as normalizeAgentConfiguration } from "../../../../../daemon/src/agent-configuration-protocol.ts"
 import type { AgentConfiguration } from "../../../shared/agent-configuration.ts"
 import type { GitDiffRequest } from "../../../../../daemon/src/git-protocol.ts"
@@ -41,6 +42,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const sessions = ref<Record<string, AgentSessionRecord>>({})
   const views = ref<Record<string, AgentSessionView>>({})
   const drafts = ref<Record<string, string>>({})
+  const elicitationDrafts = ref<Record<string, ElicitationDraft>>({})
   const draftConfiguration = useLocalStorage<AgentSelection>("deskfleet.agent-configuration", { provider: "codex" })
   const configurations = ref<Record<string, AgentConfiguration>>({})
   const configurationReads = new Map<string, Promise<AgentConfiguration>>()
@@ -76,6 +78,17 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       permissionRequests.delete(id)
     }
   }
+  function resolveElicitations(snapshot: AgentSnapshot): void {
+    for (const elicitation of snapshot.elicitations) {
+      if (elicitation.state === "pending") continue
+      delete elicitationDrafts.value[elicitation.id]
+      // A committed decision, including another viewer's, finishes this form.
+      // Drop transient response payloads so secret answers are not retained.
+      for (const operation of Object.values(operations.value)) {
+        if (operation.sessionId === snapshot.session.id && operation.method === "_deskfleet/elicitation/respond" && operation.params.elicitationId === elicitation.id) delete operations.value[operation.operationId]
+      }
+    }
+  }
   function completeOperation(operationId: string): void {
     const pending = operations.value[operationId]
     if (!pending) return
@@ -101,6 +114,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       case "input": replace(snapshot.inputs, event.payload as AgentInput, value => value.id); break
       case "turn": replace(snapshot.turns, event.payload as AgentTurn, value => value.id); break
       case "permission": replace(snapshot.permissions, event.payload as AgentPermission, value => value.id); break
+      case "elicitation": replace(snapshot.elicitations, event.payload as AgentElicitation, value => value.id); break
       case "command": commandReceived(event.payload as AgentCommand); break
     }
     snapshot.session.lastEventSeq = event.seq
@@ -118,6 +132,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       next = events.get((BigInt(current.snapshotSeq) + 1n).toString())
     }
     resolvePermissions()
+    resolveElicitations(current.snapshot)
   }
   function remember(events: AgentEvent[]): void {
     const changed = new Set<string>()
@@ -324,9 +339,20 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (snapshot) replace(snapshot.permissions, permission, value => value.id)
     resolvePermissions()
   }
+  async function respondToElicitation(sessionId: string, elicitationId: string, response: NonNullable<AgentElicitation["response"]>): Promise<void> {
+    if (view(sessionId).snapshot?.elicitations.find(item => item.id === elicitationId)?.state !== "pending") return
+    if (Object.values(operations.value).some(operation => operation.sessionId === sessionId && operation.method === "_deskfleet/elicitation/respond" && operation.params.elicitationId === elicitationId)) return
+    const elicitation = await mutation("_deskfleet/elicitation/respond", { sessionId, elicitationId, response })
+    const snapshot = view(sessionId).snapshot
+    if (snapshot) {
+      replace(snapshot.elicitations, elicitation, value => value.id)
+      resolveElicitations(snapshot)
+    }
+  }
   async function stop(sessionId: string): Promise<void> { snapshotReceived(await mutation("_deskfleet/session/stop", { sessionId })) }
   async function remove(sessionId: string): Promise<void> {
     await mutation("_deskfleet/session/delete", { sessionId })
+    for (const elicitation of views.value[sessionId]?.snapshot?.elicitations ?? []) delete elicitationDrafts.value[elicitation.id]
     delete sessions.value[sessionId]
     delete views.value[sessionId]
     delete configurations.value[sessionId]
@@ -336,5 +362,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const gitStatus = (sessionId: string) => call("_deskfleet/git/status", { sessionId })
   const gitDiff = (request: GitDiffRequest) => call("_deskfleet/git/diff", request)
   onScopeDispose(() => { disposed = true; client.close() })
-  return { sessions, views, drafts, draftConfiguration, configurations, agentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, stop, remove, gitStatus, gitDiff }
+  return { sessions, views, drafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, remove, gitStatus, gitDiff }
 })

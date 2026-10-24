@@ -245,6 +245,30 @@ The service broadcasts resolution and the deciding actor. `$/cancel_request`
 closes obsolete fan-outs. Disconnects and RPC errors leave the shared request
 pending until an approver responds, the turn ends, or the provider cancels it.
 
+## User questions
+
+Managed providers receive the ACP `elicitation.form` capability and send
+`elicitation/create` requests for structured user input. Codex maps its
+`request_user_input` tool to this interface. The daemon accepts session-scoped
+forms; it does not advertise URL elicitation. Direct CLI invocations without an
+input callback do not advertise form support.
+
+Each request is persisted with a durable elicitation ID, its provider run and
+turn, and its original form schema before clients see it. Snapshots and
+`elicitation` journal events carry the shared state. The desktop renders questions
+inline, including choices and their descriptions, free text, optional additional
+answers, and the primitive fields supported by ACP forms. Secret fields use
+masked inputs and are redacted from persisted answers and command audit.
+
+Clients submit through `_deskfleet/elicitation/respond` with an operation ID and
+an ACP response (`accept` with content, `decline`, or `cancel`). The daemon
+validates accepted answers against the requested schema. The first valid
+decision wins and invokes the provider callback only after commit; later
+responses return the recorded outcome. Reconnecting or navigating away leaves
+the question pending. A provider cancellation or timeout, turn completion, or
+provider loss closes unanswered forms; daemon restart cancels requests whose
+provider callbacks no longer exist.
+
 ## ACP over DataChannel
 
 Each client initializes an independent JSON-RPC connection over one reliable,
@@ -285,6 +309,7 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | `_deskfleet/input/withdraw` | Withdraw a pending or confirmed failed input |
 | `_deskfleet/turn/cancel` | Cancel only the named execution turn |
 | `_deskfleet/permission/respond` | Audit an offered permission decision |
+| `_deskfleet/elicitation/respond` | Validate and audit an answer or dismissal of a shared user question |
 | `_deskfleet/session/event` | Deliver committed domain and original ACP events |
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
 | `_deskfleet/session/resume`, `/stop`, `/delete` | Explicit provider/resource lifecycle operations; input submission also resumes |
@@ -349,7 +374,8 @@ response precedes buffered/live events. The client uses `session.lastEventSeq`
 as its snapshot watermark, reads earlier history in pages, deduplicates by
 Session/sequence within the catalog, and fills gaps before applying later events.
 Pending permissions are reissued on attachment with changes during the snapshot
-read accounted for. Buttons depend on the current persisted permission state.
+read accounted for. User questions are restored from the same snapshot and event
+stream. Buttons depend on the current persisted request state.
 
 Conversation text, thoughts, tool cards, plans, and turn outcomes are journal
 projections rather than separate message tables. Use provider message IDs when
@@ -378,7 +404,7 @@ Read failures retain the last result with an error until a successful refresh.
 These snapshots are independent of the conversation journal and its cursors.
 
 Daemon restart marks lost live runs/turns interrupted, outstanding dispatches
-uncertain, and old permissions cancelled. Pending inputs remain queued until
+uncertain, and old permissions and user questions cancelled. Pending inputs remain queued until
 the next message resumes the agent. SQLite commit and provider dispatch cannot be one transaction;
 unknown delivery therefore cannot be automatically repeated. Viewer reconnect
 only subscribes and replays: it never starts or resumes a provider.
@@ -396,7 +422,7 @@ ACP provider fixtures and the installed steering patch, DataChannel framing and
 backpressure, real native two-client WebRTC, and renderer interaction/projections.
 `mise run desktop:smoke-agent` adds the production Electron renderer, real local
 signaling/WebRTC, SQLite and managed Git worktrees with an injected provider.
-The smoke covers creation, streaming, backlog/steering, shared approvals,
+The smoke covers creation, streaming, backlog/steering, shared approvals and user questions,
 navigation, client replacement, live Git status and diff previews, and daemon
 restart without using paid inference. File changes made outside the provider
 also update an open diff when their status letters and line counts stay equal.

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest"
 import type { AgentEvent } from "../../../../../daemon/src/agent-protocol.ts"
-import { agentEvent, agentInput, agentPermission, agentSnapshot } from "../test/agent.ts"
+import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot } from "../test/agent.ts"
 import { groupTranscript, projectConversation, summarizeTools } from "./agent-conversation.ts"
 const update = (seq: number, update: Record<string, unknown>) => agentEvent(seq, "acp", { sessionId: "provider-session", update } as AgentEvent["payload"])
 test("reconstructs text around tools without user echoes or mutating the durable journal", () => {
@@ -39,4 +39,14 @@ test("a permission attaches to its tool call or stands in for one the provider n
   const entries = projectConversation(events, snapshot)
   expect(entries).toMatchObject([{ kind: "tool", tool: { title: "Run checks" }, permission: { id: "60", state: "resolved" } }, { kind: "tool", tool: { title: "Write file" }, permission: { id: "61", state: "pending" } }])
   expect(summarizeTools(groupTranscript(entries, snapshot).flatMap(entry => entry.kind === "response" ? entry.steps : []))).toEqual([{ kind: "execute", count: 1 }, { kind: "other", count: 1 }])
+})
+test("questions retain their original conversation position and use the winning snapshot decision", () => {
+  const question = agentElicitation()
+  const resolved = agentElicitation({ state: "resolved", response: { action: "accept", content: { target: "staging" } } })
+  const snapshot = agentSnapshot(); snapshot.elicitations = [resolved]
+  const events = [update(1, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Before" } }), agentEvent(2, "elicitation", question), update(3, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "After" } }), agentEvent(4, "elicitation", resolved)]
+  const entries = projectConversation(events, snapshot)
+  expect(entries.map(entry => entry.kind)).toEqual(["message", "elicitation", "message"])
+  expect(entries[1]).toMatchObject({ id: "elicitation-80", turnId: "70", elicitation: resolved })
+  expect(projectConversation([], snapshot)).toEqual([entries[1]])
 })

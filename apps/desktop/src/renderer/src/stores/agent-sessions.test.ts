@@ -3,7 +3,7 @@ import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { defineComponent, h } from "vue"
 import type { AgentCommand, AgentEvent } from "../../../../../daemon/src/agent-protocol.ts"
-import { agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
+import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
 import { deferred } from "../test/desktop-media.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
 const mock = vi.hoisted(() => ({ call: vi.fn(), connect: vi.fn(async () => {}), close: vi.fn(), notification: (_value: { method: string; params: unknown }) => {}, request: (_value: { id: string; method: string; params: unknown }): Promise<unknown> => Promise.resolve(), state: (_state: string) => {} }))
@@ -60,6 +60,49 @@ test("another viewer's permission decision resolves the original callback and no
   store.$dispose()
   expect(mock.close).toHaveBeenCalledOnce()
   expect(mock.call.mock.calls.some(([method]) => method === "_deskfleet/session/stop")).toBe(false)
+})
+
+test("a question decision from another viewer closes the form and clears transient answers", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  receive(agentEvent(1, "elicitation", agentElicitation()))
+  store.elicitationDrafts["80"] = { target: "staging", secret: "private" }
+  mock.call.mockRejectedValueOnce(new Error("Lost response"))
+  await expect(store.respondToElicitation("30", "80", { action: "accept", content: { target: "staging", secret: "private" } })).rejects.toThrow("Lost response")
+  expect(Object.values(store.operations)).toHaveLength(1)
+  const resolved = agentElicitation({ state: "resolved", response: { action: "decline" }, actor: { ...actor, userId: "Grace" } })
+  receive(agentEvent(2, "elicitation", resolved))
+  expect(store.views["30"]!.snapshot?.elicitations).toEqual([resolved])
+  expect(store.elicitationDrafts).toEqual({})
+  expect(store.operations).toEqual({})
+  await store.respondToElicitation("30", "80", { action: "accept", content: { target: "production" } })
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/elicitation/respond")).toHaveLength(1)
+})
+
+test("lost question replies block a second answer and retry the original command identity", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  receive(agentEvent(1, "elicitation", agentElicitation()))
+  store.elicitationDrafts["80"] = { target: "staging" }
+  const normal = mock.call.getMockImplementation()!
+  mock.call.mockRejectedValueOnce(new Error("Lost response"))
+  await expect(store.respondToElicitation("30", "80", { action: "accept", content: { target: "staging" } })).rejects.toThrow()
+  const original = mock.call.mock.calls.at(-1)!
+  const operation = Object.values(store.operations)[0]!
+  await store.respondToElicitation("30", "80", { action: "cancel" })
+  expect(mock.call.mock.calls.at(-1)).toEqual(original)
+  const resolved = agentElicitation({ state: "resolved", response: { action: "accept", content: { target: "staging" } } })
+  const snapshot = agentSnapshot(); snapshot.elicitations = [resolved]; snapshot.session.lastEventSeq = "2"
+  mock.call.mockImplementation(async (method: string, params: unknown) => {
+    if (method === "_deskfleet/elicitation/respond") return resolved
+    if (method === "_deskfleet/session/subscribe") return snapshot
+    if (method === "_deskfleet/session/history") return [agentEvent(2, "elicitation", resolved)]
+    return normal(method, params)
+  })
+  mock.state("connected")
+  await store.checkOperation(operation.operationId)
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/elicitation/respond")).toEqual([original, original])
+  expect(store.views["30"]!.snapshot?.elicitations).toEqual([resolved])
+  expect(store.elicitationDrafts).toEqual({})
+  expect(store.operations).toEqual({})
 })
 
 test("a lost submission response preserves its operation ID and clears only the submitted draft on reconciliation", async () => {

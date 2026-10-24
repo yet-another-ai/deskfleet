@@ -1,11 +1,12 @@
-import type { AgentEvent, AgentInput, AgentPermission, AgentSnapshot, AgentTurn } from "../../../../../daemon/src/agent-protocol.ts"
+import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSnapshot, AgentTurn } from "../../../../../daemon/src/agent-protocol.ts"
 
 type Content = AgentInput["content"]
 export type ConversationTool = AgentPermission["request"]["toolCall"]
 type MessageEntry = { id: string; kind: "message"; role: "assistant" | "thought"; content: Content; turnId?: string }
 type ToolEntry = { id: string; kind: "tool"; tool: ConversationTool; permission?: AgentPermission; turnId?: string }
 type PlanEntry = { id: string; kind: "plan"; entries: { content: string; status: string }[]; turnId?: string }
-export type ConversationStep = MessageEntry | ToolEntry | PlanEntry
+type ElicitationEntry = { id: string; kind: "elicitation"; elicitation: AgentElicitation; turnId?: string }
+export type ConversationStep = MessageEntry | ToolEntry | PlanEntry | ElicitationEntry
 export type ConversationEntry =
   | { id: string; kind: "input"; input: AgentInput }
   | ConversationStep
@@ -23,10 +24,20 @@ export function projectConversation(events: AgentEvent[], snapshot: AgentSnapsho
   const inputs = new Map(snapshot.inputs.map(input => [input.id, input]))
   const seenInputs = new Set<string>()
   const permissions = new Map(snapshot.permissions.map(permission => [permission.id, permission]))
+  const elicitations = new Map(snapshot.elicitations.map(elicitation => [elicitation.id, elicitation]))
+  const seenElicitations = new Set<string>()
   const messages = new Map<string, MessageEntry>()
   const tools = new Map<string, ToolEntry>()
   const plans = new Map<string, PlanEntry>()
   for (const event of events) {
+    if (event.kind === "elicitation") {
+      const elicitation = elicitations.get((event.payload as AgentElicitation).id) ?? event.payload as AgentElicitation
+      if (!seenElicitations.has(elicitation.id)) {
+        entries.push({ id: `elicitation-${elicitation.id}`, kind: "elicitation", elicitation, turnId: elicitation.turnId ?? event.turnId })
+        seenElicitations.add(elicitation.id)
+      }
+      continue
+    }
     if (event.kind === "input") {
       const input = event.payload as AgentInput
       const current = inputs.get(input.id) ?? input
@@ -89,6 +100,10 @@ export function projectConversation(events: AgentEvent[], snapshot: AgentSnapsho
       if (!entry) { entry = { id: `plan-${event.seq}`, kind: "plan", entries: [], turnId: event.turnId }; entries.push(entry); plans.set(key, entry) }
       entry.entries = update.entries.filter(record).map(value => ({ content: String(value.content ?? ""), status: String(value.status ?? "pending") }))
     }
+  }
+  // A reconnect can restore a pending question before its journal page arrives.
+  for (const elicitation of snapshot.elicitations) {
+    if (!seenElicitations.has(elicitation.id)) entries.push({ id: `elicitation-${elicitation.id}`, kind: "elicitation", elicitation, turnId: elicitation.turnId })
   }
   return entries
 }

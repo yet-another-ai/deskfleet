@@ -282,7 +282,7 @@ process are distinct capabilities. ACP alone does not guarantee live attachment;
 a tmux connection can expose the CLI without providing structured ACP control.
 
 The [Agent Session service](agent-sessions.md) persists provider identity,
-inputs, execution turns, command audit, permissions, and an ordered event journal
+inputs, execution turns, command audit, permissions, user questions, and an ordered event journal
 in the daemon's SQLite catalog. Clients connect to a daemon ACP facade over
 DataChannel; the daemon remains the sole ACP client toward each provider process.
 Credentials remain on the executing machine. ACP approval callbacks do not confine
@@ -301,7 +301,8 @@ control ownership or transfer. Commands record the initiating user and source
 machine separately from the executing machine. Pending inputs appear in a shared
 candidate backlog; users can also explicitly steer the active turn when the
 provider supports it. The daemon coordinates input delivery and permission
-decisions, with the first valid response resolving each permission request.
+decisions and structured user questions, with the first valid response resolving
+each shared request.
 Reconnecting clients attach by journal cursor without resubmitting inputs.
 Disconnect never grants approval or stops the Session.
 
