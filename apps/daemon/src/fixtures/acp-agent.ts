@@ -8,17 +8,24 @@ if (exitFile) process.once("exit", code => writeFileSync(exitFile, String(code))
 
 const activePrompts = new Map<string, (response: acp.PromptResponse) => void>()
 let nextSession = 0
+let authenticated = false
+const cursorMode = mode === "cursor"
 const connection = acp.agent({ name: "deskfleet-test-agent" })
   .onRequest(acp.methods.agent.initialize, async ({ params }) => {
     if (mode === "wait-init") await new Promise(() => {})
     if (mode === "exit-init") process.exit(12)
     return {
       protocolVersion: acp.PROTOCOL_VERSION + (mode === "wrong-version" ? 1 : 0),
-      agentInfo: { name: "deskfleet-test-agent", version: "1.0.0" },
-      agentCapabilities: {
+      agentInfo: { name: cursorMode ? "cursor-agent" : "deskfleet-test-agent", version: "1.0.0" },
+      agentCapabilities: cursorMode ? {
+        loadSession: true,
+        promptCapabilities: { image: true },
+        sessionCapabilities: { list: {} },
+      } : {
         promptCapabilities: { image: true },
         sessionCapabilities: { resume: {} },
       },
+      ...(cursorMode ? { authMethods: [{ id: "cursor_login", name: "Cursor Login" }] } : {}),
       _meta: {
         steering: { supported: true, supportsPromptRequired: mode !== "legacy-steering" },
         clientCapabilities: params.clientCapabilities,
@@ -31,10 +38,32 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
       },
     }
   })
+  .onRequest(acp.methods.agent.authenticate, () => {
+    authenticated = true
+    return {}
+  })
   .onRequest(acp.methods.agent.session.new, async ({ params }) => {
     if (mode === "wait-session") await new Promise(() => {})
     if (mode === "session-error") throw acp.RequestError.internalError({ details: `fixture cannot open ${params.cwd}` })
-    return { sessionId: `fixture-session-${++nextSession}`, _meta: { request: params } }
+    if (cursorMode && !authenticated) throw acp.RequestError.internalError({ details: "authenticate required" })
+    return { sessionId: `fixture-session-${++nextSession}`, _meta: { request: params, ...(cursorMode ? { authenticated } : {}) } }
+  })
+  .onRequest(acp.methods.agent.session.load, async ({ params, client }) => {
+    if (cursorMode && !authenticated) throw new Error("authenticate required")
+    if (cursorMode) {
+      await client.notify(acp.methods.client.session.update, {
+        sessionId: params.sessionId,
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "replayed history" } },
+      })
+      await client.notify(acp.methods.client.session.update, {
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "config_option_update",
+          configOptions: [{ id: "model", category: "model", name: "Model", type: "select", currentValue: "composer", options: [{ value: "composer", name: "Composer" }] }],
+        },
+      })
+    }
+    return { _meta: { method: "session/load", request: params } }
   })
   .onRequest(acp.methods.agent.session.setConfigOption, ({ params }) => ({
     configOptions: [{ id: params.configId, category: "model", name: "Model", type: "select", currentValue: String(params.value), options: [{ value: String(params.value), name: "Model" }] }],

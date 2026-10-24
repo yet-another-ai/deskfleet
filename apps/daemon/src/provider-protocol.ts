@@ -1,4 +1,4 @@
-export type AgentProviderTemplateId = "codex" | "claude-code" | "acp"
+export type AgentProviderTemplateId = "codex" | "claude-code" | "cursor" | "acp"
 
 export interface AgentProviderTemplate {
   id: AgentProviderTemplateId
@@ -48,6 +48,7 @@ export type ProviderEvent = { kind: "providersChanged" }
 export const AGENT_PROVIDER_TEMPLATES: readonly AgentProviderTemplate[] = [
   { id: "codex", name: "Codex", defaultBinaryPath: "codex" },
   { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" },
+  { id: "cursor", name: "Cursor", defaultBinaryPath: "agent" },
   { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" },
 ]
 

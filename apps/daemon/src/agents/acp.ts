@@ -50,8 +50,20 @@ export function supportsSteering(initialization: acp.InitializeResponse): boolea
     && "supportsPromptRequired" in steering && steering.supportsPromptRequired === true
 }
 
-export async function connectAcpProcess(launch: AgentProcess, client: AgentClient): Promise<AgentConnection> {
+/** A saved conversation can continue through `session/resume` or, when that is absent, `session/load`. */
+export function canContinueSession(initialization: acp.InitializeResponse): boolean {
+  const capabilities = initialization.agentCapabilities
+  return !!capabilities?.sessionCapabilities?.resume || capabilities?.loadSession === true
+}
+
+export interface AcpConnectOptions {
+  /** Runs after version negotiation, before callers can create a session. */
+  afterInitialize?(initialization: acp.InitializeResponse, agent: acp.ClientContext): Promise<void>
+}
+
+export async function connectAcpProcess(launch: AgentProcess, client: AgentClient, options: AcpConnectOptions = {}): Promise<AgentConnection> {
   client.signal?.throwIfAborted()
+  let replayingHistory = false
   const child = spawn(launch.command, launch.args ?? [], {
     env: Object.fromEntries(
       [...Object.entries(process.env), ...Object.entries(launch.env ?? {})]
@@ -62,6 +74,10 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   const exited = new Promise<void>(resolve => child.once("close", () => resolve()))
   const connection = acp.client({ name: "deskfleet" })
     .onNotification(acp.methods.client.session.update, async ({ params }) => {
+      // session/load replays history before its response. This handler runs
+      // synchronously when that notification is read, so the flag still covers
+      // the replay and is clear before any later notification is read.
+      if (replayingHistory && params.update.sessionUpdate !== "config_option_update") return
       try {
         await client.onUpdate(params)
       } catch (error) {
@@ -126,15 +142,28 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     if (initialization.protocolVersion !== acp.PROTOCOL_VERSION) {
       throw new Error(`${launch.command} uses unsupported ACP protocol version ${initialization.protocolVersion}`)
     }
+    await options.afterInitialize?.(initialization, connection.agent)
     return {
       initialization,
       newSession: params => connection.agent.request(acp.methods.agent.session.new, params),
       setConfigOption: params => connection.agent.request(acp.methods.agent.session.setConfigOption, params),
-      resume: params => {
-        if (!initialization.agentCapabilities?.sessionCapabilities?.resume) {
-          return Promise.reject(new Error("The agent does not support session resume"))
+      async resume(params) {
+        const capabilities = initialization.agentCapabilities
+        if (capabilities?.sessionCapabilities?.resume) {
+          return connection.agent.request(acp.methods.agent.session.resume, params)
         }
-        return connection.agent.request(acp.methods.agent.session.resume, params)
+        if (!capabilities?.loadSession) throw new Error("The agent does not support session resume")
+        replayingHistory = true
+        try {
+          return await connection.agent.request(acp.methods.agent.session.load, {
+            sessionId: params.sessionId,
+            cwd: params.cwd,
+            mcpServers: params.mcpServers ?? [],
+            ...(params.additionalDirectories?.length ? { additionalDirectories: params.additionalDirectories } : {}),
+          })
+        } finally {
+          replayingHistory = false
+        }
       },
       prompt: params => connection.agent.request(acp.methods.agent.session.prompt, params),
       async steer(params, deliveryId) {

@@ -49,7 +49,12 @@ only and does not change execution. The Codex template runs the installed Codex 
 through the bundled ACP bridge; its default binary is `codex`. The Claude Code
 template runs the installed Claude Code CLI through the bundled
 [Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp);
-its default binary is `claude`. The ACP template
+its default binary is `claude`. The Cursor template runs the installed
+[Cursor CLI](https://cursor.com/docs/cli/acp) directly as `agent acp`; its default
+binary is `agent`. Sign in with `agent login`, or set `CURSOR_API_KEY` or
+`CURSOR_AUTH_TOKEN`, before starting a session. Cursor's additional methods,
+including `cursor/ask_question` and `cursor/create_plan`, are not implemented;
+unrecognized requests receive JSON-RPC method not found. The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the
 daemon's inherited environment at process startup. The provider dialog's
@@ -383,8 +388,13 @@ the next message resumes the agent. SQLite commit and provider dispatch cannot b
 unknown delivery therefore cannot be automatically repeated. Viewer reconnect
 only subscribes and replays: it never starts or resumes a provider.
 
-Resume uses the saved provider Session ID and captured directories with
-negotiated `session/resume`. Providers without that capability cannot resume.
+Resume uses the saved provider Session ID and captured directories. Agents that
+advertise `session/resume` continue with that method. Agents that instead
+advertise `loadSession`, including Cursor CLI, continue with `session/load`.
+That method replays the provider's history as session updates. Deskfleet already
+keeps the journal, so it retains configuration updates from the replay and does
+not record the rest. The stored `resume` capability means either method was
+negotiated. Providers that advertise neither cannot resume.
 Stop can close a connection while startup RPCs await;
 resume waits for old shutdown/recovery, and old-generation callbacks cannot
 interrupt the new run.

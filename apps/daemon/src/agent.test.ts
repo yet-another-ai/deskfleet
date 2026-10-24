@@ -7,7 +7,8 @@ import { runInNewContext } from "node:vm"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk"
-import { connectAcpProcess, supportsSteering, type AgentProcess } from "./agents/acp.ts"
+import { canContinueSession, connectAcpProcess, supportsSteering, type AgentProcess } from "./agents/acp.ts"
+import { authenticateCursor } from "./agents/cursor.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
 const launch: AgentProcess = { command: process.execPath, args: [fixture] }
@@ -246,6 +247,32 @@ test("patched Codex steering preserves the opt-in and never starts a detached fa
       assert.equal(injected, scenario === "idle" ? 0 : 1)
     })
   }
+})
+
+test("Cursor ACP authenticates and loads a saved session without replaying its history", { timeout: 15_000 }, async context => {
+  const updates: acp.SessionNotification[] = []
+  const connection = await connectAcpProcess({
+    ...launch,
+    env: { DESKFLEET_TEST_AGENT_MODE: "cursor" },
+  }, { onUpdate: update => { updates.push(update) } }, { afterInitialize: authenticateCursor })
+  context.after(() => connection.close())
+  assert.equal(canContinueSession(connection.initialization), true)
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.resume, undefined)
+  const created = await connection.newSession(session)
+  assert.equal(created._meta?.authenticated, true)
+  const loaded = await connection.resume({ ...session, sessionId: created.sessionId })
+  assert.equal(loaded._meta?.method, "session/load")
+  assert.deepEqual(loaded._meta?.request, { ...session, sessionId: created.sessionId })
+  assert.deepEqual(updates.map(update => update.update.sessionUpdate), ["config_option_update"])
+  const unauthenticated = await connectAcpProcess({
+    ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor" },
+  }, { onUpdate() {} })
+  context.after(() => unauthenticated.close())
+  await assert.rejects(unauthenticated.newSession(session), (error: unknown) => {
+    const details = (error as { data?: { details?: string } }).data?.details ?? ""
+    assert.match(details, /authenticate required/u)
+    return true
+  })
 })
 
 test("ACP abort during initialization stops the child process", { timeout: 15_000 }, async context => {
