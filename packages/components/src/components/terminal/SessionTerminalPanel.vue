@@ -12,9 +12,9 @@ import TerminalWorkspace from "./TerminalWorkspace.vue"
 
 /**
  * The Session's own shells, below its conversation. They start in the Session's
- * Worktree, detach when the Session is left, and end when it is deleted.
+ * Worktree, detach when the Session is left, and retain history after archival.
  */
-const props = defineProps<{ worktree: WorktreeSummary }>()
+const props = defineProps<{ worktree: WorktreeSummary; readOnly?: boolean }>()
 const { t } = useI18n()
 const terminals = useTerminalsStore()
 const { terminalPanelOpen, terminalPanelHeight } = storeToRefs(useLayoutStore())
@@ -66,7 +66,7 @@ function keyResize(event: KeyboardEvent): void {
       @pointerdown="startResize"
       @keydown="keyResize"
     />
-    <TerminalWorkspace v-model:active-id="active" :terminals="worktree.terminals" :create="() => terminals.create({ worktreeId: worktree.id })" :ensure-terminal="() => terminals.ensureWorktreeTerminal(worktree.id)">
+    <TerminalWorkspace v-model:active-id="active" :terminals="worktree.terminals" :read-only="readOnly" :create="() => terminals.create({ worktreeId: worktree.id })" :ensure-terminal="() => terminals.ensureWorktreeTerminal(worktree.id)">
       <template #actions>
         <IconButton :icon="PanelBottomClose" :label="t('terminal.hidePanel')" @click="terminalPanelOpen = false" />
       </template>

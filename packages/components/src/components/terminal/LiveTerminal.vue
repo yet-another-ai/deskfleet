@@ -8,7 +8,7 @@ import TerminalSurface from "./TerminalSurface.vue"
 
 export type TerminalConnection = "connecting" | "replaying" | "connected" | "disconnected" | "ended" | "error"
 
-const props = defineProps<{ terminalId: string }>()
+const props = defineProps<{ terminalId: string; readOnly?: boolean }>()
 /** The surrounding tab shows the connection and the title the running program reports. */
 const emit = defineEmits<{ connection: [state: TerminalConnection, label: string]; title: [title: string] }>()
 const { t } = useI18n()
@@ -43,7 +43,7 @@ function failed(reason: unknown): void {
 
 async function activate(): Promise<void> {
   const active = attachment
-  if (!active || activating === active || !attached.value || !replayed.value || sessionStatus.value !== "running" || error.value) return
+  if (props.readOnly || !active || activating === active || !attached.value || !replayed.value || sessionStatus.value !== "running" || error.value) return
   activating = active
   try {
     await terminals.resize(props.terminalId, size.cols, size.rows)
@@ -112,14 +112,14 @@ function ready(next: { cols: number; rows: number }): void {
 function resize(next: { cols: number; rows: number }): void {
   size = next
   clearTimeout(resizeTimer)
-  if (!interactive.value) return
+  if (props.readOnly || !interactive.value) return
   resizeTimer = setTimeout(() => {
     void terminals.resize(props.terminalId, size.cols, size.rows).catch(failed)
   }, 100)
 }
 
 function input(data: string): void {
-  if (interactive.value) void terminals.input(props.terminalId, data).catch(failed)
+  if (!props.readOnly && interactive.value) void terminals.input(props.terminalId, data).catch(failed)
 }
 
 onBeforeUnmount(() => {
@@ -134,7 +134,7 @@ onBeforeUnmount(() => {
   <div class="min-h-0 flex-1 overflow-hidden bg-ui-terminal">
     <TerminalSurface
       ref="surface"
-      :interactive="interactive"
+      :interactive="interactive && !readOnly"
       @ready="ready"
       @input="input"
       @resize="resize"

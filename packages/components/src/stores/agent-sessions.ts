@@ -38,6 +38,7 @@ function replace<T>(values: T[], value: T, key: (value: T) => string | number): 
 
 /** Shared projections outlive the visible route; the daemon owns execution and history. */
 export const useAgentSessionsStore = defineStore("agent-sessions", () => {
+  const api = platformClient.agent
   const providers = useProvidersStore()
   const sessions = ref<Record<string, AgentSessionRecord>>({})
   const views = ref<Record<string, AgentSessionView>>({})
@@ -152,7 +153,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     advance(snapshot.session.id)
   }
 
-  const client = new AgentClient(platformClient.agent, (next, detail) => {
+  const client = new AgentClient(api, (next, detail) => {
     state.value = next
     error.value = detail ?? null
     if (next === "error" || next === "idle") {
@@ -193,10 +194,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     return initialized
   }
   async function call<M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]): Promise<AgentMethods[M]["result"]> {
-    const controlled = platformClient.agent.control?.(method, params)
+    const controlled = api.control?.(method, params)
     if (controlled) return controlled
-    const history = platformClient.agent.history
-    if (history && !history.available()) {
+    const history = api.history
+    if (history && !history.available() && state.value !== "connected") {
       const values = params as { sessionId?: string; afterSeq?: string; limit?: number }
       if (method === "_deskfleet/session/list") return await history.list() as AgentMethods[M]["result"]
       if (method === "_deskfleet/session/subscribe") return await history.snapshot(values.sessionId!) as AgentMethods[M]["result"]

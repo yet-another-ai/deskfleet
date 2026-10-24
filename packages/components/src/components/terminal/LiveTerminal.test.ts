@@ -9,7 +9,7 @@ import { useTerminalsStore } from "../../stores/terminals.ts"
 import { deferred } from "../../test/desktop-media.ts"
 import LiveTerminal from "./LiveTerminal.vue"
 
-function setup() {
+function setup(readOnly = false) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const terminals = useTerminalsStore()
@@ -37,7 +37,7 @@ function setup() {
     template: '<div data-surface :data-interactive="interactive" />',
   })
   const wrapper = mount(LiveTerminal, {
-    props: { terminalId: "terminal-1" },
+    props: { terminalId: "terminal-1", readOnly },
     global: { plugins: [pinia, i18n], stubs: { TerminalSurface: surface } },
   })
   const resolve = (status: TerminalSummary["status"] = "running") => pending.resolve({ id: "terminal-1", title: "zsh", cwd: "/home/user", cols: 80, rows: 24, status })
@@ -81,6 +81,21 @@ test("a transport error disables input and is reported as the connection state",
   await flushPromises()
   expect(fixture.wrapper.get("[data-surface]").attributes("data-interactive")).toBe("false")
   expect(fixture.connection()).toEqual(["error", "Peer disconnected"])
+  fixture.wrapper.unmount()
+})
+
+test("an archived context replays retained output without resizing or accepting input", async () => {
+  const fixture = setup(true)
+  fixture.resolve("interrupted")
+  await flushPromises()
+  fixture.emit({ kind: "output", sessionId: "terminal-1", data: "aGk=", offset: 2 }, () => {})
+  fixture.emit({ kind: "ready", sessionId: "terminal-1" }, () => {})
+  await flushPromises()
+  fixture.wrapper.getComponent({ name: "TerminalSurface" }).vm.$emit("input", "blocked")
+  expect(fixture.write).toHaveBeenCalled()
+  expect(fixture.terminals.resize).not.toHaveBeenCalled()
+  expect(fixture.terminals.input).not.toHaveBeenCalled()
+  expect(fixture.wrapper.get("[data-surface]").attributes("data-interactive")).toBe("false")
   fixture.wrapper.unmount()
 })
 

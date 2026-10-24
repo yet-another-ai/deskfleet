@@ -3,6 +3,7 @@ import type { CentralApi, CentralEvent, Machine } from "./central.ts"
 import type { DesktopEvent, DesktopOffer, DesktopStart, IceCandidate } from "./desktop-media.ts"
 import type { TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts"
 import type { AgentMethod, AgentMethods } from "../../../apps/daemon/src/agent-protocol.ts"
+import type { TerminalSummary } from "./terminal.ts"
 
 interface Peer { id: string; timer: ReturnType<typeof setTimeout> }
 const management = new Set<string>([
@@ -18,6 +19,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
   const providerEvents = new Set<() => void>()
   let disposed = false
   let online = machine.online
+  let knownTerminals: TerminalSummary[] = []
   const emit = (event: DesktopEvent) => { for (const listener of events) listener(event) }
   const unsubscribe = central.onEvent((event: CentralEvent) => {
     if (event.type === "peerEvent" || event.type === "peerRevoked") {
@@ -94,7 +96,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       },
     },
     terminal: {
-      ...signaling("terminal"), list: () => online ? rpc("terminalList") : Promise.resolve([]),
+      ...signaling("terminal"), list: async () => online ? (knownTerminals = await rpc("terminalList")) : knownTerminals,
       dial: options => rpc("terminalDial", options), hangup: terminalId => rpc("terminalHangup", { terminalId }),
       onSessionEvent: () => () => {},
     },

@@ -39,3 +39,14 @@ test("revokes only the matching peer and sends management over the central RPC",
   expect(f.remote.api.agent.control!("_deskfleet/input/submit", { sessionId: "1", operationId: "prompt", content: [], delivery: "backlog" })).toBeUndefined()
   expect(await f.remote.api.agent.history!.list()).toEqual([{ id: "1" }])
 })
+
+test("retains known terminal tabs during a daemon signaling outage", async () => {
+  const f = fixture()
+  const shells = [{ id: "shell1", status: "running" }]
+  vi.mocked(f.central.rpc).mockResolvedValue(shells)
+  f.emit({ type: "presence", machineId: "central7", online: true })
+  expect(await f.remote.api.terminal.list()).toEqual(shells)
+  f.emit({ type: "presence", machineId: "central7", online: false })
+  expect(await f.remote.api.terminal.list()).toEqual(shells)
+  expect(f.central.rpc).toHaveBeenCalledTimes(1)
+})

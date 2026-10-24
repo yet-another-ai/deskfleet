@@ -16,12 +16,14 @@ import SessionTerminalPanel from "../components/terminal/SessionTerminalPanel.vu
 import { useFleetStore } from "../stores/fleet.ts"
 import { useLayoutStore } from "../stores/layout.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
+import { useTerminalsStore } from "../stores/terminals.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
+const terminals = useTerminalsStore()
 const { terminalPanelOpen } = storeToRefs(useLayoutStore())
 const location = computed(() => fleet.findSession(props.sessionId))
 const view = computed(() => agents.views[props.sessionId])
@@ -39,7 +41,7 @@ const draft = computed({ get: () => agents.drafts[props.sessionId] ?? "", set: v
 const unresolvedSubmission = computed(() => Object.values(agents.operations).some(operation => operation.sessionId === props.sessionId && operation.text === draft.value))
 const pending = computed(() => Object.values(agents.operations).filter(operation => operation.sessionId === props.sessionId && operation.error))
 // Shells need the Session's own Worktree on this machine.
-const terminalWorktree = computed(() => location.value?.machine.online && snapshot.value?.session.lifecycle === "ready" && active.value ? location.value.worktree : undefined)
+const terminalWorktree = computed(() => (location.value?.machine.online || terminals.state === "connected") && snapshot.value?.session.lifecycle === "ready" ? location.value?.worktree : undefined)
 const empty = computed(() => !view.value?.loading && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
 const busy = ref(false)
 const actionError = ref<string | null>(null)
@@ -94,5 +96,5 @@ function submit(delivery: "backlog" | "steer"): void {
     </template>
   </div>
   <SessionComposer v-if="location" v-model="draft" :location="location" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
-  <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" />
+  <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
 </template>

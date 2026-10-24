@@ -91,12 +91,12 @@ async function probeHostedDaemon(): Promise<void> {
   })
   const peer = await createPeer()
   try {
-    await assert.rejects(control.call("agentOffer", { sessionId: "invalid-agent", sdp: "" }), /Invalid SDP offer/u)
+    const status = await control.call("centralStatus", {})
+    assert.equal(status.configured, false)
+    assert.ok(status.identity.originId && status.identity.machineId)
     await peer.createDataChannel("deskfleet-acp")
-    const answer = await control.call("agentOffer", { sessionId: "agent", sdp: await peer.createOffer() })
-    assert.match(answer.sdp, /m=application/u)
-    await peer.acceptAnswer(answer.sdp)
-    await control.call("close", { sessionId: "agent" })
+    await assert.rejects(control.call("agentOffer", { sessionId: "unauthorized-agent", sdp: await peer.createOffer() }), /central|backend|authorized/iu)
+    await assert.rejects(control.call("catalogList", {}), /central|backend|authorized/iu)
   } finally {
     await peer.close()
     control.close()
@@ -127,7 +127,7 @@ try {
     socket!.addEventListener("open", () => resolveOpen(), { once: true })
     socket!.addEventListener("error", () => reject(new Error("Could not inspect the production renderer")), { once: true })
   })
-  await until(async () => await evaluate<boolean>("document.readyState === 'complete' && !!document.querySelector('#root main') && !!window.deskfleet?.settings") ? true : undefined)
+  await until(async () => await evaluate<boolean>("document.readyState === 'complete' && !!document.querySelector('#root input[type=url]') && !!window.deskfleet?.central") ? true : undefined)
   assert.deepEqual(await evaluate("window.deskfleet.settings.get()"), { enabled: false, status: "stopped" })
   await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
   await stop()
@@ -141,7 +141,7 @@ try {
   })
   assert.equal(claudeVersion.stdout.trim(), "0.94.0")
   await probeHostedDaemon()
-  console.log("Electron startup smoke passed: client, Codex and Claude Code adapters, and Agent signaling")
+  console.log("Electron startup smoke passed: account UI, Codex and Claude Code adapters, hosted daemon identity, and authenticated management boundary")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error

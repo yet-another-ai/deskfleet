@@ -11,6 +11,7 @@ const props = defineProps<{
   terminals: Pick<TerminalSummary, "id" | "cwd">[]
   create: () => Promise<Pick<TerminalSummary, "id">>
   ensureTerminal?: () => Promise<Pick<TerminalSummary, "id">>
+  readOnly?: boolean
 }>()
 const activeId = defineModel<string | undefined>("activeId")
 const store = useTerminalsStore()
@@ -52,7 +53,7 @@ async function select(id: string, focus = false): Promise<void> {
 }
 
 async function create(start = props.create): Promise<void> {
-  if (creating.value) return
+  if (props.readOnly || creating.value) return
   creating.value = true
   error.value = null
   try { await select((await start()).id) }
@@ -61,7 +62,7 @@ async function create(start = props.create): Promise<void> {
 }
 
 async function hangup(id: string): Promise<void> {
-  if (closing.value.has(id)) return
+  if (props.readOnly || closing.value.has(id)) return
   closing.value.add(id)
   error.value = null
   try { await store.hangup(id) }
@@ -99,7 +100,7 @@ watch(ids, (next, previous) => follow(next, previous))
 // The parent's model listener is attached once mounted.
 onMounted(() => {
   follow(ids(), [])
-  if (!props.terminals.length && props.ensureTerminal) void create(props.ensureTerminal)
+  if (!props.readOnly && !props.terminals.length && props.ensureTerminal) void create(props.ensureTerminal)
 })
 </script>
 
@@ -142,7 +143,7 @@ onMounted(() => {
             type="button"
             :aria-label="t('terminal.hangupTab', { name: tabName(terminal.id, index) })"
             :title="t('terminal.hangupHint')"
-            :disabled="closing.has(terminal.id)"
+            :disabled="readOnly || closing.has(terminal.id)"
             class="mr-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded opacity-0 hover:bg-ui-hover group-hover:opacity-100 focus-visible:opacity-100 disabled:op-40"
             :class="activeId === terminal.id && 'opacity-100'"
             @click="hangup(terminal.id)"
@@ -153,7 +154,7 @@ onMounted(() => {
         type="button"
         :aria-label="t('terminal.newTab')"
         :title="t('terminal.newTab')"
-        :disabled="creating"
+        :disabled="readOnly || creating"
         class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text disabled:op-40"
         @click="create()"
       ><Plus :size="15" aria-hidden="true" /></button>
@@ -169,6 +170,7 @@ onMounted(() => {
     ><LiveTerminal
       :key="`${activeId}:${attempt}`"
       :terminal-id="activeId"
+      :read-only="readOnly"
       @connection="(state, label) => { connection = { state, label } }"
       @title="title => { store.titles[activeId!] = title }"
     /></div>
@@ -176,7 +178,7 @@ onMounted(() => {
       <p class="m-0">{{ t("terminal.empty") }}</p>
       <button
         type="button"
-        :disabled="creating"
+        :disabled="readOnly || creating"
         class="catalog-button"
         @click="create()"
       >{{ t("terminal.newTab") }}</button>

@@ -6,6 +6,7 @@ import type { AgentCommand, AgentEvent } from "../../../../apps/daemon/src/agent
 import { agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
 import { deferred } from "../test/desktop-media.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
+import { client as platformClient } from "@deskfleet/client/platform"
 const mock = vi.hoisted(() => ({ call: vi.fn(), connect: vi.fn(async () => {}), close: vi.fn(), notification: (_value: { method: string; params: unknown }) => {}, request: (_value: { id: string; method: string; params: unknown }): Promise<unknown> => Promise.resolve(), state: (_state: string) => {} }))
 vi.mock("../services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof mock.state, notification: typeof mock.notification, request: typeof mock.request) { mock.state = state; mock.notification = notification; mock.request = request }
@@ -24,6 +25,23 @@ beforeEach(() => {
 })
 afterEach(() => disposePinia(pinia))
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
+
+test("a live peer continues prompts during signaling loss and only disconnected views use central history", async () => {
+  const previous = platformClient.agent.history
+  const history = { available: () => false, list: vi.fn(async () => [agentSnapshot().session]), snapshot: vi.fn(async () => agentSnapshot()), events: vi.fn(async () => []) }
+  platformClient.agent.history = history
+  try {
+    const store = useAgentSessionsStore()
+    mock.state("connected")
+    await store.submit("30", "Peer stays live", "backlog")
+    expect(mock.call).toHaveBeenCalledWith("_deskfleet/input/submit", expect.objectContaining({ sessionId: "30" }))
+    expect(history.snapshot).not.toHaveBeenCalled()
+    mock.state("error")
+    await store.open("30")
+    expect(history.snapshot).toHaveBeenCalledWith("30")
+    await expect(store.submit("30", "No peer", "backlog")).rejects.toThrow("offline")
+  } finally { platformClient.agent.history = previous }
+})
 
 test("merges snapshot, history pages and concurrent live events once without regressing snapshot state", async () => {
   const snapshot = agentSnapshot(); snapshot.session.lastEventSeq = "3"; snapshot.inputs = [agentInput({ state: "delivered" })]

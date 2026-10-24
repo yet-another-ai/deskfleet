@@ -93,6 +93,28 @@ test("with nothing selected the first shell is shown", () => {
   wrapper.unmount()
 })
 
+test("archived shells can be selected and replayed but cannot create or hang up", async () => {
+  const { wrapper, create, hangup } = setup("first")
+  await wrapper.setProps({ readOnly: true })
+  await wrapper.get('[aria-label="New shell"]').trigger("click")
+  await wrapper.get('[aria-label="Hang up Shell 1"]').trigger("click")
+  await wrapper.findAll('[role="tab"]')[0]!.trigger("keydown", { key: "Delete" })
+  await wrapper.findAll('[role="tab"]')[1]!.trigger("click")
+  expect(wrapper.get("[data-shell]").attributes("data-id")).toBe("second")
+  expect(create).not.toHaveBeenCalled()
+  expect(hangup).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+test("an empty archived context never creates a terminal on mount", async () => {
+  const pinia = createPinia()
+  const ensure = vi.fn(async () => ({ id: "new" }))
+  const wrapper = mount(TerminalWorkspace, { props: { terminals: [], readOnly: true, create: ensure, ensureTerminal: ensure }, global: { plugins: [pinia, i18n] } })
+  await flushPromises()
+  expect(ensure).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
 test("the active tab shows its connection as an icon, reconnects when broken, and is titled by the running program", async () => {
   const { wrapper, terminals } = setup("first")
   const live = () => wrapper.getComponent({ name: "LiveTerminal" })
