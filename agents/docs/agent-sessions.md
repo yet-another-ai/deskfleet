@@ -28,10 +28,39 @@ Workspace's own directories in place. Its captured ordered directories are the
 execution context; the first supplies `cwd`. Later Workspace edits do not
 retarget existing Sessions. Session creation also retains a failed provisioning
 record when Git setup fails or a directory is missing. Stopping a provider
-preserves the Session and its files. Explicit deletion removes a worktree
+preserves the Session and its files. The current deletion path removes a worktree
 Session's disposable checkouts before deleting the catalog resource; a directory
 Session's files are never removed. The new-session composer offers both contexts
 and remembers the last choice on that device.
+
+## Archive and restore in the backend release
+
+Archive is the normal user action for ending active use of a Session. It is
+reversible and preserves the Session identity, execution context, Worktree files
+(including uncommitted changes and untracked files), queued inputs, configuration,
+conversation/tool history, terminal records, and full audit. Permanent Session
+deletion is not exposed by first-release user interfaces or user-facing APIs;
+the destructive operations documented below describe existing implementation.
+
+Archive requires the owning machine online. The daemon blocks new execution and
+backlog dispatch, closes the provider and its pending permission callbacks without
+granting them, and stops Session-owned terminals while retaining their final
+output and metadata. It records the resulting execution/permission transitions
+without deleting their history. Archive completes only after the associated
+live resources have closed; failed or unfinished closure cannot be reported as
+successful archive. There is no queued offline archive in this release.
+
+Restore returns the same Session to active use without starting the provider,
+dispatching queued inputs, or creating terminals. The next explicit message can
+resume the provider using its existing capabilities. A later terminal start
+creates a new PTY while preserving the ended terminal's record and transcript.
+Reading an archived Session cannot trigger implicit resume or terminal creation.
+Archive state must be durable and synchronized, distinct from provider process
+state. Archived Sessions retain their Workspace ownership and Worktree records.
+
+Archive cannot reuse Session destruction or terminal hangup, both of which delete
+data today. See [terminal archive behavior](terminals.md#ownership-and-lifecycle)
+and the [backend scope](backend.md#session-archive-and-restore).
 
 ## Provider configuration
 
@@ -91,6 +120,16 @@ a system action. The target machine is the daemon's catalog identity.
 Current signaling authenticates a local discovery token and records
 `kind: local_token` with the local source machine. Remote enrollment must bind
 peers to verified users and source devices before authorizing Session access.
+The [backend scope](backend.md) replaces unauthenticated resource creation with
+OIDC login and Team enrollment. A Web client has a verified user/device but may
+have no enrolled source Machine; the integrated actor model must represent that
+absence instead of assigning the target machine as the browser's identity.
+The [WebRTC authorization context](webrtc-security.md) binds that actor to the
+authenticated SDP exchange, target Machine, allowed actions, and a maximum
+24-hour peer lifetime. The daemon supplies the actor from this context and
+enforces revocation/expiry; neither ACP parameters nor a channel label grants
+authority. Peer closure detaches viewers without stopping the provider or
+resolving pending approvals.
 
 Canonical operation IDs are unique within the catalog. Repeating the same actor,
 method, target, and parameters returns the saved receipt/result. Reusing an ID
@@ -125,7 +164,9 @@ ownership, lookup, and active-resource constraints.
 | `agent_permissions` | `id` | Original ACP request/options, run/turn, winning decision command/actor |
 | `agent_events` | `(session_id, seq)` | Ordered domain transitions and original ACP notifications |
 
-Session lifecycle is `provisioning`, `ready`, `provision_failed`, or `deleting`.
+The currently implemented Session lifecycle is `provisioning`, `ready`,
+`provision_failed`, or `deleting`. Durable archive/restore state and transitions
+are additional work for the backend release.
 Runs are `starting`, `running`, `stopping`, `stopped`, `interrupted`, or `failed`.
 Each new provider process gets a new generation, including when resuming a saved
 conversation. Busy/idle/awaiting-approval are derived from turns and permissions.
@@ -221,7 +262,8 @@ cannot cancel the next turn or its approvals. Withdrawal affects only the named
 input. Stopping a provider retains pending backlog until the next request.
 
 A new or retried message to a stopped, interrupted, or failed agent resumes it;
-successful startup then drains the backlog in acceptance order. The UI shows no
+the planned archive state must require explicit restoration before this path.
+Successful startup then drains the backlog in acceptance order. The UI shows no
 stopped or resume state. A provider that cannot resume its saved conversation
 rejects the message instead of queueing it, and the UI explains that a new
 Session is needed. A startup failure is recorded on the run and Session, keeps
@@ -405,3 +447,12 @@ Remote account enrollment, scoped peer authorization, HTTPS cached history,
 central synchronization, and attachments are subsequent work. Synchronization
 will use qualified Session IDs and event watermarks; the executing daemon
 remains the single journal writer.
+
+The first backend release synchronizes Agent conversations, tool history, audit,
+and archive/restore state to PostgreSQL. Archive preserves all content locally
+and in central replicas. Permanent user-facing Session deletion is deferred.
+When added, deletion removes central conversation/tool content and
+content-bearing audit parameters/results, retaining metadata-only audit; stale
+uploads must not restore that content. Local durable receipts continue to serve
+the existing idempotency contract. See [backend implementation scope](backend.md)
+for the delivery plan; attachments remain outside that first backend scope.

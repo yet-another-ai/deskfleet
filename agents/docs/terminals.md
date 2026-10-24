@@ -31,8 +31,11 @@ without an explicit `cwd`, starts the shell in that Worktree's first directory.
 The owner is recorded in terminal metadata and survives daemon restart. These
 shells appear only in the Session's bottom panel, not in the sidebar or the
 machine terminal tabs. Leaving the Session detaches the panel; destroying the
-Session hangs up its terminals before the Worktree is removed. A future archived
-Session can release them the same way. Local Workspace directory configuration is connected; remote machine
+Session currently hangs up its terminals before the Worktree is removed.
+The planned archive operation instead stops Session-owned PTYs while preserving
+terminal metadata, transcripts, ownership, and Worktree files. It must not call
+the existing destructive hangup path. A terminal with the same cwd but different
+ownership is unaffected. Local Workspace directory configuration is connected; remote machine
 enrollment remains unimplemented.
 
 Navigating away detaches the view. Losing a peer, reloading the renderer, or
@@ -49,6 +52,19 @@ Daemon shutdown terminates its PTYs but preserves their history. After restart,
 previously running sessions become `interrupted`, with read-only history. Dialing
 an interrupted session does not start a replacement shell. Keeping live
 PTY processes across daemon restarts requires a separate recoverable backend.
+
+Session archive/restore is part of the [backend release](backend.md), not yet
+implemented by the terminal service. Archived terminal records remain available
+for read-only replay. Restoring a Session preserves those records without
+starting a process; it cannot revive an ended shell. A later terminal start
+creates a new PTY without overwriting the previous terminal's identity or
+transcript. Archive requires the machine online and completes only after its
+owned PTYs have stopped and their final output has been retained.
+
+Remote [peer authorization](webrtc-security.md) expires after at most 24 hours
+or on explicit revocation/closure. That event detaches terminal access without
+terminating the PTY or deleting its transcript. A working peer can survive
+signaling loss only within its existing authorization deadline.
 
 ## Wire contract and flow control
 
@@ -83,8 +99,10 @@ and files use private permissions. Output is flushed to disk before its offset
 is published to viewers. Metadata is replaced atomically, and creation/deletion
 use staged directories so incomplete operations cannot break recovery.
 
-History remains until explicit hangup; disconnect, client replacement, natural
-exit, and daemon restart do not delete it. Replay reads bounded chunks from disk
+History currently remains until explicit hangup; disconnect, client replacement,
+natural exit, and daemon restart do not delete it. Planned Session archive and
+restore also retain that history and must not be implemented as hangup.
+Replay reads bounded chunks from disk
 instead of keeping the transcript in daemon memory. Slow viewers continue from
 their acknowledged offset without discarding earlier output. An attachment
 receives `ready` after consuming the history present when it attached, allowing

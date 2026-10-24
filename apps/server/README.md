@@ -4,6 +4,15 @@ The Actix Web backend initializes a persistent SeaORM resource catalog and
 exposes `GET /healthz` for process liveness. Catalog HTTP operations and daemon
 synchronization are not yet exposed.
 
+The [backend implementation scope](../../agents/docs/backend.md) defines the next
+release: an API-only service using PostgreSQL, OIDC, Team membership, machine
+enrollment, authenticated management/signaling, synchronized Agent history, and
+reversible Session archive/restore with data retention. Permanent Session
+deletion is not a first-release user-facing operation.
+The Vue Web frontend is hosted separately and shares UI components with Electron.
+The SQLite configuration below describes the currently implemented server;
+PostgreSQL support is planned, not yet available.
+
 ## Run
 
 From the repository root:

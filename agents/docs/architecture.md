@@ -40,7 +40,7 @@ flowchart LR
 | Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript library; Node.js SEA or bundled Electron host |
 | Native libraries | OS integration and performance-sensitive transport, capture, input, and media work | Rust with napi-rs bindings |
 | Desktop application | User interface, platform integration, and daemon installation/management | Electron / TypeScript |
-| Web application | Server-hosted catalog, history, and browser-supported remote access | TypeScript |
+| Web application | Independently hosted frontend for catalog, history, and browser-supported remote access | Vue / TypeScript |
 | MCP facade | Let agents discover resources and operate on explicit remote targets | TypeScript, sharing deskfleet client operations |
 
 The server owns team membership and shared access policy. Each daemon owns its
@@ -50,6 +50,34 @@ offline; clients show when that data was last observed.
 
 The backend is open source in this repository under Apache-2.0. Shared resource
 and protocol types remain independent of Actix Web and Node-API.
+
+## Identity and team access
+
+The first backend release prioritizes the officially hosted service and uses
+OIDC for user login. The Rust backend is API-only. An independently hosted Vue
+Web client and the Electron client share a common UI component package.
+Creating resources requires an authenticated user and a selected Team.
+Headless machines need enrollment into that Team before accepting
+resource creation; their ongoing server connection uses machine credentials,
+separate from a user's interactive login.
+
+Team members can operate all machines in their Team by default. The initial
+roles are administrator and member. Administrators manage members and roles and
+remove machines. Members can enroll their own machines, configure Providers,
+create or delete Workspaces, and create, archive, or restore Sessions. The first
+release does not expose Session deletion to users. Per-Workspace sharing rules are not
+part of the initial role model. Server and daemon authorization still checks the
+requested action and Team rather than treating a connected peer as authority.
+
+The current automatically created local Team and discovery-token actor are
+development scaffolding for this flow. They do not establish authenticated Team
+membership and must not authorize resource creation in the integrated product.
+Local IPC remains a transport for the local client after enrollment. Existing
+unauthenticated local data is development data; the first release does not
+include an import flow for it.
+
+The [backend implementation scope](backend.md) tracks the required capabilities,
+existing local assumptions, delivery order, and acceptance criteria.
 
 ## Resource model
 
@@ -96,6 +124,20 @@ and preserving subdirectory positions. Uncommitted source changes are not copied
 The first path is the Session's default working directory. Workspace paths may
 be non-Git for main-context terminals and directory Sessions; creating a worktree
 Session requires Git-backed paths with a commit.
+
+Archiving is the normal way to finish using a Session. It closes the provider
+and Session-owned terminals while retaining the Session, its Worktree and files,
+queued inputs, conversation/tool history, terminal transcripts, and audit.
+Archive never invokes Worktree destruction or deletes uncommitted or untracked
+files. The machine must be online, and archive completes only after the daemon
+confirms that the associated live resources have closed. Restoration keeps the
+same Session identity and execution context and returns it to the active list
+without starting processes. A later message resumes the provider where supported;
+opening a terminal can create a new shell while retaining old terminal history.
+Archived Sessions remain owned by their Workspace and continue to prevent its
+deletion. Stopping a process, archiving a Session, and permanently deleting a
+Session are distinct operations. Session deletion is not a first-release user
+operation; existing destructive implementation paths are not archive handlers.
 
 For example:
 
@@ -150,17 +192,20 @@ The store is a persistence boundary, not an authorization boundary.
 
 `deskfleet-migration` owns explicit, reversible schema migrations. Server startup
 opens `DATABASE_URL` and applies pending migrations before accepting HTTP
-connections. SQLite is the currently enabled and tested backend. The schema uses
-portable SeaQuery types and constraints for a later PostgreSQL backend; enabling
-that backend will also require connection configuration and PostgreSQL integration
-tests. See the [server guide](../../apps/server/README.md) for configuration and
+connections. SQLite is the currently enabled and tested backend. The central
+backend release will use PostgreSQL; the daemon keeps SQLite. The schema uses
+portable SeaQuery types and constraints, but PostgreSQL server connection
+configuration, storage operations, and integration tests still need to be
+implemented. The daemon journal currently uses SQLite-specific SQL. See the
+[server guide](../../apps/server/README.md) for current configuration and
 migration commands.
 
 The standalone daemon opens `<daemon directory>/catalog.db` through a thin
 `NativeCatalog` napi binding after acquiring its discovery endpoint. `LocalCatalog`
 initializes a persistent local Team/Machine context in a transaction and scopes
-all operations to that machine. This context enables operation without login;
-it does not represent an authenticated account or organization membership.
+all operations to that machine. The current implementation enables operation
+without login; this is the pre-enrollment development path to be replaced by the
+authenticated Team flow above, not an authenticated account or membership.
 The local database is independent of the central server database. Enrollment and
 synchronization must map catalog identities rather than equate independently
 allocated integer IDs.
@@ -318,6 +363,7 @@ created on demand.
 | Traffic | Transport |
 | --- | --- |
 | Authentication, enrollment, catalog, and history | HTTPS |
+| Workspace, Provider, and machine-settings management | HTTPS API; server authorizes and forwards to the owning daemon |
 | Presence, history synchronization, and WebRTC signaling | Authenticated WebSocket or HTTPS streams |
 | Terminal dial, hangup, catalog and lifecycle events | Authenticated signaling; IPC for the local client |
 | Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel |
@@ -339,6 +385,15 @@ or Windows named pipes. Central server signaling, remote enrollment, and remote
 operation routing remain to be connected. Chromium receives the media into a
 standard HTML video element; a separate native GPU rendering window is deferred.
 See [native media](media.md) for codec support, capture lifecycle, and validation.
+
+The [WebRTC key exchange design](webrtc-security.md) uses trusted HTTPS/WSS
+signaling to bind authenticated user/device and target Machine identities to
+each peer's SDP fingerprints. The endpoints perform standard DTLS certificate
+verification and key exchange; DataChannels use DTLS and media uses DTLS-SRTP.
+The server does not receive private transport keys. Each new peer uses a new
+authorization and endpoint-generated certificates, distinct from login and
+machine enrollment credentials. No additional application encryption protocol
+or independently verified device-pairing mechanism is part of the first release.
 
 Electron terminals use a data-only peer on the same signaling infrastructure.
 The daemon owns native PTYs independently of their viewers; disconnect detaches,
@@ -392,16 +447,30 @@ Agent MCP calls carry delegated authority. Generated arguments cannot broaden
 that authority, and discovery exposes only permitted resources. Remote actions
 remain attributable to their initiating user/session and target resource.
 
-Remote access needs an expiry and revocation policy that also works during
-control-plane outages. Local work follows the machine's execution policy;
-revoking a client's access and cancelling a running task are separate actions.
-Define grant lifetimes and renewal behavior with enrollment and authentication.
+The first backend release assumes the central service is available for login,
+enrollment, authorization, and management. It does not add offline resource
+creation or a separate offline-authorization system. An established, authorized
+WebRTC connection can continue working when its signaling connection is lost,
+within its existing grant. A grant ends on peer closure, explicit revocation,
+or 24 hours after issuance, whichever comes first. The daemon enforces expiry
+even without signaling, and reconnecting signaling does not extend it. Renewal
+uses current authentication and a new peer. Logout, membership removal, and
+machine removal revoke the affected peers; notices take effect when delivered,
+with expiry bounding access if the control connection is unavailable. Revoking
+access or expiring a peer detaches viewers without cancelling Agent execution,
+terminating shells, or archiving a Session. Details are owned by the
+[peer authorization lifecycle](webrtc-security.md#authorization-lifetime-and-revocation).
 
-The initial design trusts the server with synchronized history. Keep machine
-private keys and application credentials out of history and logs. Define
-retention and deletion when adding storage. Electron renderers stay sandboxed,
-with narrow preload interfaces; agent output and repository content are
-untrusted display data.
+The initial design trusts the server with synchronized Agent conversations,
+tool history, and audit. Terminal output remains on the daemon. Archive and
+restore preserve all this data, including content-bearing audit records.
+Permanent Session deletion is deferred from the first user-facing release.
+When introduced, it removes central conversation/tool content, including raw
+content in audit parameters and results; only audit metadata remains, and stale
+uploads must not restore removed content. Keep machine private keys and
+application credentials out of history and logs. Electron renderers stay
+sandboxed, with narrow preload interfaces; agent output and repository content
+are untrusted display data.
 
 ## Native code and distribution
 
@@ -463,15 +532,20 @@ and the conversation UI with a shared backlog, steering, and permissions are
 implemented. Remote enrollment and authenticated signaling will extend the same
 client contract across machines, including direct and TURN-relayed access.
 
-Then complete one workflow: enroll a headless machine, register a workspace and
-a worktree spanning frontend/backend directories, run an agent, inspect its Git
-state from another machine, and open terminals at each supported scope. Work
-continues after closing the client, reconnecting restores the session view, and
-synchronized history remains available while the machine is offline.
+The [backend implementation scope](backend.md) covers OIDC and Teams,
+PostgreSQL, enrollment, authorized management APIs, signaling, synchronized
+catalog/history, reversible Session archive, and the shared Vue component
+package with an independent Web client. Complete one workflow in both Electron
+and Web: log in, select a Team,
+enroll a headless machine, configure a Workspace, create a Session with its
+execution context, run an Agent, inspect its Git state from another machine,
+and open a terminal. Work continues after closing the client, reconnecting
+restores the Session view, and synchronized history remains available while the
+machine is offline. Validate direct and TURN-relayed connections.
 
-MCP coordination and desktop control follow that workflow. Remaining choices
-include provider distribution, terminal backends, Linux capture/encoding,
-authenticated signaling, and central history synchronization.
+MCP coordination and desktop control follow that workflow. Provider
+distribution, additional terminal backends, and Linux capture/encoding remain
+separate follow-up work.
 
 ## References
 
