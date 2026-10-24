@@ -144,7 +144,8 @@ export const useFleetStore = defineStore("fleet", () => {
   function refreshLocalCatalog(): Promise<void> {
     refreshRequested = true
     refreshingCatalog ??= (async () => {
-      catalogLoading.value = true
+      // Background catalog/presence updates keep the current workspace visible.
+      catalogLoading.value = catalogIdentity.value === null
       try {
         do {
           refreshRequested = false

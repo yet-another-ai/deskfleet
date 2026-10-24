@@ -1,4 +1,5 @@
-import { client as platformClient } from "@deskfleet/client/platform"
+import { client as platformClient, configureClient, getClient } from "@deskfleet/client/platform"
+import type { CatalogSnapshot } from "../../../client/src/catalog.ts"
 import { createPinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { catalogFixture, sessionId, sessionWorktreeId, mainWorktreeId, workspaceId } from "../test/catalog.ts"
@@ -163,4 +164,78 @@ test("resolves provider identity only from successful snapshots and keeps it thr
   await vi.waitFor(() => expect(store.findSession(sessionId)?.session.providerUnavailable).toBe(true))
   expect(store.findSession(sessionId)?.session.provider).toBeUndefined()
   expect(store.findSession(sessionId)?.session.providerIcon).toBeUndefined()
+})
+
+
+function pendingCatalog() {
+  let resolve!: (snapshot: CatalogSnapshot) => void
+  const promise = new Promise<CatalogSnapshot>(done => { resolve = done })
+  return { promise, resolve }
+}
+
+test("catalog notifications keep the loaded workspace and title stable while a background request is pending", async () => {
+  const store = setup()
+  const initial = pendingCatalog()
+  vi.mocked(platformClient.catalog.list).mockReturnValueOnce(initial.promise)
+  const loading = store.refreshLocalCatalog()
+  expect(store.catalogLoading).toBe(true)
+  expect(store.findWorkspace(workspaceId)).toBeNull()
+  initial.resolve(catalogFixture())
+  await loading
+  const workspace = store.findWorkspace(workspaceId)!.workspace
+  expect(store.catalogLoading).toBe(false)
+  const background = pendingCatalog()
+  vi.mocked(platformClient.catalog.list).mockReturnValueOnce(background.promise)
+  changed()
+  expect(store.catalogLoading).toBe(false)
+  expect(store.findWorkspace(workspaceId)!.workspace).toBe(workspace)
+  expect(store.newSessionTarget?.workspace.id).toBe(workspaceId)
+  const updated = catalogFixture()
+  updated.workspaces[0]!.name = "Updated by another client"
+  background.resolve(updated)
+  await vi.waitFor(() => expect(store.findWorkspace(workspaceId)?.workspace.name).toBe("Updated by another client"))
+  expect(store.catalogLoading).toBe(false)
+})
+
+test("background failure and recovery retain visible content without hiding the error or enabling writes early", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  vi.mocked(platformClient.catalog.list).mockRejectedValueOnce(new Error("Connection lost"))
+  await store.refreshLocalCatalog()
+  expect(store.catalogError).toBe("Connection lost")
+  expect(store.canManageCatalog).toBe(false)
+  const recovery = pendingCatalog()
+  vi.mocked(platformClient.catalog.list).mockReturnValueOnce(recovery.promise)
+  const refreshing = store.refreshLocalCatalog()
+  expect(store.catalogLoading).toBe(false)
+  expect(store.catalogError).toBe("Connection lost")
+  expect(store.canManageCatalog).toBe(false)
+  expect(store.findWorkspace(workspaceId)?.workspace.name).toBe("storefront")
+  recovery.resolve(catalogFixture())
+  await refreshing
+  expect(store.catalogError).toBeNull()
+  expect(store.canManageCatalog).toBe(true)
+})
+
+test("selecting a different machine starts with its own initial loading state and no previous workspace", async () => {
+  const first = setup()
+  await first.refreshLocalCatalog()
+  const host = getClient()
+  configureClient({ ...host, target: { id: "another-machine", local: false } })
+  try {
+    setActivePinia(createPinia())
+    const next = setup()
+    const initial = pendingCatalog()
+    vi.mocked(platformClient.catalog.list).mockReturnValueOnce(initial.promise)
+    const loading = next.refreshLocalCatalog()
+    expect(next.targetId).toBe("another-machine")
+    expect(next.catalogLoading).toBe(true)
+    expect(next.catalogIdentity).toBeNull()
+    expect(next.findWorkspace(workspaceId)).toBeNull()
+    expect(first.findWorkspace(workspaceId)?.workspace.name).toBe("storefront")
+    initial.resolve({ teamId: "2", machineId: "3", machineName: "another", workspaces: [] })
+    await loading
+    expect(next.catalogLoading).toBe(false)
+    expect(next.catalogIdentity).toEqual({ teamId: "2", machineId: "3" })
+  } finally { configureClient(host) }
 })
