@@ -2,6 +2,9 @@ packages:
   - apps/daemon
   - apps/desktop
   - crates/node
+  - apps/web
+  - packages/client
+  - packages/components
 
 allowBuilds:
   # Squirrel.Windows support; electron-builder's NSIS target does not use it.

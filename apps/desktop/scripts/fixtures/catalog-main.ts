@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
 import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
-import type { DeskfleetDesktopApi } from "../../src/shared/desktop-api.ts"
+import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
 
 export interface CatalogSmokeContext {
   phase: "create" | "restore"

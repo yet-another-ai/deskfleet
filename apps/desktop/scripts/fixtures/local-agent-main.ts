@@ -13,7 +13,7 @@ import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
 import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
-import type { DeskfleetDesktopApi } from "../../src/shared/desktop-api.ts"
+import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
 
 export interface LocalAgentSmokeContext {
   phase: "start" | "restart" | "disabled" | "external"

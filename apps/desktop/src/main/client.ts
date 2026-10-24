@@ -1,7 +1,7 @@
 import { app, powerMonitor } from "electron"
 import { join } from "node:path"
 import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
-import { resolveAppLocale } from "../shared/i18n.ts"
+import { resolveAppLocale } from "../../../../packages/client/src/i18n.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
 import { setMainLocale } from "./i18n.ts"
 import { keepRunningInBackground } from "./lifecycle.ts"

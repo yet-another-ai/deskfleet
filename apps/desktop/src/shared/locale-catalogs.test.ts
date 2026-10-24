@@ -1,9 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { expect, test } from "vitest"
-import { APP_LOCALES, type MessageTree } from "./i18n.ts"
+import { APP_LOCALES, type MessageTree } from "../../../../packages/client/src/i18n.ts"
 
-const sourceRoot = resolve(import.meta.dirname, "..")
+const sourceRoot = resolve(import.meta.dirname, "../../../../packages/components/src")
+const localeRoot = resolve(import.meta.dirname, "../../../../packages/components/locales")
 
 function flatten(tree: MessageTree, prefix = ""): Record<string, string> {
   return Object.fromEntries(
@@ -16,7 +17,7 @@ function flatten(tree: MessageTree, prefix = ""): Record<string, string> {
 }
 
 const catalogs = APP_LOCALES.map((locale) =>
-  flatten(JSON.parse(readFileSync(resolve(sourceRoot, "locales", `${locale}.json`), "utf8"))),
+  flatten(JSON.parse(readFileSync(resolve(localeRoot, `${locale}.json`), "utf8"))),
 )
 const english = catalogs[0]!
 

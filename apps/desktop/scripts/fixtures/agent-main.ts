@@ -7,7 +7,7 @@ import { promisify } from "node:util"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
 import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
-import type { DeskfleetDesktopApi } from "../../src/shared/desktop-api.ts"
+import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
 
 export interface AgentSmokeContext {
   phase: "create" | "restore"

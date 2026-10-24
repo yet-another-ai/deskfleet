@@ -1,6 +1,6 @@
 import { app, BrowserWindow, type WebPreferences } from "electron"
 import { join } from "node:path"
-import { LOCALE_ARGUMENT_PREFIX } from "../shared/i18n.ts"
+import { LOCALE_ARGUMENT_PREFIX } from "../../../../packages/client/src/i18n.ts"
 import { resolveRendererEntrypoint } from "../shared/renderer-security.ts"
 import { attachDesktopMedia } from "./desktop-media.ts"
 import { attachSettings } from "./settings.ts"

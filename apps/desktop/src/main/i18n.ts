@@ -1,6 +1,6 @@
-import enUS from "../locales/en-US.json"
-import zhCmnHansCN from "../locales/zh-cmn-Hans-CN.json"
-import { DEFAULT_LOCALE, translate, type AppLocale, type MessageTree } from "../shared/i18n.ts"
+import enUS from "../../../../packages/components/locales/en-US.json"
+import zhCmnHansCN from "../../../../packages/components/locales/zh-cmn-Hans-CN.json"
+import { DEFAULT_LOCALE, translate, type AppLocale, type MessageTree } from "../../../../packages/client/src/i18n.ts"
 
 const catalogs: Record<AppLocale, MessageTree> = {
   "en-US": enUS,

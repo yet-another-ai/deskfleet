@@ -4,7 +4,7 @@ import { startDaemon } from "@deskfleet/daemon"
 import { DaemonClient } from "@deskfleet/daemon/control-client"
 import { daemonDiscoveryPath } from "@deskfleet/daemon/control-discovery"
 import type { LocalAgentRuntime } from "./local-agent-controller.ts"
-import type { ScreenCapturePermission } from "../shared/local-agent.ts"
+import type { ScreenCapturePermission } from "../../../../packages/client/src/local-agent.ts"
 
 export interface HostedDaemon {
   /** Settles after discovery and all native/server resources have closed. */

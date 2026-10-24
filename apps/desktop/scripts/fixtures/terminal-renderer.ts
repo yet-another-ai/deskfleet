@@ -1,7 +1,7 @@
 import { Terminal } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
-import { decodeTerminalBytes, TerminalClient } from "../../src/renderer/src/services/terminal-client.ts"
-import type { DeskfleetDesktopApi } from "../../src/shared/desktop-api.ts"
+import { decodeTerminalBytes, TerminalClient } from "../../../../packages/components/src/services/terminal-client.ts"
+import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
 
 const { deskfleet, terminalSmoke } = window as unknown as {
   deskfleet: DeskfleetDesktopApi

@@ -1,13 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron"
-import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT, type DesktopEvent, type DesktopMediaResult, type IceCandidate } from "../shared/desktop-media.ts"
-import type { DeskfleetDesktopApi } from "../shared/desktop-api.ts"
-import { DEFAULT_LOCALE, isAppLocale, LOCALE_ARGUMENT_PREFIX } from "../shared/i18n.ts"
+import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT, type DesktopEvent, type DesktopMediaResult, type IceCandidate } from "../../../../packages/client/src/desktop-media.ts"
+import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
+import { DEFAULT_LOCALE, isAppLocale, LOCALE_ARGUMENT_PREFIX } from "../../../../packages/client/src/i18n.ts"
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
-import { TERMINAL_SESSION_EVENT, type TerminalSessionEvent } from "../shared/terminal.ts"
-import { CATALOG_CHANGED_EVENT } from "../shared/catalog.ts"
-import { PROVIDERS_CHANGED_EVENT } from "../shared/providers.ts"
-import type { LocalAgentState } from "../shared/local-agent.ts"
-import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type SettingsResult } from "../shared/settings.ts"
+import { TERMINAL_SESSION_EVENT, type TerminalSessionEvent } from "../../../../packages/client/src/terminal.ts"
+import { CATALOG_CHANGED_EVENT } from "../../../../packages/client/src/catalog.ts"
+import { PROVIDERS_CHANGED_EVENT } from "../../../../packages/client/src/providers.ts"
+import type { LocalAgentState } from "../../../../packages/client/src/local-agent.ts"
+import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type SettingsResult } from "../../../../packages/client/src/settings.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))

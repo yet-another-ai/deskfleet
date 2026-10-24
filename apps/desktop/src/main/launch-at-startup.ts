@@ -1,5 +1,5 @@
 import { app } from "electron"
-import type { LaunchAtStartupState } from "../shared/settings.ts"
+import type { LaunchAtStartupState } from "../../../../packages/client/src/settings.ts"
 
 function available(): boolean {
   // Development runs use Electron's executable, not the installed deskfleet app.

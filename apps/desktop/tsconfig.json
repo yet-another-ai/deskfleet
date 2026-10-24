@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
@@ -15,7 +19,19 @@
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "types": ["node", "vite/client"]
+    "types": [
+      "node",
+      "vite/client"
+    ]
   },
-  "include": ["vite.*.config.ts", "vitest.config.ts", "uno.config.ts", "build", "scripts", "src"]
+  "include": [
+    "vite.*.config.ts",
+    "vitest.config.ts",
+    "uno.config.ts",
+    "build",
+    "scripts",
+    "src",
+    "../../packages/components/src",
+    "../../packages/client/src"
+  ]
 }

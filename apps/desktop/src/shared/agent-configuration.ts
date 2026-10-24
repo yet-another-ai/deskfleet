@@ -1,1 +1,1 @@
-export type { AgentChoice, AgentConfigOption, AgentConfiguration, AgentConfigurationParams } from "../../../daemon/src/agent-configuration-protocol.ts"
+export * from "../../../../packages/client/src/agent-configuration.ts"

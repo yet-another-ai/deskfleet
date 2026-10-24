@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import type { LocalAgentState, ScreenCapturePermission } from "../shared/local-agent.ts"
+import type { LocalAgentState, ScreenCapturePermission } from "../../../../packages/client/src/local-agent.ts"
 
 export interface LocalAgentConnection {
   readonly closed: boolean

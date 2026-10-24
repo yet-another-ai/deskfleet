@@ -1,7 +1,7 @@
 import { hostname } from "node:os"
 import { validateControlParams } from "../../../daemon/src/control-request.ts"
-import type { DesktopEvent, LocalDesktopTarget } from "../shared/desktop-media.ts"
-import type { TerminalSessionEvent } from "../shared/terminal.ts"
+import type { DesktopEvent, LocalDesktopTarget } from "../../../../packages/client/src/desktop-media.ts"
+import type { TerminalSessionEvent } from "../../../../packages/client/src/terminal.ts"
 import { DaemonClient } from "./daemon-client.ts"
 
 /** Restricts IPC calls and events to the peer sessions owned by one renderer. */

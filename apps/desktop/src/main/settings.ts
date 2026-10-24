@@ -1,6 +1,6 @@
 import { ipcMain, type BrowserWindow, type WebContents } from "electron"
-import type { LocalAgentState } from "../shared/local-agent.ts"
-import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT } from "../shared/settings.ts"
+import type { LocalAgentState } from "../../../../packages/client/src/local-agent.ts"
+import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT } from "../../../../packages/client/src/settings.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { getLaunchAtStartup, setLaunchAtStartup } from "./launch-at-startup.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"

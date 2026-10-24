@@ -41,6 +41,8 @@
     "vue": "3.6.0-rc.12",
     "vue-i18n": "11.4.16",
     "vue-router": "5.4.0",
-    "vue-tsc": "3.3.13"
+    "vue-tsc": "3.3.13",
+    "@deskfleet/client": "workspace:*",
+    "@deskfleet/components": "workspace:*"
   }
 }

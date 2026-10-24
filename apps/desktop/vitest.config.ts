@@ -25,8 +25,8 @@ export default defineConfig({
         test: {
           name: "renderer",
           environment: "happy-dom",
-          setupFiles: [resolve(import.meta.dirname, "src/renderer/src/test/setup.ts")],
-          include: ["src/renderer/src/**/*.test.ts"],
+          setupFiles: [resolve(import.meta.dirname, "../../packages/components/src/test/setup.ts")],
+          include: ["../../packages/components/src/**/*.test.ts"],
         },
       },
     ],
