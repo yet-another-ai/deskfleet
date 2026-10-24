@@ -6,17 +6,22 @@ import { useRouter } from "vue-router"
 import IconButton from "../common/IconButton.vue"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { client as platformClient } from "@deskfleet/client/platform"
+import { useAccountContext } from "../../composables/useAccountContext.ts"
+import AccountMenu from "./AccountMenu.vue"
 
 const { t } = useI18n()
 const router = useRouter()
 const fleet = useFleetStore()
+const account = useAccountContext()
 const name = computed(() => platformClient.target ? fleet.machines.find(machine => machine.id === fleet.targetId)?.name ?? t("catalog.local") : t("catalog.local"))
 const initial = computed(() => name.value.charAt(0).toUpperCase())
 </script>
 
 <template>
   <footer class="flex h-12 shrink-0 items-center gap-1 border-t border-ui-border px-2">
+    <AccountMenu v-if="account" />
     <div
+      v-else
       class="flex min-w-0 flex-1 items-center gap-2 px-1"
     >
       <span

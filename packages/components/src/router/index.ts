@@ -70,6 +70,11 @@ export const router = createRouter({
           name: "settings-agents",
           component: () => import("../components/settings/AgentsSettings.vue"),
         },
+        {
+          path: "team",
+          name: "settings-team",
+          component: () => import("../components/settings/TeamSettingsPage.vue"),
+        },
       ],
     },
     { path: "/:pathMatch(.*)*", redirect: "/" },

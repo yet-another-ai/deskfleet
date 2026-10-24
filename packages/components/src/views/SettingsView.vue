@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { client as platformClient } from "@deskfleet/client/platform"
 
-import { ArrowLeft, Bot, SlidersHorizontal } from "@lucide/vue"
+import { ArrowLeft, Bot, SlidersHorizontal, Users } from "@lucide/vue"
 import { onBeforeUnmount, onMounted } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRouter } from "vue-router"
 import SidebarLink from "../components/sidebar/SidebarLink.vue"
+import { useAccountContext } from "../composables/useAccountContext.ts"
 
 const { t } = useI18n()
 const router = useRouter()
 const platform = platformClient.platform
+const account = useAccountContext()
 
 // Section links replace their history entry, so the previous entry is the page Settings opened from.
 function leave(): void {
@@ -40,6 +42,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", leaveOnEscape))
       <div class="flex flex-col gap-0.5 px-2">
         <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
         <SidebarLink :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
+        <SidebarLink v-if="account?.team.value" :to="{ name: 'settings-team' }" :icon="Users" :label="t('account.teamSettings')" replace />
       </div>
     </nav>
     <div class="flex min-w-0 flex-1 flex-col">

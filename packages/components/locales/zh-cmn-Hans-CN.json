@@ -437,6 +437,22 @@
     "enrollmentIdentity": "在目标机器启动 daemon 并运行下方命令，然后填写输出的身份信息。",
     "enrollmentSecret": "机器凭据仅在此处显示。请保密并在目标机器导入。",
     "pasteCredentials": "将以下 JSON 粘贴到命令的标准输入中，然后发送输入结束信号。",
-    "enrollmentCredentials": "机器注册凭据"
+    "enrollmentCredentials": "机器注册凭据",
+    "general": "常规",
+    "you": "（你）",
+    "memberActions": "{name} 的操作",
+    "removeMember": "移除成员",
+    "noMembers": "暂无可显示的成员。",
+    "inviteReady": "邀请已创建",
+    "inviteDescription": "邀请其他人加入 {team}。",
+    "done": "完成",
+    "memberDescription": "成员可以使用团队机器，并连接自己的电脑。",
+    "adminDescription": "管理员还可以管理团队成员和移除机器。",
+    "enrollmentReady": "完成机器连接",
+    "enrollmentNextStep": "在目标机器上导入凭据。",
+    "headlessDescription": "连接运行 deskfleet 的服务器或其他电脑。",
+    "installationIdentity": "安装身份",
+    "localMachineIdentity": "本机机器 ID",
+    "machineSetupDescription": "连接一台计算机，开始团队协作。"
   }
 }

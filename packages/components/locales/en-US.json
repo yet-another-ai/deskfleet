@@ -437,6 +437,22 @@
     "enrollmentIdentity": "On the target machine, start the daemon and run this command. Enter its identity below.",
     "enrollmentSecret": "This machine credential is shown only here. Keep it private and import it on the target machine.",
     "pasteCredentials": "Paste the following JSON into the command’s standard input, then send end-of-input.",
-    "enrollmentCredentials": "Machine enrollment credentials"
+    "enrollmentCredentials": "Machine enrollment credentials",
+    "general": "General",
+    "you": "(you)",
+    "memberActions": "Actions for {name}",
+    "removeMember": "Remove member",
+    "noMembers": "No members to display.",
+    "inviteReady": "Invitation ready",
+    "inviteDescription": "Give someone access to {team}.",
+    "done": "Done",
+    "memberDescription": "Members can use team machines and connect their own computers.",
+    "adminDescription": "Admins can also manage team members and remove machines.",
+    "enrollmentReady": "Finish connecting this machine",
+    "enrollmentNextStep": "Import the credential on the target machine.",
+    "headlessDescription": "Connect a server or another computer running deskfleet.",
+    "installationIdentity": "Installation identity",
+    "localMachineIdentity": "Local machine ID",
+    "machineSetupDescription": "Connect a computer to start working with your team."
   }
 }

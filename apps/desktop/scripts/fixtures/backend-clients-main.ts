@@ -1,5 +1,6 @@
 import { app, BrowserWindow, net, protocol } from "electron"
-import { join } from "node:path"
+import { mkdir, writeFile } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { installCentralAccount } from "../../src/main/central-account.ts"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
@@ -36,15 +37,18 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     const element = [...root.querySelectorAll("button")].find(value => value.textContent?.trim() === label || value.getAttribute("aria-label") === label)
     require(element, `Missing ${label} button`); return element
   }
-  function selectMachine(index: number): void {
-    const select = document.querySelector<HTMLSelectElement>('select[aria-label="Machine"]')!
-    select.value = context.machines[index]!
-    select.dispatchEvent(new Event("change", { bubbles: true }))
+  async function selectMachine(index: number): Promise<void> {
+    await until(() => !!document.querySelector<HTMLButtonElement>('button[aria-label="Machine"]:not(:disabled)'), "machine switcher")
+    button("Machine").click()
+    await until(() => !!document.querySelector(`button[data-machine-id="${context.machines[index]}"]`), "machine menu")
+    const item = document.querySelector<HTMLButtonElement>(`button[data-machine-id="${context.machines[index]}"]`)!
+    require(item.getAttribute("role") === "menuitemradio", "Machine choices must expose radio menu semantics")
+    item.click()
+    await until(() => !document.querySelector('[role="menu"][aria-label="Machine"]'), "closed machine menu")
   }
   async function session(index: number): Promise<void> {
-    await until(() => !!document.querySelector('select[aria-label="Machine"]'), "machine selector")
-    selectMachine(index)
-    await until(() => !!document.querySelector("aside")?.textContent?.includes(`Machine ${index}`), "machine catalog")
+    await selectMachine(index)
+    await until(() => [...document.querySelectorAll('aside a[href*="/workspaces/"]')].some(link => link.textContent?.trim() === `Machine ${index}`), "machine catalog")
     location.hash = `/sessions/${context.sessionId}`
     await until(() => !!document.querySelector("main")?.textContent?.includes(`Machine ${index} conversation`), "session route")
   }
@@ -54,7 +58,9 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     require(!JSON.stringify(await api.central.status()).includes('"token"'), "The Electron renderer must not receive the app session token")
   }
   if (offline) {
-    await until(() => !!document.querySelector(`option[value="${context.machines[0]}"]`)?.textContent?.includes("Offline"), "offline machine presence")
+    button("Machine").click()
+    await until(() => !!document.querySelector(`button[data-machine-id="${context.machines[0]}"]`)?.textContent?.includes("Offline"), "offline machine presence")
+    button("Machine").click()
     await session(1)
     await session(0)
     await until(() => !!document.querySelector("main")?.textContent?.includes(`Prompt from ${context.mode}`), "offline synchronized history")
@@ -63,6 +69,12 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   }
   await session(0)
   await until(() => !!document.querySelector('textarea[aria-label="Prompt"]'), "session composer")
+  await until(() => !document.querySelector("aside")?.textContent?.includes("Loading workspaces"), "initial workspace load")
+  let flashedLoading = false
+  const catalogObserver = new MutationObserver(() => {
+    if (document.querySelector("aside")?.textContent?.includes("Loading workspaces")) flashedLoading = true
+  })
+  catalogObserver.observe(document.querySelector("aside")!, { subtree: true, childList: true, characterData: true })
   const textarea = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]')!
   textarea.value = `Prompt from ${context.mode}`
   textarea.dispatchEvent(new Event("input", { bubbles: true }))
@@ -85,12 +97,89 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   await until(() => !!document.querySelector("dialog[open]"), "restore confirmation")
   button("Restore session", document.querySelector("dialog[open]")!).click()
   await until(() => !document.querySelector("dialog[open]") && !document.querySelector("main")?.textContent?.includes("This session is archived"), "restore state")
+  // The prompt and archive/restore publish real central catalog updates. Keep
+  // observing beyond their coalescing timer to catch a transient loading title.
+  await new Promise(resolve => setTimeout(resolve, 2_000))
+  catalogObserver.disconnect()
+  require(!flashedLoading, "Background catalog updates flashed the workspace loading title")
   await session(1)
   await until(() => !!document.querySelector('button[aria-label="Session actions"]'), "second machine conversation snapshot")
   require(!document.querySelector("main")!.textContent!.includes(`Prompt from ${context.mode}`), "Same local Session ID leaked across machines")
   await session(0)
   await until(() => !!document.querySelector("main")?.textContent?.includes(`Prompt from ${context.mode}`), "reattached conversation")
   return { mode: context.mode, offline: false }
+}
+
+
+type CaptureView = "session" | "workspace" | "team-menu" | "machine-menu" | "account-menu" | "settings-team" | "create-team" | "invite" | "enroll"
+
+/** Navigation stays within the disposable fixture's authenticated renderer. */
+async function prepareCapture(context: BackendClientsContext, view: CaptureView): Promise<void> {
+  async function until(predicate: () => boolean, description: string): Promise<void> {
+    const end = Date.now() + 15_000
+    while (!predicate()) {
+      if (Date.now() > end) throw new Error(`Screenshot ${description} timed out: ${document.body.innerText}`)
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+  }
+  for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog[open]")) dialog.close()
+  for (const trigger of document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"][aria-expanded="true"]')) trigger.click()
+  location.hash = `/sessions/${context.sessionId}`
+  await until(() => !!document.querySelector('button[aria-label="Machine"]') && !!document.querySelector("main")?.textContent?.includes("Machine 0 conversation"), "session")
+  if (view === "workspace") {
+    const link = document.querySelector<HTMLAnchorElement>('aside a[href*="/workspaces/"]')
+    if (!link) throw new Error("Fixture workspace link is missing")
+    link.click()
+    await until(() => location.hash.startsWith("#/workspaces/") && !!document.querySelector("main")?.textContent?.includes("Directories"), "workspace")
+  } else if (view === "settings-team" || view === "invite") {
+    document.querySelector<HTMLButtonElement>('button[aria-label="Team"]')!.click()
+    await until(() => !!document.querySelector('[role="menu"][aria-label="Team"]'), "team menu")
+    const manage = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === "Team settings")
+    if (!manage) throw new Error("Team settings menu item is missing")
+    manage.click()
+    await until(() => location.hash === "#/settings/team" && !!document.querySelector("[data-member-id]"), "team settings")
+    if (view === "invite") {
+      const invite = [...document.querySelectorAll<HTMLButtonElement>("main button")].find(button => button.textContent?.trim() === "Invite a member")
+      if (!invite) throw new Error("Invite a member button is missing")
+      invite.click()
+      await until(() => !!document.querySelector('dialog[open] input[name="invite-email"]'), "invite dialog")
+    }
+  } else if (view === "create-team" || view === "enroll") {
+    const label = view === "create-team" ? "Team" : "Machine"
+    const action = view === "create-team" ? "Create your team" : "Enroll headless machine"
+    document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click()
+    await until(() => !!document.querySelector(`[role="menu"][aria-label="${label}"]`), label)
+    const create = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === action)
+    if (!create) throw new Error(`${action} menu item is missing`)
+    create.click()
+    await until(() => !!document.querySelector("dialog[open]")?.textContent?.includes(action), `${view} dialog`)
+  } else if (view.endsWith("-menu")) {
+    const label = view === "team-menu" ? "Team" : view === "machine-menu" ? "Machine" : "Client smoke"
+    const trigger = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+    if (!trigger) throw new Error(`Missing ${label} menu trigger`)
+    trigger.click()
+    await until(() => !!document.querySelector(`[role="menu"][aria-label="${label}"]`), label)
+  }
+  await document.fonts.ready
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+}
+
+async function captureScreenshots(window: BrowserWindow, context: BackendClientsContext): Promise<void> {
+  if (!process.env.DESKFLEET_SMOKE_SCREENSHOTS) return
+  const directory = resolve(process.env.DESKFLEET_SMOKE_SCREENSHOTS)
+  await mkdir(directory, { recursive: true })
+  for (const [width, height] of [[1100, 740], [800, 600]] as const) {
+    window.setContentSize(width, height)
+    for (const view of ["session", "workspace", "team-menu", "machine-menu", "account-menu", "settings-team", "create-team", "invite", "enroll"] as const) {
+      await window.webContents.executeJavaScript(`(${prepareCapture.toString()})(${JSON.stringify(context)},${JSON.stringify(view)})`)
+      const image = await window.webContents.capturePage()
+      if (image.isEmpty()) throw new Error(`Empty screenshot for ${context.mode} ${view}`)
+      await writeFile(join(directory, `${context.mode}-${width}x${height}-${view}.png`), image.toPNG())
+    }
+  }
+  await window.webContents.executeJavaScript(`(${prepareCapture.toString()})(${JSON.stringify(context)},"session")`)
+  window.setContentSize(1440, 950)
+  process.stderr.write(`${context.mode} UI screenshots saved to ${directory}\n`)
 }
 
 async function openTerminal(machineId: string): Promise<void> {
@@ -157,11 +246,12 @@ void app.whenReady().then(async () => {
   await window.webContents.executeJavaScript(`(() => { const input=document.querySelector('input[type="url"]');input.value=${JSON.stringify(context.backend)};input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('form').requestSubmit(); })()`)
   // The Web login replaces the document twice. Wait from the main process for the app to return.
   const deadline = Date.now() + 30_000
-  while (!await window.webContents.executeJavaScript(`!!document.querySelector('select[aria-label="Machine"]')`).catch(() => false)) {
+  while (!await window.webContents.executeJavaScript(`!!document.querySelector('button[aria-label="Machine"]')`).catch(() => false)) {
     if (Date.now() > deadline) throw new Error(`OIDC login timed out: ${await window.webContents.executeJavaScript("document.body.innerText")}; authorization: ${await Promise.all(authorizations.map(browser => browser.webContents.executeJavaScript("location.href+' '+document.body.innerText")))}`)
     await new Promise(resolve => setTimeout(resolve, 50))
   }
   const result = await window.webContents.executeJavaScript(`(${exercise.toString()})(${JSON.stringify(context)})`)
+  await captureScreenshots(window, context)
   await window.webContents.executeJavaScript(`(${openTerminal.toString()})(${JSON.stringify(context.machines[0])})`)
   const terminalTitle = `DF_${context.mode}_REMOTE_PTY`
   const command = process.platform === "win32" ? `powershell -NoProfile -Command "Write-Output ('DF_' + '${context.mode}' + '_REMOTE_PTY')"` : `printf 'DF_%s_REMOTE_PTY\\n' ${context.mode}`

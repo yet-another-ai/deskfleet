@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, createApp, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, vaporInteropPlugin, type App as VueApp } from "vue"
+import { computed, createApp, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, vaporInteropPlugin, type App as VueApp } from "vue"
+import { ArrowLeft, Monitor, Plus, Users } from "@lucide/vue"
 import { createPinia, disposePinia } from "pinia"
 import { useI18n } from "vue-i18n"
 import type { AccountState, LocalEnrollment, Machine, Team } from "@deskfleet/client/central"
@@ -9,6 +10,10 @@ import { remoteMachineClient } from "@deskfleet/client/remote"
 import App from "./App.vue"
 import EnrollMachine from "./components/settings/EnrollMachine.vue"
 import TeamSettings from "./components/settings/TeamSettings.vue"
+import TeamAccessDialog from "./components/settings/TeamAccessDialog.vue"
+import AccountSwitcher from "./components/sidebar/AccountSwitcher.vue"
+import AccountMenu from "./components/sidebar/AccountMenu.vue"
+import { accountContextKey, type AccountContext } from "./composables/useAccountContext.ts"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 
@@ -21,12 +26,9 @@ const teams = ref<Team[]>([])
 const teamId = ref("")
 const machines = ref<Machine[]>([])
 const machineId = ref("")
-const teamName = ref("")
 const teamSettings = ref(false)
-const creatingTeam = ref(false)
-const joining = ref(false)
+const teamDialog = ref<"create" | "join">()
 const enrollingHeadless = ref(false)
-const inviteCode = ref("")
 const team = computed(() => teams.value.find(value => value.id === teamId.value))
 const enrollment = ref<LocalEnrollment>()
 const canEnroll = computed(() => !!enrollment.value && (!enrollment.value.configured || enrollment.value.revoked))
@@ -47,7 +49,7 @@ async function action(work: () => Promise<void>): Promise<void> {
 }
 async function load(): Promise<void> {
   account.value = await central.status(); serverUrl.value = account.value.serverUrl
-  if (!account.value.user) { release(); teams.value = []; machines.value = []; return }
+  if (!account.value.user) { release(); teams.value = []; machines.value = []; teamId.value = ""; machineId.value = ""; teamSettings.value = false; return }
   teams.value = await central.teams()
   enrollment.value = await central.localEnrollment?.().catch(() => undefined)
   if (!teams.value.some(team => team.id === teamId.value)) {
@@ -64,31 +66,46 @@ async function loadMachines(): Promise<void> {
   machines.value = teamId.value ? await central.machines(teamId.value) : []
   if (!machines.value.some(item => item.id === machineId.value)) { machineId.value = machines.value[0]?.id ?? ""; await selectMachine() }
 }
-async function selectTeam(): Promise<void> { release(); machineId.value = ""; await action(loadMachines) }
+async function selectTeam(): Promise<void> { release(); teamSettings.value = false; machineId.value = ""; await action(loadMachines) }
 async function selectMachine(): Promise<void> {
   release()
-  if (!machine.value) return
+  teamSettings.value = false
+  const selected = machine.value
+  if (!selected) return
   const current = generation
   await nextTick()
   if (current !== generation || !surface.value) return
   await router.replace("/")
-  remote = remoteMachineClient(props.host, central, machine.value)
+  if (current !== generation || !surface.value) return
+  remote = remoteMachineClient(props.host, central, selected)
   configureClient(remote.api)
   workspaceState = createPinia()
-  workspace = createApp(App).use(workspaceState).use(router).use(i18n)
+  workspace = createApp(App).provide(accountContextKey, context).use(workspaceState).use(router).use(i18n)
   if (vaporInteropPlugin) workspace.use(vaporInteropPlugin)
   workspace.mount(surface.value)
 }
 async function login(): Promise<void> {
   await action(async () => { await central.setServer(serverUrl.value); await central.login(); await load() })
 }
-async function createTeam(): Promise<void> {
-  await action(async () => { const team = await central.createTeam(teamName.value.trim()); teamName.value = ""; creatingTeam.value = false; teams.value.push(team); teamId.value = team.id; await selectTeam() })
+async function createTeam(name: string): Promise<void> {
+  await action(async () => { const team = await central.createTeam(name); teamDialog.value = undefined; teams.value.push(team); teamId.value = team.id; await selectTeam() })
 }
-async function acceptInvite(): Promise<void> { await action(async () => { const joined = await central.acceptInvite(inviteCode.value.trim()); inviteCode.value = ""; joining.value = false; teamId.value = joined.id; await load() }) }
+async function acceptInvite(code: string): Promise<void> { await action(async () => { const joined = await central.acceptInvite(code); teamDialog.value = undefined; release(); machineId.value = ""; teamId.value = joined.id; await load() }) }
 async function enroll(): Promise<void> {
   await action(async () => { enrollment.value = await central.enrollLocal!(teamId.value); await loadMachines() })
 }
+function openTeamDialog(mode: "create" | "join"): void { error.value = undefined; teamDialog.value = mode }
+const context: AccountContext = {
+  central, account, teams, team, teamId, machines, machineId, enrollment, canEnroll, busy, error, connected,
+  selectTeam: async id => { if (teamId.value !== id) { teamId.value = id; await selectTeam() } },
+  selectMachine: async id => { if (machineId.value !== id) { machineId.value = id; await action(selectMachine) } },
+  createTeam: () => openTeamDialog("create"), joinTeam: () => openTeamDialog("join"),
+  manageTeam: () => { if (machineId.value) void router.push({ name: "settings-team" }); else teamSettings.value = true },
+  enrollHeadless: () => { enrollingHeadless.value = true }, enrollLocal: enroll,
+  refresh: () => action(refresh), reload: () => action(load),
+  logout: () => action(async () => { await central.logout(); await load() }),
+}
+provide(accountContextKey, context)
 const unsubscribe = central.onEvent(event => {
   if (event.type === "accountChanged") void action(load)
   if (event.type === "connection") connected.value = event.connected
@@ -102,52 +119,49 @@ onBeforeUnmount(() => { unsubscribe(); release() })
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-ui-canvas text-ui-text">
-    <header class="app-no-drag flex shrink-0 flex-wrap items-center gap-3 border-b border-ui-border px-4 py-3" :class="host.platform === 'darwin' && 'pl-20'">
-      <span class="font-semibold">deskfleet</span>
-      <template v-if="account.user">
-        <select v-model="teamId" :aria-label="t('account.team')" class="catalog-input !w-auto" :disabled="busy" @change="selectTeam">
-          <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.name }}</option>
-        </select>
-        <select v-model="machineId" :aria-label="t('account.machine')" class="catalog-input !w-auto" :disabled="busy" @change="selectMachine">
-          <option value="" disabled>{{ t('account.chooseMachine') }}</option>
-          <option v-for="item in machines" :key="item.id" :value="item.id">{{ item.name }}{{ item.online ? '' : ` · ${t('machine.offline')}` }}</option>
-        </select>
-        <button class="catalog-button" :disabled="busy" @click="creatingTeam = !creatingTeam">{{ t('account.createTeam') }}</button>
-        <button v-if="team" class="catalog-button" :disabled="busy" @click="enrollingHeadless = true">{{ t('account.enrollHeadless') }}</button>
-        <button v-if="team" class="catalog-button" :disabled="busy" @click="teamSettings = true">{{ t('account.teamSettings') }}</button>
-        <button class="catalog-button" :disabled="busy" @click="joining = !joining">{{ t('account.joinTeam') }}</button>
-        <button class="catalog-button" :disabled="busy" @click="action(refresh)">{{ t('catalog.refresh') }}</button>
-        <button v-if="central.enrollLocal && canEnroll && team" class="catalog-button" :disabled="busy" @click="enroll">{{ t(enrollment?.revoked ? 'account.reenrollThisMachine' : 'account.enrollThisMachine') }}</button>
-        <span class="ml-auto text-xs text-ui-text-muted">{{ account.user.name }}</span>
-        <button class="catalog-button" :disabled="busy" @click="action(async () => { await central.logout(); await load() })">{{ t('account.signOut') }}</button>
-      </template>
-    </header>
+  <div class="flex h-full flex-col overflow-hidden bg-ui-canvas text-ui-text">
     <EnrollMachine v-if="enrollingHeadless && team" :central="central" :team-id="team.id" :server-url="account.serverUrl" @close="enrollingHeadless = false" @enrolled="action(loadMachines)" />
-    <TeamSettings v-if="teamSettings && team && account.user" :central="central" :team="team" :user-id="account.user.id" @close="teamSettings = false" @changed="action(load)" />
-    <form v-if="creatingTeam && teams.length" class="flex gap-2 border-b border-ui-border p-3" @submit.prevent="createTeam"><input v-model="teamName" class="catalog-input" :aria-label="t('account.teamName')" :placeholder="t('account.teamName')" required /><button class="catalog-button shrink-0" :disabled="busy">{{ t('catalog.create') }}</button></form>
-    <form v-if="joining" class="flex gap-2 border-b border-ui-border p-3" @submit.prevent="acceptInvite"><input v-model="inviteCode" class="catalog-input" :aria-label="t('account.inviteCode')" :placeholder="t('account.inviteCode')" required /><button class="catalog-button shrink-0" :disabled="busy">{{ t('account.joinTeam') }}</button></form>
-    <p v-if="error" role="alert" class="m-0 border-b border-ui-border px-4 py-2 text-sm text-ui-danger">{{ error }}</p>
-    <p v-if="account.user && !connected" role="status" class="m-0 px-4 py-2 text-sm text-ui-warning">{{ t('account.signalingOffline') }}</p>
-    <p v-if="account.user && enrollment?.revoked" role="status" class="m-0 border-b border-ui-border px-4 py-2 text-sm text-ui-text-muted">{{ t('account.enrollmentRevoked') }}</p>
-    <div v-if="!account.user" class="flex flex-1 items-center justify-center p-6">
-      <form class="ui-card flex w-full max-w-md flex-col gap-4 p-6" @submit.prevent="login">
-        <h1 class="m-0 text-xl font-semibold">{{ t('account.signIn') }}</h1>
-        <label class="flex flex-col gap-2 text-sm">{{ t('account.server') }}<input v-model="serverUrl" type="url" class="catalog-input" required :disabled="busy" placeholder="https://deskfleet.example.com" /></label>
-        <button class="catalog-button" type="submit" :disabled="busy">{{ busy ? t('settings.loading') : t('account.continueOidc') }}</button>
-      </form>
-    </div>
-    <div v-else-if="!machineId" class="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center gap-4 p-6">
-      <h1 class="m-0 text-xl font-semibold">{{ teams.length ? t('account.addMachine') : t('account.createTeam') }}</h1>
-      <form v-if="!teams.length" class="flex gap-2" @submit.prevent="createTeam">
-        <input v-model="teamName" class="catalog-input" :placeholder="t('account.teamName')" required />
-        <button class="catalog-button shrink-0" :disabled="busy">{{ t('catalog.create') }}</button>
-      </form>
-      <template v-else-if="central.enrollLocal && team">
-        <p v-if="enrollment?.configured && !enrollment.revoked" class="text-sm text-ui-text-muted">{{ t('account.alreadyEnrolled', { server: enrollment.serverUrl ?? '', team: enrollment.teamId ?? '' }) }}</p>
-        <button v-else-if="canEnroll" class="catalog-button" :disabled="busy" @click="enroll">{{ t(enrollment?.revoked ? 'account.reenrollThisMachine' : 'account.enrollThisMachine') }}</button>
-      </template>
-      <p v-else class="text-sm text-ui-text-muted">{{ t('account.headlessEnrollment') }}</p>
+    <TeamAccessDialog v-if="teamDialog" :mode="teamDialog" :busy="busy" :error="error" @close="teamDialog = undefined" @submit="teamDialog === 'create' ? createTeam($event) : acceptInvite($event)" />
+    <template v-if="!account.user">
+      <div class="app-drag titlebar-overlay-inset flex h-12 shrink-0 items-center px-5 text-[13px] font-medium" :class="host.platform === 'darwin' && 'pl-20'">deskfleet</div>
+      <div class="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-6">
+        <form class="flex w-full max-w-sm flex-col gap-5" @submit.prevent="login">
+          <div><h1 class="m-0 text-xl font-semibold">{{ t('account.signIn') }}</h1><p class="mb-0 mt-2 text-sm text-ui-text-muted">deskfleet</p></div>
+          <label class="flex flex-col gap-2 text-[13px] text-ui-text-muted">{{ t('account.server') }}<input v-model="serverUrl" type="url" class="catalog-input text-ui-text" required :disabled="busy" placeholder="https://deskfleet.example.com" /></label>
+          <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
+          <button class="catalog-button justify-center" type="submit" :disabled="busy">{{ busy ? t('settings.loading') : t('account.continueOidc') }}</button>
+        </form>
+      </div>
+    </template>
+    <div v-else-if="!machineId" class="flex min-h-0 flex-1">
+      <aside class="flex w-65 shrink-0 flex-col border-r border-ui-border bg-ui-sidebar">
+        <div class="app-drag h-12 shrink-0" />
+        <AccountSwitcher />
+        <div class="flex-1" />
+        <footer class="flex h-12 shrink-0 items-center border-t border-ui-border px-2"><AccountMenu /></footer>
+      </aside>
+      <main class="flex min-w-0 flex-1 flex-col">
+        <div class="app-drag titlebar-overlay-inset flex h-12 shrink-0 items-center px-5">
+          <button v-if="teamSettings" type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover" @click="teamSettings = false"><ArrowLeft :size="16" aria-hidden="true" />{{ t('settings.back') }}</button>
+        </div>
+        <div v-if="teamSettings && team && account.user" class="min-h-0 flex-1 overflow-y-auto px-14 pb-10"><div class="mx-auto max-w-3xl"><TeamSettings :central="central" :team="team" :user-id="account.user.id" @changed="action(load)" /></div></div>
+        <div v-else class="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-4 px-6 pb-12 text-center">
+          <component :is="teams.length ? Monitor : Users" :size="32" :stroke-width="1.5" class="text-ui-text-faint" aria-hidden="true" />
+          <h1 class="m-0 text-lg font-semibold">{{ t(teams.length ? 'account.addMachine' : 'account.createTeam') }}</h1>
+          <template v-if="!teams.length">
+            <button type="button" class="catalog-button" :disabled="busy" @click="openTeamDialog('create')"><Plus :size="15" aria-hidden="true" />{{ t('account.createTeam') }}</button>
+            <button type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover" :disabled="busy" @click="openTeamDialog('join')">{{ t('account.joinTeam') }}</button>
+          </template>
+          <template v-else>
+            <p class="m-0 text-sm leading-relaxed text-ui-text-muted">{{ t('account.machineSetupDescription') }}</p>
+            <template v-if="central.enrollLocal">
+              <p v-if="enrollment?.configured && !enrollment.revoked" class="m-0 text-[13px] text-ui-text-muted">{{ t('account.alreadyEnrolled', { server: enrollment.serverUrl ?? '', team: enrollment.teamId ?? '' }) }}</p>
+              <button v-else-if="canEnroll" type="button" class="catalog-button" :disabled="busy" @click="enroll">{{ t(enrollment?.revoked ? 'account.reenrollThisMachine' : 'account.enrollThisMachine') }}</button>
+            </template>
+            <button type="button" class="catalog-button" :disabled="busy" @click="enrollingHeadless = true"><Plus :size="15" aria-hidden="true" />{{ t('account.enrollHeadless') }}</button>
+          </template>
+        </div>
+      </main>
     </div>
     <div v-show="account.user && machineId" ref="surface" class="min-h-0 flex-1" />
   </div>

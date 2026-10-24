@@ -53,6 +53,11 @@ client verifier bound to the one-time login code.
 The common UI in `packages/components` browses synchronized catalogs and history.
 Machine and Team selectors, member administration, invitation codes, and headless
 machine enrollment are shared with the independently deployed Web application.
+Team and machine switching use compact menus at the top of the sidebar. Team
+creation/joining and machine enrollment open focused dialogs; member management
+lives in the Team settings section alongside Preferences and Agents. The account
+menu and sign-out action live in the sidebar footer, preserving the existing
+window chrome and workspace area.
 The desktop can also enroll its hosted daemon after selecting a Team; an existing
 enrollment is never silently reassigned.
 After administrator removal, local enrollment first stops the retired execution
@@ -65,6 +70,10 @@ provider selection, and the conversation UI retain their existing behavior.
 Management uses authenticated HTTP; live Agent, Git, terminal, and desktop traffic
 uses an authorized WebRTC peer with server-provided STUN/TURN settings. Offline
 machines retain their synchronized catalog and readable conversation history.
+Catalog loading indicators describe the first snapshot for the selected machine.
+Background catalog and presence updates preserve the existing workspace tree,
+selection, and content while refreshing; failures still expose their error and
+disable unavailable operations.
 
 The selected machine has its own application state. Switching machines disposes
 that view's peers and caches without stopping the remote agents or terminals.

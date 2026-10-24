@@ -9,6 +9,7 @@ import WindowToolbar from "../chrome/WindowToolbar.vue"
 import MachineSection from "./MachineSection.vue"
 import SidebarFooter from "./SidebarFooter.vue"
 import SidebarLink from "./SidebarLink.vue"
+import AccountSwitcher from "./AccountSwitcher.vue"
 
 const { t } = useI18n()
 const fleet = useFleetStore()
@@ -25,6 +26,8 @@ const platform = platformClient.platform
     >
       <WindowToolbar />
     </div>
+
+    <AccountSwitcher />
 
     <nav :aria-label="t('nav.label')" class="flex shrink-0 flex-col gap-0.5 px-2">
       <SidebarLink :to="{ name: 'new-session' }" :icon="SquarePen" :label="t('nav.newSession')" />
