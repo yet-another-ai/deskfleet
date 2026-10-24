@@ -8,7 +8,7 @@ import { startDaemon } from "./daemon.ts"
 
 test("authenticated provider CRUD broadcasts changes and survives daemon restart", { timeout: 15_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "df-provider-control-"))
-  let daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  let daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
   const clients: DaemonClient[] = []
   t.after(async () => {
     clients.forEach(client => client.close())
@@ -40,7 +40,7 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
   await client.call("providerRemove", { providerId: "codex" })
   clients.forEach(connection => connection.close())
   await daemon.close()
-  daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
   const reopened = await DaemonClient.connect(() => {}, () => {}, directory)
   clients.push(reopened)
   assert.deepEqual((await reopened.call("providerList", {})).providers, [updated])

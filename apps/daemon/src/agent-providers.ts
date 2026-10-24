@@ -68,6 +68,14 @@ export class AgentProviders {
     return { templates: structuredClone(AGENT_PROVIDER_TEMPLATES) as ProviderSnapshot["templates"], providers: structuredClone(this.#providers) }
   }
 
+  /** Only these display fields may enter the central catalog replica. */
+  metadata() {
+    return {
+      templates: AGENT_PROVIDER_TEMPLATES.map(({ id, name }) => ({ id, name })),
+      providers: this.#providers.map(({ id, name, template, icon }) => ({ id, name, template, ...(icon ? { icon } : {}) })),
+    }
+  }
+
   get(id: string): AgentProviderConfig {
     validateProviderId(id)
     const provider = this.#providers.find(provider => provider.id === id)

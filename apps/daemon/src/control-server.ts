@@ -20,6 +20,8 @@ import { AgentChannel } from "./agent-channel.ts"
 import { AGENT_CHANNEL } from "./agent-protocol.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import { AgentProviders } from "./agent-providers.ts"
+import { CentralClient } from "./central-client.ts"
+import { MachineOperations } from "./machine-operations.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
 export interface ControlPeers {
@@ -60,13 +62,15 @@ class ControlConnection {
   readonly #agents: () => AgentSessions
   readonly #providers: AgentProviders
   readonly #onShutdownRequested: (() => void) | undefined
+  readonly #central: () => CentralClient
+  readonly #allowLocalControlForTests: boolean
   readonly #sessions = new Map<string, OwnedPeer>()
   readonly #dialed = new Set<string>()
   readonly #unsubscribe: () => void
   #authenticated = false
   #closing: Promise<void> | undefined
 
-  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: ScreenCapturePermissions, agents: () => AgentSessions, providers: AgentProviders, onShutdownRequested?: () => void) {
+  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: ScreenCapturePermissions, agents: () => AgentSessions, providers: AgentProviders, central: () => CentralClient, allowLocalControlForTests: boolean, onShutdownRequested?: () => void) {
     this.#socket = socket
     this.#token = token
     this.#peers = peers
@@ -77,18 +81,20 @@ class ControlConnection {
     this.#agents = agents
     this.#providers = providers
     this.#onShutdownRequested = onShutdownRequested
+    this.#central = central
+    this.#allowLocalControlForTests = allowLocalControlForTests
     const unsubscribeTerminals = terminals.onChange(event => {
       if (event.kind === "terminalHungup") this.#dialed.delete(event.terminalId)
-      if (this.#authenticated) this.#send({ event })
+      if (this.#authenticated && this.#allowLocalControlForTests) this.#send({ event })
     })
     const unsubscribeCatalog = catalog.onChange(event => {
-      if (this.#authenticated) this.#send({ event })
+      if (this.#authenticated && this.#allowLocalControlForTests) this.#send({ event })
     })
     const unsubscribePermissions = permissions.onChange(permission => {
       if (this.#authenticated) this.#send({ event: { kind: "screenCapturePermissionChanged", permission } })
     })
     const unsubscribeProviders = providers.onChanged(() => {
-      if (this.#authenticated) this.#send({ event: { kind: "providersChanged" } })
+      if (this.#authenticated && this.#allowLocalControlForTests) this.#send({ event: { kind: "providersChanged" } })
     })
     this.#unsubscribe = () => { unsubscribeTerminals(); unsubscribeCatalog(); unsubscribePermissions(); unsubscribeProviders() }
     socket.on("error", () => {})
@@ -170,7 +176,12 @@ class ControlConnection {
     }
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")
     if (this.#closing) throw new Error("Local daemon connection is closed")
+    if (!this.#allowLocalControlForTests && !["shutdown", "capabilities", "centralStatus", "centralEnroll"].includes(request.method)) {
+      throw new Error("Sign in and select a team; manage machine resources through the backend API")
+    }
     switch (request.method) {
+      case "centralStatus": return this.#central().status()
+      case "centralEnroll": return this.#central().enroll(request.params)
       case "providerList":
         return this.#providers.snapshot()
       case "providerCreate":
@@ -364,16 +375,23 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
   }
 }
 
-export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new ScreenCapturePermissions(), agentProvider?: AgentProvider) {
+export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new ScreenCapturePermissions(), agentProvider?: AgentProvider, options: { allowLocalControlForTests?: boolean; dataDirectory?: string } = {}) {
+  const dataDirectory = options.dataDirectory ?? directory
   const sessions = terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
-  const catalog = new DaemonCatalog(directory)
-  const providers = new AgentProviders(directory, agentProvider)
+  const catalog = new DaemonCatalog(dataDirectory)
+  const providers = new AgentProviders(dataDirectory, agentProvider)
   let agents: AgentSessions | undefined
+  let central: CentralClient | undefined
+  const centralService = () => {
+    if (!central) throw new Error("Central service is not ready")
+    return central
+  }
   const agentService = () => {
     if (!agents) throw new Error("Agent service is not ready")
     return agents
   }
   await mkdir(directory, { recursive: true, mode: 0o700 })
+  await mkdir(dataDirectory, { recursive: true, mode: 0o700 })
   if (process.platform !== "win32") await chmod(directory, 0o700)
   const temporary = await mkdtemp(join(tmpdir(), "df-ipc-"))
   const endpoint = process.platform === "win32" ? `\\\\.\\pipe\\deskfleet-${randomUUID()}` : join(temporary, "c.sock")
@@ -387,7 +405,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
   void initialized.catch(() => {})
   const server = createServer(socket => {
     if (stopping) { socket.destroy(); return }
-    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, permissions, agentService, providers, onShutdownRequested)
+    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, permissions, agentService, providers, centralService, options.allowLocalControlForTests === true, onShutdownRequested)
     connections.add(connection)
     const operation = initialized.then(() => connection.run()).catch(error => {
       if (published) console.error("Local desktop connection failed", error)
@@ -398,6 +416,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
   let published = false
   let closing: Promise<void> | undefined
   const stop = () => stopping ??= (async () => {
+    await central?.stop()
     // Keep the endpoint bound until resource cleanup finishes. A competing
     // startup must still recognize this discovery record as live.
     const results = await Promise.allSettled([...connections].map(connection => connection.close()).concat([...running]))
@@ -440,8 +459,12 @@ export async function startControlServer(peers: ControlPeers, directory: string,
     agents = new AgentSessions(catalog, catalog.native, agentProvider, providers)
     await agents.init()
     await sessions.init()
+    agents.onSessionArchive(worktreeId => sessions.stopOwned(worktreeId))
+    const operations = new MachineOperations({ agents, catalog, terminals: sessions, providers, capabilities })
+    central = new CentralClient(dataDirectory, operations, peers)
+    await central.init()
     ready()
-    return { stop, close }
+    return { stop, close, central }
   } catch (error) {
     failed(error)
     await close()

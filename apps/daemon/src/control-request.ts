@@ -45,6 +45,12 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
     case "hello":
       if (typeof params.token !== "string") throw new Error("Missing authentication token")
       break
+    case "centralEnroll":
+      for (const key of ["serverUrl", "machineId", "teamId", "token"]) {
+        if (typeof params[key] !== "string" || !params[key] || (params[key] as string).length > 8192) throw new Error(`Invalid enrollment ${key}`)
+      }
+      break
+    case "centralStatus":
     case "capabilities":
     case "terminalList":
     case "shutdown":

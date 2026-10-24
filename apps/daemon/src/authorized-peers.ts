@@ -1,0 +1,211 @@
+import type { NativePeer } from "@deskfleet/native"
+import { isDeepStrictEqual } from "node:util"
+import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
+import { AGENT_CHANNEL, type AgentMethod } from "./agent-protocol.ts"
+import type { ControlPeers } from "./control-server.ts"
+import type { DesktopStart, IceCandidate } from "./control-protocol.ts"
+import type { MachineCredentials, PeerAuthorization, PeerOffer, PeerSignal } from "./central-protocol.ts"
+import { TerminalChannel } from "./terminal-channel.ts"
+import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
+import type { TerminalSessions } from "./terminals.ts"
+
+const DAY_MS = 86_400_000
+const AGENT_READ = new Set<AgentMethod>([
+  "_deskfleet/session/list", "_deskfleet/session/subscribe", "_deskfleet/session/history", "_deskfleet/command/get",
+  "_deskfleet/session/configuration", "_deskfleet/agent/configuration",
+])
+const AGENT_EXECUTE = new Set<AgentMethod>([
+  "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
+  "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
+])
+
+interface AuthorizedPeer {
+  authorization: PeerAuthorization
+  native: Promise<NativePeer>
+  timer: ReturnType<typeof setTimeout>
+  remoteSdp: string
+  localSdp?: string
+  terminal?: TerminalChannel
+  agent?: AgentChannel
+}
+
+/** Resolve the empty mid emitted by native WebRTC from the authenticated SDP. */
+export function normalizeCandidate(candidate: IceCandidate, sdp: string): IceCandidate {
+  const sections = sdp.split(/\r?\nm=/u).slice(1)
+  const mids = sections.map(section => /^a=mid:(.+)$/mu.exec(section)?.[1]?.trim())
+  const index = candidate.sdpMlineIndex ?? (candidate.sdpMid ? mids.indexOf(candidate.sdpMid) : sections.length === 1 ? 0 : -1)
+  if (index < 0 || index >= sections.length || !mids[index]) throw new Error("ICE candidate does not identify a negotiated media section")
+  if (candidate.sdpMid && candidate.sdpMid !== mids[index]) throw new Error("ICE candidate media binding does not match SDP")
+  const ufrag = /^a=ice-ufrag:(.+)$/mu.exec(sections[index]!)?.[1]?.trim() ?? /^a=ice-ufrag:(.+)$/mu.exec(sdp.split(/\r?\nm=/u)[0]!)?.[1]?.trim()
+  if (candidate.usernameFragment && candidate.usernameFragment !== ufrag) throw new Error("ICE candidate belongs to another negotiation")
+  return { ...candidate, sdpMid: mids[index], sdpMlineIndex: index }
+}
+
+/** Peer lifetime belongs to its immutable grant, never to a signaling socket. */
+export class AuthorizedPeers {
+  readonly #native: ControlPeers
+  readonly #agents: AgentChannelSessions
+  readonly #terminals: TerminalSessions
+  readonly #signal: (peerId: string, event: PeerSignal) => void
+  readonly #now: () => number
+  readonly #peers = new Map<string, AuthorizedPeer>()
+  readonly #used = new Map<string, number>()
+  #credentials: MachineCredentials | undefined
+  #identity: { originId: string; machineId: string }
+
+  constructor(options: {
+    peers: ControlPeers; agents: AgentChannelSessions; terminals: TerminalSessions
+    identity: { originId: string; machineId: string }
+    signal: (peerId: string, event: PeerSignal) => void; now?: () => number
+  }) {
+    this.#native = options.peers; this.#agents = options.agents; this.#terminals = options.terminals
+    this.#identity = options.identity; this.#signal = options.signal; this.#now = options.now ?? Date.now
+  }
+
+  bind(credentials: MachineCredentials): void { this.#credentials = credentials }
+
+  #validate(grant: PeerAuthorization): void {
+    const target = grant.targetMachine, bound = this.#credentials
+    const issued = Date.parse(grant.issuedAt), expires = Date.parse(grant.expiresAt)
+    if (!bound || grant.serverId !== bound.serverId || grant.teamId !== bound.teamId || target.id !== bound.machineId ||
+      target.originId !== this.#identity.originId || target.localMachineId !== this.#identity.machineId) throw new Error("Peer grant targets another machine or authority")
+    if (grant.actor.kind !== "user" || !grant.actor.userId || !grant.actor.deviceId) throw new Error("Peer grant requires an authenticated user")
+    if (!Number.isFinite(issued) || !Number.isFinite(expires) || issued > this.#now() + 60_000 || expires <= this.#now() || expires <= issued || expires - issued > DAY_MS) {
+      throw new Error("Peer authorization is expired or exceeds 24 hours")
+    }
+    if (!["agent", "terminal", "desktop"].includes(grant.purpose)) throw new Error("Unsupported peer purpose")
+  }
+
+  #live(id: string, action?: string): AuthorizedPeer {
+    const peer = this.#peers.get(id)
+    if (!peer) throw new Error("Unknown authorized peer")
+    if (Date.parse(peer.authorization.expiresAt) <= this.#now()) {
+      void this.close(id).catch(() => {})
+      throw new Error("Peer authorization has expired")
+    }
+    if (action && !peer.authorization.actions.includes(action)) throw new Error("Peer grant does not allow this operation")
+    return peer
+  }
+
+  async offer(params: PeerOffer): Promise<{ sdp: string }> {
+    this.#validate(params.authorization)
+    if (params.peerId !== params.authorization.peerId || !params.peerId) throw new Error("Peer ID does not match its authorization")
+    for (const [id, expires] of this.#used) if (expires <= this.#now()) this.#used.delete(id)
+    if (this.#used.has(params.peerId)) throw new Error("Create a new peer for another negotiation")
+    if (!/^a=fingerprint:sha-256 [\dA-Fa-f:]+\r?$/mu.test(params.sdp)) throw new Error("An authenticated DTLS SHA-256 fingerprint is required")
+    const purpose = params.authorization.purpose
+    const native = this.#native.create(params.peerId, {
+      iceServers: params.iceServers,
+      ...(purpose === "desktop" ? { video: params.options?.codec ?? "h264", audio: params.options?.audio ?? false } : {}),
+    })
+    const owned: AuthorizedPeer = {
+      authorization: structuredClone(params.authorization), native, remoteSdp: params.sdp,
+      timer: setTimeout(() => { void this.close(params.peerId).catch(error => console.error("Expired peer cleanup failed", error)) }, Date.parse(params.authorization.expiresAt) - this.#now()),
+    }
+    owned.timer.unref()
+    this.#used.set(params.peerId, Date.parse(params.authorization.expiresAt))
+    this.#peers.set(params.peerId, owned)
+    try {
+      const peer = await native
+      this.#live(params.peerId)
+      const failure = (error: unknown) => {
+        this.#signal(params.peerId, { kind: "error", error: error instanceof Error ? error.message : String(error) })
+        void this.close(params.peerId).catch(cleanup => console.error("Peer cleanup failed", cleanup))
+      }
+      if (purpose === "agent") {
+        const sessions: AgentChannelSessions = {
+          journal: this.#agents.journal,
+          onEvent: listener => this.#agents.onEvent(event => {
+            try { this.#live(params.peerId, "agent:read"); listener(event) } catch { /* expiry closes subscriptions */ }
+          }),
+          handle: (method, value) => {
+            const scope = AGENT_READ.has(method) ? "agent:read" : AGENT_EXECUTE.has(method) ? "agent:execute" : method.startsWith("_deskfleet/git/") ? "git:read" : undefined
+            if (!scope) return Promise.reject(new Error("Manage Sessions through the backend API"))
+            this.#live(params.peerId, scope)
+            return this.#agents.handle(method, value, owned.authorization.actor)
+          },
+        }
+        owned.agent = new AgentChannel(sessions, owned.authorization.actor, bytes => {
+          this.#live(params.peerId, "agent:read")
+          return peer.sendData(AGENT_CHANNEL, Buffer.from(bytes))
+        }, failure)
+      }
+      if (purpose === "terminal") {
+        owned.terminal = new TerminalChannel(this.#terminals, text => {
+          this.#live(params.peerId, "terminal:read")
+          return peer.sendText(TERMINAL_CHANNEL, text)
+        }, failure, id => {
+          this.#live(params.peerId, "terminal:write")
+          return this.#terminals.list().some(terminal => terminal.id === id)
+        })
+      }
+      // Candidate events can race answerOffer. Hold them until the answer SDP is bound.
+      const answer = await peer.answerOffer(params.sdp)
+      this.#live(params.peerId)
+      owned.localSdp = answer
+      void this.#events(params.peerId, owned, peer)
+      return { sdp: answer }
+    } catch (error) { await this.close(params.peerId); throw error }
+  }
+
+  async candidate(id: string, candidate: IceCandidate): Promise<void> {
+    const owned = this.#live(id)
+    await (await owned.native).addIceCandidate(normalizeCandidate(candidate, owned.remoteSdp))
+  }
+
+  async start(id: string, options: Omit<DesktopStart, "sessionId">): Promise<void> {
+    const owned = this.#live(id, "desktop:stream")
+    if (owned.authorization.purpose !== "desktop") throw new Error("A desktop peer is required")
+    await (await owned.native).startDesktop(options)
+  }
+
+  async reconcile(grants: PeerAuthorization[]): Promise<void> {
+    const valid = new Map(grants.map(grant => [grant.peerId, grant]))
+    await Promise.all([...this.#peers].map(async ([id, peer]) => {
+      const grant = valid.get(id)
+      // Reconciliation never replaces or extends an existing authorization.
+      if (!grant || !isDeepStrictEqual(grant, peer.authorization) || Date.parse(grant.expiresAt) <= this.#now()) await this.close(id)
+    }))
+  }
+
+  async #events(id: string, owned: AuthorizedPeer, peer: NativePeer): Promise<void> {
+    try {
+      while (this.#peers.get(id) === owned) {
+        const event = await peer.nextEvent()
+        if (this.#peers.get(id) !== owned) return
+        if (!event) break
+        this.#live(id)
+        if (event.kind === "data" && event.data) {
+          if (owned.agent && event.label === AGENT_CHANNEL) owned.agent.receive(event.data, event.isString === true)
+          if (owned.terminal && event.label === TERMINAL_CHANNEL) {
+            this.#live(id, "terminal:write")
+            void owned.terminal.receive(event.data, event.isString === true).catch(error => {
+              this.#signal(id, { kind: "error", error: String(error) }); void this.close(id).catch(() => {})
+            })
+          }
+        }
+        if (event.kind === "iceCandidate" && event.candidate) this.#signal(id, { kind: "iceCandidate", candidate: normalizeCandidate(event.candidate, owned.localSdp!) })
+        if (event.kind === "stateChanged" && event.state) this.#signal(id, { kind: "stateChanged", state: event.state })
+        if (event.kind === "error") this.#signal(id, { kind: "error", error: event.error ?? "Peer failed" })
+        if (event.kind === "error" || event.state === "failed" || event.state === "closed" || event.kind === "dataChannelClosed") break
+      }
+    } catch (error) {
+      if (this.#peers.get(id) === owned) this.#signal(id, { kind: "error", error: error instanceof Error ? error.message : String(error) })
+    } finally { await this.close(id).catch(error => console.error("Peer cleanup failed", error)) }
+  }
+
+  async close(id: string): Promise<void> {
+    const peer = this.#peers.get(id)
+    if (!peer) return
+    this.#peers.delete(id)
+    clearTimeout(peer.timer)
+    peer.agent?.close(); peer.terminal?.close()
+    await this.#native.close(id)
+  }
+
+  async closeAll(): Promise<void> {
+    const results = await Promise.allSettled([...this.#peers.keys()].map(id => this.close(id)))
+    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    if (failures.length) throw new AggregateError(failures, "Failed to close authorized peers")
+  }
+}

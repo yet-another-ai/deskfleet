@@ -5,6 +5,7 @@ import { startDaemon } from "./daemon.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
 import { runAgent } from "./agent-cli.ts"
 import { bundledAdapter, configureAdapterHost } from "./agents/adapters.ts"
+import { runMachineCli } from "./machine-cli.ts"
 
 configureAdapterHost({
   command: process.execPath,
@@ -26,6 +27,10 @@ async function main() {
     await runAgent(process.argv.slice(3))
     return
   }
+  if (process.argv[2] === "status" || process.argv[2] === "enroll") {
+    await runMachineCli(process.argv[2], process.argv.slice(3))
+    return
+  }
   const { values } = parseArgs({
     options: {
       info: { type: "boolean" },
@@ -36,6 +41,8 @@ async function main() {
   if (values.help) {
     console.log("Usage: deskfleet-daemon [--port <0-65535>] [--info] [--help]")
     console.log("       deskfleet-daemon agent <codex|claude-code> --help")
+    console.log("       deskfleet-daemon status")
+    console.log("       deskfleet-daemon enroll --server-url <https://backend> < machine-credentials.json")
     return
   }
   if (values.info) {

@@ -10,9 +10,14 @@ import { createPeer, type NativePeer, type NativeTerminal, type PeerEvent } from
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
 import type { ControlMessage, ControlMethod, ControlMethods, DaemonEvent } from "./control-protocol.ts"
 import { validateControlParams } from "./control-request.ts"
-import { startControlServer, type ControlPeers } from "./control-server.ts"
+import { startControlServer as createControlServer, type ControlPeers } from "./control-server.ts"
 import { startDaemon } from "./daemon.ts"
 import { TerminalSessions } from "./terminals.ts"
+
+function startControlServer(...args: Parameters<typeof createControlServer>) {
+  args[7] = { ...args[7], allowLocalControlForTests: true }
+  return createControlServer(...args)
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -206,7 +211,7 @@ test("stopping control waits for an executing request before releasing its resou
 
 test("daemon control exchanges real native SDP and ICE without initializing capture", { timeout: 20_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-test-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  const daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
   const peer = await createPeer({ video: "h264" })
   context.after(async () => { await peer.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
   const discovery = await readDaemonDiscovery(directory)

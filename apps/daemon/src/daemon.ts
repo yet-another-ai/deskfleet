@@ -14,12 +14,16 @@ export async function startDaemon(port = 0, options: {
   controlDirectory?: string
   requestScreenCaptureAccess?: () => Promise<boolean | null>
   agentProvider?: AgentProvider
+  /** In-process fixtures only. Never enabled by configuration, IPC, or the CLI. */
+  allowLocalControlForTests?: boolean
 } = {}) {
   const native = nativeInfo()
   const permissions = new ScreenCapturePermissions()
   const peers = new PeerSessions()
   const controlDirectory = options.controlDirectory ?? daemonControlDirectory()
-  const terminals = new TerminalSessions({ directory: join(controlDirectory, "terminals") })
+  // Existing unauthenticated development data is not imported into a team.
+  const dataDirectory = options.allowLocalControlForTests ? controlDirectory : join(controlDirectory, "machine")
+  const terminals = new TerminalSessions({ directory: join(dataDirectory, "terminals") })
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/healthz") {
       response.writeHead(200, { "content-type": "application/json" })
@@ -61,7 +65,7 @@ export async function startDaemon(port = 0, options: {
     return closed
   }
   try {
-    control = await startControlServer(peers, controlDirectory, undefined, terminals, () => { void close() }, permissions, options.agentProvider)
+    control = await startControlServer(peers, controlDirectory, undefined, terminals, () => { void close() }, permissions, options.agentProvider, { dataDirectory, allowLocalControlForTests: options.allowLocalControlForTests })
   } catch (error) {
     const cleanup = await Promise.allSettled([peers.closeAll(), terminals.close(), server[Symbol.asyncDispose]()])
     const failures = cleanup.flatMap(result => result.status === "rejected" ? [result.reason] : [])
@@ -74,6 +78,7 @@ export async function startDaemon(port = 0, options: {
     address: `http://127.0.0.1:${address.port}`,
     peers,
     terminals,
+    central: control.central,
     /** Completes after discovery and all native/server resources have closed. */
     closed,
     close,

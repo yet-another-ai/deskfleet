@@ -16,7 +16,7 @@ function deferred<T>() {
 
 test("headless daemon serves information from the Rust addon", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-test-"))
-  const starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
   context.after(async () => { await (await starting).close(); await rm(directory, { recursive: true, force: true }) })
   const daemon = await starting
   context.signal.throwIfAborted()
@@ -29,7 +29,7 @@ test("headless daemon serves information from the Rust addon", async context => 
 
 test("authenticated shutdown acknowledges before cleanup and releases discovery last", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-shutdown-"))
-  const starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
   let restarting: ReturnType<typeof startDaemon> | undefined
   let releaseCleanup!: () => void
   let cleanupStarted!: () => void
@@ -59,7 +59,7 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
   await cleaning
   assert.deepEqual(await readDaemonDiscovery(directory), discovery)
   await assert.rejects(DaemonClient.connect(() => {}, () => {}, directory))
-  await assert.rejects(startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null }), /already running/)
+  await assert.rejects(startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null }), /already running/)
   assert.deepEqual(await readDaemonDiscovery(directory), discovery)
   assert.equal(daemon.close(), daemon.closed)
   releaseCleanup()
@@ -70,7 +70,7 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
   assert.equal(daemon.close(), daemon.closed)
 
   context.signal.throwIfAborted()
-  restarting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  restarting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
   const restarted = await restarting
   context.signal.throwIfAborted()
   const next = await DaemonClient.connect(() => {}, () => {}, directory)
@@ -83,7 +83,7 @@ test("startup requests screen access once while health and catalog stay availabl
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-permission-"))
   const permission = deferred<boolean | null>()
   let requests = 0
-  const starting = startDaemon(0, {
+  const starting = startDaemon(0, { allowLocalControlForTests: true,
     controlDirectory: directory,
     requestScreenCaptureAccess: () => { requests++; return permission.promise },
   })
@@ -106,7 +106,7 @@ test("startup requests screen access once while health and catalog stay availabl
   assert.equal((await client.call("catalogList", {})).workspaces[0]?.id, workspace.id)
 
   let competingRequests = 0
-  await assert.rejects(startDaemon(0, {
+  await assert.rejects(startDaemon(0, { allowLocalControlForTests: true,
     controlDirectory: directory,
     requestScreenCaptureAccess: async () => { competingRequests++; return null },
   }), /already running/u)
@@ -124,7 +124,7 @@ test("startup requests screen access once while health and catalog stay availabl
 test("daemon shutdown does not wait for a screen permission response", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-permission-shutdown-"))
   const permission = deferred<boolean | null>()
-  const starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: () => permission.promise })
+  const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: () => permission.promise })
   context.after(async () => {
     permission.resolve(null)
     await (await starting).close()
@@ -150,7 +150,7 @@ for (const outcome of [
   test(`a ${outcome.name} screen permission request leaves the daemon usable and reports its state`, { timeout: 15_000 }, async context => {
     const directory = await mkdtemp(join(tmpdir(), "df-daemon-permission-result-"))
     const permission = deferred<boolean | null>()
-    const starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: () => permission.promise })
+    const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: () => permission.promise })
     context.after(async () => {
       permission.resolve(null)
       await (await starting).close()
