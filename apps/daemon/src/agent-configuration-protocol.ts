@@ -1,4 +1,5 @@
 import type * as acp from "@agentclientprotocol/sdk"
+import { validateProviderId } from "./provider-protocol.ts"
 
 export interface AgentChoice {
   id: string
@@ -29,7 +30,7 @@ export interface AgentConfigurationParams extends AgentConfigurationSelection {
 }
 
 export function validateAgentConfigurationParams(params: Record<string, unknown>): void {
-  if (params.provider !== "codex") throw new Error("Unsupported agent provider")
+  validateProviderId(params.provider)
   if (params.workspaceId !== undefined && (typeof params.workspaceId !== "string"
     || !/^[1-9][0-9]{0,18}$/u.test(params.workspaceId) || BigInt(params.workspaceId) > 9_223_372_036_854_775_807n)) {
     throw new Error("Invalid catalog workspace ID")
@@ -58,9 +59,9 @@ export function selectAgentOption(options: acp.SessionConfigOption[], category: 
   }
 }
 
-export function agentConfiguration(options: acp.SessionConfigOption[], provider = "codex"): AgentConfiguration {
+export function agentConfiguration(options: acp.SessionConfigOption[], provider: AgentChoice = { id: "codex", name: "Codex" }): AgentConfiguration {
   return {
-    provider: { id: provider, name: "Codex" },
+    provider,
     models: selectAgentOption(options, "model", "model"),
     reasoningEfforts: selectAgentOption(options, "thought_level", "reasoning_effort"),
   }

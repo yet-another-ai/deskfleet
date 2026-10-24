@@ -1,6 +1,6 @@
 import type * as acp from "@agentclientprotocol/sdk"
 import { agentConfiguration, selectAgentOption, type AgentConfiguration, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
-import type { AgentConnection, AgentProvider } from "./agents/acp.ts"
+import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { codexProvider } from "./agents/codex.ts"
 
 /** A model change can replace the available reasoning choices and their default. */
@@ -32,12 +32,13 @@ export async function readAgentConfiguration(
   params: AgentConfigurationParams,
   cwd: string,
   dependencies: {
-    provider?: AgentProvider; signal?: AbortSignal; timeoutMs?: number; recoverSelection?: boolean
+    provider?: AgentProvider; config?: AgentConfig; signal?: AbortSignal; timeoutMs?: number; recoverSelection?: boolean
     onOptions?: (options: acp.SessionConfigOption[]) => void
   } = {},
 ): Promise<AgentConfiguration> {
-  if (params.provider !== "codex") throw new Error("Unsupported agent provider")
+  if (!dependencies.provider && params.provider !== "codex") throw new Error("Unsupported agent provider")
   const provider = dependencies.provider ?? codexProvider
+  const config = dependencies.config ?? { name: "Codex" }
   const controller = new AbortController()
   const signal = dependencies.signal ? AbortSignal.any([controller.signal, dependencies.signal]) : controller.signal
   signal.throwIfAborted()
@@ -49,7 +50,7 @@ export async function readAgentConfiguration(
     aborted = () => reject(signal.reason)
     signal.addEventListener("abort", aborted, { once: true })
   })
-  const connecting = Promise.resolve().then(() => provider.connect({ name: "Codex" }, {
+  const connecting = Promise.resolve().then(() => provider.connect(config, {
     onUpdate({ update }) {
       if (update.sessionUpdate === "config_option_update") notifiedOptions = update.configOptions
     },
@@ -71,7 +72,7 @@ export async function readAgentConfiguration(
     } else options = await applyAgentConfiguration(agent, session.sessionId, options, params)
     signal.throwIfAborted()
     dependencies.onOptions?.(options)
-    return agentConfiguration(options, provider.id)
+    return agentConfiguration(options, { id: params.provider, name: config.name })
   })()
   try {
     return await Promise.race([discovery, cancelled])

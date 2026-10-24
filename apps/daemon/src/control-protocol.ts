@@ -1,6 +1,7 @@
 import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "./terminal-protocol.ts"
 import type { CatalogEvent, CatalogMethods } from "./catalog-protocol.ts"
 import type { FilesystemMethods } from "./filesystem-protocol.ts"
+import type { ProviderEvent, ProviderMethods } from "./provider-protocol.ts"
 
 /** Provisional local IPC contract. Media and terminal bytes stay on WebRTC. */
 export type VideoCodec = "h264" | "h265" | "av1"
@@ -61,10 +62,10 @@ export interface LocalDaemonInfo {
   screenCapturePermission: ScreenCapturePermission
 }
 
-export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent
+export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent | ProviderEvent
   | { kind: "screenCapturePermissionChanged"; permission: ScreenCapturePermission }
 
-export interface ControlMethods extends CatalogMethods, FilesystemMethods {
+export interface ControlMethods extends CatalogMethods, FilesystemMethods, ProviderMethods {
   hello: { params: { token: string }; result: LocalDaemonInfo }
   shutdown: { params: Record<string, never>; result: null }
   capabilities: { params: Record<string, never>; result: DesktopCapabilities }

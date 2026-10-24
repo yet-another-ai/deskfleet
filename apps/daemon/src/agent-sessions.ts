@@ -6,7 +6,8 @@ import { codexProvider } from "./agents/codex.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, timestamp, type AgentPersistence } from "./agent-store.ts"
-import { AgentRuntime } from "./agent-runtime.ts"
+import { AgentRuntime, type ResolveAgentProvider } from "./agent-runtime.ts"
+import type { AgentProviders } from "./agent-providers.ts"
 import { GitInspection } from "./git-inspection.ts"
 import type {
   AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentReceipt, AgentSnapshot,
@@ -45,7 +46,7 @@ const resumable = (snapshot: AgentSnapshot) => !snapshot.session.providerSession
 export class AgentSessions {
   readonly journal: AgentJournal
   readonly #catalog: DaemonCatalog
-  readonly #provider: AgentProvider
+  readonly #resolveProvider: ResolveAgentProvider
   readonly #git = new GitInspection()
   readonly #runtimes = new Map<string, AgentRuntime>()
   readonly #operations = new Map<string, Promise<unknown>>()
@@ -53,10 +54,13 @@ export class AgentSessions {
   readonly #closing = new AbortController()
   #closed = false
 
-  constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider) {
+  constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider, providers?: AgentProviders) {
     this.#catalog = catalog
     this.journal = new AgentJournal(native)
-    this.#provider = provider
+    this.#resolveProvider = providers ? id => providers.resolve(id) : id => {
+      if (id !== "codex") throw new Error("Agent provider is unavailable")
+      return { provider, config: { name: "Codex" } }
+    }
   }
 
   async init(): Promise<void> {
@@ -92,7 +96,7 @@ export class AgentSessions {
     let runtime = this.#runtimes.get(sessionId)
     if (!runtime) {
       if (this.#closed) throw new Error("Agent service is stopping")
-      runtime = new AgentRuntime(this.journal, this.#catalog, this.#provider, sessionId)
+      runtime = new AgentRuntime(this.journal, this.#catalog, this.#resolveProvider, sessionId)
       this.#runtimes.set(sessionId, runtime)
     }
     return runtime
@@ -110,7 +114,7 @@ export class AgentSessions {
         if (!directory) throw new Error("Unknown local workspace")
         cwd = directory.path
       }
-      const pending = readAgentConfiguration(params as unknown as AgentConfigurationParams, cwd, { provider: this.#provider, signal: this.#closing.signal })
+      const pending = readAgentConfiguration(params as unknown as AgentConfigurationParams, cwd, { ...this.#resolveProvider(params.provider as string), signal: this.#closing.signal })
       this.#discovery.add(pending)
       try { return await pending } finally { this.#discovery.delete(pending) }
     }
@@ -234,12 +238,13 @@ export class AgentSessions {
   }
 
   async #create(command: AgentCommand): Promise<AgentSnapshot> {
-    if (command.params.provider !== undefined && command.params.provider !== "codex") throw new Error("Unknown Agent provider")
+    const provider = string(command.params.provider, "Agent provider")
+    this.#resolveProvider(provider)
     validateAgentConfigurationSelection(command.params)
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : ""
-    const session = await this.journal.create(command, command.workspaceId!, title, context)
+    const session = await this.journal.create(command, command.workspaceId!, title, context, provider)
     command.sessionId = session.id
     try {
       await this.#catalog.provisionSession(session.id, session.workspaceId, context)

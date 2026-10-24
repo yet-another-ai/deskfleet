@@ -8,14 +8,18 @@ import { useLayoutStore } from "./stores/layout.ts"
 import { useFleetStore } from "./stores/fleet.ts"
 import { useTerminalsStore } from "./stores/terminals.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
+import { useProvidersStore } from "./stores/providers.ts"
 
 const { sidebarOpen, detailsOpen } = storeToRefs(useLayoutStore())
 const route = useRoute()
 const fleet = useFleetStore()
 const terminals = useTerminalsStore()
 const agents = useAgentSessionsStore()
+const providers = useProvidersStore()
 watch(() => fleet.localDesktopTarget.online, (online) => { if (online) void terminals.refresh() })
-const refresh = () => { void fleet.refreshLocal().then(() => { if (fleet.localDesktopTarget.online) void agents.refresh() }) }
+const refresh = () => { void fleet.refreshLocal().then(() => {
+  if (fleet.localDesktopTarget.online) { void agents.refresh(); void providers.refresh() }
+}) }
 const unsubscribeSettings = window.deskfleet.settings.onChanged(({ status }) => {
   if (status === "running" || status === "stopped" || status === "error") {
     refresh()

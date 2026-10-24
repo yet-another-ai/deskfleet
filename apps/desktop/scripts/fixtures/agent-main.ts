@@ -18,11 +18,13 @@ export interface AgentSmokeContext {
   sessionId?: string
   workspaceId?: string
   worktreeId?: string
+  providerId?: string
 }
 export interface AgentSmokeResult {
   sessionId: string
   workspaceId: string
   worktreeId: string
+  providerId: string
   conversationEntries: number
   permissionId: string
 }
@@ -95,7 +97,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   const prompt = () => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]')
   const configuration = () => document.querySelector<HTMLElement>("[data-agent-configuration-menu]")
   const configurationTrigger = () => document.querySelector<HTMLButtonElement>("[data-agent-configuration-trigger]")
-  const configurationControl = (kind: "model" | "reasoning") => configuration()?.querySelector<HTMLButtonElement>(`[data-agent-control="${kind}"]`)
+  const configurationControl = (kind: "agent" | "model" | "reasoning") => configuration()?.querySelector<HTMLButtonElement>(`[data-agent-control="${kind}"]`)
   const configurationChoice = (value: string) => document.querySelector<HTMLButtonElement>(`[data-agent-configuration-options] [role="menuitemradio"][data-value="${value}"]`)
   async function expandConfiguration(): Promise<void> {
     await until(() => !!configurationTrigger() && !configurationTrigger()!.disabled, "Agent configuration trigger")
@@ -106,17 +108,17 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     }, "Dynamic Agent, model, and reasoning menu")
     require(configuration()!.querySelector('[data-agent-control="agent"]')?.textContent?.includes("Codex"), "Agent menu must display Codex")
   }
-  async function openConfigurationOptions(kind: "model" | "reasoning"): Promise<void> {
+  async function openConfigurationOptions(kind: "agent" | "model" | "reasoning"): Promise<void> {
     await expandConfiguration()
     configurationControl(kind)!.click()
     await until(() => !!document.querySelector('[data-agent-configuration-options] [role="menuitemradio"]'), `${kind} choices`)
     if (kind === "model") require(configurationChoice("fast")?.textContent?.trim() === "Smoke Fast", "Model options must come from the provider")
   }
-  async function selectedConfiguration(kind: "model" | "reasoning"): Promise<string | null> {
+  async function selectedConfiguration(kind: "agent" | "model" | "reasoning"): Promise<string | null> {
     await openConfigurationOptions(kind)
     return document.querySelector('[data-agent-configuration-options] [role="menuitemradio"][aria-checked="true"]')?.getAttribute("data-value") ?? null
   }
-  async function selectConfiguration(kind: "model" | "reasoning", value: string): Promise<void> {
+  async function selectConfiguration(kind: "agent" | "model" | "reasoning", value: string): Promise<void> {
     await openConfigurationOptions(kind)
     await until(() => !!configurationChoice(value) && !configurationChoice(value)!.disabled, `${value} choice`)
     configurationChoice(value)!.click()
@@ -157,13 +159,18 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   let sessionId = context.sessionId
   let workspaceId = context.workspaceId
   let worktreeId = context.worktreeId
+  let providerId = context.providerId
   if (context.phase === "create") {
     require((await api.catalog.list()).workspaces.length === 0, "Smoke catalog must start empty")
     const workspace = await api.catalog.createWorkspace("Agent smoke workspace", [{ path: context.repository }])
     workspaceId = workspace.id
+    const configuredProvider = await api.providers.create({ template: "codex", name: "Smoke Codex", binaryPath: `${context.repository}/smoke-codex`, env: { DESKFLEET_SMOKE_PROFILE: "configured" } })
+    providerId = configuredProvider.id
     await until(() => [...document.querySelectorAll("[data-composer-context]")].some(element => element.textContent?.includes(workspace.name)), "New Session workspace target")
     require(location.hash === "#/", "Initial route must be New Session")
     await expandConfiguration()
+    await selectConfiguration("agent", providerId)
+    require(configurationControl("agent")?.textContent?.includes("Smoke Codex"), "Agent submenu must select the configured provider")
     await selectConfiguration("model", "fast")
     await selectConfiguration("reasoning", "high")
     require((await api.catalog.list()).workspaces[0]!.worktrees.length === 1, "Draft model discovery must not create a managed Session Worktree")
@@ -191,6 +198,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     await click("Allow smoke edit", () => permissions()!)
     await until(() => !!conversation()?.innerText.includes("queued reply") && !button("Cancel turn") && !backlog(), "Backlog execution after permission and first turn completion")
     await expandConfiguration()
+    require(configurationControl("agent")?.disabled && configurationControl("agent")?.dataset.value === providerId, "A running Session must retain its selected provider")
     require(await selectedConfiguration("model") === "fast" && await selectedConfiguration("reasoning") === "high", "A running Session must retain its draft model and reasoning selections")
     await selectConfiguration("model", "balanced")
     require(await selectedConfiguration("reasoning") === "medium", "Changing the Session model must refresh its provider-supplied reasoning configuration")
@@ -202,7 +210,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     require(worktrees.length === 1 && worktrees[0]!.directories[0]?.path !== context.repository, "Session must own exactly one derived Git Worktree")
     worktreeId = worktrees[0]!.id
   } else {
-    require(sessionId && workspaceId && worktreeId, "Restore identities are required")
+    require(sessionId && workspaceId && worktreeId && providerId, "Restore identities are required")
     await openSession(sessionId)
     await until(() => !!conversation()?.innerText.includes("changed model reply"), "Conversation replay after daemon restart")
     require(![...document.querySelectorAll('[role="status"]')].some(element => /stopped|interrupted|Resume/u.test(element.textContent ?? "")), "An interrupted agent must not ask to be resumed")
@@ -217,8 +225,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     await click("Show terminal")
     const panel = () => document.querySelector<HTMLElement>('[aria-label="Session terminals"]')
     await until(() => !!panel(), "Session terminal panel")
-    await click("New shell", () => panel()!)
-    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Session shell connection")
+    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Automatically created Session shell connection")
     const screen = () => panel()?.querySelector(".xterm-rows")?.textContent ?? ""
     await until(() => screen().trim().length > 0, "Session shell prompt")
     // Type through xterm's own input element, as a user would.
@@ -228,11 +235,27 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     const shells = await api.terminal.list()
     require(shells.length === 1 && shells[0]!.worktreeId === worktreeId, "The Session shell must belong to the Session's Worktree")
     require(!document.querySelector('aside a[href^="#/terminals/"]'), "Session shells must stay out of the sidebar")
+    await click("Hide terminal", () => panel()!)
+    await until(() => !panel(), "Hidden Session terminal panel")
+    await click("Show terminal")
+    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Reattached Session shell")
+    const reattached = await api.terminal.list()
+    require(reattached.length === 1 && reattached[0]!.id === shells[0]!.id, "Reopening the panel must reuse its existing shell")
+    const hangup = panel()!.querySelector<HTMLButtonElement>('button[aria-label^="Hang up "]')
+    require(hangup, "Session shell close button was missing")
+    hangup.click()
+    await until(() => !panel() && !!button("Show terminal"), "Closing the last shell hides the panel")
+    require((await api.terminal.list()).length === 0, "Closing the last tab must hang up the shell")
+    await click("Show terminal")
+    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Reopening the empty panel creates a shell")
+    const recreated = await api.terminal.list()
+    require(recreated.length === 1 && recreated[0]!.id !== shells[0]!.id && recreated[0]!.worktreeId === worktreeId, "The reopened panel must create exactly one new shell in the same Session Worktree")
   }
-  require(sessionId && workspaceId && worktreeId, "Session resource identities were missing")
+  require(sessionId && workspaceId && worktreeId && providerId, "Session resource identities were missing")
   require(await selectedConfiguration("model") === "balanced", "The Session's selected model must survive history replay")
+  require(configurationControl("agent")?.dataset.value === providerId && configurationControl("agent")?.textContent?.includes("Smoke Codex"), "The Session's configured provider must survive history replay")
   const permissionId = conversation()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id")!
-  return { sessionId, workspaceId, worktreeId, permissionId, conversationEntries: conversation()!.querySelectorAll("[data-conversation-entry]").length }
+  return { sessionId, workspaceId, worktreeId, providerId, permissionId, conversationEntries: conversation()!.querySelectorAll("[data-conversation-entry]").length }
 }
 
 registerRendererScheme()

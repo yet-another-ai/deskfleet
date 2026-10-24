@@ -14,9 +14,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const titles = ref<Record<string, string>>({})
   let client: TerminalClient | null = null
   let refreshing: Promise<void> | null = null
+  let refreshChanges: Map<string, TerminalSummary | null> | null = null
+  const opening = new Map<string, Promise<TerminalSummary>>()
   const unsubscribe = window.deskfleet.terminal.onSessionEvent((event) => {
     if (event.kind === "terminalChanged") remember(event.terminal)
-    else sessions.value = sessions.value.filter(({ id }) => id !== event.terminalId)
+    else forget(event.terminalId)
   })
 
   function connection(): TerminalClient {
@@ -26,25 +28,40 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }, (event) => {
       if (event.kind !== "exit") return
       const terminal = sessions.value.find(({ id }) => id === event.sessionId)
-      if (terminal) Object.assign(terminal, { status: "exited", exitCode: event.exitCode })
+      if (terminal) remember({ ...terminal, status: "exited", exitCode: event.exitCode })
     })
     return client
   }
 
   function remember(summary: TerminalSummary): TerminalSummary {
+    refreshChanges?.set(summary.id, summary)
     const index = sessions.value.findIndex(({ id }) => id === summary.id)
     if (index === -1) sessions.value.push(summary)
     else sessions.value[index] = summary
     return summary
   }
 
+  function forget(sessionId: string): void {
+    refreshChanges?.set(sessionId, null)
+    sessions.value = sessions.value.filter(({ id }) => id !== sessionId)
+  }
+
   function refresh(): Promise<void> {
-    refreshing ??= window.deskfleet.terminal.list().then((result) => {
-      sessions.value = result
+    if (refreshing) return refreshing
+    const changes = new Map<string, TerminalSummary | null>()
+    refreshChanges = changes
+    refreshing = window.deskfleet.terminal.list().then((result) => {
+      // Events and completed commands received after the request supersede its snapshot.
+      const merged = new Map(result.map(summary => [summary.id, summary]))
+      for (const [id, summary] of changes) {
+        if (summary) merged.set(id, summary)
+        else merged.delete(id)
+      }
+      sessions.value = [...merged.values()]
       error.value = null
     }).catch((reason: unknown) => {
       error.value = reason instanceof Error ? reason.message : String(reason)
-    }).finally(() => { refreshing = null })
+    }).finally(() => { refreshing = null; refreshChanges = null })
     return refreshing
   }
 
@@ -58,6 +75,19 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }))
     if (worktreeId !== undefined) selected.value[worktreeId] = summary.id
     return summary
+  }
+
+  /** Reopening a panel during startup shares its first shell instead of creating another. */
+  function ensureWorktreeTerminal(worktreeId: string): Promise<TerminalSummary> {
+    const pending = opening.get(worktreeId)
+    if (pending) return pending
+    const operation = (async () => {
+      await refresh()
+      if (error.value) throw new Error(error.value)
+      return sessions.value.find(terminal => terminal.worktreeId === worktreeId) ?? create({ worktreeId })
+    })().finally(() => { opening.delete(worktreeId) })
+    opening.set(worktreeId, operation)
+    return operation
   }
 
   function attach(sessionId: string, listener: TerminalListener) {
@@ -80,10 +110,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const resize = (sessionId: string, cols: number, rows: number) => connection().call("resize", { sessionId, cols, rows })
   async function hangup(sessionId: string): Promise<void> {
     await window.deskfleet.terminal.hangup(sessionId)
-    sessions.value = sessions.value.filter(({ id }) => id !== sessionId)
+    forget(sessionId)
     delete titles.value[sessionId]
   }
 
   onScopeDispose(() => { unsubscribe(); client?.close() })
-  return { sessions, state, error, selected, titles, refresh, create, attach, input, resize, hangup }
+  return { sessions, state, error, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup }
 })

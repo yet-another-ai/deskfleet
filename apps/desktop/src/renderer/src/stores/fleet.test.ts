@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { catalogFixture, sessionId, sessionWorktreeId, mainWorktreeId, workspaceId } from "../test/catalog.ts"
 import { useFleetStore } from "./fleet.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
+import { useProvidersStore } from "./providers.ts"
 import { agentSnapshot } from "../test/agent.ts"
 
 const stores: ReturnType<typeof useFleetStore>[] = []
@@ -136,4 +137,29 @@ test("merges durable titles and keeps failed provisioning visible without fabric
   expect(store.findSession("failed")).not.toBeNull()
   delete agents.sessions["failed"]
   await vi.waitFor(() => expect(store.findSession("failed")).toBeNull())
+})
+
+test("resolves provider identity only from successful snapshots and keeps it through refresh failures", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  const providers = useProvidersStore()
+  agents.sessions = { [sessionId]: { ...agentSnapshot().session, id: sessionId, workspaceId, provider: "work-codex" } }
+  await vi.waitFor(() => expect(store.findSession(sessionId)?.session.providerUnavailable).toBe(false))
+  expect(store.findSession(sessionId)?.session.provider).toBeUndefined()
+  const list = vi.spyOn(window.deskfleet.providers, "list").mockResolvedValue({ templates: [], providers: [
+    { id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: {} },
+  ] })
+  await providers.refresh()
+  await vi.waitFor(() => expect(store.findSession(sessionId)?.session.provider).toBe("Work Codex"))
+  expect(store.findSession(sessionId)?.session).toMatchObject({ providerIcon: "deepseek", providerTemplate: "codex", providerUnavailable: false })
+  list.mockRejectedValueOnce(new Error("Disconnected"))
+  await providers.refresh()
+  await store.refreshLocalCatalog()
+  expect(store.findSession(sessionId)?.session).toMatchObject({ provider: "Work Codex", providerIcon: "deepseek", providerTemplate: "codex", providerUnavailable: false })
+  list.mockResolvedValue({ templates: [], providers: [] })
+  await providers.refresh()
+  await vi.waitFor(() => expect(store.findSession(sessionId)?.session.providerUnavailable).toBe(true))
+  expect(store.findSession(sessionId)?.session.provider).toBeUndefined()
+  expect(store.findSession(sessionId)?.session.providerIcon).toBeUndefined()
 })

@@ -4,6 +4,16 @@ import type { DeskfleetDesktopApi } from "../../../shared/desktop-api.ts"
 const api: DeskfleetDesktopApi = {
   platform: "linux",
   locale: "en-US",
+  providers: {
+    list: async () => ({
+      templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }, { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" }],
+      providers: [{ id: "codex", template: "codex", name: "Codex", env: {} }],
+    }),
+    create: async () => { throw new Error("Daemon unavailable") },
+    update: async () => { throw new Error("Daemon unavailable") },
+    remove: async () => { throw new Error("Daemon unavailable") },
+    onChanged: () => () => {},
+  },
   agent: {
     offer: async () => { throw new Error("Daemon unavailable") },
     candidate: async () => {},

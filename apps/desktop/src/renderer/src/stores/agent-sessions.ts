@@ -5,6 +5,7 @@ import type { AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentMethods, A
 import { agentConfiguration as normalizeAgentConfiguration } from "../../../../../daemon/src/agent-configuration-protocol.ts"
 import type { AgentConfiguration } from "../../../shared/agent-configuration.ts"
 import type { GitDiffRequest } from "../../../../../daemon/src/git-protocol.ts"
+import { useProvidersStore } from "./providers.ts"
 import { AgentClient, type AgentConnectionState, type AgentNotification } from "../services/agent-client.ts"
 
 export interface AgentSelection { provider: string; model?: string; reasoningEffort?: string }
@@ -36,6 +37,7 @@ function replace<T>(values: T[], value: T, key: (value: T) => string | number): 
 
 /** Shared projections outlive the visible route; the daemon owns execution and history. */
 export const useAgentSessionsStore = defineStore("agent-sessions", () => {
+  const providers = useProvidersStore()
   const sessions = ref<Record<string, AgentSessionRecord>>({})
   const views = ref<Record<string, AgentSessionView>>({})
   const drafts = ref<Record<string, string>>({})
@@ -126,7 +128,11 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (event.kind === "command") commandReceived(event.payload as AgentCommand)
       if (event.kind === "acp" && "update" in event.payload && event.payload.update.sessionUpdate === "config_option_update"
         && sequenceCompare(event.seq, configurationSequences.get(event.sessionId) ?? "0") > 0) {
-        configurations.value[event.sessionId] = normalizeAgentConfiguration(event.payload.update.configOptions)
+        const providerId = sessions.value[event.sessionId]?.provider ?? configurations.value[event.sessionId]?.provider.id
+        const provider = providers.providers.find(provider => provider.id === providerId)
+        configurations.value[event.sessionId] = normalizeAgentConfiguration(event.payload.update.configOptions, providerId ? {
+          id: providerId, name: provider?.name ?? configurations.value[event.sessionId]?.provider.name ?? providerId,
+        } : undefined)
         configurationSequences.set(event.sessionId, event.seq)
       }
       changed.add(event.sessionId)
@@ -298,9 +304,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (sequence === configurationSequences.get(sessionId)) configurations.value[sessionId] = result
     return configurations.value[sessionId]!
   }
-  async function create(workspaceId: string, title: string, context: AgentSessionContext): Promise<AgentSnapshot> {
+  async function create(workspaceId: string, title: string, context: AgentSessionContext, provider: string): Promise<AgentSnapshot> {
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
-    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", { workspaceId, title, provider: "codex", context, model: draftConfiguration.value.model, reasoningEffort: draftConfiguration.value.reasoningEffort })
+    const choices = draftConfiguration.value.provider === provider ? draftConfiguration.value : undefined
+    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", { workspaceId, title, provider, context, model: choices?.model, reasoningEffort: choices?.reasoningEffort })
     snapshotReceived(snapshot)
     return snapshot
   }

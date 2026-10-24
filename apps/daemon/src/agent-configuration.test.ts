@@ -6,10 +6,11 @@ import test from "node:test"
 import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk"
 import { readAgentConfiguration } from "./agent-configuration.ts"
-import { connectAcpProcess, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
+import { connectAcpProcess, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
-import { validateAgentConfigurationParams } from "./agent-configuration-protocol.ts"
+import { AgentProviders } from "./agent-providers.ts"
+import { validateAgentConfigurationParams, type AgentConfiguration } from "./agent-configuration-protocol.ts"
 
 function options(model = "first", effort = "high"): acp.SessionConfigOption[] {
   return [{
@@ -26,6 +27,7 @@ function options(model = "first", effort = "high"): acp.SessionConfigOption[] {
 function fakeProvider(overrides: Partial<AgentConnection> = {}) {
   const changes: acp.SetSessionConfigOptionRequest[] = []
   const sessions: acp.NewSessionRequest[] = []
+  const configs: AgentConfig[] = []
   let closed = 0
   let connections = 0
   let model = "first"
@@ -46,8 +48,8 @@ function fakeProvider(overrides: Partial<AgentConnection> = {}) {
     async close() { closed++ },
     ...overrides,
   }
-  const provider: AgentProvider = { id: "codex", async connect() { connections++; return connection } }
-  return { provider, changes, sessions, get closed() { return closed }, get connections() { return connections } }
+  const provider: AgentProvider = { id: "codex", async connect(config) { connections++; configs.push(config); return connection } }
+  return { provider, changes, sessions, configs, get closed() { return closed }, get connections() { return connections } }
 }
 
 test("agent configuration comes from ACP, flattens groups, and applies model before effort", async () => {
@@ -193,12 +195,12 @@ test("configuration discovery uses the target workspace without allocating a Ses
   assert.equal(fake.closed, 2)
 })
 
-test("configuration parameters reject unsupported agents and malformed choices", () => {
+test("configuration parameters reject invalid provider IDs and malformed choices", () => {
   for (const params of [
-    { provider: "unknown" }, { provider: "codex", workspaceId: "../file" },
+    { provider: "../unknown" }, { provider: "codex", workspaceId: "../file" },
     { provider: "codex", model: 42 }, { provider: "codex", reasoningEffort: "" },
   ]) assert.throws(() => validateAgentConfigurationParams(params))
-  assert.doesNotThrow(() => validateAgentConfigurationParams({ provider: "codex", workspaceId: "1", model: "model", reasoningEffort: "high" }))
+  assert.doesNotThrow(() => validateAgentConfigurationParams({ provider: "configured-agent", workspaceId: "1", model: "model", reasoningEffort: "high" }))
 })
 
 test("closing Agent service closes a pending discovery process", async context => {
@@ -216,4 +218,34 @@ test("closing Agent service closes a pending discovery process", async context =
   await service.close()
   await pending
   assert.equal(fake.closed, 1)
+})
+
+
+test("draft configuration resolves the selected provider's current launch settings and identity", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-agent-config-provider-"))
+  const fake = fakeProvider()
+  const catalog = new DaemonCatalog(directory)
+  await catalog.init()
+  const providers = new AgentProviders(directory, fake.provider)
+  await providers.init()
+  const configured = await providers.create({ template: "codex", name: "Work agent", binaryPath: "/tools/codex", env: { CODEX_HOME: "/work/agent" } })
+  const service = new AgentSessions(catalog, catalog.native, fake.provider, providers)
+  await service.init()
+  context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
+  const workspace = await catalog.native.createWorkspace("Configuration target", [{ path: directory }])
+  const params = { provider: configured.id, workspaceId: workspace.id, model: "second", reasoningEffort: "medium" }
+  const configuration = await service.handle("_deskfleet/agent/configuration", params, service.actor()) as AgentConfiguration
+  assert.deepEqual(configuration.provider, { id: configured.id, name: "Work agent" })
+  assert.equal(configuration.models?.currentValue, "second")
+  assert.equal(configuration.reasoningEfforts?.currentValue, "medium")
+  assert.deepEqual(fake.configs[0], { name: "Work agent", binaryPath: "/tools/codex", env: { CODEX_HOME: "/work/agent" } })
+  await providers.update(configured.id, { name: "Renamed agent", binaryPath: "", env: { CODEX_HOME: "/work/updated" } })
+  const updated = await service.handle("_deskfleet/agent/configuration", params, service.actor()) as AgentConfiguration
+  assert.deepEqual(updated.provider, { id: configured.id, name: "Renamed agent" })
+  assert.deepEqual(fake.configs[1], { name: "Renamed agent", binaryPath: "codex", env: { CODEX_HOME: "/work/updated" } })
+  await providers.remove(configured.id)
+  await assert.rejects(service.handle("_deskfleet/agent/configuration", params, service.actor()), /provider.*unavailable/iu)
+  assert.deepEqual(await service.journal.list(), [])
+  assert.equal((await catalog.native.snapshot()).workspaces[0]?.worktrees.length, 1)
+  assert.equal(fake.closed, 2)
 })

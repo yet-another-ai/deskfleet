@@ -5,6 +5,7 @@ import type { LocalDesktopTarget } from "../../../shared/desktop-media.ts"
 import type { AgentSessionSummary, MachineSummary, TerminalSessionSummary, WorkspaceSummary, WorktreeSummary } from "./fleet-types.ts"
 import { useTerminalsStore } from "./terminals.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
+import { useProvidersStore } from "./providers.ts"
 
 export interface WorkspaceLocation {
   machine: MachineSummary
@@ -67,6 +68,7 @@ export const useFleetStore = defineStore("fleet", () => {
   const collapsedMachineIds = ref(new Set<string>())
   const terminals = useTerminalsStore()
   const agents = useAgentSessionsStore()
+  const providers = useProvidersStore()
   const localMachine = () => machines.value.find(({ id }) => id === "local-daemon")!
   /** A terminal belongs to its owning Session Worktree, or to the machine. */
   function applyTerminals(): void {
@@ -101,7 +103,12 @@ export const useFleetStore = defineStore("fleet", () => {
       for (const metadata of Object.values(agents.sessions)) {
         if (metadata.workspaceId !== workspace.id) continue
         const summary = summaries.get(metadata.id) ?? { id: metadata.id }
-        Object.assign(summary, { title: metadata.title, provider: metadata.provider, context: metadata.context })
+        const provider = providers.providers.find(provider => provider.id === metadata.provider)
+        Object.assign(summary, {
+          title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
+          providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
+          context: metadata.context,
+        })
         summaries.set(summary.id, summary)
       }
       workspace.sessions = [...summaries.values()]
@@ -110,6 +117,7 @@ export const useFleetStore = defineStore("fleet", () => {
     applyTerminals()
   }
   watch(() => agents.sessions, applySessionMetadata, { deep: true })
+  watch(() => [providers.providers, providers.loaded], applySessionMetadata, { deep: true })
   function applySnapshot(snapshot: CatalogSnapshot): void {
     catalogIdentity.value = { teamId: snapshot.teamId, machineId: snapshot.machineId }
     localMachine().workspaces = snapshot.workspaces.map(workspaceSummary)

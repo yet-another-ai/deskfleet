@@ -68,8 +68,8 @@ starts one at that path with machine scope. On a Session's Worktree page it open
 a Session shell in that Session's bottom panel instead. The application
 does not display sample machines as live resources.
 
-Accounts, organization switching, remote machine registration, additional agent
-providers, and target pickers remain unimplemented. Placeholder controls
+Accounts, organization switching, remote machine registration, and target
+pickers remain unimplemented. Placeholder controls
 use `IconButton`'s `placeholder` state or the `common.placeholderControl` title.
 
 The window is frameless and has three columns. The sidebar holds the window
@@ -129,9 +129,11 @@ describes its target Workspace.
 
 ## Agent sessions
 
-Install and authenticate Codex CLI on the daemon's machine before sending a
-prompt. The bundled ACP adapter uses that CLI and its credentials. **New session**
-creates a persistent Session for the selected Workspace, then submits the prompt.
+Settings → Agents manages the machine's configured providers, including their
+names, icons, executable paths, and environment overrides. The Codex template
+uses the installed and authenticated Codex CLI through the bundled ACP adapter;
+the ACP template runs a configured ACP executable directly. **New session**
+creates a persistent Session for the selected Workspace and provider, then submits the prompt.
 The composer's context menu chooses **New worktree**, isolated Git checkouts from
 each directory's committed HEAD, or **Working directory**, which works in the
 Workspace's directories with their uncommitted changes. The last choice is
@@ -140,8 +142,9 @@ deleted; they do not expose a usable Worktree.
 
 Click the Agent summary in the composer to open a menu with Agent, Model, and
 Reasoning rows. Each row opens a submenu of choices with the current choice
-checked. Codex is the currently connected provider; model and effort
-choices come from its ACP configuration options. New-session selections are
+checked. The Agent submenu selects a configured provider for a new Session;
+model and effort choices come from that provider's ACP configuration options.
+New-session selections are
 remembered on the device and applied before the first prompt. In an existing
 Session, the menu reads and updates that Session's provider configuration.
 Model changes refresh the available reasoning choices. Failed requests keep the

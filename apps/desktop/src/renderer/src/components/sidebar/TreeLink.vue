@@ -20,7 +20,7 @@ const indent = { 0: "pl-2.5", 1: "pl-6", 2: "pl-10" } as const
     :class="indent[depth]"
     active-class="bg-ui-active"
   >
-    <component :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
+    <slot name="icon"><component :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /></slot>
     <span class="truncate">{{ label }}</span>
   </RouterLink>
 </template>

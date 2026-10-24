@@ -7,6 +7,10 @@ export interface AgentSessionSummary {
   title?: string
   /** The agent provider's user-facing name. */
   provider?: string
+  /** True only after a provider snapshot confirms that the saved provider is absent. */
+  providerUnavailable?: boolean
+  providerIcon?: string
+  providerTemplate?: string
   /** Absent until the Session's Agent metadata has loaded. */
   context?: AgentSessionContext
   /** Absent while provisioning or if context creation failed. */

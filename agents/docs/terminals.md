@@ -105,7 +105,8 @@ terminal** beside the real local machine and type directly into the terminal.
 Use the tab bar to switch shells or open another, and its hangup action to close
 one explicitly. Reopening a sidebar terminal attaches to its existing process. A
 Session's terminal button opens its bottom panel with shells in that Session's
-Worktree.
+Worktree, creating a shell automatically when none exists. Hiding and reopening
+the panel keeps the existing shells; hanging up its last shell closes the panel.
 
 `mise run check` covers native PTY behavior, daemon lifetime and flow control,
 signaling ownership, and renderer input/output. `mise run desktop:smoke-terminal`

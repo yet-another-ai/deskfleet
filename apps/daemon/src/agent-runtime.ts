@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type * as acp from "@agentclientprotocol/sdk"
-import { supportsSteering, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
+import { supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, timestamp } from "./agent-store.ts"
 import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
@@ -10,6 +10,7 @@ import { agentConfiguration, type AgentConfiguration, type AgentConfigurationSel
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
+export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
 const systemCommand = async (journal: AgentJournal, sessionId: string, inputId: string): Promise<AgentCommand> => ({
   id: await journal.id(), operationId: randomUUID(), actor: { ...journal.actor(), kind: "system" },
   sessionId, method: "dispatch", params: { inputId }, isCanonical: true,
@@ -21,7 +22,8 @@ export class AgentRuntime {
   readonly journal: AgentJournal
   readonly sessionId: string
   readonly #catalog: DaemonCatalog
-  readonly #provider: AgentProvider
+  readonly #resolveProvider: ResolveAgentProvider
+  #providerName?: string
   #configuration?: acp.SessionConfigOption[]
   #availableConfiguration?: acp.SessionConfigOption[]
   #openingConfiguration = false
@@ -39,10 +41,10 @@ export class AgentRuntime {
   #delivery?: Promise<void>
   readonly #permissions = new Map<string, (response: acp.RequestPermissionResponse) => void>()
 
-  constructor(journal: AgentJournal, catalog: DaemonCatalog, provider: AgentProvider, sessionId: string) {
+  constructor(journal: AgentJournal, catalog: DaemonCatalog, resolveProvider: ResolveAgentProvider, sessionId: string) {
     this.journal = journal
     this.#catalog = catalog
-    this.#provider = provider
+    this.#resolveProvider = resolveProvider
     this.sessionId = sessionId
   }
 
@@ -53,17 +55,22 @@ export class AgentRuntime {
     signal?.throwIfAborted()
     const saved = await savedAgentConfiguration(this.journal, this.sessionId)
     const snapshot = await this.journal.read(this.sessionId)
-    if (this.running || !snapshot.session.error) return agentConfiguration(this.#configuration ?? saved.options)
+    const providerId = snapshot.session.provider
+    // Reading a removed provider's history remains possible. Only a new process
+    // requires that its launch settings still exist.
+    try { this.#providerName = this.#resolveProvider(providerId).config.name } catch {}
+    const identity = { id: providerId, name: this.#providerName ?? providerId }
+    if (this.running || !snapshot.session.error) return agentConfiguration(this.#configuration ?? saved.options, identity)
     // Discover alternatives without resuming the failed conversation, changing
     // its saved selection, or releasing any pending inputs.
     let available: AgentConfiguration
-    if (this.#availableConfiguration?.length) available = agentConfiguration(this.#availableConfiguration)
+    if (this.#availableConfiguration?.length) available = agentConfiguration(this.#availableConfiguration, identity)
     else {
       const catalog = await this.#catalog.native.snapshot()
       const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
       if (!worktree?.directories[0]) throw new Error("Session worktree is unavailable")
-      available = await readAgentConfiguration({ provider: "codex", ...saved.selection }, worktree.directories[0].path,
-        { provider: this.#provider, signal, recoverSelection: true,
+      available = await readAgentConfiguration({ provider: providerId, ...saved.selection }, worktree.directories[0].path,
+        { ...this.#resolveProvider(providerId), signal, recoverSelection: true,
           onOptions: options => { this.#availableConfiguration = options },
         })
     }
@@ -148,7 +155,11 @@ export class AgentRuntime {
       await this.journal.commit(current, { runs: [run], events: [this.journal.event(this.sessionId, "run", run)] })
     })
     try {
-      const connection = await this.#provider.connect({ name: "Codex" }, {
+      // Resolve at process launch so edits apply to the next run, while an
+      // existing process keeps the settings with which it was started.
+      const { provider, config } = this.#resolveProvider(snapshot.session.provider)
+      this.#providerName = config.name
+      const connection = await provider.connect(config, {
         onUpdate: params => this.#update(params, run.generation),
         requestPermission: (params, signal) => this.#permission(params, signal, run.generation),
         onClose: error => this.#connectionLost(error, run.generation),

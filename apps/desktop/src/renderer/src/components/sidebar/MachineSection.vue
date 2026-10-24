@@ -16,6 +16,7 @@ import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import IconButton from "../common/IconButton.vue"
+import ProviderIcon from "../common/ProviderIcon.vue"
 import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
 import TreeLink from "./TreeLink.vue"
 
@@ -124,7 +125,10 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
               :icon="Bot"
               :label="sessionLabel(session)"
               :depth="1"
-            />
+            ><template #icon>
+              <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+              <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
+            </template></TreeLink>
           </li>
         </ul>
       </li>

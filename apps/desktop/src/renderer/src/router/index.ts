@@ -65,6 +65,11 @@ export const router = createRouter({
           name: "settings-preferences",
           component: () => import("../components/settings/PreferencesSettings.vue"),
         },
+        {
+          path: "agents",
+          name: "settings-agents",
+          component: () => import("../components/settings/AgentsSettings.vue"),
+        },
       ],
     },
     { path: "/:pathMatch(.*)*", redirect: "/" },

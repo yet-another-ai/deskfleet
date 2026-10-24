@@ -1,5 +1,6 @@
 import type { ControlMethod, ControlMethods, ControlRequest } from "./control-protocol.ts"
 import { resourceId, validateCatalogParams } from "./catalog-protocol.ts"
+import { validateProviderParams } from "./provider-protocol.ts"
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected an object")
@@ -21,6 +22,12 @@ function uint(value: unknown, label: string, positive = false): void {
 export function validateControlParams<M extends ControlMethod>(method: M, value: unknown): ControlMethods[M]["params"] {
   const params = object(value)
   switch (method) {
+    case "providerList":
+    case "providerCreate":
+    case "providerUpdate":
+    case "providerRemove":
+      validateProviderParams(method, params)
+      break
     case "directoryList":
       if (params.path !== undefined && (typeof params.path !== "string" || !params.path || params.path.includes("\0") || params.path.length > 4096)) {
         throw new Error("Invalid directory path")

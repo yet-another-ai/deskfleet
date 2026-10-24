@@ -153,7 +153,7 @@ test("draft choices accompany session creation and live changes use an idempoten
     if (method === "_deskfleet/session/configuration" || method === "_deskfleet/session/configure") return live
     return normal(method, params)
   })
-  await store.create("20", "Create configured session", "directory")
+  await store.create("20", "Create configured session", "directory", "codex")
   expect(mock.call).toHaveBeenCalledWith("_deskfleet/session/create", expect.objectContaining({ workspaceId: "20", model: "draft-model", reasoningEffort: "high", operationId: expect.any(String) }))
   await store.sessionConfiguration("30")
   expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/session/configuration", { sessionId: "30" })
@@ -178,4 +178,30 @@ test("live configuration events update the UI without extra reads and outrank st
   await reading
   expect(store.configurations["30"]?.models?.currentValue).toBe("orbit")
   expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/configuration")).toHaveLength(1)
+})
+
+test("session creation excludes model preferences saved for another configured provider", async () => {
+  const store = useAgentSessionsStore()
+  store.draftConfiguration = { provider: "codex", model: "codex-only", reasoningEffort: "high" }
+  mock.call.mockResolvedValue(agentSnapshot())
+  await store.create("20", "Use another agent", "directory", "work-agent")
+  expect(mock.call).toHaveBeenCalledWith("_deskfleet/session/create", {
+    workspaceId: "20", title: "Use another agent", context: "directory", provider: "work-agent",
+    model: undefined, reasoningEffort: undefined, operationId: expect.any(String),
+  })
+  window.localStorage.removeItem("deskfleet.agent-configuration")
+})
+
+test("live option updates retain the Session's configured provider identity", async () => {
+  const store = useAgentSessionsStore()
+  store.sessions["30"] = { ...agentSnapshot().session, provider: "work-agent" }
+  store.configurations["30"] = { provider: { id: "work-agent", name: "Work agent" }, models: null, reasoningEfforts: null }
+  receive(agentEvent(1, "acp", { sessionId: "provider", update: {
+    sessionUpdate: "config_option_update", configOptions: [{
+      id: "model", name: "Model", type: "select", category: "model", currentValue: "work-model",
+      options: [{ value: "work-model", name: "Work model" }],
+    }],
+  } }))
+  expect(store.configurations["30"]?.provider).toEqual({ id: "work-agent", name: "Work agent" })
+  expect(store.configurations["30"]?.models?.currentValue).toBe("work-model")
 })

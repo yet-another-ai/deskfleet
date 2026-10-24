@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentConfiguration } from "../../../../shared/agent-configuration.ts"
 import { i18n } from "../../i18n/index.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
+import { useProvidersStore } from "../../stores/providers.ts"
 import { agentSnapshot } from "../../test/agent.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import SessionComposer from "./SessionComposer.vue"
@@ -41,6 +42,11 @@ beforeEach(() => {
   window.localStorage.clear()
   pinia = createPinia(); setActivePinia(pinia)
   agents = useAgentSessionsStore()
+  const providers = useProvidersStore()
+  providers.providers = [{ id: "codex", name: "Codex", template: "codex", env: {} }]
+  providers.selectedId = "codex"
+  providers.ready = providers.loaded = true
+  agents.sessions["30"] = agentSnapshot().session
   vi.spyOn(agents, "agentConfiguration").mockResolvedValue(configuration())
 })
 afterEach(() => {
@@ -84,6 +90,27 @@ test("changes a model before offering its supported reasoning choices", async ()
   api.mockResolvedValueOnce({ ...next, reasoningEfforts: { ...next.reasoningEfforts, currentValue: "careful" } })
   await choose(view, "reasoning", "careful")
   expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", reasoningEffort: "careful", workspaceId: "11" })
+})
+
+test("switches configured providers without reusing another provider's model or accepting its pending response", async () => {
+  const providers = useProvidersStore()
+  providers.providers.push({ id: "work-agent", name: "Work agent", template: "acp", icon: "claude", env: {} })
+  agents.draftConfiguration = { provider: "codex", model: "retired-model", reasoningEffort: "high" }
+  const previous = deferredConfiguration()
+  const workConfiguration = { ...configuration("work-model"), provider: { id: "work-agent", name: "Work agent" } }
+  const api = vi.mocked(agents.agentConfiguration).mockResolvedValue(workConfiguration).mockReturnValueOnce(previous.promise)
+  const view = render()
+  await trigger(view).trigger("click")
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "retired-model", reasoningEffort: "high", workspaceId: "11" })
+  await choose(view, "agent", "work-agent")
+  expect(api).toHaveBeenLastCalledWith({ provider: "work-agent", workspaceId: "11" })
+  expect(providers.selectedId).toBe("work-agent")
+  expect(trigger(view).text()).toBe("Work agent · work-model · Medium")
+  expect(trigger(view).find('[data-provider-icon="claude"]').exists()).toBe(true)
+  previous.resolve(configuration("retired-model", "high")); await flushPromises()
+  expect(agents.draftConfiguration).toEqual({ provider: "work-agent", model: "work-model", reasoningEffort: "medium" })
+  await choose(view, "reasoning", "high")
+  expect(api).toHaveBeenLastCalledWith({ provider: "work-agent", model: "work-model", reasoningEffort: "high", workspaceId: "11" })
 })
 
 test("keeps confirmed choices after rejected changes and allows retry", async () => {
@@ -198,6 +225,21 @@ test("live session settings remain independent from saved draft preferences and 
   await view.setProps({ disabled: true })
   expect(row(view, "model").attributes("disabled")).toBeDefined()
   expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
+})
+
+test("a live Session retains its known provider name after registry removal and cannot switch providers", async () => {
+  useProvidersStore().providers = []
+  agents.sessions["30"] = { ...agentSnapshot().session, provider: "work-agent" }
+  const current = { ...configuration(), provider: { id: "work-agent", name: "Work agent" } }
+  agents.configurations["30"] = current
+  vi.spyOn(agents, "sessionConfiguration").mockResolvedValue(current)
+  const view = render(); await view.setProps({ sessionId: "30" })
+  expect(trigger(view).text()).toBe("Work agent · Sequoia · Medium")
+  await trigger(view).trigger("click"); await flushPromises()
+  expect(row(view, "agent").attributes("disabled")).toBeDefined()
+  expect(row(view, "agent").attributes("data-value")).toBe("work-agent")
+  expect(row(view, "model").attributes("disabled")).toBeUndefined()
+  expect(agents.agentConfiguration).not.toHaveBeenCalled()
 })
 
 test.each([
