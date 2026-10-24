@@ -65,8 +65,9 @@ and the [backend scope](backend.md#session-archive-and-restore).
 ## Provider configuration
 
 Each daemon owns its machine's provider settings in
-`<daemon directory>/agent-providers.json`. Settings → Agents lists those providers
-and supports adding, editing, and removing them over authenticated local IPC.
+`<daemon directory>/machine/agent-providers.json`. Settings → Agents lists those providers
+and supports adding, editing, and removing them through authenticated backend
+management RPC to the target daemon.
 The initial configuration contains a Codex provider. Removing all providers
 leaves the machine unconfigured until one is added; startup does not recreate
 deleted entries.
@@ -84,7 +85,7 @@ default binary. Blank paths use the template default. Overrides are added to the
 daemon's inherited environment at process startup. The provider dialog's
 **Test** button sends the unsaved settings to the daemon, which starts the agent,
 initializes ACP, and opens one session in an empty temporary directory without
-sending a prompt, then closes it. The test runs beside other local IPC requests,
+sending a prompt, then closes it. The test runs beside other management requests,
 gives up after 30 seconds, and reports the agent's own failure details. Template selection is
 immutable after creation because it determines the launch and configuration
 contract; the name, icon, path, and environment remain editable.
@@ -112,18 +113,17 @@ conversation IDs, and connection-local JSON-RPC request IDs are distinct.
 
 Every mutation has a client-generated UUID `operationId` and a daemon-assigned
 command ID. Its actor comes from the authenticated connection, never request
-parameters or `_meta`. The actor contains `kind`, optional `userId`, a qualified
-`sourceMachine`, and optional `deviceId`. Input authors and the people selecting
+parameters or `_meta`. The actor contains `kind`, optional `userId`, an optional
+qualified `sourceMachine`, and optional `deviceId`. Input authors and the people selecting
 those inputs for steering are recorded separately. Default backlog dispatch is
 a system action. The target machine is the daemon's catalog identity.
 
-Current signaling authenticates a local discovery token and records
-`kind: local_token` with the local source machine. Remote enrollment must bind
-peers to verified users and source devices before authorizing Session access.
-The [backend scope](backend.md) replaces unauthenticated resource creation with
-OIDC login and Team enrollment. A Web client has a verified user/device but may
-have no enrolled source Machine; the integrated actor model must represent that
-absence instead of assigning the target machine as the browser's identity.
+Central signaling binds peers to verified users and login/device identities.
+Resource creation requires OIDC login and Team enrollment. A Web client can
+have no enrolled source Machine; `sourceMachine` is then absent. The target
+machine is never assigned as the browser's identity. Local discovery credentials
+permit host setup; `local_token` actors remain only in explicit in-process test
+fixtures and internal development helpers.
 The [WebRTC authorization context](webrtc-security.md) binds that actor to the
 authenticated SDP exchange, target Machine, allowed actions, and a maximum
 24-hour peer lifetime. The daemon supplies the actor from this context and
@@ -145,7 +145,8 @@ already removed. Failed operations require a new operation ID to attempt again.
 
 ## Persistence model
 
-The existing SQLite catalog is the only Agent database. `deskfleet-store` owns
+The local SQLite catalog is the authoritative Agent database. PostgreSQL stores
+queryable replicas of its snapshots, events, and command audit. `deskfleet-store` owns
 SeaORM transactions, `deskfleet-model` owns typed records, and `deskfleet-node`
 exposes thin JSON bindings. The daemon owns scheduling, Git orchestration, and
 ACP callbacks. Records preserve ACP payloads as JSON; indexed columns enforce
@@ -156,7 +157,7 @@ ownership, lookup, and active-resource constraints.
 | `catalog_identity` | Singleton | Persistent catalog origin UUID |
 | `agent_id_allocator` | Singleton | Durable IDs for commands, inputs, turns, and permissions |
 | `workspace_sessions` | Existing `id` | Canonical Workspace ownership |
-| `agent_sessions` | `session_id` | Provider identity, title, lifecycle, capabilities, journal watermark, timestamps/error |
+| `agent_sessions` | `session_id` | Provider identity, title, lifecycle, archive state, capabilities, journal watermark, timestamps/error |
 | `agent_runs` | `(session_id, generation)` | Provider process state and start/end timestamps/error |
 | `agent_commands` | `id`; canonical `operation_id` | Immutable request audit and mutable receipt/outcome |
 | `agent_inputs` | `id` | Content/author, submission command, acceptance sequence, requested and actual delivery, dispatch command/actor |
@@ -164,9 +165,12 @@ ownership, lookup, and active-resource constraints.
 | `agent_permissions` | `id` | Original ACP request/options, run/turn, winning decision command/actor |
 | `agent_events` | `(session_id, seq)` | Ordered domain transitions and original ACP notifications |
 
-The currently implemented Session lifecycle is `provisioning`, `ready`,
-`provision_failed`, or `deleting`. Durable archive/restore state and transitions
-are additional work for the backend release.
+Session lifecycle is `provisioning`, `ready`, `provision_failed`, or `deleting`.
+Independent `archiveState` is `active`, `archiving`, or `archived`. Archive first
+persists `archiving` to close admission, then stops provider processes and owned
+terminals, and only then commits `archived`. A failed close retains `archiving`
+and can be retried with a new operation ID after restart. Restore permits only
+`archived` to `active`; it does not start processes or dispatch backlog.
 Runs are `starting`, `running`, `stopping`, `stopped`, `interrupted`, or `failed`.
 Each new provider process gets a new generation, including when resuming a saved
 conversation. Busy/idle/awaiting-approval are derived from turns and permissions.
@@ -262,7 +266,7 @@ cannot cancel the next turn or its approvals. Withdrawal affects only the named
 input. Stopping a provider retains pending backlog until the next request.
 
 A new or retried message to a stopped, interrupted, or failed agent resumes it;
-the planned archive state must require explicit restoration before this path.
+archived Sessions require explicit restoration before this path.
 Successful startup then drains the backlog in acceptance order. The UI shows no
 stopped or resume state. A provider that cannot resume its saved conversation
 rejects the message instead of queueing it, and the UI explains that a new
@@ -329,7 +333,8 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | `_deskfleet/permission/respond` | Audit an offered permission decision |
 | `_deskfleet/session/event` | Deliver committed domain and original ACP events |
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
-| `_deskfleet/session/resume`, `/stop`, `/delete` | Explicit provider/resource lifecycle operations; input submission also resumes |
+| `_deskfleet/session/resume`, `/stop` | Explicit provider lifecycle operations; input submission also resumes |
+| `_deskfleet/session/archive`, `/restore` | Backend management operations; preserve data and require an online daemon |
 
 Original ACP notifications, including provider Session IDs, are carried in journal
 events and projected once by the renderer. The facade advertises only supported

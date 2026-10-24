@@ -1,9 +1,9 @@
 # Terminals over WebRTC
 
-The Electron terminal uses xterm.js and a reliable, ordered WebRTC DataChannel.
+The shared Electron/Web terminal uses xterm.js and a reliable, ordered WebRTC DataChannel.
 It negotiates a data-only peer: no video/audio tracks, capture devices, codec
 selection, or screen-recording permission are involved. SDP and ICE reuse the
-authenticated local daemon signaling connection used by desktop streaming.
+authenticated central signaling service used by desktop streaming.
 
 ## Ownership and lifecycle
 
@@ -31,12 +31,12 @@ without an explicit `cwd`, starts the shell in that Worktree's first directory.
 The owner is recorded in terminal metadata and survives daemon restart. These
 shells appear only in the Session's bottom panel, not in the sidebar or the
 machine terminal tabs. Leaving the Session detaches the panel; destroying the
-Session currently hangs up its terminals before the Worktree is removed.
-The planned archive operation instead stops Session-owned PTYs while preserving
+Session through internal cleanup hangs up its terminals before the Worktree is removed.
+The user-facing archive operation stops Session-owned PTYs while preserving
 terminal metadata, transcripts, ownership, and Worktree files. It must not call
 the existing destructive hangup path. A terminal with the same cwd but different
-ownership is unaffected. Local Workspace directory configuration is connected; remote machine
-enrollment remains unimplemented.
+ownership is unaffected. Terminal creation and archive share the Session's
+admission queue, so a concurrent dial cannot leave a new process behind archive.
 
 Navigating away detaches the view. Losing a peer, reloading the renderer, or
 closing the window closes the transport without terminating the shell. Quitting
@@ -53,8 +53,8 @@ previously running sessions become `interrupted`, with read-only history. Dialin
 an interrupted session does not start a replacement shell. Keeping live
 PTY processes across daemon restarts requires a separate recoverable backend.
 
-Session archive/restore is part of the [backend release](backend.md), not yet
-implemented by the terminal service. Archived terminal records remain available
+Session archive/restore uses the terminal service's stop-and-retain path.
+Archived terminal records remain available
 for read-only replay. Restoring a Session preserves those records without
 starting a process; it cannot revive an ended shell. A later terminal start
 creates a new PTY without overwriting the previous terminal's identity or
@@ -69,16 +69,16 @@ signaling loss only within its existing authorization deadline.
 ## Wire contract and flow control
 
 `apps/daemon/src/terminal-protocol.ts` owns the provisional TypeScript contract.
-Shell lifecycle belongs to authenticated signaling: `terminalList` returns the
+Shell lifecycle belongs to authenticated backend management: `terminalList` returns the
 catalog, `terminalDial` creates or resumes a stable terminal ID, and
 `terminalHangup` ends it. Creation uses a client-selected ID so retrying a dial
 cannot create a duplicate shell. Resume requires an existing ID. Session changes
-and hangups are broadcast to authenticated clients, keeping their tabs current.
+and hangups trigger central catalog notifications so clients refresh their tabs.
 Hangup works without a live WebRTC data peer.
 
 The `deskfleet-terminal` channel carries attach, detach, input and resize requests
-plus output, replay-ready, exit and hangup events. A terminal must have been
-dialed on the authenticated signaling connection before the data peer may attach.
+plus output, replay-ready, exit and hangup events. A terminal must already exist
+on the target machine; the peer's authenticated grant authorizes its attachment.
 Terminal input and output never cross the Electron preload or signaling socket.
 A desktop media peer cannot invoke the terminal dispatcher.
 
@@ -92,16 +92,15 @@ rows, not pixel dimensions.
 ## Durable history
 
 The daemon saves the full output byte stream under
-`<daemon directory>/terminals/<terminal ID>/output.bin`, with session metadata in
+`<daemon directory>/machine/terminals/<terminal ID>/output.bin`, with session metadata in
 `session.json`. The default daemon directory is `~/.deskfleet`; the existing
 `DESKFLEET_DAEMON_DIRECTORY` override also selects history storage. Directories
 and files use private permissions. Output is flushed to disk before its offset
 is published to viewers. Metadata is replaced atomically, and creation/deletion
 use staged directories so incomplete operations cannot break recovery.
 
-History currently remains until explicit hangup; disconnect, client replacement,
-natural exit, and daemon restart do not delete it. Planned Session archive and
-restore also retain that history and must not be implemented as hangup.
+History remains until explicit hangup; disconnect, client replacement,
+natural exit, daemon restart, Session archive, and restore do not delete it.
 Replay reads bounded chunks from disk
 instead of keeping the transcript in daemon memory. Slow viewers continue from
 their acknowledged offset without discarding earlier output. An attachment
@@ -118,8 +117,9 @@ keystrokes that the shell does not echo are not recorded separately.
 
 ## Running and validation
 
-Start `mise run daemon:dev` and `mise run desktop:dev` separately. Use **New
-terminal** beside the real local machine and type directly into the terminal.
+Run the central backend and either client, sign in, select a Team, and enroll
+the machine. Electron can host its daemon; headless installations run
+`mise run daemon:dev`. Use **New terminal** on the selected machine.
 Use the tab bar to switch shells or open another, and its hangup action to close
 one explicitly. Reopening a sidebar terminal attaches to its existing process. A
 Session's terminal button opens its bottom panel with shells in that Session's

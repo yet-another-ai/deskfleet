@@ -71,7 +71,7 @@ alone does not close established DataChannels, while revocation and the grant's
 
 The window is frameless and has three columns. The sidebar holds the window
 toolbar (sidebar toggle, back, forward), the New session action, the resource
-tree, and a local-mode footer. The main pane shows the routed view under a header row
+tree, and the Team and machine selectors. The main pane shows the routed view under a header row
 that takes over the toolbar while the sidebar is hidden. The details panel on the
 right describes the current route's resource; its header toggle and its tab
 persist per device. The macOS traffic lights sit in the sidebar's toolbar row.
@@ -135,7 +135,7 @@ The composer's context menu chooses **New worktree**, isolated Git checkouts fro
 each directory's committed HEAD, or **Working directory**, which works in the
 Workspace's directories with their uncommitted changes. The last choice is
 remembered. Provisioning failures remain visible with their error and can be
-deleted; they do not expose a usable Worktree.
+archived; they do not expose a usable Worktree.
 
 Click the Agent summary in the composer to open a menu with Agent, Model, and
 Reasoning rows. Each row opens a submenu of choices with the current choice
@@ -167,7 +167,8 @@ closing the window leaves the agent running; quitting the app stops it.
 
 The terminal button in a Session's header opens a resizable bottom panel of
 shells in that Session's Worktree. Its open state and height are remembered per
-device. Leaving the Session detaches these shells; deleting it hangs them up. Restarting the daemon retains history
+device. Leaving the Session detaches these shells; archiving it stops them and
+retains their transcripts. Restarting the daemon retains history
 and marks interrupted runs; the next message resumes them.
 
 `useAgentSessionsStore` subscribes to snapshots and replays the committed event
@@ -197,7 +198,7 @@ replays full persisted history. The visible scrollback is 5,000 lines, without
 changing the daemon's retention; it will become a Terminal setting. Tabs show
 the connection as an icon and use the title the running program reports. See
 [terminal integration](../../agents/docs/terminals.md) for the wire contract and
-the remaining cross-machine signaling work.
+authorized remote signaling.
 
 ## Desktop playback
 
@@ -294,7 +295,7 @@ catalogs share keys and parameters and that literal `t("…")` keys exist.
 
 ## Styling
 
-Colors are CSS custom properties in `src/renderer/src/styles.css`, with light and
+Colors are CSS custom properties in `packages/components/src/styles.css`, with light and
 dark values. UnoCSS exposes them as `*-ui-<name>` utilities. presetMini has no
 preflight and omits some Wind utilities such as `list-none`, so `styles.css` also
 holds a small base reset.
@@ -314,7 +315,7 @@ Bundled builds load from the privileged `deskfleet-app://bundle/` scheme, which
 serves only files inside `out/renderer`. Development builds accept only the fixed
 loopback Vite URL. Each build injects its Content Security Policy into
 `index.html`. Production builds forbid renderer HTTP/WebSocket connections;
-WebRTC carries peer media and a narrow preload API carries local signaling. The
+WebRTC carries peer media and a narrow preload API carries authorized central signaling. The
 media policy permits local streams.
 The window denies new windows, navigation, and Chromium permission requests.
 Routing uses hash history so every route stays on the single bundled document.
@@ -357,6 +358,7 @@ real artwork of the same sizes.
 ```sh
 mise run check:desktop-types  # vue-tsc over all processes, configs, and scripts
 mise run check:desktop        # Vitest: main/shared in Node, renderer in happy-dom
+mise run backend:smoke-clients # Web and Electron login, remote RTC, archive, and history (TEST_DATABASE_URL)
 mise run desktop:smoke-media  # real Chromium/native H.264 decode; no screen capture
 mise run desktop:smoke-terminal  # real PTY I/O, resize, and reattachment over WebRTC
 mise run desktop:smoke-catalog  # built renderer CRUD, SQLite persistence, and directory shell cwd

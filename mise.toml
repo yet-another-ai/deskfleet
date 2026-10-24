@@ -28,6 +28,29 @@ run = "apm install --frozen"
 description = "Run the Actix Web backend"
 run = "cargo run -p deskfleet-server --locked"
 
+[tasks."backend:build"]
+description = "Build the API-only central backend"
+wait_for = ["native:debug", "rust:clippy", "rust:test"]
+run = "cargo build -p deskfleet-server --locked"
+
+[tasks."backend:test"]
+description = "Run central persistence and API integration tests against TEST_DATABASE_URL (PostgreSQL)"
+run = "cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored"
+
+[tasks."backend:smoke"]
+description = "Verify OIDC, two authenticated daemons, WebRTC, and synchronized history against PostgreSQL"
+depends = ["native:debug", "backend:build"]
+run = "node scripts/smoke-backend.ts"
+
+[tasks."backend:smoke-clients"]
+description = "Verify built Web and Electron clients against real OIDC, PostgreSQL, and remote daemons"
+depends = ["backend:build", "desktop:build", "web:build"]
+run = "node apps/desktop/scripts/smoke-backend-clients.ts"
+
+[tasks."protocol:generate"]
+description = "Regenerate shared TypeScript control contracts from Rust"
+run = "cargo run -p deskfleet-protocol --example export_types --locked"
+
 [tasks."db:migrate"]
 description = "Run catalog migrations (up by default; accepts status/down arguments)"
 env.DATABASE_URL = "{{ env.DATABASE_URL | default(value='sqlite://deskfleet.db?mode=rwc') }}"
@@ -35,7 +58,7 @@ run = "cargo run -p deskfleet-migration --features cli --locked --"
 
 [tasks.check]
 description = "Run TypeScript and Rust checks, tests, and debug builds"
-depends = ["check:static", "test", "rust:build", "desktop:build"]
+depends = ["check:static", "test", "rust:build", "desktop:build", "web:build"]
 
 [tasks."check-fast"]
 description = "Run the Rust edit-loop checks"
@@ -59,7 +82,7 @@ depends = ["check:scripts", "check:daemon", "check:desktop", "check:rust-tests"]
 
 [tasks.build]
 description = "Build the release server and standalone daemon"
-depends = ["rust:release", "daemon:pack"]
+depends = ["rust:release", "daemon:pack", "web:build"]
 
 [tasks."rust:release"]
 hide = true
@@ -94,6 +117,21 @@ run = "node scripts/smoke-daemon.ts"
 description = "Run the Electron desktop app with Vite watchers"
 depends = ["native:debug"]
 run = "pnpm --filter @deskfleet/desktop dev"
+
+[tasks."web:dev"]
+description = "Run the independently hosted Vue Web client"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/web dev"
+
+[tasks."web:build"]
+description = "Build the independent Vue Web client"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/web build"
+
+[tasks."web:typecheck"]
+description = "Check the Web client and shared Vue components"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/web typecheck"
 
 [tasks."desktop:smoke-media"]
 description = "Verify Chromium decoding native WebRTC media without screen capture"
@@ -179,7 +217,7 @@ run = "node scripts/check-rust-skills-harness.ts"
 
 [tasks."check:static"]
 hide = true
-depends = ["check:rust-skills-harness", "check:types", "check:desktop-types", "rust:format:check", "rust:shear", "rust:clippy"]
+depends = ["check:rust-skills-harness", "check:types", "check:desktop-types", "web:typecheck", "rust:format:check", "rust:shear", "rust:clippy"]
 
 [tasks."check:types"]
 hide = true
@@ -212,7 +250,7 @@ depends = ["rust:test"]
 
 [tasks."ci:check:static"]
 hide = true
-depends = ["check:static", "check:scripts", "desktop:build"]
+depends = ["check:static", "check:scripts", "desktop:build", "web:build"]
 
 [tasks."ci:report:sccache"]
 hide = true

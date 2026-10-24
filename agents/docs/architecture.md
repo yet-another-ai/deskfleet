@@ -4,20 +4,19 @@ deskfleet manages AI agents and their working environments across a team's
 computers. Users can browse workspaces and session history, inspect Git state,
 and access terminals or desktops on the machine doing the work.
 
-This document describes the planned system. The current implementation contains
-the Rust resource model, a SeaORM catalog with SQLite persistence, an Actix Web
-liveness endpoint, and a TypeScript daemon library calling a napi-rs addon.
-The desktop client manages workspace directory configuration and persistent
-Agent Sessions with conversation history, a shared backlog, steering, and
-approvals. The daemon runs from source, as a SEA executable, or inside the desktop app; it exposes native
-information and a local health endpoint, and runs configured agents through ACP.
-Agent clients use an ACP facade over DataChannel;
-the daemon owns execution, audit, and SQLite history. Native WebRTC peers,
-DataChannels, and on-demand capture/encoding are available through the daemon's
-native API. The Electron client uses authenticated local IPC for desktop signaling
-and Chromium WebRTC
-for decoding and playback in its sandboxed Vue renderer. The app hosts the
-daemon in its main process and stays in the tray after its windows close.
+The central Actix Web API uses PostgreSQL for OIDC application sessions, Teams,
+machine enrollment, access grants, and synchronized catalog/history. Electron
+and the independently hosted Web app share the Vue UI and authenticated client
+operations. Each TypeScript daemon connects outbound to the backend and keeps
+its execution journal in SQLite through napi-rs. Management uses authenticated
+backend APIs; Agent interaction, Git, terminals, and desktop streams use WebRTC.
+
+The daemon runs from source, as a SEA executable, or inside the Electron main
+process. It owns ACP providers, the shared backlog, steering, permissions,
+Session archive/restore, and native media. Electron retains a sandboxed renderer
+and stays in the tray after its windows close. The local discovery socket serves
+host setup, enrollment, and shutdown; it does not authorize team resource access.
+The MCP facade and desktop input expansion below remain follow-up work.
 
 ## Components
 
@@ -190,56 +189,46 @@ collection atomically. Reads preserve directory order. The default directory is
 always the first path, so no separate default flag can diverge from ordering.
 The store is a persistence boundary, not an authorization boundary.
 
-`deskfleet-migration` owns explicit, reversible schema migrations. Server startup
-opens `DATABASE_URL` and applies pending migrations before accepting HTTP
-connections. SQLite is the currently enabled and tested backend. The central
-backend release will use PostgreSQL; the daemon keeps SQLite. The schema uses
-portable SeaQuery types and constraints, but PostgreSQL server connection
-configuration, storage operations, and integration tests still need to be
-implemented. The daemon journal currently uses SQLite-specific SQL. See the
-[server guide](../../apps/server/README.md) for current configuration and
-migration commands.
+`deskfleet-migration` owns explicit, reversible SQLite catalog migrations. The
+central server uses independent PostgreSQL migrations in `deskfleet-control-store`
+and applies them before accepting requests. Central storage owns OIDC identities,
+login sessions, Team policy, enrollment, peer grants, and replicas qualified by
+central machine and local resource IDs. The local journal retains SQLite-specific
+SQL. Both stores have integration tests against their actual database engines.
+See the [server guide](../../apps/server/README.md) for configuration and migration
+commands.
 
-The standalone daemon opens `<daemon directory>/catalog.db` through a thin
-`NativeCatalog` napi binding after acquiring its discovery endpoint. `LocalCatalog`
-initializes a persistent local Team/Machine context in a transaction and scopes
-all operations to that machine. The current implementation enables operation
-without login; this is the pre-enrollment development path to be replaced by the
-authenticated Team flow above, not an authenticated account or membership.
-The local database is independent of the central server database. Enrollment and
-synchronization must map catalog identities rather than equate independently
-allocated integer IDs.
+The standalone daemon opens `<daemon directory>/machine/catalog.db` through a
+thin `NativeCatalog` napi binding after acquiring discovery. The local catalog
+keeps its persistent origin and integer machine/resource IDs. Enrollment binds
+that origin to the central Team and Machine. Earlier unauthenticated development
+data outside `machine/` is not imported into the enrolled machine.
 
-Authenticated local IPC exposes catalog listing and Workspace create/update/delete,
-plus Session create/destroy operations. There are no manual Worktree mutations.
-The daemon validates Workspace paths as absolute, existing directories. Committed
-changes broadcast `catalogChanged` to authenticated clients. Removing a Workspace
-never removes its configured directories from the filesystem.
+Authenticated backend management exposes catalog queries, Workspace
+create/update/delete, and Session create/archive/restore. The daemon validates
+Workspace paths as absolute, existing directories. There are no manual Worktree
+mutations or user-facing permanent Session deletion. Changes synchronize to the
+central catalog and notify Team clients. Workspace deletion never removes its
+configured source directories, and retained archived Sessions block deletion.
 
-Workspace forms choose paths through a reusable in-app folder dialog. Its browser
-callback lists directories on the target daemon over authenticated IPC, returning
-the current path, parent, home, roots, and child directories. The client treats
-these paths as opaque, so browsing uses the executing machine's filesystem and
-path conventions. The current client connects this dialog to the local daemon;
-remote routing can supply the same browser callback when connected. It does not
-use the operating system's folder picker.
+The shared folder dialog lists directories through backend RPC on the selected
+daemon. It returns the current path, parent, home, roots, and child directories.
+Clients treat paths as opaque so browsing follows the target machine's rules.
 
-Worktree Session creation allocates a durable Session ID and creates Git worktrees beneath
-`<daemon directory>/session-worktrees/<session ID>/`. A manifest records generated
-paths for cleanup after restart. Failure rolls back generated checkouts. Explicit
-Session destruction removes those disposable checkouts, including their local
-changes, before deleting the Session record. It never removes source checkouts.
-A daemon/client disconnect alone does not destroy a Session.
+Worktree Session creation allocates a durable ID and creates Git worktrees beneath
+`<daemon directory>/machine/session-worktrees/<session ID>/`. A manifest records
+generated paths. Provisioning failure rolls back partial checkouts. Archive
+retains those checkouts and their local changes; disconnect never destroys them.
+Internal destruction remains available for rollback and development tests only.
 
-The Electron renderer consumes these operations through its narrow preload bridge.
-`local-daemon` remains a connection target, distinct from the database Machine ID.
-It displays real local resources and supports opening a machine-owned terminal
-at a selected binding's path. The working directory does not change terminal
-ownership. Accounts, organizations, remote enrollment, central catalog HTTP
-operations, and daemon synchronization are not yet connected. The Agent UI lists
-persisted Session metadata and exposes each Session's Worktree when provisioning
-has succeeded. Failed provisioning remains visible without a fabricated Worktree.
-Daemon terminal transcripts retain their existing storage.
+Electron reaches the backend through its main-process transport and narrow
+preload bridge. Web uses its browser transport. Both use the selected central
+Machine identity for routes, caches, drafts, and commands; integer local IDs do
+not identify resources across machines. The UI displays synchronized history
+while a machine is offline and attaches through WebRTC for live Agent, Git, and
+terminal operations. The working directory remains separate from terminal
+ownership. Failed Session provisioning remains visible without a fabricated
+Worktree; terminal transcripts stay solely on the daemon.
 
 ## Daemon and session lifecycle
 
@@ -501,6 +490,7 @@ The Rust workspace contains:
 | `deskfleet-store` | SeaORM entities and transactional catalog persistence |
 | `deskfleet-migration` | Catalog schema migrations and optional migration CLI |
 | `deskfleet-protocol` | Shared wire contracts and protocol version |
+| `deskfleet-control-store` | PostgreSQL central identity, authorization, catalog, and history persistence |
 | `deskfleet-native` | Native capabilities independent of Node.js |
 | `deskfleet-capture` | Native display capture and retained GPU surfaces |
 | `deskfleet-encoder` | VideoToolbox/NVENC video encoding and Opus audio encoding |
@@ -509,13 +499,14 @@ The Rust workspace contains:
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
 | `deskfleet-server` | Actix Web application in `apps/server` |
 
-Dependencies flow `server -> protocol -> model`, `server -> store -> model/migration`,
+Dependencies flow `server -> protocol -> model`, `server -> control-store -> protocol`,
 `node -> store -> model/migration` for local catalog persistence,
 `node -> native -> capture/encoder`, and
-`@deskfleet/daemon -> @deskfleet/native`. The pnpm workspace currently contains
-the daemon, the desktop client, and the native package. TypeScript wire types
-should derive from the same authoritative contracts as Rust; napi declarations
-describe the native API separately.
+`@deskfleet/daemon -> @deskfleet/native`. The pnpm workspace contains the daemon,
+Electron and Web applications, the native package, `packages/client` for shared
+contracts/transports, and `packages/components` for Vue UI, stores, and routes.
+TypeScript control wire types derive from the Rust protocol crate; napi
+declarations describe the native API separately.
 
 `PROTOCOL_VERSION` stays at `1` until the first freeze is explicitly declared.
 Contracts evolve in place, including incompatible changes. Do not add version
@@ -525,18 +516,13 @@ mise manages tools and tasks with lockfile mode enabled. APM owns the checked-in
 skills. See the [development environment](environment.md), [CI workflow](ci.md),
 and [agent guide](../../AGENTS.md) for repository conventions.
 
-## Next milestone
-
-Daemon/native packaging, persistent Codex Sessions, the ACP DataChannel facade,
-and the conversation UI with a shared backlog, steering, and permissions are
-implemented. Remote enrollment and authenticated signaling will extend the same
-client contract across machines, including direct and TURN-relayed access.
+## Backend acceptance
 
 The [backend implementation scope](backend.md) covers OIDC and Teams,
 PostgreSQL, enrollment, authorized management APIs, signaling, synchronized
 catalog/history, reversible Session archive, and the shared Vue component
-package with an independent Web client. Complete one workflow in both Electron
-and Web: log in, select a Team,
+package with an independent Web client. The acceptance workflow in both Electron
+and Web is: log in, select a Team,
 enroll a headless machine, configure a Workspace, create a Session with its
 execution context, run an Agent, inspect its Git state from another machine,
 and open a terminal. Work continues after closing the client, reconnecting

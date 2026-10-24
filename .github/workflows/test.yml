@@ -84,3 +84,81 @@ jobs:
       - name: Report compiler cache health
         if: ${{ always() && steps.setup.outcome == 'success' }}
         run: mise run ci:report:sccache
+
+  backend:
+    name: PostgreSQL and remote backend
+    if: >-
+      ${{ !(inputs.docs_only &&
+          (github.event_name == 'pull_request' ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: deskfleet_test
+          POSTGRES_PASSWORD: deskfleet_test
+          POSTGRES_DB: deskfleet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U deskfleet_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://deskfleet_test:deskfleet_test@127.0.0.1:5432/deskfleet_test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up build environment
+        id: setup
+        uses: ./.github/actions/setup-build
+        with:
+          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          cache-rust-build: "true"
+
+      - name: Run PostgreSQL integration tests
+        run: mise run backend:test
+
+      - name: Run authenticated remote workflow
+        run: mise run backend:smoke
+
+      - name: Run the built Web and Electron clients
+        run: xvfb-run -a mise run backend:smoke-clients
+
+      - name: Start the test TURN relay
+        run: >-
+          docker run --detach --name deskfleet-turn-test
+          -p 127.0.0.1:3478:3478/udp -p 127.0.0.1:3478:3478/tcp
+          -p 127.0.0.1:49160-49180:49160-49180/udp
+          coturn/coturn:4.6.3@sha256:71c3c990283385567f11794ee692e3a47b66fd9b0bb39e42afbe776e331dd888
+          --no-cli --no-tls --no-dtls --fingerprint --use-auth-secret
+          --static-auth-secret=deskfleet-test-relay-secret --realm=deskfleet.test
+          --listening-port=3478 --min-port=49160 --max-port=49180
+          --external-ip=127.0.0.1 --allow-loopback-peers --log-file=stdout
+
+      - name: Verify the remote workflow over TURN only
+        env:
+          DESKFLEET_TURN_URLS: turn:127.0.0.1:3478?transport=udp
+          DESKFLEET_TURN_SECRET: deskfleet-test-relay-secret
+          DESKFLEET_SMOKE_RELAY_ONLY: "1"
+        run: mise run backend:smoke
+
+      - name: Verify Web and Electron over TURN only
+        env:
+          DESKFLEET_TURN_URLS: turn:127.0.0.1:3478?transport=udp
+          DESKFLEET_TURN_SECRET: deskfleet-test-relay-secret
+          DESKFLEET_SMOKE_FORCE_RELAY: "1"
+        run: xvfb-run -a mise run backend:smoke-clients
+
+      - name: Stop the test relay
+        if: ${{ always() }}
+        run: docker rm --force deskfleet-turn-test || true
+
+      - name: Report compiler cache health
+        if: ${{ always() && steps.setup.outcome == 'success' }}
+        run: mise run ci:report:sccache

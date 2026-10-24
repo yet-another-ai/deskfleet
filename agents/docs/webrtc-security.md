@@ -1,10 +1,11 @@
 # WebRTC key exchange and peer authorization
 
-This document owns the planned remote WebRTC identity, key exchange, and access
+This document owns remote WebRTC identity, key exchange, and access
 lifecycle. [Architecture](architecture.md) owns the component boundaries;
 [backend scope](backend.md) places this work in the first backend release.
-The current native transport already performs DTLS; central identity binding and
-the authorization lifecycle below are not yet implemented.
+The native transport performs DTLS. Central identity binding is implemented in
+the server's peer routes, with independent grant enforcement in the daemon's
+`AuthorizedPeers` service and both client adapters.
 
 ## Trust model
 
@@ -168,20 +169,21 @@ audit can retain actor, target, purpose, timestamps, expiry, and outcome.
 Because authenticated server channels already carry the binding, no independent
 SDP signature/JWT verification subsystem is needed for this trust model.
 
-| Current boundary | Required change |
+| Boundary | Implementation responsibility |
 | --- | --- |
 | [Native peer](../../crates/native/src/rtc/mod.rs) uses default certificate generation and standard remote SDP processing | Preserve stack-owned key generation and fingerprint verification; do not disable verification or expose private keys through napi |
-| [Control protocol](../../apps/daemon/src/control-protocol.ts) carries local `sessionId` and SDP | Define central peer identity, verified context, immutable description binding, and expiry separately from resource IDs |
-| [Control server](../../apps/daemon/src/control-server.ts) binds peers and terminal dial permission to one IPC connection | Give remote peers daemon-owned authorization/lifetime state; bind terminal access and Agent actors to that context |
-| [Desktop signaling controller](../../apps/desktop/src/main/desktop-media-controller.ts) treats signaling loss as peer failure | Distinguish signaling availability from RTC failure and explicit revocation; preserve working peers within their grant |
-| [Agent journal actor](../../apps/daemon/src/agent-store.ts) is `local_token` | Supply verified user/device identity from the bound peer, with source Machine absent for browsers that have none |
+| [Generated control protocol](../../crates/protocol/control.ts) carries authenticated peer context | Keep central peer identity, immutable description binding, and expiry separate from resource IDs |
+| [Authorized peers](../../apps/daemon/src/authorized-peers.ts) owns remote access | Bind terminal access and Agent actors to daemon-owned authorization/lifetime state |
+| [Remote client adapter](../../packages/client/src/remote.ts) tracks signaling and grants | Distinguish signaling availability from RTC failure and explicit revocation; preserve working peers within their grant |
+| [Agent journal actor](../../apps/daemon/src/agent-store.ts) records the authorized caller | Supply verified user/device identity from the bound peer, with source Machine absent for browsers that have none |
 | [Native ICE configuration](../../crates/native/src/rtc/types.rs) already supports servers and relay-only policy | Pass authorized server-provided ICE configuration to both endpoints |
 
-The locked native dependency already generates a certificate for each default
+The locked native dependency generates a certificate for each default
 PeerConnection and checks the remote handshake certificate against its SDP
-fingerprint. The missing work is authenticated identity binding, operation
-authorization, and connection lifecycle. Local discovery tokens remain local
-transport credentials and must not become remote grants.
+fingerprint. The server and daemon implement authenticated identity binding,
+operation authorization, and connection lifecycle around that transport.
+Local discovery tokens remain local transport credentials and cannot authorize
+remote grants.
 
 ## Acceptance
 

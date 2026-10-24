@@ -18,14 +18,15 @@ DESKFLEET_OIDC_ISSUER='https://identity.example.com' \
 DESKFLEET_OIDC_CLIENT_ID='deskfleet' \
 DESKFLEET_OIDC_CLIENT_SECRET='from-your-identity-provider' \
 DESKFLEET_PUBLIC_URL='https://api.example.com' \
-DESKFLEET_OIDC_RETURN_TO='https://app.example.com/auth/callback,http://127.0.0.1:*/auth/callback' \
+DESKFLEET_OIDC_RETURN_TO='https://app.example.com/,http://127.0.0.1:*/auth/callback' \
 DESKFLEET_WEB_ORIGINS='https://app.example.com' \
 mise exec -- cargo run -p deskfleet-server --locked
 ```
 
 Register `https://api.example.com/api/auth/callback` as the OIDC provider's exact
 redirect URI. `DESKFLEET_OIDC_RETURN_TO` is a comma-separated allowlist of final
-application callbacks. Browser URLs must match exactly. The one supported
+application callbacks. Browser URLs must match the Web application's entry URL
+exactly, including its pathname and trailing slash. The one supported
 wildcard, `http://127.0.0.1:*/auth/callback`, allows Electron's ephemeral loopback
 port; it does not permit other hosts, paths, queries, or credentials. The OIDC
 callback redirects with a short-lived one-use `#loginCode`. The initiating client

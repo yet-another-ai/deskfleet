@@ -4,7 +4,9 @@ This document defines the first backend delivery and the local implementation
 that it replaces or extends. [Architecture](architecture.md) owns component and
 resource boundaries; [Agent Sessions](agent-sessions.md) and
 [terminals](terminals.md) own execution and replay semantics. This is an
-implementation scope, not a claim that the services below already exist.
+implementation scope and acceptance contract. Implementation entry points are
+the [server guide](../../apps/server/README.md),
+[daemon guide](../../apps/daemon/README.md), and shared Vue packages.
 
 ## Confirmed product decisions
 
@@ -77,17 +79,20 @@ distinct.
 
 ## Local implementation changes
 
+The left column records the pre-backend baseline; the right column describes
+the implemented replacement boundary and its validation requirements.
+
 | Current implementation | Required change |
 | --- | --- |
 | [Server routes](../../apps/server/src/lib.rs) expose only `/healthz`; startup opens the catalog | Implement the authenticated control-plane APIs and daemon connection service |
 | [LocalCatalog](../../crates/store/src/local.rs) creates a `Local` Team/Machine and permits use without login | Require enrollment and authenticated Team context in the integrated flow; retain local storage and resource ownership |
 | [Control server](../../apps/daemon/src/control-server.ts) uses one discovery token and an authenticated boolean for local APIs | Bind requests and peers to verified identities and Team actions; local socket authentication remains a transport check |
 | [Agent store](../../apps/daemon/src/agent-store.ts) constructs a `local_token` actor | Record verified user and device identities; an optional source Machine represents an actual enrolled machine, never a fabricated browser machine |
-| [Fleet store](../../apps/desktop/src/renderer/src/stores/fleet.ts) fixes the target to `local-daemon` | Read the Team catalog from the backend and route operations to selected machines |
-| [Router](../../apps/desktop/src/renderer/src/router/index.ts) and Session stores identify resources by unqualified local IDs | Qualify routes, caches, drafts, and pending operations by resource origin/target so equal IDs on different machines cannot collide |
+| [Fleet store](../../packages/components/src/stores/fleet.ts) fixes the target to `local-daemon` | Read the Team catalog from the backend and route operations to selected machines |
+| [Router](../../packages/components/src/router/index.ts) and Session stores identify resources by unqualified local IDs | Qualify routes, caches, drafts, and pending operations by resource origin/target so equal IDs on different machines cannot collide |
 | [Desktop signaling](../../apps/desktop/src/main/desktop-media-controller.ts) connects only to local IPC and reports signaling loss as peer failure | Add central signaling and backend management transports; keep valid working peers alive across signaling loss, bounded by revocation and expiry |
-| [Agent](../../apps/desktop/src/renderer/src/services/agent-client.ts), [terminal](../../apps/desktop/src/renderer/src/services/terminal-client.ts), and [desktop](../../apps/desktop/src/renderer/src/composables/useDesktopConnection.ts) peers use empty ICE server lists | Apply server-issued STUN/TURN configuration to both peers and verify relayed access |
-| [Session history](../../apps/desktop/src/renderer/src/stores/agent-sessions.ts) reads only through the daemon DataChannel | Add backend history reads and reconcile the stored watermark with live subscription without replaying commands |
+| [Agent](../../packages/components/src/services/agent-client.ts), [terminal](../../packages/components/src/services/terminal-client.ts), and [desktop](../../packages/components/src/composables/useDesktopConnection.ts) peers use empty ICE server lists | Apply server-issued STUN/TURN configuration to both peers and verify relayed access |
+| [Session history](../../packages/components/src/stores/agent-sessions.ts) reads only through the daemon DataChannel | Add backend history reads and reconcile the stored watermark with live subscription without replaying commands |
 | [Catalog notifications](../../apps/daemon/src/catalog.ts) publish immediate `catalogChanged` events | Add synchronization that recovers missed changes and records deletions independently of removed resources |
 | [Session deletion](../../apps/daemon/src/agent-sessions.ts) removes resource rows and their journal | Add reversible archive/restore and remove Session deletion from first-release user operations; do not reuse destruction for archive |
 | [Terminal hangup](../../apps/daemon/src/terminals.ts) removes the transcript and metadata | Add a stop-and-retain path for archive; close only Session-owned PTYs and preserve all terminal records |
@@ -105,10 +110,11 @@ may pass through the authorized API, but launch environment values and CLI
 credentials do not belong in the central catalog/history. Synchronize only the
 Provider metadata needed for selection and display.
 
-The existing one-shot [agent CLI](../../apps/daemon/src/agent-cli.ts) starts a
-provider directly and destroys its temporary managed Session on exit. It is not
-the foundation for remote persistent Sessions. A future production CLI/MCP
-client should use the same authorized operations as the interactive clients.
+The one-shot [agent CLI](../../apps/daemon/src/agent-cli.ts) starts a provider
+directly in a chosen working directory for adapter diagnostics. It does not
+create managed resources or provide an unauthenticated path into Team Sessions.
+A future production CLI/MCP client should use the same authorized operations as
+the interactive clients.
 
 ## Data ownership and synchronization
 

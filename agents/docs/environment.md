@@ -12,8 +12,11 @@ repository root in a login shell:
 ```sh
 mise trust
 mise install --locked
-mise run dev
 ```
+
+Configure PostgreSQL and OIDC using the [server guide](../../apps/server/README.md),
+then run `mise run dev`. `mise run web:dev` starts the independent frontend;
+`mise run desktop:dev` starts Electron. Both clients sign in to the same backend.
 
 Use PowerShell 7 (`pwsh`) on Windows. `mise exec -- <command>` runs a focused
 command with the project tools even when the shell has not activated mise.
@@ -48,10 +51,15 @@ then include the configuration and lockfile changes together.
 | --- | --- |
 | `mise run install` | Install the pnpm workspace from the frozen lockfile |
 | `mise run dev` | Run the Actix Web server |
+| `mise run backend:test` | Run real PostgreSQL integration tests using `TEST_DATABASE_URL` |
+| `mise run backend:smoke` | Exercise OIDC, two enrolled daemons, native WebRTC, and synchronized history |
+| `mise run backend:smoke-clients` | Drive the built Web and Electron clients through login and remote execution; use `xvfb-run -a` on headless Linux |
 | `mise run db:migrate` | Apply catalog migrations; append `-- status` or `-- down` for migration management |
 | `mise run daemon:dev` | Build the debug addon and run the daemon from TypeScript |
 | `mise run desktop:dev` | Run the Electron app with the Vite renderer server and watched main/preload bundles |
 | `mise run desktop:build` | Build the Electron main, preload, and renderer bundles |
+| `mise run web:dev` / `web:build` | Run or build the independent Vue Web app |
+| `mise run web:typecheck` | Check the Web app and shared components |
 | `mise run desktop:smoke-catalog` | Exercise local catalog forms, persistence, and directory terminals in production Electron |
 | `mise run desktop:package` / `desktop:package:dir` | Package the desktop app with electron-builder as installers or an unpacked directory |
 | `mise run check` | Run static checks, TypeScript and Rust tests, and debug workspace and desktop builds |
@@ -70,7 +78,8 @@ Public tasks compose focused tasks in `mise.toml`. Independent checks can run in
 parallel. Cargo operations sharing `target/` use mise's `wait_for` ordering when
 they appear in the same run, avoiding repeated builds and lock contention.
 
-The pnpm workspace contains `apps/daemon`, `apps/desktop`, and `crates/node`.
+The pnpm workspace contains `apps/daemon`, `apps/desktop`, `apps/web`,
+`packages/client`, `packages/components`, and `crates/node`.
 Root TypeScript configuration checks the daemon, native loader, and repository
 scripts with TypeScript 7. The desktop package checks itself with vue-tsc, which
 needs the TypeScript compiler API, so it installs TypeScript 6 under the

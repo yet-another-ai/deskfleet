@@ -10,10 +10,14 @@ a stable `Gate` result for branch protection.
   runs. It classifies the changed files, calls Test and Build, and combines their
   results in `Gate`. Configure `Gate` under the `CI` workflow as the required
   status check in repository branch protection.
-- `.github/workflows/test.yml` runs static checks and the desktop bundle build
+- `.github/workflows/test.yml` runs static checks and the desktop/Web bundle builds
   once on Linux with `mise run ci:check:static`, plus Rust, daemon, and desktop
   tests on Linux, macOS, and Windows with `mise run test`. It supports reusable
-  calls and manual runs.
+  calls and manual runs. A separate Linux job runs real PostgreSQL integration
+  tests and the OIDC/two-daemon remote workflow against a PostgreSQL 17 service,
+  both directly and with relay-only peers through an isolated coturn container.
+  The same job drives the built Web and Electron clients under Xvfb through
+  actual login, remote execution, archive/restore, and offline history flows.
 - `.github/workflows/build.yml` builds release artifacts using `mise run build`.
   Pull requests use a Linux x64 smoke build; main and manual runs use the full
   platform matrix. Each target packages and verifies the standalone SEA daemon.
@@ -23,6 +27,9 @@ a stable `Gate` result for branch protection.
 
 The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each archive
 contains `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
+The Linux x64 job also uploads `deskfleet-web` with the static Vue application.
+Its default API origin is the hosting origin; deployments with a separate API
+origin build with `VITE_DESKFLEET_SERVER_URL` as described in the Web guide.
 
 Smoke tests copy the daemon executable alone to an unrelated temporary directory,
 clear Node's environment overrides and PATH, then check native information,

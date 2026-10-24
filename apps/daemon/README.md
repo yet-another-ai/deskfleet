@@ -1,18 +1,12 @@
 # deskfleet daemon
 
-`@deskfleet/daemon` is a TypeScript library. It runs as a standalone SEA process
-on headless machines or inside the desktop app's main process. It reports
-native platform information, serves a loopback health
-endpoint, owns a persistent workspace/worktree catalog, and runs Codex CLI and
-Claude Code sessions over ACP.
+`@deskfleet/daemon` is a TypeScript library, hosted inside Electron's main process
+or packaged as a standalone SEA executable for headless machines. It owns local
+Workspace configuration, ACP providers, Session execution, terminals, native
+WebRTC, and the authoritative SQLite journal. The central backend authorizes
+management operations and stores queryable catalog/history replicas.
 
-Its programmatic `PeerSessions` API owns native WebRTC peers and optional desktop
-streams; daemon shutdown closes these sessions. The CLI exposes authenticated
-local IPC for Electron capability discovery, WebRTC signaling, and capture
-control. Central server signaling is not yet connected. See [native media](../../agents/docs/media.md) for the API,
-platform support, and codec details.
-
-## Development
+## Development and enrollment
 
 From the repository root:
 
@@ -20,102 +14,88 @@ From the repository root:
 mise run daemon:dev
 ```
 
-This builds the debug addon and starts the TypeScript entry point. The daemon
-binds `127.0.0.1` on an available port and prints one ready event:
+This builds the addon and starts a loopback health listener. A ready event prints
+its address; `GET /healthz` reports the loaded native version and platform.
+`--port 8081` selects a port, and `--info` prints native/runtime information and
+exits. Configure PostgreSQL and OIDC through the [server guide](../server/README.md).
+Both Electron and Web require login and Team selection before resource creation.
 
-```json
-{"event":"ready","address":"http://127.0.0.1:49152"}
-```
-
-`GET /healthz` returns `status: "ok"` and the Rust addon's `version`, `os`, and
-`arch` under `native`.
-
-Use `--port 8081` to select a port. `--info` prints native information plus the
-Node runtime version and whether the process is a SEA, then exits. For example,
-after the debug build:
+Electron can enroll the daemon it hosts. For a headless machine, first start its
+daemon, then inspect its installation identity:
 
 ```sh
-mise exec -- node apps/daemon/src/main.ts --info
-mise exec -- node apps/daemon/src/main.ts --port 8081
+mise exec -- node apps/daemon/src/main.ts status
 ```
 
-The CLI publishes its authenticated Unix socket or Windows named pipe in
-`~/.deskfleet/daemon.json` (private directory and file). Set
-`DESKFLEET_DAEMON_DIRECTORY` to use another directory, with the same value in the
-Electron environment. Only one daemon can publish a live endpoint there. Local
-IPC initializes capture only when the client requests capabilities or a stream.
-On macOS, startup first requests screen/system-audio recording permission from
-the daemon process, without waiting for consent before serving other operations.
-The authenticated handshake and permission events report its status to Settings;
-denial does not stop the daemon. See [media permissions](../../agents/docs/media.md).
-Losing a client closes its peers, leaving the daemon, agent work, and terminal
-processes alive. The data-only terminal peer uses the same authenticated signaling
-path. Dial, hangup, catalog and lifecycle events use signaling; terminal bytes
-and resize travel on its WebRTC DataChannel. `TerminalSessions` owns native PTYs
-and their full disk-backed output history. History lives in the daemon directory
-until explicit hangup. Restart preserves history and marks lost processes
-interrupted. See [terminals](../../agents/docs/terminals.md).
+In the Web client's Team controls, enroll a headless machine using that
+`originId` and local `machineId`. The client displays the new machine credential
+once. Save that JSON privately or paste it on stdin:
 
-On Unix, SIGINT and SIGTERM close the listeners, database, media sessions, and PTYs, remove the
-discovery record, and exit cleanly.
+```sh
+mise exec -- node apps/daemon/src/main.ts enroll --server-url https://backend.example < machine-credentials.json
+```
 
-The package root exports `startDaemon()`, returning `close()` and a `closed`
-promise that settles after cleanup. Importing the library does not launch the
-CLI. The `control-client` and `control-discovery` subpaths let clients connect
-without loading native daemon implementation modules. Authenticated `shutdown`
-acknowledges the request, stops new work, and closes resources before releasing
-discovery. Unauthenticated clients cannot request shutdown.
+The JSON contains `machineId` (the central machine ID), `teamId`, and `token`.
+Enrollment verifies the credential and its installation identity with the
+backend before persisting it. The credential never appears in command-line
+arguments or status output. HTTPS is required except for loopback development.
 
-Desktop Settings starts this library in the app's main process by default, and
-quitting the app stops it. Its runtime and native addon ship with the desktop
-application; the standalone SEA runs independently for headless installations. Both hosts share
-the same discovery, catalog, and terminal storage. See the
-[desktop guide](../desktop/README.md#local-agent) for the toggle and lifecycle.
+The daemon publishes a private Unix socket or Windows named pipe through
+`~/.deskfleet/daemon.json`. `DESKFLEET_DAEMON_DIRECTORY` selects another directory.
+Only one live daemon can own it. The discovery token permits host setup,
+enrollment, capabilities, and shutdown; it does not grant resource access.
+Production resource operations go through the backend's authenticated APIs.
+Explicit in-process test fixtures can enable local control; neither the CLI nor
+configuration nor IPC can enable that fixture path.
 
-## Local workspace catalog
+## Storage and process ownership
 
-The daemon stores workspaces, worktrees, and ordered directory bindings in
-`<daemon directory>/catalog.db`, using SeaORM through the Rust addon. Migrations
-and a local Team/Machine context initialize only after the daemon owns discovery.
-That context persists across restarts and enables standalone use without an
-account or organization. It is separate from the central server's database.
+Production machine data lives under `<daemon directory>/machine/`:
 
-The authenticated IPC connection supports these methods:
+- `central.json`: private machine registration and credential.
+- `catalog.db`: SQLite Workspace/Session ownership, conversation, and audit.
+- `agent-providers.json`: machine-local provider launch settings and environment.
+- `session-worktrees/`: ownership manifests and generated Session checkouts.
+- `terminals/`: terminal metadata and full output transcripts.
 
-| Method | Parameters | Result |
-| --- | --- | --- |
-| `catalogList` | none | Local context and all workspaces/worktrees |
-| `directoryList` | optional absolute `path` (defaults to daemon home) | Current path, parent, home, roots, and child directories |
-| `workspaceCreate` | `name`, `directories` | Workspace with its automatic main Worktree |
-| `workspaceUpdate` | `workspaceId`, `name`, `directories` | Workspace with its updated main context |
-| `workspaceDelete` | `workspaceId` | Empty result; rejects active Sessions |
-| `workspaceSessionCreate` | `workspaceId` | Session ID, Workspace ID, and its generated Worktree |
-| `workspaceSessionDestroy` | `sessionId` | Empty result after removing the Session's disposable checkouts |
+Earlier unauthenticated development data outside this namespace is not imported.
+Local integer IDs remain decimal strings and are qualified by the catalog origin
+and central machine identity. Equal IDs on different machines stay distinct.
 
-`catalog-protocol.ts` reuses DTOs generated from the Rust binding. IDs remain
-decimal strings, including values above JavaScript's safe integer range.
-Each directory contains only `path`. Creating or updating a Workspace requires at
-least one unique absolute existing directory. Order is preserved and the first
-path is the default. Workspace creation atomically creates its permanent main
-Worktree from these paths. There are no independent Worktree mutation methods.
-Deleting a Workspace leaves its configured source directories on disk. Successful mutations broadcast `catalogChanged` to
-authenticated clients. Unauthenticated clients cannot read, mutate, or observe
-the catalog.
+The daemon connects outbound to the central control WebSocket. Workspace,
+Provider, Session archive/restore, directory browsing, and terminal lifecycle
+requests carry a server-verified actor. Peer authorization has an independent
+lifetime: a working peer survives signaling loss until closure, revocation, or
+its 24-hour deadline. Closing a viewer does not stop Agents or PTYs. History
+synchronization replays durable events and command receipts after reconnect;
+terminal bytes and desktop media are not synchronized centrally.
 
-Electron exposes Workspace operations as `window.deskfleet.catalog` through the
-existing authenticated connection. Worktrees are read-only contexts in the UI.
-The folder picker uses `window.deskfleet.filesystem.listDirectories` on that
-connection. Directory enumeration and path handling run on the daemon; the
-renderer uses returned paths without applying its own operating system's rules.
-Managed Session creation derives detached Git worktrees from committed HEADs and
-maps each directory, including subdirectories, into them. Session destruction
-removes those generated checkouts (including local changes) and their catalog
-record. Ownership manifests beneath `session-worktrees/` allow explicit cleanup
-after daemon restart. Source checkouts are never removed. Non-Git directories
-remain usable in the main context; isolated Sessions require Git-backed paths.
- Catalog data survives closing Electron and restarting
-the daemon. Local IDs belong to this database; future enrollment/synchronization
-must not merge them with independent databases by integer equality.
+On macOS startup requests screen/system-audio access without blocking other
+operations. Denial does not stop the daemon. Capture initializes on demand; see
+[media permissions](../../agents/docs/media.md). Data-only Agent and terminal
+peers do not require capture permission.
+
+The library exports `startDaemon()`, `close()`, and a `closed` promise. Importing
+it does not launch the CLI. Electron hosts the daemon in its main process and
+closes windows to the tray; quitting the application stops its daemon. Standalone
+SEA installations run independently. SIGINT/SIGTERM close listeners, providers,
+peers, and PTYs, preserve history, and release discovery after cleanup.
+
+## Workspace and Session management
+
+Backend machine RPC authorizes `catalogList`, `directoryList`,
+`workspaceCreate`, `workspaceUpdate`, and `workspaceDelete`. Workspace creation
+requires ordered, unique, absolute directory paths. The first is the default;
+there are no aliases or independently managed Worktrees. A Workspace's main
+Worktree uses its actual directories. Session creation chooses either generated
+Git worktrees or the original directories. Directory browsing always runs on the
+target daemon, using that machine's path rules.
+
+Archive retains Session-owned worktrees, including uncommitted and untracked
+files. Archived Sessions still own their Workspace and block its deletion.
+Workspace deletion leaves the configured source directories intact.
+See [Agent Sessions](../../agents/docs/agent-sessions.md) and
+[terminals](../../agents/docs/terminals.md) for persistence and lifecycle details.
 
 ## Agents through ACP
 
@@ -133,13 +113,15 @@ execution running; reopening replays the journal over the `deskfleet-acp`
 DataChannel. The composer can queue a message or steer the current turn, and a
 pending candidate can also be selected for steering. Stop retains the backlog;
 the next message, or an explicit `session/resume`, reuses the saved provider
-conversation. Explicit deletion removes the owned
-checkouts and history while retaining command audit.
+conversation. Archive stops the provider and Session-owned terminals while preserving all files,
+conversation history, audit, queued inputs, and terminal transcripts. Restore
+returns the same Session to active use without starting processes. Permanent
+Session deletion is unavailable through user-facing APIs or clients.
 
-Local IPC adds `agentOffer` for SDP/ICE signaling only. Conversation operations
-use the DataChannel extensions documented in
-[Agent Sessions](../../agents/docs/agent-sessions.md). Local token identity is
-audited today; remote account enrollment is separate work.
+The backend authenticates and binds SDP to a user, login session, Team, target
+machine, and 24-hour peer grant. Conversation operations use the DataChannel
+extensions documented in [Agent Sessions](../../agents/docs/agent-sessions.md).
+The daemon records the verified actor supplied by the grant.
 
 Run `mise run desktop:smoke-agent` to verify the production Electron flow with
 real WebRTC, SQLite, and Git worktrees using a scripted provider and no paid
@@ -151,8 +133,6 @@ After `mise run install`, check ACP initialization or run one prompt from source
 ```sh
 mise exec -- node apps/daemon/src/main.ts agent codex --check
 mise exec -- node apps/daemon/src/main.ts agent codex --cwd /path/to/repository --prompt 'Explain this repository'
-# With the daemon running and a Git-backed Workspace already configured:
-mise exec -- node apps/daemon/src/main.ts agent codex --workspace-id 1 --prompt 'Explain this repository'
 mise exec -- node apps/daemon/src/main.ts agent claude-code --check
 ```
 
@@ -173,12 +153,9 @@ The selected binary path takes precedence over `CODEX_PATH` or
 `CLAUDE_CODE_EXECUTABLE` in the environment, so the Claude adapter never falls
 back to the SDK's optional bundled binary.
 `--cwd` sets an unmanaged ACP session's working directory and defaults to the
-current directory. `--workspace-id` instead allocates a managed Session through
-the running daemon; these flags are mutually exclusive. It uses the generated
-Worktree's first directory as cwd and destroys that Session after the provider
-process closes, including initialization or prompt failure. The provider's
-`sessionId` remains distinct from the bigint database Session ID. Closing the
-Electron client does not destroy the Session.
+current directory. This one-shot development helper does not create a team
+Session. Use the authenticated Web or Electron client for persistent Sessions;
+the former `--workspace-id` local development path is unavailable in the CLI.
 
 The CLI cancels permission requests and emits `permission_cancelled` events.
 It has no approval UI; prompts requiring approval cannot proceed through it.
