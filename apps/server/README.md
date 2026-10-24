@@ -10,7 +10,18 @@ See the [backend scope](../../agents/docs/backend.md) and
 
 ## Run and configure
 
-Use PostgreSQL 17 or later and the locked repository toolchain:
+For local development, the repository's Docker Compose supplies PostgreSQL, a
+Dex OIDC provider with two test accounts, and coturn. From the repository root:
+
+```sh
+mise run infra:up
+mise -E development run dev
+```
+
+See the [development environment](../../agents/docs/environment.md#local-docker-compose)
+for login credentials, Web/Electron startup, isolated test databases, and cleanup.
+
+For your own services, use PostgreSQL 17 or later and the locked toolchain:
 
 ```sh
 DATABASE_URL='postgres://deskfleet:password@127.0.0.1:5432/deskfleet' \

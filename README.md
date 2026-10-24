@@ -2,7 +2,7 @@
 
 deskfleet manages AI agents and their working environments across a team's computers.
 
-The planned system connects agents through ACP, stores session history on a
+The system connects agents through ACP, stores session history on a
 central server, and uses WebRTC for terminal and desktop access. Workspaces
 contain worktrees that group directories and agent sessions. Git state is shown
 alongside sessions, and agents coordinate across machines through MCP tools.
@@ -12,15 +12,12 @@ The TypeScript daemon calls Rust through napi-rs. Headless machines run it as a
 Node.js Single Executable Application (SEA); the Electron app hosts it in its
 main process. The Electron client uses Vue.
 
-The current implementation includes resource types, a SeaORM catalog backed by
-SQLite, the server's `GET /healthz`, and an independent daemon with native platform
-information, a local health endpoint, and Codex CLI and Claude Code sessions over ACP. The Electron
-client manages local Workspace directory configuration through authenticated daemon IPC.
-Each Workspace has an automatic main Worktree; managed Sessions create and destroy
-their own temporary Git worktrees. The client opens terminals in configured
-directories and supports WebRTC terminal and desktop
-access. Accounts, organization membership, and remote machine enrollment remain
-planned work.
+The API-only backend uses PostgreSQL for OIDC accounts, teams, machine enrollment,
+resource catalogs, and synchronized Agent history. Daemons retain their local
+SQLite catalogs and execute Codex CLI and Claude Code sessions over ACP. The Web
+and Electron clients share Vue components, manage resources through the backend,
+and use authenticated WebRTC for Agent, Git, terminal, and desktop traffic.
+Sessions can be archived and restored while preserving their data.
 
 ## Rust workspace
 
@@ -28,20 +25,28 @@ planned work.
 | --- | --- | --- |
 | `deskfleet-model` | `crates/model` | Typed resource IDs, the machine/workspace/worktree hierarchy, directory bindings, and session associations |
 | `deskfleet-store` | `crates/store` | SeaORM entities and transactional workspace/worktree catalog persistence |
+| `deskfleet-control-store` | `crates/control-store` | PostgreSQL identities, teams, machines, authorization, and central replicas |
 | `deskfleet-migration` | `crates/migration` | Catalog schema migrations and an optional CLI |
 | `deskfleet-protocol` | `crates/protocol` | Shared wire contracts and protocol version |
 | `deskfleet-native` | `crates/native` | Platform capabilities independent of Node.js and the server |
 | `deskfleet-node` | `crates/node` | Thin napi-rs bindings over native capabilities and local catalog persistence |
 | `deskfleet-server` | `apps/server` | Actix Web control-plane backend |
 
-Install [mise](https://mise.jdx.dev/getting-started.html), then run from the
-repository root:
+Install [mise](https://mise.jdx.dev/getting-started.html) and Docker with Docker
+Compose. With Docker running, run from the repository root:
 
 ```sh
 mise trust
 mise install --locked
-mise run dev
+mise run infra:up
+mise -E development run dev
 ```
+
+Docker Compose provides local PostgreSQL, OIDC, and TURN services. In another
+terminal, run `mise run web:dev` and open `http://127.0.0.1:5174/`, or run
+`mise run desktop:dev`. Sign in with `alice@example.test` / `password` and create
+a team. See the [development guide](agents/docs/environment.md#local-docker-compose)
+for the second test account, separate test database, relay checks, and cleanup.
 
 `mise.toml` manages tool versions. `mise.lock`, `Cargo.lock`, and `pnpm-lock.yaml`
 lock tools, Rust dependencies, and JavaScript dependencies respectively.

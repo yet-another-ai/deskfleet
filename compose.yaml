@@ -1,0 +1,84 @@
+# Local development only. Applications run on the host through mise.
+# All published ports and the TURN relay address are loopback-only.
+name: deskfleet-dev
+
+services:
+  postgres:
+    image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
+    environment:
+      POSTGRES_USER: deskfleet
+      POSTGRES_PASSWORD: deskfleet-dev
+      POSTGRES_DB: deskfleet
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "deskfleet", "-d", "deskfleet"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # Test fixtures never share the development database. Stopping this service
+  # discards its data; no development volume is involved in a test reset.
+  postgres-test:
+    image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
+    environment:
+      POSTGRES_USER: deskfleet_test
+      POSTGRES_PASSWORD: deskfleet-test
+      POSTGRES_DB: deskfleet_test
+    ports:
+      - "127.0.0.1:55433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "deskfleet_test", "-d", "deskfleet_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  oidc:
+    image: ghcr.io/dexidp/dex:v2.46.1@sha256:65b72ca0f4b0bf6d4ada84ec21da8851782563404ac7b8f926923d27ceced9ab
+    command: ["dex", "serve", "/etc/dex/deskfleet.yaml"]
+    ports:
+      - "127.0.0.1:5556:5556"
+    volumes:
+      - ./.config/development/dex.yaml:/etc/dex/deskfleet.yaml:ro
+      - oidc-data:/var/dex
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  turn:
+    image: coturn/coturn:4.6.3@sha256:71c3c990283385567f11794ee692e3a47b66fd9b0bb39e42afbe776e331dd888
+    tmpfs:
+      - /var/lib/coturn
+    command:
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=deskfleet-dev-relay-secret
+      - --realm=deskfleet.local
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49180
+      - --external-ip=127.0.0.1
+      - --allow-loopback-peers
+      - --log-file=stdout
+    ports:
+      - "127.0.0.1:3478:3478/udp"
+      - "127.0.0.1:3478:3478/tcp"
+      - "127.0.0.1:49160-49180:49160-49180/udp"
+    healthcheck:
+      test: ["CMD", "turnutils_stunclient", "-p", "3478", "127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres-data:
+  oidc-data:
