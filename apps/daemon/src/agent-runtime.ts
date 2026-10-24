@@ -24,6 +24,8 @@ export class AgentRuntime {
   readonly #provider: AgentProvider
   #configuration?: acp.SessionConfigOption[]
   #availableConfiguration?: acp.SessionConfigOption[]
+  #openingConfiguration = false
+  #configurationEpoch = 0
   #configuring = false
   #connection?: AgentConnection
   #run?: AgentRun
@@ -55,13 +57,15 @@ export class AgentRuntime {
     // Discover alternatives without resuming the failed conversation, changing
     // its saved selection, or releasing any pending inputs.
     let available: AgentConfiguration
-    if (this.#availableConfiguration) available = agentConfiguration(this.#availableConfiguration)
+    if (this.#availableConfiguration?.length) available = agentConfiguration(this.#availableConfiguration)
     else {
       const catalog = await this.#catalog.native.snapshot()
       const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
       if (!worktree?.directories[0]) throw new Error("Session worktree is unavailable")
       available = await readAgentConfiguration({ provider: "codex", ...saved.selection }, worktree.directories[0].path,
-        { provider: this.#provider, signal, recoverSelection: true })
+        { provider: this.#provider, signal, recoverSelection: true,
+          onOptions: options => { this.#availableConfiguration = options },
+        })
     }
     if (available.models && saved.selection.model !== undefined) available.models.currentValue = saved.selection.model
     if (available.reasoningEfforts && saved.selection.reasoningEffort !== undefined) available.reasoningEfforts.currentValue = saved.selection.reasoningEffort
@@ -72,6 +76,7 @@ export class AgentRuntime {
     if (this.#configuring || this.#active || this.#dispatching) throw new Error("Wait for the current turn before changing the Agent configuration")
     // Pause backlog dispatch through startup and every provider configuration call.
     this.#configuring = true
+    this.#configurationEpoch++
     try {
       // A concurrent ordinary retry may still be trying the old choices. Wait
       // for it, then let this explicit replacement control the next startup.
@@ -90,10 +95,11 @@ export class AgentRuntime {
   }
 
   async #recordConfiguration(sessionId: string, options: acp.SessionConfigOption[]): Promise<void> {
-    this.#configuration = options
     const notification: acp.SessionNotification = { sessionId, update: { sessionUpdate: "config_option_update", configOptions: options } }
     await this.journal.serial(this.sessionId, async () => {
       const snapshot = await this.journal.read(this.sessionId)
+      this.#configuration = options
+      this.#availableConfiguration = options
       await this.journal.commit(snapshot, { events: [this.journal.event(this.sessionId, "acp", notification, { runGeneration: this.#run!.generation })] })
     })
   }
@@ -119,6 +125,7 @@ export class AgentRuntime {
   async #start(selection?: AgentConfigurationSelection): Promise<void> {
     this.#stopping = false
     this.#stop = undefined
+    this.#configurationEpoch++
     const snapshot = await this.journal.read(this.sessionId)
     if (snapshot.session.lifecycle !== "ready") throw new Error("Session is not available for execution")
     await this.#active?.completion
@@ -126,6 +133,7 @@ export class AgentRuntime {
     // Changing models also accepts that model's default effort. An effort-only
     // replacement keeps the saved model; ordinary retries keep both choices.
     const requested = selection?.model !== undefined ? selection : { ...savedConfiguration.selection, ...selection }
+    const availableConfiguration = this.#availableConfiguration
     this.#availableConfiguration = undefined
     const catalog = await this.#catalog.native.snapshot()
     const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
@@ -154,18 +162,26 @@ export class AgentRuntime {
       }
       const params = { cwd: worktree.directories[0].path, mcpServers: [], ...(additionalDirectories.length ? { additionalDirectories } : {}) }
       let providerSessionId = snapshot.session.providerSessionId
-      let configOptions: acp.SessionConfigOption[]
-      if (providerSessionId) {
-        if (!capabilities?.sessionCapabilities?.resume) throw new Error("This agent cannot resume the saved conversation")
-        configOptions = (await connection.resume({ ...params, sessionId: providerSessionId })).configOptions ?? []
-      } else {
-        const created = await connection.newSession(params)
-        providerSessionId = created.sessionId
-        configOptions = created.configOptions ?? []
+      let responseOptions: acp.SessionConfigOption[] | undefined
+      this.#openingConfiguration = true
+      try {
+        if (providerSessionId) {
+          if (!capabilities?.sessionCapabilities?.resume) throw new Error("This agent cannot resume the saved conversation")
+          responseOptions = (await connection.resume({ ...params, sessionId: providerSessionId })).configOptions ?? undefined
+        } else {
+          const created = await connection.newSession(params)
+          providerSessionId = created.sessionId
+          responseOptions = created.configOptions ?? undefined
+        }
+      } finally {
+        this.#openingConfiguration = false
       }
+      // ACP may omit the catalog on resume. Saved options still identify the
+      // setters, but their current values do not describe this provider process.
+      let configOptions = responseOptions ?? this.#availableConfiguration ?? availableConfiguration ?? savedConfiguration.options
       this.#availableConfiguration = configOptions
       configOptions = await applyAgentConfiguration(connection, providerSessionId, configOptions, requested,
-        options => { this.#availableConfiguration = options })
+        options => { this.#availableConfiguration = options }, responseOptions === undefined)
       await this.#recordConfiguration(providerSessionId, configOptions)
       if (this.#stopping) throw new Error("Agent startup was stopped")
       run.state = "running"
@@ -197,11 +213,23 @@ export class AgentRuntime {
   }
 
   async #update(params: acp.SessionNotification, generation: number): Promise<void> {
+    const configurationEpoch = this.#configurationEpoch
+    if (params.update.sessionUpdate === "config_option_update") {
+      if (this.#run?.generation !== generation || this.#stopping) return
+      if (this.#openingConfiguration) {
+        this.#availableConfiguration = params.update.configOptions
+        return
+      }
+      // Check on receipt: journal work can run after startup or a setter has
+      // finished. Its confirmed response must win over an earlier notification.
+      if (this.#run.state !== "running" || this.#configuring) return
+    }
     await this.journal.serial(this.sessionId, async () => {
       if (params.update.sessionUpdate === "config_option_update") {
-        // Startup only commits configuration after every saved choice succeeds.
-        if (this.#run?.generation !== generation || this.#run.state !== "running" || this.#stopping) return
+        if (this.#run?.generation !== generation || this.#run.state !== "running" || this.#stopping
+          || this.#configuring || configurationEpoch !== this.#configurationEpoch) return
         this.#configuration = params.update.configOptions
+        this.#availableConfiguration = params.update.configOptions
       }
       const snapshot = await this.journal.read(this.sessionId)
       const turnId = this.#active?.turn.id

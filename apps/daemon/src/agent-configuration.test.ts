@@ -75,6 +75,47 @@ test("model change uses the provider's new effort choices and default", async ()
   assert.equal(fake.closed, 1)
 })
 
+test("discovery uses opening notifications when the session response omits options", async () => {
+  const fake = fakeProvider()
+  const provider: AgentProvider = {
+    id: "codex",
+    async connect(config, client) {
+      const connection = await fake.provider.connect(config, client)
+      return { ...connection, async newSession() {
+        await client.onUpdate({ sessionId: "draft", update: { sessionUpdate: "config_option_update", configOptions: options() } })
+        return { sessionId: "draft" }
+      } }
+    },
+  }
+  const result = await readAgentConfiguration({ provider: "codex", model: "second", reasoningEffort: "medium" }, process.cwd(), { provider })
+  assert.equal(result.models?.currentValue, "second")
+  assert.equal(result.reasoningEfforts?.currentValue, "medium")
+  assert.deepEqual(fake.changes, [
+    { sessionId: "draft", configId: "chosen-model", value: "second" },
+    { sessionId: "draft", configId: "effort", value: "medium" },
+  ])
+  assert.equal(fake.closed, 1)
+})
+
+test("discovery honors explicitly empty options over an opening notification", async () => {
+  const fake = fakeProvider()
+  const provider: AgentProvider = {
+    id: "codex",
+    async connect(config, client) {
+      const connection = await fake.provider.connect(config, client)
+      return { ...connection, async newSession() {
+        await client.onUpdate({ sessionId: "draft", update: { sessionUpdate: "config_option_update", configOptions: options() } })
+        return { sessionId: "draft", configOptions: [] }
+      } }
+    },
+  }
+  const result = await readAgentConfiguration({ provider: "codex" }, process.cwd(), { provider })
+  assert.equal(result.models, null)
+  assert.equal(result.reasoningEfforts, null)
+  assert.deepEqual(fake.changes, [])
+  assert.equal(fake.closed, 1)
+})
+
 test("recovery discovery lists a saved model's efforts without requiring its unavailable effort", async () => {
   const fake = fakeProvider()
   const result = await readAgentConfiguration({ provider: "codex", model: "second", reasoningEffort: "retired" }, process.cwd(), {

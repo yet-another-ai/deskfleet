@@ -8,6 +8,7 @@ export async function applyAgentConfiguration(
   agent: AgentConnection, sessionId: string, options: acp.SessionConfigOption[],
   selection: AgentConfigurationSelection,
   changed: (options: acp.SessionConfigOption[]) => void | Promise<void> = () => {},
+  force = false,
 ): Promise<acp.SessionConfigOption[]> {
   for (const [category, id, value] of [
     ["model", "model", selection.model],
@@ -16,8 +17,10 @@ export async function applyAgentConfiguration(
     if (value === undefined) continue
     const option = selectAgentOption(options, category, id)
     if (!option || !option.options.some(choice => choice.id === value)) throw new Error(`Unsupported agent ${id}: ${value}`)
-    if (option.currentValue !== value) {
+    if (force || option.currentValue !== value) {
       options = (await agent.setConfigOption({ sessionId, configId: option.id, value })).configOptions
+      // A successful response replaces historical metadata with live state.
+      force = false
       await changed(options)
     }
   }
@@ -28,7 +31,10 @@ export async function applyAgentConfiguration(
 export async function readAgentConfiguration(
   params: AgentConfigurationParams,
   cwd: string,
-  dependencies: { provider?: AgentProvider; signal?: AbortSignal; timeoutMs?: number; recoverSelection?: boolean } = {},
+  dependencies: {
+    provider?: AgentProvider; signal?: AbortSignal; timeoutMs?: number; recoverSelection?: boolean
+    onOptions?: (options: acp.SessionConfigOption[]) => void
+  } = {},
 ): Promise<AgentConfiguration> {
   if (params.provider !== "codex") throw new Error("Unsupported agent provider")
   const provider = dependencies.provider ?? codexProvider
@@ -37,17 +43,23 @@ export async function readAgentConfiguration(
   signal.throwIfAborted()
   const timeout = setTimeout(() => controller.abort(new Error("Agent configuration request timed out")), dependencies.timeoutMs ?? 45_000)
   let agent: AgentConnection | undefined
+  let notifiedOptions: acp.SessionConfigOption[] | undefined
   let aborted!: () => void
   const cancelled = new Promise<never>((_, reject) => {
     aborted = () => reject(signal.reason)
     signal.addEventListener("abort", aborted, { once: true })
   })
-  const connecting = Promise.resolve().then(() => provider.connect({ name: "Codex" }, { onUpdate() {}, signal }))
+  const connecting = Promise.resolve().then(() => provider.connect({ name: "Codex" }, {
+    onUpdate({ update }) {
+      if (update.sessionUpdate === "config_option_update") notifiedOptions = update.configOptions
+    },
+    signal,
+  }))
   const discovery = (async () => {
     agent = await connecting
     signal.throwIfAborted()
     const session = await agent.newSession({ cwd, mcpServers: [] })
-    let options = session.configOptions ?? []
+    let options = session.configOptions ?? notifiedOptions ?? []
     if (dependencies.recoverSelection) {
       // Recovery only inspects choices. A rejected saved model must not prevent
       // selecting its replacement, and a stale effort must not hide model options.
@@ -58,6 +70,7 @@ export async function readAgentConfiguration(
       }
     } else options = await applyAgentConfiguration(agent, session.sessionId, options, params)
     signal.throwIfAborted()
+    dependencies.onOptions?.(options)
     return agentConfiguration(options, provider.id)
   })()
   try {

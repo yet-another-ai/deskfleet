@@ -273,6 +273,12 @@ applies the model first, then an effort supported by that model, before draining
 the backlog. Confirmed configuration is retained as ACP `config_option_update`
 events and restored when the provider resumes. Until initial configuration
 succeeds, ordinary startup retries retain the choices from the create command.
+When an ACP response omits its optional configuration list, startup uses options
+received while opening the provider session or the last confirmed catalog. Saved
+values are reapplied to the provider rather than assumed to describe its current
+state. An explicitly empty list remains authoritative; after a failed startup,
+an empty cache still permits discovery of replacement choices. Discovered option
+metadata is retained for an explicit replacement if startup again omits its list.
 
 Reading configuration does not start or resume the managed Session. After a
 failed startup, it offers the provider's available choices while retaining the
@@ -287,6 +293,10 @@ stopped provider if needed.
 Changes require no active turn and pause backlog dispatch while the provider
 confirms the options. Attached clients project the committed updates,
 so a change from another client is reflected in an open selector.
+Notifications received during startup configuration or an explicit change cannot
+overwrite the confirmed response. A queued notification from before a newer
+configuration operation is also discarded. Later unsolicited provider updates,
+such as slash-command changes, remain visible and are saved for resume.
 
 ## Replay, recovery, and UI
 
