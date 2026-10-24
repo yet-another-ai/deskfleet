@@ -114,11 +114,11 @@ onBeforeUnmount(() => { unsubscribe(); release() })
           <option v-for="item in machines" :key="item.id" :value="item.id">{{ item.name }}{{ item.online ? '' : ` · ${t('machine.offline')}` }}</option>
         </select>
         <button class="catalog-button" :disabled="busy" @click="creatingTeam = !creatingTeam">{{ t('account.createTeam') }}</button>
-        <button v-if="team?.role === 'admin'" class="catalog-button" :disabled="busy" @click="enrollingHeadless = true">{{ t('account.enrollHeadless') }}</button>
+        <button v-if="team" class="catalog-button" :disabled="busy" @click="enrollingHeadless = true">{{ t('account.enrollHeadless') }}</button>
         <button v-if="team" class="catalog-button" :disabled="busy" @click="teamSettings = true">{{ t('account.teamSettings') }}</button>
         <button class="catalog-button" :disabled="busy" @click="joining = !joining">{{ t('account.joinTeam') }}</button>
         <button class="catalog-button" :disabled="busy" @click="action(refresh)">{{ t('catalog.refresh') }}</button>
-        <button v-if="central.enrollLocal && canEnroll && team?.role === 'admin'" class="catalog-button" :disabled="busy" @click="enroll">{{ t(enrollment?.revoked ? 'account.reenrollThisMachine' : 'account.enrollThisMachine') }}</button>
+        <button v-if="central.enrollLocal && canEnroll && team" class="catalog-button" :disabled="busy" @click="enroll">{{ t(enrollment?.revoked ? 'account.reenrollThisMachine' : 'account.enrollThisMachine') }}</button>
         <span class="ml-auto text-xs text-ui-text-muted">{{ account.user.name }}</span>
         <button class="catalog-button" :disabled="busy" @click="action(async () => { await central.logout(); await load() })">{{ t('account.signOut') }}</button>
       </template>
@@ -143,7 +143,7 @@ onBeforeUnmount(() => { unsubscribe(); release() })
         <input v-model="teamName" class="catalog-input" :placeholder="t('account.teamName')" required />
         <button class="catalog-button shrink-0" :disabled="busy">{{ t('catalog.create') }}</button>
       </form>
-      <template v-else-if="central.enrollLocal && team?.role === 'admin'">
+      <template v-else-if="central.enrollLocal && team">
         <p v-if="enrollment?.configured && !enrollment.revoked" class="text-sm text-ui-text-muted">{{ t('account.alreadyEnrolled', { server: enrollment.serverUrl ?? '', team: enrollment.teamId ?? '' }) }}</p>
         <button v-else-if="canEnroll" class="catalog-button" :disabled="busy" @click="enroll">{{ t(enrollment?.revoked ? 'account.reenrollThisMachine' : 'account.enrollThisMachine') }}</button>
       </template>
