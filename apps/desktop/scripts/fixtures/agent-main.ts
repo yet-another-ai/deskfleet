@@ -1,6 +1,9 @@
 import { app, BrowserWindow, net, protocol } from "electron"
+import { execFile } from "node:child_process"
 import { writeFile } from "node:fs/promises"
+import { join } from "node:path"
 import { pathToFileURL } from "node:url"
+import { promisify } from "node:util"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
 import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
@@ -22,6 +25,48 @@ export interface AgentSmokeResult {
   worktreeId: string
   conversationEntries: number
   permissionId: string
+}
+
+const execute = promisify(execFile)
+
+/** Exercise production Git reads and rendering independently of provider events. */
+async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promise<void> {
+  async function until(predicate: () => boolean, label: string): Promise<void> {
+    const deadline = Date.now() + 20_000
+    while (!predicate()) {
+      if (Date.now() > deadline) throw new Error(`${label} timed out; renderer: ${document.body.innerText.slice(-5_000)}`)
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+  }
+  const diff = () => document.querySelector<HTMLElement>("[data-git-diff]")
+  async function open(path: string, kind: string, expected: string): Promise<void> {
+    const row = () => [...document.querySelectorAll<HTMLButtonElement>("button[data-git-path][data-git-kind]")]
+      .find(element => element.dataset.gitPath === path && element.dataset.gitKind === kind)
+    await until(() => !!row() && !row()!.disabled, `Git ${kind} ${path}`)
+    row()!.click()
+    await until(() => !!diff()?.innerText.includes(expected), `Git ${kind} preview`)
+  }
+  async function close(): Promise<void> {
+    const dialog = document.querySelector<HTMLDialogElement>("dialog[open]")
+    if (!dialog) throw new Error("Git diff dialog was missing")
+    dialog.dispatchEvent(new Event("cancel", { cancelable: true }))
+    await until(() => !diff(), "Git diff dialog close")
+  }
+
+  if (phase !== "live") {
+    const tab = document.querySelector<HTMLButtonElement>("#details-tab-changes")
+    if (!tab) throw new Error("Changes tab was missing")
+    tab.click()
+    if (phase === "initial") {
+      await open("README.md", "staged", "+Smoke staged baseline")
+      await close()
+      await open("new-file.txt", "untracked", "+Smoke untracked file")
+      await close()
+    }
+    await open("README.md", "unstaged", phase === "initial" ? "+Smoke diff first version" : "+Smoke diff live version")
+  } else {
+    await until(() => !!diff()?.innerText.includes("+Smoke diff live version") && !diff()!.innerText.includes("+Smoke diff first version"), "Live Git diff refresh without agent events")
+  }
 }
 
 // Evaluate in the production renderer with its production sandboxed preload.
@@ -168,6 +213,21 @@ void app.whenReady().then(async () => {
   let result: AgentSmokeResult
   try {
     result = await window.webContents.executeJavaScript(`(${exerciseAgent.toString()})(${JSON.stringify(context)})`) as AgentSmokeResult
+    const worktreeDirectory = await window.webContents.executeJavaScript(`window.deskfleet.catalog.list().then(snapshot => snapshot.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.id === ${JSON.stringify(result.worktreeId)})?.directories[0]?.path)`) as string | undefined
+    if (!worktreeDirectory) throw new Error("Session checkout directory was missing")
+    if (context.phase === "create") {
+      await writeFile(join(worktreeDirectory, "README.md"), "Smoke staged baseline\n")
+      await execute("git", ["-C", worktreeDirectory, "add", "--", "README.md"])
+      await writeFile(join(worktreeDirectory, "README.md"), "Smoke diff first version\n")
+      await writeFile(join(worktreeDirectory, "new-file.txt"), "Smoke untracked file\n")
+      await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("initial")`)
+      // Preserve both the status letter and line counts: polling must fetch content, too.
+      await writeFile(join(worktreeDirectory, "README.md"), "Smoke diff live version\n")
+      await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("live")`)
+    } else {
+      await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("restore")`)
+    }
+    await window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
   } finally {
     await writeFile(context.screenshotPath, (await window.webContents.capturePage()).toPNG())
   }

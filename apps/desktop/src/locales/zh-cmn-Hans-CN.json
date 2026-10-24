@@ -159,13 +159,35 @@
     "displayNone": "无界面",
     "notGit": "不是 Git 检出",
     "clean": "没有变更",
-    "diffUnavailable": "差异尚不可用。",
+    "gitUnavailable": "可查看在线本机上会话的 Git 变更。",
+    "gitLive": "实时更新中",
+    "gitPaused": "实时更新已暂停",
+    "gitStale": "正在显示上次加载的变更。",
+    "gitLoading": "正在加载 Git 变更…",
+    "refreshGit": "刷新 Git 变更",
+    "detachedHead": "分离的 HEAD",
+    "noCommits": "尚无提交",
+    "openDiff": "查看 {path} 的{kind}差异",
+    "closeDiff": "关闭差异",
+    "diffLoading": "正在加载差异…",
+    "diffContent": "文件差异",
+    "binaryDiff": "二进制文件已变更，无法显示文本差异。",
+    "emptyDiff": "此差异中已无变更。",
+    "truncatedDiff": "差异内容较大，仅显示开头部分。",
+    "changeKind": {
+      "staged": "已暂存",
+      "unstaged": "未暂存",
+      "untracked": "未跟踪"
+    },
     "changeStatus": {
       "modified": "已修改",
       "added": "已添加",
       "deleted": "已删除",
       "renamed": "已重命名",
-      "untracked": "未跟踪"
+      "untracked": "未跟踪",
+      "copied": "已复制",
+      "conflicted": "存在冲突",
+      "typeChanged": "类型已变更"
     },
     "gitUnknown": "尚未检查 Git 状态。"
   },

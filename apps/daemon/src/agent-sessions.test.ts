@@ -12,6 +12,7 @@ import type { AgentClient, AgentConnection, AgentProvider } from "./agents/acp.t
 import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import type { AgentActor, AgentReceipt, AgentSnapshot } from "./agent-protocol.ts"
+import type { GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 
 const execute = promisify(execFile)
 
@@ -365,6 +366,32 @@ test("a directory Session works in the Workspace's own directories, even without
   assert.notEqual(f.provider.cwds[0], f.repository, "A worktree Session must not run in the source checkout")
 })
 
+test("Git reads use the captured Session checkout after Workspace edits and do not append history", async t => {
+  const f = await setup(t)
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  const worktree = await f.catalog.sessionWorktree(f.sessionId)
+  assert.ok(worktree)
+  await writeFile(join(worktree.directories[0]!.path, "README.md"), "Session edit\n")
+  await writeFile(join(f.repository, "README.md"), "Source checkout edit\n")
+  const replacement = join(f.directory, "replacement")
+  await mkdir(replacement)
+  await f.catalog.native.updateWorkspace(f.create.workspaceId, "Changed configuration", [{ path: replacement }])
+  const before = await f.read()
+
+  const status = await f.service.handle("_deskfleet/git/status", { sessionId: f.sessionId }, f.actor) as GitStatusSnapshot
+  assert.equal(status.sessionId, f.sessionId)
+  assert.equal(status.repositories.length, 1)
+  const repository = status.repositories[0]!
+  assert.ok(repository.changes.some(change => change.path === "README.md" && change.kind === "unstaged"))
+  const diff = await f.service.handle("_deskfleet/git/diff", {
+    sessionId: f.sessionId, repositoryId: repository.id, path: "README.md", kind: "unstaged",
+  }, f.bob) as GitFileDiff
+  assert.match(diff.patch, /\+Session edit/u)
+  assert.doesNotMatch(diff.patch, /Source checkout edit/u)
+  assert.equal((await f.read()).session.lastEventSeq, before.session.lastEventSeq)
+  assert.deepEqual(await f.service.journal.history(f.sessionId, before.session.lastEventSeq), [])
+})
+
 test("a worktree Session still requires a committed Git checkout", async t => {
   const f = await setup(t)
   const plain = join(f.directory, "plain")
@@ -373,6 +400,9 @@ test("a worktree Session still requires a committed Git checkout", async t => {
   const snapshot = await f.service.handle("_deskfleet/session/create", { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "worktree" }, f.actor) as AgentSnapshot
   assert.equal(snapshot.session.lifecycle, "provision_failed")
   assert.match(snapshot.session.error ?? "", /Git working tree/u)
+  for (const method of ["_deskfleet/git/status", "_deskfleet/git/diff"] as const) {
+    await assert.rejects(f.service.handle(method, { sessionId: snapshot.session.id }, f.actor), /no usable execution context/u)
+  }
 })
 
 test("a new message resumes a stopped agent in its saved conversation and drains the backlog in order", async t => {

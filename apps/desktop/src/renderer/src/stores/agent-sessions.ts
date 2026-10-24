@@ -1,6 +1,7 @@
 import { defineStore } from "pinia"
 import { onScopeDispose, ref } from "vue"
 import type { AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../../daemon/src/agent-protocol.ts"
+import type { GitDiffRequest } from "../../../../../daemon/src/git-protocol.ts"
 import { AgentClient, type AgentConnectionState, type AgentNotification } from "../services/agent-client.ts"
 
 export interface AgentSessionView {
@@ -226,7 +227,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (command) commandReceived(command)
     }
   }
-  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get">>(
+  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/git/status" | "_deskfleet/git/diff">>(
     method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string,
   ): Promise<AgentMethods[M]["result"]> {
     const operationId = crypto.randomUUID()
@@ -291,6 +292,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     delete views.value[sessionId]
     journals.delete(sessionId)
   }
+  const gitStatus = (sessionId: string) => call("_deskfleet/git/status", { sessionId })
+  const gitDiff = (request: GitDiffRequest) => call("_deskfleet/git/diff", request)
   onScopeDispose(() => { disposed = true; client.close() })
-  return { sessions, views, drafts, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, stop, remove }
+  return { sessions, views, drafts, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, stop, remove, gitStatus, gitDiff }
 })

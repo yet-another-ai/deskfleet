@@ -4,6 +4,7 @@ import type { AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, timestamp, type AgentPersistence } from "./agent-store.ts"
 import { AgentRuntime } from "./agent-runtime.ts"
+import { GitInspection } from "./git-inspection.ts"
 import type {
   AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentReceipt, AgentSnapshot,
 } from "./agent-protocol.ts"
@@ -42,6 +43,7 @@ export class AgentSessions {
   readonly journal: AgentJournal
   readonly #catalog: DaemonCatalog
   readonly #provider: AgentProvider
+  readonly #git = new GitInspection()
   readonly #runtimes = new Map<string, AgentRuntime>()
   readonly #operations = new Map<string, Promise<unknown>>()
   #closed = false
@@ -106,6 +108,23 @@ export class AgentSessions {
     }
     if (method === "_deskfleet/command/get") {
       return this.journal.command(string(params.operationId, "operation ID"))
+    }
+    if (method === "_deskfleet/git/status" || method === "_deskfleet/git/diff") {
+      const sessionId = id(params.sessionId, "Session ID")
+      const { session } = await this.journal.read(sessionId)
+      if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
+      const worktree = await this.#catalog.sessionWorktree(sessionId)
+      if (!worktree?.directories.length) throw new Error("Session worktree is unavailable")
+      const directories = worktree.directories.map(directory => directory.path)
+      if (method === "_deskfleet/git/status") return this.#git.status(sessionId, directories)
+      const kind = params.kind
+      if (kind !== "staged" && kind !== "unstaged" && kind !== "untracked") throw new Error("Invalid Git diff kind")
+      return this.#git.diff({
+        sessionId,
+        repositoryId: string(params.repositoryId, "repository ID"),
+        path: string(params.path, "file path"),
+        kind,
+      }, directories)
     }
     const operationId = string(params.operationId, "operation ID")
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(operationId)) throw new Error("Invalid operation ID")

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import App from "./App.vue"
 import { i18n } from "./i18n"
 import { router } from "./router"
+import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
 import type { LocalAgentState } from "../../shared/local-agent.ts"
 
@@ -200,8 +201,15 @@ test("a session links to its own read-only worktree", async () => {
   expect(button(wrapper, "New session")).toBeUndefined()
   expect(button(wrapper, "Edit worktree")).toBeUndefined()
   expect(button(wrapper, "Delete worktree")).toBeUndefined()
+  const status = vi.spyOn(useAgentSessionsStore(mounted.at(-1)!.pinia), "gitStatus").mockResolvedValue({
+    sessionId, directories: [{ path: "/worktrees/api/session", repositoryId: "checkout" }],
+    repositories: [{ id: "checkout", root: "/worktrees/api/session", branch: "session-branch", head: "abc123", changes: [] }],
+  })
   await panel(wrapper).findAll('[role="tab"]').find(tab => tab.text() === "Changes")!.trigger("click")
-  expect(panel(wrapper).text()).toContain("Git state has not been inspected.")
+  await flushPromises()
+  expect(status).toHaveBeenCalledExactlyOnceWith(sessionId)
+  expect(panel(wrapper).text()).toContain("session-branch")
+  expect(panel(wrapper).text()).toContain("/worktrees/api/session")
 })
 
 test("the internal main worktree has no directly accessible page", async () => {

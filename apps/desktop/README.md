@@ -69,7 +69,7 @@ a Session shell in that Session's bottom panel instead. The application
 does not display sample machines as live resources.
 
 Accounts, organization switching, remote machine registration, target/provider
-pickers, Git inspection, and file diffs remain unimplemented. Placeholder controls
+pickers remain unimplemented. Placeholder controls
 use `IconButton`'s `placeholder` state or the `common.placeholderControl` title.
 
 The window is frameless and has three columns. The sidebar holds the window
@@ -115,8 +115,13 @@ The details panel has two tabs:
   terminal's scope and cwd, or a machine's display. Workspace details show its
   configured directories; Session and Worktree details show the Session's paths
   with each checkout's branch and HEAD when available.
-- **Changes** lists the worktree's uncommitted Git changes, grouped by checkout,
-  with status letters as in `git status --short` and line counts. It is empty for
+- **Changes** inspects the Session's actual directories on the local daemon,
+  grouping files by checkout and staged, unstaged, or untracked state, with
+  status letters and line counts. Select a file to open a diff preview. Both
+  the list and the open diff refresh automatically every 1.5 seconds after the
+  previous read, including changes made outside the agent. Closing the tab or
+  hiding the window pauses refreshes. Non-Git directories, binary files, large
+  truncated diffs, and read errors have explicit states. It is empty for
   machine and workspace terminals and for desktops, which belong to no worktree.
 
 `useRouteResource` resolves the route to that resource. The new session page
@@ -364,8 +369,10 @@ that outlives the app.
 The Agent Session smoke drives the production renderer through real WebRTC,
 SQLite persistence, and managed Git checkouts with a scripted ACP provider. It
 checks streaming, shared backlog steering, permission decisions, leaving and
-returning to the session, and history recovery after restarting both daemon and
-client. The startup smoke checks entry-point routing and initializes the bundled
+returning to the session, live staged/unstaged/untracked diff previews, and history
+recovery after restarting both daemon and client. It edits a file while its diff
+is open to verify live updates independent of provider events. The startup smoke
+checks entry-point routing and initializes the bundled
 Codex adapter without paid inference.
 
 vue-tsc uses the TypeScript compiler API, which TypeScript 7 does not provide. The

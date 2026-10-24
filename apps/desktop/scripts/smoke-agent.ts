@@ -133,7 +133,7 @@ try {
   assert.deepEqual(restored, first)
   assert.equal(provider.connections, 1, "Reconnecting must not restart the provider")
   assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate"])
-  console.log("Production Electron Agent: New Session, streaming, shared backlog, selected steering, permission, route reattachment, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath })
+  console.log("Production Electron Agent: New Session, streaming, shared backlog, selected steering, permission, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath })
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   if (provider.failures.length) console.error(provider.failures)

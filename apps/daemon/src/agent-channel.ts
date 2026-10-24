@@ -21,6 +21,7 @@ const METHODS = new Set<AgentMethod>([
   "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
   "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
   "_deskfleet/session/delete", "_deskfleet/command/get",
+  "_deskfleet/git/status", "_deskfleet/git/diff",
 ])
 const MAX_PENDING_REQUESTS = 128
 const MAX_QUEUED_BYTES = AGENT_MESSAGE_BYTES * 2

@@ -159,13 +159,35 @@
     "displayNone": "Headless",
     "notGit": "Not a Git checkout",
     "clean": "No changes",
-    "diffUnavailable": "Diffs are not available yet.",
+    "gitUnavailable": "Git inspection is available for sessions on an online local machine.",
+    "gitLive": "Updating live",
+    "gitPaused": "Live updates paused",
+    "gitStale": "Showing the last loaded changes.",
+    "gitLoading": "Loading Git changes…",
+    "refreshGit": "Refresh Git changes",
+    "detachedHead": "Detached HEAD",
+    "noCommits": "No commits yet",
+    "openDiff": "View {kind} diff for {path}",
+    "closeDiff": "Close diff",
+    "diffLoading": "Loading diff…",
+    "diffContent": "File diff",
+    "binaryDiff": "Binary file changed. A text diff is not available.",
+    "emptyDiff": "No changes remain in this diff.",
+    "truncatedDiff": "This diff is large. Only the first part is shown.",
+    "changeKind": {
+      "staged": "Staged",
+      "unstaged": "Unstaged",
+      "untracked": "Untracked"
+    },
     "changeStatus": {
       "modified": "Modified",
       "added": "Added",
       "deleted": "Deleted",
       "renamed": "Renamed",
-      "untracked": "Untracked"
+      "untracked": "Untracked",
+      "copied": "Copied",
+      "conflicted": "Conflicted",
+      "typeChanged": "Type changed"
     },
     "gitUnknown": "Git state has not been inspected."
   },

@@ -322,11 +322,16 @@ shell. The UI supports local machine-scoped terminals. See
 [terminal integration](terminals.md) for dial/hangup, durable history, and flow
 control.
 
-Git inspection starts with the Git CLI's machine-readable output. Resolve each
-directory to its checkout and retrieve branch, HEAD, status, and diffs. Query a
-shared checkout once when several bindings point to it. Non-Git directories stay
-usable in the main context. Session provisioning creates and removes managed Git
-worktrees; Git status/diff UI and live inspection remain to be connected.
+Git inspection uses the Git CLI's machine-readable output on the owning daemon.
+Session-scoped queries resolve the captured directories to their checkouts and
+retrieve branch, HEAD, staged/unstaged/untracked status, and file diffs. Several
+bindings in one checkout share its result; non-Git directories remain usable and
+are identified separately. Queries use the existing ACP DataChannel and do not
+write history or change the index. The visible Changes panel refreshes status
+and its open diff every 1.5 seconds after each completed read, including edits
+from terminals and external editors. Closing the panel or hiding the window
+stops polling. Git results remain transient; Session provisioning still owns
+creation and deletion of managed worktrees.
 
 MCP tools let an agent discover authorized machines and resources, inspect state,
 and request operations on an explicit target. Remotely created sessions belong
