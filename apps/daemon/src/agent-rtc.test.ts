@@ -28,7 +28,7 @@ class Sessions implements AgentChannelSessions {
     if (method === "_deskfleet/session/list") return [{ deviceId: actor.deviceId }]
     if (method === "_deskfleet/session/subscribe") return {
       session: { id: "1", workspaceId: "1", title: "Transport fixture", provider: "fixture", context: "worktree", lifecycle: "ready", createdAt, updatedAt: createdAt, lastEventSeq: String(this.sequence) },
-      runs: [], inputs: [], turns: [], permissions: this.permissions.map(permission => ({ ...permission })),
+      runs: [], inputs: [], turns: [], permissions: this.permissions.map(permission => ({ ...permission })), elicitations: [],
     } satisfies AgentSnapshot
     if (method === "_deskfleet/permission/respond") {
       this.decisions.push({ actor, params })

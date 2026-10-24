@@ -8,6 +8,7 @@ import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot
 import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
 import { agentConfiguration, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
+import { AgentElicitations } from "./agent-elicitations.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
 export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
@@ -21,6 +22,7 @@ const systemCommand = async (journal: AgentJournal, sessionId: string, inputId: 
 export class AgentRuntime {
   readonly journal: AgentJournal
   readonly sessionId: string
+  readonly elicitations: AgentElicitations
   readonly #catalog: DaemonCatalog
   readonly #resolveProvider: ResolveAgentProvider
   #providerName?: string
@@ -32,6 +34,7 @@ export class AgentRuntime {
   #connection?: AgentConnection
   #run?: AgentRun
   #active?: { turn: AgentTurn; completion: Promise<void> }
+  #endingTurn?: string
   #dispatching = false
   #pumpAgain = false
   #stopping = false
@@ -46,6 +49,10 @@ export class AgentRuntime {
     this.#catalog = catalog
     this.#resolveProvider = resolveProvider
     this.sessionId = sessionId
+    this.elicitations = new AgentElicitations(journal, sessionId, () => ({
+      generation: this.#run?.generation, turnId: this.#active?.turn.id,
+      running: this.running && (!this.#active || this.#endingTurn !== this.#active.turn.id),
+    }))
   }
 
   get running(): boolean { return !!this.#connection && !this.#stopping && this.#run?.state === "running" }
@@ -162,6 +169,7 @@ export class AgentRuntime {
       const connection = await provider.connect(config, {
         onUpdate: params => this.#update(params, run.generation),
         requestPermission: (params, signal) => this.#permission(params, signal, run.generation),
+        requestElicitation: (params, signal) => this.elicitations.request(params, signal, run.generation),
         onClose: error => this.#connectionLost(error, run.generation),
       })
       this.#connection = connection
@@ -436,7 +444,9 @@ export class AgentRuntime {
   }
 
   async #finish(turn: AgentTurn, inputId: string, command: AgentCommand, result?: acp.PromptResponse, error?: unknown, uncertain = true): Promise<void> {
+    this.#endingTurn = turn.id
     await this.cancelPermissions(undefined, turn.id)
+    await this.elicitations.cancel(undefined, turn.id)
     if (result) await this.#delivered(inputId, command, turn.id, "turn_start")
     else await this.#inputError(inputId, command, error, uncertain)
     await this.journal.serial(this.sessionId, async () => {
@@ -456,7 +466,9 @@ export class AgentRuntime {
     const connection = this.#connection
     const snapshot = await this.journal.read(this.sessionId)
     if (this.#active?.turn.id !== turnId) return
+    this.#endingTurn = turnId
     await this.cancelPermissions(undefined, turnId)
+    await this.elicitations.cancel(undefined, turnId)
     if (this.#active?.turn.id === turnId && this.#connection === connection) await connection.cancel(snapshot.session.providerSessionId!)
   }
 
@@ -471,6 +483,7 @@ export class AgentRuntime {
 
   async #lost(error: Error, generation: number): Promise<void> {
     await this.cancelPermissions()
+    await this.elicitations.cancel()
     await this.journal.serial(this.sessionId, async () => {
       const snapshot = await this.journal.read(this.sessionId)
       const previous = snapshot.runs.find(run => run.generation === generation)
@@ -490,6 +503,7 @@ export class AgentRuntime {
     await this.#starting?.catch(() => {})
     await this.#recovering
     await this.cancelPermissions()
+    await this.elicitations.cancel()
     const connection = this.#connection
     if (this.#active) await this.cancel(this.#active.turn.id)
     await connection?.close()

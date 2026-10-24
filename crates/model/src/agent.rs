@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::{
-    AgentCommandId, AgentInputId, AgentPermissionId, AgentSequence, AgentSessionId, AgentTurnId,
-    MachineId, WorkspaceId,
+    AgentCommandId, AgentElicitationId, AgentInputId, AgentPermissionId, AgentSequence,
+    AgentSessionId, AgentTurnId, MachineId, WorkspaceId,
 };
 
 macro_rules! states {
@@ -91,12 +91,18 @@ states!(PermissionState {
     Resolved => "resolved",
     Cancelled => "cancelled",
 });
+states!(ElicitationState {
+    Pending => "pending",
+    Resolved => "resolved",
+    Cancelled => "cancelled",
+});
 states!(EventKind {
     Session => "session",
     Run => "run",
     Input => "input",
     Turn => "turn",
     Permission => "permission",
+    Elicitation => "elicitation",
     Acp => "acp",
     Command => "command",
 });
@@ -256,6 +262,28 @@ pub struct AgentPermission {
     pub resolved_at: Option<String>,
 }
 
+/// A durable ACP question and the first response accepted for its running agent.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentElicitation {
+    pub id: AgentElicitationId,
+    pub session_id: AgentSessionId,
+    pub run_generation: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<AgentTurnId>,
+    pub request: Value,
+    pub state: ElicitationState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_command_id: Option<AgentCommandId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor: Option<AgentActor>,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentEventDraft {
@@ -288,6 +316,8 @@ pub struct AgentSnapshot {
     pub inputs: Vec<AgentInput>,
     pub turns: Vec<AgentTurn>,
     pub permissions: Vec<AgentPermission>,
+    #[serde(default)]
+    pub elicitations: Vec<AgentElicitation>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -304,6 +334,8 @@ pub struct AgentCommit {
     pub turns: Vec<AgentTurn>,
     #[serde(default)]
     pub permissions: Vec<AgentPermission>,
+    #[serde(default)]
+    pub elicitations: Vec<AgentElicitation>,
     pub command: Option<AgentCommand>,
     #[serde(default)]
     pub events: Vec<AgentEventDraft>,

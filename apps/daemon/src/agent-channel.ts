@@ -21,6 +21,7 @@ const METHODS = new Set<AgentMethod>([
   "_deskfleet/session/list", "_deskfleet/session/create", "_deskfleet/session/subscribe", "_deskfleet/session/history",
   "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
   "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
+  "_deskfleet/elicitation/respond",
   "_deskfleet/session/delete", "_deskfleet/command/get",
   "_deskfleet/git/status", "_deskfleet/git/diff",
 ])

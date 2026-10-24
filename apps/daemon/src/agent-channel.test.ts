@@ -2,14 +2,14 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
-import { AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES, type AgentActor, type AgentEvent, type AgentMethod, type AgentPermission, type AgentSnapshot } from "./agent-protocol.ts"
+import { AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES, type AgentActor, type AgentElicitation, type AgentEvent, type AgentMethod, type AgentPermission, type AgentSnapshot } from "./agent-protocol.ts"
 
 type Message = { id?: string | number | null; method?: string; params?: any; result?: any; error?: { code: number; message: string } }
 const actor: AgentActor = { kind: "local_token", sourceMachine: { originId: "origin", id: "machine" }, deviceId: "first" }
 const now = "2026-10-23T00:00:00Z"
 const snapshot: AgentSnapshot = {
   session: { id: "1", workspaceId: "2", title: "Test", provider: "codex", context: "worktree", lifecycle: "ready", lastEventSeq: "0", createdAt: now, updatedAt: now },
-  runs: [], inputs: [], turns: [], permissions: [],
+  runs: [], inputs: [], turns: [], permissions: [], elicitations: [],
 }
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -119,6 +119,41 @@ test("AgentChannel forwards Git reads through the authenticated viewer without r
     { method: "_deskfleet/git/diff", params: request, actor },
   ])
   assert.deepEqual(h.failures, [])
+})
+
+test("AgentChannel shares user questions through snapshots and events and authenticates answers", async t => {
+  const sessions = new Sessions()
+  const first = attach(sessions)
+  const second = attach(sessions, { ...actor, deviceId: "second" })
+  t.after(() => { first.channel.close(); second.channel.close() })
+  let question: AgentElicitation = {
+    id: "3", sessionId: "1", runGeneration: 1, state: "pending", createdAt: now,
+    request: { sessionId: "provider-session", mode: "form", message: "Choose a branch", requestedSchema: {
+      type: "object", properties: { branch: { type: "string" } }, required: ["branch"],
+    } },
+  }
+  sessions.handler = async (method, params, identity) => {
+    if (method === "_deskfleet/session/subscribe") return { ...snapshot, elicitations: [question] }
+    assert.equal(method, "_deskfleet/elicitation/respond")
+    assert.equal(params.elicitationId, question.id)
+    question = { ...question, state: "resolved", response: params.response, actor: identity }
+    sessions.emit({ sessionId: "1", seq: "1", kind: "elicitation", payload: question, createdAt: now })
+    return question
+  }
+  await Promise.all([first.initialize(), second.initialize()])
+  const attached = await Promise.all([first.subscribe(), second.subscribe()])
+  assert.ok(attached.every(message => message.result.elicitations[0].state === "pending"))
+  first.request("answer", "_deskfleet/elicitation/respond", {
+    sessionId: "1", elicitationId: "3", operationId: "answer-operation", response: { action: "accept", content: { branch: "main" } },
+  })
+  const result = await first.waitFor(message => message.id === "answer")
+  assert.deepEqual(result.result.actor, actor)
+  const mirrored = await second.waitFor(message => message.method === "_deskfleet/session/event")
+  assert.equal(mirrored.params.payload.state, "resolved")
+  assert.deepEqual(mirrored.params.payload.response, { action: "accept", content: { branch: "main" } })
+  const reattached = await second.subscribe("reattach")
+  assert.equal(reattached.result.elicitations[0].state, "resolved")
+  assert.deepEqual([...first.failures, ...second.failures], [])
 })
 
 test("AgentChannel handles approvals and cancellation while another request awaits", async t => {

@@ -1,4 +1,4 @@
-import type { ContentBlock, RequestPermissionRequest, SessionNotification } from "@agentclientprotocol/sdk"
+import type { ContentBlock, CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest, SessionNotification } from "@agentclientprotocol/sdk"
 import type { GitDiffRequest, GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 
 import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
@@ -111,13 +111,29 @@ export interface AgentSnapshot {
   inputs: AgentInput[]
   turns: AgentTurn[]
   permissions: AgentPermission[]
+  elicitations: AgentElicitation[]
+}
+
+/** A shared user question whose live provider callback belongs to the daemon. */
+export interface AgentElicitation {
+  id: string
+  sessionId: string
+  runGeneration: number
+  turnId?: string
+  request: CreateElicitationRequest
+  state: "pending" | "resolved" | "cancelled"
+  response?: CreateElicitationResponse
+  decisionCommandId?: string
+  actor?: AgentActor
+  createdAt: string
+  resolvedAt?: string
 }
 
 export interface AgentEvent {
   sessionId: string
   seq: string
-  kind: "session" | "run" | "input" | "turn" | "permission" | "acp" | "command"
-  payload: AgentSessionRecord | AgentRun | AgentInput | AgentTurn | AgentPermission | AgentCommand | SessionNotification
+  kind: "session" | "run" | "input" | "turn" | "permission" | "elicitation" | "acp" | "command"
+  payload: AgentSessionRecord | AgentRun | AgentInput | AgentTurn | AgentPermission | AgentElicitation | AgentCommand | SessionNotification
   createdAt: string
   turnId?: string
   inputId?: string
@@ -136,6 +152,7 @@ export interface AgentCommit {
   inputs?: AgentInput[]
   turns?: AgentTurn[]
   permissions?: AgentPermission[]
+  elicitations?: AgentElicitation[]
   command?: AgentCommand
   events?: AgentEventDraft[]
 }
@@ -158,6 +175,7 @@ export interface AgentMethods {
   "_deskfleet/input/retry": { params: AgentMutation & { inputId: string }; result: AgentReceipt }
   "_deskfleet/turn/cancel": { params: AgentMutation & { turnId: string }; result: AgentReceipt }
   "_deskfleet/permission/respond": { params: AgentMutation & { permissionId: string; optionId: string }; result: AgentPermission }
+  "_deskfleet/elicitation/respond": { params: AgentMutation & { elicitationId: string; response: CreateElicitationResponse }; result: AgentElicitation }
   "_deskfleet/session/resume": { params: AgentMutation; result: AgentSnapshot }
   "_deskfleet/session/stop": { params: AgentMutation; result: AgentSnapshot }
   "_deskfleet/session/delete": { params: AgentMutation; result: null }

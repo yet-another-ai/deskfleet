@@ -22,6 +22,7 @@ const repository = join(directory, "repository")
 const rendererDirectory = resolve(import.meta.dirname, "../out/renderer")
 const preloadPath = resolve(import.meta.dirname, "../out/preload/index.cjs")
 const screenshotPath = join(tmpdir(), `deskfleet-agent-smoke-${process.pid}.png`)
+const questionScreenshotPath = join(tmpdir(), `deskfleet-agent-question-${process.pid}.png`)
 let daemon: Awaited<ReturnType<typeof startDaemon>> | undefined
 let electron: ChildProcess | undefined
 let exited: Promise<void> | undefined
@@ -98,6 +99,21 @@ class ScriptedProvider implements AgentProvider {
           }, new AbortController().signal)
           assert.deepEqual(response.outcome, { outcome: "selected", optionId: "allow" })
           await update("permission accepted\n")
+          assert.ok(client.requestElicitation)
+          const answer = await client.requestElicitation({
+            sessionId: params.sessionId, toolCallId: "smoke-question", mode: "form", message: "Choose how to implement the interface.",
+            requestedSchema: {
+              type: "object", required: ["approach", "details"], properties: {
+                approach: { type: "string", title: "Which interface should we build?", description: "Implementation approach", oneOf: [
+                  { const: "Inline form", title: "Inline form", description: "Keep questions inside the conversation." },
+                  { const: "Dialog", title: "Dialog", description: "Open questions in a separate dialog." },
+                ] },
+                details: { type: "string", title: "Anything else to include?" },
+              },
+            },
+          }, new AbortController().signal)
+          assert.deepEqual(answer, { action: "accept", content: { approach: "Inline form", details: "Support keyboard navigation." } })
+          await update("question answered\n")
           finish()
         })().catch(error => { this.failures.push(error); finish() })
         return { outcome: "injected" }
@@ -118,7 +134,7 @@ async function stopClient(): Promise<void> {
 }
 
 async function launchClient(phase: AgentSmokeContext["phase"], previous?: AgentSmokeResult): Promise<AgentSmokeResult> {
-  const context: AgentSmokeContext = { phase, rendererDirectory, preloadPath, repository, screenshotPath, ...previous }
+  const context: AgentSmokeContext = { phase, rendererDirectory, preloadPath, repository, screenshotPath, questionScreenshotPath, ...previous }
   electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${join(directory, `profile-${++clientNumber}`)}`, `--agent-smoke-context=${JSON.stringify(context)}`], {
     cwd: resolve(import.meta.dirname, "../../.."), env: { ...process.env, DESKFLEET_DAEMON_DIRECTORY: controlDirectory }, stdio: ["ignore", "ignore", "pipe", "ipc"],
   })
@@ -169,11 +185,12 @@ try {
   assert.deepEqual(restored, first)
   assert.equal(provider.connections, connections, "Reconnecting must not restart the provider")
   assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate", "Smoke changed model prompt"])
-  console.log("Production Electron Agent: configured provider selection and launch settings, dynamic draft and Session configuration, streaming, shared backlog, selected steering, permission, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath })
+  console.log("Production Electron Agent: configured providers, dynamic configuration, streaming, backlog, steering, permissions, user question forms, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath, questionScreenshotPath })
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   if (provider.failures.length) console.error(provider.failures)
   console.error(`Agent smoke screenshot: ${screenshotPath}`)
+  console.error(`Agent question screenshot: ${questionScreenshotPath}`)
   throw error
 } finally {
   await stopClient()

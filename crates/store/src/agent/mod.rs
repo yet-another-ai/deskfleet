@@ -102,6 +102,12 @@ impl LocalCatalog {
                 vec![id.as_i64().into()],
             )
             .await?,
+            elicitations: records(
+                &db,
+                "SELECT record_json FROM agent_elicitations WHERE session_id = ? ORDER BY id",
+                vec![id.as_i64().into()],
+            )
+            .await?,
         };
         db.commit().await?;
         Ok(Some(snapshot))

@@ -6,10 +6,11 @@ import type { ProviderSnapshot } from "../../../../daemon/src/provider-protocol.
 import App from "./App.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
-import { agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
+import { agentElicitation, agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
 import { catalogFixture, workspaceId } from "./test/catalog.ts"
 import { useProvidersStore } from "./stores/providers.ts"
 import { deferred } from "./test/desktop-media.ts"
+import SessionView from "./views/SessionView.vue"
 const transport = vi.hoisted(() => ({ call: vi.fn(), receive: (_value: { method: string; params: unknown }) => {}, state: (_state: string) => {} }))
 vi.mock("./services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof transport.state, receive: typeof transport.receive) { transport.state = state; transport.receive = receive }
@@ -86,6 +87,45 @@ test("a workspace prompt creates a Session, keeps shared candidates, streams too
   expect(wrapper.get('[aria-label="Conversation"] [data-permission-id="60"]').text()).toContain("Reject · Grace")
   await router.push({ name: "workspace", params: { workspaceId } }); await flushPromises()
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/session/stop" || method === "_deskfleet/turn/cancel")).toBe(false)
+})
+
+test("returning to unchanged conversation history scrolls after loading, while live updates respect manual scrolling", async () => {
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  snapshot.elicitations = [agentElicitation()]
+  emit("elicitation", snapshot.elicitations[0]!)
+  await flushPromises()
+  await router.push({ name: "workspace", params: { workspaceId } })
+  await flushPromises()
+
+  const restored = deferred<AgentSnapshot>()
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/session/subscribe" ? restored.promise : normal(method, params))
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  await flushPromises()
+  const session = wrapper.findComponent(SessionView)
+  const scroller = session.get<HTMLElement>(".overflow-y-auto")
+  Object.defineProperties(scroller.element, { scrollHeight: { value: 1600 }, clientHeight: { value: 400 }, scrollTop: { value: 0, writable: true } })
+  const scrollTo = vi.spyOn(scroller.element, "scrollTo").mockImplementation(() => {
+    expect(session.find('[data-testid="agent-elicitation"]').exists()).toBe(true)
+    expect(session.text()).not.toContain("Restoring conversation")
+  })
+  expect(session.text()).toContain("Restoring conversation")
+  restored.resolve(structuredClone(snapshot))
+  await flushPromises()
+  expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 1600 })
+
+  scrollTo.mockClear()
+  await scroller.trigger("scroll")
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "More context" } } })
+  await flushPromises()
+  expect(scrollTo).not.toHaveBeenCalled()
+  scroller.element.scrollTop = 1200
+  await scroller.trigger("scroll")
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Still working" } } })
+  await flushPromises()
+  expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 1600 })
 })
 
 test("the new-session composer remembers a working-directory choice and creates that Session", async () => {
