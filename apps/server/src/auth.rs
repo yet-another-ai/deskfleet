@@ -7,16 +7,19 @@ use crate::{
 use actix_web::{HttpRequest, HttpResponse, web};
 use deskfleet_control_store::{AuthSession, MachineAuth, secret, secret_hash};
 use openidconnect::{
-    AccessTokenHash, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
-    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
-    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    AccessTokenHash, AuthorizationCode, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken,
+    IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
+    SignatureVerificationError, TokenResponse,
+    core::{CoreAuthenticationFlow, CoreClient, CoreJsonWebKeySet, CoreProviderMetadata},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub struct Oidc {
     config: OidcConfig,
-    metadata: CoreProviderMetadata,
+    metadata: Mutex<Arc<CoreProviderMetadata>>,
     http: reqwest::Client,
 }
 impl Oidc {
@@ -33,12 +36,30 @@ impl Oidc {
             .map_err(|_| ApiError::bad("OIDC provider discovery failed"))?;
         Ok(Self {
             config,
-            metadata,
+            metadata: Mutex::new(Arc::new(metadata)),
             http,
         })
     }
     fn return_to(&self, value: &str) -> bool {
         allowed_return_to(&self.config.return_to, value)
+    }
+    async fn metadata(&self) -> Arc<CoreProviderMetadata> {
+        self.metadata.lock().await.clone()
+    }
+    async fn refresh_keys(
+        &self,
+        previous: &Arc<CoreProviderMetadata>,
+    ) -> Result<Arc<CoreProviderMetadata>> {
+        // Serialize only a missing-key refresh. Concurrent callbacks that used
+        // the same cache reuse its replacement instead of fetching again.
+        let mut metadata = self.metadata.lock().await;
+        if Arc::ptr_eq(&metadata, previous) {
+            let keys = CoreJsonWebKeySet::fetch_async(metadata.jwks_uri(), &self.http)
+                .await
+                .map_err(|_| ApiError::unauthorized())?;
+            *metadata = Arc::new((**metadata).clone().set_jwks(keys));
+        }
+        Ok(metadata.clone())
     }
 }
 fn allowed_return_to(allowlist: &[String], value: &str) -> bool {
@@ -88,7 +109,7 @@ pub async fn start(state: web::Data<AppState>, body: web::Json<Start>) -> Result
         return Err(ApiError::bad("login return URL is not allowed"));
     }
     let client = CoreClient::from_provider_metadata(
-        oidc.metadata.clone(),
+        (*oidc.metadata().await).clone(),
         ClientId::new(oidc.config.client_id.clone()),
         oidc.config.client_secret.clone().map(ClientSecret::new),
     )
@@ -128,8 +149,9 @@ pub async fn callback(
         return Err(ApiError::unauthorized());
     }
     let code = query.code.clone().ok_or_else(ApiError::unauthorized)?;
-    let client = CoreClient::from_provider_metadata(
-        oidc.metadata.clone(),
+    let metadata = oidc.metadata().await;
+    let mut client = CoreClient::from_provider_metadata(
+        (*metadata).clone(),
         ClientId::new(oidc.config.client_id.clone()),
         oidc.config.client_secret.clone().map(ClientSecret::new),
     )
@@ -144,10 +166,27 @@ pub async fn callback(
         .await
         .map_err(|_| ApiError::unauthorized())?;
     let token = tokens.id_token().ok_or_else(ApiError::unauthorized)?;
+    let nonce = Nonce::new(field(&attempt, "nonce")?.into());
+    let verification = token.claims(&client.id_token_verifier(), &nonce);
+    let claims = match verification {
+        Ok(claims) => claims,
+        Err(ClaimsVerificationError::SignatureVerification(
+            SignatureVerificationError::NoMatchingKey,
+        )) => {
+            // The authorization code has already been consumed. Refresh only
+            // the trusted JWKS, then reverify this same token exactly once.
+            client = CoreClient::from_provider_metadata(
+                (*oidc.refresh_keys(&metadata).await?).clone(),
+                ClientId::new(oidc.config.client_id.clone()),
+                oidc.config.client_secret.clone().map(ClientSecret::new),
+            );
+            token
+                .claims(&client.id_token_verifier(), &nonce)
+                .map_err(|_| ApiError::unauthorized())?
+        }
+        Err(_) => return Err(ApiError::unauthorized()),
+    };
     let verifier = client.id_token_verifier();
-    let claims = token
-        .claims(&verifier, &Nonce::new(field(&attempt, "nonce")?.into()))
-        .map_err(|_| ApiError::unauthorized())?;
     if let Some(expected) = claims.access_token_hash() {
         let actual = AccessTokenHash::from_token(
             tokens.access_token(),
