@@ -15,17 +15,24 @@ export class CentralClient {
   readonly #operations: MachineOperations
   readonly #peers: AuthorizedPeers
   readonly #sync: CentralSync
+  readonly #unsubscribeTerminals: () => void
   #credentials: MachineCredentials | undefined
   #socket: WebSocket | undefined
   #connected = false
   #closed = false
+  #stopping = false
+  #stop: Promise<void> | undefined
+  #close: Promise<void> | undefined
+  readonly #httpClosing = new AbortController()
+  readonly #shutdownTimeoutMs: number
   #retry: ReturnType<typeof setTimeout> | undefined
   #heartbeat: ReturnType<typeof setInterval> | undefined
   #lastReceived = 0
   #requests = new Set<Promise<void>>()
   #enrolling = false
 
-  constructor(directory: string, operations: MachineOperations, peers: ControlPeers) {
+  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000) {
+    this.#shutdownTimeoutMs = shutdownTimeoutMs
     this.#path = join(directory, "central.json")
     this.#operations = operations
     this.#peers = new AuthorizedPeers({
@@ -34,6 +41,7 @@ export class CentralClient {
       signal: (peerId, event) => this.#send({ type: "peerEvent", peerId, event }),
     })
     this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body))
+    this.#unsubscribeTerminals = operations.terminals.onChange(() => this.#sync.changed())
   }
 
   async init(): Promise<void> {
@@ -57,7 +65,7 @@ export class CentralClient {
   }
 
   async enroll(value: MachineEnrollment): Promise<CentralStatus> {
-    if (this.#closed || this.#enrolling) throw new Error("Machine enrollment is unavailable")
+    if (this.#stopping || this.#closed || this.#enrolling) throw new Error("Machine enrollment is unavailable")
     if (this.#credentials) throw new Error("This daemon already belongs to a team")
     this.#enrolling = true
     try {
@@ -91,7 +99,7 @@ export class CentralClient {
     if (!credentials || this.#closed) throw new Error("Machine is not connected to a team")
     const response = await fetch(`${credentials.serverUrl}${path}`, {
       method: "POST", headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(30_000),
+      body: JSON.stringify(body), signal: AbortSignal.any([AbortSignal.timeout(30_000), this.#httpClosing.signal]),
     })
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) await this.#revoked()
@@ -101,7 +109,7 @@ export class CentralClient {
   }
 
   #connect(): void {
-    if (this.#closed || !this.#credentials || this.#socket) return
+    if (this.#stopping || this.#closed || !this.#credentials || this.#socket) return
     const url = new URL("/api/daemon/ws", this.#credentials.serverUrl)
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
     const socket = new WebSocket(url)
@@ -123,7 +131,7 @@ export class CentralClient {
       this.#socket = undefined; this.#connected = false; this.#sync.disable(); clearInterval(this.#heartbeat)
       if (event.code === 4401 || event.code === 4403) {
         void this.#revoked().catch(error => console.error("Revoked machine cleanup failed", error))
-      } else if (!this.#closed) {
+      } else if (!this.#stopping && !this.#closed) {
         this.#retry = setTimeout(() => this.#connect(), 2_000); this.#retry.unref()
       }
     })
@@ -139,10 +147,11 @@ export class CentralClient {
   }
 
   async #message(raw: unknown): Promise<void> {
+    if (this.#stopping) return
     if (typeof raw !== "string") throw new Error("Expected JSON control messages")
     const message = JSON.parse(raw) as ServerMessage
     if (message.type === "ready") {
-      if (message.machineId !== this.#credentials?.machineId || message.teamId !== this.#credentials?.teamId) throw new Error("Control identity mismatch")
+      if (message.machineId !== this.#credentials?.machineId || message.teamId !== this.#credentials?.teamId || message.serverId !== this.#credentials?.serverId) throw new Error("Control identity mismatch")
       this.#connected = true; this.#sync.enable(); return
     }
     if (message.type === "ping") { this.#send({ type: "pong" }); return }
@@ -182,12 +191,32 @@ export class CentralClient {
     await this.#peers.closeAll()
   }
 
-  async stop(): Promise<void> {
-    this.#closed = true; this.#connected = false
+  stop(): Promise<void> {
+    if (this.#stop) return this.#stop
+    this.#stopping = true; this.#connected = false
+    this.#sync.disable()
     clearTimeout(this.#retry); clearInterval(this.#heartbeat)
     const socket = this.#socket; this.#socket = undefined; socket?.close()
-    await this.#sync.close()
-    await this.#peers.closeAll()
-    await Promise.allSettled([...this.#requests])
+    return this.#stop = (async () => {
+      await this.#peers.closeAll()
+      await Promise.allSettled([...this.#requests])
+    })()
+  }
+
+  /** Called after Agent/PTY producers and their accepted management RPCs stop. */
+  close(): Promise<void> {
+    return this.#close ??= (async () => {
+      try { await this.stop() }
+      finally {
+        this.#unsubscribeTerminals()
+        const deadline = setTimeout(() => this.#httpClosing.abort(new Error("Final history synchronization timed out")), this.#shutdownTimeoutMs)
+        try { await this.#sync.close(!!this.#credentials) }
+        finally {
+          clearTimeout(deadline)
+          this.#httpClosing.abort()
+          this.#closed = true
+        }
+      }
+    })()
   }
 }

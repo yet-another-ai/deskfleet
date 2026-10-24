@@ -416,10 +416,12 @@ export async function startControlServer(peers: ControlPeers, directory: string,
   let published = false
   let closing: Promise<void> | undefined
   const stop = () => stopping ??= (async () => {
-    await central?.stop()
+    // Closing providers settles pending create/configure RPCs. Start resource
+    // shutdown before waiting for those control requests to return.
+    const producers = [central?.stop(), agents?.close(), sessions.close()]
     // Keep the endpoint bound until resource cleanup finishes. A competing
     // startup must still recognize this discovery record as live.
-    const results = await Promise.allSettled([...connections].map(connection => connection.close()).concat([...running]))
+    const results = await Promise.allSettled([...producers, ...[...connections].map(connection => connection.close()), ...running])
     const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (failures.length) throw new AggregateError(failures, "Failed to stop local daemon connections")
   })()
@@ -428,10 +430,12 @@ export async function startControlServer(peers: ControlPeers, directory: string,
       await stop()
     } finally {
       try {
-        if (!terminals) await sessions.close()
+        // Sync the stopped runs, cancelled approvals, and final accepted input
+        // after every producer has persisted its terminal state.
+        await central?.close()
       } finally {
         try {
-          try { await agents?.close() } finally { await catalog.close() }
+          await catalog.close()
         } finally {
           if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
           // Discovery remains owned until all daemon resources have finished closing.

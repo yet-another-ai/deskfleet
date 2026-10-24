@@ -169,15 +169,60 @@ try {
   assert.ok(audit.find(command => command.operationId === archiveId)?.result)
   console.log("Archive/restore retained files, backlog, audit, and terminal transcript; live processes remain stopped")
 
+  const reconnectLogin = await oidc.login(backend, { subject: "bob", name: "Bob smoke", email: "bob@example.invalid" })
+  const reconnectRequest = client(reconnectLogin)
+  const reconnectAgent = await connectBackendPeer({ backend, token: reconnectLogin.token, teamId, machineId: machines[1]!, purpose: "agent", request: reconnectRequest })
+  const reconnectTerminal = await connectBackendPeer({ backend, token: reconnectLogin.token, teamId, machineId: machines[1]!, purpose: "terminal", request: reconnectRequest })
+  closePeers.push(reconnectAgent.close, reconnectTerminal.close)
+  const reconnectSessionId = sessions[1]!.session.id
+  const reconnectShell = await rpc<TerminalSummary>(machines[1]!, "terminalDial", { mode: "create", terminalId: randomUUID(), cols: 80, rows: 24 }, member)
+  await reconnectAgent.rpc("_deskfleet/session/subscribe", { sessionId: reconnectSessionId })
+  await reconnectTerminal.rpc("attach", { sessionId: reconnectShell.id })
+  await fixture.stopServer()
+  await until(() => daemons.map(daemon => daemon.central.status()), values => values.every(value => !value.connected), "daemon detects central server interruption")
+  await reconnectAgent.rpc("_deskfleet/input/submit", { sessionId: reconnectSessionId, operationId: randomUUID(), delivery: "backlog", content: [{ type: "text", text: "Accepted while signaling is unavailable" }] })
+  await reconnectTerminal.rpc("input", { sessionId: reconnectShell.id, data: Buffer.from("echo deskfleet-offline-peer\r").toString("base64") })
+  await until(() => reconnectTerminal.messages, values => values.some(value => value.event?.kind === "output" && Buffer.from(value.event.data, "base64").toString("utf8").includes("deskfleet-offline-peer")), "terminal input survives signaling loss")
+  assert.equal(providers[1]!.closes, 0)
+  await fixture.restartServer()
+  await until(() => daemons.map(daemon => daemon.central.status()), values => values.every(value => value.connected), "daemon reconnects to restarted server")
+  const secondCentral = () => member<{ snapshot: AgentSnapshot; lastEventSeq: string }>(`/machines/${machines[1]}/sessions/${reconnectSessionId}`)
+  await until(secondCentral, value => value.snapshot.inputs.length === 1 && value.snapshot.permissions.some(permission => permission.state === "pending"), "offline journal catches up after reconnect")
+  assert.ok((await reconnectAgent.rpc<{ id: string }[]>("_deskfleet/session/list", {})).some(value => value.id === reconnectSessionId))
+  await reconnectRequest("/auth/logout", {})
+  await until(() => [reconnectAgent.disconnected(), reconnectTerminal.disconnected()], values => values.every(Boolean), "logout revokes established peer access")
+  await assert.rejects(reconnectAgent.rpc("_deskfleet/session/list", {}), /closed/u)
+  assert.equal(providers[1]!.closes, 0, "Revoking access must preserve the accepted Agent task")
+  assert.equal(daemons[1]!.terminals.list().find(value => value.id === reconnectShell.id)?.status, "running", "Revoking access must preserve the shell")
+  assert.ok((await secondCentral()).snapshot.permissions.some(permission => permission.state === "pending"))
+  console.log("Established Agent/Terminal peers survive server interruption and restart; logout revokes access without terminating accepted work")
+
+  // A blocked management RPC must be released by provider shutdown, before the
+  // control link waits for its handler to finish.
+  providers[1]!.blockNextCreation = true
+  const creating = rpc(machines[1]!, "_deskfleet/session/create", {
+    workspaceId: workspaces[1]!.id, provider: "codex", operationId: randomUUID(), context: "directory",
+  }).catch(() => {})
+  await until(() => providers[1]!.blockedCreations, value => value === 1, "blocked provider session creation")
+  let stopped = false
+  const stopping = daemons[1]!.close().then(() => { stopped = true })
+  await until(() => stopped, Boolean, "shutdown releases a pending provider RPC", 5_000)
+  await Promise.all([stopping, creating])
+
+  // Shut down immediately after acceptance, before the coalesced upload timer.
+  await agent.rpc("_deskfleet/input/submit", { sessionId, operationId: randomUUID(), delivery: "backlog", content: [{ type: "text", text: "Final accepted input before daemon shutdown" }] })
+  await daemons[0]!.close()
   for (const close of closePeers) await close()
-  for (const daemon of daemons) await daemon.close()
+  console.log("Shutdown releases blocked control RPCs and flushes the final durable history")
   await until(() => member<{ id: string; online: boolean }[]>(`/teams/${teamId}/machines`), values => values.every(value => !value.online), "offline machine presence")
   const offline = await readCentral()
-  assert.equal(offline.snapshot.inputs.length, 2)
+  assert.equal(offline.snapshot.inputs.length, 3)
+  assert.ok(offline.snapshot.runs.every(run => run.state !== "running"))
+  assert.ok(offline.snapshot.permissions.every(permission => permission.state !== "pending"))
   const offlineEvents = await member<{ events: AgentEvent[] }>(`${sessionPath}/events?after=0&limit=200`)
   assert.ok(offlineEvents.events.length)
   assert.ok(!JSON.stringify({ offline, offlineEvents }).includes("deskfleet-retained-terminal"), "Terminal bytes never enter central Agent history")
-  assert.equal((await member<{ snapshot: AgentSnapshot }>(`/machines/${machines[1]}/sessions/${sessionId}`)).snapshot.inputs.length, 0)
+  assert.equal((await member<{ snapshot: AgentSnapshot }>(`/machines/${machines[1]}/sessions/${sessionId}`)).snapshot.inputs.length, 1)
   await assert.rejects(rpc(machines[0]!, "_deskfleet/session/archive", { sessionId, operationId: randomUUID() }), /503/u)
   assert.equal((await readCentral()).snapshot.session.archiveState, "active")
   console.log("Offline Agent history remains readable, terminal output stays local, and offline archive is rejected")

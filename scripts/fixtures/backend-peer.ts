@@ -37,14 +37,14 @@ export async function connectBackendPeer(options: {
   const remoteCandidates: IceCandidate[] = []
   const localCandidates: IceCandidate[] = []
   const gatheredCandidates: IceCandidate[] = []
-  let ready = false, opened = false, answered = false, closed = false
+  let ready = false, opened = false, answered = false, closed = false, disconnected = false
   let offerSdp = ""
   let fragments = Buffer.alloc(0)
   let nextId = 0
   const observed = (work: Promise<unknown>) => { void work.catch(error => { if (!closed) errors.push(error) }) }
   const sendCandidate = (candidate: IceCandidate) => request(`/peers/${grant.peerId}/candidate`, { candidate: normalizeCandidate(candidate, offerSdp) })
   socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "authenticate", token: options.token })))
-  socket.addEventListener("error", () => { if (!closed) errors.push(new Error("Client signaling socket failed")) })
+  socket.addEventListener("error", () => { if (!closed && !opened) errors.push(new Error("Client signaling socket failed")) })
   socket.addEventListener("message", event => {
     const message = JSON.parse(String(event.data))
     if (message.type === "ready") ready = true
@@ -60,7 +60,8 @@ export async function connectBackendPeer(options: {
   const pump = (async () => {
     for (;;) {
       const event = await peer.nextEvent()
-      if (!event || closed) return
+      if (!event || closed) { disconnected = true; return }
+      if (event.kind === "dataChannelClosed" && event.label === channel || event.kind === "stateChanged" && ["failed", "closed"].includes(event.state ?? "")) disconnected = true
       if (event.kind === "error") throw new Error(event.error!)
       if (event.kind === "iceCandidate") {
         gatheredCandidates.push(event.candidate!)
@@ -116,6 +117,7 @@ export async function connectBackendPeer(options: {
     }
     async function rpc<T>(method: string, params: unknown): Promise<T> {
       check()
+      if (disconnected) throw new Error("Peer connection is closed")
       const id = nextId++
       const value = { ...(purpose === "agent" ? { jsonrpc: "2.0" } : {}), id, method, params }
       if (purpose === "agent") await peer.sendData(channel, Buffer.from(`${JSON.stringify(value)}\n`))
@@ -125,6 +127,6 @@ export async function connectBackendPeer(options: {
       return response!.result as T
     }
     if (purpose === "agent") assert.equal((await rpc<{ protocolVersion: number }>("initialize", { protocolVersion: 1 })).protocolVersion, 1)
-    return { rpc, close, messages, authorization: grant.authorization, check }
+    return { rpc, close, messages, authorization: grant.authorization, check, disconnected: () => disconnected }
   } catch (error) { await close(); throw error }
 }

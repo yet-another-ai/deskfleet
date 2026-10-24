@@ -3,22 +3,12 @@ import { parseArgs } from "node:util"
 import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { claudeCodeProvider } from "./agents/claude-code.ts"
 import { codexProvider } from "./agents/codex.ts"
-import { DaemonClient } from "./control-client.ts"
 import type { ManagedWorkspaceSession } from "./session-worktrees.ts"
 
 export interface AgentWorkspaceSessions {
   create(workspaceId: string): Promise<ManagedWorkspaceSession>
   destroy(sessionId: string): Promise<void>
   close(): void
-}
-
-async function connectWorkspaceSessions(): Promise<AgentWorkspaceSessions> {
-  const client = await DaemonClient.connect(() => {}, () => {})
-  return {
-    create: workspaceId => client.call("workspaceSessionCreate", { workspaceId }),
-    destroy: async sessionId => { await client.call("workspaceSessionDestroy", { sessionId }) },
-    close: () => client.close(),
-  }
 }
 
 const agents: Record<string, { provider: AgentProvider; name: string }> = {
@@ -45,7 +35,7 @@ export async function runAgent(args: string[], dependencies: {
     },
   })
   if (values.help) {
-    console.log("Usage: deskfleet-daemon agent <codex|claude-code> [--check | --prompt <text>] [--cwd <directory> | --workspace-id <id>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
+    console.log("Usage: deskfleet-daemon agent <codex|claude-code> [--check | --prompt <text>] [--cwd <directory>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
     return
   }
   const selected = positionals.length === 1 && Object.hasOwn(agents, positionals[0]!) ? agents[positionals[0]!] : undefined
@@ -55,6 +45,9 @@ export async function runAgent(args: string[], dependencies: {
   }
   if (values.cwd !== undefined && values["workspace-id"] !== undefined) {
     throw new Error("--cwd and --workspace-id are mutually exclusive")
+  }
+  if (values["workspace-id"] !== undefined && !dependencies.workspaceSessions) {
+    throw new Error("Manage team Sessions through the authenticated Web or Electron client")
   }
 
   const config: AgentConfig = {
@@ -88,7 +81,7 @@ export async function runAgent(args: string[], dependencies: {
   process.once("SIGTERM", interrupt)
   try {
     if (values["workspace-id"] !== undefined && !values.check) {
-      workspaceSessions = await (dependencies.workspaceSessions ?? connectWorkspaceSessions)()
+      workspaceSessions = await dependencies.workspaceSessions!()
       if (interrupted) return
       managed = await workspaceSessions.create(values["workspace-id"])
       if (interrupted) return

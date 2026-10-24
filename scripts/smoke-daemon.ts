@@ -68,6 +68,13 @@ try {
     const response = await fetch(`${ready.address}/healthz`, { signal: timeout })
     assert.equal(response.status, 200)
     assert.deepEqual(await response.json(), { status: "ok", native: expectedNative })
+    const status = JSON.parse(execFileSync(command, ["status"], {
+      cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+    })) as { configured: boolean; connected: boolean; identity: { originId: string; machineId: string } }
+    assert.equal(status.configured, false)
+    assert.equal(status.connected, false)
+    assert.ok(status.identity.originId)
+    assert.match(status.identity.machineId, /^\d+$/u)
     child.kill("SIGTERM")
     const [code, signal] = await Promise.race([closed, deadline])
     if (process.platform !== "win32") {

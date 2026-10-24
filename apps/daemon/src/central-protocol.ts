@@ -1,18 +1,11 @@
-import type { IceServer } from "@deskfleet/native"
+import type { ControlMessage, IceServer, PeerAuthorization as WirePeerAuthorization } from "../../../crates/protocol/control.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import type { IceCandidate } from "./control-protocol.ts"
 
 /** Wire names are owned by crates/protocol/src/control.rs (protocol version 1). */
-export interface PeerAuthorization {
-  peerId: string
-  serverId: string
-  teamId: string
+export interface PeerAuthorization extends Omit<WirePeerAuthorization, "actor" | "purpose"> {
   actor: AgentActor & { kind: "user"; userId: string; deviceId: string }
-  targetMachine: { id: string; originId: string; localMachineId: string }
   purpose: "agent" | "terminal" | "desktop"
-  actions: string[]
-  issuedAt: string
-  expiresAt: string
 }
 
 export interface MachineCredentials {
@@ -47,13 +40,9 @@ export type PeerSignal =
   | { kind: "stateChanged"; state: string }
   | { kind: "error"; error: string }
 
-export type ServerMessage =
-  | { type: "ready"; machineId: string; teamId: string }
-  | { type: "request"; id: string; method: string; params: unknown; actor?: AgentActor }
-  | { type: "peerRevoked"; peerId: string; reason: string }
-  | { type: "reconcilePeers"; peers: PeerAuthorization[] }
-  | { type: "ping" }
-  | { type: "pong" }
+export type ServerMessage = Extract<ControlMessage, { type: "ready" | "peerRevoked" | "ping" | "pong" }>
+  | (Omit<Extract<ControlMessage, { type: "request" }>, "actor"> & { actor?: PeerAuthorization["actor"] })
+  | (Omit<Extract<ControlMessage, { type: "reconcilePeers" }>, "peers"> & { peers: PeerAuthorization[] })
 
 export function centralUrl(value: string): string {
   const url = new URL(value)

@@ -7,11 +7,20 @@ export class BackendAgent implements AgentProvider {
   closes = 0
   prompts: string[] = []
   resumes: string[] = []
+  blockNextCreation = false
+  blockedCreations = 0
   async connect(_config: unknown, client: AgentClient): Promise<AgentConnection> {
     this.starts++
+    let releaseCreation: (() => void) | undefined
     return {
       initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {} } } },
-      newSession: async () => ({ sessionId: "fixture-conversation", configOptions: [] }),
+      newSession: async () => {
+        if (this.blockNextCreation) {
+          this.blockNextCreation = false; this.blockedCreations++
+          await new Promise<void>(resolve => { releaseCreation = resolve })
+        }
+        return { sessionId: "fixture-conversation", configOptions: [] }
+      },
       resume: async params => { this.resumes.push(params.sessionId); return { configOptions: [] } },
       setConfigOption: async () => ({ configOptions: [] }),
       prompt: async params => {
@@ -30,7 +39,7 @@ export class BackendAgent implements AgentProvider {
       },
       steer: async () => ({ outcome: "inactive" }),
       cancel: async () => {},
-      close: async () => { this.closes++ },
+      close: async () => { this.closes++; releaseCreation?.() },
     }
   }
 }
