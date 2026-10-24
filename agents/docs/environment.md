@@ -85,7 +85,7 @@ runtime commands.
 
 The ACP SDK, Codex adapter, and Claude Agent adapter are pinned daemon
 dependencies in pnpm. The SEA build embeds those adapters. Running a session
-still requires the installed CLI: Codex, Claude Code, or Cursor (`agent acp`).
+still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`), or Grok (`grok agent stdio`).
 Use `--binary-path` to select it and repeated `--env` options for environment
 overrides. See the [agent setup](../../apps/daemon/README.md#agents-through-acp)
 for initialization checks and prompt commands.

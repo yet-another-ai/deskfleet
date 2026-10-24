@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk"
 import { canContinueSession, connectAcpProcess, supportsSteering, type AgentProcess } from "./agents/acp.ts"
 import { authenticateCursor } from "./agents/cursor.ts"
+import { authenticateGrok } from "./agents/grok.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
 const launch: AgentProcess = { command: process.execPath, args: [fixture] }
@@ -273,6 +274,27 @@ test("Cursor ACP authenticates and loads a saved session without replaying its h
     assert.match(details, /authenticate required/u)
     return true
   })
+})
+
+test("Grok ACP prefers an API key, then a cached login, and skips interactive auth", { timeout: 15_000 }, async context => {
+  const key = await connectAcpProcess({
+    ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "grok" },
+  }, { onUpdate() {} }, { afterInitialize: (initialization, agent) => authenticateGrok(initialization, agent, { XAI_API_KEY: "present" }) })
+  context.after(() => key.close())
+  const created = await key.newSession(session)
+  assert.equal(created._meta?.authMethod, "xai.api_key")
+  assert.equal(created._meta?.headless, true)
+
+  const cached = await connectAcpProcess({
+    ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "grok-cached" },
+  }, { onUpdate() {} }, { afterInitialize: (initialization, agent) => authenticateGrok(initialization, agent, {}) })
+  context.after(() => cached.close())
+  const resumed = await cached.newSession(session)
+  assert.equal(resumed._meta?.authMethod, "cached_token")
+
+  await assert.rejects(connectAcpProcess({
+    ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "grok-login" },
+  }, { onUpdate() {} }, { afterInitialize: (initialization, agent) => authenticateGrok(initialization, agent, { XAI_API_KEY: "present" }) }), /grok login/u)
 })
 
 test("ACP abort during initialization stops the child process", { timeout: 15_000 }, async context => {

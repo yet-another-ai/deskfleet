@@ -253,6 +253,9 @@ Code template connects Claude Code CLI through the bundled
 The Cursor template launches the installed Cursor CLI directly as `agent acp`;
 Cursor speaks ACP and does not use a bundled adapter. After initialization it
 calls `authenticate` with `cursor_login` when Cursor advertises that method.
+The Grok template launches the installed Grok CLI directly as `grok agent stdio`.
+It authenticates with `xai.api_key` when `XAI_API_KEY` is set, and otherwise with
+`cached_token` after `grok login`.
 The shared
 `AgentProvider` interface accepts a user-facing name, an optional binary path,
 and environment overrides. Provider-specific code selects the process; the
@@ -261,7 +264,7 @@ initialization, session creation, prompts, cancellation, and session updates.
 Each bundled adapter uses the installed CLI and its credentials. Adapters run as
 child processes; the SEA executable reuses its bundled Node runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
-paths use the template default (`codex`, `claude`, `agent`, or `acp-agent`), and configured environment
+paths use the template default (`codex`, `claude`, `agent`, `grok`, or `acp-agent`), and configured environment
 values extend the executing daemon's inherited environment. New installations
 start with a default Codex provider; the new-session composer chooses among the
 machine's configured providers. See [Agent Sessions](agent-sessions.md) for

@@ -54,7 +54,13 @@ its default binary is `claude`. The Cursor template runs the installed
 binary is `agent`. Sign in with `agent login`, or set `CURSOR_API_KEY` or
 `CURSOR_AUTH_TOKEN`, before starting a session. Cursor's additional methods,
 including `cursor/ask_question` and `cursor/create_plan`, are not implemented;
-unrecognized requests receive JSON-RPC method not found. The ACP template
+unrecognized requests receive JSON-RPC method not found. The Grok template runs
+the installed [Grok CLI](https://docs.x.ai/build/cli/headless-scripting) directly
+as `grok agent stdio`; its default binary is `grok`. After initialization it
+calls `authenticate` with `xai.api_key` when `XAI_API_KEY` is set and that method
+is advertised, and otherwise with `cached_token` from `grok login`. Interactive
+methods are not passed to `authenticate`. Deskfleet does not add
+`--always-approve`, so tool approval stays on the existing permission UI. The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the
 daemon's inherited environment at process startup. The provider dialog's
@@ -390,7 +396,7 @@ only subscribes and replays: it never starts or resumes a provider.
 
 Resume uses the saved provider Session ID and captured directories. Agents that
 advertise `session/resume` continue with that method. Agents that instead
-advertise `loadSession`, including Cursor CLI, continue with `session/load`.
+advertise `loadSession`, including Cursor CLI and Grok, continue with `session/load`.
 That method replays the provider's history as session updates. Deskfleet already
 keeps the journal, so it retains configuration updates from the replay and does
 not record the rest. The stored `resume` capability means either method was
