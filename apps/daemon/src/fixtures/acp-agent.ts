@@ -7,6 +7,35 @@ const exitFile = process.env.DESKFLEET_TEST_EXIT_FILE
 if (exitFile) process.once("exit", code => writeFileSync(exitFile, String(code)))
 
 const activePrompts = new Map<string, (response: acp.PromptResponse) => void>()
+const cursorQuestion = {
+  toolCallId: "call_123",
+  title: "Need input",
+  questions: [
+    { id: "q1", prompt: "Which mode should I use?", options: [{ id: "agent", label: "Agent" }, { id: "plan", label: "Plan" }] },
+    { id: "q2", prompt: "Which checks?", allowMultiple: true, options: [{ id: "lint", label: "Lint" }, { id: "test", label: "Test" }] },
+  ],
+}
+const grokQuestion = {
+  toolCallId: "tc-1",
+  mode: "plan",
+  questions: [{
+    question: "Which database?",
+    options: [
+      { label: "Redis", description: "In-memory store", preview: " redis preview " },
+      { label: "Postgres", description: "Relational DB" },
+    ],
+  }],
+}
+async function askVendor(client: acp.AgentContext, method: string, params: unknown): Promise<acp.PromptResponse> {
+  try {
+    return { stopReason: "end_turn", _meta: { question: await client.request(method, params) } }
+  } catch (error) {
+    const questionError = error instanceof acp.RequestError
+      ? { code: error.code, message: error.message }
+      : { message: error instanceof Error ? error.message : String(error) }
+    return { stopReason: "end_turn", _meta: { questionError } }
+  }
+}
 let nextSession = 0
 let authenticated = false
 let authMethod: string | undefined
@@ -97,6 +126,14 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
     })
     if (pending) {
       try { return await pending } finally { activePrompts.delete(params.sessionId) }
+    }
+    if (mode === "cursor-question" || mode === "cursor-question-invalid") {
+      return askVendor(client, "cursor/ask_question", mode === "cursor-question" ? cursorQuestion : { toolCallId: "call_123", questions: [] })
+    }
+    if (mode === "grok-question" || mode === "grok-question-alias") {
+      return askVendor(client, mode === "grok-question" ? "x.ai/ask_user_question" : "_x.ai/ask_user_question", {
+        ...grokQuestion, sessionId: params.sessionId,
+      })
     }
     if (mode?.startsWith("elicitation")) {
       const scope = mode === "elicitation-request" ? { requestId: "configuration" } : { sessionId: params.sessionId, toolCallId: "question-1" }

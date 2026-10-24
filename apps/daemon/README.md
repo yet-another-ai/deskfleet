@@ -182,7 +182,9 @@ Grok is also native ACP: the daemon runs `` `<binary> agent stdio` ``. It then
 calls `authenticate` with `xai.api_key` when `XAI_API_KEY` is set and advertised,
 and otherwise with `cached_token`. `grok login` caches that token. Interactive
 methods are left unused, and `--always-approve` is not added, so permission
-requests reach the client.
+requests reach the client. When the caller accepts questions, `cursor/ask_question`,
+`x.ai/ask_user_question`, and `_x.ai/ask_user_question` are answered through that
+form. `cursor/create_plan` and Cursor's notification methods stay unrecognized.
 `--cwd` sets an unmanaged ACP session's working directory and defaults to the
 current directory. `--workspace-id` instead allocates a managed Session through
 the running daemon; these flags are mutually exclusive. It uses the generated

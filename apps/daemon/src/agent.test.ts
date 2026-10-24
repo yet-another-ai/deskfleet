@@ -336,6 +336,76 @@ test("Grok ACP prefers an API key, then a cached login, and skips interactive au
   }, { onUpdate() {} }, { afterInitialize: (initialization, agent) => authenticateGrok(initialization, agent, { XAI_API_KEY: "present" }) }), /grok login/u)
 })
 
+test("Cursor and Grok questions use the session form", { timeout: 30_000 }, async context => {
+  await context.test("cursor ask_question", async () => {
+    const requests: acp.CreateElicitationRequest[] = []
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-question" } }, {
+      onUpdate() {},
+      async requestElicitation(request) {
+        requests.push(request)
+        return { action: "accept", content: { q1: "agent", q2: ["lint"] } }
+      },
+    })
+    context.after(() => connection.close())
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    const request = requests[0]
+    assert.ok(request && "sessionId" in request && "toolCallId" in request)
+    assert.equal(request.sessionId, created.sessionId)
+    assert.equal(request.toolCallId, "call_123")
+    assert.deepEqual(result._meta?.question, { outcome: { outcome: "answered", answers: [
+      { questionId: "q1", selectedOptionIds: ["agent"] },
+      { questionId: "q2", selectedOptionIds: ["lint"] },
+    ] } })
+  })
+
+  await context.test("cursor question without a handler", async () => {
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-question" } }, { onUpdate() {} })
+    context.after(() => connection.close())
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    const questionError = result._meta?.questionError
+    assert.ok(questionError && typeof questionError === "object" && "code" in questionError)
+    assert.equal(questionError.code, -32601)
+  })
+
+  await context.test("malformed cursor question", async () => {
+    let asked = false
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-question-invalid" } }, {
+      onUpdate() {},
+      async requestElicitation() { asked = true; return { action: "cancel" } },
+    })
+    context.after(() => connection.close())
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    assert.equal(asked, false)
+    assert.deepEqual(result._meta?.question, { outcome: { outcome: "cancelled" } })
+  })
+
+  await context.test("grok ask_user_question", async () => {
+    for (const mode of ["grok-question", "grok-question-alias"]) {
+      const requests: acp.CreateElicitationRequest[] = []
+      const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: mode } }, {
+        onUpdate() {},
+        async requestElicitation(request) {
+          requests.push(request)
+          return mode === "grok-question" ? { action: "accept", content: { "Which database?": "Redis" } } : { action: "cancel" }
+        },
+      })
+      context.after(() => connection.close())
+      const created = await connection.newSession(session)
+      const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+      const request = requests[0]
+      assert.ok(request && "sessionId" in request)
+      assert.equal(request.sessionId, created.sessionId)
+      assert.deepEqual(result._meta?.question, mode === "grok-question"
+        ? { outcome: "accepted", answers: { "Which database?": ["Redis"] }, annotations: { "Which database?": { preview: " redis preview " } } }
+        : { outcome: "cancelled" })
+      await connection.close()
+    }
+  })
+})
+
 test("ACP abort during initialization stops the child process", { timeout: 15_000 }, async context => {
   const directory = mkdtempSync(join(tmpdir(), "deskfleet-acp-abort-"))
   context.after(() => rmSync(directory, { recursive: true, force: true }))

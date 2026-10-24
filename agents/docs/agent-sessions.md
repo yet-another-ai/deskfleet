@@ -52,15 +52,18 @@ template runs the installed Claude Code CLI through the bundled
 its default binary is `claude`. The Cursor template runs the installed
 [Cursor CLI](https://cursor.com/docs/cli/acp) directly as `agent acp`; its default
 binary is `agent`. Sign in with `agent login`, or set `CURSOR_API_KEY` or
-`CURSOR_AUTH_TOKEN`, before starting a session. Cursor's additional methods,
-including `cursor/ask_question` and `cursor/create_plan`, are not implemented;
+`CURSOR_AUTH_TOKEN`, before starting a session. When a session can ask the user
+a question, `cursor/ask_question` is answered through that form.
+`cursor/create_plan` and Cursor's notification methods are not implemented;
 unrecognized requests receive JSON-RPC method not found. The Grok template runs
 the installed [Grok CLI](https://docs.x.ai/build/cli/headless-scripting) directly
 as `grok agent stdio`; its default binary is `grok`. After initialization it
 calls `authenticate` with `xai.api_key` when `XAI_API_KEY` is set and that method
 is advertised, and otherwise with `cached_token` from `grok login`. Interactive
 methods are not passed to `authenticate`. Deskfleet does not add
-`--always-approve`, so tool approval stays on the existing permission UI. The ACP template
+`--always-approve`, so tool approval stays on the existing permission UI.
+`x.ai/ask_user_question` and `_x.ai/ask_user_question` use the same question form.
+The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the
 daemon's inherited environment at process startup. The provider dialog's
@@ -262,7 +265,19 @@ Managed providers receive the ACP `elicitation.form` capability and send
 `elicitation/create` requests for structured user input. Codex maps its
 `request_user_input` tool to this interface. The daemon accepts session-scoped
 forms; it does not advertise URL elicitation. Direct CLI invocations without an
-input callback do not advertise form support.
+input callback do not advertise form support and do not register vendor question
+methods.
+
+Cursor's `cursor/ask_question` and Grok's `x.ai/ask_user_question` and
+`_x.ai/ask_user_question` are translated into that form when the callback is
+installed. Cursor's documented request has no session id, so the question is
+scoped to the session this connection most recently opened or prompted. An
+answered form becomes Cursor's nested `{ outcome: { outcome: "answered", answers } }`
+result, using option ids, or Grok's `{ outcome: "accepted", answers }` map of
+question text to selected labels. Decline is Cursor `skipped` and Grok
+`cancelled`; cancel is `cancelled` for both. Grok's plan-mode outcomes
+`chat_about_this` and `skip_interview` are not separate actions. A request that
+cannot be shown is cancelled rather than left unanswered.
 
 Each request is persisted with a durable elicitation ID, its provider run and
 turn, and its original form schema before clients see it. Snapshots and

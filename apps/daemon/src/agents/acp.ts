@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk"
+import { answerVendorQuestion, VENDOR_QUESTION_METHODS } from "./questions.ts"
 
 export interface AgentConfig {
   name: string
@@ -76,7 +77,9 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     stdio: ["pipe", "pipe", "inherit"],
   })
   const exited = new Promise<void>(resolve => child.once("close", () => resolve()))
-  const connection = acp.client({ name: "deskfleet" })
+  let providerSessionId: string | undefined
+  const rememberSession = (sessionId: string | undefined) => { if (sessionId) providerSessionId = sessionId }
+  let clientApp = acp.client({ name: "deskfleet" })
     .onNotification(acp.methods.client.session.update, async ({ params }) => {
       // session/load replays history before its response. This handler runs
       // synchronously when that notification is read, so the flag still covers
@@ -106,10 +109,23 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         throw error
       }
     })
-    .connect(acp.ndJsonStream(
-      Writable.toWeb(child.stdin!),
-      Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
-    ))
+  if (client.requestElicitation) {
+    const requestElicitation = client.requestElicitation
+    for (const method of VENDOR_QUESTION_METHODS) {
+      clientApp = clientApp.onRequest(method, (params: unknown) => params, async ({ params, signal }) => {
+        try {
+          return await answerVendorQuestion(method, params, providerSessionId, requestElicitation, signal)
+        } catch (error) {
+          connection.close(error)
+          throw error
+        }
+      })
+    }
+  }
+  const connection = clientApp.connect(acp.ndJsonStream(
+    Writable.toWeb(child.stdin!),
+    Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
+  ))
 
   child.once("error", error => {
     connection.close(new Error(`Could not start ${launch.command}: ${error.message}`, { cause: error }))
@@ -158,9 +174,14 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     await options.afterInitialize?.(initialization, connection.agent)
     return {
       initialization,
-      newSession: params => connection.agent.request(acp.methods.agent.session.new, params),
+      async newSession(params) {
+        const created = await connection.agent.request(acp.methods.agent.session.new, params)
+        rememberSession(created.sessionId)
+        return created
+      },
       setConfigOption: params => connection.agent.request(acp.methods.agent.session.setConfigOption, params),
       async resume(params) {
+        rememberSession(params.sessionId)
         const capabilities = initialization.agentCapabilities
         if (capabilities?.sessionCapabilities?.resume) {
           return connection.agent.request(acp.methods.agent.session.resume, params)
@@ -178,8 +199,12 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
           replayingHistory = false
         }
       },
-      prompt: params => connection.agent.request(acp.methods.agent.session.prompt, params),
+      async prompt(params) {
+        rememberSession(params.sessionId)
+        return connection.agent.request(acp.methods.agent.session.prompt, params)
+      },
       async steer(params, deliveryId) {
+        rememberSession(params.sessionId)
         if (!supportsSteering(initialization)) throw new Error("The agent does not support steering without a new turn")
         const result = await connection.agent.request("_session/steering", {
           ...params,
