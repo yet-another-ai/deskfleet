@@ -83,10 +83,11 @@ a package manifest, run `mise exec -- pnpm install` and include the lockfile in
 the change. See the [daemon guide](../../apps/daemon/README.md) for packaging and
 runtime commands.
 
-The ACP SDK and Codex adapter are pinned daemon dependencies in pnpm. The SEA
-build embeds the adapter; running Codex sessions still requires an installed,
-authenticated Codex CLI. Use `--binary-path` to select it and repeated `--env`
-options for environment overrides. See the [Codex setup](../../apps/daemon/README.md#codex-through-acp)
+The ACP SDK, Codex adapter, and Claude Agent adapter are pinned daemon
+dependencies in pnpm. The SEA build embeds those adapters. Running a session
+still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`), or Grok (`grok agent stdio`).
+Use `--binary-path` to select it and repeated `--env` options for environment
+overrides. See the [agent setup](../../apps/daemon/README.md#agents-through-acp)
 for initialization checks and prompt commands.
 
 ## Agent skills

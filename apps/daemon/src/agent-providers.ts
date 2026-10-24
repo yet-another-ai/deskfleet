@@ -5,6 +5,8 @@ import { join } from "node:path"
 import { connectAcpProcess, type AgentConfig, type AgentProvider } from "./agents/acp.ts"
 import { claudeCodeProvider } from "./agents/claude-code.ts"
 import { codexProvider } from "./agents/codex.ts"
+import { cursorProvider } from "./agents/cursor.ts"
+import { grokProvider } from "./agents/grok.ts"
 import {
   AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, validateProviderId,
   type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type ProviderSnapshot, type ProviderTestResult,
@@ -108,7 +110,7 @@ export class AgentProviders {
   #launch(record: AgentProviderInput): { provider: AgentProvider; config: AgentConfig } {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
     return {
-      provider: record.template === "codex" ? this.#codex : record.template === "claude-code" ? claudeCodeProvider : acpProvider,
+      provider: record.template === "codex" ? this.#codex : record.template === "claude-code" ? claudeCodeProvider : record.template === "cursor" ? cursorProvider : record.template === "grok" ? grokProvider : acpProvider,
       config: { name: record.name, binaryPath: record.binaryPath ?? template.defaultBinaryPath, env: record.env },
     }
   }

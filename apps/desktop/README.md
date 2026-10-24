@@ -131,8 +131,11 @@ describes its target Workspace.
 
 Settings → Agents manages the machine's configured providers, including their
 names, icons, executable paths, and environment overrides. The Codex and Claude
-Code templates use their installed and authenticated CLIs through bundled ACP adapters;
-the ACP template runs a configured ACP executable directly. **New session**
+Code templates use their installed and authenticated CLIs through bundled ACP adapters.
+The Cursor template runs the installed Cursor CLI as `agent acp`.
+The Grok template runs the installed Grok CLI as `grok agent stdio`.
+Their multiple-choice questions use the session question cards.
+The ACP template runs a configured ACP executable directly. **New session**
 creates a persistent Session for the selected Workspace and provider, then submits the prompt.
 The composer's context menu chooses **New worktree**, isolated Git checkouts from
 each directory's committed HEAD, or **Working directory**, which works in the

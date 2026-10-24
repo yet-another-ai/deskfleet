@@ -155,6 +155,32 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
     require(edited?.template === "codex" && edited.icon === "claude" && edited.name === "Work Codex updated" && edited.binaryPath === `${context.checkoutPath}/custom-codex` && edited.env.DESKFLEET_SMOKE_PROFILE === "updated", "Provider edits were not persisted")
     require(document.querySelector(`[data-provider-id="${created.id}"] [data-provider-icon="claude"]`), "Edited provider did not display its updated icon")
     dialog = await addProvider()
+    const cursor = dialog.querySelector<HTMLSelectElement>("#provider-template")!
+    cursor.value = "cursor"
+    cursor.dispatchEvent(new Event("change", { bubbles: true }))
+    await until(() => dialog.querySelector<HTMLInputElement>('[name="provider-binary"]')?.placeholder === "agent"
+      && dialog.querySelector("[data-provider-icon]")?.getAttribute("data-provider-icon") === "cursor"
+      && (dialog.textContent?.includes("agent acp") ?? false), "Cursor template defaults")
+    input('[name="provider-name"]', "Temporary Cursor")
+    await saveProvider(dialog)
+    const cursorProvider = (await api.providers.list()).providers.find(provider => provider.name === "Temporary Cursor")
+    require(cursorProvider?.template === "cursor" && cursorProvider.binaryPath === undefined, "Cursor provider template was not saved")
+    require(document.querySelector(`[data-provider-id="${cursorProvider.id}"] [data-provider-icon="cursor"]`), "Cursor provider did not display its template icon")
+    await removeProvider(cursorProvider.id)
+    dialog = await addProvider()
+    const grok = dialog.querySelector<HTMLSelectElement>("#provider-template")!
+    grok.value = "grok"
+    grok.dispatchEvent(new Event("change", { bubbles: true }))
+    await until(() => dialog.querySelector<HTMLInputElement>('[name="provider-binary"]')?.placeholder === "grok"
+      && dialog.querySelector("[data-provider-icon]")?.getAttribute("data-provider-icon") === "grok"
+      && (dialog.textContent?.includes("grok agent stdio") ?? false), "Grok template defaults")
+    input('[name="provider-name"]', "Temporary Grok")
+    await saveProvider(dialog)
+    const grokProvider = (await api.providers.list()).providers.find(provider => provider.name === "Temporary Grok")
+    require(grokProvider?.template === "grok" && grokProvider.binaryPath === undefined, "Grok provider template was not saved")
+    require(document.querySelector(`[data-provider-id="${grokProvider.id}"] [data-provider-icon="grok"]`), "Grok provider did not display its template icon")
+    await removeProvider(grokProvider.id)
+    dialog = await addProvider()
     const acp = dialog.querySelector<HTMLSelectElement>("#provider-template")!
     acp.value = "acp"
     acp.dispatchEvent(new Event("change", { bubbles: true }))

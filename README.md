@@ -14,7 +14,7 @@ main process. The Electron client uses Vue.
 
 The current implementation includes resource types, a SeaORM catalog backed by
 SQLite, the server's `GET /healthz`, and an independent daemon with native platform
-information, a local health endpoint, and Codex CLI and Claude Code sessions over ACP. The Electron
+information, a local health endpoint, and Codex CLI, Claude Code, Cursor CLI, and Grok CLI sessions over ACP. The Electron
 client manages local Workspace directory configuration through authenticated daemon IPC.
 Each Workspace has an automatic main Worktree; managed Sessions create and destroy
 their own temporary Git worktrees. The client opens terminals in configured

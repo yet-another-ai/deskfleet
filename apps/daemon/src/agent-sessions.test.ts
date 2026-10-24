@@ -47,6 +47,8 @@ class Provider implements AgentProvider {
   closeCount = 0
   closeBarrier?: Promise<void>
   finishImmediately = false
+  /** Advertises loadSession instead of session/resume, as Cursor CLI does. */
+  loadSession = false
   resumeWait?: { promise: Promise<void>; reject(error: Error): void }
   active?: { resolve: (result: acp.PromptResponse) => void; done: Promise<acp.PromptResponse> }
   async connect(config: AgentConfig, client: AgentClient): Promise<AgentConnection> {
@@ -56,7 +58,9 @@ class Provider implements AgentProvider {
     this.clients.push(client)
     this.configs.push(structuredClone(config))
     return {
-      initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } },
+      initialization: this.loadSession
+        ? { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: { additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } }
+        : { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } },
       newSession: async params => { this.cwds.push(params.cwd); return { sessionId: "provider-conversation", configOptions: this.configuration() } },
       resume: async params => { this.resumes.push(params.sessionId); await this.resumeWait?.promise; return { configOptions: this.configuration() } },
       setConfigOption: async params => {
@@ -558,6 +562,20 @@ test("a message to an agent that cannot resume its conversation is rejected inst
   })
   await assert.rejects(f.submit("lost").result, /cannot resume/u)
   assert.equal((await f.read()).inputs.some(input => input.content.some(block => block.type === "text" && block.text === "lost")), false)
+})
+
+test("an agent that loads sessions instead of resuming them continues its saved conversation", async t => {
+  const f = await setup(t)
+  f.provider.loadSession = true
+  f.provider.finishImmediately = true
+  await f.submit("first").result
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  assert.equal((await f.read()).session.capabilities?.resume, true)
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  await f.submit("again").result
+  await until(f.read, state => state.turns.filter(turn => turn.state === "completed").length === 2)
+  assert.deepEqual(f.provider.resumes, ["provider-conversation"])
+  assert.deepEqual(f.provider.prompts, ["first", "again"])
 })
 
 

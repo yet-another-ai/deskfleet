@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
+import type * as acp from "@agentclientprotocol/sdk"
 import { AgentProviders } from "./agent-providers.ts"
 import { configureAdapterHost } from "./agents/adapter-host.ts"
 import { validateControlParams } from "./control-request.ts"
@@ -48,6 +49,12 @@ test("templates resolve their own binary defaults and cannot change after creati
   const custom = await registry.create({ template: "acp", name: "Local ACP", env: { CUSTOM: "yes" } })
   assert.equal(registry.resolve(custom.id).provider.id, "acp")
   assert.deepEqual(registry.resolve(custom.id).config, { name: "Local ACP", binaryPath: "acp-agent", env: { CUSTOM: "yes" } })
+  const cursor = await registry.create({ template: "cursor", name: "Cursor", env: { CURSOR_API_KEY: "secret" } })
+  assert.equal(registry.resolve(cursor.id).provider.id, "cursor")
+  assert.deepEqual(registry.resolve(cursor.id).config, { name: "Cursor", binaryPath: "agent", env: { CURSOR_API_KEY: "secret" } })
+  const grok = await registry.create({ template: "grok", name: "Grok", env: { XAI_API_KEY: "secret" } })
+  assert.equal(registry.resolve(grok.id).provider.id, "grok")
+  assert.deepEqual(registry.resolve(grok.id).config, { name: "Grok", binaryPath: "grok", env: { XAI_API_KEY: "secret" } })
   assert.throws(() => registry.update(custom.id, { template: "codex", name: "Changed", env: {} } as AgentProviderSettings), /template is fixed/u)
   assert.equal(registry.get(custom.id).template, "acp")
   const copy = registry.get(custom.id)
@@ -117,6 +124,61 @@ test("Claude Code runs its bundled adapter with the installed CLI and added vari
   t.after(() => connection.close())
   assert.deepEqual(connection.initialization._meta?.launch, { args: ["--claude-agent-acp"], claudeCodeExecutable: "/opt/claude" })
   assert.equal((connection.initialization._meta?.environment as { extra?: string }).extra, "work")
+  await connection.close()
+})
+
+test("Cursor launches agent acp, authenticates, and continues through session/load without replaying history", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-cursor-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "cursor agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const configured = await registry.create({
+    template: "cursor", name: "Cursor", binaryPath,
+    env: { DESKFLEET_TEST_AGENT_MODE: "cursor", CURSOR_API_KEY: "present" },
+  })
+  const { provider, config } = registry.resolve(configured.id)
+  const updates: acp.SessionNotification[] = []
+  const connection = await provider.connect(config, { onUpdate(update) { updates.push(update) } })
+  t.after(() => connection.close())
+  assert.equal(connection.initialization.agentInfo?.name, "cursor-agent")
+  assert.deepEqual(connection.initialization.authMethods?.map(method => method.id), ["cursor_login"])
+  assert.equal(connection.initialization.agentCapabilities?.loadSession, true)
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.resume, undefined)
+  assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, ["acp"])
+  const created = await connection.newSession({ cwd: directory, mcpServers: [] })
+  assert.equal(created._meta?.authenticated, true)
+  const loaded = await connection.resume({ cwd: directory, mcpServers: [], sessionId: created.sessionId })
+  assert.equal(loaded._meta?.method, "session/load")
+  assert.deepEqual(updates.map(update => update.update.sessionUpdate), ["config_option_update"])
+  await connection.close()
+})
+
+test("Grok launches grok agent stdio and authenticates with xai.api_key", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-grok-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "grok agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const configured = await registry.create({
+    template: "grok", name: "Grok", binaryPath,
+    env: { DESKFLEET_TEST_AGENT_MODE: "grok", XAI_API_KEY: "present" },
+  })
+  const { provider, config } = registry.resolve(configured.id)
+  const connection = await provider.connect(config, { onUpdate() {} })
+  t.after(() => connection.close())
+  assert.equal(connection.initialization.agentInfo?.name, "grok")
+  assert.deepEqual(connection.initialization.authMethods?.map(method => method.id), ["xai.api_key", "cached_token"])
+  assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, ["agent", "stdio"])
+  const created = await connection.newSession({ cwd: directory, mcpServers: [] })
+  assert.equal(created._meta?.authMethod, "xai.api_key")
+  assert.equal(created._meta?.headless, true)
   await connection.close()
 })
 

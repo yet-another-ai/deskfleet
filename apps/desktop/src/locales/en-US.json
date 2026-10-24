@@ -401,6 +401,8 @@
     "templateDescription": {
       "codex": "Runs the installed Codex CLI through the built-in ACP bridge.",
       "claude-code": "Runs the installed Claude Code CLI through the built-in ACP bridge.",
+      "cursor": "Runs the installed Cursor CLI over ACP. The default command is agent acp. Authenticate with agent login, CURSOR_API_KEY, or CURSOR_AUTH_TOKEN.",
+      "grok": "Runs the installed Grok CLI over ACP. The default command is grok agent stdio. Authenticate with grok login, or set XAI_API_KEY.",
       "acp": "Runs an agent executable that supports ACP over standard input and output."
     },
     "icon": "Icon",

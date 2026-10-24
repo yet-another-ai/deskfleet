@@ -7,7 +7,9 @@ import { runInNewContext } from "node:vm"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk"
-import { connectAcpProcess, supportsSteering, type AgentProcess } from "./agents/acp.ts"
+import { canContinueSession, connectAcpProcess, supportsSteering, type AgentProcess } from "./agents/acp.ts"
+import { authenticateCursor } from "./agents/cursor.ts"
+import { authenticateGrok } from "./agents/grok.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
 const launch: AgentProcess = { command: process.execPath, args: [fixture] }
@@ -285,6 +287,123 @@ test("patched Codex steering preserves the opt-in and never starts a detached fa
       assert.equal(injected, scenario === "idle" ? 0 : 1)
     })
   }
+})
+
+test("Cursor ACP authenticates and loads a saved session without replaying its history", { timeout: 15_000 }, async context => {
+  const updates: acp.SessionNotification[] = []
+  const connection = await connectAcpProcess({
+    ...launch,
+    env: { DESKFLEET_TEST_AGENT_MODE: "cursor" },
+  }, { onUpdate: update => { updates.push(update) } }, { afterInitialize: authenticateCursor })
+  context.after(() => connection.close())
+  assert.equal(canContinueSession(connection.initialization), true)
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.resume, undefined)
+  const created = await connection.newSession(session)
+  assert.equal(created._meta?.authenticated, true)
+  const loaded = await connection.resume({ ...session, sessionId: created.sessionId })
+  assert.equal(loaded._meta?.method, "session/load")
+  assert.deepEqual(loaded._meta?.request, { ...session, sessionId: created.sessionId })
+  assert.deepEqual(updates.map(update => update.update.sessionUpdate), ["config_option_update"])
+  const unauthenticated = await connectAcpProcess({
+    ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor" },
+  }, { onUpdate() {} })
+  context.after(() => unauthenticated.close())
+  await assert.rejects(unauthenticated.newSession(session), (error: unknown) => {
+    const details = (error as { data?: { details?: string } }).data?.details ?? ""
+    assert.match(details, /authenticate required/u)
+    return true
+  })
+})
+
+test("Grok ACP prefers an API key, then a cached login, and skips interactive auth", { timeout: 15_000 }, async context => {
+  const key = await connectAcpProcess({
+    ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "grok" },
+  }, { onUpdate() {} }, { afterInitialize: (initialization, agent) => authenticateGrok(initialization, agent, { XAI_API_KEY: "present" }) })
+  context.after(() => key.close())
+  const created = await key.newSession(session)
+  assert.equal(created._meta?.authMethod, "xai.api_key")
+  assert.equal(created._meta?.headless, true)
+
+  const cached = await connectAcpProcess({
+    ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "grok-cached" },
+  }, { onUpdate() {} }, { afterInitialize: (initialization, agent) => authenticateGrok(initialization, agent, {}) })
+  context.after(() => cached.close())
+  const resumed = await cached.newSession(session)
+  assert.equal(resumed._meta?.authMethod, "cached_token")
+
+  await assert.rejects(connectAcpProcess({
+    ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "grok-login" },
+  }, { onUpdate() {} }, { afterInitialize: (initialization, agent) => authenticateGrok(initialization, agent, { XAI_API_KEY: "present" }) }), /grok login/u)
+})
+
+test("Cursor and Grok questions use the session form", { timeout: 30_000 }, async context => {
+  await context.test("cursor ask_question", async () => {
+    const requests: acp.CreateElicitationRequest[] = []
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-question" } }, {
+      onUpdate() {},
+      async requestElicitation(request) {
+        requests.push(request)
+        return { action: "accept", content: { q1: "agent", q2: ["lint"] } }
+      },
+    })
+    context.after(() => connection.close())
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    const request = requests[0]
+    assert.ok(request && "sessionId" in request && "toolCallId" in request)
+    assert.equal(request.sessionId, created.sessionId)
+    assert.equal(request.toolCallId, "call_123")
+    assert.deepEqual(result._meta?.question, { outcome: { outcome: "answered", answers: [
+      { questionId: "q1", selectedOptionIds: ["agent"] },
+      { questionId: "q2", selectedOptionIds: ["lint"] },
+    ] } })
+  })
+
+  await context.test("cursor question without a handler", async () => {
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-question" } }, { onUpdate() {} })
+    context.after(() => connection.close())
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    const questionError = result._meta?.questionError
+    assert.ok(questionError && typeof questionError === "object" && "code" in questionError)
+    assert.equal(questionError.code, -32601)
+  })
+
+  await context.test("malformed cursor question", async () => {
+    let asked = false
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-question-invalid" } }, {
+      onUpdate() {},
+      async requestElicitation() { asked = true; return { action: "cancel" } },
+    })
+    context.after(() => connection.close())
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    assert.equal(asked, false)
+    assert.deepEqual(result._meta?.question, { outcome: { outcome: "cancelled" } })
+  })
+
+  await context.test("grok ask_user_question", async () => {
+    for (const mode of ["grok-question", "grok-question-alias"]) {
+      const requests: acp.CreateElicitationRequest[] = []
+      const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: mode } }, {
+        onUpdate() {},
+        async requestElicitation(request) {
+          requests.push(request)
+          return mode === "grok-question" ? { action: "accept", content: { "Which database?": "Redis" } } : { action: "cancel" }
+        },
+      })
+      context.after(() => connection.close())
+      const created = await connection.newSession(session)
+      const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+      const request = requests[0]
+      assert.ok(request && "sessionId" in request)
+      assert.equal(request.sessionId, created.sessionId)
+      assert.deepEqual(result._meta?.question, mode === "grok-question"
+        ? { outcome: "accepted", answers: { "Which database?": ["Redis"] }, annotations: { "Which database?": { preview: " redis preview " } } }
+        : { outcome: "cancelled" })
+      await connection.close()
+    }
+  })
 })
 
 test("ACP abort during initialization stops the child process", { timeout: 15_000 }, async context => {

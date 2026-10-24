@@ -401,6 +401,8 @@
     "templateDescription": {
       "codex": "通过内置 ACP bridge 运行已安装的 Codex CLI。",
       "claude-code": "通过内置 ACP bridge 运行已安装的 Claude Code CLI。",
+      "cursor": "通过 ACP 运行已安装的 Cursor CLI，默认命令为 agent acp。请先执行 agent login，或设置 CURSOR_API_KEY 或 CURSOR_AUTH_TOKEN。",
+      "grok": "通过 ACP 运行已安装的 Grok CLI，默认命令为 grok agent stdio。请先执行 grok login，或设置 XAI_API_KEY。",
       "acp": "运行通过标准输入和输出支持 ACP 的 Agent 可执行文件。"
     },
     "icon": "图标",

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type * as acp from "@agentclientprotocol/sdk"
-import { supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
+import { canContinueSession, supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, timestamp } from "./agent-store.ts"
 import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
@@ -185,7 +185,7 @@ export class AgentRuntime {
       this.#openingConfiguration = true
       try {
         if (providerSessionId) {
-          if (!capabilities?.sessionCapabilities?.resume) throw new Error("This agent cannot resume the saved conversation")
+          if (!canContinueSession(connection.initialization)) throw new Error("This agent cannot resume the saved conversation")
           responseOptions = (await connection.resume({ ...params, sessionId: providerSessionId })).configOptions ?? undefined
         } else {
           const created = await connection.newSession(params)
@@ -208,7 +208,7 @@ export class AgentRuntime {
         const current = await this.journal.read(this.sessionId)
         const session = {
           ...current.session, providerSessionId, lifecycle: "ready" as const, error: undefined, updatedAt: timestamp(),
-          capabilities: { steering: supportsSteering(connection.initialization), resume: !!capabilities?.sessionCapabilities?.resume },
+          capabilities: { steering: supportsSteering(connection.initialization), resume: canContinueSession(connection.initialization) },
         }
         await this.journal.commit(current, { session, runs: [run], events: [
           this.journal.event(this.sessionId, "session", session), this.journal.event(this.sessionId, "run", run),

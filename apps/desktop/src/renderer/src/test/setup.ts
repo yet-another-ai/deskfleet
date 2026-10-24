@@ -6,7 +6,7 @@ const api: DeskfleetDesktopApi = {
   locale: "en-US",
   providers: {
     list: async () => ({
-      templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }, { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" }, { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" }],
+      templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }, { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" }, { id: "cursor", name: "Cursor", defaultBinaryPath: "agent" }, { id: "grok", name: "Grok", defaultBinaryPath: "grok" }, { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" }],
       providers: [{ id: "codex", template: "codex", name: "Codex", env: {} }],
     }),
     create: async () => { throw new Error("Daemon unavailable") },

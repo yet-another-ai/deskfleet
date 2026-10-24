@@ -35,7 +35,7 @@ async function main() {
   })
   if (values.help) {
     console.log("Usage: deskfleet-daemon [--port <0-65535>] [--info] [--help]")
-    console.log("       deskfleet-daemon agent <codex|claude-code> --help")
+    console.log("       deskfleet-daemon agent <codex|claude-code|cursor|grok> --help")
     return
   }
   if (values.info) {

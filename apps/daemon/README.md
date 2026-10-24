@@ -154,6 +154,8 @@ mise exec -- node apps/daemon/src/main.ts agent codex --cwd /path/to/repository 
 # With the daemon running and a Git-backed Workspace already configured:
 mise exec -- node apps/daemon/src/main.ts agent codex --workspace-id 1 --prompt 'Explain this repository'
 mise exec -- node apps/daemon/src/main.ts agent claude-code --check
+mise exec -- node apps/daemon/src/main.ts agent cursor --check
+mise exec -- node apps/daemon/src/main.ts agent grok --check
 ```
 
 `--check` initializes ACP and exits without creating a session or sending a
@@ -165,13 +167,24 @@ Agent configuration uses these common options:
 
 | Option | Meaning |
 | --- | --- |
-| `--name <label>` | User-facing label, defaulting to `Codex` or `Claude Code`, separate from the provider ID |
-| `--binary-path <executable>` | CLI executable; omitted or empty uses `codex` or `claude` on PATH |
+| `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, or `Grok`, separate from the provider ID |
+| `--binary-path <executable>` | CLI executable; omitted or empty uses `codex`, `claude`, `agent`, or `grok` on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` or
 `CLAUDE_CODE_EXECUTABLE` in the environment, so the Claude adapter never falls
-back to the SDK's optional bundled binary.
+back to the SDK's optional bundled binary. Cursor is not an adapter: the daemon
+runs `` `<binary> acp` `` and then `authenticate` with `cursor_login` when that method
+is advertised. `CURSOR_API_KEY` and `CURSOR_AUTH_TOKEN` are ordinary environment
+overrides; root CLI flags, if required, belong before the `acp` argument and are
+not added by deskfleet. Cursor continues a saved conversation with `session/load`.
+Grok is also native ACP: the daemon runs `` `<binary> agent stdio` ``. It then
+calls `authenticate` with `xai.api_key` when `XAI_API_KEY` is set and advertised,
+and otherwise with `cached_token`. `grok login` caches that token. Interactive
+methods are left unused, and `--always-approve` is not added, so permission
+requests reach the client. When the caller accepts questions, `cursor/ask_question`,
+`x.ai/ask_user_question`, and `_x.ai/ask_user_question` are answered through that
+form. `cursor/create_plan` and Cursor's notification methods stay unrecognized.
 `--cwd` sets an unmanaged ACP session's working directory and defaults to the
 current directory. `--workspace-id` instead allocates a managed Session through
 the running daemon; these flags are mutually exclusive. It uses the generated
