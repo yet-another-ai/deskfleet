@@ -1,4 +1,4 @@
-import type { ControlMethod, ControlMethods, ControlRequest } from "./control-protocol.ts"
+import type { ControlMethod, ControlMethods, ControlRequest, DesktopStart } from "./control-protocol.ts"
 import { resourceId, validateCatalogParams } from "./catalog-protocol.ts"
 import { validateProviderParams } from "./provider-protocol.ts"
 
@@ -17,6 +17,23 @@ function uint(value: unknown, label: string, positive = false): void {
   if (typeof value !== "number" || !Number.isInteger(value) || value < (positive ? 1 : 0) || value > 0xffff_ffff) {
     throw new Error(`Invalid ${label}`)
   }
+}
+
+function desktopOptions(params: Record<string, unknown>): void {
+  uint(params.displayId, "display ID")
+  if (params.fps !== undefined) uint(params.fps, "frame rate", true)
+  if (params.bitrateBps !== undefined) uint(params.bitrateBps, "bitrate", true)
+}
+
+/**
+ * Desktop start options the backend relays from a client. The backend sends an omitted
+ * option as JSON null, but the native binding treats only undefined as absent.
+ */
+export function validateRelayedDesktopStart(value: unknown): Omit<DesktopStart, "sessionId"> {
+  const params = object(value)
+  const options = { displayId: params.displayId, fps: params.fps ?? undefined, bitrateBps: params.bitrateBps ?? undefined }
+  desktopOptions(options)
+  return options as Omit<DesktopStart, "sessionId">
 }
 
 export function validateControlParams<M extends ControlMethod>(method: M, value: unknown): ControlMethods[M]["params"] {
@@ -94,9 +111,7 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
     }
     case "start":
       sessionId(params.sessionId)
-      uint(params.displayId, "display ID")
-      if (params.fps !== undefined) uint(params.fps, "frame rate", true)
-      if (params.bitrateBps !== undefined) uint(params.bitrateBps, "bitrate", true)
+      desktopOptions(params)
       break
     case "close":
       sessionId(params.sessionId)
