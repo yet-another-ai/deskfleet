@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { client } from "@deskfleet/client/platform"
 import { useI18n } from "vue-i18n"
+import KeepAwakeSettings from "./KeepAwakeSettings.vue"
 import LaunchAtStartupSettings from "./LaunchAtStartupSettings.vue"
 import LocalAgentSettings from "./LocalAgentSettings.vue"
 
@@ -13,6 +14,7 @@ const { t } = useI18n()
     <h2 id="this-computer-heading" class="ui-section-title mb-2">{{ t("settings.thisComputer") }}</h2>
     <div class="ui-card px-4">
       <LaunchAtStartupSettings />
+      <KeepAwakeSettings />
       <LocalAgentSettings />
     </div>
   </section>

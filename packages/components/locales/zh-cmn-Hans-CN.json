@@ -26,6 +26,8 @@
     "launchAtStartup": "开机自启",
     "launchAtStartupDescription": "登录系统时自动打开 deskfleet。",
     "launchAtStartupUnavailable": "适用于 macOS 和 Windows 上已安装的应用。",
+    "keepAwake": "保持唤醒",
+    "keepAwakeDescription": "deskfleet 运行时阻止本机因空闲而休眠，关闭到托盘后仍然有效。屏幕仍可自动关闭。",
     "runLocalAgent": "运行本地 Agent",
     "stopsTerminals": "关闭后也会停止其终端。",
     "sections": "设置分类",

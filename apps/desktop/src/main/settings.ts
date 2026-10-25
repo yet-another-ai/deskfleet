@@ -3,6 +3,7 @@ import type { LocalAgentState } from "../../../../packages/client/src/local-agen
 import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT } from "../../../../packages/client/src/settings.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { getLaunchAtStartup, setLaunchAtStartup } from "./launch-at-startup.ts"
+import type { KeepAwakeController } from "./keep-awake.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"
 
 const renderers = new Set<WebContents>()
@@ -19,7 +20,7 @@ export function publishLocalAgentState(state: LocalAgentState): void {
   }
 }
 
-export function installSettings(controller: LocalAgentController): void {
+export function installSettings(controller: LocalAgentController, keepAwake: KeepAwakeController): void {
   ipcMain.handle(SETTINGS_CHANNEL, async (event, method: unknown, enabled: unknown) => {
     if (!renderers.has(event.sender) || !isDesktopMediaSender(event)) {
       throw new Error("Settings IPC is restricted to the main renderer")
@@ -34,6 +35,10 @@ export function installSettings(controller: LocalAgentController): void {
         case "setLaunchAtStartup":
           if (typeof enabled !== "boolean") throw new Error("Launch at startup setting must be a boolean")
           return { ok: true, value: setLaunchAtStartup(enabled) }
+        case "getKeepAwake": return { ok: true, value: keepAwake.get() }
+        case "setKeepAwake":
+          if (typeof enabled !== "boolean") throw new Error("Keep Awake setting must be a boolean")
+          return { ok: true, value: keepAwake.setEnabled(enabled) }
         default: throw new Error("Unknown settings operation")
       }
     } catch (error) {

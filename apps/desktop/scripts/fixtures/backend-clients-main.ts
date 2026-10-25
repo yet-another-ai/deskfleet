@@ -1,4 +1,4 @@
-import { app, BrowserWindow, net, protocol } from "electron"
+import { app, BrowserWindow, net, powerSaveBlocker, protocol } from "electron"
 import { mkdir, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -6,6 +6,7 @@ import { installCentralAccount } from "../../src/main/central-account.ts"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
+import { KeepAwakeController } from "../../src/main/keep-awake.ts"
 import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
@@ -212,10 +213,13 @@ void app.whenReady().then(async () => {
   denyChromiumPermissions()
   const authorizations: BrowserWindow[] = []
   let controller: LocalAgentController | undefined
+  let keepAwake: KeepAwakeController | undefined
   if (context.mode === "electron") {
     installDesktopMediaIpc()
     controller = new LocalAgentController(join(context.profileDirectory, "settings.json"), createLocalAgentRuntime({ directory: context.daemonDirectory }), publishLocalAgentState)
-    installSettings(controller)
+    keepAwake = new KeepAwakeController(join(context.profileDirectory, "keep-awake.json"), powerSaveBlocker)
+    installSettings(controller, keepAwake)
+    keepAwake.get()
     await controller.initialize()
     await installCentralAccount({ openAuthorization: async url => {
       const browser = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } })
@@ -259,13 +263,15 @@ void app.whenReady().then(async () => {
   window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" })
   await window.webContents.executeJavaScript(`(async()=>{const end=Date.now()+20000;while(!document.querySelector('.xterm-rows')?.textContent.includes(${JSON.stringify(terminalTitle)})){if(Date.now()>end)throw new Error('Terminal PTY output did not return over WebRTC: '+document.body.innerText);await new Promise(r=>setTimeout(r,25));}})()`)
   process.send?.({ phase: "online", result })
+  const exit = () => { void Promise.resolve(controller?.close()).finally(() => { keepAwake?.close(); app.exit(0) }) }
   process.on("message", message => {
     if (message && typeof message === "object" && "offline" in message) {
       void window.webContents.executeJavaScript(`(${exercise.toString()})(${JSON.stringify(context)},true)`).then(result => process.send?.({ result }), error => process.send?.({ error: String(error) }))
     } else {
       for (const browser of authorizations) browser.destroy()
-      window.destroy(); void controller?.close().finally(() => app.exit(0)); if (!controller) app.exit(0)
+      window.destroy()
+      exit()
     }
   })
-  process.on("disconnect", () => app.exit(0))
+  process.on("disconnect", exit)
 }).catch(error => { process.send?.({ error: String(error) }); app.exit(1) })

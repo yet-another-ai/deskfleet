@@ -96,12 +96,14 @@ try {
   const created = await launchClient("start")
   assert.ok(created.workspaceId && created.terminalId && created.stoppedTerminalId && created.providerId)
   assert.equal(created.survivedWindowClose, true, "The hosted daemon must outlive the app's windows")
+  assert.equal(JSON.parse(await readFile(join(profileDirectory, "keep-awake.json"), "utf8")).enabled, true)
   assert.equal(await discoveryExists(), false, "Quitting the app must stop the daemon it hosts")
   const restarted = await launchClient("restart", created)
   assert.equal(restarted.providerId, created.providerId, "Provider identity must survive an app restart")
   assert.notEqual(restarted.daemonIdentity, created.daemonIdentity, "A relaunched app must host a new daemon")
   assert.equal(await discoveryExists(), false, "Turning off must remove daemon discovery")
   assert.equal(JSON.parse(await readFile(join(profileDirectory, "settings.json"), "utf8")).localAgentEnabled, false)
+  assert.equal(JSON.parse(await readFile(join(profileDirectory, "keep-awake.json"), "utf8")).enabled, false)
   await launchClient("disabled")
   assert.equal(await discoveryExists(), false, "Persisted disabled preference must prevent daemon startup")
   // A standalone daemon, such as the headless executable, is reused and outlives the app.
@@ -113,7 +115,7 @@ try {
     try { assert.equal((await observer.call("catalogList", {})).workspaces[0]?.id, created.workspaceId, "Quitting the app must leave a separate daemon running") }
     finally { observer.close() }
   } finally { await external.close() }
-  console.log("Production Electron local Agent: provider creation/editing/removal, a failed provider test, icon selection and restart persistence, startup permission denial, Settings off/on, catalog refresh, terminal interruption, window-independent and app-bound lifetime, standalone daemon reuse, and disabled startup passed")
+  console.log("Production Electron local Agent: provider creation/editing/removal, a failed provider test, icon selection and restart persistence, startup permission denial, Settings off/on, Keep Awake persistence and window-independent lifetime, catalog refresh, terminal interruption, window-independent and app-bound lifetime, standalone daemon reuse, and disabled startup passed")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   const log = await readFile(join(daemonDirectory, "daemon.log"), "utf8").catch(() => "")

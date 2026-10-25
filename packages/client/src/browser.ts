@@ -39,6 +39,7 @@ export async function browserClient(defaultServerUrl: string): Promise<Deskfleet
     settings: {
       get: async () => ({ enabled: false, status: "stopped" }), setLocalAgentEnabled: unavailable,
       getLaunchAtStartup: async () => ({ available: false, enabled: false }), setLaunchAtStartup: unavailable,
+      getKeepAwake: async () => ({ enabled: false }), setKeepAwake: unavailable,
       onChanged: subscribe,
     },
     catalog: { list: unavailable, createWorkspace: unavailable, updateWorkspace: unavailable, deleteWorkspace: unavailable, onChanged: subscribe },

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, net, protocol } from "electron"
+import { app, BrowserWindow, net, powerSaveBlocker, protocol } from "electron"
 import { createHash } from "node:crypto"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -8,6 +8,7 @@ import { DaemonClient } from "@deskfleet/daemon/control-client"
 import { readDaemonDiscovery } from "@deskfleet/daemon/control-discovery"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
 import { keepRunningInBackground } from "../../src/main/lifecycle.ts"
+import { KeepAwakeController } from "../../src/main/keep-awake.ts"
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
 import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
@@ -53,13 +54,14 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
     }
   }
   const toggle = () => document.querySelector<HTMLButtonElement>('main [role="switch"][aria-labelledby="local-agent-label"]')
+  const keepAwakeToggle = () => document.querySelector<HTMLButtonElement>('main [role="switch"][aria-labelledby="keep-awake-label"]')
   const settingsButton = () => document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]')
   const addWorkspace = () => document.querySelector<HTMLButtonElement>('button[aria-label="Add workspace"]')
   const sidebarWorkspace = () => [...document.querySelectorAll("aside a")].some(link => link.textContent?.trim() === "Local Agent smoke")
   // Settings replaces the sidebar, so sidebar checks happen after returning to the app.
   async function openSettings(): Promise<void> {
     settingsButton()!.click()
-    await until(() => !!toggle() && !toggle()!.disabled, "Settings page")
+    await until(() => !!toggle() && !toggle()!.disabled && !!keepAwakeToggle() && !keepAwakeToggle()!.disabled, "Settings page")
   }
   async function leaveSettings(): Promise<void> {
     [...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "Back to app")!.click()
@@ -202,6 +204,7 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
       return state.enabled === enabled && state.status === (enabled ? "running" : "stopped")
     }, enabled ? "Agent restart" : "Agent stop")
     await until(() => toggle()?.getAttribute("aria-checked") === String(enabled) && !toggle()!.disabled, "Saved Agent preference")
+    require((await api.settings.getKeepAwake()).enabled === (context.phase === "start"), "Changing the local Agent must preserve Keep Awake")
     if (enabled) await verifyDeniedPermission()
     await leaveSettings()
     await until(() => enabled ? !!addWorkspace() && addWorkspace()!.getAttribute("aria-disabled") !== "true" : document.querySelector("aside")!.textContent!.includes("Offline"), "Catalog lifecycle refresh")
@@ -227,6 +230,11 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
   await until(() => !!addWorkspace() && addWorkspace()!.getAttribute("aria-disabled") !== "true", "Initial catalog connection")
   await openSettings()
   await verifyDeniedPermission()
+  const keepAwakeEnabled = context.phase === "start"
+  require(keepAwakeToggle()!.getAttribute("aria-checked") === String(!keepAwakeEnabled), "Keep Awake must default off and restore the saved preference on restart")
+  keepAwakeToggle()!.click()
+  await until(() => keepAwakeToggle()?.getAttribute("aria-checked") === String(keepAwakeEnabled) && !keepAwakeToggle()!.disabled, "Saved Keep Awake preference")
+  require((await api.settings.getKeepAwake()).enabled === keepAwakeEnabled, "Keep Awake did not update through Settings")
   let providerId: string | undefined
   if (context.phase === "start") providerId = await exerciseProviders()
   else {
@@ -283,12 +291,21 @@ void app.whenReady().then(async () => {
     createLocalAgentRuntime({ directory: context.daemonDirectory, start: controlDirectory => startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => false }) }),
     publishLocalAgentState,
   )
+  let blockerId: number | undefined
+  const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), {
+    start(type) { blockerId = powerSaveBlocker.start(type); return blockerId },
+    stop(id) { return powerSaveBlocker.stop(id) },
+  })
   installDesktopMediaIpc()
-  installSettings(controller)
+  installSettings(controller, keepAwake)
   // Quitting the app closes the daemon it hosts, as client.ts does on will-quit.
-  const exit = () => { void controller.close().finally(() => app.exit(0)) }
+  const exit = () => { void controller.close().finally(() => { keepAwake.close(); app.exit(0) }) }
   process.on("message", exit)
   process.on("disconnect", exit)
+  keepAwake.get()
+  if (context.phase === "restart" && (blockerId === undefined || !powerSaveBlocker.isStarted(blockerId))) {
+    throw new Error("The saved Keep Awake preference must start its sleep blocker before opening a window")
+  }
   const initialized = await controller.initialize()
   if (initialized.status === "error") throw new Error(initialized.error)
   const identity = async () => createHash("sha256").update(JSON.stringify(await readDaemonDiscovery(context.daemonDirectory))).digest("hex")
@@ -320,6 +337,9 @@ void app.whenReady().then(async () => {
     const observer = await DaemonClient.connect(() => {}, () => {}, context.daemonDirectory)
     try { result.survivedWindowClose = (await observer.call("catalogList", {})).workspaces.some(value => value.id === result.workspaceId) }
     finally { observer.close() }
+  }
+  if ((blockerId !== undefined && powerSaveBlocker.isStarted(blockerId)) !== (context.phase === "start")) {
+    throw new Error("Keep Awake must preserve its blocker after window close and release it when disabled")
   }
   process.send?.({ result })
 }).catch(error => {

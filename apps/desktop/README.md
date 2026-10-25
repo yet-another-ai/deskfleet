@@ -269,6 +269,18 @@ reliably; see [Electron's login item documentation](https://www.electronjs.org/d
 This launches the client with its normal window and respects the separate
 **Run local Agent** preference described below.
 
+## Keep Awake
+
+**Settings → Preferences → Keep Awake** prevents automatic system sleep while
+the desktop app runs, including while its windows are closed to the tray. It is
+disabled by default and applies independently of **Run local Agent**. Displays
+can still turn off normally.
+
+The main process saves the preference in `keep-awake.json` under Electron's
+`userData` directory and restores it on startup. It owns an Electron
+`powerSaveBlocker` with `prevent-app-suspension`, released when the setting is
+disabled or the app quits.
+
 ## Local Agent
 
 **Settings → Preferences → Run local Agent** is enabled by default. The main process stores

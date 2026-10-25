@@ -1,11 +1,12 @@
 import { installCentralAccount } from "./central-account.ts"
-import { app, powerMonitor } from "electron"
+import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { join } from "node:path"
 import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
 import { resolveAppLocale } from "../../../../packages/client/src/i18n.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
 import { setMainLocale } from "./i18n.ts"
 import { keepRunningInBackground } from "./lifecycle.ts"
+import { KeepAwakeController } from "./keep-awake.ts"
 import { LocalAgentController } from "./local-agent-controller.ts"
 import { createLocalAgentRuntime } from "./local-agent-runtime.ts"
 import { installSettings, publishLocalAgentState } from "./settings.ts"
@@ -43,17 +44,19 @@ function start(): void {
       createLocalAgentRuntime({ directory: daemonControlDirectory() }),
       publishLocalAgentState,
     )
-    installSettings(localAgent)
+    const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), powerSaveBlocker)
+    installSettings(localAgent, keepAwake)
     // The hosted daemon outlives windows but not the app. Exit once it has
     // released its sessions, terminals, and discovery.
     let closing: Promise<void> | undefined
     app.on("will-quit", (event) => {
       event.preventDefault()
-      closing ??= localAgent.close().then(
+      closing ??= localAgent.close().finally(() => keepAwake.close()).then(
         () => app.exit(0),
         (error: unknown) => { console.error(error); app.exit(1) },
       )
     })
+    try { keepAwake.get() } catch (error) { console.error(error) }
     await localAgent.initialize()
     if (lifecycle.quitting) return
     createTray({ show, quit: () => lifecycle.quit() })

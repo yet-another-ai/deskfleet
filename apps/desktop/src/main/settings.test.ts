@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events"
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron"
 import { beforeEach, expect, test, vi } from "vitest"
 import type { LocalAgentController } from "./local-agent-controller.ts"
+import type { KeepAwakeController } from "./keep-awake.ts"
 
 const { handle } = vi.hoisted(() => ({ handle: vi.fn() }))
 vi.mock("electron", () => ({ ipcMain: { handle } }))
@@ -14,7 +15,7 @@ beforeEach(() => vi.clearAllMocks())
 
 test("only a registered main renderer can change the local Agent preference", async () => {
   const controller = { state: { enabled: true, status: "running" }, setEnabled: vi.fn() }
-  installSettings(controller as unknown as LocalAgentController)
+  installSettings(controller as unknown as LocalAgentController, {} as KeepAwakeController)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
   const mainFrame = { url: BUNDLED_RENDERER_URL }
   const sender = Object.assign(new EventEmitter(), { mainFrame })
@@ -32,7 +33,7 @@ test("only a registered main renderer can change the local Agent preference", as
 })
 
 test("startup settings use the same renderer restriction and validate writes", async () => {
-  installSettings({} as LocalAgentController)
+  installSettings({} as LocalAgentController, {} as KeepAwakeController)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
   const mainFrame = { url: BUNDLED_RENDERER_URL }
   const sender = Object.assign(new EventEmitter(), { mainFrame })
@@ -51,4 +52,27 @@ test("startup settings use the same renderer restriction and validate writes", a
   expect(await invoke(event, "setLaunchAtStartup", false)).toEqual({ ok: false, error: "Login item update failed" })
   sender.emit("destroyed")
   await expect(invoke(event, "getLaunchAtStartup")).rejects.toThrow("restricted")
+})
+
+test("Keep Awake settings restrict callers, validate writes, and report failures", async () => {
+  const keepAwake = { get: vi.fn(() => ({ enabled: false })), setEnabled: vi.fn((enabled: boolean) => ({ enabled })) }
+  installSettings({} as LocalAgentController, keepAwake as unknown as KeepAwakeController)
+  const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
+  const mainFrame = { url: BUNDLED_RENDERER_URL }
+  const sender = Object.assign(new EventEmitter(), { mainFrame })
+  const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
+  await expect(invoke(event, "setKeepAwake", true)).rejects.toThrow("restricted")
+  attachSettings({ webContents: sender } as unknown as BrowserWindow)
+  await expect(invoke({ ...event, senderFrame: { ...mainFrame } } as IpcMainInvokeEvent, "setKeepAwake", true)).rejects.toThrow("restricted")
+  expect(await invoke(event, "setKeepAwake", "true")).toEqual({ ok: false, error: "Keep Awake setting must be a boolean" })
+  expect(keepAwake.setEnabled).not.toHaveBeenCalled()
+  expect(await invoke(event, "getKeepAwake")).toEqual({ ok: true, value: { enabled: false } })
+  expect(await invoke(event, "setKeepAwake", true)).toEqual({ ok: true, value: { enabled: true } })
+  expect(keepAwake.setEnabled).toHaveBeenCalledExactlyOnceWith(true)
+  keepAwake.setEnabled.mockImplementationOnce(() => { throw new Error("Could not save Keep Awake") })
+  expect(await invoke(event, "setKeepAwake", false)).toEqual({ ok: false, error: "Could not save Keep Awake" })
+  keepAwake.get.mockImplementationOnce(() => { throw new Error("Invalid Keep Awake settings") })
+  expect(await invoke(event, "getKeepAwake")).toEqual({ ok: false, error: "Invalid Keep Awake settings" })
+  sender.emit("destroyed")
+  await expect(invoke(event, "getKeepAwake")).rejects.toThrow("restricted")
 })

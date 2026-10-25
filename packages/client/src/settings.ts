@@ -8,9 +8,15 @@ export interface LaunchAtStartupState {
   enabled: boolean
 }
 
+export interface KeepAwakeState {
+  enabled: boolean
+}
+
 export type SettingsResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 export interface SettingsApi extends LocalAgentSettingsApi {
   getLaunchAtStartup(): Promise<LaunchAtStartupState>
   setLaunchAtStartup(enabled: boolean): Promise<LaunchAtStartupState>
+  getKeepAwake(): Promise<KeepAwakeState>
+  setKeepAwake(enabled: boolean): Promise<KeepAwakeState>
 }
