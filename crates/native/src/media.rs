@@ -333,7 +333,7 @@ fn capture_loop(
     {
         let _encoder = encoder.take();
     }
-    retained.latest = None;
+    let _ = retained.latest.take();
     let stopped = capture.stop().map_err(MediaError::from);
     result.and(stopped)
 }
