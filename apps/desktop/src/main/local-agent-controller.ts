@@ -1,16 +1,16 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import type { LocalAgentState, ScreenCapturePermission } from "../../../../packages/client/src/local-agent.ts"
+import type { LocalAgentState, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
 
 export interface LocalAgentConnection {
   readonly closed: boolean
-  readonly screenCapturePermission: ScreenCapturePermission
+  readonly desktopPermissions: DesktopPermissionsState
   shutdown(): Promise<void>
   close(): void
 }
 
 export interface LocalAgentRuntime {
-  connect(onDisconnect: (error: Error) => void, onPermissionChanged: (permission: ScreenCapturePermission) => void): Promise<LocalAgentConnection>
+  connect(onDisconnect: (error: Error) => void, onPermissionsChanged: (permissions: DesktopPermissionsState) => void): Promise<LocalAgentConnection>
   /** Starts the daemon in this process; it is ready to accept connections once this resolves. */
   start(): Promise<void>
   waitForShutdown(): Promise<void>
@@ -22,6 +22,8 @@ function unavailable(error: unknown): boolean {
   return error instanceof Error && "code" in error
     && (error.code === "ENOENT" || error.code === "ECONNREFUSED")
 }
+
+const clearedPermissions = { screenCapturePermission: undefined, accessibilityPermission: undefined }
 
 /** The preference owns explicit start/stop actions; quitting the app stops the daemon it hosts. */
 export class LocalAgentController {
@@ -55,7 +57,7 @@ export class LocalAgentController {
       if (this.#state.enabled) await this.#start()
       else {
         this.#connection = await this.#connectIfRunning()
-        this.#update({ status: this.#connection ? "running" : "stopped", screenCapturePermission: this.#connection?.screenCapturePermission })
+        this.#update({ status: this.#connection ? "running" : "stopped", ...(this.#connection?.desktopPermissions ?? clearedPermissions) })
       }
     } catch (error) { this.#failed(error) }
     return this.state
@@ -96,7 +98,7 @@ export class LocalAgentController {
   }
 
   #failed(error: unknown): void {
-    this.#update({ status: "error", error: error instanceof Error ? error.message : String(error), screenCapturePermission: undefined })
+    this.#update({ status: "error", error: error instanceof Error ? error.message : String(error), ...clearedPermissions })
   }
 
   async #connectIfRunning(): Promise<LocalAgentConnection | undefined> {
@@ -108,9 +110,9 @@ export class LocalAgentController {
         if (this.#connection !== connection) return
         this.#connection = undefined
         if (this.#state.status !== "stopping") this.#failed(error)
-      }, permission => {
-        if (!connection || this.#connection !== connection) return
-        this.#update({ screenCapturePermission: permission })
+      }, permissions => {
+        if (!connection || this.#connection !== connection || this.#state.status !== "running") return
+        this.#update(permissions)
       })
       return connection
     } catch (error) {
@@ -120,24 +122,24 @@ export class LocalAgentController {
   }
 
   async #start(): Promise<void> {
-    this.#update({ status: "starting", screenCapturePermission: undefined })
+    this.#update({ status: "starting", ...clearedPermissions })
     this.#connection = await this.#connectIfRunning()
     if (!this.#connection) {
       await this.#runtime.start()
       this.#connection = await this.#connectIfRunning()
       if (!this.#connection) throw new Error("Local Agent did not become ready")
     }
-    this.#update({ status: "running", screenCapturePermission: this.#connection.screenCapturePermission })
+    this.#update({ status: "running", ...this.#connection.desktopPermissions })
   }
 
   async #stop(): Promise<void> {
-    this.#update({ status: "stopping", screenCapturePermission: undefined })
+    this.#update({ status: "stopping", ...clearedPermissions })
     this.#connection = await this.#connectIfRunning()
     if (this.#connection) {
       await this.#connection.shutdown()
       await this.#runtime.waitForShutdown()
       this.detach()
     }
-    this.#update({ status: "stopped", screenCapturePermission: undefined })
+    this.#update({ status: "stopped", ...clearedPermissions })
   }
 }

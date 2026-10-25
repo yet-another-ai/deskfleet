@@ -16,7 +16,7 @@ process. It owns ACP providers, the shared backlog, steering, permissions,
 Session archive/restore, and native media. Electron retains a sandboxed renderer
 and stays in the tray after its windows close. The local discovery socket serves
 host setup, enrollment, and shutdown; it does not authorize team resource access.
-The MCP facade and desktop input expansion below remain follow-up work.
+The MCP facade below remains follow-up work.
 
 ## Components
 
@@ -536,6 +536,7 @@ The Rust workspace contains:
 | `deskfleet-control-store` | PostgreSQL central identity, authorization, catalog, and history persistence |
 | `deskfleet-native` | Native capabilities independent of Node.js |
 | `deskfleet-capture` | Native display capture and retained GPU surfaces |
+| `deskfleet-input` | Display-relative desktop input, held-state cleanup, and macOS/Windows injection |
 | `deskfleet-encoder` | VideoToolbox/NVENC/Media Foundation hardware video encoding and Opus audio encoding |
 | `deskfleet-nvenc` | Windows NVENC session and D3D11 resource ownership |
 | `deskfleet-nvenc-sys` | Windows NVENC FFI and runtime driver loading |
@@ -544,7 +545,7 @@ The Rust workspace contains:
 
 Dependencies flow `server -> protocol -> model`, `server -> control-store -> protocol`,
 `node -> store -> model/migration` for local catalog persistence,
-`node -> native -> capture/encoder`, and
+`node -> native -> capture/encoder/input`, and
 `@deskfleet/daemon -> @deskfleet/native`. The pnpm workspace contains the daemon,
 Electron and Web applications, the native package, `packages/client` for shared
 contracts/transports, and `packages/components` for Vue UI, stores, and routes.
@@ -572,7 +573,7 @@ and open a terminal. Work continues after closing the client, reconnecting
 restores the Session view, and synchronized history remains available while the
 machine is offline. Validate direct and TURN-relayed connections.
 
-MCP coordination and desktop control follow that workflow. Provider
+MCP coordination follows that workflow. Provider
 distribution, additional terminal backends, and Linux capture/encoding remain
 separate follow-up work.
 

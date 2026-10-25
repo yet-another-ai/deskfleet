@@ -4,7 +4,7 @@ import { startDaemon } from "@deskfleet/daemon"
 import { DaemonClient } from "@deskfleet/daemon/control-client"
 import { daemonDiscoveryPath } from "@deskfleet/daemon/control-discovery"
 import type { LocalAgentRuntime } from "./local-agent-controller.ts"
-import type { ScreenCapturePermission } from "../../../../packages/client/src/local-agent.ts"
+import type { DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
 
 export interface HostedDaemon {
   /** Settles after discovery and all native/server resources have closed. */
@@ -23,17 +23,22 @@ export function createLocalAgentRuntime(options: LocalAgentRuntimeOptions): Loca
   const start = options.start ?? (directory => startDaemon(0, { controlDirectory: directory }))
   let hosted: HostedDaemon | undefined
   return {
-    async connect(onDisconnect, onPermissionChanged) {
-      let permission: ScreenCapturePermission | undefined
+    async connect(onDisconnect, onPermissionsChanged) {
+      let permissions: DesktopPermissionsState | undefined
       const client = await DaemonClient.connect(event => {
-        if (event.kind !== "screenCapturePermissionChanged") return
-        permission = event.permission
-        onPermissionChanged(permission)
+        if (event.kind !== "desktopPermissionsChanged") return
+        permissions = event.permissions
+        onPermissionsChanged(permissions)
       }, onDisconnect, options.directory)
       return {
         get closed() { return client.closed },
         // Events can arrive alongside hello, before connect() resolves.
-        get screenCapturePermission() { return permission ?? client.info!.screenCapturePermission },
+        get desktopPermissions() {
+          return permissions ?? {
+            screenCapturePermission: client.info!.screenCapturePermission,
+            accessibilityPermission: client.info!.accessibilityPermission,
+          }
+        },
         shutdown: async () => { await client.call("shutdown", {}) },
         close: () => client.close(),
       }

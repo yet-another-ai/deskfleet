@@ -1,4 +1,5 @@
 import { onScopeDispose, ref, shallowRef } from "vue"
+import { DESKTOP_INPUT_CHANNEL, type DesktopInputMessage } from "../../../client/src/desktop-input.ts"
 import type {
   DesktopMediaApi,
   DesktopStart,
@@ -55,6 +56,8 @@ interface Session {
   start: DesktopStart
   options: DesktopConnectOptions
   replaced: boolean
+  input: RTCDataChannel | null
+  inputReady: boolean
 }
 
 export function desktopCodecLabel(codec: VideoCodec): string {
@@ -72,6 +75,7 @@ export interface DesktopConnectOptions {
   codecs: readonly VideoCodec[]
   displayId: number
   audio: boolean
+  control?: boolean
 }
 
 /** Chromium receives and decodes media; the bridge carries signaling only. */
@@ -80,13 +84,31 @@ export function useDesktopConnection(api: DesktopMediaApi) {
   const failure = shallowRef<DesktopFailure | null>(null)
   const stream = shallowRef<MediaStream | null>(null)
   const codec = ref<VideoCodec | null>(null)
+  const inputReady = ref(false)
   let current: Session | null = null
   let generation = 0
   let running = false
   let chain: VideoCodec[] = []
+  let closing = Promise.resolve()
+
+  function closePeer(id: string): Promise<void> {
+    const closed = api.close(id)
+    // Retain every in-flight close, including a late offer from an older generation.
+    closing = Promise.allSettled([closing, closed]).then(() => {})
+    return closed
+  }
 
   function release(session: Session): void {
     clearTimeout(session.timeout)
+    if (session.input) {
+      if (session.input.readyState === "open") {
+        try { session.input.send(JSON.stringify({ type: "releaseAll" })) } catch { /* Peer closure also releases held input. */ }
+      }
+      session.input.onmessage = null
+      session.input.onclose = null
+      session.input.onerror = null
+      session.input.close()
+    }
     session.unsubscribe()
     session.peer.onicecandidate = null
     session.peer.onconnectionstatechange = null
@@ -96,6 +118,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     if (current === session) {
       current = null
       stream.value = null
+      inputReady.value = false
     }
   }
 
@@ -112,7 +135,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     codec.value = null
     failure.value = reason
     state.value = "error"
-    void api.close(session.id).catch(() => {})
+    void closePeer(session.id).catch(() => {})
   }
 
   function continueWithNext(session: Session, detail: string): void {
@@ -121,18 +144,27 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     const run = generation
     const options = session.options
     release(session)
-    void api.close(session.id).catch(() => {})
     chain.shift()
-    if (generation !== run) return
-    const next = chain[0]
-    if (!next) {
+    state.value = "connecting"
+    // The old native peer owns the input controller until close completes.
+    // Starting its replacement sooner can contend with that controller.
+    void closePeer(session.id).then(() => {
+      if (generation !== run || !running) return
+      if (!chain[0]) {
+        stopChain()
+        codec.value = null
+        failure.value = { kind: "operation", detail }
+        state.value = "error"
+        return
+      }
+      void begin(options, run)
+    }).catch((error: unknown) => {
+      if (generation !== run || !running) return
       stopChain()
       codec.value = null
-      failure.value = { kind: "operation", detail }
+      failure.value = { kind: "operation", detail: error instanceof Error ? error.message : String(error) }
       state.value = "error"
-      return
-    }
-    void begin(options, run)
+    })
   }
 
   function operationFailed(session: Session, error: unknown): void {
@@ -178,11 +210,12 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     try {
       await api.start(session.start)
       if (current !== session) {
-        await api.close(session.id)
+        await closePeer(session.id)
         return
       }
-      clearTimeout(session.timeout)
+      if (!session.options.control || session.inputReady) clearTimeout(session.timeout)
       state.value = "connected"
+      inputReady.value = session.inputReady
     } catch (error) {
       operationFailed(session, error)
     }
@@ -203,19 +236,43 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       const id = crypto.randomUUID()
       const preparing = generation
       const iceServers = api.prepare ? await api.prepare(id) : []
-      if (preparing !== generation) { await api.close(id); return }
+      if (preparing !== generation) { await closePeer(id); return }
       const peer = new RTCPeerConnection({ iceServers })
       session = {
         id, peer, stream: new MediaStream(), unsubscribe: () => {},
         timeout: setTimeout(() => { if (session) fail(session, { kind: "timeout" }) }, 20_000),
         offered: false, remoteReady: false, startRequested: false,
         localCandidates: [], remoteCandidates: [], localSending: Promise.resolve(), remoteAdding: Promise.resolve(),
-        start: { sessionId: id, displayId: options.displayId },
+        start: { sessionId: id, displayId: options.displayId, ...(options.control ? { control: true } : {}) },
         options, replaced: false,
+        input: null, inputReady: false,
       }
       current = session
       stream.value = session.stream
       const active = session
+      if (options.control) {
+        const channel = peer.createDataChannel(DESKTOP_INPUT_CHANNEL, { ordered: true })
+        active.input = channel
+        channel.onmessage = event => {
+          if (current !== active) return
+          try {
+            const reply: unknown = JSON.parse(String(event.data))
+            if (typeof reply !== "object" || reply === null) throw new Error("Invalid desktop input response")
+            const message = reply as { type?: unknown; error?: unknown }
+            if (message.type === "ready") {
+              active.inputReady = true
+              inputReady.value = state.value === "connected"
+              if (inputReady.value) clearTimeout(active.timeout)
+            } else if (message.type === "error" && typeof message.error === "string") {
+              fail(active, { kind: "operation", detail: message.error })
+            } else {
+              throw new Error("Invalid desktop input response")
+            }
+          } catch (error) { operationFailed(active, error) }
+        }
+        channel.onclose = () => fail(active, { kind: "operation", detail: "Desktop input channel closed." })
+        channel.onerror = () => fail(active, { kind: "operation", detail: "Desktop input channel failed." })
+      }
       active.unsubscribe = api.onEvent((event) => {
         if (event.sessionId !== active.id || current !== active) return
         if (event.kind === "iceCandidate") {
@@ -258,7 +315,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       const answer = await api.offer({ sessionId: id, sdp: offer.sdp!, codec: selected, audio: options.audio })
       // An offer or capture start may finish after the user has already left.
       if (current !== active) {
-        await api.close(id)
+        await closePeer(id)
         return
       }
       active.offered = true
@@ -292,6 +349,12 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       state.value = "error"
       return
     }
+    for (;;) {
+      const pending = closing
+      await pending
+      if (generation !== run || !running) return
+      if (pending === closing) break
+    }
     await begin(options, run)
   }
 
@@ -304,7 +367,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     state.value = "idle"
     failure.value = null
     if (session) {
-      try { await api.close(session.id) }
+      try { await closePeer(session.id) }
       catch (error) {
         if (generation === closingGeneration && !current && state.value === "idle") {
           failure.value = { kind: "operation", detail: error instanceof Error ? error.message : String(error) }
@@ -314,6 +377,20 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     }
   }
 
+  function sendInput(message: DesktopInputMessage): boolean {
+    const session = current
+    if (!session?.input || !session.inputReady || session.input.readyState !== "open") return false
+    try {
+      // A saturated reliable channel must close rather than strand a key-up behind unbounded moves.
+      if (session.input.bufferedAmount > 64 * 1024) throw new Error("Desktop input could not keep up. Reconnect to continue.")
+      session.input.send(JSON.stringify(message))
+      return true
+    } catch (error) {
+      operationFailed(session, error)
+      return false
+    }
+  }
+
   onScopeDispose(() => { void disconnect() })
-  return { state, failure, stream, codec, connect, disconnect }
+  return { state, failure, stream, codec, inputReady, connect, disconnect, sendInput }
 }

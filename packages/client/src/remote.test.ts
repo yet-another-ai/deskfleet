@@ -11,6 +11,7 @@ function fixture() {
     createPeer: vi.fn(async () => ({ peerId: "peer1", authorization: { expiresAt: new Date(Date.now() + 86_400_000).toISOString() }, iceServers: [{ urls: ["turn:relay.example"], username: "user", credential: "temporary" }] })),
     closePeer: vi.fn(async () => {}), rpc: vi.fn(async () => ({ result: true })),
     offerPeer: vi.fn(async () => ({ sdp: "answer" })),
+    startPeer: vi.fn(async () => {}),
     sessions: vi.fn(async () => [{ session: { id: "1" } }] as never),
   } as unknown as CentralApi
   const machine: Machine = { id: "central7", teamId: "team2", name: "Remote", originId: "origin", localMachineId: "1", capabilities: {}, online: false }
@@ -49,4 +50,13 @@ test("retains known terminal tabs during a daemon signaling outage", async () =>
   f.emit({ type: "presence", machineId: "central7", online: false })
   expect(await f.remote.api.terminal.list()).toEqual(shells)
   expect(f.central.rpc).toHaveBeenCalledTimes(1)
+})
+
+test("desktop control is requested explicitly when starting its authorized peer", async () => {
+  const f = fixture()
+  await f.remote.api.desktop.prepare!("desktop")
+  await f.remote.api.desktop.start({ sessionId: "desktop", displayId: 2 })
+  expect(f.central.startPeer).toHaveBeenLastCalledWith("peer1", { displayId: 2 })
+  await f.remote.api.desktop.start({ sessionId: "desktop", displayId: 2, control: true })
+  expect(f.central.startPeer).toHaveBeenLastCalledWith("peer1", { displayId: 2, control: true })
 })

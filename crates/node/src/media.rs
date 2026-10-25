@@ -36,18 +36,11 @@ pub async fn capture_displays() -> Result<Vec<DisplayInfo>> {
         .collect())
 }
 
-/// Request this process's screen/system-audio access without starting capture.
-/// Resolves with null on platforms without an upfront permission request.
-#[napi]
-pub async fn request_screen_capture_access() -> Result<Option<bool>> {
-    media::request_screen_capture_access()
-        .await
-        .map_err(native_error)
-}
-
 #[napi(object)]
 pub struct DesktopConfig {
     pub display_id: u32,
+    /// Enable mouse and keyboard input for this display after authorization.
+    pub control: Option<bool>,
     pub fps: Option<f64>,
     pub bitrate_bps: Option<u32>,
     pub max_bitrate_bps: Option<u32>,

@@ -1,5 +1,6 @@
 //! Native platform capabilities, independent of Node.js and the HTTP server.
 
+pub mod input;
 pub mod media;
 pub mod rtc;
 pub mod terminal;

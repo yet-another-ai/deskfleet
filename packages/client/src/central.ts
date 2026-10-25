@@ -50,7 +50,7 @@ export interface CentralApi {
   rpc<T = unknown>(machineId: string, method: string, params: unknown): Promise<T>
   createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files"): Promise<PeerGrant>
   offerPeer(peerId: string, sdp: string, options?: unknown): Promise<{ sdp: string }>
-  startPeer(peerId: string, options: { displayId: number }): Promise<void>
+  startPeer(peerId: string, options: { displayId: number; control?: boolean }): Promise<void>
   candidatePeer(peerId: string, candidate: IceCandidate): Promise<void>
   closePeer(peerId: string): Promise<void>
   onEvent(listener: (event: CentralEvent) => void): () => void

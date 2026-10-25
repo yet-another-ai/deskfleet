@@ -109,7 +109,7 @@ export class HttpCentralClient implements CentralApi {
   rpc<T>(machineId: string, method: string, params: unknown) { return this.request<T>("POST", `/api/machines/${encodeURIComponent(machineId)}/rpc`, { method, params }) }
   createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files") { return this.request<PeerGrant>("POST", "/api/peers", { teamId, machineId, purpose }) }
   offerPeer(peerId: string, sdp: string, options?: unknown) { return this.request<{ sdp: string }>("POST", `/api/peers/${encodeURIComponent(peerId)}/offer`, { sdp, options }) }
-  async startPeer(peerId: string, options: { displayId: number }) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/start`, options) }
+  async startPeer(peerId: string, options: { displayId: number; control?: boolean }) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/start`, options) }
   async candidatePeer(peerId: string, candidate: IceCandidate) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/candidate`, { candidate }) }
   async closePeer(peerId: string) { await this.request("DELETE", `/api/peers/${encodeURIComponent(peerId)}`) }
   onEvent(listener: (event: CentralEvent) => void): () => void { this.#listeners.add(listener); this.#connect(); return () => this.#listeners.delete(listener) }

@@ -75,7 +75,7 @@ pub async fn create(
     let actions = match b.purpose.as_str() {
         "agent" => vec!["agent:read", "agent:execute", "git:read"],
         "terminal" => vec!["terminal:read", "terminal:write"],
-        "desktop" => vec!["desktop:stream"],
+        "desktop" => vec!["desktop:stream", "desktop:control"],
         "files" => vec!["files:read", "files:write"],
         _ => return Err(ApiError::bad("unsupported peer purpose")),
     };
@@ -242,6 +242,8 @@ pub struct Start {
     display_id: Value,
     fps: Option<u32>,
     bitrate_bps: Option<u32>,
+    #[serde(default)]
+    control: bool,
 }
 pub async fn start(
     req: HttpRequest,
@@ -250,22 +252,55 @@ pub async fn start(
     b: web::Json<Start>,
 ) -> Result<web::Json<Value>> {
     let authorization = authorize(&req, &s, &p).await?;
-    if authorization.purpose != "desktop" {
+    if authorization.purpose != "desktop"
+        || !authorization
+            .actions
+            .iter()
+            .any(|action| action == "desktop:stream")
+        || (b.control
+            && !authorization
+                .actions
+                .iter()
+                .any(|action| action == "desktop:control"))
+    {
         return Err(ApiError::forbidden());
     }
-    Ok(web::Json(s.hub.request(&authorization.target_machine.id,"peer.start",json!({"peerId":p.as_str(),"displayId":b.display_id,"fps":b.fps,"bitrateBps":b.bitrate_bps}),None).await?))
+    Ok(web::Json(s.hub.request(&authorization.target_machine.id,"peer.start",json!({"peerId":p.as_str(),"displayId":b.display_id,"fps":b.fps,"bitrateBps":b.bitrate_bps,"control":b.control}),None).await?))
 }
 pub async fn close(
     req: HttpRequest,
     s: web::Data<AppState>,
     p: web::Path<String>,
 ) -> Result<web::Json<Value>> {
-    authorize(&req, &s, &p).await?;
+    let actor = auth::user(&req, &s).await?;
+    // A prior revocation or expiry must not skip the daemon's cleanup receipt.
+    // This lookup remains bound to the original login and current machine access.
+    let authorization = s.store.peer_for_close(&p, &actor.id).await?;
+    s.store
+        .authorized_machine(&actor.user.id, &authorization.target_machine.id)
+        .await?;
     let peers = s.store.revoke_peer(&p).await?;
     s.hub.revoke(peers, "closed").await;
     s.peers.remove(&p).await;
+    // Desktop reconnects can acquire exclusive native input. Revocation delivery
+    // alone does not acknowledge that the previous controller released its keys.
+    if authorization.purpose == "desktop" {
+        s.hub
+            .request(
+                &authorization.target_machine.id,
+                "peer.close",
+                json!({"peerId": p.as_str()}),
+                None,
+            )
+            .await?;
+    }
     Ok(web::Json(json!({})))
 }
+
+#[cfg(test)]
+#[path = "peers/close_tests.rs"]
+mod close_tests;
+
 struct MediaBinding {
     mid: Option<String>,
     ufrag: String,
@@ -435,6 +470,17 @@ pub(crate) async fn daemon_event(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    #[test]
+    fn desktop_control_requires_an_explicit_boolean() {
+        let viewing: Start = serde_json::from_value(json!({"displayId": 1})).unwrap();
+        assert!(!viewing.control);
+        let controlling: Start =
+            serde_json::from_value(json!({"displayId": 1, "control": true})).unwrap();
+        assert!(controlling.control);
+        assert!(
+            serde_json::from_value::<Start>(json!({"displayId": 1, "control": "true"})).is_err()
+        );
+    }
     pub(crate) fn sdp() -> String {
         format!(
             "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=fingerprint:sha-256 {}\r\na=ice-ufrag:one\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=mid:data\r\na=sctp-port:5000\r\n",

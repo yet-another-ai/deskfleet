@@ -35,18 +35,18 @@ const statusColor = computed(() => {
     default: return "bg-ui-text-faint"
   }
 })
-const screenCapture = computed(() => {
-  const permission = state.value?.screenCapturePermission
-  return state.value?.status === "running" && permission?.status !== "not-required" && permission?.status !== "granted" ? permission : undefined
-})
-const screenCaptureNeedsAction = computed(() => screenCapture.value?.status === "denied" || screenCapture.value?.status === "error")
-const screenCaptureLabel = computed(() => {
-  switch (screenCapture.value?.status) {
-    case "requesting": return t("settings.screenCaptureRequesting")
-    case "denied": return t("settings.screenCaptureDenied")
-    case "error": return t("settings.screenCaptureError")
-    default: return ""
-  }
+const permissions = computed(() => {
+  if (state.value?.status !== "running") return []
+  const values = [
+    { kind: "screenCapture", permission: state.value.screenCapturePermission },
+    { kind: "accessibility", permission: state.value.accessibilityPermission },
+  ] as const
+  return values.flatMap(({ kind, permission }) => {
+    if (!permission || permission.status === "not-required" || permission.status === "granted") return []
+    const label = permission.status === "requesting" ? t(`settings.${kind}Requesting`)
+      : permission.status === "denied" ? t(`settings.${kind}Denied`) : t(`settings.${kind}Error`)
+    return [{ kind, permission, label, needsAction: permission.status === "denied" || permission.status === "error" }]
+  })
 })
 
 async function load() {
@@ -99,9 +99,11 @@ onBeforeUnmount(unsubscribe)
       <span class="ui-switch-thumb" :class="state?.enabled && 'translate-x-4'" />
     </button>
   </SettingsRow>
-  <div v-if="screenCapture" :data-screen-capture-permission="screenCapture.status" class="-mt-1 pb-3 text-[13px]" :class="screenCaptureNeedsAction ? 'text-ui-warning' : 'text-ui-text-muted'" :role="screenCaptureNeedsAction ? 'alert' : 'status'">
-    <p class="m-0">{{ screenCaptureLabel }}</p>
-    <p v-if="screenCapture.status === 'error' && screenCapture.error" class="mb-0 mt-1 break-words">{{ screenCapture.error }}</p>
+  <div v-if="permissions.length" data-desktop-permissions role="group" :aria-label="t('settings.desktopPermissions')" class="-mt-1 flex flex-col gap-2 pb-3 text-[13px]">
+    <div v-for="notice in permissions" :key="notice.kind" :data-screen-capture-permission="notice.kind === 'screenCapture' ? notice.permission.status : undefined" :data-accessibility-permission="notice.kind === 'accessibility' ? notice.permission.status : undefined" :class="notice.needsAction ? 'text-ui-warning' : 'text-ui-text-muted'" :role="notice.needsAction ? 'alert' : 'status'">
+      <p class="m-0">{{ notice.label }}</p>
+      <p v-if="notice.permission.status === 'error' && notice.permission.error" class="mb-0 mt-1 break-words">{{ notice.permission.error }}</p>
+    </div>
   </div>
   <p v-if="requestError || state?.error" role="alert" class="m-0 -mt-1 break-words pb-3 text-[13px] text-ui-danger">{{ requestError || state?.error }}</p>
 </template>

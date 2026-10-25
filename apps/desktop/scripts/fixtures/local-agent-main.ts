@@ -94,10 +94,12 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
   }
   async function verifyDeniedPermission(): Promise<void> {
     await until(() => !!document.querySelector('[data-screen-capture-permission="denied"]'), "Screen permission denial")
+    await until(() => !!document.querySelector('[data-accessibility-permission="denied"]'), "Accessibility permission denial")
     const state = await api.settings.get()
-    require(state.status === "running" && state.screenCapturePermission?.status === "denied", "Denied screen permission must leave the Agent running")
+    require(state.status === "running" && state.screenCapturePermission?.status === "denied" && state.accessibilityPermission?.status === "denied", "Denied desktop permissions must leave the Agent running")
     require([...document.querySelectorAll('main [role="status"]')].some(element => element.textContent?.trim() === "Running"), "Settings must show Running while screen access is denied")
     require(document.querySelector('[data-screen-capture-permission="denied"]')!.getAttribute("role") === "alert", "Denied permission must be visible in Settings")
+    require(document.querySelector('[data-desktop-permissions] [data-accessibility-permission="denied"]')!.getAttribute("role") === "alert", "Accessibility denial must appear with screen permission in Settings")
   }
   function button(text: string, root: ParentNode = document): HTMLButtonElement {
     const element = [...root.querySelectorAll("button")].find(button => button.textContent?.trim() === text)
@@ -314,7 +316,7 @@ void app.whenReady().then(async () => {
   const controller = new LocalAgentController(
     join(app.getPath("userData"), "settings.json"),
     // Automated smoke runs must never display operating-system permission prompts.
-    createLocalAgentRuntime({ directory: context.daemonDirectory, start: controlDirectory => startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => false }) }),
+    createLocalAgentRuntime({ directory: context.daemonDirectory, start: controlDirectory => startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false }) }),
     publishLocalAgentState,
   )
   let blockerId: number | undefined

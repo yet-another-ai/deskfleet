@@ -91,22 +91,26 @@ For diagnostics, set `DESKFLEET_WINDOWS_ENCODER` in the daemon's environment to
 An explicit backend never falls back to another encoder. `media-foundation`
 advertises only H.264. This also allows testing MF on a machine with NVENC.
 
-On macOS, the daemon requests Screen Recording consent as soon as startup owns
-discovery and local IPC is ready. `requestScreenCaptureAccess()` checks existing
-consent and requests it through CoreGraphics on a Rust worker; it does not start
-capture. This consent also covers the current ScreenCaptureKit system-audio
-stream. Waiting for or denying consent does not block agents, terminals, catalog
-operations, or daemon cleanup. Windows and Linux do not issue this request.
+On macOS, the daemon requests Screen Recording and Accessibility consent together
+as soon as startup owns discovery and local IPC is ready. The shared
+`DesktopPermissions` lifecycle invokes `requestScreenCaptureAccess()` and
+`requestAccessibilityAccess()` independently, once per daemon start. Each checks
+existing consent before requesting it through CoreGraphics on a Rust worker;
+neither starts capture or initializes input. Screen Recording also covers the
+current ScreenCaptureKit system-audio stream. Waiting for or denying either
+permission does not block the other request, agents, terminals, catalog operations,
+or daemon cleanup. Windows and Linux return `not-required` without prompting.
 
-The authenticated `hello` response includes `screenCapturePermission`, and
-`screenCapturePermissionChanged` events publish the result to connected clients.
-While the Agent runs, Desktop Settings shows pending, denied, or failed permission
-requests. Granted or unnecessary permissions have no notice; the Agent's running
-status stays separate.
+The authenticated `hello` response includes `screenCapturePermission` and
+`accessibilityPermission`. `desktopPermissionsChanged` events publish the combined
+snapshot to connected clients. While the Agent runs, Desktop Settings groups
+pending, denied, or failed requests for both permissions. Granted or unnecessary
+permissions have no notice; the Agent's running status stays separate.
 Previously denied access must be enabled in macOS System Settings under Privacy
-& Security → Screen & System Audio Recording; restart the local Agent afterward.
-Reconnecting a client reads the existing daemon's status without requesting again.
-Tests inject the permission request so ordinary test runs do not open OS dialogs.
+& Security → Screen & System Audio Recording or Accessibility as appropriate;
+restart the local Agent afterward. Reconnecting a client reads the existing
+daemon's status without requesting again. Tests inject both permission requests
+so ordinary test runs do not open OS dialogs.
 
 The native desktop pipeline owns capture and hardware encoding on one blocking
 worker, preserving D3D11 thread ownership and retained GPU surface lifetimes.
@@ -167,8 +171,52 @@ and denied capture permissions: capture belongs to the daemon.
 
 Selected-machine desktop connections use central authorization and signaling,
 including server-provided STUN/TURN configuration. The daemon checks the
-`desktop:stream` grant before starting capture. Desktop keyboard/mouse input
-is not implemented.
+`desktop:stream` grant before starting capture. Enabling input also requires
+`desktop:control`, checked by both the server and daemon. Desktop grants issued
+to authorized Team members currently carry both actions; a stream-only grant
+cannot inject input.
+
+## Mouse and keyboard control
+
+Select **Mouse and keyboard control** before connecting to control the
+selected display. Viewing is the default. Click the video to focus keyboard
+input; the surrounding application keeps its normal keyboard behavior when the
+video is not focused. The toolbar can pause/resume input without stopping the
+video. Disconnect to change the control setting.
+
+The viewer sends JSON events on the reliable, ordered `deskfleet-input`
+DataChannel. `pointerMove` and `pointerButton` use normalized display coordinates
+in [0, 1]; the viewer removes the video's letterboxing before mapping pointer
+positions. Buttons follow DOM numbering (left, middle, right, back, forward).
+`wheel` carries CSS pixel deltas (positive right/down), and `key` carries physical
+`KeyboardEvent.code`, pressed state, and repeat. The remote keyboard layout
+determines characters. Clipboard, text/IME composition forwarding, and operating
+system shortcuts intercepted by the viewer's OS are outside this contract.
+`releaseAll` releases only controls held by this controller.
+
+`deskfleet-input` owns validation, held state and platform injection behind one
+backend interface. Windows uses SendInput scan codes and physical virtual-desktop
+coordinates; macOS uses CoreGraphics events and display bounds in points, including
+Retina and displays with negative origins. Native platform state lives on one
+dedicated input thread; napi only forwards bounded messages asynchronously.
+Loading the addon and viewing a desktop do not initialize input. One controller
+per daemon process is allowed; additional peers may continue viewing.
+
+The daemon starts input for the capture's selected display and sends `ready` only
+after startup and DataChannel opening. Input arriving before enablement, without
+a control grant, or with malformed fields fails the connection. Focus loss,
+hidden pages, and pointer cancellation release held controls. Peer disconnect,
+revocation, expiry, capture failure, and daemon shutdown release native state.
+Desktop close acknowledges native cleanup before a client reconnects; overlapping
+close requests wait for the same cleanup. Encoder fallback and manual reconnect
+also wait for closure before acquiring another controller.
+
+macOS requires Accessibility permission for the process hosting the daemon.
+The daemon requests it alongside Screen Recording during startup. Remote input
+startup still checks current permission and reports denial without opening a consent dialog.
+Screen Recording permission is separate. Windows injection follows SendInput's
+integrity restrictions: it cannot control elevated applications from a lower
+integrity process or operate the secure desktop. Linux input is unsupported.
 
 The native package can also be used directly:
 

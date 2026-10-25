@@ -72,3 +72,8 @@ export function captureDisplays(): Promise<DisplayInfo[]> {
 export function requestScreenCaptureAccess(): Promise<boolean | null> {
   return (bindings ??= loadBindings()).requestScreenCaptureAccess()
 }
+
+/** Request Accessibility in the daemon's process without opening an input controller. */
+export function requestAccessibilityAccess(): Promise<boolean | null> {
+  return (bindings ??= loadBindings()).requestAccessibilityAccess()
+}

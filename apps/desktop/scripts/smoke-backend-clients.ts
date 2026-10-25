@@ -98,7 +98,7 @@ try {
     await execute("git", ["-C", repository, "add", "."])
     await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
     const provider = new BackendAgent(); providers.push(provider)
-    const daemon = await startDaemon(0, { controlDirectory: join(directory, `daemon-${index}`), agentProvider: provider, requestScreenCaptureAccess: async () => false }); daemons.push(daemon)
+    const daemon = await startDaemon(0, { controlDirectory: join(directory, `daemon-${index}`), agentProvider: provider, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false }); daemons.push(daemon)
     const { identity } = daemon.central.status()
     const enrollment = await request<{ machine: { id: string }; token: string }>(`/teams/${teamId}/machines`, { name: `Machine ${index}`, originId: identity.originId, localMachineId: identity.machineId })
     machines.push(enrollment.machine.id)
@@ -111,7 +111,7 @@ try {
   }
   assert.equal(sessions[0], sessions[1])
   await launch("web")
-  daemons[0] = await startDaemon(0, { controlDirectory: join(directory, "daemon-0"), agentProvider: providers[0]!, requestScreenCaptureAccess: async () => false })
+  daemons[0] = await startDaemon(0, { controlDirectory: join(directory, "daemon-0"), agentProvider: providers[0]!, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false })
   await until(() => daemons[0]!.central.status(), status => status.connected, "daemon restart")
   await launch("electron")
   assert.deepEqual(providers[0]!.prompts, ["Prompt from web", "Prompt from electron"])

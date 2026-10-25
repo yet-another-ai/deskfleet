@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 deskfleet-capture.workspace = true
 deskfleet-encoder.workspace = true
+deskfleet-input.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 thiserror.workspace = true

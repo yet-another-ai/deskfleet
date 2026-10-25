@@ -21,6 +21,7 @@ function uint(value: unknown, label: string, positive = false): void {
 
 function desktopOptions(params: Record<string, unknown>): void {
   uint(params.displayId, "display ID")
+  if (params.control !== undefined && typeof params.control !== "boolean") throw new Error("Invalid desktop control setting")
   if (params.fps !== undefined) uint(params.fps, "frame rate", true)
   if (params.bitrateBps !== undefined) uint(params.bitrateBps, "bitrate", true)
 }
@@ -31,7 +32,8 @@ function desktopOptions(params: Record<string, unknown>): void {
  */
 export function validateRelayedDesktopStart(value: unknown): Omit<DesktopStart, "sessionId"> {
   const params = object(value)
-  const options = { displayId: params.displayId, fps: params.fps ?? undefined, bitrateBps: params.bitrateBps ?? undefined }
+  const options = { displayId: params.displayId, fps: params.fps ?? undefined, bitrateBps: params.bitrateBps ?? undefined,
+    ...(params.control === undefined || params.control === null ? {} : { control: params.control }) }
   desktopOptions(options)
   return options as Omit<DesktopStart, "sessionId">
 }

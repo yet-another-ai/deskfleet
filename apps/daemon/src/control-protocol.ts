@@ -43,6 +43,7 @@ export interface TerminalOffer {
 export interface DesktopStart {
   sessionId: string
   displayId: number
+  control?: boolean
   fps?: number
   bitrateBps?: number
 }
@@ -67,19 +68,23 @@ export function isEncoderFailure(error: unknown): error is Error & { reason: Des
   return typeof error === "object" && error !== null && (error as { reason?: unknown }).reason === "encoder"
 }
 
-export interface ScreenCapturePermission {
+export interface DesktopPermission {
   status: "requesting" | "granted" | "denied" | "not-required" | "error"
   error?: string
 }
 
-export interface LocalDaemonInfo {
+export interface DesktopPermissionsState {
+  screenCapturePermission: DesktopPermission
+  accessibilityPermission: DesktopPermission
+}
+
+export interface LocalDaemonInfo extends DesktopPermissionsState {
   name: string
   desktop: boolean
-  screenCapturePermission: ScreenCapturePermission
 }
 
 export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent | ProviderEvent
-  | { kind: "screenCapturePermissionChanged"; permission: ScreenCapturePermission }
+  | { kind: "desktopPermissionsChanged"; permissions: DesktopPermissionsState }
 
 export interface ControlMethods extends CatalogMethods, FilesystemMethods, ProviderMethods {
   centralStatus: { params: Record<string, never>; result: CentralStatus }

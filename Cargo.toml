@@ -4,6 +4,7 @@ members = [
     "crates/control-store",
     "crates/capture",
     "crates/encoder",
+    "crates/input",
     "crates/model",
     "crates/migration",
     "crates/native",
@@ -27,6 +28,7 @@ publish = false
 [workspace.dependencies]
 deskfleet-capture = { path = "crates/capture" }
 deskfleet-encoder = { path = "crates/encoder" }
+deskfleet-input = { path = "crates/input" }
 deskfleet-nvenc = { path = "crates/nvenc" }
 deskfleet-nvenc-sys = { path = "crates/nvenc-sys" }
 deskfleet-model = { path = "crates/model" }

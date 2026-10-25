@@ -7,42 +7,42 @@ vi.mock("@deskfleet/daemon/control-client", () => ({ DaemonClient: { connect: mo
 vi.mock("@deskfleet/daemon", () => ({ startDaemon: vi.fn() }))
 afterEach(() => vi.clearAllMocks())
 
-test("connection retains a permission event received alongside its initial handshake", async () => {
+test("connection retains both permission outcomes received alongside its initial handshake", async () => {
   let event!: (event: DaemonEvent) => void
   const client = {
     closed: false,
-    info: { name: "machine", desktop: true, screenCapturePermission: { status: "requesting" } },
+    info: { name: "machine", desktop: true, screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } },
     call: vi.fn(),
     close: vi.fn(),
   }
   mocks.connect.mockImplementation(async onEvent => {
     event = onEvent
-    event({ kind: "screenCapturePermissionChanged", permission: { status: "granted" } })
+    event({ kind: "desktopPermissionsChanged", permissions: { screenCapturePermission: { status: "granted" }, accessibilityPermission: { status: "requesting" } } })
     return client
   })
   const changed = vi.fn()
   const runtime = createLocalAgentRuntime({ directory: "/daemon", start: vi.fn() })
   const connection = await runtime.connect(vi.fn(), changed)
-  expect(connection.screenCapturePermission).toEqual({ status: "granted" })
-  expect(changed).toHaveBeenCalledExactlyOnceWith({ status: "granted" })
+  expect(connection.desktopPermissions).toEqual({ screenCapturePermission: { status: "granted" }, accessibilityPermission: { status: "requesting" } })
+  expect(changed).toHaveBeenCalledExactlyOnceWith(connection.desktopPermissions)
   event({ kind: "catalogChanged" })
   expect(changed).toHaveBeenCalledTimes(1)
-  event({ kind: "screenCapturePermissionChanged", permission: { status: "denied" } })
-  expect(changed).toHaveBeenLastCalledWith({ status: "denied" })
-  expect(connection.screenCapturePermission).toEqual({ status: "denied" })
+  event({ kind: "desktopPermissionsChanged", permissions: { screenCapturePermission: { status: "granted" }, accessibilityPermission: { status: "denied" } } })
+  expect(changed).toHaveBeenLastCalledWith({ screenCapturePermission: { status: "granted" }, accessibilityPermission: { status: "denied" } })
+  expect(connection.desktopPermissions).toEqual({ screenCapturePermission: { status: "granted" }, accessibilityPermission: { status: "denied" } })
 })
 
-test("connecting to an existing daemon reads permission without starting another request", async () => {
+test("connecting to an existing daemon reads both permissions without starting another request", async () => {
   const client = {
     closed: false,
-    info: { name: "machine", desktop: true, screenCapturePermission: { status: "denied" } },
+    info: { name: "machine", desktop: true, screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "granted" } },
     call: vi.fn(),
     close: vi.fn(),
   }
   mocks.connect.mockResolvedValue(client)
   const runtime = createLocalAgentRuntime({ directory: "/daemon", start: vi.fn() })
   const connection = await runtime.connect(vi.fn(), vi.fn())
-  expect(connection.screenCapturePermission).toEqual({ status: "denied" })
+  expect(connection.desktopPermissions).toEqual({ screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "granted" } })
   expect(client.call).not.toHaveBeenCalled()
 })
 

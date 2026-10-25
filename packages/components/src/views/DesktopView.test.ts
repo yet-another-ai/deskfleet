@@ -212,3 +212,27 @@ test("the floating toolbar moves by keyboard and drag, stays inside the stage, a
 
   expect(wrapper.get('[role="dialog"]').classes()).toEqual(expect.arrayContaining(["bottom-full", "left-0"]))
 })
+
+test("control is opt-in and can pause with held keys released while video stays connected", async () => {
+  const wrapper = await mountDesktop()
+  const checkbox = wrapper.get("[data-desktop-control]")
+  expect((checkbox.element as HTMLInputElement).checked).toBe(false)
+  await checkbox.setValue(true)
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  const peer = TestPeer.instances[0]!
+  peer.changeState("connected")
+  peer.input.ready()
+  await flushPromises()
+  expect(mock.api.start).toHaveBeenCalledWith(expect.objectContaining({ control: true }))
+  expect(checkbox.attributes("disabled")).toBeDefined()
+  const video = wrapper.get("video")
+  expect(video.attributes("tabindex")).toBe("0")
+  await video.trigger("keydown", { code: "ControlLeft" })
+  await button(wrapper, "Pause control").trigger("click")
+  expect(peer.input.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "releaseAll" }))
+  expect(video.attributes("tabindex")).toBe("-1")
+  expect(peer.close).not.toHaveBeenCalled()
+  await button(wrapper, "Resume control").trigger("click")
+  expect(video.attributes("tabindex")).toBe("0")
+})

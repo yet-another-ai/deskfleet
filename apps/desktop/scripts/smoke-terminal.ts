@@ -59,7 +59,7 @@ try {
   await writeFile(join(directory, "index.html"), `<!doctype html>
 <meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${rendererContentSecurityPolicy(true)}">
 <link rel="stylesheet" href="/renderer.css"><div id="terminal"></div><script type="module" src="/renderer.js"></script>`)
-  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null })
+  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
   const first = await launchClient({ phase: "write" })
   assert.equal(daemon.terminals.list().length, 2)
   assert.ok((await stat(join(controlDirectory, "terminals", String(first.terminalId), "output.bin"))).size > 300_000)

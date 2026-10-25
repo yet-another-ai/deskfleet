@@ -9,6 +9,20 @@ export const browserCodecs: RTCRtpCodec[] = [
   { mimeType: "video/AV1", clockRate: 90000, sdpFmtpLine: "profile=0" },
 ]
 
+export class TestInputChannel {
+  readyState: RTCDataChannelState = "connecting"
+  bufferedAmount = 0
+  onmessage: ((event: { data: string }) => void) | null = null
+  onclose: (() => void) | null = null
+  onerror: (() => void) | null = null
+  send = vi.fn((_message: string) => {})
+  close = vi.fn(() => { this.readyState = "closed" })
+  ready(): void {
+    this.readyState = "open"
+    this.onmessage?.({ data: JSON.stringify({ type: "ready" }) })
+  }
+}
+
 export class TestPeer {
   static instances: TestPeer[] = []
   connectionState: RTCPeerConnectionState = "new"
@@ -16,6 +30,8 @@ export class TestPeer {
   onconnectionstatechange: (() => void) | null = null
   ontrack: ((event: { track: MediaStreamTrack }) => void) | null = null
   codecPreferences = vi.fn()
+  input = new TestInputChannel()
+  createDataChannel = vi.fn(() => this.input)
   addTransceiver = vi.fn((_kind: string, _init: RTCRtpTransceiverInit) => ({ setCodecPreferences: this.codecPreferences }))
   createOffer = vi.fn(async (): Promise<RTCSessionDescriptionInit> => ({ type: "offer", sdp: "browser-offer" }))
   setLocalDescription = vi.fn(async (_description: RTCSessionDescriptionInit) => {})

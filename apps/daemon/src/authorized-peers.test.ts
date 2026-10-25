@@ -24,14 +24,17 @@ function grant(): PeerAuthorization {
   }
 }
 
-function fixture() {
+function fixture(closeGate?: Promise<void>) {
   let now = epoch, closed = false
   const sent: string[] = [], events: PeerEvent[] = [], calls: { method: string; actor: AgentActor }[] = []
   const packets: Buffer[] = []
+  const input: string[] = [], starts: unknown[] = [], signals: unknown[] = []
   let waiting: ((event: PeerEvent | null) => void) | undefined
   const push = (event: PeerEvent) => { if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) } else events.push(event) }
   const native = {
-    answerOffer: async () => sdp, addIceCandidate: async () => {}, startDesktop: async () => {},
+    answerOffer: async () => sdp, addIceCandidate: async () => {}, startDesktop: async (options: unknown) => { starts.push(options) },
+    sendDesktopInput: async (text: string) => { input.push(text) },
+    sendText: async (_label: string, text: string) => { sent.push(text) },
     sendData: async (_label: string, data: Buffer) => { sent.push(data.toString()); packets.push(data) },
     nextEvent: async () => events.shift() ?? (closed ? null : new Promise<PeerEvent | null>(resolve => { waiting = resolve })),
   } as unknown as NativePeer
@@ -40,16 +43,62 @@ function fixture() {
     handle: async (method, _params, actor) => { calls.push({ method, actor }); return null },
   }
   const peers = new AuthorizedPeers({
-    peers: { create: async () => native, close: async () => { closed = true; waiting?.(null) } },
-    agents, terminals: {} as TerminalSessions, identity, signal: () => {}, now: () => now,
+    peers: { create: async () => native, close: async () => { await closeGate; closed = true; waiting?.(null) } },
+    agents, terminals: {} as TerminalSessions, identity, signal: (_id, event) => { signals.push(event) }, now: () => now,
   })
   peers.bind(credentials)
   const rpc = async (id: number, method: string, params: unknown) => {
     push({ kind: "data", label: "deskfleet-acp", data: Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n") })
     for (let tries = 0; tries < 100 && !sent.some(value => value.includes(`"id":${id},`)); tries++) await delay(1)
   }
-  return { peers, calls, sent, packets, rpc, push, expired: () => { now += 86_400_001 }, closed: () => closed }
+  return { peers, calls, sent, packets, rpc, push, input, starts, signals, expired: () => { now += 86_400_001 }, closed: () => closed }
 }
+
+test("repeated close and shutdown await the same native input cleanup", async () => {
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const f = fixture(gate)
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+  const closed: string[] = []
+  const first = f.peers.close("peer").then(() => { closed.push("first") })
+  const second = f.peers.close("peer").then(() => { closed.push("second") })
+  const shutdown = f.peers.closeAll().then(() => { closed.push("shutdown") })
+  await delay(0)
+  assert.deepEqual(closed, [])
+  release()
+  await Promise.all([first, second, shutdown])
+  assert.equal(closed.length, 3)
+  assert.equal(f.closed(), true)
+})
+
+test("desktop streaming grant alone cannot enable or send control", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream"] }, iceServers: [] })
+  await assert.rejects(f.peers.start("peer", { displayId: 7, control: true }), /does not allow/)
+  assert.equal(f.starts.length, 0)
+  await f.peers.start("peer", { displayId: 7 })
+  f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"releaseAll"}') })
+  for (let tries = 0; tries < 100 && !f.closed(); tries++) await delay(1)
+  assert.equal(f.closed(), true)
+  assert.deepEqual(f.input, [])
+})
+
+test("desktop control binds the capture display and expires before further input", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+  f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+  await f.peers.start("peer", { displayId: 7, control: true })
+  f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyA","pressed":true}') })
+  for (let tries = 0; tries < 100 && !f.input.length; tries++) await delay(1)
+  assert.deepEqual(f.starts, [{ displayId: 7, control: true }])
+  assert.equal(f.input.length, 1)
+  assert.deepEqual(f.sent, ['{"type":"ready"}'])
+  f.expired()
+  f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyB","pressed":true}') })
+  for (let tries = 0; tries < 100 && !f.closed(); tries++) await delay(1)
+  assert.equal(f.closed(), true)
+  assert.equal(f.input.length, 1)
+})
 
 test("peer grant binds target, user, purpose, and a maximum 24-hour lifetime", async () => {
   const f = fixture()

@@ -58,6 +58,10 @@
     "screenCaptureRequesting": "正在请求屏幕与系统音频录制权限…",
     "screenCaptureDenied": "请在 macOS 系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许访问，然后关闭并重新开启本地 Agent。",
     "screenCaptureError": "无法请求屏幕与系统音频录制权限。请关闭并重新开启本地 Agent 以重试。",
+    "desktopPermissions": "桌面权限",
+    "accessibilityRequesting": "正在请求用于鼠标和键盘控制的辅助功能权限…",
+    "accessibilityDenied": "请在 macOS 系统设置 → 隐私与安全性 → 辅助功能中允许鼠标和键盘控制，然后关闭并重新开启本地 Agent。",
+    "accessibilityError": "无法请求用于鼠标和键盘控制的辅助功能权限。请关闭并重新开启本地 Agent 以重试。",
     "agents": "Agents"
   },
   "notification": {
@@ -171,6 +175,10 @@
     "displayOption": "显示器 {id} · {width} × {height}",
     "codecStatus": "视频编码：{codec}",
     "audio": "系统音频",
+    "control": "鼠标和键盘控制",
+    "pauseControl": "暂停控制",
+    "resumeControl": "恢复控制",
+    "controlHint": "点击远程桌面即可发送鼠标和键盘输入。",
     "video": "远程桌面视频",
     "checking": "正在检查本机桌面…",
     "ready": "选择显示器并连接以开始共享。视频编码：{codec}。",

@@ -1,12 +1,11 @@
-import type { ScreenCapturePermission } from "../../../apps/daemon/src/control-protocol.ts"
+import type { DesktopPermissionsState } from "../../../apps/daemon/src/control-protocol.ts"
 
-export type { ScreenCapturePermission } from "../../../apps/daemon/src/control-protocol.ts"
+export type { DesktopPermission, DesktopPermissionsState } from "../../../apps/daemon/src/control-protocol.ts"
 
-export interface LocalAgentState {
+export interface LocalAgentState extends Partial<DesktopPermissionsState> {
   enabled: boolean
   status: "stopped" | "starting" | "running" | "stopping" | "error"
   error?: string
-  screenCapturePermission?: ScreenCapturePermission
 }
 
 export interface LocalAgentSettingsApi {

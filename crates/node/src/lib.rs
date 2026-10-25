@@ -4,6 +4,7 @@ use napi_derive::napi;
 
 mod catalog;
 mod media;
+mod permissions;
 mod rtc;
 mod terminal;
 
@@ -11,10 +12,8 @@ pub use catalog::{
     CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree,
     NativeCatalog, open_catalog,
 };
-pub use media::{
-    DesktopConfig, DisplayInfo, capture_displays, request_screen_capture_access,
-    supported_video_codecs,
-};
+pub use media::{DesktopConfig, DisplayInfo, capture_displays, supported_video_codecs};
+pub use permissions::{request_accessibility_access, request_screen_capture_access};
 pub use rtc::{
     IceCandidate, IceServer, NativePeer, PeerConfig, PeerEvent, VideoCodec, create_peer,
 };

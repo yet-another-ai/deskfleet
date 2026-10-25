@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import { LocalAgentController, type LocalAgentConnection, type LocalAgentRuntime } from "./local-agent-controller.ts"
-import type { ScreenCapturePermission } from "../../../../packages/client/src/local-agent.ts"
+import type { DesktopPermission, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -14,21 +14,21 @@ async function fixture(running = false) {
   const path = join(directory, "settings.json")
   let disconnect: ((error: Error) => void) | undefined
   let current: LocalAgentConnection | undefined
-  let permission: ScreenCapturePermission = { status: "requesting" }
-  let permissionChanged: ((permission: ScreenCapturePermission) => void) | undefined
+  let permissions: DesktopPermissionsState = { screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } }
+  let permissionsChanged: ((permissions: DesktopPermissionsState) => void) | undefined
   const shutdown = vi.fn(async () => {
     running = false
     current!.close()
   })
   const runtime: LocalAgentRuntime = {
-    connect: vi.fn(async (onDisconnect, onPermissionChanged) => {
+    connect: vi.fn(async (onDisconnect, onPermissionsChanged) => {
       if (!running) throw Object.assign(new Error("Not running"), { code: "ENOENT" })
       disconnect = onDisconnect
-      permissionChanged = onPermissionChanged
+      permissionsChanged = onPermissionsChanged
       let closed = false
       current = {
         get closed() { return closed },
-        get screenCapturePermission() { return permission },
+        get desktopPermissions() { return permissions },
         shutdown,
         close() { closed = true; onDisconnect(new Error("Disconnected")) },
       }
@@ -43,13 +43,14 @@ async function fixture(running = false) {
     path, runtime, emit, shutdown,
     controller: new LocalAgentController(path, runtime, emit),
     disconnect: () => { running = false; disconnect?.(new Error("Daemon exited")) },
-    permissionChanged: (next: ScreenCapturePermission) => { permission = next; permissionChanged?.(next) },
+    permissionChanged: (next: DesktopPermission) => { permissions = { ...permissions, screenCapturePermission: next }; permissionsChanged?.(permissions) },
+    accessibilityChanged: (next: DesktopPermission) => { permissions = { ...permissions, accessibilityPermission: next }; permissionsChanged?.(permissions) },
   }
 }
 
 test("fresh settings start the local Agent by default and quitting closes the hosted daemon", async () => {
   const f = await fixture()
-  expect(await f.controller.initialize()).toEqual({ enabled: true, status: "running", error: undefined, screenCapturePermission: { status: "requesting" } })
+  expect(await f.controller.initialize()).toEqual({ enabled: true, status: "running", error: undefined, screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })
   expect(f.runtime.start).toHaveBeenCalledOnce()
   await f.controller.close()
   expect(f.runtime.close).toHaveBeenCalledOnce()
@@ -125,29 +126,50 @@ test("permission outcomes update Settings without changing Agent availability", 
   const f = await fixture(true)
   await f.controller.initialize()
   f.permissionChanged({ status: "denied" })
+  f.accessibilityChanged({ status: "granted" })
   expect(f.controller.state).toMatchObject({ status: "running", screenCapturePermission: { status: "denied" } })
+  expect(f.controller.state.accessibilityPermission).toEqual({ status: "granted" })
   expect(f.emit).toHaveBeenLastCalledWith(f.controller.state)
   f.permissionChanged({ status: "granted" })
   expect(f.controller.state.screenCapturePermission).toEqual({ status: "granted" })
 
   await f.controller.setEnabled(false)
   expect(f.controller.state.screenCapturePermission).toBeUndefined()
+  expect(f.controller.state.accessibilityPermission).toBeUndefined()
   f.permissionChanged({ status: "denied" })
-  expect(f.controller.state).toMatchObject({ status: "stopped", screenCapturePermission: undefined })
+  f.accessibilityChanged({ status: "denied" })
+  expect(f.controller.state).toMatchObject({ status: "stopped", screenCapturePermission: undefined, accessibilityPermission: undefined })
 
   await f.controller.setEnabled(true)
   expect(f.controller.state.screenCapturePermission).toEqual({ status: "denied" })
+  expect(f.controller.state.accessibilityPermission).toEqual({ status: "denied" })
   f.disconnect()
   expect(f.controller.state.screenCapturePermission).toBeUndefined()
+  expect(f.controller.state.accessibilityPermission).toBeUndefined()
 })
 
 test("a reused daemon supplies its current permission even with auto-start disabled", async () => {
   const f = await fixture(true)
   f.permissionChanged({ status: "granted" })
+  f.accessibilityChanged({ status: "denied" })
   await writeFile(f.path, JSON.stringify({ localAgentEnabled: false }))
-  expect(await f.controller.initialize()).toMatchObject({ enabled: false, status: "running", screenCapturePermission: { status: "granted" } })
+  expect(await f.controller.initialize()).toMatchObject({ enabled: false, status: "running", screenCapturePermission: { status: "granted" }, accessibilityPermission: { status: "denied" } })
   expect(f.runtime.start).not.toHaveBeenCalled()
   f.controller.detach()
   f.permissionChanged({ status: "denied" })
+  f.accessibilityChanged({ status: "granted" })
   expect(f.controller.state.screenCapturePermission).toEqual({ status: "granted" })
+  expect(f.controller.state.accessibilityPermission).toEqual({ status: "denied" })
+})
+
+test("permission events from an old connection cannot replace the restarted daemon's state", async () => {
+  const f = await fixture(true)
+  await f.controller.initialize()
+  const oldPermissionEvent = vi.mocked(f.runtime.connect).mock.calls[0]![1]
+  await f.controller.setEnabled(false)
+  f.permissionChanged({ status: "denied" })
+  f.accessibilityChanged({ status: "error", error: "Accessibility request failed" })
+  await f.controller.setEnabled(true)
+  oldPermissionEvent({ screenCapturePermission: { status: "granted" }, accessibilityPermission: { status: "granted" } })
+  expect(f.controller.state).toMatchObject({ status: "running", screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "error", error: "Accessibility request failed" } })
 })

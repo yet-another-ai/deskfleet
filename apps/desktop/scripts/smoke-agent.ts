@@ -163,7 +163,7 @@ try {
   await execute("git", ["-C", repository, "add", "."])
   await execute("git", ["-C", repository, "-c", "user.name=Smoke", "-c", "user.email=smoke@example.invalid", "commit", "-m", "fixture"])
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/agent-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" })
-  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null, agentProvider: provider })
+  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, agentProvider: provider })
   const first = await launchClient("create")
   assert.deepEqual(provider.failures, [])
   assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate", "Smoke changed model prompt"])
@@ -181,7 +181,7 @@ try {
   const connections = provider.connections
   await daemon.close()
   daemon = undefined
-  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null, agentProvider: provider })
+  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, agentProvider: provider })
   const restored = await launchClient("restore", first)
   assert.deepEqual(restored, first)
   assert.equal(provider.connections, connections, "Reconnecting must not restart the provider")

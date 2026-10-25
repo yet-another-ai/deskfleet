@@ -107,7 +107,7 @@ try {
   await launchClient("disabled")
   assert.equal(await discoveryExists(), false, "Persisted disabled preference must prevent daemon startup")
   // A standalone daemon, such as the headless executable, is reused and outlives the app.
-  const external = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: daemonDirectory, requestScreenCaptureAccess: async () => false })
+  const external = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: daemonDirectory, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false })
   try {
     const identity = createHash("sha256").update(JSON.stringify(await readDaemonDiscovery(daemonDirectory))).digest("hex")
     assert.equal((await launchClient("external")).daemonIdentity, identity, "The app must reuse a separately running daemon")

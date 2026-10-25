@@ -69,7 +69,7 @@ test("native peers exchange binary and text DataChannel messages through the dae
   }
   try {
     const controlDirectory = await waitFor("creating test directory", directory)
-    starting = startDaemon(0, { controlDirectory, requestScreenCaptureAccess: async () => null })
+    starting = startDaemon(0, { controlDirectory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
     const daemon = await waitFor("starting daemon", starting)
     const left = await waitFor("creating left peer", daemon.peers.create("left"))
     const right = await waitFor("creating right peer", daemon.peers.create("right"))
@@ -145,6 +145,7 @@ test("desktop settings reject invalid input without initializing capture", async
   try {
     await assert.rejects(peer.startDesktop({ displayId: 0, fps: 0 }), /fps/)
     await assert.rejects(peer.startDesktop({ displayId: 0, bitrateBps: 0 }), /bitrate/)
+    await assert.rejects(peer.sendDesktopInput('{"type":"releaseAll"}'), /control is not enabled/)
   } finally {
     await peer.close()
   }

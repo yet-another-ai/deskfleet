@@ -1470,6 +1470,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskfleet-input"
+version = "0.1.0"
+dependencies = [
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
+ "windows",
+]
+
+[[package]]
 name = "deskfleet-migration"
 version = "0.1.0"
 dependencies = [
@@ -1494,6 +1507,7 @@ dependencies = [
  "bytes",
  "deskfleet-capture",
  "deskfleet-encoder",
+ "deskfleet-input",
  "filedescriptor",
  "nix 0.31.3",
  "portable-pty",

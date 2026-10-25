@@ -35,6 +35,8 @@ export declare class NativePeer {
   takeMediaFailure(): MediaFailure | null
   /** Capture and encode entirely in Rust; call only after authorizing desktop access. */
   startDesktop(config: DesktopConfig): Promise<void>
+  /** Apply a desktop DataChannel message after the daemon checks its control grant. */
+  sendDesktopInput(message: string): Promise<void>
   stopDesktop(): Promise<void>
   /** Stop capture before closing the transport, including after media failure. */
   close(): Promise<void>
@@ -87,6 +89,8 @@ export declare function createTerminal(config: TerminalConfig): Promise<NativeTe
 
 export interface DesktopConfig {
   displayId: number
+  /** Enable mouse and keyboard input for this display after authorization. */
+  control?: boolean
   fps?: number
   bitrateBps?: number
   maxBitrateBps?: number
@@ -149,6 +153,12 @@ export interface PeerEvent {
   /** `"encoder"` when the viewer may negotiate the next codec. Absent for every other failure. */
   reason?: string
 }
+
+/**
+ * Request this process's Accessibility access without initializing input.
+ * Resolves with null on platforms without an upfront permission request.
+ */
+export declare function requestAccessibilityAccess(): Promise<boolean | null>
 
 /**
  * Request this process's screen/system-audio access without starting capture.

@@ -8,6 +8,7 @@ import { useI18n } from "vue-i18n"
 import type { DesktopCapabilities } from "../../../client/src/desktop-media.ts"
 import IconButton from "../components/common/IconButton.vue"
 import { commonDesktopCodecs, desktopCodecLabel, useDesktopConnection } from "../composables/useDesktopConnection.ts"
+import { useDesktopInput } from "../composables/useDesktopInput.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 
@@ -23,7 +24,11 @@ const loading = ref(false)
 const discoveryError = ref<string | null>(null)
 const displayId = ref<number | null>(null)
 const audio = ref(false)
+const control = ref(false)
+const controlPaused = ref(false)
 const video = shallowRef<HTMLVideoElement | null>(null)
+const inputEnabled = computed(() => control.value && !controlPaused.value && connection.inputReady.value)
+useDesktopInput(video, inputEnabled, connection.sendInput)
 const playbackBlocked = ref(false)
 const fullscreenError = ref(false)
 const settingsOpen = ref(false)
@@ -111,7 +116,13 @@ watch([video, stream], ([element, media]) => {
 
 function connect(): void {
   if (!canConnect.value || displayId.value === null || codecs.value.length === 0) return
-  void connection.connect({ displayId: displayId.value, codecs: codecs.value, audio: audio.value })
+  controlPaused.value = false
+  void connection.connect({ displayId: displayId.value, codecs: codecs.value, audio: audio.value, control: control.value })
+}
+
+function toggleControl(): void {
+  controlPaused.value = !controlPaused.value
+  if (!controlPaused.value) video.value?.focus({ preventScroll: true })
 }
 
 async function fullscreen(): Promise<void> {
@@ -152,6 +163,9 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
         v-show="stream"
         ref="video"
         class="absolute inset-0 h-full w-full object-contain"
+        :class="inputEnabled && 'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-accent'"
+        :tabindex="inputEnabled ? 0 : -1"
+        :title="inputEnabled ? t('desktop.controlHint') : undefined"
         :aria-label="t('desktop.video')"
         :muted="!audio"
         autoplay
@@ -203,6 +217,9 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
           <span class="h-1.5 w-1.5 rounded-full" :class="state === 'connected' ? 'bg-ui-success' : 'bg-ui-text-faint'" aria-hidden="true" />{{ status }}
         </span>
         <IconButton v-if="stream && state === 'connected'" :icon="Maximize" :label="t('desktop.fullscreen')" @click="fullscreen" />
+        <button v-if="stream && control && state === 'connected'" type="button" class="ui-button py-1" :disabled="!connection.inputReady.value" :aria-pressed="!controlPaused" @click="toggleControl">
+          {{ controlPaused ? t("desktop.resumeControl") : t("desktop.pauseControl") }}
+        </button>
         <IconButton ref="settingsTrigger" :icon="SlidersHorizontal" :label="t('desktop.settings')" :disabled="!capabilities" aria-haspopup="dialog" :aria-expanded="settingsOpen" :aria-controls="settingsId" @click="settingsOpen = !settingsOpen" />
         <button v-if="stream && active" type="button" class="ui-button-danger py-1" @click="connection.disconnect()">
           <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("desktop.disconnect") }}
@@ -222,6 +239,10 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
           <label v-if="capabilities?.audio" class="flex items-center gap-2 text-[13px]">
             <input v-model="audio" type="checkbox" :disabled="active" />
             {{ t("desktop.audio") }}
+          </label>
+          <label class="flex items-center gap-2 text-[13px]">
+            <input v-model="control" data-desktop-control type="checkbox" :disabled="active" />
+            {{ t("desktop.control") }}
           </label>
           <p v-if="active" class="m-0 text-xs text-ui-text-muted">{{ t("desktop.settingsLocked") }}</p>
         </div>

@@ -1,22 +1,23 @@
 import { once } from "node:events"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { nativeInfo, requestScreenCaptureAccess } from "@deskfleet/native"
+import { nativeInfo, requestAccessibilityAccess, requestScreenCaptureAccess } from "@deskfleet/native"
 import { PeerSessions } from "./peers.ts"
 import { startControlServer } from "./control-server.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
-import { ScreenCapturePermissions } from "./screen-capture-permission.ts"
+import { DesktopPermissions } from "./desktop-permissions.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 
 export async function startDaemon(port = 0, options: {
   controlDirectory?: string
   requestScreenCaptureAccess?: () => Promise<boolean | null>
+  requestAccessibilityAccess?: () => Promise<boolean | null>
   agentProvider?: AgentProvider
   /** In-process fixtures only. Never enabled by configuration, IPC, or the CLI. */
   allowLocalControlForTests?: boolean
 } = {}) {
   const native = nativeInfo()
-  const permissions = new ScreenCapturePermissions()
+  const permissions = new DesktopPermissions()
   const peers = new PeerSessions()
   const controlDirectory = options.controlDirectory ?? daemonControlDirectory()
   const server = createServer((request, response) => {
@@ -67,7 +68,10 @@ export async function startDaemon(port = 0, options: {
     throw error
   }
   // Request once we own the machine daemon, before any remote capture is used.
-  permissions.request(options.requestScreenCaptureAccess ?? requestScreenCaptureAccess)
+  permissions.request({
+    requestScreenCaptureAccess: options.requestScreenCaptureAccess ?? requestScreenCaptureAccess,
+    requestAccessibilityAccess: options.requestAccessibilityAccess ?? requestAccessibilityAccess,
+  })
   return {
     address: `http://127.0.0.1:${address.port}`,
     peers,

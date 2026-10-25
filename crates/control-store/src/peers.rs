@@ -21,6 +21,19 @@ impl ControlStore {
         let row=one(&self.db,"SELECT grant_json FROM cp_peers WHERE id=$1 AND login_session_id=$2 AND NOT revoked AND expires_at>$3",vec![id.into(),login_id.into(),now_ms().into()]).await?;
         Ok(serde_json::from_value(row.try_get("", "grant_json")?)?)
     }
+    /// Look up a login's peer for cleanup, including revoked or expired grants.
+    ///
+    /// This does not authorize further peer operations. Callers must still
+    /// authenticate the login and check its current access to the target machine.
+    pub async fn peer_for_close(&self, id: &str, login_id: &str) -> Result<PeerAuthorization> {
+        let row = one(
+            &self.db,
+            "SELECT grant_json FROM cp_peers WHERE id=$1 AND login_session_id=$2",
+            vec![id.into(), login_id.into()],
+        )
+        .await?;
+        Ok(serde_json::from_value(row.try_get("", "grant_json")?)?)
+    }
     pub async fn valid_machine_peers(&self, machine_id: &str) -> Result<Vec<PeerAuthorization>> {
         json_rows(&self.db,"SELECT p.grant_json AS record FROM cp_peers p JOIN cp_members m ON m.team_id=p.team_id AND m.user_id=p.user_id JOIN cp_login_sessions s ON s.id=p.login_session_id WHERE p.machine_id=$1 AND NOT p.revoked AND p.expires_at>$2 AND NOT s.revoked",vec![resource_id(machine_id)?.into(),now_ms().into()]).await?.into_iter().map(|v|serde_json::from_value(v).map_err(crate::Error::from)).collect()
     }

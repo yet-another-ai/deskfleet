@@ -214,7 +214,7 @@ test("stopping control waits for an executing request before releasing its resou
 
 test("daemon control exchanges real native SDP and ICE without initializing capture", { timeout: 20_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-test-"))
-  const daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  const daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
   const peer = await createPeer({ video: "h264" })
   context.after(async () => { await peer.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
   const discovery = await readDaemonDiscovery(directory)
@@ -344,6 +344,10 @@ test("relayed desktop starts treat JSON null as an omitted option and validate t
   // The backend forwards a client's omitted fps and bitrate as null.
   assert.deepEqual(validateRelayedDesktopStart({ peerId: "peer", displayId: 1, fps: null, bitrateBps: null }), { displayId: 1, fps: undefined, bitrateBps: undefined })
   assert.deepEqual(validateRelayedDesktopStart({ peerId: "peer", displayId: 2, fps: 30, bitrateBps: 8_000_000 }), { displayId: 2, fps: 30, bitrateBps: 8_000_000 })
+  assert.equal(validateRelayedDesktopStart({ displayId: 2, control: true }).control, true)
+  assert.equal(validateRelayedDesktopStart({ displayId: 2, control: false }).control, false)
+  assert.throws(() => validateRelayedDesktopStart({ displayId: 2, control: "true" }), /control setting/)
+  assert.throws(() => validateControlParams("start", { sessionId: "desktop", displayId: 2, control: 1 }), /control setting/)
   assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: null }), /display ID/)
   assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: 1, fps: 0 }), /frame rate/)
   assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: 1, bitrateBps: "fast" }), /bitrate/)

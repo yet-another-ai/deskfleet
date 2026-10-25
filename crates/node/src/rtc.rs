@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use deskfleet_native::{media::DesktopStream, rtc};
+use deskfleet_native::{input::InputWorker, media::DesktopStream, rtc};
 use napi::bindgen_prelude::Buffer;
 use napi::{Error, Result};
 use napi_derive::napi;
@@ -156,6 +156,7 @@ impl From<rtc::PeerEvent> for PeerEvent {
 pub struct NativePeer {
     peer: Arc<rtc::Peer>,
     desktop: Mutex<Option<DesktopStream>>,
+    input: Mutex<Option<InputWorker>>,
 }
 
 /// Create a transport without accessing a display or initializing an encoder.
@@ -183,6 +184,7 @@ pub async fn create_peer(config: PeerConfig) -> Result<NativePeer> {
     Ok(NativePeer {
         peer: Arc::new(rtc::Peer::new(config).await.map_err(native_error)?),
         desktop: Mutex::new(None),
+        input: Mutex::new(None),
     })
 }
 
@@ -263,32 +265,71 @@ impl NativePeer {
         if desktop.is_some() {
             return Err(native_error("desktop stream is already started"));
         }
-        *desktop = Some(
-            DesktopStream::start(Arc::clone(&self.peer), config.into())
-                .await
-                .map_err(native_error)?,
-        );
+        let input = if config.control.unwrap_or(false) {
+            Some(
+                InputWorker::start(config.display_id)
+                    .await
+                    .map_err(native_error)?,
+            )
+        } else {
+            None
+        };
+        let stream = match DesktopStream::start(Arc::clone(&self.peer), config.into()).await {
+            Ok(stream) => stream,
+            Err(error) => {
+                if let Some(input) = input {
+                    input.stop().await.map_err(native_error)?;
+                }
+                return Err(native_error(error));
+            }
+        };
+        *desktop = Some(stream);
+        *self.input.lock().await = input;
         Ok(())
+    }
+
+    /// Apply a desktop DataChannel message after the daemon checks its control grant.
+    #[napi]
+    pub async fn send_desktop_input(&self, message: String) -> Result<()> {
+        if message.len() > 4096 {
+            return Err(native_error("desktop input message is too large"));
+        }
+        let event = serde_json::from_str(&message).map_err(native_error)?;
+        let input = self.input.lock().await;
+        input
+            .as_ref()
+            .ok_or_else(|| native_error("desktop control is not enabled"))?
+            .handle(event)
+            .await
+            .map_err(native_error)
     }
 
     #[napi]
     pub async fn stop_desktop(&self) -> Result<()> {
         let mut desktop = self.desktop.lock().await;
+        let input = match self.input.lock().await.take() {
+            Some(input) => input.stop().await.map_err(native_error),
+            None => Ok(()),
+        };
         if let Some(stream) = desktop.take() {
             stream.stop().await.map_err(native_error)?;
         }
-        Ok(())
+        input
     }
 
     /// Stop capture before closing the transport, including after media failure.
     #[napi]
     pub async fn close(&self) -> Result<()> {
         let mut desktop = self.desktop.lock().await;
+        let input = match self.input.lock().await.take() {
+            Some(input) => input.stop().await.map_err(native_error),
+            None => Ok(()),
+        };
         let media = match desktop.take() {
             Some(stream) => stream.stop().await.map_err(native_error),
             None => Ok(()),
         };
         let transport = self.peer.close().await.map_err(native_error);
-        media.and(transport)
+        input.and(media).and(transport)
     }
 }

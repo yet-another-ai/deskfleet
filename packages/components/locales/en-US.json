@@ -58,6 +58,10 @@
     "screenCaptureRequesting": "Requesting access to record the screen and system audio…",
     "screenCaptureDenied": "Allow access in macOS System Settings → Privacy & Security → Screen & System Audio Recording, then turn the local Agent off and on.",
     "screenCaptureError": "Could not request screen and system audio access. Turn the local Agent off and on to retry.",
+    "desktopPermissions": "Desktop permissions",
+    "accessibilityRequesting": "Requesting Accessibility access for mouse and keyboard control…",
+    "accessibilityDenied": "Allow mouse and keyboard control in macOS System Settings → Privacy & Security → Accessibility, then turn the local Agent off and on.",
+    "accessibilityError": "Could not request Accessibility access for mouse and keyboard control. Turn the local Agent off and on to retry.",
     "agents": "Agents"
   },
   "notification": {
@@ -171,6 +175,10 @@
     "displayOption": "Display {id} · {width} × {height}",
     "codecStatus": "Video codec: {codec}",
     "audio": "System audio",
+    "control": "Mouse and keyboard control",
+    "pauseControl": "Pause control",
+    "resumeControl": "Resume control",
+    "controlHint": "Click the desktop to send mouse and keyboard input.",
     "video": "Remote desktop video",
     "checking": "Checking the local desktop…",
     "ready": "Choose a display and connect to start sharing. Video codec: {codec}.",
