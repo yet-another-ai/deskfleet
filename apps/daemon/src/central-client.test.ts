@@ -16,15 +16,17 @@ import { centralUrl } from "./central-protocol.ts"
 
 test("local discovery grants only host setup and never imports development resources", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-central-auth-"))
-  context.after(() => rm(directory, { recursive: true, force: true }))
   const development = await startDaemon(0, { controlDirectory: directory, allowLocalControlForTests: true, requestScreenCaptureAccess: async () => null })
   const old = await DaemonClient.connect(() => {}, () => {}, directory)
   await old.call("workspaceCreate", { name: "Development data", directories: [{ path: directory }] })
   old.close(); await development.close()
   const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
-  context.after(() => daemon.close())
   const client = await DaemonClient.connect(() => {}, () => {}, directory)
-  context.after(() => client.close())
+  context.after(async () => {
+    client.close()
+    await daemon.close()
+    await rm(directory, { recursive: true, force: true })
+  })
   const status = await client.call("centralStatus", {})
   assert.equal(status.configured, false)
   assert.equal(status.connected, false)
@@ -36,7 +38,6 @@ test("local discovery grants only host setup and never imports development resou
 test("enrollment verifies local machine identity and saves only a private daemon credential", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-enroll-"))
   const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
-  context.after(async () => { await daemon.close(); await rm(directory, { recursive: true, force: true }) })
   const identity = daemon.central.status().identity
   let originId = "wrong"
   const server = createServer((request, response) => {
@@ -46,7 +47,11 @@ test("enrollment verifies local machine identity and saves only a private daemon
   })
   server.on("upgrade", (_request, socket) => socket.destroy())
   server.listen(0, "127.0.0.1"); await once(server, "listening")
-  context.after(() => server.close())
+  context.after(async () => {
+    await daemon.close()
+    await server[Symbol.asyncDispose]()
+    await rm(directory, { recursive: true, force: true })
+  })
   const credentials = { serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, machineId: "machine", teamId: "team", token: "machine-secret" }
   await assert.rejects(daemon.central.enroll(credentials), /do not match/)
   originId = identity.originId
