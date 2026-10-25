@@ -17,6 +17,9 @@ const MAX_INPUT_BYTES: usize = 64 * 1024;
 #[cfg(unix)]
 mod unix;
 
+#[cfg(windows)]
+mod windows;
+
 #[cfg(any(windows, test))]
 mod cursor_query;
 
@@ -121,6 +124,8 @@ impl Handles {
         lock(&self.writer).take();
         lock(&self.master).take();
         result?;
+        #[cfg(windows)]
+        windows::wait_for_termination(&**child)?;
         child.wait().map_err(|error| backend("wait", error))?;
         Ok(())
     }

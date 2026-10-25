@@ -25,6 +25,9 @@ portable-pty.workspace = true
 filedescriptor.workspace = true
 nix.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Win32_System_Threading"] }
+
 [dev-dependencies]
 serde.workspace = true
 serde_json.workspace = true

@@ -169,6 +169,37 @@ async fn close_releases_workers_with_a_running_foreground_job() {
     .expect("workers must release PTY handles");
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn close_releases_working_directory_before_returning() {
+    for _ in 0..4 {
+        let directory = std::env::temp_dir().join(format!(
+            "df-terminal-close-{}-{}",
+            std::process::id(),
+            rand::random::<u64>(),
+        ));
+        std::fs::create_dir(&directory).expect("create terminal cwd");
+        let mut config = config();
+        config.cwd = directory.clone();
+        let mut shell = CommandBuilder::new("cmd.exe");
+        shell.args(["/D", "/Q"]);
+        let terminal = tokio::time::timeout(
+            Duration::from_secs(5),
+            Terminal::spawn_command(config, shell),
+        )
+        .await
+        .expect("spawn timeout")
+        .expect("spawn");
+        tokio::time::timeout(Duration::from_secs(5), terminal.close())
+            .await
+            .expect("close timeout")
+            .expect("close");
+        // Keep the Terminal alive: close itself must release the child's cwd,
+        // without relying on finalization, a delay, or a deletion retry.
+        std::fs::remove_dir(&directory).expect("closed terminal must release its cwd");
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn shell_exit_does_not_wait_for_a_background_slave_handle() {
