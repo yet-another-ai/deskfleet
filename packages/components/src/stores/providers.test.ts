@@ -7,8 +7,8 @@ import { deferred } from "../test/desktop-media.ts"
 import { useProvidersStore } from "./providers.ts"
 
 let pinia: ReturnType<typeof createPinia>
-beforeEach(() => { pinia = createPinia(); setActivePinia(pinia) })
-afterEach(() => { disposePinia(pinia); vi.restoreAllMocks() })
+beforeEach(() => { localStorage.clear(); pinia = createPinia(); setActivePinia(pinia) })
+afterEach(() => { disposePinia(pinia); vi.restoreAllMocks(); localStorage.clear() })
 const snapshot = (ids: string[]): ProviderSnapshot => ({
   templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }],
   providers: ids.map(id => ({ id, template: "codex", name: id, env: {} })),
@@ -46,6 +46,21 @@ test("a change during a pending read refreshes before publishing stale options",
   expect(store.selectedId).toBe("new")
   store.$dispose()
   expect(unsubscribe).toHaveBeenCalledOnce()
+})
+
+test("restores the persisted draft provider instead of the first registry entry", async () => {
+  localStorage.setItem("deskfleet.agent-configuration", JSON.stringify({ provider: "second", model: "kept", reasoningEffort: "high" }))
+  vi.spyOn(platformClient.providers, "list").mockResolvedValue(snapshot(["first", "second"]))
+  const store = useProvidersStore()
+  await store.refresh()
+  expect(store.selectedId).toBe("second")
+  store.selectedId = "first"
+  await store.refresh()
+  expect(store.selectedId).toBe("first")
+  localStorage.setItem("deskfleet.agent-configuration", JSON.stringify({ provider: "removed" }))
+  store.selectedId = ""
+  await store.refresh()
+  expect(store.selectedId).toBe("first")
 })
 
 test("a disconnected daemon disables creation until a successful refresh", async () => {

@@ -3,6 +3,20 @@ import { defineStore } from "pinia"
 import { onScopeDispose, ref } from "vue"
 import type { ProviderDisplay } from "@deskfleet/client/providers"
 
+/** Draft Agent choices persist separately; restore that provider when this process has not chosen one. */
+function persistedDraftProvider(): string {
+  const storage = globalThis.localStorage
+  if (!storage) return ""
+  try {
+    const raw = storage.getItem("deskfleet.agent-configuration")
+    if (!raw) return ""
+    const parsed = JSON.parse(raw) as { provider?: unknown }
+    return typeof parsed.provider === "string" ? parsed.provider : ""
+  } catch {
+    return ""
+  }
+}
+
 /** The local daemon owns these settings; all windows refresh after a mutation. */
 export const useProvidersStore = defineStore("providers", () => {
   const providers = ref<ProviderDisplay[]>([])
@@ -27,7 +41,10 @@ export const useProvidersStore = defineStore("providers", () => {
           if (disposed) return
           if (refreshRequested) continue
           providers.value = snapshot.providers
-          if (!providers.value.some(provider => provider.id === selectedId.value)) selectedId.value = providers.value[0]?.id ?? ""
+          if (!providers.value.some(provider => provider.id === selectedId.value)) {
+            const remembered = persistedDraftProvider()
+            selectedId.value = providers.value.find(provider => provider.id === remembered)?.id ?? providers.value[0]?.id ?? ""
+          }
           ready.value = true
           loaded.value = true
           error.value = null
