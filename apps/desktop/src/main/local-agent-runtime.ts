@@ -20,14 +20,16 @@ export interface LocalAgentRuntimeOptions {
 
 /** Hosts the daemon library in the app process: it outlives windows, not the app. */
 export function createLocalAgentRuntime(options: LocalAgentRuntimeOptions): LocalAgentRuntime {
-  const start = options.start ?? (directory => startDaemon(0, { controlDirectory: directory }))
+  const start = options.start ?? (directory => startDaemon(0, { controlDirectory: directory, permissionMode: "guided" }))
   let hosted: HostedDaemon | undefined
   return {
     async connect(onDisconnect, onPermissionsChanged) {
       let permissions: DesktopPermissionsState | undefined
+      let permissionsRevision = 0
       const client = await DaemonClient.connect(event => {
         if (event.kind !== "desktopPermissionsChanged") return
         permissions = event.permissions
+        permissionsRevision += 1
         onPermissionsChanged(permissions)
       }, onDisconnect, options.directory)
       return {
@@ -35,9 +37,22 @@ export function createLocalAgentRuntime(options: LocalAgentRuntimeOptions): Loca
         // Events can arrive alongside hello, before connect() resolves.
         get desktopPermissions() {
           return permissions ?? {
+            fullDiskAccessPermission: client.info!.fullDiskAccessPermission,
             screenCapturePermission: client.info!.screenCapturePermission,
             accessibilityPermission: client.info!.accessibilityPermission,
           }
+        },
+        refreshPermissions: async () => {
+          const revision = permissionsRevision
+          const result = await client.call("permissionsRefresh", {})
+          if (revision === permissionsRevision) permissions = result
+          return permissions!
+        },
+        requestPermission: async permission => {
+          const revision = permissionsRevision
+          const result = await client.call("permissionRequest", { permission })
+          if (revision === permissionsRevision) permissions = result
+          return permissions!
         },
         shutdown: async () => { await client.call("shutdown", {}) },
         close: () => client.close(),

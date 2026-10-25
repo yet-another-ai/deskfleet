@@ -82,6 +82,24 @@ export interface CatalogWorktree {
   directories: Array<CatalogDirectory>
 }
 
+/**
+ * Check Accessibility access without prompting or initializing input.
+ * Resolves with null on platforms without an upfront permission request.
+ */
+export declare function checkAccessibilityAccess(): Promise<boolean | null>
+
+/**
+ * Check this process's Full Disk Access without opening macOS settings.
+ * Resolves with null on platforms without an upfront permission request.
+ */
+export declare function checkFullDiskAccess(): Promise<boolean | null>
+
+/**
+ * Check screen/system-audio access without prompting or starting capture.
+ * Resolves with null on platforms without an upfront permission request.
+ */
+export declare function checkScreenCaptureAccess(): Promise<boolean | null>
+
 /** Create a transport without accessing a display or initializing an encoder. */
 export declare function createPeer(config: PeerConfig): Promise<NativePeer>
 
@@ -161,6 +179,12 @@ export interface PeerEvent {
  * Resolves with null on platforms without an upfront permission request.
  */
 export declare function requestAccessibilityAccess(): Promise<boolean | null>
+
+/**
+ * Check this process's Full Disk Access and open macOS settings when denied.
+ * Resolves with false while user authorization is required, or null elsewhere.
+ */
+export declare function requestFullDiskAccess(): Promise<boolean | null>
 
 /**
  * Request this process's screen/system-audio access without starting capture.

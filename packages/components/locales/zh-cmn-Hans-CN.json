@@ -59,6 +59,9 @@
     "screenCaptureDenied": "请在 macOS 系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许访问，然后关闭并重新开启本地 Agent。",
     "screenCaptureError": "无法请求屏幕与系统音频录制权限。请关闭并重新开启本地 Agent 以重试。",
     "desktopPermissions": "桌面权限",
+    "fullDiskAccessRequesting": "正在为本地 Agent 请求完全磁盘访问权限…",
+    "fullDiskAccessDenied": "请在 macOS 系统设置 → 隐私与安全性 → 完全磁盘访问权限中，授权运行本地 Agent 的应用或可执行文件，然后重新启动该应用或可执行文件。",
+    "fullDiskAccessError": "无法请求完全磁盘访问权限。请重新启动运行本地 Agent 的应用或可执行文件以重试。",
     "accessibilityRequesting": "正在请求用于鼠标和键盘控制的辅助功能权限…",
     "accessibilityDenied": "请在 macOS 系统设置 → 隐私与安全性 → 辅助功能中允许鼠标和键盘控制，然后关闭并重新开启本地 Agent。",
     "accessibilityError": "无法请求用于鼠标和键盘控制的辅助功能权限。请关闭并重新开启本地 Agent 以重试。",
@@ -590,7 +593,6 @@
     "emptyDescription": "团队成员在团队机器上运行智能体和打开终端。连接此电脑或一台服务器即可开始。"
   },
   "files": {
-    "allowLocalPreviews": "允许预览本地文件",
     "title": "文件传输",
     "local": "本机",
     "chooseFolder": "选择文件夹",
@@ -621,5 +623,56 @@
       "conflict": "已存在"
     },
     "showHidden": "显示隐藏项目"
+  },
+  "welcome": {
+    "title": "欢迎使用 deskfleet",
+    "description": "连接团队的后端服务器，按步骤完成这台电脑的设置。",
+    "progress": "设置进度",
+    "steps": {
+      "server": "后端服务器",
+      "fullDiskAccess": "完全磁盘访问权限",
+      "screenCapture": "屏幕录制",
+      "accessibility": "辅助功能",
+      "account": "登录账户"
+    },
+    "stepCount": "第 {current} 步，共 {total} 步",
+    "serverTitle": "连接后端服务器",
+    "serverDescription": "输入团队的 deskfleet 后端地址。你的账户和机器将连接到此服务器。",
+    "savingServer": "正在保存服务器…",
+    "continue": "继续",
+    "continueAs": "以 {name} 的身份继续",
+    "systemSettings": "macOS 系统设置",
+    "permissionRestart": "在列表中为 deskfleet 开启权限。如果 macOS 要求退出并重新打开应用，设置流程会从这里继续。",
+    "openSettings": "开启权限",
+    "checking": "正在检查…",
+    "checkAgain": "重新检查",
+    "skip": "暂时跳过",
+    "retry": "重试",
+    "loading": "正在加载 deskfleet…",
+    "permissionStatus": {
+      "checking": "正在检查权限…",
+      "requesting": "正在等待 macOS 授权…",
+      "granted": "权限已开启",
+      "not-required": "无需额外权限",
+      "denied": "尚未开启权限",
+      "error": "无法检查权限"
+    },
+    "permissions": {
+      "fullDiskAccess": {
+        "description": "允许本地 Agent 访问受保护文件夹中的文件，用于文件预览和工作区操作。",
+        "path": "隐私与安全性 → 完全磁盘访问权限",
+        "skip": "你可以先使用有限的文件访问功能，稍后在系统设置中开启此权限。"
+      },
+      "screenCapture": {
+        "description": "允许 deskfleet 在远程桌面会话中共享这台电脑的屏幕和系统音频。",
+        "path": "隐私与安全性 → 屏幕与系统录音",
+        "skip": "开启此权限之前，无法使用远程屏幕共享。你可以稍后在系统设置中开启。"
+      },
+      "accessibility": {
+        "description": "允许远程桌面会话控制这台电脑的鼠标和键盘。",
+        "path": "隐私与安全性 → 辅助功能",
+        "skip": "开启此权限之前，无法远程控制鼠标和键盘。你可以稍后在系统设置中开启。"
+      }
+    }
   }
 }

@@ -107,10 +107,27 @@ its 24-hour deadline. Closing a viewer does not stop Agents or PTYs. History
 synchronization replays durable events and command receipts after reconnect;
 terminal bytes and desktop media are not synchronized centrally.
 
-On macOS startup requests screen/system-audio access without blocking other
-operations. Denial does not stop the daemon. Capture initializes on demand; see
-[media permissions](../../agents/docs/media.md). Data-only Agent and terminal
+On macOS standalone creation requests Full Disk Access, screen/system-audio access, and
+Accessibility without blocking other operations. Full Disk Access is checked
+in the hosting process; when missing, the daemon opens System Settings → Privacy
+& Security → Full Disk Access and reports instructions to stderr. Enable the
+hosting app or executable there and restart it. Apple requires this manual step;
+the daemon cannot grant itself permission. The check infers access by opening a
+protected TCC database without reading its contents; unexpected probe failures
+remain errors. Other platforms require no upfront Full Disk Access request.
+Denial does not stop the daemon; protected file operations retain OS enforcement.
+Capture initializes on demand; see [media permissions](../../agents/docs/media.md).
+Data-only Agent and terminal
 peers do not require capture permission.
+
+Electron passes `permissionMode: "guided"` when creating the daemon. This checks
+all three permissions without showing OS dialogs. Its welcome page invokes the
+authenticated local `permissionRequest` operation for one permission at a time;
+`permissionsRefresh` rechecks status after the user returns from System Settings.
+Pending requests do not block IPC or shutdown, and repeated requests for a
+pending permission share that request. The native checks and dialogs always run
+in the daemon's hosting process, including when Electron reuses a standalone
+daemon. These operations grant no Team or machine-resource authority.
 
 The library exports `startDaemon()`, `close()`, and a `closed` promise. Importing
 it does not launch the CLI. Electron hosts the daemon in its main process and

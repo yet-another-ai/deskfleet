@@ -28,14 +28,12 @@ test("file bridge accepts explicit endpoints and rejects malformed write request
 })
 
 test("file bridge forwards opaque grants and rejects malformed grant identifiers", async () => {
-  const list = vi.fn(async () => ({})), authorizeLocalSession = vi.fn(async () => ({ kind: "local", grantId: "issued" }))
-  const api = { list, authorizeLocalSession } as unknown as FilesApi
+  const list = vi.fn(async () => ({}))
+  const api = { list } as unknown as FilesApi
   await invokeFiles(api, "list", [{ kind: "local", grantId: "issued" }, "/selected"])
   expect(list).toHaveBeenCalledWith({ kind: "local", grantId: "issued" }, "/selected")
   await expect(invokeFiles(api, "list", [{ kind: "local", grantId: {} }])).rejects.toThrow("identifier")
   await expect(invokeFiles(api, "list", [{ kind: "local", grantId: "bad\0token" }])).rejects.toThrow("identifier")
-  expect(await invokeFiles(api, "authorizeLocalSession", ["session", "/renderer-claimed-root"])).toEqual({ kind: "local", grantId: "issued" })
-  expect(authorizeLocalSession).toHaveBeenCalledWith("session")
 })
 
 class TestContents extends EventEmitter {

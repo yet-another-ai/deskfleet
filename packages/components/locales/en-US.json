@@ -59,6 +59,9 @@
     "screenCaptureDenied": "Allow access in macOS System Settings → Privacy & Security → Screen & System Audio Recording, then turn the local Agent off and on.",
     "screenCaptureError": "Could not request screen and system audio access. Turn the local Agent off and on to retry.",
     "desktopPermissions": "Desktop permissions",
+    "fullDiskAccessRequesting": "Requesting Full Disk Access for the local Agent…",
+    "fullDiskAccessDenied": "Grant Full Disk Access to the app or executable running the local Agent in macOS System Settings → Privacy & Security → Full Disk Access, then restart that app or executable.",
+    "fullDiskAccessError": "Could not request Full Disk Access. Restart the app or executable running the local Agent to retry.",
     "accessibilityRequesting": "Requesting Accessibility access for mouse and keyboard control…",
     "accessibilityDenied": "Allow mouse and keyboard control in macOS System Settings → Privacy & Security → Accessibility, then turn the local Agent off and on.",
     "accessibilityError": "Could not request Accessibility access for mouse and keyboard control. Turn the local Agent off and on to retry.",
@@ -590,7 +593,6 @@
     "emptyDescription": "Team members run agents and open terminals on the team’s machines. Connect this computer or a server to get started."
   },
   "files": {
-    "allowLocalPreviews": "Allow local file previews",
     "title": "File transfer",
     "local": "This computer",
     "chooseFolder": "Choose folder",
@@ -621,5 +623,56 @@
       "conflict": "Exists"
     },
     "showHidden": "Show hidden items"
+  },
+  "welcome": {
+    "title": "Welcome to deskfleet",
+    "description": "Connect to your team’s server and get this computer ready, one step at a time.",
+    "progress": "Setup progress",
+    "steps": {
+      "server": "Backend server",
+      "fullDiskAccess": "Full Disk Access",
+      "screenCapture": "Screen recording",
+      "accessibility": "Accessibility",
+      "account": "Your account"
+    },
+    "stepCount": "Step {current} of {total}",
+    "serverTitle": "Connect your server",
+    "serverDescription": "Enter the address of your team’s deskfleet backend. Your account and machines will connect to this server.",
+    "savingServer": "Saving server…",
+    "continue": "Continue",
+    "continueAs": "Continue as {name}",
+    "systemSettings": "macOS System Settings",
+    "permissionRestart": "Enable deskfleet in the list. If macOS asks you to quit and reopen the app, your setup will resume here.",
+    "openSettings": "Enable access",
+    "checking": "Checking…",
+    "checkAgain": "Check again",
+    "skip": "Skip for now",
+    "retry": "Try again",
+    "loading": "Loading deskfleet…",
+    "permissionStatus": {
+      "checking": "Checking access…",
+      "requesting": "Waiting for macOS authorization…",
+      "granted": "Access enabled",
+      "not-required": "No additional permission needed",
+      "denied": "Access is not enabled yet",
+      "error": "Could not check access"
+    },
+    "permissions": {
+      "fullDiskAccess": {
+        "description": "Allow the local agent to work with files in protected folders, including file previews and workspace files.",
+        "path": "Privacy & Security → Full Disk Access",
+        "skip": "You can continue with limited file access and enable this permission later in System Settings."
+      },
+      "screenCapture": {
+        "description": "Allow deskfleet to share this computer’s screen and system audio during remote desktop sessions.",
+        "path": "Privacy & Security → Screen & System Audio Recording",
+        "skip": "Remote screen sharing will be unavailable until you enable this permission in System Settings."
+      },
+      "accessibility": {
+        "description": "Allow remote desktop sessions to control the mouse and keyboard on this computer.",
+        "path": "Privacy & Security → Accessibility",
+        "skip": "Remote mouse and keyboard control will be unavailable until you enable this permission in System Settings."
+      }
+    }
   }
 }

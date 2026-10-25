@@ -72,6 +72,26 @@ export function captureDisplays(): Promise<DisplayInfo[]> {
   return (bindings ??= loadBindings()).captureDisplays()
 }
 
+/** Check the daemon's Full Disk Access without opening macOS settings; null elsewhere. */
+export function checkFullDiskAccess(): Promise<boolean | null> {
+  return (bindings ??= loadBindings()).checkFullDiskAccess()
+}
+
+/** Check screen recording access without prompting or starting capture; null elsewhere. */
+export function checkScreenCaptureAccess(): Promise<boolean | null> {
+  return (bindings ??= loadBindings()).checkScreenCaptureAccess()
+}
+
+/** Check Accessibility without prompting or opening an input controller; null elsewhere. */
+export function checkAccessibilityAccess(): Promise<boolean | null> {
+  return (bindings ??= loadBindings()).checkAccessibilityAccess()
+}
+
+/** Check the daemon's Full Disk Access and open macOS settings if needed; null elsewhere. */
+export function requestFullDiskAccess(): Promise<boolean | null> {
+  return (bindings ??= loadBindings()).requestFullDiskAccess()
+}
+
 /** Request permission in the calling process; null means no upfront request on this platform. */
 export function requestScreenCaptureAccess(): Promise<boolean | null> {
   return (bindings ??= loadBindings()).requestScreenCaptureAccess()

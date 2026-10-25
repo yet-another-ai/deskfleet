@@ -46,6 +46,21 @@ pub enum InputError {
 /// Result returned by the input backend.
 pub type Result<T> = std::result::Result<T, InputError>;
 
+/// Check Accessibility consent without prompting or initializing input.
+///
+/// Returns `None` on platforms without an upfront permission request.
+#[must_use]
+pub fn check_accessibility_access() -> Option<bool> {
+    #[cfg(target_os = "macos")]
+    {
+        Some(objc2_core_graphics::CGPreflightPostEventAccess())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 /// Request Accessibility consent for this process during daemon startup.
 ///
 /// Existing macOS consent is checked before requesting access. This does not

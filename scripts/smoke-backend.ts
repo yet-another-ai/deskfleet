@@ -64,7 +64,7 @@ try {
     await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
     const provider = new BackendAgent()
     providers.push(provider)
-    const daemon = await startDaemon(0, { controlDirectory, agentProvider: provider, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => null })
+    const daemon = await startDaemon(0, { controlDirectory, agentProvider: provider, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
     daemons.push(daemon)
     const { identity } = daemon.central.status()
     const enrollment: { machine: { id: string }; token: string } = await admin(`/teams/${teamId}/machines`, {
@@ -229,7 +229,7 @@ try {
   console.log("Offline Agent history remains readable, terminal output stays local, and offline archive is rejected")
 
   const hostDirectory = join(directory, "daemon-0")
-  daemons[0] = await startDaemon(0, { controlDirectory: hostDirectory, agentProvider: providers[0], requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => null })
+  daemons[0] = await startDaemon(0, { controlDirectory: hostDirectory, agentProvider: providers[0], requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const oldOrigin = daemons[0]!.central.status().identity.originId
   await until(() => daemons[0]!.central.status(), value => value.connected, "machine restarts before removal")
   await admin(`/machines/${machines[0]}`, undefined, "DELETE")
@@ -259,7 +259,7 @@ try {
   assert.match(retainedGit.stdout, /README\.md/u)
   assert.match(retainedGit.stdout, /untracked\.txt/u)
   await daemons[0]!.close()
-  daemons[0] = await startDaemon(0, { controlDirectory: hostDirectory, agentProvider: providers[0], requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => null })
+  daemons[0] = await startDaemon(0, { controlDirectory: hostDirectory, agentProvider: providers[0], requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   assert.equal(daemons[0]!.central.status().identity.originId, freshOrigin)
   console.log("A removed machine re-enrolls into its original team with empty data; retired worktree paths and history stay intact")
 } catch (error) {

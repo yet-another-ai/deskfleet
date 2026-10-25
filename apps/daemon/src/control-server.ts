@@ -178,10 +178,12 @@ class ControlConnection {
     }
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")
     if (this.#closing) throw new Error("Local daemon connection is closed")
-    if (!this.#allowLocalControlForTests && !["shutdown", "capabilities", "centralStatus", "centralEnroll", "centralPrepareEnrollment"].includes(request.method)) {
+    if (!this.#allowLocalControlForTests && !["shutdown", "capabilities", "centralStatus", "centralEnroll", "centralPrepareEnrollment", "permissionsRefresh", "permissionRequest"].includes(request.method)) {
       throw new Error("Sign in and select a team; manage machine resources through the backend API")
     }
     switch (request.method) {
+      case "permissionsRefresh": return this.#permissions.refresh()
+      case "permissionRequest": return this.#permissions.requestPermission(request.params.permission)
       case "centralStatus": return this.#central().status()
       case "centralPrepareEnrollment": return this.#prepareEnrollment()
       case "centralEnroll": return this.#central().enroll(request.params)

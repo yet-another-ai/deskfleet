@@ -6,6 +6,8 @@ import { installCentralAccount } from "../../src/main/central-account.ts"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
+import { OnboardingController } from "../../src/main/onboarding-controller.ts"
+import { installOnboarding } from "../../src/main/onboarding.ts"
 import { KeepAwakeController } from "../../src/main/keep-awake.ts"
 import { NotificationSettingsController } from "../../src/main/notification-settings.ts"
 import { WorktreeRootSettingsController } from "../../src/main/worktree-root-settings.ts"
@@ -246,12 +248,16 @@ void app.whenReady().then(async () => {
     installSettings(controller, keepAwake, new NotificationSettingsController(join(app.getPath("userData"), "notifications.json")), new WorktreeRootSettingsController(context.daemonDirectory))
     keepAwake.get()
     await controller.initialize()
-    await installCentralAccount({ openAuthorization: async url => {
+    const central = await installCentralAccount({ openAuthorization: async url => {
       const browser = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } })
       authorizations.push(browser)
       browser.webContents.on("console-message", (event) => { if (event.level === "error") process.stderr.write(`${event.message}\n`) })
       await browser.loadURL(url)
     } })
+    // This fixture exercises signed-in clients; smoke-startup covers first-run setup.
+    const onboardingPath = join(context.profileDirectory, "onboarding.json")
+    await writeFile(onboardingPath, JSON.stringify({ step: "complete" }))
+    installOnboarding(new OnboardingController({ path: onboardingPath, platform: process.platform, central, localAgent: controller }))
     protocol.handle(RENDERER_SCHEME, request => {
       const path = resolveRendererResourcePath(request.url, context.rendererDirectory)
       return path ? net.fetch(pathToFileURL(path).toString()) : new Response(null, { status: 400 })

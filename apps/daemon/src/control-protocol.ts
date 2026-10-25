@@ -88,7 +88,11 @@ export interface DesktopPermission {
 export interface DesktopPermissionsState {
   screenCapturePermission: DesktopPermission
   accessibilityPermission: DesktopPermission
+  fullDiskAccessPermission: DesktopPermission
 }
+
+export const DESKTOP_PERMISSION_KINDS = ["fullDiskAccess", "screenCapture", "accessibility"] as const
+export type DesktopPermissionKind = typeof DESKTOP_PERMISSION_KINDS[number]
 
 export interface LocalDaemonInfo extends DesktopPermissionsState {
   name: string
@@ -99,6 +103,8 @@ export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent | P
   | { kind: "desktopPermissionsChanged"; permissions: DesktopPermissionsState }
 
 export interface ControlMethods extends CatalogMethods, FilesystemMethods, ProviderMethods {
+  permissionsRefresh: { params: Record<string, never>; result: DesktopPermissionsState }
+  permissionRequest: { params: { permission: DesktopPermissionKind }; result: DesktopPermissionsState }
   centralStatus: { params: Record<string, never>; result: CentralStatus }
   centralPrepareEnrollment: { params: Record<string, never>; result: CentralStatus }
   centralEnroll: { params: MachineEnrollment; result: CentralStatus }

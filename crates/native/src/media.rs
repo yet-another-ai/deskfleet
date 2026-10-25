@@ -32,6 +32,8 @@ pub enum MediaError {
     VideoEncoder(EncoderError),
     #[error("media worker failed: {0}")]
     Worker(#[from] tokio::task::JoinError),
+    #[error("cannot open Screen Recording settings: {0}")]
+    PermissionSettings(#[source] std::io::Error),
     #[error("media transport failed: {0}")]
     Transport(String),
     #[error("media worker stopped during startup")]
@@ -77,15 +79,35 @@ pub async fn displays() -> Result<Vec<Display>, MediaError> {
     Ok(tokio::task::spawn_blocking(deskfleet_capture::displays).await??)
 }
 
+/// Check capture permission on a worker without prompting or starting capture.
+///
+/// Returns `None` on platforms without an upfront permission request.
+///
+/// # Errors
+/// Returns an error if the permission worker fails.
+pub async fn check_screen_capture_access() -> Result<Option<bool>, MediaError> {
+    Ok(tokio::task::spawn_blocking(deskfleet_capture::check_screen_capture_access).await?)
+}
+
 /// Request capture permission on a worker without starting capture or encoders.
+/// Opens the macOS privacy pane when access remains denied.
 ///
 /// Returns `None` on platforms without an upfront permission request.
 ///
 /// # Errors
 ///
-/// Returns an error if the permission worker fails.
+/// Returns an error if the permission worker or System Settings fails.
 pub async fn request_screen_capture_access() -> Result<Option<bool>, MediaError> {
-    Ok(tokio::task::spawn_blocking(deskfleet_capture::request_screen_capture_access).await?)
+    tokio::task::spawn_blocking(|| {
+        let granted = deskfleet_capture::request_screen_capture_access();
+        #[cfg(target_os = "macos")]
+        if granted == Some(false) {
+            crate::permission_settings::open("Privacy_ScreenCapture")
+                .map_err(MediaError::PermissionSettings)?;
+        }
+        Ok(granted)
+    })
+    .await?
 }
 
 #[derive(Debug, Clone)]

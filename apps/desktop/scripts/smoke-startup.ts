@@ -16,6 +16,7 @@ const executable = createRequire(import.meta.url)("electron") as string
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-startup-smoke-")))
 const profile = join(directory, "profile")
 const daemonDirectory = join(directory, "daemon")
+const screenshotDirectory = process.env.DESKFLEET_STARTUP_SCREENSHOTS
 const env: NodeJS.ProcessEnv = { ...process.env, DESKFLEET_DAEMON_DIRECTORY: daemonDirectory }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.DESKFLEET_RENDERER_URL
@@ -26,6 +27,7 @@ let diagnostics = ""
 let nextId = 0
 
 function launch(args: string[]): void {
+  diagnostics = ""
   const child = spawn(executable, [appPath, ...args], {
     env, stdio: ["ignore", "ignore", "pipe"],
   })
@@ -36,10 +38,10 @@ function launch(args: string[]): void {
 
 async function stop(): Promise<void> {
   socket?.close()
+  socket = undefined
   if (!client || client.exitCode !== null || client.signalCode !== null) return
-  client.kill("SIGTERM")
   const timer = setTimeout(() => client?.kill("SIGKILL"), 5_000)
-  try { await exited } finally { clearTimeout(timer) }
+  try { await requestQuit(); await exited } finally { clearTimeout(timer) }
 }
 
 async function until<T>(read: () => Promise<T | undefined>): Promise<T> {
@@ -55,7 +57,7 @@ async function until<T>(read: () => Promise<T | undefined>): Promise<T> {
   throw new Error("Production Electron startup timed out")
 }
 
-async function evaluate<T>(expression: string): Promise<T> {
+async function protocol<T>(method: string, params: Record<string, unknown>): Promise<T> {
   const id = ++nextId
   return new Promise<T>((resolveResult, reject) => {
     const timer = setTimeout(() => finish(new Error("Renderer evaluation timed out")), 5_000)
@@ -69,11 +71,43 @@ async function evaluate<T>(expression: string): Promise<T> {
       const message = JSON.parse(String(event.data))
       if (message.id !== id) return
       if (message.error || message.result?.exceptionDetails) finish(new Error(JSON.stringify(message.error ?? message.result.exceptionDetails)))
-      else finish(undefined, message.result.result.value as T)
+      else finish(undefined, message.result as T)
     }
     socket!.addEventListener("message", receive)
-    socket!.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }))
+    socket!.send(JSON.stringify({ id, method, params }))
   })
+}
+
+async function evaluate<T>(expression: string): Promise<T> {
+  const result = await protocol<{ result: { value: T } }>("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true })
+  return result.result.value
+}
+
+async function inspectRenderer(): Promise<void> {
+  await rm(join(profile, "DevToolsActivePort"), { force: true })
+  launch([`--user-data-dir=${profile}`, "--remote-debugging-port=0", ...process.platform === "win32" ? ["--inspect=0"] : []])
+  const port = await until(async () => {
+    const contents = await readFile(join(profile, "DevToolsActivePort"), "utf8").catch(() => "")
+    return contents ? Number(contents.split("\n")[0]) : undefined
+  })
+  const target = await until(async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/json/list`)
+    const targets = await response.json() as { type: string; url: string; webSocketDebuggerUrl: string }[]
+    return targets.find(value => value.type === "page" && value.url.startsWith("deskfleet-app://bundle/index.html"))
+  })
+  socket = new WebSocket(target.webSocketDebuggerUrl)
+  await new Promise<void>((resolveOpen, reject) => {
+    socket!.addEventListener("open", () => resolveOpen(), { once: true })
+    socket!.addEventListener("error", () => reject(new Error("Could not inspect the production renderer")), { once: true })
+  })
+  await until(async () => await evaluate<boolean>("document.readyState === 'complete' && !!document.querySelector('#root input[type=url]') && !!window.deskfleet?.onboarding") ? true : undefined)
+}
+
+async function screenshot(name: string): Promise<void> {
+  if (!screenshotDirectory) return
+  await mkdir(screenshotDirectory, { recursive: true })
+  const result = await protocol<{ data: string }>("Page.captureScreenshot", { format: "png" })
+  await writeFile(join(screenshotDirectory, `${name}.png`), Buffer.from(result.data, "base64"))
 }
 
 async function requestQuit(): Promise<void> {
@@ -111,6 +145,7 @@ async function probeHostedDaemon(): Promise<void> {
   const hostProfile = join(directory, "host-profile")
   await mkdir(hostProfile)
   await writeFile(join(hostProfile, "settings.json"), JSON.stringify({ localAgentEnabled: true }))
+  await writeFile(join(hostProfile, "onboarding.json"), JSON.stringify({ step: "complete" }))
   launch([`--user-data-dir=${hostProfile}`, ...process.platform === "win32" ? ["--inspect=0"] : []])
   const control = await until(async () => {
     try { return await DaemonClient.connect(() => {}, () => {}, daemonDirectory) }
@@ -140,23 +175,46 @@ async function probeHostedDaemon(): Promise<void> {
 try {
   await stat(join(appPath, "out/main/index.js"))
   await mkdir(profile)
-  await writeFile(join(profile, "settings.json"), JSON.stringify({ localAgentEnabled: false }))
-  launch([`--user-data-dir=${profile}`, "--remote-debugging-port=0"])
-  const port = await until(async () => {
-    const contents = await readFile(join(profile, "DevToolsActivePort"), "utf8").catch(() => "")
-    return contents ? Number(contents.split("\n")[0]) : undefined
-  })
-  const target = await until(async () => {
-    const response = await fetch(`http://127.0.0.1:${port}/json/list`)
-    const targets = await response.json() as { type: string; url: string; webSocketDebuggerUrl: string }[]
-    return targets.find(value => value.type === "page" && value.url.startsWith("deskfleet-app://bundle/index.html"))
-  })
-  socket = new WebSocket(target.webSocketDebuggerUrl)
-  await new Promise<void>((resolveOpen, reject) => {
-    socket!.addEventListener("open", () => resolveOpen(), { once: true })
-    socket!.addEventListener("error", () => reject(new Error("Could not inspect the production renderer")), { once: true })
-  })
-  await until(async () => await evaluate<boolean>("document.readyState === 'complete' && !!document.querySelector('#root input[type=url]') && !!window.deskfleet?.central") ? true : undefined)
+  await inspectRenderer()
+  assert.deepEqual(await evaluate("window.deskfleet.onboarding.get()"), { step: "server" })
+  assert.deepEqual(await evaluate("window.deskfleet.settings.get()"), { enabled: true, status: "stopped" })
+  await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
+  await screenshot("welcome-server")
+
+  // Exercise the production form and IPC, without needing an OIDC server.
+  await evaluate(`(() => {
+    const input = document.querySelector('input[name="server-url"]');
+    input.value = "https://deskfleet.example.com";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.form.requestSubmit();
+  })()`)
+  const firstStep = process.platform === "darwin" ? "fullDiskAccess" : "account"
+  await until(async () => (await evaluate<{ step: string }>("window.deskfleet.onboarding.get()")).step === firstStep ? true : undefined)
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
+  await stat(join(daemonDirectory, "daemon.json"))
+  // macOS permission dialogs require manual interaction; skip them through
+  // their production API so this smoke does not change machine permissions.
+  if (process.platform === "darwin") {
+    for (const permission of ["fullDiskAccess", "screenCapture", "accessibility"]) {
+      await evaluate(`window.deskfleet.onboarding.advancePermission(${JSON.stringify(permission)})`)
+    }
+  }
+  assert.deepEqual(JSON.parse(await readFile(join(profile, "onboarding.json"), "utf8")), { step: "account" })
+  await stop()
+
+  // An unfinished welcome resumes at account, with the saved backend address.
+  await inspectRenderer()
+  assert.deepEqual(await evaluate("window.deskfleet.onboarding.get()"), { step: "account" })
+  assert.equal(await evaluate("document.querySelector('input[name=server-url]').value"), "https://deskfleet.example.com")
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
+  await screenshot("welcome-account")
+  // The UI completes this after OIDC; exercise persisted host progress here.
+  assert.deepEqual(await evaluate("window.deskfleet.onboarding.complete()"), { step: "complete" })
+  await evaluate("window.deskfleet.settings.setLocalAgentEnabled(false)")
+  await stop()
+
+  await inspectRenderer()
+  assert.deepEqual(await evaluate("window.deskfleet.onboarding.get()"), { step: "complete" })
   assert.deepEqual(await evaluate("window.deskfleet.settings.get()"), { enabled: false, status: "stopped" })
   await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
   await stop()
@@ -171,7 +229,7 @@ try {
   })
   assert.equal(claudeVersion.stdout.trim(), dependencies["@agentclientprotocol/claude-agent-acp"])
   await probeHostedDaemon()
-  console.log("Electron startup smoke passed: account UI, Codex and Claude Code adapters, hosted daemon identity, and authenticated management boundary")
+  console.log("Electron startup smoke passed: welcome server setup, saved progress, disabled auto-start, Codex and Claude Code adapters, hosted daemon identity, and authenticated management boundary")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error

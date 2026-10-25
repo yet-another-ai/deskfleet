@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { Bell, SlidersHorizontal, Users } from "@lucide/vue"
-import { defineAsyncComponent, onBeforeUnmount, provide } from "vue"
+import { defineAsyncComponent, onBeforeUnmount, provide, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import type { OnboardingState } from "@deskfleet/client/onboarding"
 import AddMachineDialog from "./components/account/AddMachineDialog.vue"
 import MachineOnboarding from "./components/account/MachineOnboarding.vue"
-import SignIn from "./components/account/SignIn.vue"
+import WelcomePage from "./components/account/WelcomePage.vue"
+import BrandLogo from "./components/common/BrandLogo.vue"
 import TeamAccessDialog from "./components/account/TeamAccessDialog.vue"
 import TeamOnboarding from "./components/account/TeamOnboarding.vue"
 import PreferencesSettings from "./components/settings/PreferencesSettings.vue"
@@ -28,6 +30,14 @@ const session = createAccountSession(props.host.central!, props.host.initialErro
 const { ready, account, teams, team, machine, dialog, shellSettings } = session
 provide(accountSessionKey, session)
 onBeforeUnmount(session.dispose)
+const onboarding = ref<OnboardingState | undefined>(props.host.onboarding ? undefined : { step: "complete" })
+const onboardingError = ref<string>()
+async function loadOnboarding(): Promise<void> {
+  onboardingError.value = undefined
+  try { onboarding.value = await props.host.onboarding!.get() }
+  catch (reason) { onboardingError.value = reason instanceof Error ? reason.message : String(reason) }
+}
+if (props.host.onboarding) void loadOnboarding()
 const section = (value: AccountSettingsSection) => [
   "ui-nav-item w-full cursor-pointer px-2.5 text-left",
   shellSettings.value === value && "ui-nav-active",
@@ -36,8 +46,8 @@ const section = (value: AccountSettingsSection) => [
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-ui-canvas text-ui-text">
-    <template v-if="ready">
-      <SignIn v-if="!account.user" :platform="host.platform" />
+    <template v-if="ready && onboarding">
+      <WelcomePage v-if="onboarding.step !== 'complete' || !account.user" :host="host" :state="onboarding" @change="onboarding = $event" />
       <!-- Each selected machine runs in its own application scope; see MachineSurface. -->
       <MachineSurface v-else-if="machine" :key="machine.id" :host="host" :session="session" :machine="machine" />
       <SettingsLayout v-else-if="shellSettings" @back="shellSettings = undefined">
@@ -65,6 +75,14 @@ const section = (value: AccountSettingsSection) => [
         </main>
       </div>
     </template>
+    <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6">
+      <BrandLogo :size="48" />
+      <template v-if="onboardingError">
+        <p role="alert" class="m-0 text-sm text-ui-danger">{{ onboardingError }}</p>
+        <button type="button" class="ui-button" @click="loadOnboarding">{{ t("welcome.retry") }}</button>
+      </template>
+      <p v-else role="status" class="m-0 text-sm text-ui-text-muted">{{ t("welcome.loading") }}</p>
+    </div>
     <TeamAccessDialog v-if="dialog === 'create-team' || dialog === 'join-team'" :mode="dialog === 'create-team' ? 'create' : 'join'" @close="dialog = undefined" />
     <AddMachineDialog v-if="dialog === 'add-machine' && team" @close="dialog = undefined" />
   </div>

@@ -1,4 +1,4 @@
-import type { ControlMethod, ControlMethods, ControlRequest, DesktopStart } from "./control-protocol.ts"
+import { DESKTOP_PERMISSION_KINDS, type ControlMethod, type ControlMethods, type ControlRequest, type DesktopStart } from "./control-protocol.ts"
 import { resourceId, validateCatalogParams } from "./catalog-protocol.ts"
 import { validateProviderParams } from "./provider-protocol.ts"
 
@@ -41,6 +41,11 @@ export function validateRelayedDesktopStart(value: unknown): Omit<DesktopStart, 
 export function validateControlParams<M extends ControlMethod>(method: M, value: unknown): ControlMethods[M]["params"] {
   const params = object(value)
   switch (method) {
+    case "permissionRequest":
+      if (!DESKTOP_PERMISSION_KINDS.some(kind => kind === params.permission)) throw new Error("Unknown system permission")
+      break
+    case "permissionsRefresh":
+      break
     case "providerList":
     case "providerCreate":
     case "providerUpdate":

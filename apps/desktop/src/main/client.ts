@@ -10,6 +10,8 @@ import { keepRunningInBackground } from "./lifecycle.ts"
 import { KeepAwakeController } from "./keep-awake.ts"
 import { LocalAgentController } from "./local-agent-controller.ts"
 import { createLocalAgentRuntime } from "./local-agent-runtime.ts"
+import { OnboardingController } from "./onboarding-controller.ts"
+import { installOnboarding } from "./onboarding.ts"
 import { NotificationSettingsController } from "./notification-settings.ts"
 import { DesktopNotifications } from "./notifications.ts"
 import { TaskNotificationMonitor } from "./task-notification-monitor.ts"
@@ -51,6 +53,8 @@ function start(): void {
       publishLocalAgentState,
     )
     const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), powerSaveBlocker)
+    const onboarding = new OnboardingController({ path: join(app.getPath("userData"), "onboarding.json"), platform: process.platform, central, localAgent })
+    installOnboarding(onboarding)
     const notificationSettings = new NotificationSettingsController(join(app.getPath("userData"), "notifications.json"))
     const notifications = new DesktopNotifications(notificationSettings, show)
     const notificationMonitor = new TaskNotificationMonitor(central, notification => notifications.notify(notification), console.error)
@@ -70,7 +74,9 @@ function start(): void {
       )
     })
     try { keepAwake.get() } catch (error) { console.error(error) }
-    await localAgent.initialize()
+    let startLocalAgent = false
+    try { startLocalAgent = (await onboarding.get()).step !== "server" } catch (error) { console.error(error) }
+    await localAgent.initialize({ start: startLocalAgent })
     if (lifecycle.quitting) return
     createTray({ show, quit: () => lifecycle.quit() })
     show()

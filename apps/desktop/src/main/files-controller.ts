@@ -1,4 +1,3 @@
-import { realpath } from "node:fs/promises"
 import type { FileEndpoint } from "../../../daemon/src/files-protocol.ts"
 import { FileTransferManager } from "@deskfleet/client/file-transfers"
 import type { FileConflict, FileListing, FileResourceRequest, FilesApi, FileTarget, FileTransfer, FileTransferRequest } from "@deskfleet/client/files"
@@ -6,7 +5,6 @@ import { FileGrants } from "./files-grants.ts"
 
 interface FileDialogs {
   chooseDirectory(): Promise<string | null>
-  confirmSession(directory: string): Promise<boolean>
   confirmOverwrite(path: string): Promise<boolean>
 }
 
@@ -16,6 +14,7 @@ export class WindowFiles implements FilesApi {
   readonly #manager: FileTransferManager
   readonly #dialogs: FileDialogs
   readonly #sessionDirectory: (sessionId: string) => Promise<string>
+  readonly #sessionTargets = new Map<string, Promise<FileTarget>>()
   #closed = false
 
   constructor(options: FileDialogs & {
@@ -54,16 +53,20 @@ export class WindowFiles implements FilesApi {
       return this.list(target)
     })
   }
-  async authorizeLocalSession(sessionId: string): Promise<FileTarget | null> {
-    return this.#live(async () => {
-      // The renderer supplies an identifier, never the root to be authorized.
-      const directory = await realpath(await this.#sessionDirectory(sessionId))
-      this.#check()
-      if (!await this.#dialogs.confirmSession(directory)) return null
-      this.#check()
-      if (await realpath(await this.#sessionDirectory(sessionId)) !== directory) throw new Error("Session directory changed; authorize it again")
-      return this.#grants.issue(directory, { read: true, write: false, sessionId })
-    })
+  async #resource(request: FileResourceRequest): Promise<FileResourceRequest> {
+    if (request.target.kind !== "local" || request.target.grantId) return request
+    const { sessionId } = request
+    let target = this.#sessionTargets.get(sessionId)
+    if (!target) {
+      target = this.#live(async () => {
+        // Only the daemon supplies the captured root; the renderer supplies a Session identifier.
+        const directory = await this.#sessionDirectory(sessionId)
+        this.#check()
+        return this.#grants.issue(directory, { read: true, write: false, sessionId })
+      }).catch(error => { this.#sessionTargets.delete(sessionId); throw error })
+      this.#sessionTargets.set(sessionId, target)
+    }
+    return { ...request, target: await target }
   }
   async enqueue(request: FileTransferRequest): Promise<string> {
     return this.#live(async () => {
@@ -77,13 +80,14 @@ export class WindowFiles implements FilesApi {
   cancel(id: string): Promise<void> { return this.#live(() => this.#manager.cancel(id)) }
   retry(id: string, conflict?: FileConflict): Promise<void> { return this.#live(() => this.#manager.retry(id, conflict)) }
   onChanged(listener: (transfers: FileTransfer[]) => void): () => void { return this.#manager.onChanged(listener) }
-  resolveResource(request: FileResourceRequest) { return this.#live(() => this.#manager.resolveResource(request)) }
-  readResource(request: FileResourceRequest) { return this.#live(() => this.#manager.readResource(request)) }
-  saveResource(request: FileResourceRequest) { return this.#live(() => this.#manager.saveResource(request)) }
+  resolveResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.resolveResource(await this.#resource(request))) }
+  readResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.readResource(await this.#resource(request))) }
+  saveResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.saveResource(await this.#resource(request))) }
 
   async close(): Promise<void> {
     if (this.#closed) return
     this.#closed = true
+    this.#sessionTargets.clear()
     this.#grants.revoke()
     await Promise.all([this.#manager.close(), this.#grants.close()])
   }

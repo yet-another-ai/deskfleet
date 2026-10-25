@@ -40,10 +40,6 @@ export async function invokeFiles(api: FilesApi, method: unknown, args: unknown)
   switch (method) {
     case "list": return api.list(target(args[0]), args[1] === undefined ? undefined : text(args[1]))
     case "chooseLocalDirectory": return api.chooseLocalDirectory()
-    case "authorizeLocalSession": {
-      if (!api.authorizeLocalSession) throw new Error("Local Session authorization is unavailable")
-      return api.authorizeLocalSession(text(args[0]))
-    }
     case "enqueue": {
       const request = object(args[0])
       if (request.kind !== undefined && request.kind !== "file" && request.kind !== "directory") throw new Error("Invalid file kind")
@@ -102,10 +98,6 @@ export function installFiles(central: CentralApi): { close(): Promise<void> } {
         })
         return result.canceled ? null : result.filePaths[0] ?? null
       },
-      confirmSession: async directory => (await dialog.showMessageBox(window, {
-        type: "question", title: "Allow local Session files", message: "Allow previews and downloads from this Session folder?",
-        detail: directory, buttons: ["Cancel", "Allow reading"], defaultId: 0, cancelId: 0, noLink: true,
-      })).response === 1,
       confirmOverwrite: async path => (await dialog.showMessageBox(window, {
         type: "warning", title: "Replace local files", message: "Replace this item and all of its contents?",
         detail: path, buttons: ["Cancel", "Replace"], defaultId: 0, cancelId: 0, noLink: true,

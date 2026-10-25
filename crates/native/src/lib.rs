@@ -1,7 +1,10 @@
 //! Native platform capabilities, independent of Node.js and the HTTP server.
 
+pub mod filesystem_permissions;
 pub mod input;
 pub mod media;
+#[cfg(target_os = "macos")]
+mod permission_settings;
 pub mod rtc;
 pub mod terminal;
 

@@ -9,6 +9,7 @@ import { PROVIDERS_CHANGED_EVENT } from "../../../../packages/client/src/provide
 import type { LocalAgentState } from "../../../../packages/client/src/local-agent.ts"
 import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type SettingsResult } from "../../../../packages/client/src/settings.ts"
 import { filesApi } from "./files.ts"
+import { onboardingApi } from "./onboarding.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -42,7 +43,7 @@ const peerSignaling = {
 
 export function desktopApi(central?: CentralApi): DeskfleetDesktopApi {
 return {
-  ...(central ? { central } : {}),
+  ...(central ? { central, onboarding: onboardingApi() } : {}),
   platform: process.platform as DeskfleetDesktopApi["platform"],
   locale: isAppLocale(locale) ? locale : DEFAULT_LOCALE,
   files: filesApi(),

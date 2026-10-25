@@ -327,6 +327,25 @@ shows the app. Delivery depends on backend synchronization and the operating
 system's notification settings. Electron's native notification API requires a
 signed macOS application; see the [Electron notification documentation](https://www.electronjs.org/docs/latest/api/notification).
 
+## Welcome and initial setup
+
+The welcome page configures the backend server, guides macOS Full Disk Access,
+screen/system-audio recording, and Accessibility in that order, then signs in.
+The desktop host saves the current step in `onboarding.json` under `userData`;
+closing the window or restarting the app resumes the unfinished step. A fresh
+profile does not start its local Agent or open permission dialogs before the
+server step is submitted. Saving the server starts or reuses the local Agent
+when its saved preference is enabled. A disabled local Agent and platforms that
+do not require these permissions proceed directly to sign-in.
+
+Each permission page explains the capability and provides an explicit request,
+a status refresh, and a way to continue without it. Returning from System
+Settings refreshes permission status silently. Full Disk Access must be enabled
+for the app or executable hosting the Agent; restart that host if macOS requires
+it. Permission denial does not prevent sign-in or unrelated Agent operations.
+Completed setup is not repeated at each launch. Signed-out users and Web clients
+use the same welcome design for server selection and account sign-in.
+
 ## Local Agent
 
 **Settings → Preferences → Run local Agent** is enabled by default. The main process stores
@@ -336,13 +355,13 @@ reuses the authenticated daemon already serving the same discovery directory,
 such as a standalone SEA. There is no separate Node.js or daemon installation
 to configure, and the app starts no separate daemon process.
 
-On macOS, a newly started Agent immediately requests screen/system-audio recording
-access. Settings shows a permission notice while access is pending, denied, or
-unavailable; granted access has no notice. The Agent's running status stays
-separate. If access was previously denied, enable it in System Settings → Privacy
-& Security → Screen & System Audio Recording, then turn the local Agent off and
-on. Waiting for consent or denying it leaves terminals and other Agent work
-available. Reusing an already running Agent does not repeat the request.
+Creating the local Agent checks OS access without opening permission dialogs;
+the welcome flow guides explicit requests one at a time. Local Session file
+previews load automatically, without a separate permission button or confirmation
+dialog. Settings shows a notice while OS access is pending, denied, or unavailable;
+granted access has no notice. The Agent's running status stays separate. Waiting
+for consent or denying it leaves other Agent work available, subject to OS file
+permissions. Reusing an already running Agent does not repeat its startup requests.
 
 Turning the switch off requests authenticated daemon shutdown, including active
 agent and terminal processes, and waits for cleanup. Workspace data, conversation

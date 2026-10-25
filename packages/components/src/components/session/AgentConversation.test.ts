@@ -11,54 +11,47 @@ const originalFiles = client.files, originalCentral = client.central
 let wrapper: VueWrapper | undefined
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; client.files = originalFiles; client.central = originalCentral })
 
-function setup(authorizeLocalSession = vi.fn<NonNullable<FilesApi["authorizeLocalSession"]>>().mockResolvedValue({ kind: "local", grantId: "preview" })) {
+function setup(target: FileTarget = { kind: "local" }) {
   let event!: (value: CentralEvent) => void
   const unsubscribe = vi.fn()
   client.central = { onEvent: (listener: (value: CentralEvent) => void) => { event = listener; return unsubscribe } } as unknown as CentralApi
   const readResource = vi.fn().mockRejectedValue(new Error("No image data in this fixture"))
-  client.files = { authorizeLocalSession, readResource } as unknown as FilesApi
+  client.files = { readResource } as unknown as FilesApi
   const snapshot = agentSnapshot()
   const events = [agentEvent(1, "acp", { sessionId: "provider-session", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "![Chart](chart.png)" } } })]
-  wrapper = mount(AgentConversation, { props: { snapshot, events, resourceTarget: { kind: "local" } }, global: { plugins: [i18n] } })
-  return { view: wrapper, snapshot, authorizeLocalSession, readResource, event, unsubscribe }
+  wrapper = mount(AgentConversation, { props: { snapshot, events, resourceTarget: target }, global: { plugins: [i18n] } })
+  return { view: wrapper, snapshot, readResource, event, unsubscribe }
 }
 
-test("local previews wait for user authorization and retain the grant across streamed snapshots", async () => {
-  const { view, snapshot, authorizeLocalSession, readResource, event, unsubscribe } = setup()
+test("local previews load automatically and keep their Session context across streamed snapshots", async () => {
+  const { view, snapshot, readResource, event, unsubscribe } = setup()
   await flushPromises()
-  expect(authorizeLocalSession).not.toHaveBeenCalled()
-  expect(readResource).not.toHaveBeenCalled()
-  await view.get('button').trigger("click")
-  await flushPromises()
-  expect(authorizeLocalSession).toHaveBeenCalledExactlyOnceWith(snapshot.session.id)
-  expect(readResource).toHaveBeenCalledExactlyOnceWith({ target: { kind: "local", grantId: "preview" }, sessionId: snapshot.session.id, uri: "chart.png" })
+  expect(readResource).toHaveBeenCalledExactlyOnceWith({ target: { kind: "local" }, sessionId: snapshot.session.id, uri: "chart.png" })
   await view.setProps({ snapshot: structuredClone(snapshot) })
+  expect(readResource).toHaveBeenCalledOnce()
   expect(view.text()).not.toContain("Allow local file previews")
   event({ type: "accountChanged" })
   await flushPromises()
-  expect(view.text()).toContain("Allow local file previews")
+  expect(readResource).toHaveBeenCalledOnce()
+  expect(view.get("[data-resource-retry]").attributes("title")).toContain("unavailable")
   wrapper!.unmount(); wrapper = undefined
   expect(unsubscribe).toHaveBeenCalledOnce()
 })
 
-test("a Session change discards pending authorization", async () => {
-  let finish!: (value: FileTarget | null) => void
-  const pending = vi.fn<NonNullable<FilesApi["authorizeLocalSession"]>>(() => new Promise(resolve => { finish = resolve }))
-  const { view, snapshot, readResource } = setup(pending)
-  await view.get('button').trigger("click")
-  await view.setProps({ snapshot: { ...snapshot, session: { ...snapshot.session, id: "other" } } })
-  finish({ kind: "local", grantId: "stale" })
+test("a Session change reads its resources automatically with the new context", async () => {
+  const { view, snapshot, readResource } = setup()
   await flushPromises()
-  expect(readResource).not.toHaveBeenCalled()
-  expect(view.text()).toContain("Allow local file previews")
+  await view.setProps({ snapshot: { ...snapshot, session: { ...snapshot.session, id: "other" } } })
+  await flushPromises()
+  expect(readResource).toHaveBeenLastCalledWith({ target: { kind: "local" }, sessionId: "other", uri: "chart.png" })
+  expect(readResource).toHaveBeenCalledTimes(2)
+  expect(view.text()).not.toContain("Allow local file previews")
 })
 
 test("remote previews retain their existing automatic read flow", async () => {
-  const { view, authorizeLocalSession, readResource, snapshot } = setup()
   const remote = { kind: "machine", machineId: "machine", teamId: "team" } as const
-  await view.setProps({ resourceTarget: remote })
+  const { view, readResource, snapshot } = setup(remote)
   await flushPromises()
-  expect(authorizeLocalSession).not.toHaveBeenCalled()
   expect(readResource).toHaveBeenCalledExactlyOnceWith({ target: remote, sessionId: snapshot.session.id, uri: "chart.png" })
   expect(view.text()).not.toContain("Allow local file previews")
 })

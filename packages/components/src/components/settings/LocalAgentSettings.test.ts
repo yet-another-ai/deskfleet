@@ -146,6 +146,25 @@ test("groups independent screen and input permission changes without changing Ag
   expect(view.find('[role="alert"]').exists()).toBe(false)
 })
 
+test.each(["en-US", "zh-cmn-Hans-CN"] as const)("shows automatic Full Disk Access status and system settings instructions in %s", async locale => {
+  i18n.global.locale.value = locale
+  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, fullDiskAccessPermission: { status: "requesting" } })
+  const view = render()
+  await flushPromises()
+  expect(view.get('[data-full-disk-access-permission="requesting"][role="status"]').text()).toBe(i18n.global.t("settings.fullDiskAccessRequesting"))
+  changed({ ...running, fullDiskAccessPermission: { status: "denied" } })
+  await flushPromises()
+  expect(view.get('[data-full-disk-access-permission="denied"][role="alert"]').text()).toBe(locale === "en-US"
+    ? "Grant Full Disk Access to the app or executable running the local Agent in macOS System Settings → Privacy & Security → Full Disk Access, then restart that app or executable."
+    : "请在 macOS 系统设置 → 隐私与安全性 → 完全磁盘访问权限中，授权运行本地 Agent 的应用或可执行文件，然后重新启动该应用或可执行文件。")
+  expect(view.find("button.ui-button").exists()).toBe(false)
+  expect(view.get('[role="switch"]').attributes("aria-checked")).toBe("true")
+  expect(view.get('[role="switch"]').attributes("disabled")).toBeUndefined()
+  changed({ ...running, fullDiskAccessPermission: { status: "granted" } })
+  await flushPromises()
+  expect(view.find("[data-desktop-permissions]").exists()).toBe(false)
+})
+
 test.each(["response", "error"])("preserves a newer permission event when the pending start returns a stale %s", async result => {
   vi.mocked(platformClient.settings.get).mockResolvedValue(stopped)
   let started!: (state: LocalAgentState) => void
@@ -168,25 +187,28 @@ test.each(["response", "error"])("preserves a newer permission event when the pe
 })
 
 test.each(["granted", "not-required"] as const)("hides normal desktop permission status %s and notices when the Agent stops", async status => {
-  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, screenCapturePermission: { status }, accessibilityPermission: { status } })
+  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, fullDiskAccessPermission: { status }, screenCapturePermission: { status }, accessibilityPermission: { status } })
   const view = render()
   await flushPromises()
   expect(view.find("[data-screen-capture-permission]").exists()).toBe(false)
   expect(view.find("[data-accessibility-permission]").exists()).toBe(false)
-  changed({ ...running, screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })
+  expect(view.find("[data-full-disk-access-permission]").exists()).toBe(false)
+  changed({ ...running, fullDiskAccessPermission: { status: "requesting" }, screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })
   await flushPromises()
   expect(view.find("[data-screen-capture-permission]").exists()).toBe(true)
   expect(view.find("[data-accessibility-permission]").exists()).toBe(true)
-  changed({ ...stopped, screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })
+  expect(view.find("[data-full-disk-access-permission]").exists()).toBe(true)
+  changed({ ...stopped, fullDiskAccessPermission: { status: "requesting" }, screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })
   await flushPromises()
   expect(view.find("[data-screen-capture-permission]").exists()).toBe(false)
   expect(view.find("[data-accessibility-permission]").exists()).toBe(false)
+  expect(view.find("[data-full-disk-access-permission]").exists()).toBe(false)
   expect(view.get('[role="status"]').text()).toBe("Stopped")
 })
 
-test("localizes both permission errors and shows native errors separately from Agent health", async () => {
+test("localizes permission errors and shows native errors separately from Agent health", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
-  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, screenCapturePermission: { status: "error", error: "Capture request failed" }, accessibilityPermission: { status: "error", error: "Accessibility request failed" } })
+  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, fullDiskAccessPermission: { status: "error", error: "Full Disk Access request failed" }, screenCapturePermission: { status: "error", error: "Capture request failed" }, accessibilityPermission: { status: "error", error: "Accessibility request failed" } })
   const view = render()
   await flushPromises()
   const notice = view.get('[data-screen-capture-permission="error"][role="alert"]')
@@ -195,6 +217,9 @@ test("localizes both permission errors and shows native errors separately from A
   const accessibility = view.get('[data-accessibility-permission="error"][role="alert"]')
   expect(accessibility.text()).toContain("无法请求用于鼠标和键盘控制的辅助功能权限。请关闭并重新开启本地 Agent 以重试。")
   expect(accessibility.text()).toContain("Accessibility request failed")
+  const fullDiskAccess = view.get('[data-full-disk-access-permission="error"][role="alert"]')
+  expect(fullDiskAccess.text()).toContain("无法请求完全磁盘访问权限。请重新启动运行本地 Agent 的应用或可执行文件以重试。")
+  expect(fullDiskAccess.text()).toContain("Full Disk Access request failed")
   expect(view.get('[role="status"]').text()).toBe("运行中")
   expect(view.find("button.ui-button").exists()).toBe(false)
 })

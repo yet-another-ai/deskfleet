@@ -16,11 +16,11 @@ import { centralUrl } from "./central-protocol.ts"
 
 test("local discovery grants only host setup and never imports development resources", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-central-auth-"))
-  const development = await startDaemon(0, { controlDirectory: directory, allowLocalControlForTests: true, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
+  const development = await startDaemon(0, { controlDirectory: directory, allowLocalControlForTests: true, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const old = await DaemonClient.connect(() => {}, () => {}, directory)
   await old.call("workspaceCreate", { name: "Development data", directories: [{ path: directory }] })
   old.close(); await development.close()
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
+  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const client = await DaemonClient.connect(() => {}, () => {}, directory)
   context.after(async () => {
     client.close()
@@ -37,7 +37,7 @@ test("local discovery grants only host setup and never imports development resou
 
 test("enrollment verifies local machine identity and saves only a private daemon credential", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-enroll-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
+  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const identity = daemon.central.status().identity
   let originId = "wrong"
   const server = createServer((request, response) => {

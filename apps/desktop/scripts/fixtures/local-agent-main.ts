@@ -316,7 +316,7 @@ void app.whenReady().then(async () => {
   const controller = new LocalAgentController(
     join(app.getPath("userData"), "settings.json"),
     // Automated smoke runs must never display operating-system permission prompts.
-    createLocalAgentRuntime({ directory: context.daemonDirectory, start: controlDirectory => startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false }) }),
+    createLocalAgentRuntime({ directory: context.daemonDirectory, start: controlDirectory => startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false, requestFullDiskAccess: async () => null }) }),
     publishLocalAgentState,
   )
   let blockerId: number | undefined

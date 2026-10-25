@@ -1,10 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { LocalAgentState, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
+import type { OnboardingPermission } from "../../../../packages/client/src/onboarding.ts"
 
 export interface LocalAgentConnection {
   readonly closed: boolean
   readonly desktopPermissions: DesktopPermissionsState
+  refreshPermissions(): Promise<DesktopPermissionsState>
+  requestPermission(permission: OnboardingPermission): Promise<DesktopPermissionsState>
   shutdown(): Promise<void>
   close(): void
 }
@@ -23,7 +26,7 @@ function unavailable(error: unknown): boolean {
     && (error.code === "ENOENT" || error.code === "ECONNREFUSED")
 }
 
-const clearedPermissions = { screenCapturePermission: undefined, accessibilityPermission: undefined }
+const clearedPermissions = { fullDiskAccessPermission: undefined, screenCapturePermission: undefined, accessibilityPermission: undefined }
 
 /** The preference owns explicit start/stop actions; quitting the app stops the daemon it hosts. */
 export class LocalAgentController {
@@ -42,7 +45,7 @@ export class LocalAgentController {
 
   get state(): LocalAgentState { return { ...this.#state } }
 
-  async initialize(): Promise<LocalAgentState> {
+  async initialize(options: { start?: boolean } = {}): Promise<LocalAgentState> {
     try {
       try {
         const stored: unknown = JSON.parse(await readFile(this.#path, "utf8"))
@@ -52,6 +55,7 @@ export class LocalAgentController {
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
       }
+      if (options.start === false) return this.state
       // An external daemon is not stopped just because this client launches
       // with auto-start disabled. Explicitly switching off requests shutdown.
       if (this.#state.enabled) await this.#start()
@@ -61,6 +65,42 @@ export class LocalAgentController {
       }
     } catch (error) { this.#failed(error) }
     return this.state
+  }
+
+  /** Resume startup after the welcome server step without changing the saved preference. */
+  startIfEnabled(): Promise<LocalAgentState> {
+    if (this.#operation) return this.#operation
+    this.#operation = (async () => {
+      try {
+        if (this.#state.enabled) await this.#start()
+        else {
+          this.#connection = await this.#connectIfRunning()
+          this.#update({ status: this.#connection ? "running" : "stopped", ...(this.#connection?.desktopPermissions ?? clearedPermissions) })
+        }
+      } catch (error) { this.#failed(error) }
+      return this.state
+    })().finally(() => { this.#operation = undefined })
+    return this.#operation
+  }
+
+  async refreshPermissions(): Promise<DesktopPermissionsState> {
+    const connection = await this.#permissionConnection()
+    const permissions = await connection.refreshPermissions()
+    if (this.#connection === connection && !connection.closed && this.#state.status === "running") this.#update(permissions)
+    return permissions
+  }
+
+  async requestPermission(permission: OnboardingPermission): Promise<DesktopPermissionsState> {
+    const connection = await this.#permissionConnection()
+    const permissions = await connection.requestPermission(permission)
+    if (this.#connection === connection && !connection.closed && this.#state.status === "running") this.#update(permissions)
+    return permissions
+  }
+
+  async #permissionConnection(): Promise<LocalAgentConnection> {
+    if (!this.#connection || this.#connection.closed) await this.startIfEnabled()
+    if (!this.#connection || this.#connection.closed) throw new Error(this.#state.error ?? "Local Agent is disabled")
+    return this.#connection
   }
 
   setEnabled(enabled: boolean): Promise<LocalAgentState> {

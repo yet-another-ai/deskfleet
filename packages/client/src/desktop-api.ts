@@ -8,11 +8,13 @@ import type { SettingsApi } from "./settings.ts"
 import type { TerminalSignalingApi } from "./terminal.ts"
 import type { AgentSignalingApi } from "./agent.ts"
 import type { ProvidersApi } from "./providers.ts"
+import type { OnboardingApi } from "./onboarding.ts"
 
 /** The preload bridge exposed to the main renderer as `window.deskfleet`. */
 export interface DeskfleetDesktopApi {
   platform: "darwin" | "linux" | "win32" | "web"
   central?: CentralApi
+  onboarding?: OnboardingApi
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
   locale: AppLocale

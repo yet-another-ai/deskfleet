@@ -18,7 +18,7 @@ test("headless daemon serves information from the Rust addon", async context => 
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-test-"))
   const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory,
     openCatalog: (_path, name) => openInMemoryCatalog(name),
-    requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null,
+    requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null,
   })
   context.after(async () => { await (await starting).close(); await rm(directory, { recursive: true, force: true }) })
   const daemon = await starting
@@ -32,7 +32,7 @@ test("headless daemon serves information from the Rust addon", async context => 
 
 test("authenticated shutdown acknowledges before cleanup and releases discovery last", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-shutdown-"))
-  const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
+  const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   let restarting: ReturnType<typeof startDaemon> | undefined
   let releaseCleanup!: () => void
   let cleanupStarted!: () => void
@@ -62,7 +62,7 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
   await cleaning
   assert.deepEqual(await readDaemonDiscovery(directory), discovery)
   await assert.rejects(DaemonClient.connect(() => {}, () => {}, directory))
-  await assert.rejects(startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null }), /already running/)
+  await assert.rejects(startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null }), /already running/)
   assert.deepEqual(await readDaemonDiscovery(directory), discovery)
   assert.equal(daemon.close(), daemon.closed)
   releaseCleanup()
@@ -73,7 +73,7 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
   assert.equal(daemon.close(), daemon.closed)
 
   context.signal.throwIfAborted()
-  restarting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
+  restarting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const restarted = await restarting
   context.signal.throwIfAborted()
   const next = await DaemonClient.connect(() => {}, () => {}, directory)
@@ -82,36 +82,42 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
   await restarted.close()
 })
 
-test("startup requests both desktop permissions once without blocking health and catalog", { timeout: 15_000 }, async context => {
+test("startup requests file and desktop permissions once without blocking health and catalog", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-permission-"))
   const screen = deferred<boolean | null>()
   const accessibility = deferred<boolean | null>()
-  const requests = { screen: 0, accessibility: 0 }
+  const files = deferred<boolean | null>()
+  const requests = { screen: 0, accessibility: 0, files: 0 }
   const starting = startDaemon(0, { allowLocalControlForTests: true,
     controlDirectory: directory,
     openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: () => { requests.screen++; return screen.promise },
     requestAccessibilityAccess: () => { requests.accessibility++; return accessibility.promise },
+    requestFullDiskAccess: () => { requests.files++; return files.promise },
   })
   context.after(async () => {
     screen.resolve(null)
     accessibility.resolve(null)
+    files.resolve(null)
     await (await starting).close()
     await rm(directory, { recursive: true, force: true })
   })
   const daemon = await starting
   context.signal.throwIfAborted()
-  assert.deepEqual(requests, { screen: 1, accessibility: 1 })
+  assert.deepEqual(requests, { screen: 1, accessibility: 1, files: 1 })
   const screenChanged = deferred<DesktopPermission>()
   const accessibilityChanged = deferred<DesktopPermission>()
+  const filesChanged = deferred<DesktopPermission>()
   const client = await DaemonClient.connect(event => {
     if (event.kind !== "desktopPermissionsChanged") return
     if (event.permissions.screenCapturePermission.status !== "requesting") screenChanged.resolve(event.permissions.screenCapturePermission)
     if (event.permissions.accessibilityPermission.status !== "requesting") accessibilityChanged.resolve(event.permissions.accessibilityPermission)
+    if (event.permissions.fullDiskAccessPermission.status !== "requesting") filesChanged.resolve(event.permissions.fullDiskAccessPermission)
   }, () => {}, directory)
   context.after(() => client.close())
   assert.deepEqual(client.info?.screenCapturePermission, { status: "requesting" })
   assert.deepEqual(client.info?.accessibilityPermission, { status: "requesting" })
+  assert.deepEqual(client.info?.fullDiskAccessPermission, { status: "requesting" })
   assert.equal((await fetch(`${daemon.address}/healthz`)).status, 200)
   const workspace = await client.call("workspaceCreate", { name: "During permission request", directories: [{ path: directory }] })
   assert.equal((await client.call("catalogList", {})).workspaces[0]?.id, workspace.id)
@@ -122,9 +128,10 @@ test("startup requests both desktop permissions once without blocking health and
     openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: async () => { competingRequests++; return null },
     requestAccessibilityAccess: async () => { competingRequests++; return null },
+    requestFullDiskAccess: async () => { competingRequests++; return null },
   }), /already running/u)
   assert.equal(competingRequests, 0)
-  assert.deepEqual(requests, { screen: 1, accessibility: 1 })
+  assert.deepEqual(requests, { screen: 1, accessibility: 1, files: 1 })
 
   accessibility.resolve(true)
   assert.deepEqual(await accessibilityChanged.promise, { status: "granted" })
@@ -132,28 +139,35 @@ test("startup requests both desktop permissions once without blocking health and
   context.after(() => pendingObserver.close())
   assert.deepEqual(pendingObserver.info?.screenCapturePermission, { status: "requesting" })
   assert.deepEqual(pendingObserver.info?.accessibilityPermission, { status: "granted" })
+  assert.deepEqual(pendingObserver.info?.fullDiskAccessPermission, { status: "requesting" })
+  files.resolve(true)
+  assert.deepEqual(await filesChanged.promise, { status: "granted" })
   screen.resolve(true)
   assert.deepEqual(await screenChanged.promise, { status: "granted" })
   const observer = await DaemonClient.connect(() => {}, () => {}, directory)
   context.after(() => observer.close())
   assert.deepEqual(observer.info?.screenCapturePermission, { status: "granted" })
   assert.deepEqual(observer.info?.accessibilityPermission, { status: "granted" })
-  assert.deepEqual(requests, { screen: 1, accessibility: 1 })
+  assert.deepEqual(observer.info?.fullDiskAccessPermission, { status: "granted" })
+  assert.deepEqual(requests, { screen: 1, accessibility: 1, files: 1 })
 })
 
-test("daemon shutdown does not wait for either desktop permission response", { timeout: 15_000 }, async context => {
+test("daemon shutdown does not wait for file or desktop permission responses", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-permission-shutdown-"))
   const screen = deferred<boolean | null>()
   const accessibility = deferred<boolean | null>()
+  const files = deferred<boolean | null>()
   const starting = startDaemon(0, {
     allowLocalControlForTests: true, controlDirectory: directory,
     openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: () => screen.promise,
     requestAccessibilityAccess: () => accessibility.promise,
+    requestFullDiskAccess: () => files.promise,
   })
   context.after(async () => {
     screen.resolve(null)
     accessibility.resolve(null)
+    files.resolve(null)
     await (await starting).close()
     await rm(directory, { recursive: true, force: true })
   })
@@ -163,15 +177,63 @@ test("daemon shutdown does not wait for either desktop permission response", { t
   context.after(() => client.close())
   assert.deepEqual(client.info?.screenCapturePermission, { status: "requesting" })
   assert.deepEqual(client.info?.accessibilityPermission, { status: "requesting" })
+  assert.deepEqual(client.info?.fullDiskAccessPermission, { status: "requesting" })
   await client.call("shutdown", {})
   await daemon.closed
   await assert.rejects(readDaemonDiscovery(directory), { code: "ENOENT" })
-  // Both requests are deliberately still pending when shutdown completes.
+  // All requests are deliberately still pending when shutdown completes.
   screen.resolve(false)
   accessibility.resolve(false)
+  files.resolve(false)
 })
 
-for (const permissionKey of ["screenCapturePermission", "accessibilityPermission"] as const) {
+const permissionKeys = ["screenCapturePermission", "accessibilityPermission", "fullDiskAccessPermission"] as const
+
+test("guided daemon setup exposes checks and individual requests through authenticated local IPC", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-daemon-guided-"))
+  const consent = deferred<boolean | null>()
+  let granted = false
+  const requests: string[] = []
+  const daemon = await startDaemon(0, {
+    controlDirectory: directory, permissionMode: "guided",
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
+    checkFullDiskAccess: async () => granted,
+    checkScreenCaptureAccess: async () => false,
+    checkAccessibilityAccess: async () => null,
+    requestFullDiskAccess: () => { requests.push("files"); return consent.promise },
+    requestScreenCaptureAccess: async () => { requests.push("screen"); return true },
+    requestAccessibilityAccess: async () => { requests.push("accessibility"); return true },
+  })
+  context.after(async () => { consent.resolve(null); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
+  const permissionChanged = deferred<DesktopPermission>()
+  const client = await DaemonClient.connect(event => {
+    if (event.kind === "desktopPermissionsChanged" && event.permissions.fullDiskAccessPermission.status === "granted") {
+      permissionChanged.resolve(event.permissions.fullDiskAccessPermission)
+    }
+  }, () => {}, directory)
+  context.after(() => client.close())
+  assert.deepEqual(await client.call("permissionsRefresh", {}), {
+    fullDiskAccessPermission: { status: "denied" },
+    screenCapturePermission: { status: "denied" },
+    accessibilityPermission: { status: "not-required" },
+  })
+  assert.deepEqual(requests, [])
+  await assert.rejects(client.call("permissionRequest", { permission: "unknown" as never }), /Unknown system permission/u)
+  assert.deepEqual(requests, [])
+  assert.equal((await client.call("permissionRequest", { permission: "fullDiskAccess" })).fullDiskAccessPermission.status, "requesting")
+  assert.deepEqual(requests, ["files"])
+  assert.equal((await client.call("permissionsRefresh", {})).fullDiskAccessPermission.status, "requesting")
+  assert.equal((await fetch(`${daemon.address}/healthz`)).status, 200)
+  granted = true
+  consent.resolve(true)
+  assert.deepEqual(await permissionChanged.promise, { status: "granted" })
+  assert.equal((await client.call("permissionsRefresh", {})).fullDiskAccessPermission.status, "granted")
+  assert.deepEqual(requests, ["files"])
+  await client.call("shutdown", {})
+  await daemon.closed
+})
+
+for (const permissionKey of permissionKeys) {
   for (const outcome of [
     { name: "granted", value: true, expected: { status: "granted" } },
     { name: "denied", value: false, expected: { status: "denied" } },
@@ -181,12 +243,13 @@ for (const permissionKey of ["screenCapturePermission", "accessibilityPermission
     test(`a ${outcome.name} ${permissionKey} request leaves the daemon usable and reports its state`, { timeout: 15_000 }, async context => {
       const directory = await mkdtemp(join(tmpdir(), "df-daemon-permission-result-"))
       const permission = deferred<boolean | null>()
-      const otherKey = permissionKey === "screenCapturePermission" ? "accessibilityPermission" : "screenCapturePermission"
+      const otherKeys = permissionKeys.filter(key => key !== permissionKey)
       const starting = startDaemon(0, {
         allowLocalControlForTests: true, controlDirectory: directory,
         openCatalog: (_path, name) => openInMemoryCatalog(name),
         requestScreenCaptureAccess: permissionKey === "screenCapturePermission" ? () => permission.promise : async () => true,
         requestAccessibilityAccess: permissionKey === "accessibilityPermission" ? () => permission.promise : async () => true,
+        requestFullDiskAccess: permissionKey === "fullDiskAccessPermission" ? () => permission.promise : async () => true,
       })
       context.after(async () => {
         permission.resolve(null)
@@ -201,7 +264,7 @@ for (const permissionKey of ["screenCapturePermission", "accessibilityPermission
       }, () => {}, directory)
       context.after(() => client.close())
       assert.deepEqual(client.info?.[permissionKey], { status: "requesting" })
-      assert.deepEqual(client.info?.[otherKey], { status: "granted" })
+      for (const key of otherKeys) assert.deepEqual(client.info?.[key], { status: "granted" })
       if ("error" in outcome) permission.reject(new Error(outcome.error))
       else permission.resolve(outcome.value)
       assert.deepEqual(await changed.promise, outcome.expected)
@@ -210,7 +273,7 @@ for (const permissionKey of ["screenCapturePermission", "accessibilityPermission
       const observer = await DaemonClient.connect(() => {}, () => {}, directory)
       context.after(() => observer.close())
       assert.deepEqual(observer.info?.[permissionKey], outcome.expected)
-      assert.deepEqual(observer.info?.[otherKey], { status: "granted" })
+      for (const key of otherKeys) assert.deepEqual(observer.info?.[key], { status: "granted" })
     })
   }
 }

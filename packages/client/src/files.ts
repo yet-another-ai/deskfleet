@@ -15,8 +15,6 @@ export interface FilesApi {
   list(target: FileTarget, path?: string): Promise<FileListing>
   /** A browser grants access to a local directory; desktop opens a native directory chooser. */
   chooseLocalDirectory(): Promise<FileListing | null>
-  /** Desktop asks for trusted consent to preview the Session's captured local directory. */
-  authorizeLocalSession?(sessionId: string): Promise<FileTarget | null>
   enqueue(request: FileTransferRequest): Promise<string>
   transfers(): Promise<FileTransfer[]>
   cancel(id: string): Promise<void>

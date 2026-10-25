@@ -95,7 +95,7 @@ test("catalog changes have their own event stream and stop after owner disposal"
   expect(emit).not.toHaveBeenCalled()
   expect(emitTerminal).not.toHaveBeenCalled()
 
-  event({ kind: "desktopPermissionsChanged", permissions: { screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "granted" } } })
+  event({ kind: "desktopPermissionsChanged", permissions: { fullDiskAccessPermission: { status: "granted" }, screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "granted" } } })
   expect(emit).not.toHaveBeenCalled()
   expect(emitTerminal).not.toHaveBeenCalled()
   expect(emitCatalog).toHaveBeenCalledTimes(1)

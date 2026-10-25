@@ -71,7 +71,7 @@ export class FileGrants {
     return grant
   }
 
-  /** Call only after main-owned native selection/confirmation, never with an unconfirmed renderer path. */
+  /** Roots come from main-owned folder selection or captured daemon Session context, never renderer paths. */
   async issue(root: string, permissions: Permissions): Promise<LocalTarget> {
     this.#checkActive()
     absoluteGrantPath(root)

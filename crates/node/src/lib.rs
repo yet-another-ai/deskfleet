@@ -13,7 +13,10 @@ pub use catalog::{
     NativeCatalog, open_catalog, open_in_memory_catalog,
 };
 pub use media::{DesktopConfig, DisplayInfo, capture_displays, supported_video_codecs};
-pub use permissions::{request_accessibility_access, request_screen_capture_access};
+pub use permissions::{
+    check_accessibility_access, check_full_disk_access, check_screen_capture_access,
+    request_accessibility_access, request_full_disk_access, request_screen_capture_access,
+};
 pub use rtc::{
     IceCandidate, IceServer, NativePeer, PeerConfig, PeerEvent, VideoCodec, create_peer,
 };

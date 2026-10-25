@@ -26,16 +26,15 @@ async function fixture() {
   await Promise.all([mkdir(source), mkdir(destination)])
   await writeFile(join(source, "hello.txt"), "selected content")
   const chooseDirectory = vi.fn(async (): Promise<string | null> => source)
-  const confirmSession = vi.fn(async (_directory: string) => true)
   const confirmOverwrite = vi.fn(async (_path: string) => false)
   const sessionDirectory = vi.fn(async (_sessionId: string) => source)
   const remoteEndpoint = vi.fn(async () => new FilesService(async () => source))
   const create = () => {
-    const controller = new WindowFiles({ chooseDirectory, confirmSession, confirmOverwrite, sessionDirectory, remoteEndpoint })
+    const controller = new WindowFiles({ chooseDirectory, confirmOverwrite, sessionDirectory, remoteEndpoint })
     controllers.push(controller)
     return controller
   }
-  return { source, destination, chooseDirectory, confirmSession, confirmOverwrite, sessionDirectory, remoteEndpoint, create }
+  return { source, destination, chooseDirectory, confirmOverwrite, sessionDirectory, remoteEndpoint, create }
 }
 async function selected(controller: WindowFiles): Promise<Extract<FileTarget, { kind: "local" }>> {
   const listing = await controller.chooseLocalDirectory()
@@ -73,27 +72,39 @@ test("native directory selection supplies isolated grants for browsing and copyi
   await expect(controller.list(source)).rejects.toThrow("expired")
 })
 
-test("Session consent uses its trusted directory and issues only Session-bound read access", async () => {
+test("Session resources load automatically from a shared read-only captured directory grant", async () => {
   const f = await fixture(), controller = f.create()
-  const target = await controller.authorizeLocalSession("session")
-  expect(target).not.toBeNull()
-  expect(f.confirmSession).toHaveBeenCalledWith(f.source)
-  expect(f.sessionDirectory.mock.calls.every(([id]) => id === "session")).toBe(true)
-  const request = { target: target!, sessionId: "session", uri: "hello.txt" }
+  const request = { target: { kind: "local" } as const, sessionId: "session", uri: "hello.txt" }
+  const [file, preview] = await Promise.all([controller.resolveResource(request), controller.readResource(request)])
+  expect(file.path).toBe(join(f.source, "hello.txt"))
+  expect(new TextDecoder().decode(preview.data)).toBe("selected content")
+  expect(f.sessionDirectory).toHaveBeenCalledExactlyOnceWith("session")
+  expect(f.chooseDirectory).not.toHaveBeenCalled()
+
+  f.chooseDirectory.mockResolvedValueOnce(f.destination)
+  const id = await controller.saveResource(request)
+  const transfer = await finished(controller, id!)
+  expect(transfer.state).toBe("completed")
+  expect(await readFile(join(f.destination, "hello.txt"), "utf8")).toBe("selected content")
+  const target = transfer.source.target
+  expect(target).toMatchObject({ kind: "local", grantId: expect.any(String) })
+  expect(f.sessionDirectory).toHaveBeenCalledOnce()
   expect(new TextDecoder().decode((await controller.readResource(request)).data)).toBe("selected content")
-  await expect(controller.readResource({ ...request, sessionId: "other" })).rejects.toThrow("Session preview")
+  await expect(controller.readResource({ ...request, target, sessionId: "other" })).rejects.toThrow("Session preview")
   await writeFile(join(f.destination, "private.txt"), "private")
   await expect(controller.readResource({ ...request, uri: pathToFileURL(join(f.destination, "private.txt")).href })).rejects.toThrow("outside")
-  await expect(controller.enqueue({ source: { target: target!, path: join(f.source, "hello.txt") }, destination: { target: target!, path: f.source } })).rejects.toThrow("write access")
+  await expect(controller.enqueue({ source: { target, path: join(f.source, "hello.txt") }, destination: { target, path: f.source } })).rejects.toThrow("write access")
 })
 
-test("cancelled or changed Session consent issues no usable grant", async () => {
+test("Session resolution failure can retry without authorizing arbitrary local paths", async () => {
   const f = await fixture(), controller = f.create()
-  f.confirmSession.mockResolvedValueOnce(false)
-  expect(await controller.authorizeLocalSession("session")).toBeNull()
-  f.sessionDirectory.mockResolvedValueOnce(f.source).mockResolvedValueOnce(f.destination)
-  await expect(controller.authorizeLocalSession("session")).rejects.toThrow("Session directory changed")
-  await expect(controller.readResource({ target: { kind: "local" }, sessionId: "session", uri: "hello.txt" })).rejects.toThrow("Choose a local folder")
+  const request = { target: { kind: "local" } as const, sessionId: "session", uri: "hello.txt" }
+  f.sessionDirectory.mockRejectedValueOnce(new Error("Session unavailable"))
+  await expect(controller.readResource(request)).rejects.toThrow("Session unavailable")
+  await expect(controller.list({ kind: "local" }, f.source)).rejects.toThrow("Choose a local folder")
+  await expect(controller.readResource({ ...request, target: { kind: "local", grantId: "forged" } })).rejects.toThrow("Choose a local folder")
+  expect(new TextDecoder().decode((await controller.readResource(request)).data)).toBe("selected content")
+  expect(f.sessionDirectory).toHaveBeenCalledTimes(2)
 })
 
 test("pending native folder selection cannot issue a grant after close", async () => {
@@ -106,14 +117,13 @@ test("pending native folder selection cannot issue a grant after close", async (
   await rejected
 })
 
-test("pending Session consent cannot resurrect a closed document", async () => {
-  const f = await fixture(), controller = f.create(), decision = deferred<boolean>(), shown = deferred<void>()
-  f.confirmSession.mockImplementationOnce(() => { shown.resolve(); return decision.promise })
-  const pending = controller.authorizeLocalSession("session")
+test("pending Session resource resolution cannot resurrect a closed document", async () => {
+  const f = await fixture(), controller = f.create(), directory = deferred<string>()
+  f.sessionDirectory.mockReturnValueOnce(directory.promise)
+  const pending = controller.readResource({ target: { kind: "local" }, sessionId: "session", uri: "hello.txt" })
   const rejected = expect(pending).rejects.toThrow("expired")
-  await shown.promise
   await controller.close()
-  decision.resolve(true)
+  directory.resolve(f.source)
   await rejected
 })
 
@@ -143,5 +153,5 @@ test("explicit remote machine endpoints retain their own filesystem authority", 
   expect((await controller.list(target, f.destination)).path).toBe(f.destination)
   expect(f.remoteEndpoint).toHaveBeenCalledWith(target)
   expect(f.chooseDirectory).not.toHaveBeenCalled()
-  expect(f.confirmSession).not.toHaveBeenCalled()
+  expect(f.sessionDirectory).not.toHaveBeenCalled()
 })

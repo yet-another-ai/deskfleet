@@ -1,0 +1,98 @@
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { dirname } from "node:path"
+import type { CentralApi } from "../../../../packages/client/src/central.ts"
+import { ONBOARDING_PERMISSIONS, type OnboardingPermission, type OnboardingState, type OnboardingStep } from "../../../../packages/client/src/onboarding.ts"
+import type { LocalAgentController } from "./local-agent-controller.ts"
+
+interface OnboardingOptions {
+  path: string
+  platform: NodeJS.Platform
+  central: Pick<CentralApi, "setServer">
+  localAgent: Pick<LocalAgentController, "state" | "startIfEnabled" | "refreshPermissions" | "requestPermission">
+}
+
+const steps: readonly OnboardingStep[] = ["server", ...ONBOARDING_PERMISSIONS, "account", "complete"]
+
+/** The welcome flow records progress; the daemon owns every OS permission action. */
+export class OnboardingController {
+  readonly #options: OnboardingOptions
+  #state: OnboardingState | undefined
+  #operation: Promise<unknown> | undefined
+
+  constructor(options: OnboardingOptions) { this.#options = options }
+
+  async get(): Promise<OnboardingState> {
+    if (!this.#state) {
+      try {
+        const stored: unknown = JSON.parse(await readFile(this.#options.path, "utf8"))
+        if (!stored || typeof stored !== "object" || !("step" in stored) || !steps.includes(stored.step as OnboardingStep)) {
+          throw new Error("Invalid welcome setup progress")
+        }
+        this.#state = { step: stored.step as OnboardingStep }
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
+        this.#state = { step: "server" }
+      }
+    }
+    return { ...this.#state }
+  }
+
+  saveServer(serverUrl: string): Promise<OnboardingState> {
+    return this.#run(async () => {
+      await this.#requireStep("server")
+      await this.#options.central.setServer(serverUrl)
+      const local = await this.#options.localAgent.startIfEnabled()
+      if (local.status === "error") throw new Error(local.error ?? "Local Agent could not start")
+      return this.#save(this.#options.platform === "darwin" && local.status === "running" ? "fullDiskAccess" : "account")
+    })
+  }
+
+  async permissions() {
+    const { step } = await this.get()
+    if (!ONBOARDING_PERMISSIONS.includes(step as OnboardingPermission)) throw new Error("Welcome setup is not on a permission step")
+    return this.#options.localAgent.refreshPermissions()
+  }
+
+  requestPermission(permission: OnboardingPermission) {
+    return this.#run(async () => {
+      await this.#requireStep(permission)
+      return this.#options.localAgent.requestPermission(permission)
+    })
+  }
+
+  advancePermission(permission: OnboardingPermission): Promise<OnboardingState> {
+    return this.#run(async () => {
+      await this.#requireStep(permission)
+      const index = ONBOARDING_PERMISSIONS.indexOf(permission)
+      return this.#save(ONBOARDING_PERMISSIONS[index + 1] ?? "account")
+    })
+  }
+
+  complete(): Promise<OnboardingState> {
+    return this.#run(async () => {
+      await this.#requireStep("account")
+      return this.#save("complete")
+    })
+  }
+
+  async #requireStep(step: OnboardingStep): Promise<void> {
+    if ((await this.get()).step !== step) throw new Error("Welcome setup step has changed")
+  }
+
+  #run<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.#operation) return Promise.reject(new Error("Welcome setup is changing state"))
+    const pending = operation().finally(() => { this.#operation = undefined })
+    this.#operation = pending
+    return pending
+  }
+
+  async #save(step: OnboardingStep): Promise<OnboardingState> {
+    const state = { step }
+    const path = this.#options.path
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(`${path}.tmp`, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 })
+    await rename(`${path}.tmp`, path)
+    this.#state = state
+    return { ...state }
+  }
+}

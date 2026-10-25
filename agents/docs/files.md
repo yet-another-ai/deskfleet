@@ -70,12 +70,13 @@ the endpoint rechecks the grant after that dialog. A folder replacement still re
 the complete item. Revocation also prevents pending selection/confirmation dialogs
 from issuing authority into the previous document or account.
 
-Local Agent previews require an explicit **Allow local file previews** action.
-Main resolves the Session's captured first directory through its daemon connection
-and displays that directory in a native confirmation. The resulting grant is
-read-only and bound to that Session; absolute references, file URLs, and relative
-paths must stay within it. A renderer-provided Session ID or path alone grants no
-access. Downloading those resources selects a separate writable destination.
+Local Agent previews load automatically. Main resolves the Session's captured
+first directory through its daemon connection on the first resource request and
+retains a read-only grant bound to that Session and the current window/account.
+Absolute references, file URLs, and relative paths must stay within it; the renderer
+cannot supply the captured root. There is no per-Session preview button or consent
+dialog. Operating-system file permissions are handled when creating the daemon.
+Downloading those resources selects a separate writable destination.
 Remote file peers and explicitly authorized daemon terminal operations retain their
 OS-user authority; Session roots do not globally restrict daemon filesystem access.
 

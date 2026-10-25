@@ -38,6 +38,7 @@ const statusColor = computed(() => {
 const permissions = computed(() => {
   if (state.value?.status !== "running") return []
   const values = [
+    { kind: "fullDiskAccess", permission: state.value.fullDiskAccessPermission },
     { kind: "screenCapture", permission: state.value.screenCapturePermission },
     { kind: "accessibility", permission: state.value.accessibilityPermission },
   ] as const
@@ -100,7 +101,15 @@ onBeforeUnmount(unsubscribe)
     </button>
   </SettingsRow>
   <div v-if="permissions.length" data-desktop-permissions role="group" :aria-label="t('settings.desktopPermissions')" class="-mt-1 flex flex-col gap-2 pb-3 text-[13px]">
-    <div v-for="notice in permissions" :key="notice.kind" :data-screen-capture-permission="notice.kind === 'screenCapture' ? notice.permission.status : undefined" :data-accessibility-permission="notice.kind === 'accessibility' ? notice.permission.status : undefined" :class="notice.needsAction ? 'text-ui-warning' : 'text-ui-text-muted'" :role="notice.needsAction ? 'alert' : 'status'">
+    <div
+      v-for="notice in permissions"
+      :key="notice.kind"
+      :data-full-disk-access-permission="notice.kind === 'fullDiskAccess' ? notice.permission.status : undefined"
+      :data-screen-capture-permission="notice.kind === 'screenCapture' ? notice.permission.status : undefined"
+      :data-accessibility-permission="notice.kind === 'accessibility' ? notice.permission.status : undefined"
+      :class="notice.needsAction ? 'text-ui-warning' : 'text-ui-text-muted'"
+      :role="notice.needsAction ? 'alert' : 'status'"
+    >
       <p class="m-0">{{ notice.label }}</p>
       <p v-if="notice.permission.status === 'error' && notice.permission.error" class="mb-0 mt-1 break-words">{{ notice.permission.error }}</p>
     </div>

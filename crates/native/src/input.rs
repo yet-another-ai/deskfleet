@@ -13,16 +13,37 @@ use tokio::sync::{mpsc, oneshot};
 type Result<T> = std::result::Result<T, InputError>;
 type Command = (InputEvent, oneshot::Sender<Result<()>>);
 
-/// Request this process's Accessibility permission without opening input.
+/// Check this process's Accessibility permission without prompting.
 ///
 /// Returns `None` on platforms without an upfront permission request.
 ///
 /// # Errors
 /// Returns an error if the permission worker fails.
-pub async fn request_accessibility_access() -> Result<Option<bool>> {
-    tokio::task::spawn_blocking(deskfleet_input::request_accessibility_access)
+pub async fn check_accessibility_access() -> Result<Option<bool>> {
+    tokio::task::spawn_blocking(deskfleet_input::check_accessibility_access)
         .await
         .map_err(|error| InputError::Platform(error.to_string()))
+}
+
+/// Request this process's Accessibility permission without opening input.
+/// Opens the macOS privacy pane when access remains denied.
+///
+/// Returns `None` on platforms without an upfront permission request.
+///
+/// # Errors
+/// Returns an error if the permission worker or System Settings fails.
+pub async fn request_accessibility_access() -> Result<Option<bool>> {
+    tokio::task::spawn_blocking(|| {
+        let granted = deskfleet_input::request_accessibility_access();
+        #[cfg(target_os = "macos")]
+        if granted == Some(false) {
+            crate::permission_settings::open("Privacy_Accessibility")
+                .map_err(|error| InputError::Platform(error.to_string()))?;
+        }
+        Ok(granted)
+    })
+    .await
+    .map_err(|error| InputError::Platform(error.to_string()))?
 }
 
 /// Serializes OS input without blocking Node's event loop or moving OS state.

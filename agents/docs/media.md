@@ -91,26 +91,32 @@ For diagnostics, set `DESKFLEET_WINDOWS_ENCODER` in the daemon's environment to
 An explicit backend never falls back to another encoder. `media-foundation`
 advertises only H.264. This also allows testing MF on a machine with NVENC.
 
-On macOS, the daemon requests Screen Recording and Accessibility consent together
-as soon as startup owns discovery and local IPC is ready. The shared
-`DesktopPermissions` lifecycle invokes `requestScreenCaptureAccess()` and
-`requestAccessibilityAccess()` independently, once per daemon start. Each checks
-existing consent before requesting it through CoreGraphics on a Rust worker;
-neither starts capture or initializes input. Screen Recording also covers the
-current ScreenCaptureKit system-audio stream. Waiting for or denying either
-permission does not block the other request, agents, terminals, catalog operations,
-or daemon cleanup. Windows and Linux return `not-required` without prompting.
+On macOS, the daemon owns Screen Recording and Accessibility consent through the
+shared `DesktopPermissions` lifecycle. The desktop app starts its hosted daemon
+after the welcome page saves the backend server, then guides Full Disk Access,
+Screen Recording, and Accessibility in order. In this guided mode, startup and
+focus refreshes only check permissions; each explicit welcome action requests
+one permission through authenticated local IPC. Standalone daemons request all
+permissions independently once startup owns discovery and local IPC is ready.
+The native checks and requests run on Rust workers, without starting capture or
+initializing input. Screen Recording also covers the current ScreenCaptureKit
+system-audio stream. Pending or denied permission does not block agents,
+terminals, catalog operations, or daemon cleanup. Windows and Linux return
+`not-required` without prompting.
 
-The authenticated `hello` response includes `screenCapturePermission` and
-`accessibilityPermission`. `desktopPermissionsChanged` events publish the combined
-snapshot to connected clients. While the Agent runs, Desktop Settings groups
-pending, denied, or failed requests for both permissions. Granted or unnecessary
-permissions have no notice; the Agent's running status stays separate.
+The authenticated `hello` response includes `fullDiskAccessPermission`,
+`screenCapturePermission`, and `accessibilityPermission`.
+`desktopPermissionsChanged` events publish the combined snapshot to connected
+clients. While the Agent runs, Desktop Settings groups pending, denied, or failed
+requests. Granted or unnecessary permissions have no notice; the Agent's running
+status stays separate.
 Previously denied access must be enabled in macOS System Settings under Privacy
 & Security → Screen & System Audio Recording or Accessibility as appropriate;
-restart the local Agent afterward. Reconnecting a client reads the existing
-daemon's status without requesting again. Tests inject both permission requests
-so ordinary test runs do not open OS dialogs.
+requests open the relevant settings pane when consent remains denied. Restart
+the app or standalone daemon if macOS requires a restart after granting access.
+Reconnecting a client reads the existing daemon's status without requesting
+again. Tests inject permission checks and requests so ordinary test runs do not
+open OS dialogs.
 
 The native desktop pipeline owns capture and hardware encoding on one blocking
 worker, preserving D3D11 thread ownership and retained GPU surface lifetimes.
@@ -218,7 +224,8 @@ close requests wait for the same cleanup. Encoder fallback and manual reconnect
 also wait for closure before acquiring another controller.
 
 macOS requires Accessibility permission for the process hosting the daemon.
-The daemon requests it alongside Screen Recording during startup. Remote input
+The desktop welcome flow requests it after Screen Recording; standalone daemons
+request it during startup. Remote input
 startup still checks current permission and reports denial without opening a consent dialog.
 Screen Recording permission is separate. Windows injection follows SendInput's
 integrity restrictions: it cannot control elevated applications from a lower

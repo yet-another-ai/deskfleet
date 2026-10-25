@@ -20,7 +20,7 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
     if (t.signal.aborted) { client.close(); t.signal.throwIfAborted() }
     return client
   }
-  starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
+  starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   let daemon = await starting
   t.signal.throwIfAborted()
   const client = own(await DaemonClient.connect(() => {}, () => {}, directory))
@@ -52,7 +52,7 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
   clients.forEach(connection => connection.close())
   await daemon.close()
   t.signal.throwIfAborted()
-  starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
+  starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   daemon = await starting
   t.signal.throwIfAborted()
   const reopened = own(await DaemonClient.connect(() => {}, () => {}, directory))

@@ -23,6 +23,21 @@ pub use types::{CaptureConfig, Display};
 #[cfg(target_os = "windows")]
 pub use windows::create_d3d11_device as create_d3d11_device_for_display;
 
+/// Check screen recording access without prompting or starting capture.
+///
+/// Returns `None` on platforms without an upfront permission request.
+#[must_use]
+pub fn check_screen_capture_access() -> Option<bool> {
+    #[cfg(target_os = "macos")]
+    {
+        Some(objc2_core_graphics::CGPreflightScreenCaptureAccess())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 /// Request screen and system-audio recording access for the current process.
 ///
 /// On macOS, this prompts only when access has not yet been determined and

@@ -265,12 +265,24 @@ app waits for its cleanup before exiting. The app never spawns a separate daemon
 process. The standalone Node.js SEA is the headless distribution of the same
 daemon and runs independently of any desktop app.
 
-After acquiring discovery and initializing local IPC, the daemon requests the
-OS permissions needed by its implemented desktop capture capabilities. On macOS
-this is screen/system-audio recording consent, requested in the process hosting
-the daemon before a remote client uses it. Permission prompts and denial must not
-block headless operations. Settings displays permission status separately from
-daemon availability; capture and encoding still start only on explicit use.
+Desktop first-run setup uses a welcome page: backend server, Full Disk Access,
+screen/system-audio recording, Accessibility, then account sign-in. The host saves
+the current step in `onboarding.json` under its user-data directory and resumes
+it after restart. A fresh installation shows the server step before starting its
+daemon. After saving the server, it starts or reuses the local Agent according to
+the existing enabled preference. Non-macOS clients and clients with the local
+Agent disabled skip the OS permission steps. Users can defer an individual
+permission without blocking account setup or unrelated Agent work.
+
+After acquiring discovery and initializing local IPC, a desktop-hosted daemon
+checks permissions without prompting. The welcome page requests each permission
+through authenticated local IPC; native checks and requests run in the owning
+daemon process. Returning from System Settings refreshes checks without opening
+another prompt. Standalone startup requests its permissions automatically.
+Full Disk Access requires enabling the host app or executable in System Settings
+and may require restarting that host. File previews have no separate consent
+button or per-Session dialog. Settings displays OS permission status separately
+from daemon availability; capture and encoding start only on explicit use.
 
 Startup reuses an authenticated daemon already owning the discovery directory,
 such as a standalone SEA, instead of hosting another. Explicitly disabling the

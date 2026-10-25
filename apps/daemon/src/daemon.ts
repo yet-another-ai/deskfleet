@@ -1,7 +1,7 @@
 import { once } from "node:events"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { nativeInfo, requestAccessibilityAccess, requestScreenCaptureAccess } from "@deskfleet/native"
+import { checkAccessibilityAccess, checkFullDiskAccess, checkScreenCaptureAccess, nativeInfo, requestAccessibilityAccess, requestFullDiskAccess, requestScreenCaptureAccess } from "@deskfleet/native"
 import { PeerSessions } from "./peers.ts"
 import { startControlServer } from "./control-server.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
@@ -13,6 +13,12 @@ export async function startDaemon(port = 0, options: {
   controlDirectory?: string
   requestScreenCaptureAccess?: () => Promise<boolean | null>
   requestAccessibilityAccess?: () => Promise<boolean | null>
+  requestFullDiskAccess?: () => Promise<boolean | null>
+  checkScreenCaptureAccess?: () => Promise<boolean | null>
+  checkAccessibilityAccess?: () => Promise<boolean | null>
+  checkFullDiskAccess?: () => Promise<boolean | null>
+  /** Desktop welcome setup checks silently, then guides each request over local IPC. */
+  permissionMode?: "automatic" | "guided"
   agentProvider?: AgentProvider
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
   /** In-process fixtures only. Never enabled by configuration, IPC, or the CLI. */
@@ -71,11 +77,24 @@ export async function startDaemon(port = 0, options: {
     if (failures.length) throw new AggregateError([error, ...failures], "Daemon startup and cleanup failed", { cause: error })
     throw error
   }
-  // Request once we own the machine daemon, before any remote capture is used.
-  permissions.request({
-    requestScreenCaptureAccess: options.requestScreenCaptureAccess ?? requestScreenCaptureAccess,
-    requestAccessibilityAccess: options.requestAccessibilityAccess ?? requestAccessibilityAccess,
+  // Request OS access when creating the owning daemon, before clients use its files or desktop.
+  const stopReportingFileAccess = permissions.onChange(({ fullDiskAccessPermission }) => {
+    if (fullDiskAccessPermission.status === "requesting") return
+    stopReportingFileAccess()
+    if (fullDiskAccessPermission.status === "denied" || fullDiskAccessPermission.status === "error") {
+      console.error("Local Agent file access: enable Full Disk Access for the app or executable hosting the daemon in macOS System Settings > Privacy & Security, then restart it.",
+        fullDiskAccessPermission.error ?? "")
+    }
   })
+  permissions.initialize({
+    screenCapture: options.requestScreenCaptureAccess ?? requestScreenCaptureAccess,
+    accessibility: options.requestAccessibilityAccess ?? requestAccessibilityAccess,
+    fullDiskAccess: options.requestFullDiskAccess ?? requestFullDiskAccess,
+  }, {
+    screenCapture: options.checkScreenCaptureAccess ?? checkScreenCaptureAccess,
+    accessibility: options.checkAccessibilityAccess ?? checkAccessibilityAccess,
+    fullDiskAccess: options.checkFullDiskAccess ?? checkFullDiskAccess,
+  }, options.permissionMode)
   return {
     address: `http://127.0.0.1:${address.port}`,
     peers,
