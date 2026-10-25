@@ -3,17 +3,44 @@ description: Install locked tools and dependencies with shared build caches.
 
 inputs:
   github-token:
-    description: Token for mise tool downloads. Leave empty for pull requests.
+    description: Token used by mise when downloading tools from GitHub.
     required: false
     default: ""
   cache-rust-build:
-    description: Restore Cargo target artifacts for checks; release builds use compiler caching only.
+    description: >-
+      Cache the Cargo target directory between runs. Enable for check and test
+      jobs that rebuild the same profiles; leave it disabled for release
+      packaging so the repository cache quota stays available for the compiler
+      cache.
     required: false
     default: "false"
+
+outputs:
+  electron-path:
+    description: Electron package download directory for this runner.
+    value: ${{ steps.cache-paths.outputs.electron-path }}
+  electron-cache-key:
+    description: Primary key for the Electron download cache.
+    value: ${{ steps.electron-downloads.outputs.cache-primary-key }}
+  electron-cache-hit:
+    description: Whether the Electron download cache restored an exact match.
+    value: ${{ steps.electron-downloads.outputs.cache-hit }}
 
 runs:
   using: composite
   steps:
+    - name: Install locked toolchain
+      uses: jdx/mise-action@v5
+      with:
+        version: 2026.10.19
+        install_args: --locked
+        cache: true
+        # Restore main's tool cache everywhere, but let only main and tags
+        # write it. Pull-request merge refs only consume the shared cache quota.
+        cache_save: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'true' || 'false' }}
+        # An explicit empty input suppresses mise-action's automatic token default.
+        github_token: ${{ inputs.github-token }}
+
     - name: Locate LLVM for NVENC bindings
       if: runner.os == 'Windows'
       shell: pwsh
@@ -24,81 +51,72 @@ runs:
         }
         "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-    - name: Install locked tools
-      uses: jdx/mise-action@v5.2.3
-      with:
-        version: 2026.10.19
-        install_args: --locked
-        cache: true
-        cache_save: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'true' || 'false' }}
-        github_token: ${{ inputs.github-token }}
-
-    - name: Locate pnpm store
-      id: pnpm-store
-      shell: bash
-      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-    - name: Restore pnpm store
-      id: pnpm-cache
-      uses: actions/cache/restore@v6
-      with:
-        path: ${{ steps.pnpm-store.outputs.path }}
-        key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'mise.lock') }}
-        restore-keys: pnpm-${{ runner.os }}-${{ runner.arch }}-
-
-    - name: Install workspace dependencies
-      shell: bash
-      run: mise run install
-
-    - name: Save pnpm store
-      if: >-
-        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
-        steps.pnpm-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v6
-      with:
-        path: ${{ steps.pnpm-store.outputs.path }}
-        key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
-
-    - name: Restore Cargo build cache
+    - name: Restore Cargo target directory
       if: inputs.cache-rust-build == 'true'
       uses: Swatinem/rust-cache@v2
       with:
+        # Warm caches come from main. Pull requests restore that baseline
+        # without competing for the repository cache quota.
         save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - name: Configure shared compiler cache
       shell: bash
       env:
-        CACHE_MODE: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'READ_WRITE' || 'READ_ONLY' }}
+        # Pull-request caches are scoped to the merge ref and cannot warm main
+        # or other pull requests. Reads stay shared; writes stay on main and tags.
+        CACHE_RW_MODE: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'READ_WRITE' || 'READ_ONLY' }}
+        CACHE_ERROR_LOG: ${{ runner.temp }}/deskfleet-sccache-errors.log
       run: |
-        {
-          echo "SCCACHE_GHA_ENABLED=true"
-          echo "SCCACHE_GHA_RW_MODE=$CACHE_MODE"
-        } >> "$GITHUB_ENV"
+        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+        printf 'SCCACHE_GHA_RW_MODE=%s\n' "$CACHE_RW_MODE" >> "$GITHUB_ENV"
+        printf 'SCCACHE_ERROR_LOG=%s\n' "$CACHE_ERROR_LOG" >> "$GITHUB_ENV"
+        echo "SCCACHE_LOG=warn" >> "$GITHUB_ENV"
 
     - name: Install sccache
       uses: mozilla-actions/sccache-action@v0.0.11
       with:
+        # The sccache version participates in the GitHub Actions cache version.
         version: v0.18.0
 
     - name: Enable compiler caching
       shell: bash
-      run: echo "RUSTC_WRAPPER=${SCCACHE_PATH:-sccache}" >> "$GITHUB_ENV"
+      run: printf 'RUSTC_WRAPPER=%s\n' "${SCCACHE_PATH:-sccache}" >> "$GITHUB_ENV"
 
-    - name: Locate Cargo downloads
-      id: paths
-      if: inputs.cache-rust-build != 'true'
+    - name: Locate Cargo, pnpm, and Electron caches
+      id: cache-paths
       shell: bash
-      run: echo "cargo-home=${CARGO_HOME:-$HOME/.cargo}" >> "$GITHUB_OUTPUT"
+      run: |
+        node --input-type=module <<'EOF'
+        import { execFileSync } from "node:child_process"
+        import { appendFileSync } from "node:fs"
+        import { homedir, platform } from "node:os"
+        import { join } from "node:path"
+
+        const home = homedir()
+        const output = process.env.GITHUB_OUTPUT
+        const cargoHome = process.env.CARGO_HOME ?? join(home, ".cargo")
+        const pnpmStore = execFileSync("pnpm", ["store", "path", "--silent"], { encoding: "utf8" }).trim()
+        const localAppData = process.env.LOCALAPPDATA || join(home, "AppData", "Local")
+        const electron = platform() === "darwin"
+          ? join(home, "Library", "Caches", "electron")
+          : platform() === "win32"
+            ? join(localAppData, "electron", "Cache")
+            : join(home, ".cache", "electron")
+        appendFileSync(output, `cargo-home=${cargoHome}\n`)
+        appendFileSync(output, `pnpm-store=${pnpmStore}\n`)
+        appendFileSync(output, `electron-path=${electron}\n`)
+        EOF
 
     - name: Restore Cargo downloads
-      id: downloads
+      id: cargo-downloads
+      # rust-cache already caches the registry and git databases.
       if: inputs.cache-rust-build != 'true'
       uses: actions/cache/restore@v6
       with:
         path: |
-          ${{ steps.paths.outputs.cargo-home }}/registry/index
-          ${{ steps.paths.outputs.cargo-home }}/registry/cache
-          ${{ steps.paths.outputs.cargo-home }}/git/db
+          ${{ steps.cache-paths.outputs.cargo-home }}/registry/index
+          ${{ steps.cache-paths.outputs.cargo-home }}/registry/cache
+          ${{ steps.cache-paths.outputs.cargo-home }}/git/db
         key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
 
@@ -108,14 +126,45 @@ runs:
       run: cargo fetch --locked
 
     - name: Save Cargo downloads
+      # Pull requests read main's entry through the base-branch fallback.
+      # Their merge-ref copy would spend the repository cache quota.
       if: >-
         inputs.cache-rust-build != 'true' &&
         (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
-        steps.downloads.outputs.cache-hit != 'true'
+        steps.cargo-downloads.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
       with:
         path: |
-          ${{ steps.paths.outputs.cargo-home }}/registry/index
-          ${{ steps.paths.outputs.cargo-home }}/registry/cache
-          ${{ steps.paths.outputs.cargo-home }}/git/db
-        key: ${{ steps.downloads.outputs.cache-primary-key }}
+          ${{ steps.cache-paths.outputs.cargo-home }}/registry/index
+          ${{ steps.cache-paths.outputs.cargo-home }}/registry/cache
+          ${{ steps.cache-paths.outputs.cargo-home }}/git/db
+        key: ${{ steps.cargo-downloads.outputs.cache-primary-key }}
+
+    - name: Restore pnpm store
+      id: pnpm-store
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.cache-paths.outputs.pnpm-store }}
+        key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: pnpm-store-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Restore Electron downloads
+      id: electron-downloads
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.cache-paths.outputs.electron-path }}
+        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: electron-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Install workspace dependencies
+      shell: bash
+      run: mise run install
+
+    - name: Save pnpm store
+      if: >-
+        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
+        steps.pnpm-store.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.cache-paths.outputs.pnpm-store }}
+        key: ${{ steps.pnpm-store.outputs.cache-primary-key }}
