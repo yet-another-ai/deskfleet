@@ -195,6 +195,7 @@
     "connectionFailed": "桌面连接失败。",
     "timeout": "桌面连接超时。请检查守护进程后重试。",
     "fullscreen": "全屏",
+    "exitFullscreen": "退出全屏",
     "fullscreenFailed": "无法进入全屏。",
     "play": "播放桌面视频"
   },
@@ -387,6 +388,7 @@
     "awaitingApproval": "等待授权",
     "copy": "复制消息",
     "copied": "已复制",
+    "copyFailed": "无法复制消息，请重试。",
     "working": "工作中",
     "workingFor": "已工作 {duration}",
     "worked": "已完成",

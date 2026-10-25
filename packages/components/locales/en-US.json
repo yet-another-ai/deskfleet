@@ -195,6 +195,7 @@
     "connectionFailed": "The desktop connection failed.",
     "timeout": "The desktop connection timed out. Check the daemon and try again.",
     "fullscreen": "Full screen",
+    "exitFullscreen": "Exit full screen",
     "fullscreenFailed": "Could not enter full screen.",
     "play": "Play desktop video"
   },
@@ -387,6 +388,7 @@
     "awaitingApproval": "Awaiting approval",
     "copy": "Copy message",
     "copied": "Copied",
+    "copyFailed": "Could not copy the message. Try again.",
     "working": "Working",
     "workingFor": "Working for {duration}",
     "worked": "Worked",

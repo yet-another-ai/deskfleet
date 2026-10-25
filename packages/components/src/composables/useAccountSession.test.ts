@@ -104,6 +104,28 @@ test("a slow machine list for a Team the user already left is discarded", async 
   expect(session.machine.value?.name).toBe("First machine")
 })
 
+test("member identities follow the selected Team, discard a late response after switching and clear on sign-out", async () => {
+  const fake = fakeCentral({ teams: [{ id: "first", name: "First", role: "admin" }, { id: "second", name: "Second", role: "admin" }] })
+  fake.central.members.mockImplementation(async teamId => [{ userId: teamId, name: `${teamId} member`, role: "member" }])
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  expect(session.members.value.map(member => member.name)).toEqual(["first member"])
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  fake.central.members.mockImplementationOnce(async teamId => {
+    await held
+    return [{ userId: teamId, name: `${teamId} member`, role: "member" }]
+  })
+  const abandoned = session.selectTeam("second")
+  expect(session.members.value).toEqual([])
+  await session.selectTeam("first")
+  release()
+  await abandoned
+  expect(session.members.value.map(member => member.name)).toEqual(["first member"])
+  await session.signOut()
+  expect(session.members.value).toEqual([])
+})
+
 test("connecting this computer selects its new machine; removing a machine reselects", async () => {
   const fake = fakeCentral({ machines: [machineFixture("server", "team-1", "Server")], enrollment: enrollment() })
   session = createAccountSession(fake.central)

@@ -62,7 +62,7 @@ selected display. Codec discovery probes NVENC and Media Foundation on that
 same display's adapter, without a global cache or a union of other GPUs' codecs.
 The capability response attaches codecs to each display. Desktop Settings
 shows the codec the viewer will use and updates it when the selected display
-changes. The viewer picks the first codec in H.264, HEVC, AV1 order that both
+changes. The viewer picks the first codec in AV1, HEVC, H.264 order that both
 that display and the browser can use. It does not offer a codec menu.
 Encoding first tries NVENC on that device. If H.264 startup
 fails, it tries hardware Media Foundation transforms on the same adapter.
@@ -153,7 +153,7 @@ all peers, including pending creation.
 
 After login and machine enrollment, select the target machine in the Web or
 Electron client and open **Remote control → Desktop**. Refresh capabilities if needed,
-choose a display, then connect. The viewer selects H.264, then HEVC, then AV1
+choose a display, then connect. The viewer selects AV1, then HEVC, then H.264
 from the codecs that display and the browser share, and shows the choice as
 status text. On macOS, the daemon process
 needs Screen Recording permission; system audio can be enabled explicitly.
@@ -169,8 +169,10 @@ are queued. A media track feeds a standard `<video>` via `srcObject`; Chromium
 owns decoding, audio playback, scaling, and fullscreen. Raw frames never cross the
 preload bridge. No native decoder or independent GPU window is added.
 
-Disconnect, navigation away from the desktop view, renderer reload/crash, and
-client exit release the corresponding media session. Closing the window to the
+Disconnect, switching away from the Desktop tab, navigation away from the desktop
+view, renderer reload/crash, and client exit release the corresponding media
+session. Tab switches retain display and stream settings; returning to Desktop
+does not reconnect automatically. Closing the window to the
 tray keeps the renderer and its current stream alive. Failed or timed-out
 connections expose an error and can be retried. The renderer retains its sandbox
 and denied capture permissions: capture belongs to the daemon.

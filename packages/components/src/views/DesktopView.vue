@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { client as platformClient } from "@deskfleet/client/platform"
 
-import { GripVertical, LoaderCircle, Maximize, MonitorPlay, Play, RefreshCw, SlidersHorizontal, Unplug } from "@lucide/vue"
+import { GripVertical, LoaderCircle, Maximize, Minimize, MonitorPlay, Play, RefreshCw, SlidersHorizontal, Unplug } from "@lucide/vue"
 import { onClickOutside } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, shallowRef, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -12,7 +12,7 @@ import { useDesktopInput } from "../composables/useDesktopInput.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 
-const props = defineProps<{ machineId: string }>()
+const props = withDefaults(defineProps<{ machineId: string; visible?: boolean }>(), { visible: true })
 const { t } = useI18n()
 const fleet = useFleetStore()
 const connection = useDesktopConnection(platformClient.desktop)
@@ -31,6 +31,7 @@ const inputEnabled = computed(() => control.value && !controlPaused.value && con
 useDesktopInput(video, inputEnabled, connection.sendInput)
 const playbackBlocked = ref(false)
 const fullscreenError = ref(false)
+const isFullscreen = ref(false)
 const settingsOpen = ref(false)
 const settingsId = useId()
 const settingsTrigger = useTemplateRef<{ $el: HTMLButtonElement }>("settingsTrigger")
@@ -56,7 +57,7 @@ const codecs = computed(() => commonDesktopCodecs(
 const chosenCodec = computed(() => activeCodec.value ?? codecs.value[0] ?? null)
 const codecLabel = computed(() => chosenCodec.value ? desktopCodecLabel(chosenCodec.value) : "")
 const active = computed(() => ["connecting", "starting", "connected"].includes(state.value))
-const canConnect = computed(() => local.value && !loading.value && !active.value
+const canConnect = computed(() => props.visible && local.value && !loading.value && !active.value
   && fleet.localDesktopTarget.online && displayId.value !== null && chosenCodec.value !== null)
 
 async function refresh(): Promise<void> {
@@ -91,6 +92,7 @@ watch(() => props.machineId, () => {
   discoveryError.value = null
   if (local.value) void refresh()
 }, { immediate: true })
+watch(() => props.visible, visible => { if (!visible) void connection.disconnect() })
 onBeforeUnmount(() => { ++discoveryGeneration })
 
 async function play(): Promise<void> {
@@ -126,8 +128,18 @@ function toggleControl(): void {
 }
 
 async function fullscreen(): Promise<void> {
-  try { await video.value?.requestFullscreen() }
+  fullscreenError.value = false
+  const element = stage.value
+  if (!element) return
+  try {
+    if (document.fullscreenElement === element) await document.exitFullscreen()
+    else await element.requestFullscreen()
+  }
   catch { fullscreenError.value = true }
+}
+
+function updateFullscreen(): void {
+  isFullscreen.value = document.fullscreenElement === stage.value
 }
 
 const status = computed(() => {
@@ -157,7 +169,7 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!-- The stream fills the pane; its controls and settings float above it. -->
-    <div ref="stage" data-desktop-stage class="relative flex min-h-64 min-w-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors" :class="stream ? 'border-transparent bg-ui-terminal' : 'border-ui-border bg-ui-surface'">
+    <div ref="stage" data-desktop-stage class="relative flex min-h-64 min-w-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors" :class="stream ? 'border-transparent bg-ui-terminal' : 'border-ui-border bg-ui-surface'" @fullscreenchange="updateFullscreen">
       <video
         v-if="local"
         v-show="stream"
@@ -216,7 +228,7 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
         <span v-if="stream" role="status" class="flex items-center gap-1.5 px-2 text-[13px] text-ui-text-muted">
           <span class="h-1.5 w-1.5 rounded-full" :class="state === 'connected' ? 'bg-ui-success' : 'bg-ui-text-faint'" aria-hidden="true" />{{ status }}
         </span>
-        <IconButton v-if="stream && state === 'connected'" :icon="Maximize" :label="t('desktop.fullscreen')" @click="fullscreen" />
+        <IconButton v-if="stream && state === 'connected'" :icon="isFullscreen ? Minimize : Maximize" :label="t(isFullscreen ? 'desktop.exitFullscreen' : 'desktop.fullscreen')" @click="fullscreen" />
         <button v-if="stream && control && state === 'connected'" type="button" class="ui-button py-1" :disabled="!connection.inputReady.value" :aria-pressed="!controlPaused" @click="toggleControl">
           {{ controlPaused ? t("desktop.resumeControl") : t("desktop.pauseControl") }}
         </button>

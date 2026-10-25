@@ -14,7 +14,7 @@ import { WorktreeRootSettingsController } from "../../src/main/worktree-root-set
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
 import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
-import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
+import { installRendererPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
 import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
 
@@ -339,7 +339,7 @@ void app.whenReady().then(async () => {
   const identity = async () => createHash("sha256").update(JSON.stringify(await readDaemonDiscovery(context.daemonDirectory))).digest("hex")
   // These phases end with the hosted daemon switched off, so read its identity first.
   const reusedIdentity = context.phase === "restart" || context.phase === "external" ? await identity() : undefined
-  denyChromiumPermissions()
+  installRendererPermissions()
   protocol.handle(RENDERER_SCHEME, async request => {
     if (request.method !== "GET") return new Response(null, { status: 405 })
     const path = resolveRendererResourcePath(request.url, context.rendererDirectory)

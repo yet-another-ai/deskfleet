@@ -1,5 +1,5 @@
 import { computed, inject, ref, type ComputedRef, type InjectionKey, type Ref } from "vue"
-import type { AccountState, CentralApi, LocalEnrollment, Machine, Team } from "@deskfleet/client/central"
+import type { AccountState, CentralApi, LocalEnrollment, Machine, Team, TeamMember } from "@deskfleet/client/central"
 import { router } from "../router/index.ts"
 
 export type AccountDialog = "create-team" | "join-team" | "add-machine"
@@ -20,6 +20,7 @@ export interface AccountSession {
   teams: Ref<Team[]>
   teamId: Ref<string | undefined>
   team: ComputedRef<Team | undefined>
+  members: Ref<TeamMember[]>
   machines: Ref<Machine[]>
   machineId: Ref<string | undefined>
   machine: ComputedRef<Machine | undefined>
@@ -58,6 +59,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   const account = ref<AccountState>({ serverUrl: "" })
   const teams = ref<Team[]>([])
   const teamId = ref<string>()
+  const members = ref<TeamMember[]>([])
   const machines = ref<Machine[]>([])
   const machineId = ref<string>()
   const enrollment = ref<LocalEnrollment>()
@@ -74,12 +76,19 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   const canEnrollLocal = computed(() => !!central.enrollLocal && !!enrollment.value && (!enrollment.value.configured || enrollment.value.revoked))
   // A slower response for a Team the user has already left must not replace the current list.
   let machinesRevision = 0
+  let membersRevision = 0
 
   async function background(work: () => Promise<void>): Promise<void> {
     try { await work(); notice.value = undefined } catch (reason) { notice.value = message(reason) }
   }
   async function loadEnrollment(): Promise<void> {
     enrollment.value = await central.localEnrollment?.().catch(() => undefined)
+  }
+  async function loadMembers(): Promise<void> {
+    const revision = ++membersRevision
+    const selected = teamId.value
+    const list = selected ? await central.members(selected) : []
+    if (revision === membersRevision) members.value = list
   }
   async function loadMachines(preferred?: string): Promise<void> {
     const revision = ++machinesRevision
@@ -100,7 +109,9 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     account.value = await central.status()
     if (!account.value.user) {
       ++machinesRevision
+      ++membersRevision
       teams.value = []; teamId.value = undefined; machines.value = []; machineId.value = undefined
+      members.value = []
       dialog.value = undefined; shellSettings.value = undefined
       return
     }
@@ -110,15 +121,17 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       const enrolledTeam = enrollment.value?.serverUrl === account.value.serverUrl ? enrollment.value.teamId : undefined
       teamId.value = (list.find(value => value.id === enrolledTeam) ?? list[0])?.id
       machineId.value = undefined
+      members.value = []
     }
-    await loadMachines()
+    await Promise.all([loadMachines(), loadMembers()])
   }
   async function selectTeam(id: string): Promise<void> {
     if (id === teamId.value) return
     teamId.value = id
     machineId.value = undefined
     machines.value = []
-    await background(() => loadMachines())
+    members.value = []
+    await background(async () => { await Promise.all([loadMachines(), loadMembers()]) })
   }
   async function enrollLocal(name?: string): Promise<void> {
     if (!central.enrollLocal || !teamId.value) throw new Error("This computer cannot be connected from this client")
@@ -150,7 +163,10 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     if (event.type === "accountChanged") void background(reload)
     else if (event.type === "connection") {
       connected.value = event.connected
-      if (event.connected && teamId.value) void refreshMachines()
+      if (event.connected && teamId.value) void background(async () => {
+        await loadEnrollment()
+        await Promise.all([loadMachines(), loadMembers()])
+      })
     } else if (event.type === "machinesChanged" && event.teamId === teamId.value) void refreshMachines()
     else if (event.type === "presence") {
       const target = machines.value.find(value => value.id === event.machineId)
@@ -160,7 +176,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   void background(reload).finally(() => { ready.value = true; if (initialNotice) notice.value = initialNotice })
 
   return {
-    central, ready, account, teams, teamId, team, machines, machineId, machine, enrollment, localMachineId, canEnrollLocal,
+    central, ready, account, teams, teamId, team, members, machines, machineId, machine, enrollment, localMachineId, canEnrollLocal,
     connected, notice, dialog, shellSettings, reload,
     refreshMachines,
     async signIn(serverUrl) { await central.setServer(serverUrl); await central.login(); await reload() },

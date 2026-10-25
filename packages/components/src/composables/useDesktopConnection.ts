@@ -35,7 +35,7 @@ export function browserCodecPreferences(codec: VideoCodec, codecs: RTCRtpCodec[]
 }
 
 export function commonDesktopCodecs(nativeCodecs: VideoCodec[], browserCodecs: RTCRtpCodec[]): VideoCodec[] {
-  return (["h264", "h265", "av1"] as const).filter(
+  return (["av1", "h265", "h264"] as const).filter(
     (codec) => nativeCodecs.includes(codec) && browserCodecPreferences(codec, browserCodecs).length > 0,
   )
 }

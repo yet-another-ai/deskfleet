@@ -1,7 +1,7 @@
 import { app, BrowserWindow, net, protocol } from "electron"
 import { pathToFileURL } from "node:url"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
-import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
+import { installRendererPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
 import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
 
@@ -176,7 +176,7 @@ void app.whenReady().then(async () => {
   const argument = process.argv.find(value => value.startsWith("--catalog-smoke-context="))
   if (!argument) throw new Error("Missing catalog smoke context")
   const context = JSON.parse(argument.slice("--catalog-smoke-context=".length)) as CatalogSmokeContext
-  denyChromiumPermissions()
+  installRendererPermissions()
   protocol.handle(RENDERER_SCHEME, async request => {
     if (request.method !== "GET") return new Response(null, { status: 405 })
     const path = resolveRendererResourcePath(request.url, context.rendererDirectory)

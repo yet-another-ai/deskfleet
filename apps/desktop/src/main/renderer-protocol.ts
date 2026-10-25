@@ -1,7 +1,7 @@
-import { net, protocol, session, type Protocol, type Session } from "electron"
+import { net, protocol, session, type Protocol, type Session, type WebContents } from "electron"
 import { isAbsolute, relative, resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
-import { RENDERER_HOST, RENDERER_SCHEME } from "../shared/renderer-security.ts"
+import { isMainRendererUrl, RENDERER_HOST, RENDERER_SCHEME } from "../shared/renderer-security.ts"
 import { rendererDirectory } from "./paths.ts"
 
 interface RendererProtocolRequest {
@@ -93,7 +93,23 @@ export function installRendererProtocol(target: Pick<Protocol, "handle"> = proto
   target.handle(RENDERER_SCHEME, (request) => handleRendererProtocolRequest(request))
 }
 
-export function denyChromiumPermissions(target: Session = session.defaultSession): void {
-  target.setPermissionCheckHandler(() => false)
-  target.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+function allowsRendererPermission(
+  webContents: WebContents | null,
+  permission: string,
+  details: { isMainFrame: boolean; requestingUrl?: string },
+): boolean {
+  return (permission === "clipboard-sanitized-write" || permission === "fullscreen")
+    && details.isMainFrame
+    && isMainRendererUrl(details.requestingUrl ?? "")
+    && isMainRendererUrl(webContents?.getURL() ?? "")
+}
+
+/** Allow the main renderer's copy and fullscreen actions; deny other permissions. */
+export function installRendererPermissions(
+  target: Pick<Session, "setPermissionCheckHandler" | "setPermissionRequestHandler"> = session.defaultSession,
+): void {
+  target.setPermissionCheckHandler((webContents, permission, _origin, details) =>
+    allowsRendererPermission(webContents, permission, details))
+  target.setPermissionRequestHandler((webContents, permission, callback, details) =>
+    callback(allowsRendererPermission(webContents, permission, details)))
 }

@@ -28,6 +28,7 @@ test("browses synchronized history with the machine offline and isolates equal l
     status: vi.fn(async () => ({ serverUrl: "https://fleet.example", user: signedIn ? { id: "u1", name: "Ada" } : undefined })),
     setServer: vi.fn(), login: vi.fn(async () => { signedIn = true }), logout: vi.fn(async () => { signedIn = false }),
     teams: vi.fn(async () => [{ id: "7", name: "Team", role: "member" }]),
+    members: vi.fn(async () => [{ userId: "u1", name: "Ada", role: "member" }]),
     machines: vi.fn(async () => machines),
     onEvent: (listener: (event: CentralEvent) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     catalog: vi.fn(async (machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", providers: { providers: [{ id: "codex", name: "Codex", template: "codex" }] }, snapshot: {

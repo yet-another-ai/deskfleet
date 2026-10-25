@@ -12,7 +12,7 @@ function setup() {
   const connection = scope.run(() => useDesktopConnection(mock.api))!
   return { ...mock, scope, connection }
 }
-const options = { codecs: ["h264", "h265", "av1"], displayId: 2, audio: false } as const
+const options = { codecs: ["av1", "h265", "h264"], displayId: 2, audio: false } as const
 beforeEach(stubWebRtc)
 afterEach(() => {
   for (const scope of scopes.splice(0)) scope.stop()
@@ -20,8 +20,10 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-test("matches native profiles and prefers H264 when available", () => {
-  expect(commonDesktopCodecs(["av1", "h265", "h264"], browserCodecs)).toEqual(["h264", "h265", "av1"])
+test("matches native profiles in AV1, HEVC, H264 preference order", () => {
+  expect(commonDesktopCodecs(["h264", "h265", "av1"], browserCodecs)).toEqual(["av1", "h265", "h264"])
+  expect(commonDesktopCodecs(["h264", "h265"], browserCodecs)).toEqual(["h265", "h264"])
+  expect(commonDesktopCodecs(["h264", "h265", "av1"], browserCodecs.filter(codec => codec.mimeType === "video/H264"))).toEqual(["h264"])
   expect(browserCodecPreferences("h264", browserCodecs)).toEqual([browserCodecs[0]])
   expect(commonDesktopCodecs(["h265", "av1"], [
     { mimeType: "video/H265", clockRate: 90000, sdpFmtpLine: "profile-id=2" },
@@ -34,8 +36,8 @@ test("negotiates receive-only media and starts capture only after the answer and
   await connection.connect(options)
   const peer = TestPeer.instances[0]!
   expect(peer.addTransceiver).toHaveBeenCalledExactlyOnceWith("video", { direction: "recvonly" })
-  expect(peer.codecPreferences).toHaveBeenCalledWith([browserCodecs[0]])
-  expect(api.offer).toHaveBeenCalledWith({ sessionId: expect.any(String), sdp: "browser-offer", codec: "h264", audio: false })
+  expect(peer.codecPreferences).toHaveBeenCalledWith([browserCodecs[4]])
+  expect(api.offer).toHaveBeenCalledWith({ sessionId: expect.any(String), sdp: "browser-offer", codec: "av1", audio: false })
   expect(peer.setRemoteDescription).toHaveBeenCalledWith({ type: "answer", sdp: "native-answer" })
   expect(api.start).not.toHaveBeenCalled()
   peer.changeState("connected")
@@ -174,7 +176,7 @@ test("an encoder failure opens a new peer for the next codec at startup and mid-
   TestPeer.instances[1]!.changeState("connected")
   await connecting
   await flushPromises()
-  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["h264", "h265"])
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["av1", "h265"])
   expect(connection.codec.value).toBe("h265")
   expect(connection.state.value).toBe("connected")
 
@@ -183,8 +185,8 @@ test("an encoder failure opens a new peer for the next codec at startup and mid-
   await flushPromises()
   TestPeer.instances[2]!.changeState("connected")
   await flushPromises()
-  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["h264", "h265", "av1"])
-  expect(connection.codec.value).toBe("av1")
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["av1", "h265", "h264"])
+  expect(connection.codec.value).toBe("h264")
   expect(connection.state.value).toBe("connected")
 })
 
@@ -203,19 +205,19 @@ test("encoder fallback stops at the end of the common list and ignores unclassif
   }
   await connecting
   await flushPromises()
-  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["h264", "h265", "av1"])
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["av1", "h265", "h264"])
   expect(connection.state.value).toBe("error")
   expect(connection.failure.value).toEqual({ kind: "operation", detail: "encoder produced no packet" })
   expect(connection.codec.value).toBeNull()
 
   api.start.mockReset()
   api.start.mockResolvedValue(undefined)
-  await connection.connect({ codecs: ["h264", "h265"], displayId: 2, audio: false })
+  await connection.connect({ codecs: ["h265", "h264"], displayId: 2, audio: false })
   TestPeer.instances[3]!.changeState("connected")
   await flushPromises()
   emit({ sessionId: api.offer.mock.calls.at(-1)![0].sessionId, kind: "error", error: "media transport failed" })
   await flushPromises()
-  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["h264", "h265", "av1", "h264"])
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["av1", "h265", "h264", "h265"])
   expect(connection.failure.value).toEqual({ kind: "operation", detail: "media transport failed" })
 })
 
@@ -303,7 +305,7 @@ test("encoder fallback releases control and waits for the old native peer to clo
   expect(api.offer).toHaveBeenCalledTimes(1)
   closed.resolve()
   await flushPromises()
-  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["h264", "h265"])
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["av1", "h265"])
   expect(TestPeer.instances[1]!.createDataChannel).toHaveBeenCalledWith("deskfleet-input", { ordered: true })
 })
 

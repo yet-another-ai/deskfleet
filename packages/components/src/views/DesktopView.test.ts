@@ -43,10 +43,10 @@ afterEach(() => {
 
 test("discovers displays without capturing, then connects with the automatic codec", async () => {
   const wrapper = await mountDesktop()
-  expect(wrapper.get('[role="status"]').text()).toBe("Choose a display and connect to start sharing. Video codec: H.264.")
+  expect(wrapper.get('[role="status"]').text()).toBe("Choose a display and connect to start sharing. Video codec: AV1.")
   expect(wrapper.findAll("select")).toHaveLength(1)
   const display = wrapper.get("select")
-  expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: H.264")
+  expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: AV1")
   expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
   expect(mock.api.offer).not.toHaveBeenCalled()
   expect(mock.api.start).not.toHaveBeenCalled()
@@ -55,8 +55,8 @@ test("discovers displays without capturing, then connects with the automatic cod
   await wrapper.get('input[type="checkbox"]').setValue(true)
   await button(wrapper, "Connect").trigger("click")
   await flushPromises()
-  expect(mock.api.offer).toHaveBeenCalledWith(expect.objectContaining({ codec: "h264", audio: true }))
-  expect(wrapper.get('[role="status"]').text()).toBe("Connecting with H.264…")
+  expect(mock.api.offer).toHaveBeenCalledWith(expect.objectContaining({ codec: "av1", audio: true }))
+  expect(wrapper.get('[role="status"]').text()).toBe("Connecting with AV1…")
   expect(button(wrapper, "Disconnect").exists()).toBe(true)
   expect(display.attributes("disabled")).toBeDefined()
 
@@ -66,13 +66,90 @@ test("discovers displays without capturing, then connects with the automatic cod
   peer.changeState("connected")
   await flushPromises()
   expect(mock.api.start).toHaveBeenCalledWith(expect.objectContaining({ displayId: 2 }))
-  expect(wrapper.get('[role="status"]').text()).toBe("Connected · H.264")
+  expect(wrapper.get('[role="status"]').text()).toBe("Connected · AV1")
   expect((wrapper.get("video").element as HTMLVideoElement).srcObject).toBeTruthy()
   expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
   await button(wrapper, "Disconnect").trigger("click")
   await flushPromises()
   expect((wrapper.get("video").element as HTMLVideoElement).srcObject).toBeNull()
   expect(track.stop).toHaveBeenCalledTimes(1)
+})
+
+test("selects HEVC ahead of H264 when the display has no AV1 encoder", async () => {
+  mock.api.capabilities.mockResolvedValueOnce({
+    displays: [{ id: 1, width: 1920, height: 1080, refreshRateHz: 60, codecs: ["h264", "h265"] }],
+    audio: false,
+  })
+  const wrapper = await mountDesktop()
+  expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: HEVC")
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  expect(mock.api.offer).toHaveBeenCalledWith(expect.objectContaining({ codec: "h265" }))
+  expect(wrapper.get('[role="status"]').text()).toBe("Connecting with HEVC…")
+})
+
+test("fullscreen keeps the desktop toolbar available and follows browser exit events", async () => {
+  const wrapper = await mountDesktop()
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  const peer = TestPeer.instances[0]!
+  peer.ontrack?.({ track: { stop: vi.fn() } as unknown as MediaStreamTrack })
+  peer.changeState("connected")
+  await flushPromises()
+
+  const stage = wrapper.get("[data-desktop-stage]").element
+  let fullscreenElement: Element | null = null
+  const originalElement = Object.getOwnPropertyDescriptor(document, "fullscreenElement")
+  const originalExit = Object.getOwnPropertyDescriptor(document, "exitFullscreen")
+  const change = (element: Element | null) => {
+    fullscreenElement = element
+    stage.dispatchEvent(new Event("fullscreenchange"))
+  }
+  const request = vi.fn(async () => { change(stage) })
+  const exit = vi.fn(async () => { change(null) })
+  Object.defineProperty(stage, "requestFullscreen", { value: request })
+  Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => fullscreenElement })
+  Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exit })
+  try {
+    await wrapper.get('[aria-label="Full screen"]').trigger("click")
+    await flushPromises()
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(stage.contains(wrapper.get('[aria-label="Exit full screen"]').element)).toBe(true)
+    expect(stage.contains(button(wrapper, "Disconnect").element)).toBe(true)
+    await wrapper.get('[aria-label="Exit full screen"]').trigger("click")
+    await flushPromises()
+    expect(exit).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
+
+    await wrapper.get('[aria-label="Full screen"]').trigger("click")
+    change(null) // The browser also exits fullscreen when the user presses Escape.
+    await flushPromises()
+    expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
+  } finally {
+    if (originalElement) Object.defineProperty(document, "fullscreenElement", originalElement)
+    else Reflect.deleteProperty(document, "fullscreenElement")
+    if (originalExit) Object.defineProperty(document, "exitFullscreen", originalExit)
+    else Reflect.deleteProperty(document, "exitFullscreen")
+  }
+})
+
+test("fullscreen failures are visible and a successful retry clears the error", async () => {
+  const wrapper = await mountDesktop()
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  const peer = TestPeer.instances[0]!
+  peer.ontrack?.({ track: { stop: vi.fn() } as unknown as MediaStreamTrack })
+  peer.changeState("connected")
+  await flushPromises()
+
+  const request = vi.fn().mockRejectedValueOnce(new Error("Fullscreen denied")).mockResolvedValue(undefined)
+  Object.defineProperty(wrapper.get("[data-desktop-stage]").element, "requestFullscreen", { value: request })
+  await wrapper.get('[aria-label="Full screen"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toBe("Could not enter full screen.")
+  await wrapper.get('[aria-label="Full screen"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
 })
 
 test("switching displays selects a codec supported by that display's GPU", async () => {
@@ -86,7 +163,7 @@ test("switching displays selects a codec supported by that display's GPU", async
   })
   const wrapper = await mountDesktop()
   const display = wrapper.get("select")
-  expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: H.264")
+  expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: AV1")
   await display.setValue("2")
   expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: H.264")
   expect(wrapper.get('[role="status"]').text()).toContain("Video codec: H.264.")

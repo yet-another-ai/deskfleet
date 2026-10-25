@@ -10,6 +10,7 @@ import { i18n } from "../i18n/index.ts"
 import { useRouteResource } from "../composables/useRouteResource.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
+import { deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
 import RemoteControlView from "./RemoteControlView.vue"
 
 const TerminalStub = defineComponent({
@@ -20,10 +21,13 @@ const DesktopStub = defineComponent({ name: "DesktopView", props: ["machineId"],
 const FilesStub = defineComponent({ name: "FileTransferPanel", props: ["api", "target", "machineName"], template: '<div data-tool="files" />' })
 const shell: TerminalSummary = { id: "shell", title: "zsh", cwd: "/workspace", cols: 80, rows: 24, status: "running" }
 const originalFiles = platformClient.files
+const originalDesktop = platformClient.desktop
 const cleanup: (() => void)[] = []
 afterEach(() => {
   for (const stop of cleanup.splice(0)) stop()
   platformClient.files = originalFiles
+  platformClient.desktop = originalDesktop
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -67,6 +71,25 @@ async function select(wrapper: VueWrapper, index: number) {
   await flushPromises()
 }
 
+function mockDesktop() {
+  stubWebRtc()
+  const mock = mockDesktopApi()
+  platformClient.desktop = mock.api
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue()
+  const sources = new WeakMap<HTMLMediaElement, MediaProvider | null>()
+  vi.spyOn(HTMLMediaElement.prototype, "srcObject", "set").mockImplementation(function (this: HTMLMediaElement, value) {
+    sources.set(this, value)
+  })
+  vi.spyOn(HTMLMediaElement.prototype, "srcObject", "get").mockImplementation(function (this: HTMLMediaElement) {
+    return sources.get(this) ?? null
+  })
+  return mock
+}
+
+function connectButton(wrapper: VueWrapper) {
+  return wrapper.findAll("[data-desktop-stage] button").find(button => button.text() === "Connect")!
+}
+
 test("a headless machine defaults to Terminal without mounting Desktop or Files", async () => {
   const { wrapper, create } = await setup()
   expect(tabs(wrapper).map(tab => tab.attributes("aria-selected"))).toEqual(["true", "false", "false"])
@@ -99,6 +122,81 @@ test("tools mount only when first visited and keep the same instances across tab
   await select(wrapper, 2)
   expect(wrapper.getComponent(FilesStub).vm).toBe(fileInstance)
   expect(wrapper.getComponent(FilesStub).isVisible()).toBe(true)
+})
+
+test.each([{ tab: 0, name: "Terminal" }, { tab: 2, name: "Files" }])(
+  "switching to $name disconnects Desktop and returning preserves settings until manually reconnecting",
+  async ({ tab }) => {
+    const { api, listeners } = mockDesktop()
+    const { wrapper } = await setup({ desktop: true, realDesktop: true })
+    await vi.waitFor(() => expect(wrapper.find("[data-desktop-stage]").exists()).toBe(true))
+    await flushPromises()
+    await wrapper.get("select").setValue("2")
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get("[data-desktop-control]").setValue(true)
+    await connectButton(wrapper).trigger("click")
+    await flushPromises()
+    const peer = TestPeer.instances[0]!
+    const track = { stop: vi.fn() } as unknown as MediaStreamTrack
+    peer.ontrack?.({ track })
+    peer.changeState("connected")
+    peer.input.ready()
+    await flushPromises()
+    const video = wrapper.get("video")
+    const element = video.element as HTMLVideoElement
+    expect(element.srcObject).not.toBeNull()
+    await video.trigger("keydown", { code: "ControlLeft" })
+    expect(peer.input.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "key", code: "ControlLeft", pressed: true, repeat: false }))
+
+    await select(wrapper, tab)
+    expect(api.close).toHaveBeenCalledExactlyOnceWith(api.offer.mock.calls[0]![0].sessionId)
+    expect(peer.close).toHaveBeenCalledOnce()
+    expect(track.stop).toHaveBeenCalledOnce()
+    expect(peer.input.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "releaseAll" }))
+    expect(peer.input.close).toHaveBeenCalledOnce()
+    expect(listeners.size).toBe(0)
+    expect(element.srcObject).toBeNull()
+    expect(video.isVisible()).toBe(false)
+
+    await select(wrapper, 1)
+    expect(wrapper.get("video").element).toBe(element)
+    expect((wrapper.get("select").element as HTMLSelectElement).value).toBe("2")
+    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.get("[data-desktop-control]").element as HTMLInputElement).checked).toBe(true)
+    expect(connectButton(wrapper).attributes("disabled")).toBeUndefined()
+    expect(api.offer).toHaveBeenCalledOnce()
+    expect(api.start).toHaveBeenCalledOnce()
+    await connectButton(wrapper).trigger("click")
+    await flushPromises()
+    expect(api.offer).toHaveBeenCalledTimes(2)
+    expect(api.offer).toHaveBeenLastCalledWith(expect.objectContaining({ audio: true }))
+  },
+)
+
+test("leaving Desktop during negotiation closes the peer and ignores a late answer", async () => {
+  const { api } = mockDesktop()
+  const answer = deferred<{ sdp: string }>()
+  api.offer.mockReturnValueOnce(answer.promise)
+  const { wrapper } = await setup({ desktop: true, realDesktop: true })
+  await vi.waitFor(() => expect(wrapper.find("[data-desktop-stage]").exists()).toBe(true))
+  await flushPromises()
+  await connectButton(wrapper).trigger("click")
+  await flushPromises()
+  const peer = TestPeer.instances[0]!
+  const sessionId = api.offer.mock.calls[0]![0].sessionId
+  await select(wrapper, 2)
+  expect(peer.close).toHaveBeenCalledOnce()
+  expect(api.close).toHaveBeenCalledExactlyOnceWith(sessionId)
+
+  answer.resolve({ sdp: "late-answer" })
+  await flushPromises()
+  expect(api.close).toHaveBeenCalledTimes(2)
+  expect(api.close).toHaveBeenLastCalledWith(sessionId)
+  expect(peer.setRemoteDescription).not.toHaveBeenCalled()
+  expect(api.start).not.toHaveBeenCalled()
+  await select(wrapper, 1)
+  expect(api.offer).toHaveBeenCalledOnce()
+  expect(connectButton(wrapper).attributes("disabled")).toBeUndefined()
 })
 
 test("Terminal lists only machine-owned shells and rejects a Session shell in the query", async () => {

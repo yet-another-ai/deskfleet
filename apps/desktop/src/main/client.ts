@@ -18,7 +18,7 @@ import { TaskNotificationMonitor } from "./task-notification-monitor.ts"
 import { installSettings, publishLocalAgentState } from "./settings.ts"
 import { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 import {
-  denyChromiumPermissions,
+  installRendererPermissions,
   installRendererProtocol,
   registerRendererScheme,
 } from "./renderer-protocol.ts"
@@ -38,7 +38,7 @@ function start(): void {
     installDesktopMediaIpc()
     const central = await installCentralAccount()
     const files = installFiles(central)
-    denyChromiumPermissions()
+    installRendererPermissions()
     // The dev runner, service managers, and session shutdown stop the client with
     // signals. Electron's own handlers, installed during startup, request an
     // ordinary quit that the tray lifecycle blocks; registering after ready

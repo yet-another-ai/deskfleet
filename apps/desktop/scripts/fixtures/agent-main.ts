@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
-import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
+import { installRendererPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
 import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
 
@@ -287,7 +287,7 @@ void app.whenReady().then(async () => {
   const argument = process.argv.find(value => value.startsWith("--agent-smoke-context="))
   if (!argument) throw new Error("Missing Agent smoke context")
   const context = JSON.parse(argument.slice("--agent-smoke-context=".length)) as AgentSmokeContext
-  denyChromiumPermissions()
+  installRendererPermissions()
   protocol.handle(RENDERER_SCHEME, async request => {
     if (request.method !== "GET") return new Response(null, { status: 405 })
     const path = resolveRendererResourcePath(request.url, context.rendererDirectory)

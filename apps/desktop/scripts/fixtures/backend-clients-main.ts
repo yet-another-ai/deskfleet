@@ -12,7 +12,7 @@ import { KeepAwakeController } from "../../src/main/keep-awake.ts"
 import { NotificationSettingsController } from "../../src/main/notification-settings.ts"
 import { WorktreeRootSettingsController } from "../../src/main/worktree-root-settings.ts"
 import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
-import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
+import { installRendererPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
 
 export interface BackendClientsContext {
@@ -237,7 +237,7 @@ registerRendererScheme()
 app.on("window-all-closed", () => {})
 
 void app.whenReady().then(async () => {
-  denyChromiumPermissions()
+  installRendererPermissions()
   const authorizations: BrowserWindow[] = []
   let controller: LocalAgentController | undefined
   let keepAwake: KeepAwakeController | undefined

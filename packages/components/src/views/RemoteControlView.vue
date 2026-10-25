@@ -84,13 +84,13 @@ const activeTerminal = computed({
         @click="select(tab.id)" @keydown="keydown($event, index)"
       ><component :is="tab.icon" :size="15" aria-hidden="true" />{{ t(tab.label) }}</button>
     </div>
-    <!-- Visit tools on demand, then retain their connections and state while switching tabs. -->
+    <!-- Retain visited tools and their state; desktop capture stops when its tab is hidden. -->
     <div v-if="visited.has('terminal')" v-show="active === 'terminal'" :id="panelId('terminal')" role="tabpanel" :aria-labelledby="tabId('terminal')" class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-ui-border">
       <TerminalWorkspace v-if="currentTarget" v-model:active-id="activeTerminal" :terminals="machineTerminals" :create="() => terminals.create()" />
       <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('terminal.unavailable') }}</p>
     </div>
     <div v-if="visited.has('desktop')" v-show="active === 'desktop'" :id="panelId('desktop')" role="tabpanel" :aria-labelledby="tabId('desktop')" class="flex min-h-0 flex-1 flex-col">
-      <DesktopView :machine-id="machineId" />
+      <DesktopView :machine-id="machineId" :visible="active === 'desktop'" />
     </div>
     <div v-if="visited.has('files')" v-show="active === 'files'" :id="panelId('files')" role="tabpanel" :aria-labelledby="tabId('files')" class="flex min-h-0 flex-1 flex-col overflow-auto">
       <FileTransferPanel v-if="files && target && currentTarget" :key="target.kind === 'machine' ? `${target.teamId}:${target.machineId}` : 'local'" :api="files" :target="target" :machine-name="machine.name" />
