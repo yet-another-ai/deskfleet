@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  Archive,
   Bot,
   ChevronRight,
   Folder,
@@ -13,6 +14,7 @@ import { RouterLink, useRouter } from "vue-router"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
+import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import IconButton from "../common/IconButton.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
@@ -22,9 +24,25 @@ import TreeLink from "./TreeLink.vue"
 const props = defineProps<{ machine: MachineSummary }>()
 const { t, locale } = useI18n()
 const sessionLabel = useSessionLabel()
+const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
 const router = useRouter()
 const addingWorkspace = ref(false)
+const archiving = ref(new Set<string>())
+const archiveErrors = ref<Record<string, string>>({})
+
+async function archiveSession(sessionId: string): Promise<void> {
+  if (archiving.value.has(sessionId)) return
+  archiving.value.add(sessionId)
+  delete archiveErrors.value[sessionId]
+  try {
+    await agents.archive(sessionId)
+  } catch (reason) {
+    archiveErrors.value[sessionId] = reason instanceof Error ? reason.message : String(reason)
+  } finally {
+    archiving.value.delete(sessionId)
+  }
+}
 
 async function workspaceCreated(id: string): Promise<void> {
   addingWorkspace.value = false
@@ -98,10 +116,21 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
               :icon="Bot"
               :label="sessionLabel(session)"
               :depth="1"
-            ><template #icon>
-              <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
-              <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
-            </template></TreeLink>
+            >
+              <template #icon>
+                <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+                <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
+              </template>
+              <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
+                <IconButton
+                  :icon="Archive"
+                  :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
+                  :disabled="!machine.online || archiving.has(session.id)"
+                  @click="archiveSession(session.id)"
+                />
+              </template>
+            </TreeLink>
+            <p v-if="archiveErrors[session.id]" role="alert" class="m-0 px-2.5 pb-1 pl-6 text-xs text-ui-danger break-words">{{ archiveErrors[session.id] }}</p>
           </li>
         </ul>
       </li>
