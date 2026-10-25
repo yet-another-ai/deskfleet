@@ -139,6 +139,7 @@ pub async fn enroll(
     b: web::Json<Enrollment>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
+    let b = b.into_inner();
     let (m, t) = s
         .store
         .enroll(
@@ -147,7 +148,7 @@ pub async fn enroll(
             &b.name,
             &b.origin_id,
             &b.local_machine_id,
-            b.capabilities.clone(),
+            b.capabilities,
         )
         .await?;
     Ok(web::Json(json!({"machine":m,"token":t})))
@@ -235,9 +236,10 @@ pub async fn rpc(
     if !MANAGEMENT.contains(&b.method.as_str()) || !b.params.is_object() {
         return Err(ApiError::bad("unsupported management method"));
     }
+    let b = b.into_inner();
     Ok(web::Json(
         s.hub
-            .request(&p, &b.method, b.params.clone(), Some(actor(&a)))
+            .request(&p, &b.method, b.params, Some(actor(&a)))
             .await?,
     ))
 }
@@ -357,16 +359,13 @@ pub async fn sync_catalog(
     if b.snapshot["machineId"].as_str() != Some(m.machine.local_machine_id.as_str()) {
         return Err(ApiError::bad("catalog belongs to another local machine"));
     }
+    let b = b.into_inner();
     s.store
-        .save_catalog(
-            &m.machine.id,
-            b.snapshot.clone(),
-            safe_providers(&b.providers),
-        )
+        .save_catalog(&m.machine.id, b.snapshot, safe_providers(&b.providers))
         .await?;
-    if let Some(capabilities) = &b.capabilities {
+    if let Some(capabilities) = b.capabilities {
         s.store
-            .set_machine_capabilities(&m.machine.id, capabilities.clone())
+            .set_machine_capabilities(&m.machine.id, capabilities)
             .await?;
     }
     s.store.machine_seen(&m.machine.id).await?;
@@ -394,14 +393,15 @@ pub async fn sync_history(
     b: web::Json<History>,
 ) -> Result<web::Json<Value>> {
     let m = auth::machine(&req, &s).await?;
+    let b = b.into_inner();
     let seq = s
         .store
         .sync_history(
             &m.machine.id,
             &b.session_id,
-            b.snapshot.clone(),
-            b.events.clone(),
-            b.commands.clone(),
+            b.snapshot,
+            b.events,
+            b.commands,
         )
         .await?;
     s.notify_team(

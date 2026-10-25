@@ -47,8 +47,7 @@ backlog dispatch, closes the provider and its pending permission callbacks witho
 granting them, and stops Session-owned terminals while retaining their final
 output and metadata. It records the resulting execution/permission transitions
 without deleting their history. Archive completes only after the associated
-live resources have closed; failed or unfinished closure cannot be reported as
-successful archive. There is no queued offline archive in this release.
+live resources have closed. There is no queued offline archive in this release.
 
 Restore returns the same Session to active use without starting the provider,
 dispatching queued inputs, or creating terminals. The next explicit message can

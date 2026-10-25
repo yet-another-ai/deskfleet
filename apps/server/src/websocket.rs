@@ -2,7 +2,6 @@
 use crate::{
     AppState,
     error::{ApiError, Result},
-    hub::Outbound,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
 use actix_ws::{CloseCode, CloseReason};
@@ -123,7 +122,7 @@ async fn connect(
             tokio::select! {
                 _=shutdown_rx.changed()=>{close_code=(*shutdown_rx.borrow()).unwrap_or(1012);break;},
                 outgoing=receive.recv()=>match outgoing{
-                    Some(Outbound::Message(message))=>{if send_json(&mut session,&message).await.is_err(){break}},
+                    Some(message)=>{if send_json(&mut session,&message).await.is_err(){break}},
                     None=>break,
                 },
                 incoming=stream.next()=>match incoming{

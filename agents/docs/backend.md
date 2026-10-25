@@ -3,9 +3,8 @@
 This document defines the first backend delivery and the local implementation
 that it replaces or extends. [Architecture](architecture.md) owns component and
 resource boundaries; [Agent Sessions](agent-sessions.md) and
-[terminals](terminals.md) own execution and replay semantics. This is an
-implementation scope and acceptance contract. Implementation entry points are
-the [server guide](../../apps/server/README.md),
+[terminals](terminals.md) own execution and replay semantics. Implementation entry
+points are the [server guide](../../apps/server/README.md),
 [daemon guide](../../apps/daemon/README.md), and shared Vue packages.
 
 ## Confirmed product decisions
@@ -44,8 +43,8 @@ the [server guide](../../apps/server/README.md),
   A subsequent message resumes the provider where supported; a subsequent
   terminal start creates a new shell and preserves prior terminal history.
 - Do not expose permanent Session deletion through first-release user interfaces
-  or user-facing APIs. The previously agreed content-removal and metadata-only
-  audit rules apply to a future delete operation, not to archive.
+  or user-facing APIs. A future delete operation removes content and retains
+  metadata-only audit; archive retains both content and full audit.
 - Treat existing unauthenticated local data as development data. The first
   release does not need a legacy resource/history import flow.
 - Re-enrollment after administrator removal uses a new empty machine directory
@@ -84,10 +83,7 @@ distinct.
 
 ## Local implementation changes
 
-The left column records the pre-backend baseline; the right column describes
-the implemented replacement boundary and its validation requirements.
-
-| Current implementation | Required change |
+| Pre-backend implementation | Required change |
 | --- | --- |
 | [Server routes](../../apps/server/src/lib.rs) expose only `/healthz`; startup opens the catalog | Implement the authenticated control-plane APIs and daemon connection service |
 | [LocalCatalog](../../crates/store/src/local.rs) creates a `Local` Team/Machine and permits use without login | Require enrollment and authenticated Team context in the integrated flow; retain local storage and resource ownership |
@@ -102,13 +98,12 @@ the implemented replacement boundary and its validation requirements.
 | [Session deletion](../../apps/daemon/src/agent-sessions.ts) removes resource rows and their journal | Add reversible archive/restore and remove Session deletion from first-release user operations; do not reuse destruction for archive |
 | [Terminal hangup](../../apps/daemon/src/terminals.ts) removes the transcript and metadata | Add a stop-and-retain path for archive; close only Session-owned PTYs and preserve all terminal records |
 | [Provider snapshots](../../apps/daemon/src/agent-providers.ts) include launch settings and environment values | Separate display metadata from configuration; keep secrets out of central replicas, command audit payloads, and logs |
-| [Agent SQL](../../crates/store/src/agent/sql.rs) selects SQLite explicitly; database connections currently use one SQLite-oriented pool configuration | Implement PostgreSQL server persistence rather than assuming the local journal is already a multi-machine PostgreSQL store |
+| [Agent SQL](../../crates/store/src/agent/sql.rs) selects SQLite explicitly; database connections currently use one SQLite-oriented pool configuration | Implement PostgreSQL server persistence |
 | [Renderer CSP](../../apps/desktop/src/shared/renderer-csp.ts) forbids network access and UI code calls `window.deskfleet` | Extract shared UI behind application adapters; Electron supplies a main-process/preload adapter and Web supplies a browser API/signaling adapter |
 
-The existing catalog is real, as are ACP execution, durable history, managed
-worktrees, terminals, Git inspection, and native WebRTC. These are reusable
-capabilities. The temporary parts are their unauthenticated ownership context,
-single-target routing, and local-only control-plane connections.
+Reuse the catalog, ACP execution, durable history, managed worktrees, terminals,
+Git inspection, and native WebRTC. Replace their unauthenticated ownership
+context, single-target routing, and local-only control-plane connections.
 
 Keep machine settings persisted on the machine. Forwarded Provider configuration
 may pass through the authorized API, but launch environment values and CLI
@@ -140,8 +135,7 @@ of subsequent events, a durable acknowledged watermark, and retry deduplication.
 Catalog updates, such as Workspace deletion, need equivalent recoverable state
 because they are not all represented by a Session journal. Archive/restore state
 must also synchronize without removing Session history. The implementation may use
-snapshots or incremental change records where appropriate; it does not require
-a generic distributed replication framework.
+snapshots or incremental change records where appropriate.
 
 History responses report how far the server has synchronized and when the
 machine was last observed. A disconnected machine is not proof that its last
@@ -243,8 +237,7 @@ Acceptance also covers:
   its existing grant. Fingerprint/context mismatch rejects a connection;
   revocation or the 24-hour deadline closes access without stopping executing
   Agents or shells. Signaling reconnect does not extend authorization.
-  Reconnecting synchronization catches up without duplicating events; this does
-  not expand into an offline account/team mode.
+  Reconnecting synchronization catches up without duplicating events.
 - Archive requires the machine online and closes the provider and Session-owned
   PTYs before reporting success. Unrelated terminals keep running. Worktree
   files, uncommitted/untracked changes, backlog, terminal records, conversation

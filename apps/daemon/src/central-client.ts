@@ -169,7 +169,6 @@ export class CentralClient {
     try {
       const result = await this.#request(message.method, message.params, message.actor)
       this.#send({ type: "response", id: message.id, result })
-      this.#sync.changed()
     } catch (error) {
       this.#send({ type: "response", id: message.id, error: { code: "operation_failed", message: error instanceof Error ? error.message : String(error) } })
     }

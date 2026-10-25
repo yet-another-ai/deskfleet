@@ -61,8 +61,7 @@ The daemon publishes a private Unix socket or Windows named pipe through
 Only one live daemon can own it. The discovery token permits host setup,
 enrollment, capabilities, and shutdown; it does not grant resource access.
 Production resource operations go through the backend's authenticated APIs.
-Explicit in-process test fixtures can enable local control; neither the CLI nor
-configuration nor IPC can enable that fixture path.
+Local control is available only to explicit in-process test fixtures.
 
 ## Storage and process ownership
 

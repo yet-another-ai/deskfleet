@@ -70,8 +70,8 @@ export class HttpCentralClient implements CentralApi {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     if (!response.ok) {
-      const error = await response.json().catch(() => ({})) as { error?: string | { code: string; message: string }; message?: string }
-      throw new HttpError(response.status, error.message ?? (typeof error.error === "string" ? error.error : error.error?.message) ?? response.statusText)
+      const error = await response.json().catch(() => ({})) as { error?: { code: string; message: string } }
+      throw new HttpError(response.status, error.error?.message ?? response.statusText)
     }
     return response.status === 204 ? undefined as T : await response.json() as T
   }

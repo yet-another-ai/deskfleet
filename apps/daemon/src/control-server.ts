@@ -88,16 +88,16 @@ class ControlConnection {
     this.#allowLocalControlForTests = allowLocalControlForTests
     const unsubscribeTerminals = allowLocalControlForTests ? terminals.onChange(event => {
       if (event.kind === "terminalHungup") this.#dialed.delete(event.terminalId)
-      if (this.#authenticated && this.#allowLocalControlForTests) this.#send({ event })
+      if (this.#authenticated) this.#send({ event })
     }) : () => {}
     const unsubscribeCatalog = allowLocalControlForTests ? catalog.onChange(event => {
-      if (this.#authenticated && this.#allowLocalControlForTests) this.#send({ event })
+      if (this.#authenticated) this.#send({ event })
     }) : () => {}
     const unsubscribePermissions = permissions.onChange(permission => {
       if (this.#authenticated) this.#send({ event: { kind: "screenCapturePermissionChanged", permission } })
     })
     const unsubscribeProviders = allowLocalControlForTests ? providers.onChanged(() => {
-      if (this.#authenticated && this.#allowLocalControlForTests) this.#send({ event: { kind: "providersChanged" } })
+      if (this.#authenticated) this.#send({ event: { kind: "providersChanged" } })
     }) : () => {}
     this.#unsubscribe = () => { unsubscribeTerminals(); unsubscribeCatalog(); unsubscribePermissions(); unsubscribeProviders() }
     socket.on("error", () => {})

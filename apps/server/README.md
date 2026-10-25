@@ -150,8 +150,8 @@ mise exec -- cargo run -p deskfleet-control-store --example migrate -- status
 
 ## Verification
 
-Unit tests need no PostgreSQL. Explicit integration tests require a real instance;
-they never substitute SQLite. Each run creates uniquely scoped fixture identities.
+Unit tests run without PostgreSQL. Integration tests require a PostgreSQL instance.
+Each run creates uniquely scoped fixture identities.
 
 ```sh
 mise exec -- cargo test -p deskfleet-protocol -p deskfleet-server -p deskfleet-control-store --locked

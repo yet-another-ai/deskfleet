@@ -134,9 +134,8 @@ same Session identity and execution context and returns it to the active list
 without starting processes. A later message resumes the provider where supported;
 opening a terminal can create a new shell while retaining old terminal history.
 Archived Sessions remain owned by their Workspace and continue to prevent its
-deletion. Stopping a process, archiving a Session, and permanently deleting a
-Session are distinct operations. Session deletion is not a first-release user
-operation; existing destructive implementation paths are not archive handlers.
+deletion. Session deletion is not a first-release user operation; existing
+destructive implementation paths are not archive handlers.
 
 For example:
 

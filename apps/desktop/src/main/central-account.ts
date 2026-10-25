@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
 import { HttpCentralClient, type SavedAccount } from "@deskfleet/client/http-central"
-import type { CentralApi, LocalEnrollment } from "@deskfleet/client/central"
+import type { LocalEnrollment } from "@deskfleet/client/central"
 import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { enrollLocalMachine } from "./local-enrollment.ts"
@@ -92,5 +92,3 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
   client.onEvent(event => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(CENTRAL_EVENT, event) })
   app.once("will-quit", () => client.dispose())
 }
-
-export type DesktopCentralApi = CentralApi

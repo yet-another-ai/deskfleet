@@ -51,3 +51,11 @@ test("collects Session summary pages without merging equal IDs from another mach
   expect(await f.client.sessions("remote7")).toEqual([{ session: { id: "1" } }, { session: { id: "3" } }])
   expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/machines/remote7/sessions?after=1&limit=200", expect.anything())
 })
+
+test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {
+  const f = setup()
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))
+  await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 503, message: "target machine is unavailable" })
+  f.fetch.mockResolvedValueOnce(new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }))
+  await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" })
+})

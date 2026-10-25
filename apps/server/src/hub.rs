@@ -5,10 +5,7 @@ use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, mpsc, oneshot, watch};
 
-type Sender = mpsc::Sender<Outbound>;
-pub(crate) enum Outbound {
-    Message(ControlMessage),
-}
+type Sender = mpsc::Sender<ControlMessage>;
 #[derive(Clone)]
 struct Daemon {
     connection_id: String,
@@ -149,12 +146,12 @@ impl Hub {
         };
         if daemon
             .sender
-            .try_send(Outbound::Message(ControlMessage::Request {
+            .try_send(ControlMessage::Request {
                 id: id.clone(),
                 method: method.into(),
                 params,
                 actor,
-            }))
+            })
             .is_err()
         {
             self.inner.lock().await.pending.remove(&id);
@@ -200,11 +197,7 @@ impl Hub {
         let routes = self.inner.lock().await;
         if let Some(clients) = routes.clients.get(login_id) {
             for client in clients.values() {
-                if client
-                    .sender
-                    .try_send(Outbound::Message(message.clone()))
-                    .is_err()
-                {
+                if client.sender.try_send(message.clone()).is_err() {
                     let _ = client.shutdown.send(Some(1012));
                 }
             }
@@ -215,10 +208,7 @@ impl Hub {
         for clients in routes.clients.values() {
             for client in clients.values() {
                 if users.contains(&client.user_id)
-                    && client
-                        .sender
-                        .try_send(Outbound::Message(message.clone()))
-                        .is_err()
+                    && client.sender.try_send(message.clone()).is_err()
                 {
                     let _ = client.shutdown.send(Some(1012));
                 }
@@ -233,20 +223,14 @@ impl Hub {
                 reason: reason.into(),
             };
             if let Some(daemon) = routes.daemons.get(&peer.target_machine.id)
-                && daemon
-                    .sender
-                    .try_send(Outbound::Message(message.clone()))
-                    .is_err()
+                && daemon.sender.try_send(message.clone()).is_err()
             {
                 let _ = daemon.shutdown.send(Some(1012));
             }
             for clients in routes.clients.values() {
                 for client in clients.values() {
                     if client.user_id == peer.actor.user_id
-                        && client
-                            .sender
-                            .try_send(Outbound::Message(message.clone()))
-                            .is_err()
+                        && client.sender.try_send(message.clone()).is_err()
                     {
                         let _ = client.shutdown.send(Some(1012));
                     }
@@ -269,8 +253,7 @@ mod tests {
         let hub = Hub::default();
         let (send, _receive) = mpsc::channel(1);
         let (shutdown, mut stopped) = watch::channel(None);
-        send.try_send(Outbound::Message(ControlMessage::Ping))
-            .unwrap_or_else(|_| panic!("empty queue"));
+        send.try_send(ControlMessage::Ping).unwrap();
         hub.add_daemon("1", "old", send, shutdown).await;
         let peer:PeerAuthorization=serde_json::from_value(serde_json::json!({"peerId":"peer","serverId":"server","teamId":"team","actor":{"kind":"user","userId":"u","deviceId":"d"},"targetMachine":{"id":"1","originId":"origin","localMachineId":"1"},"purpose":"agent","actions":[],"issuedAt":"now","expiresAt":"later"})).unwrap();
         hub.revoke(vec![peer], "logout").await;

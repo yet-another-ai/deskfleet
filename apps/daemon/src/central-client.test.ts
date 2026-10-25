@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
+import { setImmediate } from "node:timers/promises"
 import { startDaemon } from "./daemon.ts"
 import { DaemonClient } from "./control-client.ts"
 import { CentralClient } from "./central-client.ts"
@@ -62,6 +63,74 @@ test("remote enrollment requires TLS and accepts HTTP only on loopback", () => {
   assert.equal(centralUrl("http://localhost:8080"), "http://localhost:8080")
   assert.throws(() => centralUrl("http://backend.example"), /HTTPS/)
   assert.throws(() => centralUrl("https://user:secret@backend.example"), /origin URL/)
+})
+
+test("read and signaling RPCs do not republish catalogs; resource events still synchronize", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-sync-events-"))
+  context.after(() => rm(directory, { recursive: true, force: true }))
+  await writeFile(join(directory, "central.json"), JSON.stringify({
+    serverUrl: "http://127.0.0.1:8080", serverId: "server", teamId: "team", machineId: "machine", token: "secret",
+  }))
+  let socket!: Socket
+  const replies: { type: string; id?: string; error?: unknown }[] = []
+  class Socket extends EventTarget {
+    static OPEN = 1
+    readyState = Socket.OPEN
+    constructor() { super(); socket = this }
+    send(value: string) { replies.push(JSON.parse(value)) }
+    close() { this.readyState = 3 }
+    receive(value: unknown) { this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) })) }
+  }
+  context.mock.property(globalThis, "WebSocket", Socket as unknown as typeof WebSocket)
+  context.mock.timers.enable({ apis: ["setTimeout", "setInterval"] })
+  const posts: string[] = []
+  context.mock.method(globalThis, "fetch", async (url: string | URL | Request) => {
+    posts.push(String(url))
+    return Response.json({ lastEventSeq: "1" })
+  })
+  let catalogChanged = () => {}, providersChanged = () => {}, terminalsChanged = () => {}
+  let agentChanged = (_event: { sessionId: string }) => {}
+  let hasSession = false
+  const snapshot = () => ({ session: { id: "session", lastEventSeq: "1" } })
+  const operations = {
+    agents: {
+      onEvent: (listener: typeof agentChanged) => { agentChanged = listener; return () => {} },
+      journal: {
+        identity: { originId: "origin", machineId: "local" },
+        list: async () => hasSession ? [snapshot().session] : [], read: async () => snapshot(),
+        commands: async () => [], serial: async (_id: string, action: () => Promise<unknown>) => action(),
+        history: async () => [{ sessionId: "session", seq: "1" }],
+      },
+    },
+    catalog: { native: { snapshot: async () => ({}) }, onChange: (listener: () => void) => { catalogChanged = listener; return () => {} } },
+    providers: { metadata: () => ({}), onChanged: (listener: () => void) => { providersChanged = listener; return () => {} } },
+    terminals: { onChange: (listener: () => void) => { terminalsChanged = listener; return () => {} } },
+    handle: async () => [],
+  } as unknown as MachineOperations
+  const central = new CentralClient(directory, operations, {} as ControlPeers)
+  context.after(() => central.close())
+  await central.init()
+  const flush = async () => { context.mock.timers.tick(250); await setImmediate() }
+  const catalogs = () => posts.filter(url => url.endsWith("/catalog")).length
+  socket.receive({ type: "ready", serverId: "server", machineId: "machine", teamId: "team" })
+  await flush()
+  assert.equal(catalogs(), 1)
+  for (const method of ["terminalList", "peer.close"]) {
+    socket.receive({ type: "request", id: method, method, params: { peerId: "closed-peer" } })
+  }
+  await setImmediate()
+  await flush()
+  assert.deepEqual(new Map(replies.map(({ id, error }) => [id, error])), new Map([["terminalList", undefined], ["peer.close", undefined]]))
+  assert.equal(catalogs(), 1, "Refreshing terminal lists must not start a catalogChanged feedback loop")
+  for (const changed of [catalogChanged, providersChanged, terminalsChanged]) {
+    const before = catalogs()
+    changed(); await flush()
+    assert.equal(catalogs(), before + 1)
+  }
+  hasSession = true
+  agentChanged({ sessionId: "session" }); await flush()
+  assert.equal(posts.filter(url => url.endsWith("/history")).length, 1)
+  assert.equal(catalogs(), 4)
 })
 
 

@@ -56,10 +56,10 @@ PTY processes across daemon restarts requires a separate recoverable backend.
 Session archive/restore uses the terminal service's stop-and-retain path.
 Archived terminal records remain available
 for read-only replay. Restoring a Session preserves those records without
-starting a process; it cannot revive an ended shell. A later terminal start
-creates a new PTY without overwriting the previous terminal's identity or
-transcript. Archive requires the machine online and completes only after its
-owned PTYs have stopped and their final output has been retained.
+starting a process. A later terminal start creates a new PTY without overwriting
+the previous terminal's identity or transcript. Archive requires the machine
+online and completes only after its owned PTYs have stopped and their final
+output has been retained.
 
 Remote [peer authorization](webrtc-security.md) expires after at most 24 hours
 or on explicit revocation/closure. That event detaches terminal access without

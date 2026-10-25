@@ -58,8 +58,7 @@ the Team's other machines appear as collapsed groups, and opening one switches
 to it. Team creation/joining and Add machine open focused dialogs. Team settings,
 alongside Preferences and Agents, manages the name, members and roles, and
 machines. It remains available while a Team has no machines. The account menu
-and sign-out action live in the sidebar footer, preserving the existing window
-chrome and workspace area.
+and sign-out action live in the sidebar footer.
 Add machine offers this computer on the desktop, which enrolls its hosted daemon;
 an existing enrollment is never silently reassigned. For another machine, paste
 the output of `deskfleet-daemon status` into the dialog and import the issued
@@ -71,8 +70,7 @@ context and prepares a new empty directory and identity. The previous data stays
 at its original paths; the new registration can join the same Team again.
 
 Workspace creation and editing use the target daemon's filesystem browser through
-central management APIs. Directory ordering, Session-owned Worktrees, terminals,
-provider selection, and the conversation UI retain their existing behavior.
+central management APIs.
 Management uses authenticated HTTP; live Agent, Git, terminal, and desktop traffic
 uses an authorized WebRTC peer with server-provided STUN/TURN settings. Offline
 machines retain their synchronized catalog and readable conversation history.
@@ -325,7 +323,7 @@ stylesheet.
 ## Renderer security
 
 The renderer runs with context isolation, the Chromium sandbox, and no Node
-integration. The preload exposes `window.deskfleet` (`src/shared/desktop-api.ts`)
+integration. The preload exposes `window.deskfleet` (`packages/client/src/desktop-api.ts`)
 only to the main renderer document. Keep that interface narrow; agent output and
 repository content are untrusted display data.
 

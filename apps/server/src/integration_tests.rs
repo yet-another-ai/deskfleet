@@ -139,7 +139,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     let hub = state.hub.clone();
     let machine = machine_id.to_owned();
     let worker = actix_web::rt::spawn(async move {
-        while let Some(hub::Outbound::Message(message)) = receive.recv().await {
+        while let Some(message) = receive.recv().await {
             if let ControlMessage::Request {
                 id,
                 method,

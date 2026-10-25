@@ -12,12 +12,11 @@ use config::ServerConfig;
 use deskfleet_control_store::ControlStore;
 use deskfleet_protocol::{HealthResponse, control::ControlMessage};
 use error::Result;
-use std::sync::Arc;
 
 pub struct AppState {
     pub store: ControlStore,
     pub config: ServerConfig,
-    pub oidc: Option<Arc<auth::Oidc>>,
+    pub oidc: Option<auth::Oidc>,
     hub: hub::Hub,
     peers: peers::Negotiations,
 }
@@ -25,7 +24,7 @@ impl AppState {
     pub async fn new(config: ServerConfig) -> Result<Self> {
         let store = ControlStore::connect(&config.database_url).await?;
         let oidc = match config.oidc.clone() {
-            Some(c) => Some(Arc::new(auth::Oidc::discover(c).await?)),
+            Some(c) => Some(auth::Oidc::discover(c).await?),
             None => None,
         };
         Ok(Self {

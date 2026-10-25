@@ -4,17 +4,13 @@ import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouter } from "vue-router"
 import IconButton from "../common/IconButton.vue"
-import { useFleetStore } from "../../stores/fleet.ts"
-import { client as platformClient } from "@deskfleet/client/platform"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import AccountFooter from "./AccountFooter.vue"
 
 const { t } = useI18n()
 const router = useRouter()
-const fleet = useFleetStore()
 const account = useAccountSession()
-const name = computed(() => platformClient.target ? fleet.machines.find(machine => machine.id === fleet.targetId)?.name ?? t("catalog.local") : t("catalog.local"))
-const initial = computed(() => name.value.charAt(0).toUpperCase())
+const initial = computed(() => t("catalog.local").charAt(0).toUpperCase())
 </script>
 
 <template>
@@ -27,7 +23,7 @@ const initial = computed(() => name.value.charAt(0).toUpperCase())
       >
         {{ initial }}
       </span>
-      <span class="truncate">{{ name }}</span>
+      <span class="truncate">{{ t("catalog.local") }}</span>
     </div>
     <IconButton :icon="Settings" :label="t('nav.settings')" @click="router.push({ name: 'settings' })" />
   </footer>
