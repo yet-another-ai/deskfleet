@@ -16,6 +16,15 @@ async function openChooser(view: VueWrapper): Promise<void> {
   await vi.waitFor(() => expect(view.find('input[type="search"]').exists()).toBe(true))
 }
 
+test("a second click while the catalog is opening does not immediately close the chooser", async () => {
+  const view = await render()
+  const button = view.get('button[aria-expanded]').element
+  button.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+  button.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+  await vi.waitFor(() => expect(view.find('input[type="search"]').exists()).toBe(true))
+  expect(view.get('button[aria-expanded]').attributes("aria-expanded")).toBe("true")
+})
+
 test("searches the LLM icon catalog and selects an icon without submitting the form", async () => {
   const view = await render()
   expect(view.text()).toContain("Template default")

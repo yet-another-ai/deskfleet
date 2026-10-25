@@ -32,14 +32,21 @@ const icons = computed(() => {
   const term = query.value.trim().toLocaleLowerCase()
   return catalog.value.filter(item => `${item.name} ${item.id}`.toLocaleLowerCase().includes(term))
 })
+let toggling = false
 async function toggle(): Promise<void> {
-  if (props.disabled) return
-  if (!open.value) await ensureIcons()
-  open.value = !open.value
-  if (open.value) {
-    query.value = ""
-    await nextTick()
-    search.value?.focus()
+  if (props.disabled || toggling) return
+  toggling = true
+  try {
+    const next = !open.value
+    if (next) await ensureIcons()
+    open.value = next
+    if (open.value) {
+      query.value = ""
+      await nextTick()
+      search.value?.focus()
+    }
+  } finally {
+    toggling = false
   }
 }
 async function close(): Promise<void> {
