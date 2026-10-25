@@ -61,6 +61,11 @@ and installs the pnpm workspace with `--frozen-lockfile`.
 Task definitions live in `mise.toml`; the workflows select tasks and execution
 platforms instead of maintaining another set of validation commands.
 
+When both suites are scheduled, daemon tests wait for Rust tests to finish.
+Both create many SQLite catalogs; separating them avoids overlapping storage
+workloads while daemon IPC deadlines are active. Running only `check:daemon`
+does not add the Rust test suite.
+
 Static and test jobs may restore the Cargo target cache. Build jobs use Cargo
 download caches without restoring compiled targets. The setup action populates
 download caches before saving them.

@@ -8,17 +8,24 @@ import { startDaemon } from "./daemon.ts"
 
 test("authenticated provider CRUD broadcasts changes and survives daemon restart", { timeout: 15_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "df-provider-control-"))
-  let daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  let starting: ReturnType<typeof startDaemon> | undefined
   const clients: DaemonClient[] = []
   t.after(async () => {
     clients.forEach(client => client.close())
-    await daemon.close()
-    await rm(directory, { recursive: true, force: true })
+    try { await (await starting)?.close() }
+    finally { await rm(directory, { recursive: true, force: true }) }
   })
-  const client = await DaemonClient.connect(() => {}, () => {}, directory)
+  const own = (client: DaemonClient): DaemonClient => {
+    clients.push(client)
+    if (t.signal.aborted) { client.close(); t.signal.throwIfAborted() }
+    return client
+  }
+  starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  let daemon = await starting
+  t.signal.throwIfAborted()
+  const client = own(await DaemonClient.connect(() => {}, () => {}, directory))
   let changed: (() => void) | undefined
-  const observer = await DaemonClient.connect(event => { if (event.kind === "providersChanged") changed?.() }, () => {}, directory)
-  clients.push(client, observer)
+  const observer = own(await DaemonClient.connect(event => { if (event.kind === "providersChanged") changed?.() }, () => {}, directory))
   assert.equal((await client.call("providerList", {})).providers[0]?.id, "codex")
   const notification = new Promise<void>(resolve => { changed = resolve })
   const created = await client.call("providerCreate", { provider: { template: "acp", name: "Custom", env: { API_KEY: "private" } } })
@@ -40,9 +47,11 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
   await client.call("providerRemove", { providerId: "codex" })
   clients.forEach(connection => connection.close())
   await daemon.close()
-  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
-  const reopened = await DaemonClient.connect(() => {}, () => {}, directory)
-  clients.push(reopened)
+  t.signal.throwIfAborted()
+  starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  daemon = await starting
+  t.signal.throwIfAborted()
+  const reopened = own(await DaemonClient.connect(() => {}, () => {}, directory))
   assert.deepEqual((await reopened.call("providerList", {})).providers, [updated])
   await reopened.call("providerRemove", { providerId: created.id })
   assert.deepEqual((await reopened.call("providerList", {})).providers, [])

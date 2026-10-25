@@ -246,6 +246,8 @@ run = "pnpm --filter @deskfleet/desktop typecheck"
 [tasks."check:daemon"]
 hide = true
 depends = ["native:debug"]
+# Both suites create many SQLite catalogs; avoid competing for runner storage.
+wait_for = ["rust:test"]
 run = "node --test apps/daemon/src/*.test.ts"
 
 [tasks."check:desktop"]

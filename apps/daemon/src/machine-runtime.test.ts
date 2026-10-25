@@ -114,11 +114,25 @@ test("explicit registration reset stops resources and preserves their original p
 
 test("registration preparation retains host IPC and resolves getters to the new context", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-machine-ipc-reset-"))
+  let starting: ReturnType<typeof startDaemon> | undefined
+  const clients: DaemonClient[] = []
+  context.after(async () => {
+    clients.forEach(client => client.close())
+    try { await (await starting)?.close() }
+    finally { await rm(directory, { recursive: true, force: true }) }
+  })
+  const own = (client: DaemonClient): DaemonClient => {
+    clients.push(client)
+    if (context.signal.aborted) { client.close(); context.signal.throwIfAborted() }
+    return client
+  }
   await seed(directory)
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
-  const first = await DaemonClient.connect(() => {}, () => {}, directory)
-  const second = await DaemonClient.connect(() => {}, () => {}, directory)
-  context.after(async () => { first.close(); second.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
+  context.signal.throwIfAborted()
+  starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
+  const daemon = await starting
+  context.signal.throwIfAborted()
+  const first = own(await DaemonClient.connect(() => {}, () => {}, directory))
+  const second = own(await DaemonClient.connect(() => {}, () => {}, directory))
   const before = await first.call("centralStatus", {})
   assert.equal(before.revoked, true)
   const discovery = await readDaemonDiscovery(directory)
