@@ -20,6 +20,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
+  # Disable incremental compilation so sccache can cache every rustc invocation.
   CARGO_INCREMENTAL: "0"
 
 jobs:
@@ -36,8 +37,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Use faster release profile for packaging builds
+        shell: bash
+        run: |
+          {
+            echo "CARGO_PROFILE_RELEASE_LTO=false"
+            echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16"
+            echo "CARGO_PROFILE_RELEASE_DEBUG=0"
+            echo "CARGO_PROFILE_RELEASE_STRIP=symbols"
+          } >> "$GITHUB_ENV"
+
       - name: Set up build environment
-        id: setup
+        id: setup_build
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
@@ -79,6 +90,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Report compiler cache health
-        if: ${{ always() && steps.setup.outcome == 'success' }}
+      - name: Report shared compiler cache health
+        if: ${{ always() && steps.setup_build.outcome == 'success' }}
         run: mise run ci:report:sccache

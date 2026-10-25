@@ -27,23 +27,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install locked Node toolchain
-        uses: jdx/mise-action@v5.2.3
-        with:
-          version: 2026.10.19
-          install_args: --locked node
-          cache: true
-          cache_save: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
-          github_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
-
-      - name: Classify documentation changes
+      - name: Classify documentation-only changes
         id: classify
         shell: bash
         run: |
-          # Missing output or a failed classifier must run full CI.
+          # Use the hosted runner's Node without provisioning a toolchain. Older
+          # runtimes or missing output must fall back to full CI, never a skip.
           echo "docs_only=false" >> "$GITHUB_OUTPUT"
           if ! node scripts/ci-docs-only.ts; then
-            echo "::warning::Change classification failed; running full CI."
+            echo "::warning::Classification could not run; running full CI."
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -54,6 +46,8 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       docs_only: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+    permissions:
+      contents: read
 
   build:
     name: Build
@@ -62,6 +56,8 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       pr_smoke_build: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
 
   gate:
     name: Gate

@@ -20,6 +20,10 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
+  # CI-only compilation tuning. Local builds keep full debug info. CI only
+  # needs line tables for backtraces, and MSVC PDB generation is a large part
+  # of Windows build time. Incremental compilation is disabled so sccache can
+  # cache every rustc invocation.
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
@@ -35,7 +39,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up build environment
-        id: setup
+        id: setup_build
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
@@ -44,8 +48,8 @@ jobs:
       - name: Run static checks
         run: mise run ci:check:static
 
-      - name: Report compiler cache health
-        if: ${{ always() && steps.setup.outcome == 'success' }}
+      - name: Report shared compiler cache health
+        if: ${{ always() && steps.setup_build.outcome == 'success' }}
         run: mise run ci:report:sccache
 
   checks:
@@ -72,7 +76,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up build environment
-        id: setup
+        id: setup_build
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
@@ -81,8 +85,8 @@ jobs:
       - name: Run tests
         run: mise run test
 
-      - name: Report compiler cache health
-        if: ${{ always() && steps.setup.outcome == 'success' }}
+      - name: Report shared compiler cache health
+        if: ${{ always() && steps.setup_build.outcome == 'success' }}
         run: mise run ci:report:sccache
 
   backend:
@@ -115,7 +119,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up build environment
-        id: setup
+        id: setup_build
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
@@ -133,6 +137,15 @@ jobs:
           electron_sandbox=$(mise exec -- pnpm --filter @deskfleet/desktop exec node -p 'require.resolve("electron/dist/chrome-sandbox")')
           sudo chown root:root "$electron_sandbox"
           sudo chmod 4755 "$electron_sandbox"
+
+      - name: Save Electron downloads
+        if: >-
+          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
+          steps.setup_build.outputs.electron-cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.setup_build.outputs.electron-path }}
+          key: ${{ steps.setup_build.outputs.electron-cache-key }}
 
       - name: Run the built Web and Electron clients
         run: xvfb-run -a mise run backend:smoke-clients
@@ -166,6 +179,6 @@ jobs:
         if: ${{ always() }}
         run: docker rm --force deskfleet-turn-test || true
 
-      - name: Report compiler cache health
-        if: ${{ always() && steps.setup.outcome == 'success' }}
+      - name: Report shared compiler cache health
+        if: ${{ always() && steps.setup_build.outcome == 'success' }}
         run: mise run ci:report:sccache
