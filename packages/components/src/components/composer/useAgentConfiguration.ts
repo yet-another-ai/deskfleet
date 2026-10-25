@@ -22,7 +22,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     error.value = null
     try {
       const result = sessionId
-        ? choices ? await agents.configureSession(sessionId, { model: choices.model, reasoningEffort: choices.reasoningEffort }) : await agents.sessionConfiguration(sessionId)
+        ? choices ? await agents.configureSession(sessionId, choices) : await agents.sessionConfiguration(sessionId)
         : await agents.agentConfiguration({ ...(choices ?? selection.value), provider: providerId!, workspaceId })
       if (currentRequest !== requestId) return
       if (!sessionId) {
@@ -31,6 +31,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
           provider: result.provider.id,
           model: result.models?.currentValue,
           reasoningEffort: result.reasoningEfforts?.currentValue,
+          mode: result.modes?.currentValue,
         }
       }
     } catch (cause) {
@@ -45,11 +46,15 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     if (expanded.value && !loading.value && (target().sessionId || !configuration.value)) void configure()
   }
   function changeModel(model: string): Promise<void> {
-    // Let the agent select a supported effort for the new model.
-    return configure({ model })
+    // Draft discovery opens a new agent; carry its mode, but reset effort for the
+    // new model. A live Session owns its mode, including any native fallback.
+    return configure({ ...(!target().sessionId && { mode: configuration.value?.modes?.currentValue }), model })
   }
   function changeReasoningEffort(reasoningEffort: string): Promise<void> {
-    return configure({ ...(!target().sessionId && { model: configuration.value?.models?.currentValue }), reasoningEffort })
+    return configure({ ...(!target().sessionId && { model: configuration.value?.models?.currentValue, mode: configuration.value?.modes?.currentValue }), reasoningEffort })
+  }
+  function changeMode(mode: string): Promise<void> {
+    return configure({ ...(!target().sessionId && { model: configuration.value?.models?.currentValue, reasoningEffort: configuration.value?.reasoningEfforts?.currentValue }), mode })
   }
   function reload(): Promise<void> {
     return configure(target().sessionId ? undefined : {})
@@ -64,5 +69,6 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
 
   const modelName = computed(() => configuration.value?.models?.options.find(option => option.id === configuration.value?.models?.currentValue)?.name ?? configuration.value?.models?.currentValue ?? selection.value?.model)
   const reasoningEffort = computed(() => configuration.value?.reasoningEfforts?.currentValue ?? selection.value?.reasoningEffort)
-  return { configuration, expanded, loading, error, modelName, reasoningEffort, toggle, changeModel, changeReasoningEffort, reload }
+  const modeName = computed(() => configuration.value?.modes?.options.find(option => option.id === configuration.value?.modes?.currentValue)?.name ?? configuration.value?.modes?.currentValue ?? selection.value?.mode)
+  return { configuration, expanded, loading, error, modelName, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload }
 }

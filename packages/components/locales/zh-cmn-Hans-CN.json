@@ -93,6 +93,7 @@
     },
     "model": "模型",
     "reasoningEffort": "推理强度",
+    "mode": "模式",
     "configuration": "Agent 配置",
     "configureAgent": "配置 Agent：{selection}",
     "collapseConfiguration": "收起 Agent 配置",

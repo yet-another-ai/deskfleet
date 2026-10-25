@@ -18,6 +18,17 @@ function configuration(model = "sequoia", effort = "medium"): AgentConfiguration
     provider: { id: "codex", name: "Codex" },
     models: { id: "model", currentValue: model, options: [{ id: "sequoia", name: "Sequoia" }, { id: "orbit", name: "Orbit" }] },
     reasoningEfforts: { id: "reasoning_effort", currentValue: effort, options: [{ id: "medium", name: "Medium" }, { id: "high", name: "High" }] },
+    modes: null,
+  }
+}
+function nativeConfiguration(mode = "acceptEdits", model = "sequoia", effort = "medium"): AgentConfiguration {
+  return {
+    ...configuration(model, effort),
+    modes: { id: "mode", currentValue: mode, options: [
+      { id: "acceptEdits", name: "Accept edits", description: "Automatically approve file edits." },
+      { id: "auto", name: "Auto", description: "Review tool permissions automatically." },
+      { id: "plan", name: "Plan", description: "Plan before making changes." },
+    ] },
   }
 }
 function deferredConfiguration() {
@@ -55,7 +66,7 @@ afterEach(() => {
   i18n.global.locale.value = "en-US"
 })
 
-test("opens a compact three-row menu and dynamically populates checked submenus", async () => {
+test("opens a compact configuration menu and dynamically populates checked submenus", async () => {
   const loaded = deferredConfiguration()
   const api = vi.mocked(agents.agentConfiguration).mockReturnValueOnce(loaded.promise)
   const view = render()
@@ -63,11 +74,12 @@ test("opens a compact three-row menu and dynamically populates checked submenus"
   expect(view.find('[role="menu"]').exists()).toBe(false)
   await trigger(view).trigger("click")
   expect(api).toHaveBeenCalledExactlyOnceWith({ provider: "codex", workspaceId: "11" })
-  expect(view.findAll("[data-agent-control]")).toHaveLength(3)
+  expect(view.findAll("[data-agent-control]")).toHaveLength(4)
   expect(row(view, "agent").text()).toBe("AgentCodex")
   expect(document.activeElement).toBe(row(view, "agent").element)
   expect(row(view, "model").attributes("disabled")).toBeDefined()
   expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
+  expect(row(view, "mode").attributes("disabled")).toBeDefined()
   expect(view.get('[role="status"]').text()).toBe("Reading configuration from the agent…")
   loaded.resolve(configuration()); await flushPromises()
   expect(row(view, "model").text()).toBe("ModelSequoia")
@@ -90,6 +102,55 @@ test("changes a model before offering its supported reasoning choices", async ()
   api.mockResolvedValueOnce({ ...next, reasoningEfforts: { ...next.reasoningEfforts, currentValue: "careful" } })
   await choose(view, "reasoning", "careful")
   expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", reasoningEffort: "careful", workspaceId: "11" })
+})
+
+test("shows native mode names and descriptions and saves only the agent's confirmed choice", async () => {
+  i18n.global.locale.value = "zh-cmn-Hans-CN"
+  const api = vi.mocked(agents.agentConfiguration).mockResolvedValue(nativeConfiguration())
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  expect(row(view, "mode").text()).toBe("模式Accept edits")
+  await row(view, "mode").trigger("click")
+  expect(options(view).map(option => option.attributes("data-value"))).toEqual(["acceptEdits", "auto", "plan"])
+  expect(options(view)[1]!.text()).toContain("Review tool permissions automatically.")
+  await view.get('[role="menuitemradio"][data-value="auto"]').trigger("click"); await flushPromises()
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "sequoia", reasoningEffort: "medium", mode: "auto" })
+  // An unsupported auto mode can be accepted with a native fallback.
+  expect(row(view, "mode").attributes("data-value")).toBe("acceptEdits")
+  expect(agents.draftConfiguration.mode).toBe("acceptEdits")
+  expect(JSON.parse(window.localStorage.getItem(storageKey)!).mode).toBe("acceptEdits")
+  api.mockRejectedValueOnce(new Error("Mode change rejected"))
+  await choose(view, "mode", "plan")
+  expect(row(view, "mode").attributes("data-value")).toBe("acceptEdits")
+  expect(view.get('[role="alert"]').text()).toBe("Mode change rejected")
+})
+
+test("draft model changes preserve native mode and reset effort, while mode changes preserve model and effort", async () => {
+  const api = vi.mocked(agents.agentConfiguration).mockResolvedValue(nativeConfiguration("auto", "sequoia", "high"))
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  api.mockResolvedValueOnce(nativeConfiguration("auto", "orbit"))
+  await choose(view, "model", "orbit")
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "orbit", mode: "auto" })
+  expect(agents.draftConfiguration).toEqual({ provider: "codex", model: "orbit", reasoningEffort: "medium", mode: "auto" })
+  api.mockResolvedValueOnce(nativeConfiguration("auto", "orbit", "high"))
+  await choose(view, "reasoning", "high")
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "orbit", reasoningEffort: "high", mode: "auto" })
+  api.mockResolvedValueOnce(nativeConfiguration("plan", "orbit", "high"))
+  await choose(view, "mode", "plan")
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "orbit", reasoningEffort: "high", mode: "plan" })
+  expect(trigger(view).text()).toBe("Codex · Orbit · High · Plan")
+  view.unmount(); wrappers.splice(wrappers.indexOf(view), 1)
+  const restored = render(); await trigger(restored).trigger("click"); await flushPromises()
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "orbit", reasoningEffort: "high", mode: "plan" })
+})
+
+test("reload recovers rejected draft choices using the agent's current defaults", async () => {
+  agents.draftConfiguration = { provider: "codex", model: "retired-model", mode: "retired-mode" }
+  const api = vi.mocked(agents.agentConfiguration).mockRejectedValueOnce(new Error("Mode is no longer available"))
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  api.mockResolvedValueOnce(nativeConfiguration())
+  await view.findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11" })
+  expect(agents.draftConfiguration).toEqual({ provider: "codex", model: "sequoia", reasoningEffort: "medium", mode: "acceptEdits" })
 })
 
 test("switches configured providers without reusing another provider's model or accepting its pending response", async () => {
@@ -174,11 +235,13 @@ test("reloads after discovery errors and disables controls the agent does not su
   const api = vi.mocked(agents.agentConfiguration).mockRejectedValueOnce(new Error("Codex is not authenticated"))
   const view = render(); await trigger(view).trigger("click"); await flushPromises()
   expect(view.get('[role="alert"]').text()).toBe("Codex is not authenticated")
-  api.mockResolvedValueOnce({ provider: { id: "codex", name: "Codex" }, models: null, reasoningEfforts: null })
+  api.mockResolvedValueOnce({ provider: { id: "codex", name: "Codex" }, models: null, reasoningEfforts: null, modes: null })
   await view.findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
   expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11" })
   expect(row(view, "model").text()).toBe("ModelUnavailable")
   expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
+  expect(row(view, "mode").text()).toBe("ModeUnavailable")
+  expect(row(view, "mode").attributes("disabled")).toBeDefined()
 })
 
 test("ignores previous workspace responses and responses after unmount", async () => {
@@ -218,7 +281,7 @@ test("live session settings remain independent from saved draft preferences and 
   expect(agents.agentConfiguration).not.toHaveBeenCalled()
   expect(configure).not.toHaveBeenCalled()
   await choose(view, "reasoning", "high")
-  expect(configure).toHaveBeenLastCalledWith("30", { model: undefined, reasoningEffort: "high" })
+  expect(configure).toHaveBeenLastCalledWith("30", { reasoningEffort: "high" })
   expect(window.localStorage.getItem(storageKey)).toBe(saved)
   agents.configurations["30"] = configuration("orbit", "high"); await flushPromises()
   expect(row(view, "model").attributes("data-value")).toBe("orbit")
@@ -240,6 +303,42 @@ test("a live Session retains its known provider name after registry removal and 
   expect(row(view, "agent").attributes("data-value")).toBe("work-agent")
   expect(row(view, "model").attributes("disabled")).toBeUndefined()
   expect(agents.agentConfiguration).not.toHaveBeenCalled()
+})
+
+test("changes model and mode in the same Session while its Agent stays fixed", async () => {
+  const providers = useProvidersStore()
+  providers.providers.push({ id: "other-agent", name: "Other agent", template: "acp" })
+  agents.draftConfiguration = { provider: "other-agent", mode: "draft-mode" }; await flushPromises()
+  const saved = window.localStorage.getItem(storageKey)
+  vi.spyOn(agents, "sessionConfiguration").mockImplementation(async id => {
+    const result = nativeConfiguration("auto")
+    agents.configurations[id] = result
+    return result
+  })
+  const configure = vi.spyOn(agents, "configureSession").mockImplementation(async (id, choices) => {
+    const result = nativeConfiguration(choices.mode ?? "acceptEdits", "orbit")
+    agents.configurations[id] = result
+    return result
+  })
+  const view = render(); await view.setProps({ sessionId: "30" })
+  await trigger(view).trigger("click"); await flushPromises()
+  expect(row(view, "agent").attributes("disabled")).toBeDefined()
+  await row(view, "agent").trigger("click")
+  expect(options(view)).toHaveLength(0)
+  expect(row(view, "model").attributes("disabled")).toBeUndefined()
+  await choose(view, "model", "orbit")
+  expect(configure).toHaveBeenLastCalledWith("30", { model: "orbit" })
+  // Do not reapply Auto after the new model returns Accept edits as its fallback.
+  expect(row(view, "mode").attributes("data-value")).toBe("acceptEdits")
+  expect(trigger(view).text()).toBe("Codex · Orbit · Medium · Accept edits")
+  await choose(view, "mode", "plan")
+  expect(configure).toHaveBeenLastCalledWith("30", { mode: "plan" })
+  expect(agents.sessions["30"]!.provider).toBe("codex")
+  expect(window.localStorage.getItem(storageKey)).toBe(saved)
+  expect(agents.agentConfiguration).not.toHaveBeenCalled()
+  await view.setProps({ disabled: true })
+  expect(row(view, "model").attributes("disabled")).toBeDefined()
+  expect(row(view, "mode").attributes("disabled")).toBeDefined()
 })
 
 test.each([
@@ -264,10 +363,7 @@ test.each([
   await row(view, control).trigger("click")
   expect(options(view).some(option => option.attributes("aria-checked") === "true")).toBe(false)
   await view.get(`[role="menuitemradio"][data-value="${replacement}"]`).trigger("click"); await flushPromises()
-  expect(configure).toHaveBeenCalledExactlyOnceWith("30", {
-    model: control === "model" ? replacement : undefined,
-    reasoningEffort: control === "reasoning" ? replacement : undefined,
-  })
+  expect(configure).toHaveBeenCalledExactlyOnceWith("30", control === "model" ? { model: replacement } : { reasoningEffort: replacement })
   expect(row(view, control).attributes("data-value")).toBe(replacement)
   expect(trigger(view).text()).not.toContain("retired-")
   expect(agents.agentConfiguration).not.toHaveBeenCalled()
@@ -308,7 +404,7 @@ test("refreshes cached choices after a failed resume without duplicating pending
   expect(options(view).map(option => option.attributes("data-value"))).toEqual(["sequoia", "orbit"])
   expect(configure).not.toHaveBeenCalled()
   await view.get('[role="menuitemradio"][data-value="orbit"]').trigger("click"); await flushPromises()
-  expect(configure).toHaveBeenCalledExactlyOnceWith("30", { model: "orbit", reasoningEffort: undefined })
+  expect(configure).toHaveBeenCalledExactlyOnceWith("30", { model: "orbit" })
   expect(row(view, "model").attributes("data-value")).toBe("orbit")
   expect(read).toHaveBeenCalledTimes(1)
   await trigger(view).trigger("click"); await trigger(view).trigger("click"); await flushPromises()

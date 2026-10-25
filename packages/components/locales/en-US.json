@@ -93,6 +93,7 @@
     },
     "model": "Model",
     "reasoningEffort": "Reasoning",
+    "mode": "Mode",
     "configuration": "Agent configuration",
     "configureAgent": "Configure agent: {selection}",
     "collapseConfiguration": "Collapse agent configuration",

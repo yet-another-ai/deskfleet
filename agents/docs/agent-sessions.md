@@ -367,10 +367,10 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | --- | --- |
 | `initialize` | Negotiate protocol, facade capabilities, byte limit, and catalog identity |
 | `_deskfleet/session/list` | Read persisted Session summaries |
-| `_deskfleet/agent/configuration` | Discover provider model and reasoning choices for a draft in a Workspace's default directory |
-| `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning selections, and start it; return snapshot |
+| `_deskfleet/agent/configuration` | Discover provider model, reasoning, and mode choices for a draft in a Workspace's default directory |
+| `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning/mode selections, and start it; return snapshot |
 | `_deskfleet/session/configuration` | Read the Session's confirmed provider configuration |
-| `_deskfleet/session/configure` | Audit and apply model/reasoning changes to a Session |
+| `_deskfleet/session/configure` | Audit and apply model/reasoning/mode changes to a Session without changing its provider |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
 | `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
 | `_deskfleet/git/status` | Inspect the Session's captured checkouts, branch/HEAD, and staged/unstaged/untracked files |
@@ -387,8 +387,9 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | `_deskfleet/session/resume`, `/stop` | Explicit provider lifecycle operations; input submission also resumes |
 | `_deskfleet/session/archive`, `/restore` | Backend management operations; preserve data and require an online daemon |
 
-Original ACP notifications, including provider Session IDs, are carried in journal
-events and projected once by the renderer. The facade advertises only supported
+ACP notifications, including provider Session IDs, are carried in journal
+events and projected once by the renderer. Mode metadata is normalized as
+described below. The facade advertises only supported
 methods. Managed creation takes a Workspace whose directories determine `cwd`.
 
 Git reads require a ready Session and resolve its owned Worktree through the
@@ -399,19 +400,50 @@ that Session's paths. Diffs distinguish index changes from working-tree changes
 and include untracked file previews. Binary files and truncated patches are
 reported explicitly. Checkout errors do not hide healthy checkout results.
 
-### Model and reasoning configuration
+### Model, reasoning, and mode configuration
 
-The composer's menu has Agent, Model, and Reasoning submenus. A draft can select
+The composer's menu has Agent, Model, Reasoning, and Mode submenus. A draft can select
 any provider configured on its machine; an existing Session keeps its saved
-provider identity. Available models and efforts come from that provider's ACP
-select options, including grouped options. Draft discovery resolves the selected
+provider identity. Users can change the model between turns in the same Session;
+the conversation and provider identity remain unchanged. Available models,
+efforts, and modes come from that provider's ACP select options, including
+grouped options. Mode names and descriptions retain the provider's wording:
+they can describe permission policies or workflows such as Plan, and are not
+mapped onto a shared permission scale. A provider that offers no mode choices
+has no selectable modes. Draft discovery resolves the selected
 provider's current launch settings, creates a temporary provider session in the
 Workspace's default directory, sends no prompt, and closes the connection. It
 times out after 45 seconds and stops when the daemon shuts down. Launch settings
 and environment values stay outside the configuration response and journal.
 
-New Session commands carry optional model and reasoning selections. Startup
-applies the model first, then an effort supported by that model, before draining
+For agents that advertise ACP `modes` separately from configuration options, the
+stdio transport presents that catalog as a mode select option and routes changes
+through `session/set_mode`. A native mode configuration option takes precedence.
+`current_mode_update` notifications update the same confirmed configuration used
+by attached clients and resume. Normalized mode metadata retains its native setter
+identity when a resumed process omits the catalog. No catalog is inferred from a
+provider's name.
+
+Provider capabilities determine which controls are available:
+
+| Provider | Native modes | Model changes within a Session |
+| --- | --- | --- |
+| Codex | The bundled adapter offers Read-only, Workspace access, Auto review (Approve for Me), and Full access through its mode option. | Uses the advertised model option. |
+| Claude Code | The bundled adapter offers Manual, Accept edits, Plan, Auto, and Bypass permissions where available. Auto can fall back for an unsupported model. | Uses the advertised model option; the returned configuration can also change the effective mode. |
+| Cursor | Uses advertised ACP modes, including its documented Agent, Plan, and Ask workflows. These are not its Auto-review permission setting. | Uses model choices advertised by the installed CLI; available choices and model variants depend on that CLI version. |
+| Grok | Current upstream session setup advertises no mode catalog. Its startup Auto/YOLO settings are not exposed as a Session mode selector. | Its model and reasoning configuration options support changes. |
+
+These are integration observations, not hardcoded option lists. See
+[Codex permission modes](https://learn.chatgpt.com/docs/permission-modes),
+[Claude Code permission modes](https://code.claude.com/docs/en/permission-modes),
+[Cursor ACP](https://cursor.com/docs/cli/acp), Cursor's
+[model configuration and variant limitations](https://forum.cursor.com/t/cursor-cli-acp-reports-grok-4-6-fast-despite-explicitly-selecting-the-listed-non-fast-model/174835/5)
+and [Auto-review limitation](https://forum.cursor.com/t/acp-agent-doesnt-use-auto-review/171082),
+and Grok's [session setup](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/agent/mvp_agent/session_setup.rs)
+and [configuration handler](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/agent/handlers/config_option.rs).
+
+New Session commands carry optional model, reasoning, and mode selections. Startup
+applies the model first, then an effort and mode supported by that model, before draining
 the backlog. Confirmed configuration is retained as ACP `config_option_update`
 events and restored when the provider resumes. Until initial configuration
 succeeds, ordinary startup retries retain the choices from the create command.
@@ -429,6 +461,13 @@ temporary discovery session retrieves them without delivering queued inputs or
 changing the saved configuration. An explicit replacement overrides the failing
 selection during startup; choosing another model lets that model supply its
 default reasoning effort unless the user also specifies an effort.
+
+Mode changes use the provider's confirmed configuration, including any fallback
+it applies for the selected model. Model changes in a running provider accept
+the returned mode rather than reapplying the previous mode. A stopped Session
+restores its saved mode along with its model when starting the next provider
+process. Draft discovery retains the selected mode when changing models; an
+explicit reload resets draft choices to the provider's defaults.
 
 Changing configuration is an audited, idempotent Session command; it resumes a
 stopped provider if needed.

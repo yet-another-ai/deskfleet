@@ -3,7 +3,7 @@ import { agentConfiguration, selectAgentOption, type AgentConfiguration, type Ag
 import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { codexProvider } from "./agents/codex.ts"
 
-/** A model change can replace the available reasoning choices and their default. */
+/** Apply dependent choices against the provider's latest confirmed configuration. */
 export async function applyAgentConfiguration(
   agent: AgentConnection, sessionId: string, options: acp.SessionConfigOption[],
   selection: AgentConfigurationSelection,
@@ -13,12 +13,13 @@ export async function applyAgentConfiguration(
   for (const [category, id, value] of [
     ["model", "model", selection.model],
     ["thought_level", "reasoning_effort", selection.reasoningEffort],
+    ["mode", "mode", selection.mode],
   ] as const) {
     if (value === undefined) continue
     const option = selectAgentOption(options, category, id)
     if (!option || !option.options.some(choice => choice.id === value)) throw new Error(`Unsupported agent ${id}: ${value}`)
     if (force || option.currentValue !== value) {
-      options = (await agent.setConfigOption({ sessionId, configId: option.id, value })).configOptions
+      options = (await agent.setConfigOption({ sessionId, configId: option.id, value }, options)).configOptions
       // A successful response replaces historical metadata with live state.
       force = false
       await changed(options)

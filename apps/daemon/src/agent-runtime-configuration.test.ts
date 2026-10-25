@@ -12,13 +12,16 @@ import type { AgentSnapshot } from "./agent-protocol.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import { DaemonCatalog } from "./catalog.ts"
 
-function options(model: string, effort: string): acp.SessionConfigOption[] {
+function options(model: string, effort: string, mode = "manual"): acp.SessionConfigOption[] {
   return [{
     id: "model", category: "model", name: "Model", type: "select", currentValue: model,
     options: ["first", "second"].map(value => ({ value, name: value })),
   }, {
     id: "effort", category: "thought_level", name: "Reasoning", type: "select", currentValue: effort,
     options: ["low", "high"].map(value => ({ value, name: value })),
+  }, {
+    id: "permission-mode", category: "mode", name: "Mode", type: "select", currentValue: mode,
+    options: ["manual", "auto", "full-access"].map(value => ({ value, name: value })),
   }]
 }
 
@@ -27,16 +30,19 @@ class ConfigurationProvider implements AgentProvider {
   client!: AgentClient
   model = "first"
   effort = "high"
+  mode = "manual"
   newSessionOptions: "full" | "missing" | "empty" = "full"
   resumeOptions: "full" | "missing" | "empty" = "full"
   notifyOpeningOptions = false
   onSetOption?: (params: acp.SetSessionConfigOptionRequest) => void
   changes: acp.SetSessionConfigOptionRequest[] = []
   prompts: { model: string; effort: string }[] = []
+  promptModes: string[] = []
   connections = 0
   closes = 0
   newSessionWait?: Promise<void>
   closeWait?: Promise<void>
+  promptWait?: Promise<void>
 
   async connect(_config: unknown, client: AgentClient): Promise<AgentConnection> {
     this.connections++
@@ -47,33 +53,40 @@ class ConfigurationProvider implements AgentProvider {
         await this.newSessionWait
         this.model = "first"
         this.effort = "high"
+        this.mode = "manual"
         if (this.notifyOpeningOptions) await client.onUpdate({
-          sessionId: "conversation", update: { sessionUpdate: "config_option_update", configOptions: options(this.model, this.effort) },
+          sessionId: "conversation", update: { sessionUpdate: "config_option_update", configOptions: options(this.model, this.effort, this.mode) },
         })
         return {
           sessionId: "conversation",
           ...(this.newSessionOptions === "missing" ? {} : {
-            configOptions: this.newSessionOptions === "empty" ? [] : options(this.model, this.effort),
+            configOptions: this.newSessionOptions === "empty" ? [] : options(this.model, this.effort, this.mode),
           }),
         }
       },
       resume: async () => {
         this.model = "first"
         this.effort = "high"
+        this.mode = "manual"
         return this.resumeOptions === "missing" ? {} : {
-          configOptions: this.resumeOptions === "empty" ? [] : options(this.model, this.effort),
+          configOptions: this.resumeOptions === "empty" ? [] : options(this.model, this.effort, this.mode),
         }
       },
       setConfigOption: async params => {
         this.changes.push(params)
         if (params.configId === "model") { this.model = String(params.value); this.effort = "high" }
-        else this.effort = String(params.value)
-        const configOptions = options(this.model, this.effort)
+        else if (params.configId === "effort") this.effort = String(params.value)
+        else this.mode = String(params.value)
+        // Simulate an Agent whose Auto mode is unavailable for the second model.
+        if (this.model === "second" && this.mode === "auto") this.mode = "manual"
+        const configOptions = options(this.model, this.effort, this.mode)
         this.onSetOption?.(params)
         return { configOptions }
       },
       prompt: async () => {
         this.prompts.push({ model: this.model, effort: this.effort })
+        this.promptModes.push(this.mode)
+        await this.promptWait
         return { stopReason: "end_turn" }
       },
       steer: async () => ({ outcome: "inactive" }),
@@ -126,7 +139,7 @@ async function setup(t: TestContext, provider: ConfigurationProvider, selection:
   const submit = () => service.handle("_deskfleet/input/submit", {
     sessionId, operationId: randomUUID(), content: [{ type: "text", text: "Use my settings" }], delivery: "backlog",
   }, actor)
-  return { service, sessionId, read, configuration, configure, stop, resume, submit }
+  return { service, catalog, sessionId, read, configuration, configure, stop, resume, submit }
 }
 
 test("a resume without configOptions reapplies the saved choices before the next prompt", async t => {
@@ -320,4 +333,81 @@ test("unsolicited provider updates can return to an earlier exact configuration 
   await f.submit()
   await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
   assert.deepEqual(provider.prompts, [{ model: "second", effort: "high" }])
+})
+
+test("Session creation applies its native mode and retains it when replacing a stopped Session's model", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider, { model: "first", reasoningEffort: "low", mode: "full-access" })
+  assert.equal((await f.configuration()).modes?.currentValue, "full-access")
+  await f.stop()
+  const changed = await f.configure({ model: "second" })
+  assert.equal(changed.models?.currentValue, "second")
+  assert.equal(changed.reasoningEfforts?.currentValue, "high", "Changing models accepts its default effort")
+  assert.equal(changed.modes?.currentValue, "full-access")
+  await f.submit()
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  assert.deepEqual(provider.promptModes, ["full-access"])
+})
+
+test("model changes between turns preserve the Agent and publish the provider's actual mode fallback", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider, { mode: "auto" })
+  await f.submit()
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  const before = await f.read()
+  const changed = await f.configure({ model: "second" })
+  assert.equal(changed.models?.currentValue, "second")
+  assert.equal(changed.modes?.currentValue, "manual")
+  assert.deepEqual(provider.changes.slice(-1).map(change => [change.configId, change.value]), [["model", "second"]])
+  await f.submit()
+  await until(f.read, state => state.turns.filter(turn => turn.state === "completed").length === 2)
+  const after = await f.read()
+  assert.equal(after.session.id, before.session.id)
+  assert.equal(after.session.provider, "codex")
+  assert.equal(after.session.providerSessionId, before.session.providerSessionId)
+  assert.equal(provider.connections, 1, "Changing a model retains the existing provider conversation")
+  assert.deepEqual(provider.prompts.map(prompt => prompt.model), ["first", "second"])
+  assert.deepEqual(provider.promptModes, ["auto", "manual"])
+  await assert.rejects(f.service.handle("_deskfleet/session/configure", {
+    sessionId: f.sessionId, operationId: randomUUID(), provider: "claude", model: "first",
+  }, f.service.actor()), /Agent cannot be changed/)
+  assert.equal((await f.read()).session.provider, "codex")
+  assert.equal(provider.model, "second")
+})
+
+test("a saved mode survives a daemon restart and an omitted resume configuration", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider, { mode: "auto" })
+  const changed = await f.configure({ mode: "full-access" })
+  assert.equal(changed.modes?.currentValue, "full-access")
+  await f.service.close()
+  provider.resumeOptions = "missing"
+  provider.changes.length = 0
+  // A fresh service reads only the durable journal; no runtime state is reused.
+  const service = new AgentSessions(f.catalog, f.catalog.native, provider)
+  try {
+    await service.init()
+    const actor = service.actor()
+    const configuration = await service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, actor) as AgentConfiguration
+    assert.equal(configuration.modes?.currentValue, "full-access")
+    await service.handle("_deskfleet/session/resume", { sessionId: f.sessionId, operationId: randomUUID() }, actor)
+    assert.equal(provider.mode, "full-access")
+    assert.ok(provider.changes.some(change => change.configId === "permission-mode" && change.value === "full-access"))
+  } finally { await service.close() }
+})
+
+test("mode and model changes wait for the current turn", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  let release!: () => void
+  provider.promptWait = new Promise<void>(resolve => { release = resolve })
+  try {
+    await f.submit()
+    await until(f.read, () => provider.prompts.length === 1)
+    await assert.rejects(f.configure({ mode: "full-access" }), /Wait for the current turn/)
+    await assert.rejects(f.configure({ model: "second" }), /Wait for the current turn/)
+    assert.deepEqual(provider.changes, [])
+  } finally { release() }
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  assert.equal((await f.configure({ mode: "full-access" })).modes?.currentValue, "full-access")
 })

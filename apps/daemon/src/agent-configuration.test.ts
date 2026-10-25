@@ -5,12 +5,12 @@ import { join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk"
-import { readAgentConfiguration } from "./agent-configuration.ts"
+import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
 import { connectAcpProcess, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import { AgentProviders } from "./agent-providers.ts"
-import { validateAgentConfigurationParams, type AgentConfiguration } from "./agent-configuration-protocol.ts"
+import { agentConfiguration, validateAgentConfigurationParams, type AgentConfiguration } from "./agent-configuration-protocol.ts"
 
 function options(model = "first", effort = "high"): acp.SessionConfigOption[] {
   return [{
@@ -64,6 +64,7 @@ test("agent configuration comes from ACP, flattens groups, and applies model bef
     provider: { id: "codex", name: "Codex" },
     models: { id: "chosen-model", currentValue: "second", options: [{ id: "first", name: "First model" }, { id: "second", name: "Second model" }] },
     reasoningEfforts: { id: "effort", currentValue: "medium", options: [{ id: "low", name: "low" }, { id: "medium", name: "medium" }] },
+    modes: null,
   })
   assert.equal(fake.closed, 1)
 })
@@ -75,6 +76,58 @@ test("model change uses the provider's new effort choices and default", async ()
   assert.deepEqual(result.reasoningEfforts?.options.map(option => option.id), ["low", "medium"])
   assert.equal(fake.changes.length, 1)
   assert.equal(fake.closed, 1)
+})
+
+test("native mode choices retain their names and descriptions separately from collaboration mode", async () => {
+  const nativeOptions: acp.SessionConfigOption[] = [{
+    id: "collaboration_mode", name: "Collaboration", type: "select", currentValue: "plan",
+    options: [{ value: "plan", name: "Plan" }],
+  }, {
+    id: "permission-mode", category: "mode", name: "Mode", type: "select", currentValue: "workspace-write",
+    options: [{ group: "permissions", name: "Permissions", options: [
+      { value: "workspace-write", name: "Workspace access", description: "Ask before leaving the workspace." },
+      { value: "agent", name: "Auto review", description: "Review permission requests automatically." },
+      { value: "agent-full-access", name: "Full access" },
+    ] }],
+  }]
+  const fake = fakeProvider({ async newSession() { return { sessionId: "draft", configOptions: nativeOptions } } })
+  const configuration = await readAgentConfiguration({ provider: "codex" }, process.cwd(), fake)
+  assert.deepEqual(configuration.modes, {
+    id: "permission-mode", currentValue: "workspace-write", options: [
+      { id: "workspace-write", name: "Workspace access", description: "Ask before leaving the workspace." },
+      { id: "agent", name: "Auto review", description: "Review permission requests automatically." },
+      { id: "agent-full-access", name: "Full access" },
+    ],
+  })
+  const fallback = nativeOptions[1]!
+  assert.deepEqual(agentConfiguration([{ ...fallback, id: "mode", category: undefined }]).modes, {
+    ...configuration.modes, id: "mode",
+  })
+})
+
+test("mode is applied after model and effort and uses the provider's effective mode", async () => {
+  const mode = (currentValue: string): acp.SessionConfigOption => ({
+    id: "permission-mode", category: "mode", name: "Mode", type: "select", currentValue,
+    options: ["manual", "auto"].map(value => ({ value, name: value })),
+  })
+  const changes: acp.SetSessionConfigOptionRequest[] = []
+  const fake = fakeProvider({ async setConfigOption(params) {
+    changes.push(params)
+    return { configOptions: [...options("second", params.configId === "chosen-model" ? "low" : "medium"), mode("manual")] }
+  } })
+  const connection = await fake.provider.connect({ name: "Codex" }, { onUpdate() {} })
+  const confirmed: acp.SessionConfigOption[][] = []
+  const result = await applyAgentConfiguration(connection, "draft", [...options(), mode("manual")], {
+    model: "second", reasoningEffort: "medium", mode: "auto",
+  }, options => { confirmed.push(options) })
+  assert.deepEqual(changes.map(change => [change.configId, change.value]), [
+    ["chosen-model", "second"], ["effort", "medium"], ["permission-mode", "auto"],
+  ])
+  assert.equal(agentConfiguration(result).modes?.currentValue, "manual", "The agent can decline Auto for the selected model")
+  assert.equal(confirmed.length, 3)
+  await assert.rejects(applyAgentConfiguration(connection, "draft", result, { mode: "invented-mode" }), /Unsupported agent mode/)
+  assert.equal(changes.length, 3, "Unavailable modes never reach the provider")
+  await connection.close()
 })
 
 test("discovery uses opening notifications when the session response omits options", async () => {
@@ -214,8 +267,9 @@ test("configuration parameters reject invalid provider IDs and malformed choices
   for (const params of [
     { provider: "../unknown" }, { provider: "codex", workspaceId: "../file" },
     { provider: "codex", model: 42 }, { provider: "codex", reasoningEffort: "" },
+    { provider: "codex", mode: "" }, { provider: "codex", mode: "invalid\0mode" },
   ]) assert.throws(() => validateAgentConfigurationParams(params))
-  assert.doesNotThrow(() => validateAgentConfigurationParams({ provider: "configured-agent", workspaceId: "1", model: "model", reasoningEffort: "high" }))
+  assert.doesNotThrow(() => validateAgentConfigurationParams({ provider: "configured-agent", workspaceId: "1", model: "model", reasoningEffort: "high", mode: "auto" }))
 })
 
 test("closing Agent service closes a pending discovery process", async context => {

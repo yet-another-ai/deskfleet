@@ -40,7 +40,7 @@ beforeEach(async () => {
     if (method === "initialize") return {}
     if (method === "_deskfleet/session/list") return []
     if (method === "_deskfleet/agent/configuration") return {
-      provider: { id: String(params.provider), name: String(params.provider) }, models: null, reasoningEfforts: null,
+      provider: { id: String(params.provider), name: String(params.provider) }, models: null, reasoningEfforts: null, modes: null,
     }
     if (method === "_deskfleet/session/create") {
       snapshot.session.title = String(params.title)
@@ -285,18 +285,21 @@ test("a Session's shells open in its bottom panel, belong to its Worktree, and s
 })
 
 
-test("the selected model and effort reach a newly created Session through the agent channel", async () => {
+test("the selected model, effort and native mode reach a newly created Session through the agent channel", async () => {
   const original = transport.call.getMockImplementation()!
   let model = "sequoia"
   let effort = "medium"
+  let mode = "workspace-write"
   transport.call.mockImplementation(async (method: string, params: Record<string, unknown>) => {
     if (method === "_deskfleet/agent/configuration") {
       model = String(params.model ?? model)
       effort = String(params.reasoningEffort ?? "medium")
+      mode = String(params.mode ?? mode)
       return {
         provider: { id: "codex", name: "Codex" },
         models: { id: "model", currentValue: model, options: [{ id: "sequoia", name: "Sequoia" }, { id: "orbit", name: "Orbit" }] },
         reasoningEfforts: { id: "effort", currentValue: effort, options: [{ id: "medium", name: "Medium" }, { id: "high", name: "High" }] },
+        modes: { id: "mode", currentValue: mode, options: [{ id: "workspace-write", name: "Workspace access" }, { id: "agent", name: "Auto review" }] },
       }
     }
     return original(method, params)
@@ -309,10 +312,13 @@ test("the selected model and effort reach a newly created Session through the ag
   await wrapper.get('[data-agent-control="reasoning"]').trigger("click")
   await wrapper.get('[role="menuitemradio"][data-value="high"]').trigger("click")
   await flushPromises()
+  await wrapper.get('[data-agent-control="mode"]').trigger("click")
+  await wrapper.get('[role="menuitemradio"][data-value="agent"]').trigger("click")
+  await flushPromises()
   await wrapper.get("textarea").setValue("Use the selected reasoning model")
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
-  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ model: "orbit", reasoningEffort: "high" })
+  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ model: "orbit", reasoningEffort: "high", mode: "agent" })
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/input/submit")).toBe(true)
   window.localStorage.removeItem("deskfleet.agent-configuration")
 })

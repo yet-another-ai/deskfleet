@@ -20,6 +20,7 @@ export async function savedAgentConfiguration(journal: AgentJournal, sessionId: 
           return { options: update.configOptions, selection: {
             model: configuration.models?.currentValue,
             reasoningEffort: configuration.reasoningEfforts?.currentValue,
+            mode: configuration.modes?.currentValue,
           } }
         }
       }
@@ -29,6 +30,7 @@ export async function savedAgentConfiguration(journal: AgentJournal, sessionId: 
           options: [], selection: {
             model: command.params.model as string | undefined,
             reasoningEffort: command.params.reasoningEffort as string | undefined,
+            mode: command.params.mode as string | undefined,
           },
         }
       }

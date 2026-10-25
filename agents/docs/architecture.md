@@ -337,11 +337,12 @@ DataChannel; the daemon remains the sole ACP client toward each provider process
 Credentials remain on the executing machine. ACP approval callbacks do not confine
 agents that execute tools directly.
 
-The composer discovers model and reasoning choices from the provider through the
+The composer discovers model, reasoning, and mode choices from the provider through the
 same ACP DataChannel facade. Draft discovery uses a temporary provider session in
 the Workspace's default directory without creating a managed Session or Worktree.
 Session creation applies the selected configuration before delivering prompts;
-existing Session controls operate on that Session's provider connection.
+existing Session controls change these choices between turns on that Session's
+provider connection. A Session's provider identity cannot be changed.
 Configuration options and confirmed changes use the existing ACP event journal
 so attached viewers can follow them.
 

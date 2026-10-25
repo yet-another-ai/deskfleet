@@ -100,6 +100,7 @@ export class AgentRuntime {
     }
     if (available.models && saved.selection.model !== undefined) available.models.currentValue = saved.selection.model
     if (available.reasoningEfforts && saved.selection.reasoningEffort !== undefined) available.reasoningEfforts.currentValue = saved.selection.reasoningEffort
+    if (available.modes && saved.selection.mode !== undefined) available.modes.currentValue = saved.selection.mode
     return available
   }
 
@@ -165,9 +166,11 @@ export class AgentRuntime {
     if (snapshot.session.lifecycle !== "ready") throw new Error("Session is not available for execution")
     await this.#active?.completion
     const savedConfiguration = await savedAgentConfiguration(this.journal, this.sessionId)
-    // Changing models also accepts that model's default effort. An effort-only
-    // replacement keeps the saved model; ordinary retries keep both choices.
-    const requested = selection?.model !== undefined ? selection : { ...savedConfiguration.selection, ...selection }
+    // Changing models accepts the new model's default effort while preserving
+    // the Session's mode. The provider can reconcile that mode with the model.
+    const requested = selection?.model !== undefined
+      ? { ...selection, mode: selection.mode ?? savedConfiguration.selection.mode }
+      : { ...savedConfiguration.selection, ...selection }
     const availableConfiguration = this.#availableConfiguration
     this.#availableConfiguration = undefined
     const catalog = await this.#catalog.native.snapshot()

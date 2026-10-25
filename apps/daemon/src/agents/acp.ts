@@ -2,6 +2,7 @@ import { spawn } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk"
 import { answerVendorQuestion, VENDOR_QUESTION_METHODS } from "./questions.ts"
+import { AcpSessionModes } from "./session-modes.ts"
 
 export interface AgentConfig {
   name: string
@@ -37,7 +38,8 @@ export interface AgentClient {
 export interface AgentConnection {
   readonly initialization: acp.InitializeResponse
   newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse>
-  setConfigOption(params: acp.SetSessionConfigOptionRequest): Promise<acp.SetSessionConfigOptionResponse>
+  /** knownOptions restores setter identity after resume; it is never sent over ACP. */
+  setConfigOption(params: acp.SetSessionConfigOptionRequest, knownOptions?: acp.SessionConfigOption[]): Promise<acp.SetSessionConfigOptionResponse>
   resume(params: acp.ResumeSessionRequest): Promise<acp.ResumeSessionResponse>
   prompt(params: acp.PromptRequest): Promise<acp.PromptResponse>
   /** Never starts a detached provider turn. Inactive inputs need a normal prompt. */
@@ -69,6 +71,7 @@ export interface AcpConnectOptions {
 export async function connectAcpProcess(launch: AgentProcess, client: AgentClient, options: AcpConnectOptions = {}): Promise<AgentConnection> {
   client.signal?.throwIfAborted()
   let replayingHistory = false
+  const sessionModes = new AcpSessionModes()
   const child = spawn(launch.command, launch.args ?? [], {
     env: Object.fromEntries(
       [...Object.entries(process.env), ...Object.entries(launch.env ?? {})]
@@ -84,9 +87,9 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       // session/load replays history before its response. This handler runs
       // synchronously when that notification is read, so the flag still covers
       // the replay and is clear before any later notification is read.
-      if (replayingHistory && params.update.sessionUpdate !== "config_option_update") return
+      if (replayingHistory && params.update.sessionUpdate !== "config_option_update" && params.update.sessionUpdate !== "current_mode_update") return
       try {
-        await client.onUpdate(params)
+        await client.onUpdate(sessionModes.notification(params))
       } catch (error) {
         connection.close(error)
       }
@@ -177,24 +180,30 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       async newSession(params) {
         const created = await connection.agent.request(acp.methods.agent.session.new, params)
         rememberSession(created.sessionId)
-        return created
+        return sessionModes.response(created.sessionId, created)
       },
-      setConfigOption: params => connection.agent.request(acp.methods.agent.session.setConfigOption, params),
+      setConfigOption: (params, knownOptions) => sessionModes.setConfigOption(
+        params,
+        request => connection.agent.request(acp.methods.agent.session.setMode, request),
+        request => connection.agent.request(acp.methods.agent.session.setConfigOption, request),
+        knownOptions,
+      ),
       async resume(params) {
         rememberSession(params.sessionId)
         const capabilities = initialization.agentCapabilities
         if (capabilities?.sessionCapabilities?.resume) {
-          return connection.agent.request(acp.methods.agent.session.resume, params)
+          return sessionModes.response(params.sessionId, await connection.agent.request(acp.methods.agent.session.resume, params))
         }
         if (!capabilities?.loadSession) throw new Error("The agent does not support session resume")
         replayingHistory = true
         try {
-          return await connection.agent.request(acp.methods.agent.session.load, {
+          const loaded = await connection.agent.request(acp.methods.agent.session.load, {
             sessionId: params.sessionId,
             cwd: params.cwd,
             mcpServers: params.mcpServers ?? [],
             ...(params.additionalDirectories?.length ? { additionalDirectories: params.additionalDirectories } : {}),
           })
+          return sessionModes.response(params.sessionId, loaded)
         } finally {
           replayingHistory = false
         }

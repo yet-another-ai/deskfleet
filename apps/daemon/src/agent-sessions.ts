@@ -231,6 +231,7 @@ export class AgentSessions {
       if (method === "_deskfleet/session/archive" || method === "_deskfleet/session/restore") return await this.#transition(command)
       if (method !== "_deskfleet/session/delete") requireActiveSession(session)
       if (method === "_deskfleet/session/configure") {
+        if (params.provider !== undefined && params.provider !== session.provider) throw new Error("A Session's Agent cannot be changed")
         validateAgentConfigurationSelection(params)
         const result = await this.#runtime(sessionId).configure(params as AgentConfigurationSelection)
         await this.#complete(command, result)

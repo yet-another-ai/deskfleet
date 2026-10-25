@@ -4,6 +4,7 @@ import { validateProviderId } from "./provider-protocol.ts"
 export interface AgentChoice {
   id: string
   name: string
+  description?: string
 }
 
 export interface AgentConfigOption {
@@ -17,11 +18,13 @@ export interface AgentConfiguration {
   provider: AgentChoice
   models: AgentConfigOption | null
   reasoningEfforts: AgentConfigOption | null
+  modes: AgentConfigOption | null
 }
 
 export interface AgentConfigurationSelection {
   model?: string
   reasoningEffort?: string
+  mode?: string
 }
 
 export interface AgentConfigurationParams extends AgentConfigurationSelection {
@@ -39,7 +42,7 @@ export function validateAgentConfigurationParams(params: Record<string, unknown>
 }
 
 export function validateAgentConfigurationSelection(params: Record<string, unknown>): void {
-  for (const key of ["model", "reasoningEffort"]) {
+  for (const key of ["model", "reasoningEffort", "mode"]) {
     const value = params[key]
     if (value !== undefined && (typeof value !== "string" || !value || value.length > 256 || value.includes("\0"))) {
       throw new Error(`Invalid agent ${key}`)
@@ -55,7 +58,9 @@ export function selectAgentOption(options: acp.SessionConfigOption[], category: 
     id: option.id,
     currentValue: option.currentValue,
     options: option.options.flatMap(value => "group" in value ? value.options : [value])
-      .map(value => ({ id: value.value, name: value.name })),
+      .map(value => ({ id: value.value, name: value.name,
+        ...(typeof value.description === "string" ? { description: value.description } : {}),
+      })),
   }
 }
 
@@ -64,5 +69,6 @@ export function agentConfiguration(options: acp.SessionConfigOption[], provider:
     provider,
     models: selectAgentOption(options, "model", "model"),
     reasoningEfforts: selectAgentOption(options, "thought_level", "reasoning_effort"),
+    modes: selectAgentOption(options, "mode", "mode"),
   }
 }

@@ -3,6 +3,7 @@ import { Check, ChevronDown, ChevronRight, LoaderCircle } from "@lucide/vue"
 import { onClickOutside, useEventListener } from "@vueuse/core"
 import { computed, nextTick, ref, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
+import type { AgentChoice } from "../../../../client/src/agent-configuration.ts"
 import { useAgentConfiguration } from "./useAgentConfiguration.ts"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import { useProvidersStore } from "../../stores/providers.ts"
@@ -16,13 +17,14 @@ const agents = useAgentSessionsStore()
 const providerId = computed(() => props.sessionId ? agents.sessions[props.sessionId]?.provider ?? agents.configurations[props.sessionId]?.provider.id : providers.selectedId)
 const selectedProvider = computed(() => providers.providers.find(provider => provider.id === providerId.value))
 const providerUnavailable = computed(() => !!props.sessionId && providers.loaded && !selectedProvider.value)
-const { configuration, expanded, loading, error, modelName, reasoningEffort, toggle, changeModel, changeReasoningEffort, reload } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }))
+const { configuration, expanded, loading, error, modelName, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }))
 const providerPending = computed(() => !selectedProvider.value && !configuration.value && !providerUnavailable.value)
 watch(loading, value => emit("loading", value), { immediate: true })
 const controlsId = useId()
 const root = useTemplateRef<HTMLElement>("root")
 const trigger = useTemplateRef<HTMLButtonElement>("trigger")
-type Control = "agent" | "model" | "reasoning"
+type Control = "agent" | "model" | "reasoning" | "mode"
+interface ConfigurationControl { id: Control; label: string; value?: string; name?: string; options: AgentChoice[]; disabled: boolean }
 const active = ref<Control | null>(null)
 const submenuPosition = ref({ left: "0px", top: "0px" })
 
@@ -31,11 +33,12 @@ function effortName(value: string, fallback?: string): string {
 }
 const effortLabel = computed(() => reasoningEffort.value && effortName(reasoningEffort.value, configuration.value?.reasoningEfforts?.options.find(option => option.id === reasoningEffort.value)?.name))
 const providerName = computed(() => selectedProvider.value?.name ?? configuration.value?.provider.name ?? t(providerUnavailable.value ? "providers.unavailable" : "composer.provider"))
-const summary = computed(() => [providerName.value, modelName.value, effortLabel.value].filter(Boolean).join(" · "))
-const controls = computed(() => [
+const summary = computed(() => [providerName.value, modelName.value, effortLabel.value, modeName.value].filter(Boolean).join(" · "))
+const controls = computed<ConfigurationControl[]>(() => [
   { id: "agent" as const, label: t("composer.provider"), value: providerId.value, name: providerName.value, options: providers.providers, disabled: props.disabled || !!props.sessionId || !providers.ready || !providers.providers.length },
   { id: "model" as const, label: t("composer.model"), value: configuration.value?.models?.currentValue, name: modelName.value, options: configuration.value?.models?.options ?? [], disabled: props.disabled || loading.value || !configuration.value?.models?.options.length },
   { id: "reasoning" as const, label: t("composer.reasoningEffort"), value: configuration.value?.reasoningEfforts?.currentValue, name: effortLabel.value, options: configuration.value?.reasoningEfforts?.options.map(option => ({ ...option, name: effortName(option.id, option.name) })) ?? [], disabled: props.disabled || loading.value || !configuration.value?.reasoningEfforts?.options.length },
+  { id: "mode" as const, label: t("composer.mode"), value: configuration.value?.modes?.currentValue, name: modeName.value, options: configuration.value?.modes?.options ?? [], disabled: props.disabled || loading.value || !configuration.value?.modes?.options.length },
 ])
 
 async function expand(): Promise<void> {
@@ -83,6 +86,7 @@ function choose(control: Control, value: string): void {
   if (control === "agent" && !props.sessionId) providers.selectedId = value
   if (control === "model") void changeModel(value)
   if (control === "reasoning") void changeReasoningEffort(value)
+  if (control === "mode") void changeMode(value)
 }
 </script>
 
@@ -104,7 +108,10 @@ function choose(control: Control, value: string): void {
         <div v-if="active === control.id" :id="`${controlsId}-${control.id}`" data-agent-configuration-options role="menu" :aria-label="control.label" :style="submenuPosition" class="ui-menu fixed z-40 max-h-[min(20rem,calc(100vh-16px))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] overflow-y-auto">
           <button v-for="option in control.options" :key="option.id" type="button" role="menuitemradio" :data-value="option.id" :aria-checked="control.value === option.id" :disabled="control.disabled" class="ui-menu-item focus:outline-none" @click="choose(control.id, option.id)" @keydown.left.stop.prevent="closeOptions(control.id)" @keydown.down.stop.prevent="move($event, '[data-agent-configuration-options] button', 1)" @keydown.up.stop.prevent="move($event, '[data-agent-configuration-options] button', -1)">
             <ProviderIcon v-if="control.id === 'agent'" :icon="providers.providers.find(provider => provider.id === option.id)?.icon" :template="providers.providers.find(provider => provider.id === option.id)?.template" :size="15" class="text-ui-text-muted" />
-            <span class="min-w-0 flex-1 truncate">{{ option.name }}</span>
+            <span class="min-w-0 flex-1 text-left">
+              <span class="block" :class="option.description ? 'whitespace-normal' : 'truncate'">{{ option.name }}</span>
+              <span v-if="option.description" class="mt-0.5 block whitespace-normal text-xs text-ui-text-muted">{{ option.description }}</span>
+            </span>
             <Check v-if="control.value === option.id" :size="15" class="shrink-0" aria-hidden="true" />
           </button>
         </div>
