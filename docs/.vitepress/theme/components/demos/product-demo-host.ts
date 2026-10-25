@@ -55,8 +55,9 @@ const host: DeskfleetDesktopApi = {
   },
   filesystem: {
     listDirectories: async (path = "/workspace") => ({
-      path, parentPath: path === "/" ? null : "/", homePath: "/workspace", roots: [{ name: "/", path: "/" }],
-      directories: path === "/workspace" ? ["website", "api"].map(name => ({ name, path: `/workspace/${name}`, hidden: false })) : [],
+      path, parentPath: path === "/" ? null : path.slice(0, path.lastIndexOf("/")) || "/", homePath: "/workspace", roots: [{ name: "/", path: "/" }],
+      directories: (path === "/" ? ["workspace"] : path === "/workspace" ? ["website", "api"] : [])
+        .map(name => ({ name, path: `${path === "/" ? "" : path}/${name}`, hidden: false })),
     }),
   },
   providers: {

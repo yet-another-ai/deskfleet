@@ -12,7 +12,11 @@ async function mount() {
   dispose = undefined
   const { mountProductDemo } = await import("./product-demo-runtime.ts")
   if (!target.value || current !== generation) return
-  const cleanup = await mountProductDemo(target.value, { ...props })
+  // Each pending app owns its node, so stale cleanup cannot unmount a newer app.
+  const container = document.createElement("div")
+  container.style.height = "100%"
+  target.value.replaceChildren(container)
+  const cleanup = await mountProductDemo(container, { ...props })
   if (current !== generation) cleanup()
   else dispose = cleanup
 }
