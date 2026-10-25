@@ -14,9 +14,10 @@ main process. The Electron client uses Vue.
 
 The API-only backend uses PostgreSQL for OIDC accounts, teams, machine enrollment,
 resource catalogs, and synchronized Agent history. Daemons retain their local
-SQLite catalogs and execute Codex CLI and Claude Code sessions over ACP. The Web
-and Electron clients share Vue components, manage resources through the backend,
-and use authenticated WebRTC for Agent, Git, terminal, and desktop traffic.
+SQLite catalogs and execute Codex CLI, Claude Code, Cursor CLI, and Grok CLI
+sessions over ACP. The Web and Electron clients share Vue components, manage
+resources through the backend, and use authenticated WebRTC for Agent, Git,
+terminal, and desktop traffic.
 Sessions can be archived and restored while preserving their data.
 
 ## Rust workspace

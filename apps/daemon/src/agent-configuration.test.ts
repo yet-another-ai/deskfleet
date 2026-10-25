@@ -3,9 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
+import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk"
 import { readAgentConfiguration } from "./agent-configuration.ts"
-import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
+import { connectAcpProcess, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import { AgentProviders } from "./agent-providers.ts"
@@ -157,10 +158,36 @@ test("configuration failures and unsupported options close the connection", asyn
   })
 })
 
-test("a stalled configuration request times out and closes its connection", { timeout: 15_000 }, async () => {
-  const fake = fakeProvider({ newSession: () => new Promise(() => {}) })
-  await assert.rejects(readAgentConfiguration({ provider: "codex" }, process.cwd(), { provider: fake.provider, timeoutMs: 20 }), /timed out/)
-  assert.equal(fake.closed, 1)
+test("a stalled ACP session request times out and closes its process", { timeout: 15_000 }, async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] })
+  let ready!: () => void
+  const started = new Promise<void>(resolve => { ready = resolve })
+  let closed = false
+  const provider: AgentProvider = {
+    id: "codex",
+    async connect(config, client) {
+      const connection = await connectAcpProcess({
+        command: process.execPath,
+        args: [fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))],
+        env: { DESKFLEET_TEST_AGENT_MODE: "wait-session" },
+      }, client)
+      return {
+        ...connection,
+        newSession(params) {
+          const pending = connection.newSession(params)
+          ready()
+          return pending
+        },
+        async close() { await connection.close(); closed = true },
+      }
+    },
+  }
+  const pending = assert.rejects(readAgentConfiguration({ provider: "codex" }, process.cwd(), { provider, timeoutMs: 500 }), /timed out/)
+  // Advance the deadline only once session/new is pending, regardless of startup speed.
+  await started
+  context.mock.timers.tick(500)
+  await pending
+  assert.equal(closed, true)
 })
 
 test("configuration discovery uses the target workspace without allocating a Session", async context => {

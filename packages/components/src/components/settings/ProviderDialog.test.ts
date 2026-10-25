@@ -44,6 +44,30 @@ test("the Claude Code template defaults to the installed claude CLI and its mark
   expect(save).toHaveBeenCalledExactlyOnceWith({ template: "claude-code", name: "Claude Code", binaryPath: undefined, icon: undefined, env: {} })
 })
 
+test("the Cursor template defaults to the installed agent CLI and its mark", async () => {
+  const { view, save } = render()
+  await view.get("select").setValue("cursor")
+  expect((view.get('[name="provider-name"]').element as HTMLInputElement).value).toBe("Cursor")
+  expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe("agent")
+  expect(view.text()).toContain("The default command is agent acp.")
+  expect(view.get("[data-provider-icon]").attributes("data-provider-icon")).toBe("cursor")
+  await view.get("form").trigger("submit")
+  await flushPromises()
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: undefined, icon: undefined, env: {} })
+})
+
+test("the Grok template defaults to the installed grok CLI and its mark", async () => {
+  const { view, save } = render()
+  await view.get("select").setValue("grok")
+  expect((view.get('[name="provider-name"]').element as HTMLInputElement).value).toBe("Grok")
+  expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe("grok")
+  expect(view.text()).toContain("The default command is grok agent stdio.")
+  expect(view.get("[data-provider-icon]").attributes("data-provider-icon")).toBe("grok")
+  await view.get("form").trigger("submit")
+  await flushPromises()
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "grok", name: "Grok", binaryPath: undefined, icon: undefined, env: {} })
+})
+
 test("tests the unsaved settings without saving and clears a result once launch settings change", async () => {
   let finish: (result: { agentName: string }) => void = () => {}
   const { view, save, test } = render(undefined, undefined, vi.fn(() => new Promise(resolve => { finish = resolve })))

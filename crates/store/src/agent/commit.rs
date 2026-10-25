@@ -21,6 +21,7 @@ impl LocalCatalog {
             || !changes.inputs.is_empty()
             || !changes.turns.is_empty()
             || !changes.permissions.is_empty()
+            || !changes.elicitations.is_empty()
             || !changes.events.is_empty();
         if has_domain && changes.events.is_empty() {
             return Err(StoreError::InvalidAgent(
@@ -187,6 +188,37 @@ impl LocalCatalog {
                         ),
                     ],
                     permission,
+                )
+                .await?;
+            }
+            for elicitation in &changes.elicitations {
+                validation::same_session(id, elicitation.session_id)?;
+                validation::elicitation(&db, elicitation).await?;
+                upsert(
+                    &db,
+                    "agent_elicitations",
+                    &["id"],
+                    &[
+                        ("id", elicitation.id.as_i64().into()),
+                        ("session_id", id.as_i64().into()),
+                        ("state", elicitation.state.as_str().into()),
+                        (
+                            "run_generation",
+                            generation(elicitation.run_generation)?.into(),
+                        ),
+                        (
+                            "turn_id",
+                            elicitation.turn_id.map(|value| value.as_i64()).into(),
+                        ),
+                        (
+                            "decision_command_id",
+                            elicitation
+                                .decision_command_id
+                                .map(|value| value.as_i64())
+                                .into(),
+                        ),
+                    ],
+                    elicitation,
                 )
                 .await?;
             }

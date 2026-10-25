@@ -60,6 +60,7 @@ resource_id!(
     AgentInputId,
     AgentTurnId,
     AgentPermissionId,
+    AgentElicitationId,
     AgentSequence,
 );
 

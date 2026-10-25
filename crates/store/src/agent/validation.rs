@@ -143,6 +143,38 @@ pub(super) async fn permission(
     Ok(())
 }
 
+pub(super) async fn elicitation(
+    db: &impl ConnectionTrait,
+    value: &AgentElicitation,
+) -> Result<(), StoreError> {
+    positive(value.id.as_i64())?;
+    if let Some(old) = record::<AgentElicitation>(
+        db,
+        "SELECT record_json FROM agent_elicitations WHERE id = ?",
+        vec![value.id.as_i64().into()],
+    )
+    .await?
+    {
+        if old.session_id != value.session_id
+            || old.run_generation != value.run_generation
+            || old.turn_id != value.turn_id
+            || old.request != value.request
+            || old.created_at != value.created_at
+        {
+            return Err(StoreError::InvalidAgent(
+                "elicitation identity and request are immutable",
+            ));
+        }
+        if old.state != ElicitationState::Pending && old != *value {
+            return Err(StoreError::InvalidAgent("elicitation was already resolved"));
+        }
+    }
+    if let Some(command) = value.decision_command_id {
+        command_session(db, command.as_i64(), value.session_id).await?;
+    }
+    Ok(())
+}
+
 pub(super) async fn command_session(
     db: &impl ConnectionTrait,
     id: i64,

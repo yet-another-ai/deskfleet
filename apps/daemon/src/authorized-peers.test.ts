@@ -68,6 +68,9 @@ test("Agent RPC uses the server actor and cannot perform management over WebRTC"
   await f.rpc(3, "_deskfleet/session/create", {})
   assert.match(f.sent.join(""), /Manage Sessions through the backend API/)
   assert.equal(f.calls.length, 1)
+  await f.rpc(4, "_deskfleet/elicitation/respond", { sessionId: "1", elicitationId: "2", response: { action: "cancel" }, actor: { userId: "spoof" } })
+  assert.equal(f.calls[1]?.method, "_deskfleet/elicitation/respond")
+  assert.equal(f.calls[1]?.actor.userId, "alice")
 })
 
 test("expiry closes access without a signaling connection and ignores queued input", async context => {

@@ -5,6 +5,9 @@ use deskfleet_store::{LocalCatalog, StoreError};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+#[path = "agent/elicitations.rs"]
+mod elicitations;
+
 struct File(PathBuf);
 impl File {
     fn new() -> Self {

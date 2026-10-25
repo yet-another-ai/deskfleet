@@ -13,10 +13,16 @@ import { AgentProviders } from "./agent-providers.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import type { AgentConfiguration, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
-import type { AgentActor, AgentReceipt, AgentSnapshot } from "./agent-protocol.ts"
+import type { AgentActor, AgentElicitation, AgentReceipt, AgentSnapshot } from "./agent-protocol.ts"
 import type { GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 
 const execute = promisify(execFile)
+const questionRequest: acp.CreateElicitationRequest = {
+  sessionId: "provider-conversation", toolCallId: "question-1", mode: "form", message: "Choose a direction",
+  requestedSchema: { type: "object", required: ["direction"], properties: {
+    direction: { type: "string", oneOf: [{ const: "left", title: "Left" }, { const: "right", title: "Right" }] },
+  } },
+}
 
 class Provider implements AgentProvider {
   id = "fixture"
@@ -41,6 +47,8 @@ class Provider implements AgentProvider {
   closeCount = 0
   closeBarrier?: Promise<void>
   finishImmediately = false
+  /** Advertises loadSession instead of session/resume, as Cursor CLI does. */
+  loadSession = false
   resumeWait?: { promise: Promise<void>; reject(error: Error): void }
   active?: { resolve: (result: acp.PromptResponse) => void; done: Promise<acp.PromptResponse> }
   async connect(config: AgentConfig, client: AgentClient): Promise<AgentConnection> {
@@ -50,7 +58,9 @@ class Provider implements AgentProvider {
     this.clients.push(client)
     this.configs.push(structuredClone(config))
     return {
-      initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } },
+      initialization: this.loadSession
+        ? { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: { additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } }
+        : { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } },
       newSession: async params => { this.cwds.push(params.cwd); return { sessionId: "provider-conversation", configOptions: this.configuration() } },
       resume: async params => { this.resumes.push(params.sessionId); await this.resumeWait?.promise; return { configOptions: this.configuration() } },
       setConfigOption: async params => {
@@ -90,6 +100,9 @@ class Provider implements AgentProvider {
       sessionId: "provider-conversation", toolCall: { toolCallId: "tool-1", title: "Write file" },
       options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }, { optionId: "reject", name: "Reject", kind: "reject_once" }],
     }, new AbortController().signal)
+  }
+  askQuestion(request = questionRequest, signal = new AbortController().signal): Promise<acp.CreateElicitationResponse> {
+    return this.client.requestElicitation!(request, signal)
   }
 }
 
@@ -136,7 +149,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   return { catalog, service, provider, providers, actor, bob, create, snapshot, sessionId, read, submit, directory, repository }
 }
 
-test("archive retains files and history, cancels approval, and restore waits for explicit input", async t => {
+test("archive retains files and history, cancels approval and questions, and restore waits for explicit input", async t => {
   const f = await setup(t)
   const browser: AgentActor = { kind: "user", userId: "browser-user", deviceId: "browser-device" }
   const worktree = (await f.catalog.sessionWorktree(f.sessionId))!
@@ -147,8 +160,10 @@ test("archive retains files and history, cancels approval, and restore waits for
   await until(f.read, () => f.provider.prompts.length === 1)
   await f.submit("queued", browser).result
   const permissionResult = f.provider.askPermission()
-  const before = await until(f.read, state => state.permissions.some(permission => permission.state === "pending"))
+  const questionResult = f.provider.askQuestion()
+  const before = await until(f.read, state => state.permissions.some(permission => permission.state === "pending") && state.elicitations.some(question => question.state === "pending"))
   const pendingPermission = before.permissions.find(permission => permission.state === "pending")!
+  const pendingQuestion = before.elicitations.find(question => question.state === "pending")!
   const closed: string[] = []
   f.service.onSessionArchive(async id => { closed.push(id) })
   const archive = { sessionId: f.sessionId, operationId: randomUUID() }
@@ -157,7 +172,9 @@ test("archive retains files and history, cancels approval, and restore waits for
   assert.equal(archived.session.lifecycle, "ready")
   assert.deepEqual(closed, [worktree.id])
   assert.deepEqual((await permissionResult).outcome, { outcome: "cancelled" })
+  assert.deepEqual(await questionResult, { action: "cancel" })
   assert.equal(archived.permissions.find(permission => permission.id === pendingPermission.id)?.state, "cancelled")
+  assert.equal(archived.elicitations.find(question => question.id === pendingQuestion.id)?.state, "cancelled")
   assert.equal(archived.inputs.length, 2)
   assert.equal(archived.inputs[1]!.state, "pending")
   assert.deepEqual(archived.inputs[0]!.author, browser)
@@ -171,6 +188,7 @@ test("archive retains files and history, cancels approval, and restore waits for
     ["_deskfleet/session/configure", { model: "second" }],
     ["_deskfleet/input/submit", { content: [{ type: "text", text: "blocked" }], delivery: "backlog" }],
     ["_deskfleet/permission/respond", { permissionId: pendingPermission.id, optionId: "allow" }],
+    ["_deskfleet/elicitation/respond", { elicitationId: pendingQuestion.id, response: { action: "accept", content: { direction: "left" } } }],
     ["_deskfleet/input/retry", { inputId: archived.inputs[1]!.id }],
   ] as const
   for (const [method, params] of calls) {
@@ -188,6 +206,7 @@ test("archive retains files and history, cancels approval, and restore waits for
   assert.equal(restored.session.archiveState, "active")
   assert.equal(restored.session.id, archived.session.id)
   assert.equal(restored.inputs[1]!.state, "pending")
+  assert.equal(restored.elicitations.find(question => question.id === pendingQuestion.id)?.state, "cancelled")
   assert.deepEqual(f.provider.prompts, ["hold"])
   assert.equal(f.provider.clients.length, 1)
   await f.submit("new explicit request", browser).result
@@ -331,6 +350,97 @@ test("permission races resolve once, all decisions are audited, and a stale canc
   await until(f.read, state => state.turns.length === 2 && f.provider.prompts.length === 2)
   await f.service.handle("_deskfleet/turn/cancel", { sessionId: f.sessionId, operationId: randomUUID(), turnId: firstTurn.id }, f.bob)
   assert.equal(f.provider.cancelCount, 0)
+})
+
+test("questions persist before response and concurrent viewers share the first valid answer", async t => {
+  const f = await setup(t)
+  await f.submit("hold").result
+  await until(f.read, () => f.provider.prompts.length === 1)
+  const answer = f.provider.askQuestion()
+  let state = await until(f.read, state => state.elicitations.length === 1)
+  const elicitationId = state.elicitations[0]!.id
+  const invalid = { sessionId: f.sessionId, operationId: randomUUID(), elicitationId, response: { action: "accept", content: { direction: "invalid" } } }
+  await assert.rejects(f.service.handle("_deskfleet/elicitation/respond", invalid, f.actor), /Invalid answer/u)
+  assert.equal((await f.read()).elicitations[0]!.state, "pending")
+  assert.equal((await f.service.journal.command(invalid.operationId))?.status, "failed")
+  const decisions = ["left", "right"].map(direction => ({
+    sessionId: f.sessionId, operationId: randomUUID(), elicitationId, response: { action: "accept", content: { direction } },
+  }))
+  const results = await Promise.all(decisions.map((params, i) => f.service.handle("_deskfleet/elicitation/respond", params, i ? f.bob : f.actor))) as AgentElicitation[]
+  assert.deepEqual(results[0], results[1])
+  assert.deepEqual(await answer, results[0]!.response)
+  assert.equal(results[0]!.state, "resolved")
+  assert.equal(results[0]!.turnId, state.turns[0]!.id)
+  for (const decision of decisions) assert.equal((await f.service.journal.command(decision.operationId))?.status, "completed")
+  assert.deepEqual(await f.service.handle("_deskfleet/elicitation/respond", decisions[0], f.actor), results[0])
+  await assert.rejects(f.service.handle("_deskfleet/elicitation/respond", { ...decisions[0], response: { action: "decline" } }, f.actor), /reused/u)
+  state = await f.service.handle("_deskfleet/session/subscribe", { sessionId: f.sessionId }, f.bob) as AgentSnapshot
+  assert.deepEqual(state.elicitations[0], results[0])
+  const history = await f.service.journal.history(f.sessionId, "0", 200)
+  assert.ok(history.some(event => event.kind === "command" && "method" in event.payload
+    && event.payload.method === "_deskfleet/elicitation/respond" && event.payload.status === "completed"), "A later answer publishes its final receipt for synchronization")
+  const events = history.filter(event => event.kind === "elicitation")
+  assert.equal(events.length, 2)
+  assert.equal((events[0]!.payload as AgentElicitation).state, "pending")
+  assert.equal((events[1]!.payload as AgentElicitation).state, "resolved")
+})
+
+test("secret answers reach the provider but never enter the journal or command audit", async t => {
+  const f = await setup(t)
+  const request: acp.CreateElicitationRequest = { ...questionRequest, mode: "form", requestedSchema: {
+    type: "object", required: ["token"], properties: { token: { type: "string", default: "secret-default", _meta: { codex: { isSecret: true } } } },
+  } }
+  const answer = f.provider.askQuestion(request)
+  const state = await until(f.read, state => state.elicitations.length === 1)
+  const params = { sessionId: f.sessionId, operationId: randomUUID(), elicitationId: state.elicitations[0]!.id, response: { action: "accept", content: { token: "private-answer" } } }
+  const result = await f.service.handle("_deskfleet/elicitation/respond", params, f.actor) as AgentElicitation
+  assert.deepEqual(await answer, params.response)
+  assert.deepEqual(result.response, { action: "accept", content: { token: "[redacted]" } })
+  assert.deepEqual(await f.service.handle("_deskfleet/elicitation/respond", params, f.actor), result)
+  await assert.rejects(f.service.handle("_deskfleet/elicitation/respond", { ...params, response: { action: "accept", content: { token: "another-secret" } } }, f.actor), /reused/u)
+  const persisted = JSON.stringify([await f.read(), await f.service.journal.history(f.sessionId, "0", 200), await f.service.journal.command(params.operationId)])
+  for (const secret of ["private-answer", "secret-default", "another-secret"]) assert.equal(persisted.includes(secret), false)
+})
+
+test("questions cancel on provider abort, turn completion, cancellation, stop, and process loss", async t => {
+  for (const reason of ["abort", "finish", "cancel", "stop", "lost"] as const) await t.test(reason, async t => {
+    const f = await setup(t)
+    await f.submit("hold").result
+    await until(f.read, () => f.provider.prompts.length === 1)
+    const controller = new AbortController()
+    const answer = f.provider.askQuestion(questionRequest, controller.signal)
+    const state = await until(f.read, state => state.elicitations.length === 1)
+    if (reason === "abort") controller.abort()
+    if (reason === "finish") f.provider.finish()
+    if (reason === "cancel") await f.service.handle("_deskfleet/turn/cancel", { sessionId: f.sessionId, operationId: randomUUID(), turnId: state.turns[0]!.id }, f.actor)
+    if (reason === "stop") await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+    if (reason === "lost") { f.provider.client.onClose?.(new Error("connection lost")); f.provider.finish() }
+    assert.deepEqual(await answer, { action: "cancel" })
+    assert.equal((await f.read()).elicitations[0]!.state, "cancelled")
+    const result = await f.service.handle("_deskfleet/elicitation/respond", {
+      sessionId: f.sessionId, operationId: randomUUID(), elicitationId: state.elicitations[0]!.id, response: { action: "accept", content: { direction: "left" } },
+    }, f.bob) as AgentElicitation
+    assert.equal(result.state, "cancelled")
+  })
+})
+
+test("restart cancels durable questions and stale provider generations cannot publish new questions", async t => {
+  const f = await setup(t)
+  const oldClient = f.provider.client
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  await f.service.handle("_deskfleet/session/resume", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  assert.deepEqual(await oldClient.requestElicitation!(questionRequest, new AbortController().signal), { action: "cancel" })
+  assert.deepEqual((await f.read()).elicitations, [])
+  await f.service.close()
+  const snapshot = await f.read()
+  const orphan: AgentElicitation = { id: await f.service.journal.id(), sessionId: f.sessionId, runGeneration: snapshot.runs.at(-1)!.generation,
+    request: questionRequest, state: "pending", createdAt: new Date().toISOString() }
+  await f.service.journal.commit(snapshot, { elicitations: [orphan], events: [f.service.journal.event(f.sessionId, "elicitation", orphan)] })
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  await restored.init()
+  t.after(() => restored.close())
+  assert.equal((await restored.journal.read(f.sessionId)).elicitations[0]!.state, "cancelled")
+  await restored.close()
 })
 
 test("fresh viewers replay history, stop retains backlog, and resume reuses the provider conversation", async t => {
@@ -574,6 +684,20 @@ test("a message to an agent that cannot resume its conversation is rejected inst
   })
   await assert.rejects(f.submit("lost").result, /cannot resume/u)
   assert.equal((await f.read()).inputs.some(input => input.content.some(block => block.type === "text" && block.text === "lost")), false)
+})
+
+test("an agent that loads sessions instead of resuming them continues its saved conversation", async t => {
+  const f = await setup(t)
+  f.provider.loadSession = true
+  f.provider.finishImmediately = true
+  await f.submit("first").result
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  assert.equal((await f.read()).session.capabilities?.resume, true)
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  await f.submit("again").result
+  await until(f.read, state => state.turns.filter(turn => turn.state === "completed").length === 2)
+  assert.deepEqual(f.provider.resumes, ["provider-conversation"])
+  assert.deepEqual(f.provider.prompts, ["first", "again"])
 })
 
 

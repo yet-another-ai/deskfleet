@@ -24,7 +24,7 @@ export const providerIcons: ProviderIcon[] = Object.entries(marks).map(([path, s
 
 const iconsById = new Map(providerIcons.map(icon => [icon.id, icon]))
 
-const templateIcons: Record<string, string> = { codex: "openai", "claude-code": "claudecode" }
+const templateIcons: Record<string, string> = { codex: "openai", "claude-code": "claudecode", cursor: "cursor", grok: "grok" }
 
 export function iconForProvider(icon?: string, template?: string): ProviderIcon | undefined {
   return (icon ? iconsById.get(icon) : undefined) ?? (template ? iconsById.get(templateIcons[template] ?? "") : undefined)

@@ -79,7 +79,21 @@ only and does not change execution. The Codex template runs the installed Codex 
 through the bundled ACP bridge; its default binary is `codex`. The Claude Code
 template runs the installed Claude Code CLI through the bundled
 [Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp);
-its default binary is `claude`. The ACP template
+its default binary is `claude`. The Cursor template runs the installed
+[Cursor CLI](https://cursor.com/docs/cli/acp) directly as `agent acp`; its default
+binary is `agent`. Sign in with `agent login`, or set `CURSOR_API_KEY` or
+`CURSOR_AUTH_TOKEN`, before starting a session. When a session can ask the user
+a question, `cursor/ask_question` is answered through that form.
+`cursor/create_plan` and Cursor's notification methods are not implemented;
+unrecognized requests receive JSON-RPC method not found. The Grok template runs
+the installed [Grok CLI](https://docs.x.ai/build/cli/headless-scripting) directly
+as `grok agent stdio`; its default binary is `grok`. After initialization it
+calls `authenticate` with `xai.api_key` when `XAI_API_KEY` is set and that method
+is advertised, and otherwise with `cached_token` from `grok login`. Interactive
+methods are not passed to `authenticate`. Deskfleet does not add
+`--always-approve`, so tool approval stays on the existing permission UI.
+`x.ai/ask_user_question` and `_x.ai/ask_user_question` use the same question form.
+The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the
 daemon's inherited environment at process startup. The provider dialog's
@@ -291,6 +305,42 @@ The service broadcasts resolution and the deciding actor. `$/cancel_request`
 closes obsolete fan-outs. Disconnects and RPC errors leave the shared request
 pending until an approver responds, the turn ends, or the provider cancels it.
 
+## User questions
+
+Managed providers receive the ACP `elicitation.form` capability and send
+`elicitation/create` requests for structured user input. Codex maps its
+`request_user_input` tool to this interface. The daemon accepts session-scoped
+forms; it does not advertise URL elicitation. Direct CLI invocations without an
+input callback do not advertise form support and do not register vendor question
+methods.
+
+Cursor's `cursor/ask_question` and Grok's `x.ai/ask_user_question` and
+`_x.ai/ask_user_question` are translated into that form when the callback is
+installed. Cursor's documented request has no session id, so the question is
+scoped to the session this connection most recently opened or prompted. An
+answered form becomes Cursor's nested `{ outcome: { outcome: "answered", answers } }`
+result, using option ids, or Grok's `{ outcome: "accepted", answers }` map of
+question text to selected labels. Decline is Cursor `skipped` and Grok
+`cancelled`; cancel is `cancelled` for both. Grok's plan-mode outcomes
+`chat_about_this` and `skip_interview` are not separate actions. A request that
+cannot be shown is cancelled rather than left unanswered.
+
+Each request is persisted with a durable elicitation ID, its provider run and
+turn, and its original form schema before clients see it. Snapshots and
+`elicitation` journal events carry the shared state. The desktop renders questions
+inline, including choices and their descriptions, free text, optional additional
+answers, and the primitive fields supported by ACP forms. Secret fields use
+masked inputs and are redacted from persisted answers and command audit.
+
+Clients submit through `_deskfleet/elicitation/respond` with an operation ID and
+an ACP response (`accept` with content, `decline`, or `cancel`). The daemon
+validates accepted answers against the requested schema. The first valid
+decision wins and invokes the provider callback only after commit; later
+responses return the recorded outcome. Reconnecting or navigating away leaves
+the question pending. A provider cancellation or timeout, turn completion, or
+provider loss closes unanswered forms; daemon restart cancels requests whose
+provider callbacks no longer exist.
+
 ## ACP over DataChannel
 
 Each client initializes an independent JSON-RPC connection over one reliable,
@@ -331,6 +381,7 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | `_deskfleet/input/withdraw` | Withdraw a pending or confirmed failed input |
 | `_deskfleet/turn/cancel` | Cancel only the named execution turn |
 | `_deskfleet/permission/respond` | Audit an offered permission decision |
+| `_deskfleet/elicitation/respond` | Validate and audit an answer or dismissal of a shared user question |
 | `_deskfleet/session/event` | Deliver committed domain and original ACP events |
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
 | `_deskfleet/session/resume`, `/stop` | Explicit provider lifecycle operations; input submission also resumes |
@@ -396,7 +447,8 @@ response precedes buffered/live events. The client uses `session.lastEventSeq`
 as its snapshot watermark, reads earlier history in pages, deduplicates by
 Session/sequence within the catalog, and fills gaps before applying later events.
 Pending permissions are reissued on attachment with changes during the snapshot
-read accounted for. Buttons depend on the current persisted permission state.
+read accounted for. User questions are restored from the same snapshot and event
+stream. Buttons depend on the current persisted request state.
 
 Conversation text, thoughts, tool cards, plans, and turn outcomes are journal
 projections rather than separate message tables. Use provider message IDs when
@@ -425,13 +477,18 @@ Read failures retain the last result with an error until a successful refresh.
 These snapshots are independent of the conversation journal and its cursors.
 
 Daemon restart marks lost live runs/turns interrupted, outstanding dispatches
-uncertain, and old permissions cancelled. Pending inputs remain queued until
+uncertain, and old permissions and user questions cancelled. Pending inputs remain queued until
 the next message resumes the agent. SQLite commit and provider dispatch cannot be one transaction;
 unknown delivery therefore cannot be automatically repeated. Viewer reconnect
 only subscribes and replays: it never starts or resumes a provider.
 
-Resume uses the saved provider Session ID and captured directories with
-negotiated `session/resume`. Providers without that capability cannot resume.
+Resume uses the saved provider Session ID and captured directories. Agents that
+advertise `session/resume` continue with that method. Agents that instead
+advertise `loadSession`, including Cursor CLI and Grok, continue with `session/load`.
+That method replays the provider's history as session updates. Deskfleet already
+keeps the journal, so it retains configuration updates from the replay and does
+not record the rest. The stored `resume` capability means either method was
+negotiated. Providers that advertise neither cannot resume.
 Stop can close a connection while startup RPCs await;
 resume waits for old shutdown/recovery, and old-generation callbacks cannot
 interrupt the new run.
@@ -443,7 +500,7 @@ ACP provider fixtures and the installed steering patch, DataChannel framing and
 backpressure, real native two-client WebRTC, and renderer interaction/projections.
 `mise run desktop:smoke-agent` adds the production Electron renderer, real local
 signaling/WebRTC, SQLite and managed Git worktrees with an injected provider.
-The smoke covers creation, streaming, backlog/steering, shared approvals,
+The smoke covers creation, streaming, backlog/steering, shared approvals and user questions,
 navigation, client replacement, live Git status and diff previews, and daemon
 restart without using paid inference. File changes made outside the provider
 also update an open diff when their status letters and line counts stay equal.

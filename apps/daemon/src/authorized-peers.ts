@@ -17,6 +17,7 @@ const AGENT_READ = new Set<AgentMethod>([
 const AGENT_EXECUTE = new Set<AgentMethod>([
   "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
   "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
+  "_deskfleet/elicitation/respond",
 ])
 
 interface AuthorizedPeer {

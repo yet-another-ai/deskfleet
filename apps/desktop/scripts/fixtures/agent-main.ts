@@ -15,6 +15,7 @@ export interface AgentSmokeContext {
   preloadPath: string
   repository: string
   screenshotPath: string
+  questionScreenshotPath: string
   sessionId?: string
   workspaceId?: string
   worktreeId?: string
@@ -94,6 +95,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   const conversation = () => document.querySelector<HTMLOListElement>('[aria-label="Conversation"]')
   const backlog = () => document.querySelector<HTMLElement>('[aria-label="Queued"]')
   const permissions = () => document.querySelector<HTMLElement>('[aria-label="Permissions"]')
+  const question = () => conversation()?.querySelector<HTMLElement>('[data-testid="agent-elicitation"]')
   const prompt = () => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]')
   const configuration = () => document.querySelector<HTMLElement>("[data-agent-configuration-menu]")
   const configurationTrigger = () => document.querySelector<HTMLButtonElement>("[data-agent-configuration-trigger]")
@@ -147,12 +149,14 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     for (const toggle of folded()) toggle.click()
     await until(() => !folded().length, "Expanded turn work")
     const text = conversation()?.innerText ?? ""
-    for (const marker of ["Smoke first prompt", "stream one 中文", "stream two", "Smoke selected steer", "steer received", "permission accepted", "Smoke queued candidate", "queued reply", "Smoke changed model prompt", "changed model reply"]) {
+    for (const marker of ["Smoke first prompt", "stream one 中文", "stream two", "Smoke selected steer", "steer received", "permission accepted", "question answered", "Smoke queued candidate", "queued reply", "Smoke changed model prompt", "changed model reply"]) {
       require(text.split(marker).length === 2, `Expected exactly one ${marker} in persisted conversation: ${text}`)
     }
     require(!backlog(), "All submitted inputs should have left the backlog")
     require(!!conversation()?.querySelector("[data-permission-id]")?.textContent?.includes("Allow smoke edit"), "Resolved permission choice was not retained")
     require(!permissions(), "Resolved permission must not be actionable")
+    require(question()?.textContent?.includes("Inline form") && question()?.textContent?.includes("Support keyboard navigation."), "User answers were not retained in conversation history")
+    require(!question()?.querySelector('[data-testid="elicitation-submit"]'), "Answered question must not remain actionable")
   }
 
   await until(() => !!button("Add workspace") && button("Add workspace")!.getAttribute("aria-disabled") !== "true", "Daemon catalog connection")
@@ -196,6 +200,26 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     await until(() => !!button("Allow smoke edit", permissions() ?? document), "Pending permission after returning")
     require(permissions()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id") === permissionId, "Returning created a second permission request")
     await click("Allow smoke edit", () => permissions()!)
+    await until(() => !!question()?.querySelector('[data-testid="elicitation-submit"]'), "Inline user question")
+    const choice = question()!.querySelector<HTMLInputElement>('input[name="approach"][value="Inline form"]')
+    const detail = question()!.querySelector<HTMLInputElement>('input[name="details"]')
+    require(choice && detail, "Question must render choice and free-text fields")
+    choice.click()
+    detail.value = "Support keyboard navigation."
+    detail.dispatchEvent(new Event("input", { bubbles: true }))
+    const questionId = question()!.dataset.elicitationId
+    newSession.click()
+    await until(() => location.hash === "#/" && !conversation(), "Leaving the question pending")
+    await openSession(sessionId)
+    await until(() => question()?.dataset.elicitationId === questionId, "Same question after returning")
+    require(question()!.querySelector<HTMLInputElement>('input[name="approach"][value="Inline form"]')?.checked, "Question choice draft was lost during navigation")
+    require(question()!.querySelector<HTMLInputElement>('input[name="details"]')?.value === "Support keyboard navigation.", "Question text draft was lost during navigation")
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    console.info("deskfleet-elicitation-preview")
+    await until(() => (window as unknown as { elicitationPreviewCaptured?: boolean }).elicitationPreviewCaptured === true, "Question screenshot captured")
+    const submit = question()!.querySelector<HTMLButtonElement>('[data-testid="elicitation-submit"]')
+    require(submit && !submit.disabled, "Valid question answers must be submittable")
+    submit.click()
     await until(() => !!conversation()?.innerText.includes("queued reply") && !button("Cancel turn") && !backlog(), "Backlog execution after permission and first turn completion")
     await expandConfiguration()
     require(configurationControl("agent")?.disabled && configurationControl("agent")?.dataset.value === providerId, "A running Session must retain its selected provider")
@@ -275,6 +299,15 @@ void app.whenReady().then(async () => {
     webPreferences: { preload: context.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, additionalArguments: ["--deskfleet-locale=en-US"] },
   })
   attachDesktopMedia(window)
+  let questionCaptured = false
+  window.webContents.on("console-message", event => {
+    if (event.message !== "deskfleet-elicitation-preview") return
+    void (async () => {
+      await writeFile(context.questionScreenshotPath, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+      questionCaptured = true
+      await window.webContents.executeJavaScript("window.elicitationPreviewCaptured = true")
+    })().catch(error => process.send?.({ error: String(error) }))
+  })
   window.webContents.on("render-process-gone", (_event, details) => process.send?.({ error: `Renderer exited: ${details.reason}` }))
   process.on("message", () => app.quit())
   process.on("disconnect", () => app.quit())
@@ -296,9 +329,11 @@ void app.whenReady().then(async () => {
     } else {
       await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("restore")`)
     }
-    await window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
   } finally {
-    await writeFile(context.screenshotPath, (await window.webContents.capturePage()).toPNG())
+    // Keep one capture per hidden window: the first phase previews the question;
+    // the restore phase captures the final Git view. Repeated hidden-window
+    // captures can stall the compositor on Wayland.
+    if (!questionCaptured) await writeFile(context.screenshotPath, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
   }
   process.send?.({ result })
 }).catch(error => { process.send?.({ error: String(error) }); app.quit() })

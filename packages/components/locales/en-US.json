@@ -285,6 +285,23 @@
     "uncertainInput": "Delivery could not be confirmed. Check the conversation before submitting again.",
     "permissions": "Permissions",
     "permissionRequired": "Permission required",
+    "questions": {
+      "title": "Your input is needed",
+      "required": "Required",
+      "optional": "Optional",
+      "yes": "Yes",
+      "no": "No",
+      "clear": "Clear answer",
+      "submit": "Submit answers",
+      "sending": "Sending answers…",
+      "decline": "Decline",
+      "cancel": "Cancel",
+      "answered": "Answered",
+      "declined": "Declined",
+      "cancelled": "Question cancelled",
+      "invalid": "Complete the required fields and check your answers.",
+      "unsupported": "This question uses a field that cannot be displayed."
+    },
     "backlogHint": "Messages you send now are queued.",
     "addToBacklog": "Add to backlog",
     "cancelTurn": "Cancel turn",
@@ -395,6 +412,8 @@
     "templateDescription": {
       "codex": "Runs the installed Codex CLI through the built-in ACP bridge.",
       "claude-code": "Runs the installed Claude Code CLI through the built-in ACP bridge.",
+      "cursor": "Runs the installed Cursor CLI over ACP. The default command is agent acp. Authenticate with agent login, CURSOR_API_KEY, or CURSOR_AUTH_TOKEN.",
+      "grok": "Runs the installed Grok CLI over ACP. The default command is grok agent stdio. Authenticate with grok login, or set XAI_API_KEY.",
       "acp": "Runs an agent executable that supports ACP over standard input and output."
     },
     "icon": "Icon",

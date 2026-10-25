@@ -5,7 +5,7 @@ use deskfleet_protocol::control::{PeerActor, PeerAuthorization, PeerTarget};
 use serde_json::{Value, json};
 
 fn snapshot(id: &str, seq: &str) -> Value {
-    json!({"session":{"id":id,"workspaceId":"1","lastEventSeq":seq,"archiveState":"active"},"runs":[],"inputs":[],"turns":[],"permissions":[]})
+    json!({"session":{"id":id,"workspaceId":"1","lastEventSeq":seq,"archiveState":"active"},"runs":[],"inputs":[],"turns":[],"permissions":[],"elicitations":[]})
 }
 fn event(id: &str, seq: &str) -> Value {
     json!({"sessionId":id,"seq":seq,"kind":"acp","payload":{"text":format!("event {seq}")}})
@@ -198,6 +198,36 @@ async fn postgres_roles_tokens_replication_and_revocation() {
     assert_eq!(commands["commands"][0]["id"], "10");
     assert!(commands.get("nextCursor").is_none());
     assert!(store.sessions(&machine.id, 0, 1001, "all").await.is_err());
+    let question = json!({
+        "id": "30", "sessionId": "20", "runGeneration": 1,
+        "request": {"mode": "form", "message": "Choose a scope"},
+        "state": "cancelled", "response": {"action": "cancel"},
+        "createdAt": "2026-10-25T00:00:00Z", "resolvedAt": "2026-10-25T00:00:01Z"
+    });
+    let mut archived_question = snapshot("20", "1");
+    archived_question["session"]["archiveState"] = json!("archived");
+    archived_question["elicitations"] = json!([question]);
+    let question_event = json!({
+        "sessionId": "20", "seq": "1", "kind": "elicitation", "payload": question
+    });
+    store
+        .sync_history(
+            &machine.id,
+            "20",
+            archived_question.clone(),
+            vec![question_event.clone()],
+            vec![],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store.session_snapshot(&machine.id, "20").await.unwrap()["snapshot"],
+        archived_question
+    );
+    assert_eq!(
+        store.events(&machine.id, "20", 0, 200).await.unwrap()["events"],
+        json!([question_event])
+    );
     store
         .set_machine_capabilities(&machine.id, json!({"agent":true,"desktop":false}))
         .await
