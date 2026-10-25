@@ -30,10 +30,28 @@ export interface AgentConfigurationSelection {
 export interface AgentConfigurationParams extends AgentConfigurationSelection {
   provider: string
   workspaceId?: string
+  /** One draft composer's temporary ACP session; scoped to the verified caller. */
+  probeId?: string
+  /** Last confirmed draft choices, applied only when its temporary session must reopen. */
+  restore?: AgentConfigurationSelection
+  /** Close a draft probe without looking up its possibly deleted provider/workspace. */
+  release?: boolean
 }
 
 export function validateAgentConfigurationParams(params: Record<string, unknown>): void {
   validateProviderId(params.provider)
+  if (params.probeId !== undefined && (typeof params.probeId !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(params.probeId))) {
+    throw new Error("Invalid Agent configuration probe ID")
+  }
+  if (params.release !== undefined && typeof params.release !== "boolean") throw new Error("Invalid Agent configuration release")
+  if (params.release && !params.probeId) throw new Error("Agent configuration release requires a probe ID")
+  if (params.restore !== undefined) {
+    if (!params.probeId || !params.restore || typeof params.restore !== "object" || Array.isArray(params.restore)) {
+      throw new Error("Invalid Agent configuration restore selection")
+    }
+    validateAgentConfigurationSelection(params.restore as Record<string, unknown>)
+  }
   if (params.workspaceId !== undefined && (typeof params.workspaceId !== "string"
     || !/^[1-9][0-9]{0,18}$/u.test(params.workspaceId) || BigInt(params.workspaceId) > 9_223_372_036_854_775_807n)) {
     throw new Error("Invalid catalog workspace ID")

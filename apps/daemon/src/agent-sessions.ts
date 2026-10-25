@@ -1,6 +1,7 @@
 import { homedir } from "node:os"
 import { createHash } from "node:crypto"
 import { readAgentConfiguration } from "./agent-configuration.ts"
+import { AgentConfigurationProbes } from "./agent-configuration-probes.ts"
 import { validateAgentConfigurationParams, validateAgentConfigurationSelection, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { ContentBlock } from "@agentclientprotocol/sdk"
 import { codexProvider } from "./agents/codex.ts"
@@ -54,6 +55,8 @@ export class AgentSessions {
   readonly #transitions = new Map<string, Promise<unknown>>()
   readonly #archiveListeners = new Set<(worktreeId: string) => Promise<void>>()
   readonly #discovery = new Set<Promise<unknown>>()
+  readonly #configurationProbes = new AgentConfigurationProbes()
+  readonly #unsubscribeProviders?: () => void
   readonly #closing = new AbortController()
   #closed = false
 
@@ -64,6 +67,9 @@ export class AgentSessions {
       if (id !== "codex") throw new Error("Agent provider is unavailable")
       return { provider, config: { name: "Codex" } }
     }
+    this.#unsubscribeProviders = providers?.onChanged(() => {
+      void this.#configurationProbes.invalidate().catch(error => console.error("Could not close Agent configuration probes", error))
+    })
   }
 
   async init(): Promise<void> {
@@ -139,6 +145,12 @@ export class AgentSessions {
     const params = object(value)
     if (method === "_deskfleet/agent/configuration") {
       validateAgentConfigurationParams(params)
+      const request = params as unknown as AgentConfigurationParams
+      const scope = canonical(actor)
+      if (request.release) {
+        await this.#configurationProbes.release(scope, request.probeId!)
+        return null
+      }
       let cwd = homedir()
       if (params.workspaceId !== undefined) {
         const workspace = (await this.#catalog.native.snapshot()).workspaces.find(workspace => workspace.id === params.workspaceId)
@@ -146,7 +158,10 @@ export class AgentSessions {
         if (!directory) throw new Error("Unknown local workspace")
         cwd = directory.path
       }
-      const pending = readAgentConfiguration(params as unknown as AgentConfigurationParams, cwd, { ...this.#resolveProvider(params.provider as string), signal: this.#closing.signal })
+      const launch = this.#resolveProvider(request.provider)
+      const pending = request.probeId
+        ? this.#configurationProbes.read(scope, request, cwd, launch)
+        : readAgentConfiguration(request, cwd, { ...launch, signal: this.#closing.signal })
       this.#discovery.add(pending)
       try { return await pending } finally { this.#discovery.delete(pending) }
     }
@@ -500,8 +515,9 @@ export class AgentSessions {
 
   async close(): Promise<void> {
     this.#closed = true
+    this.#unsubscribeProviders?.()
     this.#closing.abort(new Error("Agent service is stopping"))
-    const stopping = Promise.allSettled([...this.#runtimes.values()].map(runtime => runtime.stop()))
+    const stopping = Promise.allSettled([this.#configurationProbes.close(), ...[...this.#runtimes.values()].map(runtime => runtime.stop())])
     await Promise.allSettled(this.#discovery)
     await Promise.allSettled(this.#operations.values())
     // A Resume accepted before shutdown may have been waiting for an earlier

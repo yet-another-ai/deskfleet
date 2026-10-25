@@ -213,10 +213,13 @@ It has no approval UI; prompts requiring approval cannot proceed through it.
 The pinned adapter uses
 [`patches/@agentclientprotocol__codex-acp@2.2.2.patch`](../../patches/@agentclientprotocol__codex-acp@2.2.2.patch).
 It makes steering return `promptRequired` when the target turn ends, allowing the
-daemon to start and track the next prompt. See the
+daemon to start and track the next prompt. It also clears the app-server shutdown
+timers after the child exits, so configuration discovery does not wait through an
+unused two-second grace period. The termination deadlines still apply to a child
+that has not exited. See the
 [steering contract](../../agents/docs/agent-sessions.md#codex-steering-boundary)
-for capability negotiation and delivery semantics. Remove the patch when the
-pinned adapter provides that contract upstream.
+for capability negotiation and delivery semantics. Remove each patch hunk when
+the pinned adapter provides its corresponding behavior upstream.
 
 Source and SEA launches route adapter subprocesses through `--codex-acp` or
 `--claude-agent-acp` on their own entry point. The Claude adapter's published

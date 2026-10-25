@@ -1,7 +1,7 @@
 import type { AgentProviderConfig, AgentProviderInput, AgentProviderSettings, ProviderSnapshot, ProviderTestResult } from "../../../apps/daemon/src/provider-protocol.ts"
 
 export type ProviderDisplay = Pick<AgentProviderConfig, "id" | "name" | "icon" | "template">
-export interface ProviderDisplaySnapshot { providers: ProviderDisplay[] }
+export interface ProviderDisplaySnapshot { revision?: string; providers: ProviderDisplay[] }
 
 export const PROVIDERS_CHANGED_EVENT = "deskfleet:providers-changed"
 

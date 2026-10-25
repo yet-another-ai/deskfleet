@@ -106,7 +106,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     if (!configuration()) configurationTrigger()!.click()
     await until(() => {
       const controls = configuration()?.querySelectorAll<HTMLButtonElement>("[data-agent-control]")
-      return controls?.length === 3 && !configurationControl("model")?.disabled && !configurationControl("reasoning")?.disabled
+      return controls?.length === 4 && !configurationControl("model")?.disabled && !configurationControl("reasoning")?.disabled
     }, "Dynamic Agent, model, and reasoning menu")
     require(configuration()!.querySelector('[data-agent-control="agent"]')?.textContent?.includes("Codex"), "Agent menu must display Codex")
   }

@@ -23,6 +23,8 @@ export interface AgentProviderConfig extends AgentProviderInput {
 }
 
 export interface ProviderSnapshot {
+  /** Opaque settings revision; contains no launch settings or credential-derived data. */
+  revision: string
   templates: AgentProviderTemplate[]
   providers: AgentProviderConfig[]
 }

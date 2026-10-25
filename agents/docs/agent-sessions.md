@@ -410,11 +410,38 @@ efforts, and modes come from that provider's ACP select options, including
 grouped options. Mode names and descriptions retain the provider's wording:
 they can describe permission policies or workflows such as Plan, and are not
 mapped onto a shared permission scale. A provider that offers no mode choices
-has no selectable modes. Draft discovery resolves the selected
-provider's current launch settings, creates a temporary provider session in the
-Workspace's default directory, sends no prompt, and closes the connection. It
-times out after 45 seconds and stops when the daemon shuts down. Launch settings
-and environment values stay outside the configuration response and journal.
+has no selectable modes. Draft discovery resolves the selected provider's current
+launch settings and creates a temporary provider session in the Workspace's
+default directory, without sending a prompt or allocating a managed Session.
+The composer supplies a random `probeId` to reuse that connection for successive
+choices. The daemon scopes it to the verified user and login session, and checks
+the provider, Workspace directory, and launch settings on each request. Requests
+without a probe ID remain one-shot discoveries.
+
+Public provider metadata includes a random registry revision that changes only
+when settings change or the daemon reloads them. The UI uses that revision for
+invalidation; ordinary catalog/history notifications do not restart probes.
+The revision is not derived from credentials or environment values.
+
+Changes on one probe run sequentially. The model picker can show a pending model
+while the provider confirms its dependent effort and mode options; sending a
+prompt and editing dependent choices wait for confirmation. Rapid model choices
+keep only the latest queued change. Failed changes retain the UI's last confirmed
+choices and discard the probe, so partial provider mutations cannot leak into a
+retry. An explicit reload creates a fresh probe with the provider's defaults.
+
+The composer releases its probe on unmount or context/settings changes, using
+the same configuration method with `release: true` (which returns `null`). A
+pending request settles before that release is sent, avoiding a late request
+reopening a retired probe. The daemon closes probes after 60 seconds idle, replaces
+them after five minutes, and limits retained/closing probes to eight per machine.
+If a retained probe expired, an edit's `restore` selection seeds the new session
+from the last confirmed choices before applying the edit. The provider still
+validates those choices and reports any unsupported value; reload clears them.
+Each request retains the 45-second deadline. Provider settings changes and daemon
+shutdown close probes; a changed Workspace directory replaces its probe on the
+next request. Launch settings and environment values stay outside the
+configuration response and journal.
 
 For agents that advertise ACP `modes` separately from configuration options, the
 stdio transport presents that catalog as a mode select option and routes changes
@@ -466,8 +493,9 @@ Mode changes use the provider's confirmed configuration, including any fallback
 it applies for the selected model. Model changes in a running provider accept
 the returned mode rather than reapplying the previous mode. A stopped Session
 restores its saved mode along with its model when starting the next provider
-process. Draft discovery retains the selected mode when changing models; an
-explicit reload resets draft choices to the provider's defaults.
+process. A retained draft probe likewise accepts the provider's returned effort
+and mode when changing models. ACP has no universal reset-to-default setter:
+an explicit reload opens a new probe to retrieve fresh defaults.
 
 Changing configuration is an audited, idempotent Session command; it resumes a
 stopped provider if needed.

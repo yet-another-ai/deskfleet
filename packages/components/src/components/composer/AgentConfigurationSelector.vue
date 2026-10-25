@@ -17,7 +17,7 @@ const agents = useAgentSessionsStore()
 const providerId = computed(() => props.sessionId ? agents.sessions[props.sessionId]?.provider ?? agents.configurations[props.sessionId]?.provider.id : providers.selectedId)
 const selectedProvider = computed(() => providers.providers.find(provider => provider.id === providerId.value))
 const providerUnavailable = computed(() => !!props.sessionId && providers.loaded && !selectedProvider.value)
-const { configuration, expanded, loading, error, modelName, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }))
+const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }))
 const providerPending = computed(() => !selectedProvider.value && !configuration.value && !providerUnavailable.value)
 watch(loading, value => emit("loading", value), { immediate: true })
 const controlsId = useId()
@@ -36,7 +36,7 @@ const providerName = computed(() => selectedProvider.value?.name ?? configuratio
 const summary = computed(() => [providerName.value, modelName.value, effortLabel.value, modeName.value].filter(Boolean).join(" · "))
 const controls = computed<ConfigurationControl[]>(() => [
   { id: "agent" as const, label: t("composer.provider"), value: providerId.value, name: providerName.value, options: providers.providers, disabled: props.disabled || !!props.sessionId || !providers.ready || !providers.providers.length },
-  { id: "model" as const, label: t("composer.model"), value: configuration.value?.models?.currentValue, name: modelName.value, options: configuration.value?.models?.options ?? [], disabled: props.disabled || loading.value || !configuration.value?.models?.options.length },
+  { id: "model" as const, label: t("composer.model"), value: modelValue.value, name: modelName.value, options: configuration.value?.models?.options ?? [], disabled: props.disabled || loading.value && !requestedModel.value || !configuration.value?.models?.options.length },
   { id: "reasoning" as const, label: t("composer.reasoningEffort"), value: configuration.value?.reasoningEfforts?.currentValue, name: effortLabel.value, options: configuration.value?.reasoningEfforts?.options.map(option => ({ ...option, name: effortName(option.id, option.name) })) ?? [], disabled: props.disabled || loading.value || !configuration.value?.reasoningEfforts?.options.length },
   { id: "mode" as const, label: t("composer.mode"), value: configuration.value?.modes?.currentValue, name: modeName.value, options: configuration.value?.modes?.options ?? [], disabled: props.disabled || loading.value || !configuration.value?.modes?.options.length },
 ])
@@ -96,6 +96,7 @@ function choose(control: Control, value: string): void {
       <span v-if="providerPending" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
       <ProviderIcon v-else :icon="selectedProvider?.icon" :template="selectedProvider?.template" :size="15" />
       <span class="truncate">{{ summary }}</span>
+      <LoaderCircle v-if="requestedModel" :size="13" class="shrink-0 animate-spin" aria-hidden="true" />
       <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
     </button>
     <div v-if="expanded" :id="controlsId" data-agent-configuration-menu role="menu" :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu absolute bottom-full left-0 z-30 mb-2 w-64">
@@ -103,6 +104,7 @@ function choose(control: Control, value: string): void {
         <button type="button" role="menuitem" :data-agent-control="control.id" :data-value="control.value" :disabled="control.disabled" aria-haspopup="menu" :aria-expanded="active === control.id" :aria-controls="`${controlsId}-${control.id}`" class="ui-menu-item gap-3 focus:outline-none" :class="active === control.id && 'bg-ui-hover'" @click="openOptions(control.id, true)" @focus="active = null" @keydown.right.stop.prevent="openOptions(control.id, true)" @keydown.down.stop.prevent="move($event, '[data-agent-control]', 1)" @keydown.up.stop.prevent="move($event, '[data-agent-control]', -1)">
           <span>{{ control.label }}</span>
           <span class="ml-auto truncate text-ui-text-muted">{{ control.name ?? (loading ? t('composer.loading') : t('composer.unavailable')) }}</span>
+          <LoaderCircle v-if="control.id === 'model' && requestedModel" :size="13" class="shrink-0 animate-spin text-ui-text-muted" data-model-pending aria-hidden="true" />
           <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
         </button>
         <div v-if="active === control.id" :id="`${controlsId}-${control.id}`" data-agent-configuration-options role="menu" :aria-label="control.label" :style="submenuPosition" class="ui-menu fixed z-40 max-h-[min(20rem,calc(100vh-16px))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] overflow-y-auto">

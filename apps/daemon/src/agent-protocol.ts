@@ -162,7 +162,7 @@ export interface AgentCommit {
 export interface AgentReceipt { operationId: string; commandId: string; inputId?: string; sessionId: string }
 export interface AgentMutation { sessionId: string; operationId: string }
 export interface AgentMethods {
-  "_deskfleet/agent/configuration": { params: AgentConfigurationParams; result: AgentConfiguration }
+  "_deskfleet/agent/configuration": { params: AgentConfigurationParams; result: AgentConfiguration | null }
   "_deskfleet/session/configuration": { params: { sessionId: string }; result: AgentConfiguration }
   "_deskfleet/session/configure": { params: AgentMutation & AgentConfigurationSelection; result: AgentConfiguration }
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }

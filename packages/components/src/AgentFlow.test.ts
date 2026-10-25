@@ -157,7 +157,7 @@ test("the new-session composer remembers a working-directory choice and creates 
 
 test("new sessions use the selected configured provider and show its name", async () => {
   vi.spyOn(platformClient.providers, "list").mockResolvedValue({
-    templates: [],
+    revision: "registry-1", templates: [],
     providers: [
       { id: "codex", template: "codex", name: "Codex", env: {} },
       { id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: { CODEX_HOME: "/work/config" } },
@@ -172,7 +172,7 @@ test("new sessions use the selected configured provider and show its name", asyn
   await flushPromises()
   expect(wrapper.findAll('[data-agent-configuration-trigger]')).toHaveLength(1)
   expect(wrapper.find('[aria-label="Choose provider"]').exists()).toBe(false)
-  expect(transport.call).toHaveBeenCalledWith("_deskfleet/agent/configuration", { provider: "work-codex", workspaceId })
+  expect(transport.call).toHaveBeenCalledWith("_deskfleet/agent/configuration", { provider: "work-codex", workspaceId, probeId: expect.any(String) })
   await vi.waitFor(() => expect(wrapper.find('[data-provider-icon="deepseek"]').exists()).toBe(true))
   await wrapper.get("textarea").setValue("Use the work account")
   await wrapper.get('[aria-label="Send"]').trigger("click")
@@ -182,7 +182,7 @@ test("new sessions use the selected configured provider and show its name", asyn
   expect(wrapper.get('[data-agent-configuration-trigger] [data-provider-icon]').attributes('data-provider-icon')).toBe("deepseek")
   expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes('data-provider-icon')).toBe("deepseek")
 
-  vi.mocked(platformClient.providers.list).mockResolvedValue({ templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "claude", env: {} }] })
+  vi.mocked(platformClient.providers.list).mockResolvedValue({ revision: "registry-1", templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "claude", env: {} }] })
   await useProvidersStore(pinia).refresh()
   await flushPromises()
   expect(wrapper.get('[data-agent-configuration-trigger] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
@@ -207,14 +207,14 @@ test("restored sessions show pending provider identity until its configuration l
   expect(wrapper.find('aside a[href="#/sessions/30"] [data-provider-pending]').exists()).toBe(true)
   expect(wrapper.text()).not.toContain("Provider unavailable")
 
-  read.resolve({ templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: {} }] })
+  read.resolve({ revision: "registry-1", templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: {} }] })
   await flushPromises()
   expect(wrapper.get('[data-agent-configuration-trigger]').text()).toBe("Work Codex")
   await vi.waitFor(() => expect(wrapper.get('[data-agent-configuration-trigger] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek"))
   expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek")
   expect(wrapper.find('[data-agent-configuration-trigger] [data-provider-pending]').exists()).toBe(false)
 
-  list.mockResolvedValue({ templates: [], providers: [] })
+  list.mockResolvedValue({ revision: "registry-1", templates: [], providers: [] })
   await useProvidersStore(pinia).refresh()
   await flushPromises()
   expect(wrapper.get('[data-agent-configuration-trigger]').text()).toBe("Provider unavailable")
@@ -223,7 +223,7 @@ test("restored sessions show pending provider identity until its configuration l
 })
 
 test("an empty provider list links to Agents settings and prevents session creation", async () => {
-  vi.spyOn(platformClient.providers, "list").mockResolvedValue({ templates: [], providers: [] })
+  vi.spyOn(platformClient.providers, "list").mockResolvedValue({ revision: "registry-1", templates: [], providers: [] })
   await useProvidersStore(pinia).refresh()
   await flushPromises()
   await wrapper.get("textarea").setValue("Keep my draft")
@@ -290,8 +290,9 @@ test("the selected model, effort and native mode reach a newly created Session t
   let mode = "workspace-write"
   transport.call.mockImplementation(async (method: string, params: Record<string, unknown>) => {
     if (method === "_deskfleet/agent/configuration") {
+      if (params.release) return null
       model = String(params.model ?? model)
-      effort = String(params.reasoningEffort ?? "medium")
+      effort = String(params.reasoningEffort ?? effort)
       mode = String(params.mode ?? mode)
       return {
         provider: { id: "codex", name: "Codex" },

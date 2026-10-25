@@ -2,7 +2,36 @@ diff --git a/dist/index.js b/dist/index.js
 index 3e927271d2e805d1b111dfa6082686c17b2f62ae..2ad93adff6e5c0049db0b0f1e53f6950a92d5cde 100755
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -42473,7 +42473,8 @@ var CodexAcpServer = class {
+@@ -38086,7 +38086,11 @@ var CodexAppServerSupervisor = class {
+     let closed = false;
+     let stdoutEnded = false;
+     let wedgedTimer = null;
++    let terminateTimer = null;
++    let abandonTimer = null;
+     const markDead = () => {
++      if (terminateTimer !== null) clearTimeout(terminateTimer);
++      if (abandonTimer !== null) clearTimeout(abandonTimer);
+       child.dead = true;
+       for (const listener of [...this.deathListeners]) {
+         try {
+@@ -38209,14 +38213,14 @@ var CodexAppServerSupervisor = class {
+         process11.stdin?.end();
+       } catch {
+       }
+-      setTimeout(() => {
++      terminateTimer = setTimeout(() => {
+         if (exitSeen) return;
+         logger.log("[APP-SERVER STOP] still running after the end of stdin; sending SIGTERM", { generation });
+         try {
+           process11.kill("SIGTERM");
+         } catch {
+         }
+-        setTimeout(() => {
++        abandonTimer = setTimeout(() => {
+           if (exitSeen) return;
+           exitSeen = true;
+           markDead();
+@@ -42473,7 +42477,8 @@ var CodexAcpServer = class {
        authMethods: getCodexAuthMethods(_params.clientCapabilities),
        _meta: {
          steering: {
@@ -12,7 +41,7 @@ index 3e927271d2e805d1b111dfa6082686c17b2f62ae..2ad93adff6e5c0049db0b0f1e53f6950
          },
          // Only AIR gets the AIR extension, see `docs/air-extensions.md`.
          ...this.capabilities.airClient ? {
-@@ -43856,6 +43857,9 @@ Check ${configPath} and project .codex directories, especially their config.toml
+@@ -43856,6 +43861,9 @@ Check ${configPath} and project .codex directories, especially their config.toml
          return { outcome: "injected" };
        }
      }
@@ -22,7 +51,7 @@ index 3e927271d2e805d1b111dfa6082686c17b2f62ae..2ad93adff6e5c0049db0b0f1e53f6950
      return await this.startNewTurnFromSteering(params);
    }
    /**
-@@ -43994,7 +43998,8 @@ Check ${configPath} and project .codex directories, especially their config.toml
+@@ -43994,7 +44002,8 @@ Check ${configPath} and project .codex directories, especially their config.toml
      }
      return {
        sessionId,

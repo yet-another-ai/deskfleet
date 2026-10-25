@@ -20,6 +20,7 @@ function persistedDraftProvider(): string {
 /** The local daemon owns these settings; all windows refresh after a mutation. */
 export const useProvidersStore = defineStore("providers", () => {
   const providers = ref<ProviderDisplay[]>([])
+  const revision = ref<string>()
   const selectedId = ref("")
   const ready = ref(false)
   /** Keep the last known provider identity even if a later refresh disconnects. */
@@ -41,6 +42,7 @@ export const useProvidersStore = defineStore("providers", () => {
           if (disposed) return
           if (refreshRequested) continue
           providers.value = snapshot.providers
+          if (snapshot.revision !== undefined) revision.value = snapshot.revision
           if (!providers.value.some(provider => provider.id === selectedId.value)) {
             const remembered = persistedDraftProvider()
             selectedId.value = providers.value.find(provider => provider.id === remembered)?.id ?? providers.value[0]?.id ?? ""
@@ -64,5 +66,5 @@ export const useProvidersStore = defineStore("providers", () => {
 
   const unsubscribe = platformClient.providers.onChanged(() => { void refresh() })
   onScopeDispose(() => { disposed = true; unsubscribe() })
-  return { providers, selectedId, ready, loaded, loading, error, refresh }
+  return { providers, revision, selectedId, ready, loaded, loading, error, refresh }
 })

@@ -61,7 +61,7 @@ const host: DeskfleetDesktopApi = {
     }),
   },
   providers: {
-    list: async () => ({ templates: [...AGENT_PROVIDER_TEMPLATES], providers }),
+    list: async () => ({ revision: "product-demo", templates: [...AGENT_PROVIDER_TEMPLATES], providers }),
     display: async () => ({ providers }),
     create: async provider => { const created = { ...provider, id: crypto.randomUUID() }; providers.push(created); return created },
     update: async (id, changes) => { const provider = providers.find(provider => provider.id === id); if (!provider) return unavailable(); Object.assign(provider, changes); return provider },

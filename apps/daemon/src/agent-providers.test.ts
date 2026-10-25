@@ -27,7 +27,9 @@ test("provider settings persist with private permissions and removal preserves a
   assert.deepEqual(registry.resolve(first.id).config, { name: "Renamed", binaryPath: "/opt/codex", env: { MODE: "work" } })
   const reopened = new AgentProviders(directory)
   await reopened.init()
-  assert.deepEqual(reopened.snapshot(), registry.snapshot())
+  assert.deepEqual(reopened.snapshot().providers, registry.snapshot().providers)
+  assert.deepEqual(reopened.snapshot().templates, registry.snapshot().templates)
+  assert.notEqual(reopened.snapshot().revision, registry.snapshot().revision, "A daemon restart invalidates retained metadata")
   const path = join(directory, "agent-providers.json")
   assert.ok(!(await readFile(path, "utf8")).includes("secret"))
   if (process.platform !== "win32") assert.equal((await stat(path)).mode & 0o777, 0o600)
@@ -60,6 +62,24 @@ test("templates resolve their own binary defaults and cannot change after creati
   const copy = registry.get(custom.id)
   copy.env.CUSTOM = "mutated"
   assert.equal(registry.resolve(custom.id).config.env?.CUSTOM, "yes")
+})
+
+test("public provider revision changes on settings edits without exposing launch configuration", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-revision-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const before = registry.metadata()
+  assert.equal(before.revision, registry.snapshot().revision)
+  assert.equal(registry.metadata().revision, before.revision, "Ordinary catalog/history refreshes keep the same revision")
+  await registry.update("codex", { name: "Codex", binaryPath: "/private/tool", env: { API_KEY: "test-secret" } })
+  const after = registry.metadata()
+  assert.notEqual(after.revision, before.revision, "An environment-only change invalidates metadata even when its display fields are unchanged")
+  assert.deepEqual(after.providers, before.providers)
+  assert.equal(after.revision, registry.snapshot().revision)
+  assert.match(after.revision, /^[0-9a-f-]{36}$/u)
+  assert.equal(JSON.stringify(after).includes("test-secret"), false)
+  assert.equal(JSON.stringify(after).includes("/private/tool"), false)
 })
 
 test("provider icons persist, remain editable, and can return to the template default", async t => {

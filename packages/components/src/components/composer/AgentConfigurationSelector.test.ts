@@ -2,6 +2,7 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
+import { client as platformClient } from "@deskfleet/client/platform"
 import { i18n } from "../../i18n/index.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useProvidersStore } from "../../stores/providers.ts"
@@ -13,6 +14,7 @@ const storageKey = "deskfleet.agent-configuration"
 const wrappers: VueWrapper[] = []
 let pinia: ReturnType<typeof createPinia>
 let agents: ReturnType<typeof useAgentSessionsStore>
+let providersChanged = () => {}
 function configuration(model = "sequoia", effort = "medium"): AgentConfiguration {
   return {
     provider: { id: "codex", name: "Codex" },
@@ -33,8 +35,9 @@ function nativeConfiguration(mode = "acceptEdits", model = "sequoia", effort = "
 }
 function deferredConfiguration() {
   let resolve!: (value: AgentConfiguration) => void
-  const promise = new Promise<AgentConfiguration>(done => { resolve = done })
-  return { promise, resolve }
+  let reject!: (reason: Error) => void
+  const promise = new Promise<AgentConfiguration>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 function render(workspaceId = "11") {
   const view = mount(AgentConfigurationSelector, { attachTo: document.body, props: { workspaceId }, global: { plugins: [i18n, pinia] } })
@@ -52,13 +55,16 @@ async function choose(view: VueWrapper, control: string, value: string): Promise
 beforeEach(() => {
   window.localStorage.clear()
   pinia = createPinia(); setActivePinia(pinia)
+  vi.spyOn(platformClient.providers, "onChanged").mockImplementation(listener => { providersChanged = listener; return () => {} })
   agents = useAgentSessionsStore()
   const providers = useProvidersStore()
   providers.providers = [{ id: "codex", name: "Codex", template: "codex" }]
   providers.selectedId = "codex"
   providers.ready = providers.loaded = true
+  providers.revision = "registry-1"
   agents.sessions["30"] = agentSnapshot().session
   vi.spyOn(agents, "agentConfiguration").mockResolvedValue(configuration())
+  vi.spyOn(agents, "releaseAgentConfiguration").mockResolvedValue()
 })
 afterEach(() => {
   for (const view of wrappers.splice(0)) view.unmount()
@@ -73,7 +79,7 @@ test("opens a compact configuration menu and dynamically populates checked subme
   expect(api).not.toHaveBeenCalled()
   expect(view.find('[role="menu"]').exists()).toBe(false)
   await trigger(view).trigger("click")
-  expect(api).toHaveBeenCalledExactlyOnceWith({ provider: "codex", workspaceId: "11" })
+  expect(api).toHaveBeenCalledExactlyOnceWith({ probeId: expect.any(String), provider: "codex", workspaceId: "11" })
   expect(view.findAll("[data-agent-control]")).toHaveLength(4)
   expect(row(view, "agent").text()).toBe("AgentCodex")
   expect(document.activeElement).toBe(row(view, "agent").element)
@@ -95,13 +101,13 @@ test("changes a model before offering its supported reasoning choices", async ()
   const next = { ...configuration("orbit"), reasoningEfforts: { id: "reasoning_effort", currentValue: "minimal", options: [{ id: "minimal", name: "Minimal" }, { id: "careful", name: "Agent careful" }] } }
   const api = vi.mocked(agents.agentConfiguration).mockResolvedValueOnce(next)
   await choose(view, "model", "orbit")
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", workspaceId: "11" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ probeId: expect.any(String), provider: "codex", model: "orbit", workspaceId: "11" }))
   expect(row(view, "reasoning").attributes("data-value")).toBe("minimal")
   await row(view, "reasoning").trigger("click")
   expect(options(view).map(option => option.text())).toEqual(["Minimal", "Agent careful"])
   api.mockResolvedValueOnce({ ...next, reasoningEfforts: { ...next.reasoningEfforts, currentValue: "careful" } })
   await choose(view, "reasoning", "careful")
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", reasoningEffort: "careful", workspaceId: "11" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ provider: "codex", reasoningEffort: "careful", workspaceId: "11" }))
 })
 
 test("shows native mode names and descriptions and saves only the agent's confirmed choice", async () => {
@@ -113,7 +119,7 @@ test("shows native mode names and descriptions and saves only the agent's confir
   expect(options(view).map(option => option.attributes("data-value"))).toEqual(["acceptEdits", "auto", "plan"])
   expect(options(view)[1]!.text()).toContain("Review tool permissions automatically.")
   await view.get('[role="menuitemradio"][data-value="auto"]').trigger("click"); await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "sequoia", reasoningEffort: "medium", mode: "auto" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ provider: "codex", workspaceId: "11", mode: "auto" }))
   // An unsupported auto mode can be accepted with a native fallback.
   expect(row(view, "mode").attributes("data-value")).toBe("acceptEdits")
   expect(agents.draftConfiguration.mode).toBe("acceptEdits")
@@ -124,23 +130,23 @@ test("shows native mode names and descriptions and saves only the agent's confir
   expect(view.get('[role="alert"]').text()).toBe("Mode change rejected")
 })
 
-test("draft model changes preserve native mode and reset effort, while mode changes preserve model and effort", async () => {
+test("draft model changes accept native dependent choices, while mode changes preserve model and effort", async () => {
   const api = vi.mocked(agents.agentConfiguration).mockResolvedValue(nativeConfiguration("auto", "sequoia", "high"))
   const view = render(); await trigger(view).trigger("click"); await flushPromises()
-  api.mockResolvedValueOnce(nativeConfiguration("auto", "orbit"))
+  api.mockResolvedValueOnce(nativeConfiguration("acceptEdits", "orbit"))
   await choose(view, "model", "orbit")
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "orbit", mode: "auto" })
-  expect(agents.draftConfiguration).toEqual({ provider: "codex", model: "orbit", reasoningEffort: "medium", mode: "auto" })
-  api.mockResolvedValueOnce(nativeConfiguration("auto", "orbit", "high"))
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ probeId: expect.any(String), provider: "codex", workspaceId: "11", model: "orbit" }))
+  expect(agents.draftConfiguration).toEqual({ provider: "codex", model: "orbit", reasoningEffort: "medium", mode: "acceptEdits" })
+  api.mockResolvedValueOnce(nativeConfiguration("acceptEdits", "orbit", "high"))
   await choose(view, "reasoning", "high")
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "orbit", reasoningEffort: "high", mode: "auto" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ provider: "codex", workspaceId: "11", reasoningEffort: "high" }))
   api.mockResolvedValueOnce(nativeConfiguration("plan", "orbit", "high"))
   await choose(view, "mode", "plan")
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "orbit", reasoningEffort: "high", mode: "plan" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ provider: "codex", workspaceId: "11", mode: "plan" }))
   expect(trigger(view).text()).toBe("Codex · Orbit · High · Plan")
   view.unmount(); wrappers.splice(wrappers.indexOf(view), 1)
   const restored = render(); await trigger(restored).trigger("click"); await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", model: "orbit", reasoningEffort: "high", mode: "plan" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ probeId: expect.any(String), provider: "codex", workspaceId: "11", model: "orbit", reasoningEffort: "high", mode: "plan" }))
 })
 
 test("reload recovers rejected draft choices using the agent's current defaults", async () => {
@@ -149,7 +155,7 @@ test("reload recovers rejected draft choices using the agent's current defaults"
   const view = render(); await trigger(view).trigger("click"); await flushPromises()
   api.mockResolvedValueOnce(nativeConfiguration())
   await view.findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ probeId: expect.any(String), provider: "codex", workspaceId: "11" }))
   expect(agents.draftConfiguration).toEqual({ provider: "codex", model: "sequoia", reasoningEffort: "medium", mode: "acceptEdits" })
 })
 
@@ -162,16 +168,20 @@ test("switches configured providers without reusing another provider's model or 
   const api = vi.mocked(agents.agentConfiguration).mockResolvedValue(workConfiguration).mockReturnValueOnce(previous.promise)
   const view = render()
   await trigger(view).trigger("click")
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "retired-model", reasoningEffort: "high", workspaceId: "11" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ probeId: expect.any(String), provider: "codex", model: "retired-model", reasoningEffort: "high", workspaceId: "11" }))
+  const previousProbe = api.mock.calls[0]![0].probeId
   await choose(view, "agent", "work-agent")
-  expect(api).toHaveBeenLastCalledWith({ provider: "work-agent", workspaceId: "11" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ probeId: expect.any(String), provider: "work-agent", workspaceId: "11" }))
   expect(providers.selectedId).toBe("work-agent")
+  expect(api.mock.calls.at(-1)![0].probeId).not.toBe(previousProbe)
+  expect(agents.releaseAgentConfiguration).not.toHaveBeenCalled()
   expect(trigger(view).text()).toBe("Work agent · work-model · Medium")
   await vi.waitFor(() => expect(trigger(view).find('[data-provider-icon="claude"]').exists()).toBe(true))
   previous.resolve(configuration("retired-model", "high")); await flushPromises()
+  expect(agents.releaseAgentConfiguration).toHaveBeenCalledExactlyOnceWith({ provider: "codex", workspaceId: "11", probeId: previousProbe })
   expect(agents.draftConfiguration).toEqual({ provider: "work-agent", model: "work-model", reasoningEffort: "medium" })
   await choose(view, "reasoning", "high")
-  expect(api).toHaveBeenLastCalledWith({ provider: "work-agent", model: "work-model", reasoningEffort: "high", workspaceId: "11" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ provider: "work-agent", reasoningEffort: "high", workspaceId: "11" }))
 })
 
 test("keeps confirmed choices after rejected changes and allows retry", async () => {
@@ -228,7 +238,7 @@ test("remounting uses saved draft choices while requesting fresh options", async
   const second = render()
   expect(trigger(second).text()).toBe("Codex · orbit · High")
   await trigger(second).trigger("click"); await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", model: "orbit", reasoningEffort: "high", workspaceId: "11" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ probeId: expect.any(String), provider: "codex", model: "orbit", reasoningEffort: "high", workspaceId: "11" }))
 })
 
 test("reloads after discovery errors and disables controls the agent does not support", async () => {
@@ -237,7 +247,7 @@ test("reloads after discovery errors and disables controls the agent does not su
   expect(view.get('[role="alert"]').text()).toBe("Codex is not authenticated")
   api.mockResolvedValueOnce({ provider: { id: "codex", name: "Codex" }, models: null, reasoningEfforts: null, modes: null })
   await view.findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11" })
+  expect(api).toHaveBeenLastCalledWith(expect.objectContaining({ probeId: expect.any(String), provider: "codex", workspaceId: "11" }))
   expect(row(view, "model").text()).toBe("ModelUnavailable")
   expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
   expect(row(view, "mode").text()).toBe("ModeUnavailable")
@@ -411,4 +421,208 @@ test("refreshes cached choices after a failed resume without duplicating pending
   expect(read).toHaveBeenCalledTimes(2)
   expect(agents.agentConfiguration).not.toHaveBeenCalled()
   expect(window.localStorage.getItem(storageKey)).toBe(saved)
+})
+
+
+test("reuses a draft probe for confirmed choices and gives each mounted picker its own probe", async () => {
+  const api = vi.mocked(agents.agentConfiguration)
+  const first = render(); await trigger(first).trigger("click"); await flushPromises()
+  const probeId = api.mock.calls[0]![0].probeId
+  expect(probeId).toEqual(expect.any(String))
+  api.mockResolvedValueOnce(configuration("orbit"))
+  await choose(first, "model", "orbit")
+  api.mockResolvedValueOnce(configuration("orbit", "high"))
+  await choose(first, "reasoning", "high")
+  expect(api.mock.calls.slice(0, 3).map(([params]) => params.probeId)).toEqual([probeId, probeId, probeId])
+  const second = render(); await trigger(second).trigger("click"); await flushPromises()
+  expect(api.mock.calls.at(-1)![0].probeId).not.toBe(probeId)
+})
+
+test("coalesces rapid model choices while keeping dependent controls and sending blocked until confirmation", async () => {
+  const initial = configuration()
+  initial.models!.options.push({ id: "birch", name: "Birch" })
+  const api = vi.mocked(agents.agentConfiguration).mockResolvedValueOnce(initial)
+  const view = mount(SessionComposer, {
+    attachTo: document.body,
+    props: { location: { machine: { id: "1", name: "Machine", local: true, online: true, desktop: false, terminals: [], workspaces: [] }, workspace: { id: "11", name: "Workspace", directories: [], sessions: [], terminals: [] } } },
+    global: { plugins: [i18n, pinia] },
+  }); wrappers.push(view)
+  await view.get("textarea").setValue("Keep my draft")
+  await trigger(view).trigger("click"); await flushPromises()
+  const saved = window.localStorage.getItem(storageKey)
+  const first = deferredConfiguration(); const last = deferredConfiguration()
+  api.mockReturnValueOnce(first.promise).mockReturnValueOnce(last.promise)
+  await choose(view, "model", "orbit")
+  expect(row(view, "model").attributes("data-value")).toBe("orbit")
+  expect(row(view, "model").attributes("disabled")).toBeUndefined()
+  expect(view.find("[data-model-pending]").exists()).toBe(true)
+  expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
+  expect(view.get('[aria-label="Send"]').attributes("disabled")).toBeDefined()
+  await choose(view, "model", "birch")
+  await choose(view, "model", "sequoia")
+  expect(api).toHaveBeenCalledTimes(2)
+  expect(row(view, "model").attributes("data-value")).toBe("sequoia")
+  expect(window.localStorage.getItem(storageKey)).toBe(saved)
+  first.resolve(configuration("orbit", "high")); await flushPromises()
+  expect(api).toHaveBeenCalledTimes(3)
+  expect(api.mock.calls.at(-1)![0]).toMatchObject({ model: "sequoia", probeId: api.mock.calls[0]![0].probeId })
+  expect(api.mock.calls.some(([params]) => params.model === "birch")).toBe(false)
+  expect(row(view, "reasoning").attributes("data-value")).toBe("medium")
+  expect(window.localStorage.getItem(storageKey)).toBe(saved)
+  expect(view.get('[aria-label="Send"]').attributes("disabled")).toBeDefined()
+  last.resolve(configuration("sequoia", "high")); await flushPromises()
+  expect(view.find("[data-model-pending]").exists()).toBe(false)
+  expect(agents.draftConfiguration.reasoningEffort).toBe("high")
+  expect(view.get('[aria-label="Send"]').attributes("disabled")).toBeUndefined()
+  expect(view.get("textarea").element.value).toBe("Keep my draft")
+})
+
+test("restarts the latest queued model after an obsolete change fails", async () => {
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  const api = vi.mocked(agents.agentConfiguration)
+  const first = deferredConfiguration(); const last = deferredConfiguration()
+  api.mockReturnValueOnce(first.promise).mockReturnValueOnce(last.promise)
+  await choose(view, "model", "orbit")
+  await choose(view, "model", "sequoia")
+  const previousProbe = api.mock.calls.at(-1)![0].probeId
+  first.reject(new Error("Obsolete model failed")); await flushPromises()
+  expect(api.mock.calls.at(-1)![0]).toMatchObject({ model: "sequoia" })
+  expect(api.mock.calls.at(-1)![0].probeId).not.toBe(previousProbe)
+  expect(agents.releaseAgentConfiguration).toHaveBeenCalledWith({ provider: "codex", workspaceId: "11", probeId: previousProbe })
+  expect(view.find('[role="alert"]').exists()).toBe(false)
+  expect(view.find("[data-model-pending]").exists()).toBe(true)
+  last.resolve(configuration()); await flushPromises()
+  expect(view.find('[role="status"]').exists()).toBe(false)
+})
+
+test("a failed latest model restores the confirmed selection and a retry starts a fresh probe", async () => {
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  const api = vi.mocked(agents.agentConfiguration)
+  const previousProbe = api.mock.calls[0]![0].probeId
+  const saved = window.localStorage.getItem(storageKey)
+  const pending = deferredConfiguration(); api.mockReturnValueOnce(pending.promise)
+  await choose(view, "model", "orbit")
+  expect(row(view, "model").attributes("data-value")).toBe("orbit")
+  pending.reject(new Error("Model unavailable")); await flushPromises()
+  expect(row(view, "model").attributes("data-value")).toBe("sequoia")
+  expect(view.find("[data-model-pending]").exists()).toBe(false)
+  expect(view.get('[role="alert"]').text()).toBe("Model unavailable")
+  expect(window.localStorage.getItem(storageKey)).toBe(saved)
+  api.mockResolvedValueOnce(configuration("orbit"))
+  await choose(view, "model", "orbit")
+  expect(api.mock.calls.at(-1)![0].probeId).not.toBe(previousProbe)
+  expect(row(view, "model").attributes("data-value")).toBe("orbit")
+})
+
+test("releases a switched workspace probe after its pending read and releases the new probe on unmount", async () => {
+  const pending = deferredConfiguration()
+  const api = vi.mocked(agents.agentConfiguration).mockReturnValueOnce(pending.promise)
+  const view = render(); await trigger(view).trigger("click")
+  const first = api.mock.calls[0]![0].probeId
+  await view.setProps({ workspaceId: "22" }); await flushPromises()
+  const second = api.mock.calls.at(-1)![0].probeId
+  expect(second).not.toBe(first)
+  expect(agents.releaseAgentConfiguration).not.toHaveBeenCalled()
+  pending.resolve(configuration("old-model")); await flushPromises()
+  expect(agents.releaseAgentConfiguration).toHaveBeenCalledExactlyOnceWith({ provider: "codex", workspaceId: "11", probeId: first })
+  expect(row(view, "model").attributes("data-value")).toBe("sequoia")
+  view.unmount(); wrappers.splice(wrappers.indexOf(view), 1); await flushPromises()
+  expect(agents.releaseAgentConfiguration).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "22", probeId: second })
+})
+
+test("ordinary metadata notifications preserve a draft probe and changed settings revisions invalidate it", async () => {
+  const snapshot = await platformClient.providers.list()
+  const list = vi.spyOn(platformClient.providers, "list").mockResolvedValue({ ...snapshot, revision: "registry-1" })
+  const api = vi.mocked(agents.agentConfiguration)
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  const first = api.mock.calls[0]![0].probeId
+  providersChanged(); await flushPromises()
+  providersChanged(); await flushPromises()
+  expect(api).toHaveBeenCalledTimes(1)
+  expect(agents.releaseAgentConfiguration).not.toHaveBeenCalled()
+  api.mockResolvedValueOnce(configuration("orbit", "high"))
+  list.mockResolvedValue({ ...snapshot, revision: "registry-2" })
+  providersChanged(); await flushPromises()
+  expect(api.mock.calls.at(-1)![0].probeId).not.toBe(first)
+  expect(agents.releaseAgentConfiguration).toHaveBeenCalledExactlyOnceWith({ provider: "codex", workspaceId: "11", probeId: first })
+  expect(row(view, "model").attributes("data-value")).toBe("orbit")
+  view.unmount(); wrappers.splice(wrappers.indexOf(view), 1)
+  list.mockResolvedValue({ ...snapshot, revision: "registry-3" })
+  providersChanged(); await flushPromises()
+  expect(api).toHaveBeenCalledTimes(2)
+})
+
+test("reload discovers defaults with a new probe and no rejected choices", async () => {
+  agents.draftConfiguration = { provider: "codex", model: "retired-model", reasoningEffort: "high" }
+  const api = vi.mocked(agents.agentConfiguration).mockRejectedValueOnce(new Error("Model unavailable"))
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  const first = api.mock.calls[0]![0].probeId
+  await view.findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
+  expect(api.mock.calls.at(-1)![0]).toEqual({ provider: "codex", workspaceId: "11", probeId: expect.any(String) })
+  expect(api.mock.calls.at(-1)![0].probeId).not.toBe(first)
+})
+
+
+test("effort changes keep all dependent controls disabled and do not announce a pending model", async () => {
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  const pending = deferredConfiguration()
+  vi.mocked(agents.agentConfiguration).mockReturnValueOnce(pending.promise)
+  await choose(view, "reasoning", "high")
+  expect(row(view, "model").attributes("disabled")).toBeDefined()
+  expect(row(view, "reasoning").attributes("disabled")).toBeDefined()
+  expect(view.find("[data-model-pending]").exists()).toBe(false)
+  pending.resolve(configuration("sequoia", "high")); await flushPromises()
+  expect(row(view, "model").attributes("disabled")).toBeUndefined()
+})
+
+test("moving from a draft to a live Session releases the draft probe", async () => {
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  const probeId = vi.mocked(agents.agentConfiguration).mock.calls[0]![0].probeId
+  vi.spyOn(agents, "sessionConfiguration").mockImplementation(async id => {
+    agents.configurations[id] = configuration()
+    return agents.configurations[id]!
+  })
+  await view.setProps({ sessionId: "30" }); await flushPromises()
+  expect(agents.releaseAgentConfiguration).toHaveBeenCalledExactlyOnceWith({ provider: "codex", workspaceId: "11", probeId })
+  expect(agents.sessionConfiguration).toHaveBeenCalledExactlyOnceWith("30")
+  expect(agents.agentConfiguration).toHaveBeenCalledTimes(1)
+})
+
+test("the first registry revision does not interrupt an already-open draft probe", async () => {
+  const providers = useProvidersStore()
+  providers.revision = undefined
+  const pending = deferredConfiguration()
+  const api = vi.mocked(agents.agentConfiguration).mockReturnValueOnce(pending.promise)
+  const view = render(); await trigger(view).trigger("click")
+  providers.revision = "registry-first"; await flushPromises()
+  expect(api).toHaveBeenCalledTimes(1)
+  expect(agents.releaseAgentConfiguration).not.toHaveBeenCalled()
+  pending.resolve(configuration()); await flushPromises()
+  expect(row(view, "model").attributes("data-value")).toBe("sequoia")
+})
+
+test("explicit draft edits carry confirmed restoration choices separately from their delta", async () => {
+  const api = vi.mocked(agents.agentConfiguration).mockResolvedValueOnce(nativeConfiguration("auto", "orbit", "high"))
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  expect(api.mock.calls[0]![0].restore).toBeUndefined()
+  const probeId = api.mock.calls[0]![0].probeId
+  api.mockResolvedValueOnce(nativeConfiguration("acceptEdits", "sequoia", "medium"))
+  await choose(view, "model", "sequoia")
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", probeId, model: "sequoia", restore: { model: "orbit", reasoningEffort: "high", mode: "auto" } })
+  api.mockResolvedValueOnce(nativeConfiguration("acceptEdits", "sequoia", "high"))
+  await choose(view, "reasoning", "high")
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", probeId, reasoningEffort: "high", restore: { model: "sequoia", reasoningEffort: "medium", mode: "acceptEdits" } })
+  await view.setProps({ workspaceId: "22" }); await flushPromises()
+  expect(api.mock.calls.at(-1)![0].restore).toBeUndefined()
+  expect(api.mock.calls.at(-1)![0].probeId).not.toBe(probeId)
+})
+
+test("reload after a rejected edit omits the previous confirmed restoration choices", async () => {
+  const api = vi.mocked(agents.agentConfiguration).mockResolvedValueOnce(nativeConfiguration("auto", "orbit", "high"))
+  const view = render(); await trigger(view).trigger("click"); await flushPromises()
+  api.mockRejectedValueOnce(new Error("Mode unavailable"))
+  await choose(view, "mode", "plan")
+  expect(api.mock.calls.at(-1)![0].restore).toEqual({ model: "orbit", reasoningEffort: "high", mode: "auto" })
+  await view.findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
+  expect(api.mock.calls.at(-1)![0]).toEqual({ provider: "codex", workspaceId: "11", probeId: expect.any(String) })
 })

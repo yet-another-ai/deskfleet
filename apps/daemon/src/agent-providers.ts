@@ -32,6 +32,7 @@ export class AgentProviders {
   readonly #codex: AgentProvider
   readonly #listeners = new Set<() => void>()
   #providers: AgentProviderConfig[] = []
+  #revision = randomUUID()
   #queue: Promise<unknown> = Promise.resolve()
 
   constructor(directory: string, codexOverride: AgentProvider = codexProvider) {
@@ -49,6 +50,7 @@ export class AgentProviders {
       const providers: AgentProviderConfig[] = [{ id: "codex", template: "codex", name: "Codex", env: {} }]
       await this.#save(providers)
       this.#providers = providers
+      this.#revision = randomUUID()
       return
     }
     const value: unknown = JSON.parse(data)
@@ -64,15 +66,17 @@ export class AgentProviders {
       ids.add(id)
       return { id, ...providerInput(input) }
     })
+    this.#revision = randomUUID()
   }
 
   snapshot(): ProviderSnapshot {
-    return { templates: structuredClone(AGENT_PROVIDER_TEMPLATES) as ProviderSnapshot["templates"], providers: structuredClone(this.#providers) }
+    return { revision: this.#revision, templates: structuredClone(AGENT_PROVIDER_TEMPLATES) as ProviderSnapshot["templates"], providers: structuredClone(this.#providers) }
   }
 
-  /** Only these display fields may enter the central catalog replica. */
+  /** Public display fields and an opaque revision may enter the central catalog replica. */
   metadata() {
     return {
+      revision: this.#revision,
       templates: AGENT_PROVIDER_TEMPLATES.map(({ id, name }) => ({ id, name })),
       providers: this.#providers.map(({ id, name, template, icon }) => ({ id, name, template, ...(icon ? { icon } : {}) })),
     }
@@ -162,6 +166,7 @@ export class AgentProviders {
   async #commit(providers: AgentProviderConfig[]): Promise<void> {
     await this.#save(providers)
     this.#providers = providers
+    this.#revision = randomUUID()
     for (const listener of this.#listeners) listener()
   }
 

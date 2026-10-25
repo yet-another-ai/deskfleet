@@ -9,7 +9,8 @@ import { useProvidersStore } from "./providers.ts"
 let pinia: ReturnType<typeof createPinia>
 beforeEach(() => { localStorage.clear(); pinia = createPinia(); setActivePinia(pinia) })
 afterEach(() => { disposePinia(pinia); vi.restoreAllMocks(); localStorage.clear() })
-const snapshot = (ids: string[]): ProviderSnapshot => ({
+const snapshot = (ids: string[], revision = "registry-1"): ProviderSnapshot => ({
+  revision,
   templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }],
   providers: ids.map(id => ({ id, template: "codex", name: id, env: {} })),
 })
@@ -33,7 +34,7 @@ test("preserves the chosen provider on edits and replaces it when removed", asyn
 
 test("a change during a pending read refreshes before publishing stale options", async () => {
   const read = deferred<ProviderSnapshot>()
-  const list = vi.spyOn(platformClient.providers, "list").mockReturnValueOnce(read.promise).mockResolvedValue(snapshot(["new"]))
+  const list = vi.spyOn(platformClient.providers, "list").mockReturnValueOnce(read.promise).mockResolvedValue(snapshot(["new"], "registry-2"))
   let changed = () => {}
   const unsubscribe = vi.fn()
   vi.spyOn(platformClient.providers, "onChanged").mockImplementation(listener => { changed = listener; return unsubscribe })
@@ -44,6 +45,7 @@ test("a change during a pending read refreshes before publishing stale options",
   await refreshing
   expect(list).toHaveBeenCalledTimes(2)
   expect(store.selectedId).toBe("new")
+  expect(store.revision).toBe("registry-2")
   store.$dispose()
   expect(unsubscribe).toHaveBeenCalledOnce()
 })
@@ -88,4 +90,17 @@ test("an unsuccessful initial read does not confirm that providers are missing",
   await store.refresh()
   expect(store.loaded).toBe(false)
   expect(store.ready).toBe(false)
+})
+
+test("retains the registry revision across ordinary refreshes and accepts an actual settings change", async () => {
+  const list = vi.spyOn(platformClient.providers, "list").mockResolvedValue(snapshot(["codex"]))
+  const store = useProvidersStore()
+  await store.refresh()
+  expect(store.revision).toBe("registry-1")
+  list.mockResolvedValue(snapshot(["codex"]))
+  await store.refresh()
+  expect(store.revision).toBe("registry-1")
+  list.mockResolvedValue(snapshot(["codex"], "registry-2"))
+  await store.refresh()
+  expect(store.revision).toBe("registry-2")
 })

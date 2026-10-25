@@ -273,3 +273,11 @@ test("live option updates retain the Session's configured provider identity", as
   expect(store.configurations["30"]?.provider).toEqual({ id: "work-agent", name: "Work agent" })
   expect(store.configurations["30"]?.models?.currentValue).toBe("work-model")
 })
+
+test("configuration reads require metadata while releasing a draft probe accepts null", async () => {
+  const store = useAgentSessionsStore()
+  const params = { provider: "codex", workspaceId: "11", probeId: "probe-test" }
+  await expect(store.agentConfiguration(params)).rejects.toThrow("Agent configuration is unavailable")
+  await expect(store.releaseAgentConfiguration(params)).resolves.toBeUndefined()
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/agent/configuration", { ...params, release: true })
+})

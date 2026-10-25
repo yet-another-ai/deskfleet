@@ -313,7 +313,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
 
-  const agentConfiguration = (params: AgentSelection & { workspaceId?: string }) => call("_deskfleet/agent/configuration", params)
+  async function agentConfiguration(params: AgentSelection & { workspaceId?: string; probeId?: string; restore?: Omit<AgentSelection, "provider"> }): Promise<AgentConfiguration> {
+    const result = await call("_deskfleet/agent/configuration", params)
+    if (!result) throw new Error("Agent configuration is unavailable")
+    return result
+  }
+  async function releaseAgentConfiguration(params: { provider: string; workspaceId?: string; probeId: string }): Promise<void> {
+    await call("_deskfleet/agent/configuration", { ...params, release: true })
+  }
   function sessionConfiguration(sessionId: string): Promise<AgentConfiguration> {
     const current = configurationReads.get(sessionId)
     if (current) return current
@@ -371,5 +378,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const gitStatus = (sessionId: string) => call("_deskfleet/git/status", { sessionId })
   const gitDiff = (request: GitDiffRequest) => call("_deskfleet/git/diff", request)
   onScopeDispose(() => { disposed = true; client.close() })
-  return { sessions, views, drafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, archive, restore, gitStatus, gitDiff }
+  return { sessions, views, drafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, archive, restore, gitStatus, gitDiff }
 })

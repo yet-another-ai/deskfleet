@@ -268,8 +268,55 @@ test("configuration parameters reject invalid provider IDs and malformed choices
     { provider: "../unknown" }, { provider: "codex", workspaceId: "../file" },
     { provider: "codex", model: 42 }, { provider: "codex", reasoningEffort: "" },
     { provider: "codex", mode: "" }, { provider: "codex", mode: "invalid\0mode" },
+    { provider: "codex", probeId: "not-a-uuid" }, { provider: "codex", release: true },
+    { provider: "codex", release: "true" },
+    { provider: "codex", restore: {} },
+    { provider: "codex", probeId: "cc8b5b3d-154a-4bf8-89f6-dd2403a646f5", restore: { mode: "" } },
   ]) assert.throws(() => validateAgentConfigurationParams(params))
   assert.doesNotThrow(() => validateAgentConfigurationParams({ provider: "configured-agent", workspaceId: "1", model: "model", reasoningEffort: "high", mode: "auto" }))
+})
+
+test("draft probes reuse startup, isolate callers, and invalidate changed launch settings and directories", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-agent-config-probes-"))
+  const fake = fakeProvider()
+  const catalog = new DaemonCatalog(directory)
+  await catalog.init()
+  const providers = new AgentProviders(directory, fake.provider)
+  await providers.init()
+  const service = new AgentSessions(catalog, catalog.native, fake.provider, providers)
+  await service.init()
+  context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
+  const workspace = await catalog.native.createWorkspace("Draft", [{ path: directory }])
+  const params = { provider: "codex", workspaceId: workspace.id, probeId: "cc8b5b3d-154a-4bf8-89f6-dd2403a646f5" }
+  const first = { kind: "user" as const, userId: "alice", deviceId: "login-1" }
+  const second = { ...first, deviceId: "login-2" }
+  await service.handle("_deskfleet/agent/configuration", params, first)
+  await service.handle("_deskfleet/agent/configuration", { ...params, model: "second" }, first)
+  assert.equal(fake.connections, 1, "A model switch reuses the draft process and session")
+  assert.equal(fake.sessions.length, 1)
+  assert.equal(fake.closed, 0)
+  await service.handle("_deskfleet/agent/configuration", params, second)
+  assert.equal(fake.connections, 2, "Another login cannot reuse the same probe ID")
+  await service.handle("_deskfleet/agent/configuration", { ...params, release: true }, second)
+  assert.equal(fake.closed, 1)
+  await service.handle("_deskfleet/agent/configuration", params, first)
+  assert.equal(fake.connections, 2, "Releasing another login's probe leaves this one usable")
+  await providers.update("codex", { name: "Updated", binaryPath: "updated-codex", env: {} })
+  const updated = await service.handle("_deskfleet/agent/configuration", params, first) as AgentConfiguration
+  assert.equal(updated.provider.name, "Updated")
+  assert.equal(fake.configs.at(-1)?.binaryPath, "updated-codex")
+  assert.equal(fake.connections, 3)
+  await catalog.native.updateWorkspace(workspace.id, "Moved", [{ path: tmpdir() }])
+  await service.handle("_deskfleet/agent/configuration", params, first)
+  assert.equal(fake.sessions.at(-1)?.cwd, tmpdir())
+  assert.equal(fake.connections, 4)
+  await providers.remove("codex")
+  assert.equal(await service.handle("_deskfleet/agent/configuration", { ...params, workspaceId: "99999", release: true }, first), null,
+    "Cleanup works even when its provider and workspace no longer exist")
+  assert.deepEqual(await service.journal.list(), [])
+  assert.equal((await catalog.native.snapshot()).workspaces[0]?.worktrees.length, 1)
+  await service.close()
+  assert.equal(fake.closed, 4)
 })
 
 test("closing Agent service closes a pending discovery process", async context => {
