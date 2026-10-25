@@ -247,6 +247,76 @@ test("a change received during a snapshot read schedules another read", async ()
   f.monitor.close()
 })
 
+test("a delayed first snapshot reports work that happened after observation began", async () => {
+  const f = setup([])
+  const pending = new Map<string, ReturnType<typeof deferred<AgentSnapshot[]>>>()
+  f.source.sessions.mockImplementation((id: string) => {
+    const read = deferred<AgentSnapshot[]>()
+    pending.set(id, read)
+    return read.promise
+  })
+  const starting = f.monitor.start()
+  await vi.waitFor(() => expect(pending.has("local")).toBe(true))
+  vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-25T10:05:00Z"))
+  const late = snapshot()
+  late.turns = [
+    { ...turn("historical"), endedAt: "2026-10-25T09:00:00Z" },
+    { ...turn("during-wait"), endedAt: "2026-10-25T10:04:00Z" },
+  ]
+  late.elicitations = [
+    { ...question("old-question"), createdAt: "2026-10-25T09:00:00Z" },
+    { ...question("new-question"), createdAt: "2026-10-25T10:04:00Z" },
+  ]
+  pending.get("local")!.resolve([late])
+  pending.get("remote")!.resolve([])
+  await starting
+  expect(f.notify.mock.calls.map(([notice]) => notice.kind)).toEqual(["taskCompleted", "taskNeedsInput"])
+  f.monitor.close()
+})
+
+test("a failed first snapshot does not swallow completions from the next read", async () => {
+  const f = setup([])
+  let localAttempts = 0
+  f.source.sessions.mockImplementation(async (id: string) => {
+    if (id === "local" && localAttempts++ === 0) throw new Error("unavailable")
+    return structuredClone(f.state.snapshots.get(id) ?? [])
+  })
+  await f.monitor.start()
+  expect(f.onError).toHaveBeenCalled()
+  expect(f.notify).not.toHaveBeenCalled()
+  const updated = snapshot("1", 2)
+  updated.turns = [
+    { ...turn("historical"), endedAt: "2026-10-25T09:00:00Z" },
+    { ...turn("fresh"), endedAt: timestamp },
+  ]
+  f.state.snapshots.set("local", [updated])
+  await f.refresh()
+  expect(f.notify).toHaveBeenCalledExactlyOnceWith({ kind: "taskCompleted", machineId: "local", sessionId: "1", title: "Task 1" })
+  f.monitor.close()
+})
+
+test("an invalidated first snapshot still reports work in the following read", async () => {
+  const f = setup([])
+  const reads: Array<{ id: string } & ReturnType<typeof deferred<AgentSnapshot[]>>> = []
+  f.source.sessions.mockImplementation((id: string) => {
+    const read = deferred<AgentSnapshot[]>()
+    reads.push({ id, ...read })
+    return read.promise
+  })
+  const starting = f.monitor.start()
+  await vi.waitFor(() => expect(reads.some(read => read.id === "local")).toBe(true))
+  const firstCount = reads.length
+  f.emit({ type: "machinesChanged", teamId: team.id })
+  for (const read of reads.slice(0, firstCount)) read.resolve([])
+  await vi.waitFor(() => expect(reads.length).toBeGreaterThan(firstCount))
+  const during = snapshot("1", 4)
+  during.turns = [{ ...turn("during-gap"), endedAt: timestamp }]
+  for (const read of reads.slice(firstCount)) read.resolve(read.id === "local" ? [during] : [])
+  await starting
+  expect(f.notify).toHaveBeenCalledExactlyOnceWith({ kind: "taskCompleted", machineId: "local", sessionId: "1", title: "Task 1" })
+  f.monitor.close()
+})
+
 test("failed reads preserve the baseline and retry on the next event", async () => {
   const f = setup()
   await f.monitor.start()

@@ -17,6 +17,8 @@ interface SeenSession {
 interface SeenMachine {
   watchStartedAt: number
   initialized: boolean
+  /** The first read failed or was discarded, so the next snapshot is not a silent baseline. */
+  missedBaseline: boolean
   sessions: Map<string, SeenSession>
 }
 
@@ -124,21 +126,35 @@ export class TaskNotificationMonitor {
     const authorized = new Set(machines.map(machine => machine.id))
     for (const id of this.#machines.keys()) if (!authorized.has(id)) this.#machines.delete(id)
     for (const id of authorized) {
-      if (!this.#machines.has(id)) this.#machines.set(id, { watchStartedAt: Date.now(), initialized: false, sessions: new Map() })
+      if (!this.#machines.has(id)) this.#machines.set(id, { watchStartedAt: Date.now(), initialized: false, missedBaseline: false, sessions: new Map() })
       this.#pendingMachines.add(id)
     }
   }
 
   async #refreshMachine(machineId: string, epoch: number): Promise<void> {
+    if (!this.#machines.get(machineId)) return
+    let snapshots: AgentSnapshot[]
+    try {
+      snapshots = await this.#source.sessions(machineId)
+    } catch (error) {
+      const current = this.#machines.get(machineId)
+      if (this.#current(epoch) && current && !current.initialized) current.missedBaseline = true
+      throw error
+    }
     const machine = this.#machines.get(machineId)
-    if (!machine) return
-    const snapshots = await this.#source.sessions(machineId)
-    if (!this.#current(epoch)) return
-    for (const snapshot of snapshots) this.#observe(machineId, machine, snapshot)
+    if (!this.#current(epoch) || !machine) {
+      if (machine && !machine.initialized) machine.missedBaseline = true
+      return
+    }
+    // An immediate first read is the baseline, including events timestamped slightly
+    // after the watch. A failed, discarded, or slow read must still surface work
+    // that happened after observation began.
+    const silentBaseline = !machine.initialized && !machine.missedBaseline && Date.now() <= machine.watchStartedAt
+    for (const snapshot of snapshots) this.#observe(machineId, machine, snapshot, silentBaseline)
     machine.initialized = true
   }
 
-  #observe(machineId: string, machine: SeenMachine, snapshot: AgentSnapshot): void {
+  #observe(machineId: string, machine: SeenMachine, snapshot: AgentSnapshot, silentBaseline: boolean): void {
     const { session } = snapshot
     const previous = machine.sessions.get(session.id)
     const sequence = BigInt(session.lastEventSeq)
@@ -164,7 +180,7 @@ export class TaskNotificationMonitor {
     }
     seen.sequence = sequence
     machine.sessions.set(session.id, seen)
-    if (!machine.initialized || session.archiveState !== "active" || session.lifecycle !== "ready") return
+    if (silentBaseline || session.archiveState !== "active" || session.lifecycle !== "ready") return
     for (const kind of notices) {
       this.#notify({ kind, machineId, sessionId: session.id, title: session.title })
     }
