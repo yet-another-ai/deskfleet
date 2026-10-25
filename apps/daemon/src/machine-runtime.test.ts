@@ -184,6 +184,29 @@ test("failed registration preparation keeps the retired catalog usable and can b
   })
 })
 
+test("a committed registration reset succeeds when retired machine cleanup fails", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-cleanup-"))
+  await seed(directory)
+  const runtime = new MachineRuntime(directory, options)
+  context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
+  await runtime.init()
+  const previous = runtime.current
+  const original = previous.central.status()
+  const failure = new Error("Retired central cleanup failed")
+  const close = previous.central.close.bind(previous.central)
+  context.mock.method(previous.central, "close", async () => { await close(); throw failure })
+  const report = context.mock.method(console, "error", () => {})
+
+  const prepared = await runtime.prepareEnrollment()
+  assert.equal(prepared.configured, false)
+  assert.notEqual(prepared.identity.originId, original.identity.originId)
+  assert.deepEqual(runtime.current.central.status(), prepared)
+  assert.equal(await activeMachineDirectory(directory), runtime.current.directory)
+  assert.deepEqual(await runtime.prepareEnrollment(), prepared)
+  assert.throws(() => previous.catalog.native, /not available/u)
+  assert.deepEqual(report.mock.calls.map(call => call.arguments), [["Retired machine cleanup failed", failure]])
+})
+
 test("host shutdown waits for an accepted reset and closes its replacement context", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-shutdown-"))
   await seed(directory)

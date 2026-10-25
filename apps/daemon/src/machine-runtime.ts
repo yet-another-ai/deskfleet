@@ -101,7 +101,7 @@ export class MachineRuntime {
       }
       catch (error) { await next.close(); throw error }
       this.#machine = next
-      await previous.close()
+      await previous.close().catch(error => console.error("Retired machine cleanup failed", error))
       return next.central.status()
     })().finally(() => { this.#preparing = undefined })
     return this.#preparing
