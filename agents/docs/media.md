@@ -190,7 +190,9 @@ in [0, 1]; the viewer removes the video's letterboxing before mapping pointer
 positions. Buttons follow DOM numbering (left, middle, right, back, forward).
 `wheel` carries CSS pixel deltas (positive right/down), and `key` carries physical
 `KeyboardEvent.code`, pressed state, and repeat. The remote keyboard layout
-determines characters. Clipboard, text/IME composition forwarding, and operating
+determines characters. Physical keys that the target cannot map are ignored without
+releasing held input or disconnecting the stream. Malformed messages and OS injection
+failures still fail the connection. Clipboard, text/IME composition forwarding, and operating
 system shortcuts intercepted by the viewer's OS are outside this contract.
 `releaseAll` releases only controls held by this controller.
 
@@ -203,7 +205,8 @@ Loading the addon and viewing a desktop do not initialize input. One controller
 per daemon process is allowed; additional peers may continue viewing.
 
 The daemon starts input for the capture's selected display and sends `ready` only
-after startup and DataChannel opening. Input arriving before enablement, without
+after startup and DataChannel opening. If capture or input enablement fails, start
+waits for peer cleanup before reporting the failure. Input arriving before enablement, without
 a control grant, or with malformed fields fails the connection. Focus loss,
 hidden pages, and pointer cancellation release held controls. Peer disconnect,
 revocation, expiry, capture failure, and daemon shutdown release native state.

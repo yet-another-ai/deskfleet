@@ -25,7 +25,9 @@ function grant(): PeerAuthorization {
 }
 
 function fixture(closeGate?: Promise<void>) {
-  let now = epoch, closed = false
+  let now = epoch, closed = false, closeCalls = 0
+  let closing!: () => void
+  const closeStarted = new Promise<void>(resolve => { closing = resolve })
   const sent: string[] = [], events: PeerEvent[] = [], calls: { method: string; actor: AgentActor }[] = []
   const packets: Buffer[] = []
   const input: string[] = [], starts: unknown[] = [], signals: unknown[] = []
@@ -43,7 +45,7 @@ function fixture(closeGate?: Promise<void>) {
     handle: async (method, _params, actor) => { calls.push({ method, actor }); return null },
   }
   const peers = new AuthorizedPeers({
-    peers: { create: async () => native, close: async () => { await closeGate; closed = true; waiting?.(null) } },
+    peers: { create: async () => native, close: async () => { closeCalls++; closing(); await closeGate; closed = true; waiting?.(null) } },
     agents, terminals: {} as TerminalSessions, identity, signal: (_id, event) => { signals.push(event) }, now: () => now,
   })
   peers.bind(credentials)
@@ -51,7 +53,7 @@ function fixture(closeGate?: Promise<void>) {
     push({ kind: "data", label: "deskfleet-acp", data: Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n") })
     for (let tries = 0; tries < 100 && !sent.some(value => value.includes(`"id":${id},`)); tries++) await delay(1)
   }
-  return { peers, calls, sent, packets, rpc, push, input, starts, signals, expired: () => { now += 86_400_001 }, closed: () => closed }
+  return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, closeStarted, closeCalls: () => closeCalls, expired: () => { now += 86_400_001 }, closed: () => closed }
 }
 
 test("repeated close and shutdown await the same native input cleanup", async () => {
@@ -99,6 +101,42 @@ test("desktop control binds the capture display and expires before further input
   assert.equal(f.closed(), true)
   assert.equal(f.input.length, 1)
 })
+
+for (const failure of ["ready send", "expiry after capture", "expiry during ready send"] as const) {
+  test(`desktop startup rolls back ${failure} and waits for native cleanup`, { timeout: 5_000 }, async context => {
+    let release!: () => void
+    const f = fixture(new Promise<void>(resolve => { release = resolve }))
+    context.after(async () => { release(); await f.peers.closeAll() })
+    const sendError = new Error("Input ready send failed")
+    const startDesktop = f.native.startDesktop.bind(f.native)
+    f.native.startDesktop = async options => {
+      await startDesktop(options)
+      if (failure === "expiry after capture") f.expired()
+    }
+    f.native.sendText = async () => {
+      if (failure === "ready send") throw sendError
+      if (failure === "expiry during ready send") f.expired()
+    }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+    f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+    await delay(0)
+    let settled = false
+    const start = f.peers.start("peer", { displayId: 7, control: true }).finally(() => { settled = true })
+    const rejected = assert.rejects(start, error => failure === "ready send" ? error === sendError : error instanceof Error && /authorization has expired/.test(error.message))
+    await f.closeStarted
+    f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyA","pressed":true}') })
+    await delay(0)
+    assert.equal(settled, false, "startup must wait for capture and input cleanup")
+    assert.equal(f.closed(), false)
+    assert.deepEqual(f.starts, [{ displayId: 7, control: true }])
+    assert.deepEqual(f.input, [])
+    release()
+    await rejected
+    assert.equal(f.closed(), true)
+    assert.equal(f.closeCalls(), 1)
+    await assert.rejects(f.peers.start("peer", { displayId: 7, control: true }), /Unknown authorized peer/)
+  })
+}
 
 test("peer grant binds target, user, purpose, and a maximum 24-hour lifetime", async () => {
   const f = fixture()

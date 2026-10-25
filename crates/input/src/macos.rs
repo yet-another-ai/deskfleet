@@ -128,9 +128,7 @@ impl PlatformInput {
     }
 
     pub(super) fn key(&mut self, code: &str, pressed: bool, repeat: bool) -> Result<()> {
-        let keycode = keys::keycode(code).ok_or(InputError::Unsupported(
-            "keyboard code has no macOS mapping",
-        ))?;
+        let keycode = keys::keycode(code).ok_or(InputError::UnsupportedKey)?;
         let event = CGEvent::new_keyboard_event(Some(&self.source), keycode, pressed)
             .ok_or_else(event_creation_error)?;
         let mut modifiers = self.modifiers;

@@ -175,15 +175,20 @@ export class AuthorizedPeers {
     if (owned.authorization.purpose !== "desktop") throw new Error("A desktop peer is required")
     if (options.control) this.#live(id, "desktop:control")
     const native = await owned.native
-    this.#live(id, "desktop:stream")
     try {
+      this.#live(id, "desktop:stream")
       await native.startDesktop(options)
       this.#live(id, "desktop:stream")
       if (options.control) await owned.input!.enable()
+      this.#live(id, "desktop:stream")
     } catch (error) {
       const failure = native.takeMediaFailure?.()
-      if (failure?.reason === "encoder") throw encoderFailure(failure.message)
-      throw error
+      const startupError = failure?.reason === "encoder" ? encoderFailure(failure.message) : error
+      try { await this.close(id) }
+      catch (cleanup) {
+        throw new AggregateError([startupError, cleanup], `Desktop startup failed: ${startupError instanceof Error ? startupError.message : String(startupError)}; peer cleanup failed`, { cause: startupError })
+      }
+      throw startupError
     }
   }
 

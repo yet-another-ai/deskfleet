@@ -8,6 +8,7 @@ use crate::InputError;
 struct Fake {
     events: Rc<RefCell<Vec<String>>>,
     fail_release: Rc<RefCell<bool>>,
+    key_error: Rc<RefCell<Option<InputError>>>,
 }
 
 impl Backend for Fake {
@@ -26,8 +27,11 @@ impl Backend for Fake {
         Ok(())
     }
     fn key(&mut self, code: &str, pressed: bool, repeat: bool) -> Result<()> {
-        if code == "Unsupported" {
-            return Err(InputError::Unsupported("key"));
+        if matches!(code, "AudioVolumeUp" | "MediaPlayPause") {
+            return Err(InputError::UnsupportedKey);
+        }
+        if let Some(error) = self.key_error.borrow_mut().take() {
+            return Err(error);
         }
         self.events
             .borrow_mut()
@@ -68,6 +72,51 @@ fn blur_releases_only_remote_inputs_and_ignores_late_repeats() {
             "key KeyA true true",
             "key KeyA false false",
             "key ControlLeft false false",
+        ]
+    );
+}
+
+#[test]
+fn unmapped_keys_preserve_held_inputs_and_allow_subsequent_input() {
+    let fake = Fake::default();
+    let mut controller = Controller::new(fake.clone());
+    controller.handle(key("ControlLeft", true, false)).unwrap();
+    controller.handle(key("KeyA", true, false)).unwrap();
+    controller
+        .handle(InputEvent::PointerButton {
+            button: 0,
+            pressed: true,
+            x: 0.5,
+            y: 0.5,
+        })
+        .unwrap();
+
+    for code in ["AudioVolumeUp", "MediaPlayPause"] {
+        controller.handle(key(code, true, false)).unwrap();
+        controller.handle(key(code, true, true)).unwrap();
+        controller.handle(key(code, false, false)).unwrap();
+        assert_eq!(controller.keys, ["ControlLeft", "KeyA"]);
+        assert_eq!(controller.buttons, [0]);
+    }
+
+    controller.handle(key("KeyA", true, true)).unwrap();
+    controller.handle(key("KeyA", false, false)).unwrap();
+    controller.handle(key("KeyB", true, false)).unwrap();
+    controller.handle(key("KeyB", false, false)).unwrap();
+    controller.release_all().unwrap();
+    assert_eq!(
+        *fake.events.borrow(),
+        [
+            "key ControlLeft true false",
+            "key KeyA true false",
+            "move 0.5 0.5",
+            "button 0 true",
+            "key KeyA true true",
+            "key KeyA false false",
+            "key KeyB true false",
+            "key KeyB false false",
+            "key ControlLeft false false",
+            "button 0 false",
         ]
     );
 }
@@ -122,7 +171,8 @@ fn malformed_input_releases_pressed_keys_without_injecting_coordinates() {
             x: 0.5,
             y: 0.5,
         },
-        key("Unsupported", true, false),
+        key("", true, false),
+        key(&"A".repeat(33), true, false),
     ] {
         let fake = Fake::default();
         let mut controller = Controller::new(fake.clone());
@@ -131,6 +181,33 @@ fn malformed_input_releases_pressed_keys_without_injecting_coordinates() {
         assert_eq!(
             *fake.events.borrow(),
             ["key AltLeft true false", "key AltLeft false false"]
+        );
+    }
+}
+
+#[test]
+fn platform_key_errors_still_fail_and_release_held_inputs() {
+    for error in [
+        InputError::Unsupported("this operating system"),
+        InputError::PermissionDenied,
+        InputError::Platform("injection failed".into()),
+    ] {
+        let expected = error.to_string();
+        let fake = Fake::default();
+        let mut controller = Controller::new(fake.clone());
+        controller.handle(key("ControlLeft", true, false)).unwrap();
+        *fake.key_error.borrow_mut() = Some(error);
+        assert_eq!(
+            controller
+                .handle(key("KeyA", true, false))
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
+        assert!(controller.keys.is_empty());
+        assert_eq!(
+            *fake.events.borrow(),
+            ["key ControlLeft true false", "key ControlLeft false false"]
         );
     }
 }

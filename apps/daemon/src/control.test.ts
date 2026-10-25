@@ -109,6 +109,39 @@ function fakePeers() {
   return { service, peers, configCalls, answerCalls, candidateCalls, startCalls }
 }
 
+function desktopPeers(options: { start?: () => Promise<void>; ready?: () => Promise<void>; close: () => Promise<void> }) {
+  const opened = deferred<void>(), started = deferred<void>(), closing = deferred<void>()
+  const queued: PeerEvent[] = [{ kind: "dataChannelOpen", label: "deskfleet-input" }]
+  let waiting: ((event: PeerEvent | null) => void) | undefined
+  let active = false, closeCalls = 0
+  const push = (event: PeerEvent) => {
+    if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) }
+    else queued.push(event)
+  }
+  const service: ControlPeers = {
+    async create() {
+      return {
+        answerOffer: async () => "answer",
+        startDesktop: async () => { active = true; started.resolve(); await options.start?.() },
+        sendText: async () => { await options.ready?.() },
+        nextEvent: async () => {
+          const event = queued.shift()
+          if (event) return event
+          opened.resolve()
+          return new Promise<PeerEvent | null>(resolve => { waiting = resolve })
+        },
+      } as unknown as NativePeer
+    },
+    async close() {
+      closeCalls++; closing.resolve()
+      await options.close()
+      active = false
+      waiting?.(null)
+    },
+  }
+  return { service, push, opened: opened.promise, started: started.promise, closing: closing.promise, active: () => active, closeCalls: () => closeCalls }
+}
+
 const capabilities = async () => ({ displays: [{ id: 4, width: 1280, height: 720, refreshRateHz: 60, codecs: ["h264" as const] }], audio: false })
 const offer = { sessionId: "screen-1", sdp: "browser-offer", codec: "h264" as const, audio: false }
 
@@ -397,6 +430,74 @@ test("request validation errors retain authenticated connections and their activ
   assert.equal(fake.peers.size, 0)
 })
 
+for (const failure of ["ready send", "channel closes during capture start"] as const) {
+  test(`local desktop startup rolls back when ${failure} and awaits native cleanup`, { timeout: 15_000 }, async context => {
+    const directory = await mkdtemp(join(tmpdir(), "df-control-rollback-"))
+    const closeGate = deferred<void>(), startGate = deferred<void>()
+    const fake = desktopPeers({
+      close: () => closeGate.promise,
+      ...(failure === "ready send" ? { ready: async () => { throw new Error("Input ready send failed") } } : { start: () => startGate.promise }),
+    })
+    const server = await startControlServer(fake.service, directory, capabilities)
+    context.after(async () => {
+      startGate.resolve(); closeGate.resolve()
+      await server.close(); await rm(directory, { recursive: true, force: true })
+    })
+    const discovery = await readDaemonDiscovery(directory)
+    const client = new Client(discovery.endpoint, context.signal)
+    context.after(() => client.close())
+    await client.call("hello", { token: discovery.token })
+    await client.call("offer", offer)
+    await fake.opened
+    let settled = false
+    const start = client.call("start", { sessionId: offer.sessionId, displayId: 4, control: true }).finally(() => { settled = true })
+    const rejected = assert.rejects(start, failure === "ready send" ? /Input ready send failed/ : /Desktop session is closed/)
+    await fake.started
+    if (failure !== "ready send") fake.push({ kind: "dataChannelClosed", label: "deskfleet-input" })
+    await fake.closing
+    startGate.resolve()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(settled, false, "failure response must wait for capture and input cleanup")
+    assert.equal(fake.active(), true)
+    closeGate.resolve()
+    await rejected
+    assert.equal(fake.active(), false)
+    assert.equal(fake.closeCalls(), 1)
+    await assert.rejects(client.call("start", { sessionId: offer.sessionId, displayId: 4 }), /Unknown desktop session/)
+    assert.deepEqual(await client.call("capabilities", {}), await capabilities())
+  })
+}
+
+test("local session IDs and shutdown wait for cleanup already started by an input channel close", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-closing-"))
+  const closeGate = deferred<void>()
+  const fake = desktopPeers({ close: () => closeGate.promise })
+  const server = await startControlServer(fake.service, directory, capabilities)
+  context.after(async () => {
+    closeGate.resolve()
+    await server.close(); await rm(directory, { recursive: true, force: true })
+  })
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint, context.signal)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  await client.call("offer", offer)
+  await fake.opened
+  await client.call("start", { sessionId: offer.sessionId, displayId: 4, control: true })
+  fake.push({ kind: "dataChannelClosed", label: "deskfleet-input" })
+  await fake.closing
+  await assert.rejects(client.call("offer", offer), /Desktop session already exists/)
+  let stopped = false
+  const stopping = server.close().then(() => { stopped = true })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(stopped, false)
+  assert.equal(fake.active(), true)
+  closeGate.resolve()
+  await stopping
+  assert.equal(fake.active(), false)
+  assert.equal(fake.closeCalls(), 1)
+})
+
 test("desktop error events keep an encoder reason and omit it for other failures", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-reason-"))
   const queued: PeerEvent[] = []
@@ -432,6 +533,7 @@ test("desktop error events keep an encoder reason and omit it for other failures
   }, (error: Error & { reason?: string }) => error)
   assert.equal(rejected.message, "the video encoder produced no packet within 5 seconds")
   assert.equal(rejected.reason, "encoder")
+  await client.call("offer", offer)
   const delivered = new Promise<void>((resolve) => { client.onEvent = () => resolve() })
   push({ kind: "error", error: "NVENC encode failed", reason: "encoder" })
   push({ kind: "error", error: "display 4 was not found" })

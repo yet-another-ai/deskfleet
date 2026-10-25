@@ -61,6 +61,7 @@ class ControlConnection {
   readonly #prepareEnrollment: () => Promise<CentralStatus>
   readonly #allowLocalControlForTests: boolean
   readonly #sessions = new Map<string, OwnedPeer>()
+  readonly #closingSessions = new Map<string, Promise<void>>()
   readonly #dialed = new Set<string>()
   readonly #unsubscribe: () => void
   #authenticated = false
@@ -230,7 +231,7 @@ class ControlConnection {
       case "terminalOffer":
       case "agentOffer": {
         const { sessionId, sdp } = request.params
-        if (this.#sessions.has(sessionId)) throw new Error("Desktop session already exists")
+        if (this.#sessions.has(sessionId) || this.#closingSessions.has(sessionId)) throw new Error("Desktop session already exists")
         if (this.#sessions.size >= 8) throw new Error("Too many desktop sessions")
         const config: PeerConfig = request.method === "offer" ? { video: request.params.codec, audio: request.params.audio } : {}
         if (config.audio && process.platform !== "darwin") throw new Error("System audio capture is unavailable on this platform")
@@ -272,15 +273,27 @@ class ControlConnection {
         return null
       case "start": {
         const { sessionId, displayId, fps, bitrateBps, control } = request.params
-        if (this.#sessions.get(sessionId)?.terminal || this.#sessions.get(sessionId)?.agent) throw new Error("Data-only peers cannot start desktop capture")
-        const peer = await this.#session(sessionId)
+        const owned = this.#sessions.get(sessionId)
+        if (!owned) throw new Error("Unknown desktop session on this connection")
+        if (owned.terminal || owned.agent) throw new Error("Data-only peers cannot start desktop capture")
+        const peer = await owned.peer
+        const assertLive = () => {
+          if (this.#sessions.get(sessionId) !== owned || this.#closing) throw new Error("Desktop session is closed")
+        }
         try {
+          assertLive()
           await peer.startDesktop({ displayId, fps, bitrateBps, ...(control === undefined ? {} : { control }) })
-          if (control) await this.#sessions.get(sessionId)?.input?.enable()
+          assertLive()
+          if (control) await owned.input!.enable()
+          assertLive()
         } catch (error) {
           const failure = peer.takeMediaFailure?.()
-          if (failure?.reason === "encoder") throw encoderFailure(failure.message)
-          throw error
+          const startupError = failure?.reason === "encoder" ? encoderFailure(failure.message) : error
+          try { await this.#closeSession(sessionId) }
+          catch (cleanup) {
+            throw new AggregateError([startupError, cleanup], `Desktop startup failed: ${message(startupError)}; peer cleanup failed`, { cause: startupError })
+          }
+          throw startupError
         }
         return null
       }
@@ -339,20 +352,25 @@ class ControlConnection {
   }
 
   async #closeSession(sessionId: string): Promise<void> {
+    const closing = this.#closingSessions.get(sessionId)
+    if (closing) return closing
     const owned = this.#sessions.get(sessionId)
     if (!owned) return
     this.#sessions.delete(sessionId)
     owned.terminal?.close()
     owned.agent?.close()
     owned.input?.close()
-    await this.#peers.close(owned.nativeId)
+    const pending = this.#peers.close(owned.nativeId)
+    this.#closingSessions.set(sessionId, pending)
+    try { await pending }
+    finally { this.#closingSessions.delete(sessionId) }
   }
 
   close(): Promise<void> {
     this.#socket.destroy()
     this.#unsubscribe()
     this.#dialed.clear()
-    this.#closing ??= Promise.allSettled([...this.#sessions.keys()].map(id => this.#closeSession(id))).then(results => {
+    this.#closing ??= Promise.allSettled([...new Set([...this.#sessions.keys(), ...this.#closingSessions.keys()])].map(id => this.#closeSession(id))).then(results => {
       const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
       if (errors.length) throw new AggregateError(errors, "Failed to close desktop sessions")
     })

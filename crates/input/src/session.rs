@@ -1,4 +1,4 @@
-use crate::{Backend, InputEvent, Result};
+use crate::{Backend, InputError, InputEvent, Result};
 
 pub(super) struct Controller<B: Backend> {
     backend: B,
@@ -59,7 +59,11 @@ impl<B: Backend> Controller<B> {
                 if (!pressed || repeat) && !held || pressed && held && !repeat {
                     return Ok(());
                 }
-                self.backend.key(&code, pressed, repeat)?;
+                match self.backend.key(&code, pressed, repeat) {
+                    // Mapping misses do not disturb other held keys or buttons.
+                    Err(InputError::UnsupportedKey) => return Ok(()),
+                    result => result?,
+                }
                 if pressed && !held {
                     self.keys.push(code);
                 } else if !pressed {

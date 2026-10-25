@@ -125,7 +125,7 @@ pub(super) fn scan_code(code: &str) -> Result<(u16, bool)> {
         "MetaLeft" => (0x5b, true),
         "MetaRight" => (0x5c, true),
         "ContextMenu" => (0x5d, true),
-        _ => return Err(InputError::Unsupported("physical key code")),
+        _ => return Err(InputError::UnsupportedKey),
     };
     Ok((scan, extended))
 }
@@ -143,7 +143,8 @@ mod tests {
         assert_eq!(scan_code("AltLeft").unwrap(), (0x38, false));
         assert_eq!(scan_code("ArrowLeft").unwrap(), (0x4b, true));
         assert_eq!(scan_code("Numpad4").unwrap(), (0x4b, false));
-        assert!(scan_code("Unidentified").is_err());
-        assert!(scan_code("0x1e").is_err());
+        for code in ["AudioVolumeUp", "MediaPlayPause", "Unidentified", "0x1e"] {
+            assert!(matches!(scan_code(code), Err(InputError::UnsupportedKey)));
+        }
     }
 }

@@ -30,6 +30,9 @@ use session::Controller;
 pub enum InputError {
     #[error("desktop input is unsupported: {0}")]
     Unsupported(&'static str),
+    /// The physical key has no platform mapping; no event was injected.
+    #[error("physical key code has no platform mapping")]
+    UnsupportedKey,
     #[error("desktop control needs Accessibility permission on the remote Mac")]
     PermissionDenied,
     #[error("invalid desktop input: {0}")]
@@ -196,9 +199,10 @@ impl InputSession {
     }
 
     /// Validate and inject one ordered event. Errors trigger held-input cleanup.
+    /// Physical keys without a platform mapping are ignored.
     ///
     /// # Errors
-    /// Returns invalid input, unsupported physical keys, or OS injection errors.
+    /// Returns invalid input or OS injection errors.
     pub fn handle(&mut self, event: InputEvent) -> Result<()> {
         self.controller.handle(event)
     }
