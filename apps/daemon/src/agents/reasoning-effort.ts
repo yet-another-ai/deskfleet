@@ -238,6 +238,15 @@ function sameOptions(left: acp.SessionConfigOption[], right: acp.SessionConfigOp
   return left.length === right.length && left.every((option, index) => option === right[index])
 }
 
+/** Reasoning ids advertised under category `mode` are effort levels, not permission modes. */
+function presentReasoningCategory(options: acp.SessionConfigOption[]): acp.SessionConfigOption[] {
+  if (!options.some(option => option.type === "select" && option.category === "mode" && isReasoningId(option.id) && selectValues(option).length > 0)) {
+    return options
+  }
+  return options.map(option => option.type === "select" && option.category === "mode" && isReasoningId(option.id) && selectValues(option).length > 0
+    ? { ...option, category: "thought_level" } : option)
+}
+
 /**
  * Projects model-scoped reasoning into a `thought_level` select.
  * An explicit empty option list stays empty. A usable advertised select is unchanged.
@@ -249,7 +258,7 @@ export function projectModelReasoning(
 ): acp.SessionConfigOption[] | null | undefined {
   if (options === null) return null
   if (options && options.length === 0) return options
-  const stripped = options ? withoutEmptyReasoning(stripProjectedReasoning(options)) : undefined
+  const stripped = options ? presentReasoningCategory(withoutEmptyReasoning(stripProjectedReasoning(options))) : undefined
   if (stripped && selectReasoningEffort(stripped)) return sameOptions(stripped, options!) ? options : stripped
   let next = stripped
   if (!modelSelect(next)) {

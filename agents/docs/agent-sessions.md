@@ -511,6 +511,9 @@ the thinking-intensity aliases) or on `x.ai/sessionConfig` rows whose category
 is `mode`. Deskfleet projects those levels into the reasoning control. A
 projected effort change calls `session/set_mode`; a projected model change
 calls `session/set_model`. Those metadata rows are not permission modes. An
+advertised reasoning option that already uses category `mode` is presented as
+`thought_level` and still changes with `session/set_config_option`, so it does
+not hide a real permission mode. An
 explicit `supportsReasoningEffort: false`, or an empty effort list, leaves the
 control unavailable instead of reusing a stale catalog.
 

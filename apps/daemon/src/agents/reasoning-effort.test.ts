@@ -104,6 +104,27 @@ test("selected model metadata supplies thinking levels and blocks a stale sessio
   assert.equal(agentConfiguration(projectModelReasoning(placeholder, {}) ?? []).reasoningEfforts?.currentValue, "minimal")
 })
 
+test("an advertised reasoning option categorized as mode does not replace permission modes", () => {
+  const options: acp.SessionConfigOption[] = [
+    {
+      id: "reasoning_effort", category: "mode", name: "Reasoning", type: "select", currentValue: "high",
+      options: [{ value: "low", name: "Low" }, { value: "high", name: "High" }],
+    },
+    {
+      id: "permission", category: "mode", name: "Mode", type: "select", currentValue: "agent",
+      options: [{ value: "agent", name: "Agent" }],
+    },
+  ]
+  const projected = projectModelReasoning(options, {})
+  const configuration = agentConfiguration(projected ?? [])
+  assert.equal(configuration.reasoningEfforts?.id, "reasoning_effort")
+  assert.equal(configuration.reasoningEfforts?.currentValue, "high")
+  assert.deepEqual(configuration.reasoningEfforts?.options.map(option => option.id), ["low", "high"])
+  assert.equal(configuration.modes?.id, "permission")
+  assert.equal(configuration.modes?.currentValue, "agent")
+  assert.equal(new AcpModelReasoning().kind("reasoning_effort", projected ?? undefined), undefined)
+})
+
 test("session config reasoning stays distinct from an advertised permission mode", () => {
   const options: acp.SessionConfigOption[] = [
     { id: "model", category: "model", name: "Model", type: "select", currentValue: "grok-4.5", options: [{ value: "grok-4.5", name: "Grok 4.5" }] },
