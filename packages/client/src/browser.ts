@@ -48,7 +48,7 @@ export async function browserClient(defaultServerUrl: string): Promise<Deskfleet
     },
     catalog: { list: unavailable, createWorkspace: unavailable, updateWorkspace: unavailable, deleteWorkspace: unavailable, onChanged: subscribe },
     filesystem: { listDirectories: unavailable },
-    providers: { list: unavailable, create: unavailable, update: unavailable, remove: unavailable, test: unavailable, onChanged: subscribe },
+    providers: { list: unavailable, create: unavailable, update: unavailable, remove: unavailable, test: unavailable, probe: unavailable, install: unavailable, login: unavailable, onChanged: subscribe },
     agent: signaling,
     terminal: { ...signaling, list: unavailable, dial: unavailable, hangup: unavailable, onSessionEvent: subscribe },
     desktop: { ...signaling, target: unavailable, capabilities: unavailable, start: unavailable },

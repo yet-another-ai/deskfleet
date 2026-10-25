@@ -1,11 +1,23 @@
 import { homedir } from "node:os"
 import { basename, isAbsolute } from "node:path"
-import { createTerminal, type NativeTerminal } from "@deskfleet/native"
+import { createTerminal, type NativeTerminal, type TerminalConfig } from "@deskfleet/native"
 import { TerminalHistory } from "./terminal-history.ts"
 import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "./terminal-protocol.ts"
 
-export type TerminalFactory = (config: { cwd: string; cols: number; rows: number }) => Promise<NativeTerminal>
+export type TerminalFactory = (config: TerminalConfig) => Promise<NativeTerminal>
 export type TerminalChange = "output" | "state" | "hangup"
+
+/** Only daemon-owned operations select a program; the public dial API starts shells. */
+export interface TerminalRun {
+  terminalId: string
+  title: string
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  cols: number
+  rows: number
+}
 
 interface Session {
   summary: TerminalSummary
@@ -87,15 +99,39 @@ export class TerminalSessions {
   }
 
   async dial(options: TerminalDial): Promise<TerminalSummary> {
+    if (options.mode === "create") return this.#create({
+      terminalId: options.terminalId, cols: options.cols, rows: options.rows,
+      cwd: options.cwd, worktreeId: options.worktreeId,
+    })
     if (this.#closed) throw new Error("Terminal sessions are closed")
     await this.init()
     if (this.#closed) throw new Error("Terminal sessions are closed")
     sessionId(options.terminalId)
-    if (options.mode === "resume") {
-      const pending = this.#spawning.get(options.terminalId)
-      if (pending) await pending
-      return { ...this.#session(options.terminalId).summary }
+    const pending = this.#spawning.get(options.terminalId)
+    if (pending) await pending
+    return { ...this.#session(options.terminalId).summary }
+  }
+
+  /** Run an installer or login program with normal terminal input, history and exit events. */
+  async run(options: TerminalRun): Promise<TerminalSummary> {
+    if (!options.command || options.command.includes("\0")) throw new Error("Invalid terminal command")
+    if (options.args?.some(argument => argument.includes("\0"))) throw new Error("Invalid terminal argument")
+    for (const [key, value] of Object.entries(options.env ?? {})) {
+      // Inherited OS variables include names such as Windows ProgramFiles(x86).
+      // User-authored provider overrides are validated separately at their RPC boundary.
+      if (!key || key.includes("=") || key.includes("\0") || value.includes("\0")) throw new Error("Invalid terminal environment")
     }
+    return this.#create({ ...options, args: options.args?.slice(), env: options.env ? { ...options.env } : undefined })
+  }
+
+  async #create(options: {
+    terminalId: string; cols: number; rows: number; cwd?: string; worktreeId?: string
+    title?: string; command?: string; args?: string[]; env?: Record<string, string>
+  }): Promise<TerminalSummary> {
+    if (this.#closed) throw new Error("Terminal sessions are closed")
+    await this.init()
+    if (this.#closed) throw new Error("Terminal sessions are closed")
+    sessionId(options.terminalId)
     const existing = this.#sessions.get(options.terminalId)
     if (existing) return { ...existing.summary }
     const pending = this.#spawning.get(options.terminalId)
@@ -103,17 +139,24 @@ export class TerminalSessions {
     terminalSize(options.cols, options.rows)
     const cwd = options.cwd ?? homedir()
     if (!cwd || !isAbsolute(cwd) || cwd.includes("\0")) throw new Error("Terminal working directory must be an absolute path")
-    const spawning = this.#spawn(options.terminalId, cwd, options.cols, options.rows, options.worktreeId)
+    const config: TerminalConfig = { cwd, cols: options.cols, rows: options.rows }
+    if (options.command !== undefined) {
+      config.command = options.command
+      config.args = options.args
+      config.env = options.env
+    }
+    const spawning = this.#spawn(options.terminalId, config, options.worktreeId, options.title)
     this.#spawning.set(options.terminalId, spawning)
     try { return await spawning }
     finally { this.#spawning.delete(options.terminalId) }
   }
 
-  async #spawn(id: string, cwd: string, cols: number, rows: number, worktreeId?: string): Promise<TerminalSummary> {
-    const summary: TerminalSummary = { id, title: basename(cwd) || cwd, cwd, cols, rows, status: "running", ...(worktreeId ? { worktreeId } : {}) }
+  async #spawn(id: string, config: TerminalConfig, worktreeId?: string, title?: string): Promise<TerminalSummary> {
+    const { cwd, cols, rows } = config
+    const summary: TerminalSummary = { id, title: title || basename(cwd) || cwd, cwd, cols, rows, status: "running", ...(worktreeId ? { worktreeId } : {}) }
     const history = await TerminalHistory.create(this.#directory, summary)
     let native: NativeTerminal
-    try { native = await this.#factory({ cwd, cols, rows }) }
+    try { native = await this.#factory(config) }
     catch (error) { await history.remove(); throw error }
     const session: Session = {
       summary, history, native, listeners: new Set(), drained: Promise.resolve(), stopRequested: false,

@@ -84,6 +84,9 @@ return {
     update: (providerId, changes) => invokeDesktop("providerUpdate", { providerId, changes }),
     remove: (providerId) => invokeDesktop("providerRemove", { providerId }),
     test: (provider) => invokeDesktop("providerTest", { provider }),
+    probe: (provider) => invokeDesktop("providerProbe", { provider }),
+    install: (provider) => invokeDesktop("providerInstall", { provider }),
+    login: (provider) => invokeDesktop("providerLogin", { provider }),
     onChanged: (listener) => {
       const handler = () => listener()
       ipcRenderer.on(PROVIDERS_CHANGED_EVENT, handler)

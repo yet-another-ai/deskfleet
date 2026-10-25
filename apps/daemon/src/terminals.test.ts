@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import test, { type TestContext } from "node:test"
-import type { NativeTerminal } from "@deskfleet/native"
+import type { NativeTerminal, TerminalConfig } from "@deskfleet/native"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHUNK_BYTES, type TerminalMessage } from "./terminal-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
@@ -54,7 +54,7 @@ async function until(predicate: () => boolean): Promise<void> {
 async function fixture(context: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "df-terminal-channel-"))
   const spawned: FakeTerminal[] = []
-  const configs: Array<{ cwd: string; cols: number; rows: number }> = []
+  const configs: TerminalConfig[] = []
   const sessions = new TerminalSessions({ directory, factory: async config => {
     configs.push(config)
     const terminal = new FakeTerminal()
@@ -93,6 +93,44 @@ async function fixture(context: TestContext) {
 function output(messages: TerminalMessage[]) {
   return messages.flatMap(message => "event" in message && message.event.kind === "output" ? [message.event] : [])
 }
+
+test("setup commands keep exact launch arguments outside their machine-terminal history", async context => {
+  const f = await fixture(context)
+  const options = {
+    terminalId: randomUUID(), title: "Codex login", command: "/tools/codex with spaces",
+    args: ["login", "literal $(command)"], env: { CODEX_HOME: "/private/settings", API_KEY: "secret", "ProgramFiles(x86)": "C:\\Program Files (x86)" },
+    cwd: homedir(), cols: 80, rows: 24,
+  }
+  const terminal = await f.sessions.run(options)
+  assert.equal(terminal.title, "Codex login")
+  assert.equal(terminal.worktreeId, undefined)
+  assert.deepEqual(f.configs, [{
+    cwd: options.cwd, cols: 80, rows: 24, command: options.command, args: options.args, env: options.env,
+  }])
+  assert.equal(JSON.stringify(f.sessions.snapshot(terminal.id)).includes("secret"), false)
+  assert.deepEqual(await f.sessions.dial({ mode: "resume", terminalId: terminal.id }), terminal)
+  assert.equal(f.spawned.length, 1)
+  const native = f.spawned[0]!
+  const bytes = Buffer.from("Visit the authorization URL\r\n")
+  native.emit({ kind: "data", data: bytes })
+  native.emit({ kind: "exit", exitCode: 0 })
+  native.emit(null)
+  await until(() => f.sessions.snapshot(terminal.id).summary.status === "exited")
+  assert.deepEqual(await f.sessions.read(terminal.id, 0, bytes.length), bytes)
+  assert.equal(f.sessions.snapshot(terminal.id).summary.exitCode, 0)
+  assert.equal((await readFile(join(f.directory, terminal.id, "session.json"), "utf8")).includes("secret"), false)
+})
+
+test("public terminal dial cannot select the internal setup command fields", async context => {
+  const f = await fixture(context)
+  const params = {
+    mode: "create" as const, terminalId: randomUUID(), cols: 80, rows: 24,
+    command: "/tools/not-a-shell", args: ["login"], env: { API_KEY: "not-an-override" }, title: "Not a shell",
+  }
+  const terminal = await f.sessions.dial(params)
+  assert.deepEqual(f.configs, [{ cwd: homedir(), cols: 80, rows: 24 }])
+  assert.notEqual(terminal.title, params.title)
+})
 
 test("archiving stops only owned PTYs and retains their final output and identity across restart", async context => {
   const f = await fixture(context)

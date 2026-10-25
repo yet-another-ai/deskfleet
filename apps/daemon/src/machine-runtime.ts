@@ -10,6 +10,7 @@ import type { DesktopCapabilities } from "./control-protocol.ts"
 import type { ControlPeers } from "./control-server.ts"
 import { activeMachineDirectory, newMachineDirectory } from "./machine-directory.ts"
 import { MachineOperations } from "./machine-operations.ts"
+import { ProviderSetup } from "./provider-setup.ts"
 import { TerminalSessions } from "./terminals.ts"
 
 interface MachineOptions {
@@ -26,6 +27,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   const catalog = new DaemonCatalog(directory, hostDirectory)
   const providers = new AgentProviders(directory, options.agentProvider)
   const terminals = options.terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
+  const setup = new ProviderSetup(terminals)
   let agents: AgentSessions | undefined
   let central: CentralClient | undefined
   let stopping: Promise<void> | undefined
@@ -51,10 +53,10 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     await agents.init()
     await terminals.init()
     agents.onSessionArchive(worktreeId => terminals.stopOwned(worktreeId))
-    const operations = new MachineOperations({ agents, catalog, providers, terminals, capabilities: options.capabilities })
+    const operations = new MachineOperations({ agents, catalog, providers, terminals, setup, capabilities: options.capabilities })
     central = new CentralClient(directory, operations, options.peers)
     await central.init()
-    return { directory, catalog, providers, agents, terminals, central, stop, close }
+    return { directory, catalog, providers, setup, agents, terminals, central, stop, close }
   } catch (error) {
     try { await close() }
     catch (cleanup) { throw new AggregateError([error, cleanup], "Machine startup and cleanup failed", { cause: error }) }

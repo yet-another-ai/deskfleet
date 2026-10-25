@@ -299,6 +299,11 @@ creation. A Session retains its configured provider ID, and each new provider
 process resolves the current settings. Editing or removing a provider does not
 stop existing processes or delete their history; a removed provider cannot
 start again. Provider launch settings remain outside the Session journal.
+The same daemon probes executable paths during provider creation. Explicit
+installation and login actions run in machine-owned terminals, using official
+installers and the selected CLI's authentication command. Their output and input
+reuse the terminal channel. Connection tests use existing credentials and never
+start interactive login. See [provider configuration](agent-sessions.md#provider-configuration).
 
 The Codex template connects Codex CLI through the bundled
 [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp). The Claude
@@ -306,7 +311,8 @@ Code template connects Claude Code CLI through the bundled
 [Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp).
 The Cursor template launches the installed Cursor CLI directly as `agent acp`;
 Cursor speaks ACP and does not use a bundled adapter. After initialization it
-calls `authenticate` with `cursor_login` when Cursor advertises that method.
+calls `authenticate` with `cursor_login` when Cursor advertises that method,
+except during connection tests, which use credentials loaded at CLI startup.
 The Grok template launches the installed Grok CLI directly as `grok agent stdio`.
 It authenticates with `xai.api_key` when `XAI_API_KEY` is set, and otherwise with
 `cached_token` after `grok login`.
@@ -573,8 +579,8 @@ and open a terminal. Work continues after closing the client, reconnecting
 restores the Session view, and synchronized history remains available while the
 machine is offline. Validate direct and TURN-relayed connections.
 
-MCP coordination follows that workflow. Provider
-distribution, additional terminal backends, and Linux capture/encoding remain
+MCP coordination follows that workflow. Bundling provider binaries,
+additional terminal backends, and Linux capture/encoding remain
 separate follow-up work.
 
 ## References

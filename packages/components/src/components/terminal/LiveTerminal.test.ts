@@ -150,3 +150,15 @@ test("reports its connection in the supported Chinese locale", async () => {
     } finally { fixture.wrapper.unmount() }
   } finally { i18n.global.locale.value = previousLocale }
 })
+
+test("an exit delivered before attachment completes is not overwritten by a stale running summary", async () => {
+  const fixture = setup()
+  await flushPromises()
+  fixture.emit({ kind: "exit", sessionId: "terminal-1", exitCode: 0 }, () => {})
+  fixture.resolve()
+  fixture.emit({ kind: "ready", sessionId: "terminal-1" }, () => {})
+  await flushPromises()
+  expect(fixture.connection()).toEqual(["ended", "Process exited (0)"])
+  expect(fixture.wrapper.get("[data-surface]").attributes("data-interactive")).toBe("false")
+  fixture.wrapper.unmount()
+})

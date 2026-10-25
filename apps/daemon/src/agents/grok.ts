@@ -1,5 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { connectAcpProcess, type AgentConfig, type AgentProcess, type AgentProvider } from "./acp.ts"
+import { launchProviderCommand } from "../provider-setup-process.ts"
 
 /** Grok CLI starts its ACP server with these arguments. */
 export const GROK_ACP_ARGUMENTS = ["agent", "stdio"] as const
@@ -9,11 +10,7 @@ export const GROK_API_KEY_METHOD = "xai.api_key"
 export const GROK_CACHED_TOKEN_METHOD = "cached_token"
 
 export function grokProcess(config: AgentConfig): AgentProcess {
-  return {
-    command: config.binaryPath || "grok",
-    args: [...GROK_ACP_ARGUMENTS],
-    env: config.env,
-  }
+  return launchProviderCommand(config.binaryPath || "grok", [...GROK_ACP_ARGUMENTS], config.env)
 }
 
 function agentAuthMethod(initialization: acp.InitializeResponse, id: string): boolean {

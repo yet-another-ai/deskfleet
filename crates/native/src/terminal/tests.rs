@@ -5,6 +5,9 @@ fn config() -> TerminalConfig {
         cwd: std::env::current_dir().expect("test cwd"),
         cols: 80,
         rows: 24,
+        command: None,
+        args: Vec::new(),
+        env: HashMap::new(),
     }
 }
 
@@ -140,6 +143,64 @@ async fn rejects_invalid_cwd_and_dimensions_before_spawn() {
         Terminal::spawn(invalid).await,
         Err(TerminalError::InvalidDirectory(_))
     ));
+    let mut invalid = config();
+    invalid.args.push("--version".into());
+    assert!(matches!(
+        Terminal::spawn(invalid).await,
+        Err(TerminalError::Backend {
+            operation: "configure",
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
+async fn explicit_command_preserves_arguments_and_overrides_environment() {
+    let mut config = config();
+    #[cfg(unix)]
+    {
+        config.command = Some("/bin/sh".into());
+        config.args = vec![
+            "-c".into(),
+            "test -n \"$PATH\" || exit 8; printf 'argument=%s\\noverride=%s\\n' \"$1\" \"$DESKFLEET_TERMINAL_TEST_VALUE\"".into(),
+            "test".into(),
+            "literal $(echo wrong) with spaces".into(),
+        ];
+    }
+    #[cfg(windows)]
+    {
+        config.command = Some("cmd.exe".into());
+        config.args = vec![
+            "/D".into(),
+            "/Q".into(),
+            "/C".into(),
+            "if not defined PATH (exit /b 8) else (echo override=%DESKFLEET_TERMINAL_TEST_VALUE%)"
+                .into(),
+        ];
+    }
+    config.env.insert(
+        "DESKFLEET_TERMINAL_TEST_VALUE".into(),
+        "value with spaces".into(),
+    );
+    let terminal = Terminal::spawn(config)
+        .await
+        .expect("spawn explicit command");
+    let mut output = Vec::new();
+    loop {
+        match next(&terminal).await {
+            Some(TerminalEvent::Data(data)) => output.extend(data),
+            Some(TerminalEvent::Exit { exit_code: 0 }) => break,
+            event => panic!("unexpected terminal event: {event:?}"),
+        }
+    }
+    let output = String::from_utf8_lossy(&output);
+    #[cfg(unix)]
+    assert!(
+        output.contains("argument=literal $(echo wrong) with spaces"),
+        "{output}"
+    );
+    assert!(output.contains("override=value with spaces"), "{output}");
+    assert_eq!(next(&terminal).await, None);
 }
 
 #[cfg(unix)]

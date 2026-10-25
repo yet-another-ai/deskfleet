@@ -96,11 +96,42 @@ methods are not passed to `authenticate`. Deskfleet does not add
 The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the
-daemon's inherited environment at process startup. The provider dialog's
-**Test** button sends the unsaved settings to the daemon, which starts the agent,
+daemon's inherited environment at process startup.
+
+Adding a provider first chooses its template; editing opens the form directly.
+The form probes the selected machine as soon as it opens or the template
+changes, and again after executable or environment edits. Discovery
+checks the configured path or the machine's PATH and official user installation
+locations, confirms the built-in CLI's identity, and reports its resolved path.
+The resolved absolute path is used when saving the provider. Credential status
+is read separately where the CLI supports it; an unavailable status remains
+unknown. Executable discovery never starts an ACP session or login flow.
+The dialog reduces the result to one status: ready, installed with unknown
+credentials, not signed in, not installed, unusable, or a failed check. The
+resolved path is the default shown for the executable field, which sits with
+environment overrides in a collapsed Advanced section unless the provider
+already overrides either.
+
+Missing built-in CLIs offer **Install**, using the vendor's official installer
+on supported platforms. **Log in** is a separate action once the CLI is found.
+Both actions run in dedicated machine-owned terminals, with output, interactive
+input, and explicit cancellation in the dialog. Output closes after a successful
+exit once the refreshed status appears, and remains after a failure. The daemon selects the command
+and passes environment overrides directly to the process. Installation does not
+imply authentication: completion triggers a new probe, and successful installation
+fills the executable's absolute path. Custom ACP providers have discovery but no
+built-in installation or login action. Setup uses authenticated machine management
+RPC; terminal interaction uses the existing WebRTC terminal channel.
+
+The provider dialog's **Test Connection** button sends the unsaved settings to the daemon, which starts the agent,
 initializes ACP, and opens one session in an empty temporary directory without
 sending a prompt, then closes it. The test runs beside other management requests,
-gives up after 30 seconds, and reports the agent's own failure details. Template selection is
+gives up after 30 seconds, and reports the agent's own failure details: the
+first line is shown inline and the full output on request. It only
+uses existing credentials. Codex's bridge default-login setting is disabled for
+tests, and Cursor tests skip `cursor_login`, which can otherwise open browser
+authentication. Missing authentication asks the user to use **Log in** instead.
+Template selection is
 immutable after creation because it determines the launch and configuration
 contract; the name, icon, path, and environment remain editable.
 

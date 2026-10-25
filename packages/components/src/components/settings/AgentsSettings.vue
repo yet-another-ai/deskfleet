@@ -45,7 +45,6 @@ watch(() => [machine.value?.id, available.value], () => { editor.value = null; o
 const unsubscribe = platformClient.providers.onChanged(() => { void refresh() })
 onBeforeUnmount(() => { revision++; unsubscribe() })
 const templateName = (provider: AgentProviderConfig) => snapshot.value?.templates.find(template => template.id === provider.template)?.name ?? provider.template
-const binary = (provider: AgentProviderConfig) => provider.binaryPath || snapshot.value?.templates.find(template => template.id === provider.template)?.defaultBinaryPath
 
 function edit(provider: AgentProviderConfig): void {
   openMenu.value = null
@@ -111,16 +110,12 @@ async function remove(): Promise<void> {
     <p v-if="loading && !snapshot" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t("providers.loading") }}</p>
     <template v-if="snapshot">
       <div v-if="snapshot.providers.length" ref="list" class="rounded-xl border border-ui-border bg-ui-surface shadow-ui-card" @keydown.esc.stop="openMenu = null">
-        <div v-for="(provider, index) in snapshot.providers" :key="provider.id" class="flex items-center gap-4 px-5 py-4" :class="index > 0 && 'border-t border-ui-border'" :data-provider-id="provider.id">
-          <ProviderIcon :icon="provider.icon" :template="provider.template" :size="22" class="text-ui-text-muted" />
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-medium">{{ provider.name }}</div>
-            <div class="mt-1 flex min-w-0 items-center gap-1.5 text-[13px] text-ui-text-muted">
-              <span class="shrink-0">{{ templateName(provider) }}</span><span aria-hidden="true">·</span>
-              <span class="truncate" :title="binary(provider)">{{ binary(provider) }}</span><span aria-hidden="true">·</span>
-              <span class="shrink-0">{{ t("providers.environmentCount", Object.keys(provider.env).length) }}</span>
-            </div>
-          </div>
+        <div v-for="(provider, index) in snapshot.providers" :key="provider.id" class="flex items-center gap-2 py-1.5 pr-3 pl-1.5" :class="index > 0 && 'border-t border-ui-border'" :data-provider-id="provider.id">
+          <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-3.5 rounded-lg px-3 py-2.5 text-left hover:bg-ui-hover" :aria-label="t('providers.editNamed', { name: provider.name })" data-provider-open @click="edit(provider)">
+            <ProviderIcon :icon="provider.icon" :template="provider.template" :size="20" class="shrink-0" />
+            <span class="min-w-0 truncate text-sm font-medium">{{ provider.name }}</span>
+            <span v-if="templateName(provider) !== provider.name" class="ui-badge shrink-0" data-provider-row-template>{{ templateName(provider) }}</span>
+          </button>
           <div class="relative shrink-0">
             <IconButton :icon="Ellipsis" :label="t('providers.actions', { name: provider.name })" :aria-expanded="openMenu === provider.id" aria-haspopup="menu" @click="openMenu = openMenu === provider.id ? null : provider.id" />
             <div v-if="openMenu === provider.id" role="menu" class="ui-menu absolute top-full right-0 z-20 mt-1 flex w-40 flex-col">
@@ -137,7 +132,7 @@ async function remove(): Promise<void> {
       </div>
     </template>
   </div>
-  <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :disabled="!available" :save="save" :test="test" @saved="editor = null" @cancel="editor = null" />
+  <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :disabled="!available" :machine-name="machine?.name ?? ''" :save="save" :test="test" :probe="platformClient.providers.probe" :install="platformClient.providers.install" :login="platformClient.providers.login" @saved="editor = null" @cancel="editor = null" />
   <dialog ref="removeDialog" class="ui-dialog app-no-drag w-[26rem]" aria-labelledby="provider-remove-title" @cancel.prevent="cancelRemove" @close="cancelRemove">
     <h2 id="provider-remove-title" class="ui-dialog-title">{{ t("providers.removeQuestion", { name: removing?.name ?? '' }) }}</h2>
     <p class="ui-dialog-description">{{ t("providers.removeDescription") }}</p>

@@ -27,6 +27,10 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
   let changed: (() => void) | undefined
   const observer = own(await DaemonClient.connect(event => { if (event.kind === "providersChanged") changed?.() }, () => {}, directory))
   assert.equal((await client.call("providerList", {})).providers[0]?.id, "codex")
+  const missing = { template: "acp" as const, name: "Missing", binaryPath: join(directory, "missing-binary"), env: {} }
+  assert.equal((await client.call("providerProbe", { provider: missing })).status, "missing")
+  await assert.rejects(client.call("providerInstall", { provider: missing }))
+  await assert.rejects(client.call("providerLogin", { provider: missing }))
   const notification = new Promise<void>(resolve => { changed = resolve })
   const created = await client.call("providerCreate", { provider: { template: "acp", name: "Custom", env: { API_KEY: "private" } } })
   await notification

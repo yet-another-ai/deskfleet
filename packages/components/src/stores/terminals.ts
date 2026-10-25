@@ -95,14 +95,21 @@ export const useTerminalsStore = defineStore("terminals", () => {
     const active = connection()
     const unsubscribe = active.subscribe(sessionId, listener)
     let detached = false
-    const ready = platformClient.terminal.dial({ mode: "resume", terminalId: sessionId }).then(async () => {
+    const rememberAttachment = (summary: TerminalSummary) => {
+      const observed = sessions.value.find(terminal => terminal.id === sessionId)
+      // A short command can exit while the attachment response is in flight.
+      return remember(summary.status === "running" && observed && observed.status !== "running" ? observed : summary)
+    }
+    const ready = platformClient.terminal.dial({ mode: "resume", terminalId: sessionId }).then(async summary => {
       if (detached) throw new Error("Terminal attachment was cancelled")
-      const summary = await active.call("attach", { sessionId })
+      // Register before subscribing on the daemon so an early exit has a target.
+      rememberAttachment(summary)
+      const attached = await active.call("attach", { sessionId })
       if (detached) {
         await active.call("detach", { sessionId })
         throw new Error("Terminal attachment was cancelled")
       }
-      return remember(summary)
+      return rememberAttachment(attached)
     })
     return { ready, detach: () => { detached = true; unsubscribe() } }
   }

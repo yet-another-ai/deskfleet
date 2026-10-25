@@ -159,3 +159,17 @@ test("reattaching dials the existing shell before using the data channel; detach
   expect(detach).toHaveBeenCalledOnce()
   expect(hangup).not.toHaveBeenCalled()
 })
+
+test("a fast command's exit survives a stale attachment response", async () => {
+  vi.spyOn(platformClient.terminal, "dial").mockResolvedValue(shell)
+  vi.spyOn(TerminalClient.prototype, "subscribe").mockReturnValue(() => {})
+  const attaching = deferred<TerminalSummary>()
+  vi.spyOn(TerminalClient.prototype, "call").mockReturnValue(attaching.promise)
+  const store = setup()
+  const attached = store.attach(shell.id, () => {})
+  await vi.waitFor(() => expect(store.sessions).toEqual([shell]))
+  receive({ kind: "terminalChanged", terminal: { ...shell, status: "exited", exitCode: 0 } })
+  attaching.resolve(shell)
+  await expect(attached.ready).resolves.toMatchObject({ status: "exited", exitCode: 0 })
+  expect(store.sessions).toEqual([{ ...shell, status: "exited", exitCode: 0 }])
+})

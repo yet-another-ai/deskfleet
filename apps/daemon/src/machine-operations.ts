@@ -7,6 +7,7 @@ import { parseControlRequest } from "./control-request.ts"
 import { listDirectories } from "./filesystem.ts"
 import type { TerminalDial, TerminalSummary } from "./terminal-protocol.ts"
 import type { TerminalSessions } from "./terminals.ts"
+import type { ProviderSetup } from "./provider-setup.ts"
 
 const MANAGEMENT = new Set<AgentMethod>([
   "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure",
@@ -20,14 +21,15 @@ export class MachineOperations {
   readonly catalog: DaemonCatalog
   readonly terminals: TerminalSessions
   readonly providers: AgentProviders
+  readonly setup: ProviderSetup
   readonly #capabilities: () => Promise<DesktopCapabilities>
 
   constructor(options: {
     agents: AgentSessions; catalog: DaemonCatalog; terminals: TerminalSessions
-    providers: AgentProviders; capabilities: () => Promise<DesktopCapabilities>
+    providers: AgentProviders; setup: ProviderSetup; capabilities: () => Promise<DesktopCapabilities>
   }) {
     this.agents = options.agents; this.catalog = options.catalog; this.terminals = options.terminals
-    this.providers = options.providers; this.#capabilities = options.capabilities
+    this.providers = options.providers; this.setup = options.setup; this.#capabilities = options.capabilities
   }
 
   async dial(params: TerminalDial): Promise<TerminalSummary> {
@@ -53,6 +55,9 @@ export class MachineOperations {
       case "providerUpdate": return this.providers.update(request.params.providerId, request.params.changes)
       case "providerRemove": await this.providers.remove(request.params.providerId); return null
       case "providerTest": return this.providers.test(request.params.provider)
+      case "providerProbe": return this.setup.probe(request.params.provider)
+      case "providerInstall": return this.setup.install(request.params.provider)
+      case "providerLogin": return this.setup.login(request.params.provider)
       case "capabilities": return this.#capabilities()
       case "terminalList": return this.terminals.list()
       case "terminalDial": return this.dial(request.params)

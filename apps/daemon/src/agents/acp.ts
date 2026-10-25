@@ -8,6 +8,8 @@ export interface AgentConfig {
   name: string
   binaryPath?: string
   env?: Record<string, string>
+  /** Connection checks may consume existing credentials but must never start login. */
+  authentication?: "existing"
 }
 
 export interface AgentProvider {

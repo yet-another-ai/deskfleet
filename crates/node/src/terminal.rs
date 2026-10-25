@@ -1,5 +1,7 @@
 //! Thin async PTY binding. The daemon owns the returned terminal.
 
+use std::collections::HashMap;
+
 use deskfleet_native::terminal::{self, Terminal};
 use napi::Result;
 use napi::bindgen_prelude::Buffer;
@@ -12,6 +14,9 @@ pub struct TerminalConfig {
     pub cwd: String,
     pub cols: u16,
     pub rows: u16,
+    pub command: Option<String>,
+    pub args: Option<Vec<String>>,
+    pub env: Option<HashMap<String, String>>,
 }
 
 #[napi(object)]
@@ -59,6 +64,9 @@ pub async fn create_terminal(config: TerminalConfig) -> Result<NativeTerminal> {
         cwd: config.cwd.into(),
         cols: config.cols,
         rows: config.rows,
+        command: config.command,
+        args: config.args.unwrap_or_default(),
+        env: config.env.unwrap_or_default(),
     })
     .await
     .map_err(native_error)?;

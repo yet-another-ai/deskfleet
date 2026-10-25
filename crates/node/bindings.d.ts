@@ -175,6 +175,9 @@ export interface TerminalConfig {
   cwd: string
   cols: number
   rows: number
+  command?: string
+  args?: Array<string>
+  env?: Record<string, string>
 }
 
 export interface TerminalEvent {

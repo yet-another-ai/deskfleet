@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { RequestError } from "@agentclientprotocol/sdk"
 import { connectAcpProcess, type AgentConfig, type AgentProvider } from "./agents/acp.ts"
 import { claudeCodeProvider } from "./agents/claude-code.ts"
 import { codexProvider } from "./agents/codex.ts"
 import { cursorProvider } from "./agents/cursor.ts"
 import { grokProvider } from "./agents/grok.ts"
+import { launchProviderCommand } from "./provider-setup-process.ts"
 import {
   AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, validateProviderId,
   type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type ProviderSnapshot, type ProviderTestResult,
@@ -14,11 +16,14 @@ import {
 
 const acpProvider: AgentProvider = {
   id: "acp",
-  connect: (config, client) => connectAcpProcess({ command: config.binaryPath || "acp-agent", env: config.env }, client),
+  connect: (config, client) => connectAcpProcess(launchProviderCommand(config.binaryPath || "acp-agent", [], config.env), client),
 }
 
 /** ACP adapters often put the actual cause in error data behind a generic JSON-RPC message. */
 function testFailure(error: unknown): string {
+  if ((error as { code?: unknown } | null)?.code === RequestError.authRequired().code) {
+    return "Authentication required. Use the Log in button before testing the connection."
+  }
   const data = (error as { data?: unknown } | null | undefined)?.data
   const details = data && typeof data === "object" && "details" in data ? data.details : undefined
   if (typeof details === "string" && details.trim()) return details.trim()
@@ -99,6 +104,7 @@ export class AgentProviders {
    */
   async test(input: AgentProviderInput): Promise<ProviderTestResult> {
     const { provider, config } = this.#launch(providerInput(input))
+    config.authentication = "existing"
     const cwd = await mkdtemp(join(tmpdir(), "df-provider-test-"))
     const connecting = provider.connect(config, { onUpdate() {} })
     let timer: NodeJS.Timeout | undefined

@@ -1,3 +1,4 @@
+import { createPinia } from "pinia"
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { reactive } from "vue"
@@ -16,7 +17,7 @@ const unsubscribe = vi.fn()
 const provider: AgentProviderConfig = { id: "codex", template: "codex", name: "Work Codex", env: { TEAM: "work" } }
 const button = (view: VueWrapper, text: string) => view.findAll("button").find(value => value.text() === text)!
 function render() {
-  wrapper = mount(AgentsSettings, { global: { plugins: [i18n] } })
+  wrapper = mount(AgentsSettings, { global: { plugins: [createPinia(), i18n] } })
   return wrapper
 }
 beforeEach(() => {
@@ -34,8 +35,9 @@ test("lists the owning machine's providers and follows updates", async () => {
   await flushPromises()
   expect(view.text()).toContain("my-machine")
   expect(view.get('[data-provider-id="codex"]').text()).toContain("Work Codex")
-  expect(view.get('[data-provider-id="codex"]').text()).toContain("1 environment variable")
-  expect(view.text()).not.toContain("work")
+  // Rows identify the provider; launch details stay in its editor.
+  expect(view.get('[data-provider-id="codex"] [data-provider-row-template]').text()).toBe("Codex")
+  expect(view.get('[data-provider-id="codex"]').text()).toBe("Work CodexCodex")
   snapshot.providers = []
   changed()
   await flushPromises()
@@ -60,16 +62,15 @@ test("adds a provider and edits its settings without sending a template change",
   const view = render()
   await flushPromises()
   await button(view, "Add provider").trigger("click")
-  await view.get("select").setValue("acp")
+  await view.get('[data-provider-template-choice="acp"]').trigger("click")
   await view.get('[name="provider-name"]').setValue("Other agent")
   await view.get('[name="provider-binary"]').setValue("/tools/my-acp")
   await view.get("form").trigger("submit")
   await flushPromises()
   expect(create).toHaveBeenCalledExactlyOnceWith({ template: "acp", name: "Other agent", binaryPath: "/tools/my-acp", icon: undefined, env: {} })
   expect(view.find("form").exists()).toBe(false)
-  await view.get('[aria-label="Actions for Work Codex"]').trigger("click")
-  await view.get('[role="menuitem"]').trigger("click")
-  expect(view.find("select").exists()).toBe(false)
+  await view.get('[data-provider-id="codex"] [data-provider-open]').trigger("click")
+  expect(view.find("[data-provider-template-choice]").exists()).toBe(false)
   await view.get('[name="provider-name"]').setValue("Renamed")
   await view.get('form button[aria-expanded]').trigger("click")
   await vi.waitFor(() => expect(view.find('input[type="search"]').exists()).toBe(true))

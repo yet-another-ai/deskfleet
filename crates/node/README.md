@@ -14,6 +14,11 @@ and reaps the owned process. Natural exit delivers queued output before the exit
 event. PTY operations run off Node's event loop, and the native output queue is
 bounded to 1 MiB.
 
+Daemon-owned setup operations can pass `command`, `args`, and `env` to launch an
+explicit program in the same PTY lifecycle. Arguments are passed directly and
+environment overrides extend the inherited environment. These launch settings
+are internal to the daemon and are not accepted by the public terminal dial API.
+
 Peers provide async SDP/ICE operations, DataChannel send/receive events,
 `startDesktop()` / `stopDesktop()`, and `close()`. Capture and encoding stay in
 Rust; no raw GPU frames pass through JavaScript. Importing the package or

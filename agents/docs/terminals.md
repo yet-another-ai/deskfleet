@@ -66,6 +66,25 @@ or on explicit revocation/closure. That event detaches terminal access without
 terminating the PTY or deleting its transcript. A working peer can survive
 signaling loss only within its existing authorization deadline.
 
+## Dedicated setup terminals
+
+Provider installation and login use dedicated machine-scoped terminals. The
+daemon selects the executable, arguments, environment overrides, and title, then
+calls `TerminalSessions.run()`. The native PTY launches that program directly
+with its argument vector and inherited environment plus overrides. Its working
+directory defaults to the daemon user's home directory.
+
+Setup terminals use the same input, output replay, resize, exit status, and
+hangup lifecycle as shells. A client can attach after the program has started
+and read all output already produced. Natural exit retains the transcript;
+detaching does not cancel an operation. Command arguments and environment
+overrides are not stored in terminal metadata.
+
+The public `terminalDial` RPC still creates default shells or resumes existing
+terminal IDs. It does not accept arbitrary command, argument, or environment
+fields. Provider operations own their setup commands; the terminal service only
+owns the resulting process and transcript.
+
 ## Wire contract and flow control
 
 `apps/daemon/src/terminal-protocol.ts` owns the provisional TypeScript contract.

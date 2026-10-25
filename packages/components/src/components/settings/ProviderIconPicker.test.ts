@@ -27,7 +27,7 @@ test("a second click while the catalog is opening does not immediately close the
 
 test("searches the LLM icon catalog and selects an icon without submitting the form", async () => {
   const view = await render()
-  expect(view.text()).toContain("Template default")
+  expect(view.get("button[aria-expanded]").attributes("aria-label")).toBe("Icon: Template default")
   expect(view.find('[name="provider-icon-search"]').exists()).toBe(false)
   await openChooser(view)
   await view.get('input[type="search"]').setValue("deepseek")
@@ -41,7 +41,7 @@ test("searches the LLM icon catalog and selects an icon without submitting the f
 
 test("shows the selected icon and resets to the template default", async () => {
   const view = await render("openai")
-  expect(view.text()).toContain("OpenAI")
+  expect(view.get("button[aria-expanded]").attributes("aria-label")).toBe("Icon: OpenAI")
   await openChooser(view)
   expect(view.get('[data-provider-icon-choice="openai"]').attributes("aria-pressed")).toBe("true")
   expect(view.get("[data-default-icon]").attributes("aria-pressed")).toBe("false")
@@ -67,9 +67,19 @@ test("handles empty searches and lets Escape collapse the chooser before dismiss
 test("does not change the icon while saving and localizes the chooser", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
   const view = await render(undefined, true)
-  expect(view.text()).toContain("模板默认图标")
+  expect(view.get("button[aria-expanded]").attributes("aria-label")).toBe("图标：模板默认图标")
   expect(view.get('button[aria-expanded]').attributes("disabled")).toBeDefined()
   await view.get('button[aria-expanded]').trigger("click")
+  expect(view.find('input[type="search"]').exists()).toBe(false)
+  expect(view.emitted("update:modelValue")).toBeUndefined()
+})
+
+test("a click outside the chooser closes it without changing the icon", async () => {
+  const view = await render()
+  await openChooser(view)
+  document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))
+  document.body.dispatchEvent(new PointerEvent("click", { bubbles: true }))
+  await flushPromises()
   expect(view.find('input[type="search"]').exists()).toBe(false)
   expect(view.emitted("update:modelValue")).toBeUndefined()
 })

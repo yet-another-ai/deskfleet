@@ -89,6 +89,8 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       list: () => rpc("providerList"), create: provider => rpc("providerCreate", { provider }),
       update: (providerId, changes) => rpc("providerUpdate", { providerId, changes }),
       remove: providerId => rpc("providerRemove", { providerId }), test: provider => rpc("providerTest", { provider }),
+      probe: provider => rpc("providerProbe", { provider }),
+      install: provider => rpc("providerInstall", { provider }), login: provider => rpc("providerLogin", { provider }),
       onChanged: listener => { providerEvents.add(listener); return () => { providerEvents.delete(listener) } },
     },
     agent: {

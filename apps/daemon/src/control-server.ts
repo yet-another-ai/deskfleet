@@ -21,6 +21,7 @@ import { AgentChannel } from "./agent-channel.ts"
 import { AGENT_CHANNEL } from "./agent-protocol.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import type { AgentProviders } from "./agent-providers.ts"
+import type { ProviderSetup } from "./provider-setup.ts"
 import type { CentralClient } from "./central-client.ts"
 import { MachineRuntime } from "./machine-runtime.ts"
 import type { CentralStatus } from "./central-protocol.ts"
@@ -57,6 +58,7 @@ class ControlConnection {
   readonly #permissions: DesktopPermissions
   readonly #agents: () => AgentSessions
   readonly #providers: AgentProviders
+  readonly #setup: ProviderSetup
   readonly #onShutdownRequested: (() => void) | undefined
   readonly #central: () => CentralClient
   readonly #prepareEnrollment: () => Promise<CentralStatus>
@@ -68,7 +70,7 @@ class ControlConnection {
   #authenticated = false
   #closing: Promise<void> | undefined
 
-  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: DesktopPermissions, agents: () => AgentSessions, providers: AgentProviders, central: () => CentralClient, prepareEnrollment: () => Promise<CentralStatus>, allowLocalControlForTests: boolean, onShutdownRequested?: () => void) {
+  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: DesktopPermissions, agents: () => AgentSessions, providers: AgentProviders, setup: ProviderSetup, central: () => CentralClient, prepareEnrollment: () => Promise<CentralStatus>, allowLocalControlForTests: boolean, onShutdownRequested?: () => void) {
     this.#socket = socket
     this.#token = token
     this.#peers = peers
@@ -78,6 +80,7 @@ class ControlConnection {
     this.#permissions = permissions
     this.#agents = agents
     this.#providers = providers
+    this.#setup = setup
     this.#onShutdownRequested = onShutdownRequested
     this.#central = central
     this.#prepareEnrollment = prepareEnrollment
@@ -126,8 +129,8 @@ class ControlConnection {
           pending = pending.subarray(end + 1)
           try {
             const request = parseControlRequest(value)
-            if (request.method === "providerTest" && this.#authenticated) {
-              // A test can take seconds; keep this connection's other requests responsive.
+            if (["providerTest", "providerProbe", "providerInstall", "providerLogin"].includes(request.method) && this.#authenticated) {
+              // Probes and setup can take seconds; keep terminal I/O and other requests responsive.
               void this.#handle(request).then(
                 result => this.#send({ id: request.id, result }),
                 error => this.#send({ id: request.id, error: message(error) }),
@@ -193,6 +196,12 @@ class ControlConnection {
         return null
       case "providerTest":
         return this.#providers.test(request.params.provider)
+      case "providerProbe":
+        return this.#setup.probe(request.params.provider)
+      case "providerInstall":
+        return this.#setup.install(request.params.provider)
+      case "providerLogin":
+        return this.#setup.login(request.params.provider)
       case "shutdown":
         if (!this.#onShutdownRequested) throw new Error("Daemon shutdown is unavailable")
         return null
@@ -429,7 +438,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
       if (stopping || socket.destroyed) { socket.destroy(); return }
       const current = machine.current
       connection = new ControlConnection(socket, discovery.token, peers, capabilities, current.terminals, current.catalog, permissions,
-        () => machine.current.agents, current.providers, () => machine.current.central, () => machine.prepareEnrollment(),
+        () => machine.current.agents, current.providers, current.setup, () => machine.current.central, () => machine.prepareEnrollment(),
         options.allowLocalControlForTests === true, onShutdownRequested)
       connections.add(connection)
       return connection.run()

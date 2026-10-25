@@ -16,6 +16,9 @@ const api: DeskfleetDesktopApi = {
     update: async () => { throw new Error("Daemon unavailable") },
     remove: async () => { throw new Error("Daemon unavailable") },
     test: async () => { throw new Error("Daemon unavailable") },
+    probe: async () => ({ status: "missing", auth: "unknown", installable: true, loginAvailable: false }),
+    install: async () => { throw new Error("Daemon unavailable") },
+    login: async () => { throw new Error("Daemon unavailable") },
     onChanged: () => () => {},
   },
   agent: {

@@ -94,8 +94,10 @@ async function connect(): Promise<void> {
     const summary = await active.ready
     if (disposed || attachment !== active) return
     attached.value = true
-    sessionStatus.value = summary.status
-    exitCode.value = summary.exitCode
+    if (sessionStatus.value === "running") {
+      sessionStatus.value = summary.status
+      exitCode.value = summary.exitCode
+    }
     await activate()
   } catch (reason) {
     if (attachment === active) failed(reason)

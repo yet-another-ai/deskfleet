@@ -40,7 +40,7 @@ let nextSession = 0
 let authenticated = false
 let authMethod: string | undefined
 let authHeadless: unknown
-const cursorMode = mode === "cursor"
+const cursorMode = mode === "cursor" || mode === "cursor-test" || mode === "cursor-test-signed-out"
 const grokMode = mode === "grok" || mode === "grok-cached" || mode === "grok-login"
 function grokAuthMethods(): acp.AuthMethod[] {
   if (mode === "grok") return [{ id: "xai.api_key", name: "xai.api_key" }, { id: "cached_token", name: "cached_token" }]
@@ -76,15 +76,18 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
     }
   })
   .onRequest(acp.methods.agent.authenticate, ({ params }) => {
+    if (mode?.startsWith("cursor-test")) throw new Error("Test connection must not request login")
     authenticated = true
     authMethod = params.methodId
     authHeadless = params._meta?.headless
     return {}
   })
   .onRequest(acp.methods.agent.session.new, async ({ params }) => {
+    if (mode === "cursor-test-signed-out") throw acp.RequestError.authRequired()
+    if (mode === "test-no-login" && process.env.DEFAULT_AUTH_REQUEST) throw new Error("Test connection inherited automatic login")
     if (mode === "wait-session") await new Promise(() => {})
     if (mode === "session-error") throw acp.RequestError.internalError({ details: `fixture cannot open ${params.cwd}` })
-    if (cursorMode && !authenticated) throw acp.RequestError.internalError({ details: "authenticate required" })
+    if (cursorMode && mode !== "cursor-test" && !authenticated) throw acp.RequestError.internalError({ details: "authenticate required" })
     return {
       sessionId: `fixture-session-${++nextSession}`,
       _meta: {

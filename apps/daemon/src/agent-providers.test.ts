@@ -225,6 +225,10 @@ test("provider tests open a prompt-free session from unsaved settings and report
 })
 
 test("invalid provider inputs and template edits are rejected by the IPC boundary", () => {
+  for (const method of ["providerProbe", "providerInstall", "providerLogin"] as const) {
+    assert.throws(() => validateControlParams(method, { provider: { template: "unknown", name: "Agent", env: {} } }), /Unknown Agent provider template/u)
+    assert.throws(() => validateControlParams(method, { provider: { template: "codex", name: "Agent", binaryPath: "bad\0path", env: {} } }), /binary path/u)
+  }
   assert.throws(() => validateControlParams("providerCreate", { provider: { template: "unknown", name: "Agent", env: {} } }), /Unknown Agent provider template/u)
   assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: " ", env: {} } }), /Provider names/u)
   assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: "Agent", binaryPath: "bad\0path", env: {} } }), /binary path/u)
@@ -238,6 +242,29 @@ test("invalid provider inputs and template edits are rejected by the IPC boundar
     assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: "Agent", icon, env: {} } }), /provider icon/u)
     assert.throws(() => validateControlParams("providerUpdate", { providerId: "codex", changes: { name: "Agent", icon, env: {} } }), /provider icon/u)
   }
+})
+
+test("connection tests never request Cursor login, including when cached credentials expire", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-auth-test-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "cursor agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  const provider = { template: "cursor" as const, name: "Cursor", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-test" } }
+  assert.deepEqual(await registry.test(provider), { agentName: "cursor-agent" })
+  await assert.rejects(registry.test({ ...provider, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-test-signed-out" } }), /Use the Log in button/u)
+})
+
+test("Codex connection tests disable the bridge's automatic login setting", { timeout: 15_000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-codex-auth-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  configureAdapterHost({ command: process.execPath, args: [fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))] })
+  const registry = new AgentProviders(directory)
+  assert.deepEqual(await registry.test({ template: "codex", name: "Codex", env: {
+    DEFAULT_AUTH_REQUEST: JSON.stringify({ methodId: "chatgpt" }), DESKFLEET_TEST_AGENT_MODE: "test-no-login",
+  } }), { agentName: "deskfleet-test-agent" })
 })
 
 test("invalid persisted settings do not silently reset the user's providers", async t => {

@@ -1,3 +1,5 @@
+import type { TerminalSummary } from "./terminal-protocol.ts"
+
 export type AgentProviderTemplateId = "codex" | "claude-code" | "cursor" | "grok" | "acp"
 
 export interface AgentProviderTemplate {
@@ -34,6 +36,18 @@ export interface ProviderTestResult {
   agentName: string
 }
 
+/** Executable discovery and read-only credential status, independent of ACP sessions. */
+export interface ProviderProbeResult {
+  status: "found" | "missing" | "invalid"
+  binaryPath?: string
+  version?: string
+  message?: string
+  auth: "authenticated" | "unauthenticated" | "unknown"
+  installable: boolean
+  loginAvailable: boolean
+  installMessage?: string
+}
+
 /** Bounds a provider test below the local control client's request timeout. */
 export const PROVIDER_TEST_TIMEOUT_MS = 30_000
 
@@ -43,6 +57,9 @@ export interface ProviderMethods {
   providerUpdate: { params: { providerId: string; changes: AgentProviderSettings }; result: AgentProviderConfig }
   providerRemove: { params: { providerId: string }; result: null }
   providerTest: { params: { provider: AgentProviderInput }; result: ProviderTestResult }
+  providerProbe: { params: { provider: AgentProviderInput }; result: ProviderProbeResult }
+  providerInstall: { params: { provider: AgentProviderInput }; result: TerminalSummary }
+  providerLogin: { params: { provider: AgentProviderInput }; result: TerminalSummary }
 }
 
 export type ProviderEvent = { kind: "providersChanged" }
@@ -102,6 +119,6 @@ export function providerInput(value: unknown): AgentProviderInput {
 
 export function validateProviderParams(method: keyof ProviderMethods, params: Record<string, unknown>): void {
   if (method === "providerUpdate" || method === "providerRemove") validateProviderId(params.providerId)
-  if (method === "providerCreate" || method === "providerTest") providerInput(params.provider)
+  if (["providerCreate", "providerTest", "providerProbe", "providerInstall", "providerLogin"].includes(method)) providerInput(params.provider)
   if (method === "providerUpdate") providerSettings(params.changes)
 }

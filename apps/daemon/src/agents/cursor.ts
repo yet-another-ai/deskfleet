@@ -1,5 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { connectAcpProcess, type AgentConfig, type AgentProcess, type AgentProvider } from "./acp.ts"
+import { launchProviderCommand } from "../provider-setup-process.ts"
 
 /** Cursor CLI starts its ACP server with this subcommand. Root flags, when used, must precede it. */
 export const CURSOR_ACP_ARGUMENT = "acp"
@@ -7,11 +8,7 @@ export const CURSOR_ACP_ARGUMENT = "acp"
 export const CURSOR_AUTH_METHOD = "cursor_login"
 
 export function cursorProcess(config: AgentConfig): AgentProcess {
-  return {
-    command: config.binaryPath || "agent",
-    args: [CURSOR_ACP_ARGUMENT],
-    env: config.env,
-  }
+  return launchProviderCommand(config.binaryPath || "agent", [CURSOR_ACP_ARGUMENT], config.env)
 }
 
 /**
@@ -29,6 +26,10 @@ export async function authenticateCursor(initialization: acp.InitializeResponse,
 export const cursorProvider: AgentProvider = {
   id: "cursor",
   connect(config, client) {
-    return connectAcpProcess(cursorProcess(config), client, { afterInitialize: authenticateCursor })
+    // cursor_login starts browser auth when credentials have expired. Cursor's
+    // session/new also accepts credentials loaded at startup, without that call.
+    return connectAcpProcess(cursorProcess(config), client, {
+      ...(config.authentication === "existing" ? {} : { afterInitialize: authenticateCursor }),
+    })
   },
 }

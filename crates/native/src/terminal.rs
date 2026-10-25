@@ -1,5 +1,6 @@
 //! Daemon-owned PTYs. Detaching a transport does not affect the terminal.
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,6 +50,11 @@ pub struct TerminalConfig {
     pub cwd: PathBuf,
     pub cols: u16,
     pub rows: u16,
+    /// Omission selects the user's default login shell.
+    pub command: Option<String>,
+    pub args: Vec<String>,
+    /// Overrides are added to the inherited process environment.
+    pub env: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,12 +145,30 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    /// Spawn the user's default shell in a PTY. Unix shells are login shells.
+    /// Spawn a command or the user's default shell in a PTY.
+    /// Default Unix shells are login shells; explicit commands receive argv directly.
     ///
     /// # Errors
     /// Returns an error for an invalid directory or size, or OS spawn failure.
     pub async fn spawn(config: TerminalConfig) -> Result<Self> {
-        Self::spawn_command(config, CommandBuilder::new_default_prog()).await
+        let mut command = match &config.command {
+            Some(program) => {
+                let mut command = CommandBuilder::new(program);
+                command.args(&config.args);
+                command
+            }
+            None if config.args.is_empty() => CommandBuilder::new_default_prog(),
+            None => {
+                return Err(backend(
+                    "configure",
+                    "arguments require an explicit command",
+                ));
+            }
+        };
+        for (key, value) in &config.env {
+            command.env(key, value);
+        }
+        Self::spawn_command(config, command).await
     }
 
     async fn spawn_command(config: TerminalConfig, mut command: CommandBuilder) -> Result<Self> {
