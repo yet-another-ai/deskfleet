@@ -1,7 +1,7 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
-import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { ProviderSnapshot } from "../../../apps/daemon/src/provider-protocol.ts"
 import App from "./App.vue"
@@ -9,12 +9,9 @@ import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import { agentElicitation, agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
 import { catalogFixture, workspaceId } from "./test/catalog.ts"
-import { loadProviderIcons } from "./services/provider-icons.ts"
 import { useProvidersStore } from "./stores/providers.ts"
 import { deferred } from "./test/desktop-media.ts"
 import SessionView from "./views/SessionView.vue"
-
-beforeAll(() => loadProviderIcons(), 30_000)
 const transport = vi.hoisted(() => ({ call: vi.fn(), receive: (_value: { method: string; params: unknown }) => {}, state: (_state: string) => {} }))
 vi.mock("./services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof transport.state, receive: typeof transport.receive) { transport.state = state; transport.receive = receive }

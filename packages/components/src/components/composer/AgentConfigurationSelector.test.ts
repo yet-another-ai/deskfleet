@@ -1,16 +1,13 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
-import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { i18n } from "../../i18n/index.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useProvidersStore } from "../../stores/providers.ts"
 import { agentSnapshot } from "../../test/agent.ts"
-import { loadProviderIcons } from "../../services/provider-icons.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import SessionComposer from "./SessionComposer.vue"
-
-beforeAll(() => loadProviderIcons(), 30_000)
 
 const storageKey = "deskfleet.agent-configuration"
 const wrappers: VueWrapper[] = []

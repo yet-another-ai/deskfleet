@@ -1,14 +1,11 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { reactive } from "vue"
-import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { AGENT_PROVIDER_TEMPLATES, type AgentProviderConfig, type ProviderSnapshot } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import { i18n } from "../../i18n/index.ts"
-import { loadProviderIcons } from "../../services/provider-icons.ts"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
 import AgentsSettings from "./AgentsSettings.vue"
-
-beforeAll(() => loadProviderIcons(), 30_000)
 
 const fleet = reactive<{ machines: MachineSummary[]; targetId: string }>({ machines: [], targetId: "local-daemon" })
 vi.mock("../../stores/fleet.ts", () => ({ useFleetStore: () => fleet }))

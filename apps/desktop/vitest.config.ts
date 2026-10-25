@@ -25,6 +25,7 @@ export default defineConfig({
         test: {
           name: "renderer",
           environment: "happy-dom",
+          hookTimeout: 120_000,
           setupFiles: [resolve(import.meta.dirname, "../../packages/components/src/test/setup.ts")],
           include: ["../../packages/components/src/**/*.test.ts"],
         },

@@ -1,6 +1,7 @@
 import { configureClient } from "@deskfleet/client/platform"
 import { afterEach } from "vitest"
 import type { DeskfleetDesktopApi } from "../../../client/src/desktop-api.ts"
+import { loadProviderIcons } from "../services/provider-icons.ts"
 
 const api: DeskfleetDesktopApi = {
   platform: "linux",
@@ -68,6 +69,8 @@ const api: DeskfleetDesktopApi = {
 }
 
 configureClient(api)
+// Icon chunks are hundreds of SVG modules. Finish that import before a worker exits.
+await loadProviderIcons()
 
 afterEach(() => {
   document.body.innerHTML = ""
