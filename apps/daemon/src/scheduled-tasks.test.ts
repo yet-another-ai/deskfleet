@@ -129,7 +129,7 @@ test("archiving a retained pending run releases manual and automatic scheduled d
   assert.equal(manual.state, "running")
   assert.notEqual(manual.sessionId, first.sessionId)
   assert.equal(state.inputs[0]!.state, "pending", "Archive preserves the original backlog")
-  assert.equal((await f.list())[0]!.runs.length, 50, "The archived anchor no longer needs retention")
+  assert.ok((await f.list())[0]!.runs.some(run => run.id === first.id), "Archived pending input stays an overlap anchor")
 
   f.snapshots.get(manual.sessionId!)!.session.archiveState = "archived"
   f.emit(manual.sessionId!)
@@ -154,6 +154,89 @@ test("restoring an archived Session with pending input prevents overlapping sche
   const next = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
   assert.equal(next.state, "skipped")
   assert.equal(f.calls.length, 2)
+})
+
+test("startup releases a running run whose session journal is missing", async t => {
+  const f = await fixture(t)
+  const task = await f.create()
+  const run = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  await f.scheduler.close()
+  f.snapshots.delete(run.sessionId!)
+  const reopened = new ScheduledTasks(f.directory, f.dependencies)
+  t.after(() => reopened.close())
+  await reopened.init()
+  const released = await reopened.handle("scheduleList", {}, actor) as ScheduledTask[]
+  assert.equal(released[0]!.lastRun?.state, "interrupted")
+  assert.match(released[0]!.lastRun!.error!, /no longer available/u)
+  const next = await reopened.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  assert.equal(next.state, "running")
+  assert.notEqual(next.sessionId, run.sessionId)
+})
+
+test("startup keeps an unreadable active session blocking without aborting", async t => {
+  const f = await fixture(t)
+  const task = await f.create()
+  const run = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  await f.scheduler.close()
+  const journal = f.dependencies.agents.journal
+  const read = journal.read.bind(journal)
+  journal.read = async (id: string) => {
+    if (id === run.sessionId) throw new Error("Snapshot is unavailable")
+    return read(id)
+  }
+  const reopened = new ScheduledTasks(f.directory, f.dependencies)
+  t.after(() => reopened.close())
+  await reopened.init()
+  const listed = await reopened.handle("scheduleList", {}, actor) as ScheduledTask[]
+  assert.equal(listed[0]!.lastRun?.state, "running")
+  const skipped = await reopened.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  assert.equal(skipped.state, "skipped")
+})
+
+test("archived pending input remains an overlap anchor after history eviction", async t => {
+  const f = await fixture(t)
+  const task = await f.create({ target: { kind: "existing", sessionId: "1" } })
+  const first = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  const state = f.snapshots.get("1")!
+  state.session.archiveState = "archived"
+  f.emit("1")
+  assert.equal((await f.list())[0]!.runs.find(run => run.id === first.id)?.state, "interrupted")
+  for (let i = 0; i < 50; i += 1) {
+    const failed = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+    assert.equal(failed.state, "failed")
+    assert.match(failed.error!, /active and ready/u)
+  }
+  assert.ok((await f.list())[0]!.runs.some(run => run.id === first.id))
+  assert.equal(state.inputs.length, 1)
+
+  state.session.archiveState = "active"
+  f.emit("1")
+  const restored = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  assert.equal(restored.state, "skipped")
+  assert.equal(state.inputs.length, 1, "Restoring a retained pending input does not accept a second backlog input")
+  assert.equal(f.calls.length, 1)
+})
+
+test("a finished archived run is not retained past the history cap", async t => {
+  const f = await fixture(t)
+  const task = await f.create({ trigger: { kind: "manual" } })
+  const first = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  const state = f.snapshots.get(first.sessionId!)!
+  state.inputs[0]!.state = "delivered"
+  state.turns.push({ id: "30", sessionId: state.session.id, initialInputId: "10", dispatchCommandId: "20", runGeneration: 1, state: "completed", startedAt: "2026-10-26T00:00:00Z", endedAt: "2026-10-26T00:01:00Z" })
+  f.emit(state.session.id)
+  state.session.archiveState = "archived"
+  f.emit(state.session.id)
+  const second = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  assert.equal(second.state, "running")
+  for (let i = 0; i < 55; i += 1) {
+    const skipped = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+    assert.equal(skipped.state, "skipped")
+  }
+  const runs = (await f.list())[0]!.runs
+  assert.equal(runs.some(run => run.id === first.id), false)
+  assert.ok(runs.some(run => run.id === second.id))
+  assert.ok(runs.length <= 51)
 })
 
 test("unreadable active Sessions block overlap but missing Sessions do not", async t => {

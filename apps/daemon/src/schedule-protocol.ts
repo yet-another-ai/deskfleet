@@ -69,13 +69,23 @@ export function scheduleTrigger(value: unknown): ScheduleTrigger {
     return { kind: "interval", minutes: trigger.minutes as number }
   }
   if (trigger.kind !== "daily" && trigger.kind !== "weekly") throw new Error("Invalid schedule trigger")
-  if (typeof trigger.time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/u.test(trigger.time)) throw new Error("Schedule time must use HH:mm")
+  const time = scheduleTime(trigger.time)
   const timeZone = nonempty(trigger.timeZone, "time zone", 100)
   try { new Intl.DateTimeFormat("en", { timeZone }).format() }
   catch { throw new Error("Invalid schedule time zone") }
-  if (trigger.kind === "daily") return { kind: "daily", time: trigger.time, timeZone }
+  if (trigger.kind === "daily") return { kind: "daily", time, timeZone }
   if (!Array.isArray(trigger.weekdays) || !trigger.weekdays.length || trigger.weekdays.some(day => !Number.isInteger(day) || day < 0 || day > 6)) throw new Error("Choose at least one weekday between 0 (Sunday) and 6")
-  return { kind: "weekly", time: trigger.time, timeZone, weekdays: [...new Set(trigger.weekdays as number[])].sort() }
+  return { kind: "weekly", time, timeZone, weekdays: [...new Set(trigger.weekdays as number[])].sort() }
+}
+
+/** Browser time controls may report seconds. Schedules persist minute precision. */
+function scheduleTime(value: unknown): string {
+  if (typeof value !== "string") throw new Error("Schedule time must use HH:mm")
+  const match = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d(?:\.\d+)?)?$/u.exec(value)
+  const hour = match?.[1]
+  const minute = match?.[2]
+  if (!hour || !minute) throw new Error("Schedule time must use HH:mm")
+  return `${hour}:${minute}`
 }
 
 export function scheduleInput(value: unknown): ScheduleInput {

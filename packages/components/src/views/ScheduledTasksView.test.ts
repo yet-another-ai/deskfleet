@@ -185,6 +185,7 @@ test("weekly timing rejects an invalid time zone and saves selected weekdays wit
 
 test.each([
   ["daily", "14:30:00"], ["weekly", "14:30:00"],
+  ["daily", "14:30:00.000"], ["weekly", "09:05:07.250"],
   ["daily", "14:30"], ["weekly", "14:30"],
 ] as const)("saves %s browser time %s at minute precision", async (kind, value) => {
   const { wrapper, rpc } = await setup([task()])
@@ -197,7 +198,7 @@ test.each([
   await wrapper.get("form").trigger("submit")
   await flushPromises()
   expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({
-    trigger: { kind, time: "14:30", timeZone: "Asia/Singapore", ...(kind === "weekly" ? { weekdays: [1] } : {}) },
+    trigger: { kind, time: value.slice(0, 5), timeZone: "Asia/Singapore", ...(kind === "weekly" ? { weekdays: [1] } : {}) },
   }) }))
 })
 

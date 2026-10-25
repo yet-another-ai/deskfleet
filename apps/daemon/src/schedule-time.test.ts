@@ -22,6 +22,13 @@ test("non-hour offsets and DST transitions retain wall time", () => {
   assert.equal(nextScheduleTime({ kind: "daily", time: "02:15", timeZone: "Australia/Lord_Howe" }, new Date("2026-10-03T13:00:00Z")), "2026-10-04T15:15:00.000Z")
 })
 
+test("browser time values with seconds normalize to HH:mm", () => {
+  assert.deepEqual(scheduleTrigger({ kind: "daily", time: "14:30:00", timeZone: "UTC" }), { kind: "daily", time: "14:30", timeZone: "UTC" })
+  assert.deepEqual(scheduleTrigger({ kind: "weekly", time: "09:05:07.250", timeZone: "UTC", weekdays: [1] }), { kind: "weekly", time: "09:05", timeZone: "UTC", weekdays: [1] })
+  assert.deepEqual(scheduleInput({ title: "Task", prompt: "Review", workspaceId: "1", enabled: true, target: { kind: "existing", sessionId: "1" }, trigger: { kind: "daily", time: "08:15:00", timeZone: "UTC" } }).trigger, { kind: "daily", time: "08:15", timeZone: "UTC" })
+  assert.throws(() => scheduleTrigger({ kind: "daily", time: "14:30:60", timeZone: "UTC" }), /HH:mm/u)
+})
+
 test("schedule parsing rejects invalid timing, targets, and empty prompts", () => {
   assert.throws(() => scheduleTrigger({ kind: "daily", time: "24:00", timeZone: "UTC" }), /HH:mm/u)
   assert.throws(() => scheduleTrigger({ kind: "daily", time: "09:00", timeZone: "unknown" }), /time zone/u)

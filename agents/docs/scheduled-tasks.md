@@ -19,7 +19,8 @@ Sessions, Worktrees, and history.
 
 Triggers are manual, a minute interval, daily, or selected weekdays. Daily and
 weekly triggers store an explicit IANA time zone and `HH:mm` wall time, so a
-different viewer's clock does not move the schedule. A nonexistent daylight
+different viewer's clock does not move the schedule. A browser time control
+that reports seconds is stored at minute precision. A nonexistent daylight
 saving time is skipped; a repeated wall time uses its first occurrence only.
 The UI shows the next occurrence and its time zone. Intervals advance from the
 current dispatch time and do not replay a backlog of missed occurrences.
@@ -46,8 +47,9 @@ again. A Session still closing during archive continues to block dispatch.
 Recent runs record claim/running/completed/failed/interrupted/skipped state,
 timestamps, associated Session and input IDs, and errors. Completion follows
 the journal's actual input/turn outcome, not just a successful RPC response.
-The most recent 50 runs are retained, with a still-blocking run retained when
-needed to prevent overlap. Provider removal, an archived target, failed
+The most recent 50 runs are retained. A run that is still blocking, or an
+archived run whose pending input would block again after restore, is kept when
+that cap would otherwise drop it. Provider removal, an archived target, failed
 provisioning, and authorization failures appear in run history.
 
 Restart recovery inspects durable command receipts and the recovered Agent

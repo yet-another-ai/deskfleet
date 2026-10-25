@@ -191,31 +191,61 @@ export class ScheduledTasks {
     await Promise.all(due.map(task => this.#track(this.#run(task.id, undefined, task.nextRunAt)).catch(error => console.error("Scheduled task dispatch failed", message(error)))))
   }
 
-  async #busy(task: StoredTask): Promise<StoredRun | undefined> {
-    for (const run of task.runs) {
-      if (run.state === "claimed") return run
-      if (!run.sessionId || run.state === "completed" || run.state === "skipped") continue
-      let snapshot: AgentSnapshot
-      try { snapshot = await this.#dependencies.agents.journal.read(run.sessionId) }
-      catch {
-        // A missing or fully archived Session cannot execute its retained input.
-        // Failed reads alone do not prove that potentially active work has stopped.
-        try {
-          const session = (await this.#dependencies.agents.journal.list()).find(session => session.id === run.sessionId)
-          if (!session || session.archiveState === "archived") continue
-        } catch { /* Keep uncertain work blocking if the catalog is also unavailable. */ }
-        return run
-      }
-      if (snapshot.session.archiveState === "archived") continue
-      if (!run.inputId) {
-        if (run.state === "interrupted" && (snapshot.inputs.some(input => pendingInput(input.state)) || snapshot.turns.some(turn => activeTurn(turn.state)))) return run
-        continue
-      }
-      const input = snapshot.inputs.find(input => input.id === run.inputId)
-      if (input && pendingInput(input.state)) return run
-      if (snapshot.turns.some(turn => (turn.initialInputId === run.inputId || turn.id === input?.turnId) && activeTurn(turn.state))) return run
+  async #sessionPresence(sessionId: string): Promise<"missing" | "archived" | "present" | "unknown"> {
+    try {
+      const session = (await this.#dependencies.agents.journal.list()).find(session => session.id === sessionId)
+      if (!session) return "missing"
+      return session.archiveState === "archived" ? "archived" : "present"
+    } catch { return "unknown" }
+  }
+
+  #release(run: StoredRun, reason: "missing" | "archived"): void {
+    if (run.state !== "running") return
+    run.state = "interrupted"
+    run.finishedAt = run.finishedAt ?? this.#now().toISOString()
+    run.error = reason === "archived" ? "Scheduled Session was archived" : "Scheduled Session is no longer available"
+  }
+
+  /** True when this run's input or turn should still count as scheduled overlap. */
+  #pendingWork(run: StoredRun, snapshot: AgentSnapshot): boolean {
+    if (!run.inputId) return run.state === "interrupted" && (snapshot.inputs.some(input => pendingInput(input.state)) || snapshot.turns.some(turn => activeTurn(turn.state)))
+    const input = snapshot.inputs.find(input => input.id === run.inputId)
+    if (input && pendingInput(input.state)) return true
+    return snapshot.turns.some(turn => (turn.initialInputId === run.inputId || turn.id === input?.turnId) && activeTurn(turn.state))
+  }
+
+  async #activity(run: StoredRun): Promise<"blocking" | "anchor" | "idle" | "missing"> {
+    const sessionId = run.sessionId
+    if (!sessionId) return "idle"
+    let snapshot: AgentSnapshot
+    try { snapshot = await this.#dependencies.agents.journal.read(sessionId) }
+    catch {
+      // A missing Session cannot execute its input. A fully archived one cannot
+      // either, but restoring it can make that input overlap again. A failed
+      // read of a Session that may still be active does not prove the work stopped.
+      const presence = await this.#sessionPresence(sessionId)
+      if (presence === "missing") return "missing"
+      if (presence === "archived") return "anchor"
+      return "blocking"
     }
-    return undefined
+    if (!this.#pendingWork(run, snapshot)) return "idle"
+    // Archive still closing keeps its input blocking. A finished archive does not,
+    // but the run stays retained so restore can apply overlap again.
+    return snapshot.session.archiveState === "archived" ? "anchor" : "blocking"
+  }
+
+  async #overlap(task: StoredTask): Promise<{ blocking?: StoredRun; retained: StoredRun[] }> {
+    let blocking: StoredRun | undefined
+    const retained: StoredRun[] = []
+    for (const run of task.runs) {
+      if (run.state === "claimed") { blocking ??= run; retained.push(run); continue }
+      if (!run.sessionId || run.state === "completed" || run.state === "skipped") continue
+      const activity = await this.#activity(run)
+      if (activity === "blocking") { blocking ??= run; retained.push(run) }
+      else if (activity === "anchor") retained.push(run)
+      else if (activity === "missing") this.#release(run, "missing")
+    }
+    return { blocking, retained }
   }
 
   async #run(id: unknown, manualActor?: AgentActor, scheduledFor?: string): Promise<ScheduleRun | undefined> {
@@ -226,12 +256,13 @@ export class ScheduledTasks {
       // Competing ticks may observe the same deadline; only its first claim wins.
       if (scheduledFor && (!task.enabled || task.nextRunAt !== scheduledFor)) return undefined
       const now = this.#now().toISOString()
-      const busy = await this.#busy(task)
-      const run: StoredRun = { id: randomUUID(), createOperationId: randomUUID(), inputOperationId: randomUUID(), state: busy ? "skipped" : "claimed",
-        scheduledFor: scheduledFor ?? now, startedAt: now, ...(busy ? { finishedAt: now, error: "The previous scheduled input is still active" } : {}) }
+      const { blocking, retained } = await this.#overlap(task)
+      const run: StoredRun = { id: randomUUID(), createOperationId: randomUUID(), inputOperationId: randomUUID(), state: blocking ? "skipped" : "claimed",
+        scheduledFor: scheduledFor ?? now, startedAt: now, ...(blocking ? { finishedAt: now, error: "The previous scheduled input is still active" } : {}) }
       task.runs = [run, ...task.runs].slice(0, 50)
-      // A long-running task can span many skipped deadlines; retain its anchor.
-      if (busy && !task.runs.some(value => value.id === busy.id)) task.runs.push(busy)
+      // The newest 50 runs stay visible. Also keep live overlap and archived
+      // inputs that would overlap again if their Session is restored.
+      for (const anchor of retained) if (!task.runs.some(value => value.id === anchor.id)) task.runs.push(anchor)
       if (scheduledFor) task.nextRunAt = nextScheduleTime(task.trigger, this.#now())
       await this.#save(tasks)
       return { task: structuredClone(task), run: structuredClone(run) }
@@ -316,7 +347,17 @@ export class ScheduledTasks {
       const run = tasks.find(task => task.id === taskId)?.runs.find(run => run.id === runId)
       if (!run || !["running", "failed", "interrupted"].includes(run.state) || !run.sessionId || !run.inputId) return
       const previous = JSON.stringify(run)
-      const snapshot = await this.#dependencies.agents.journal.read(run.sessionId)
+      let snapshot: AgentSnapshot
+      try { snapshot = await this.#dependencies.agents.journal.read(run.sessionId) }
+      catch {
+        // Startup must survive a stale run whose Session journal is gone or unreadable.
+        const presence = await this.#sessionPresence(run.sessionId)
+        if (presence !== "missing" && presence !== "archived") return
+        this.#release(run, presence)
+        if (JSON.stringify(run) === previous) return
+        await this.#save(tasks)
+        return
+      }
       const input = snapshot.inputs.find(input => input.id === run.inputId)
       const turn = snapshot.turns.find(turn => turn.id === input?.turnId)
         ?? snapshot.turns.findLast(turn => turn.initialInputId === run.inputId)

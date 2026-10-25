@@ -21,12 +21,18 @@ const kind = computed({
         : { kind: value, time: rememberedTime.value, timeZone: rememberedZone.value, ...(value === "weekly" ? { weekdays: [1] } : {}) } as ScheduleInput["trigger"]
   },
 })
+function minuteTime(value: string): string {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d(?:\.\d+)?)?$/u.exec(value)
+  const hour = match?.[1]
+  const minute = match?.[2]
+  return hour && minute ? `${hour}:${minute}` : value
+}
 const time = computed({
   get: () => trigger.value.kind === "daily" || trigger.value.kind === "weekly" ? trigger.value.time : "",
   set: (value: string) => {
     if (trigger.value.kind !== "daily" && trigger.value.kind !== "weekly") return
-    // Browser time controls may include seconds; schedules use minute precision.
-    trigger.value = { ...trigger.value, time: value.slice(0, 5) }
+    // Safari and other browsers can report HH:mm:ss from type="time". Schedules use minute precision.
+    trigger.value = { ...trigger.value, time: minuteTime(value) }
   },
 })
 const weekdays = computed(() => Array.from({ length: 7 }, (_, index) => ({
