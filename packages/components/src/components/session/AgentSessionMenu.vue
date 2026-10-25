@@ -26,6 +26,10 @@ function confirm(): void {
   else if (kind === "archive") emit("archive")
   else if (kind === "restore") emit("restore")
 }
+function closed(): void {
+  // A previous close event can arrive after this dialog has reopened.
+  if (!dialog.value?.open) confirming.value = null
+}
 </script>
 
 <template>
@@ -36,7 +40,7 @@ function confirm(): void {
       <button v-if="archiveState === 'archived'" type="button" role="menuitem" class="ui-menu-item" @click="choose('restore')"><ArchiveRestore :size="14" aria-hidden="true" />{{ t('agent.restore') }}</button>
       <button v-else type="button" role="menuitem" class="ui-menu-item" @click="choose('archive')"><Archive :size="14" aria-hidden="true" />{{ t(archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive') }}</button>
     </div>
-    <dialog ref="dialog" class="ui-dialog w-[24rem]" @close="confirming = null">
+    <dialog ref="dialog" class="ui-dialog w-[24rem]" @close="closed">
       <p class="m-0 text-sm leading-relaxed">{{ t(confirming === 'stop' ? 'agent.stopQuestion' : confirming === 'restore' ? 'agent.restoreQuestion' : 'agent.archiveQuestion') }}</p>
       <div class="ui-dialog-actions">
         <button type="button" class="ui-button" @click="dialog?.close()">{{ t('catalog.cancel') }}</button>

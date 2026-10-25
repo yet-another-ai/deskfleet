@@ -35,9 +35,35 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
       await new Promise(resolve => setTimeout(resolve, 25))
     }
   }
+  function findButton(label: string, root: ParentNode = document): HTMLButtonElement | undefined {
+    return [...root.querySelectorAll("button")].find(value => value.textContent?.trim() === label || value.getAttribute("aria-label") === label)
+  }
   function button(label: string, root: ParentNode = document): HTMLButtonElement {
-    const element = [...root.querySelectorAll("button")].find(value => value.textContent?.trim() === label || value.getAttribute("aria-label") === label)
-    require(element, `Missing ${label} button`); return element
+    const element = findButton(label, root)
+    require(element, `Missing ${label} button: ${root instanceof Element ? root.outerHTML : document.body.innerText}`); return element
+  }
+  async function openSessionAction(label: string): Promise<HTMLButtonElement> {
+    await until(() => {
+      const trigger = findButton("Session actions")
+      return !!trigger && !trigger.disabled && trigger.getAttribute("aria-disabled") !== "true"
+    }, `${label} action enabled`)
+    button("Session actions").click()
+    let action: HTMLButtonElement | undefined
+    await until(() => {
+      const menu = findButton("Session actions")?.parentElement?.querySelector('[role="menu"]')
+      action = menu ? findButton(label, menu) : undefined
+      return !!action
+    }, `${label} menu item`)
+    return action!
+  }
+  async function confirmSessionAction(label: string): Promise<void> {
+    let confirmation: HTMLButtonElement | undefined
+    await until(() => {
+      const dialog = findButton("Session actions")?.parentElement?.querySelector("dialog[open]")
+      confirmation = dialog ? findButton(label, dialog) : undefined
+      return !!confirmation
+    }, `${label} confirmation`)
+    confirmation!.click()
   }
   // Unselected Team machines are collapsed sidebar groups; opening one switches machines.
   const machineRow = (index: number) => document.querySelector<HTMLButtonElement>(`aside button[data-machine-id="${context.machines[index]}"]`)
@@ -80,20 +106,14 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   button("Send").click()
   await until(() => !!document.querySelector("main")?.textContent?.includes("Fixture Agent is waiting for approval"), "streaming Agent message")
   await until(() => !!document.querySelector("main")?.textContent?.includes("Read fixture file"), "Agent tool call")
-  button("Session actions").click()
-  await until(() => !!document.querySelector('[role="menu"]'), "session actions menu")
+  const archive = await openSessionAction("Archive session")
   require(!document.body.innerText.includes("Delete session"), "Sessions must expose Archive, not Delete")
-  button("Archive session", document.querySelector('[role="menu"]')!).click()
-  await until(() => !!document.querySelector("dialog[open]"), "archive confirmation")
-  button("Archive session", document.querySelector("dialog[open]")!).click()
+  archive.click()
+  await confirmSessionAction("Archive session")
   await until(() => !!document.querySelector("main")?.textContent?.includes("This session is archived"), "archived state")
-  await until(() => !button("Session actions").disabled, "archive command completed")
-  await new Promise(resolve => setTimeout(resolve, 50))
-  button("Session actions").click()
-  await until(() => !!document.querySelector('[role="menu"]'), `restoration menu ${button("Session actions").outerHTML}`)
-  button("Restore session", document.querySelector('[role="menu"]')!).click()
-  await until(() => !!document.querySelector("dialog[open]"), "restore confirmation")
-  button("Restore session", document.querySelector("dialog[open]")!).click()
+  const restore = await openSessionAction("Restore session")
+  restore.click()
+  await confirmSessionAction("Restore session")
   await until(() => !document.querySelector("dialog[open]") && !document.querySelector("main")?.textContent?.includes("This session is archived"), "restore state")
   // The prompt and archive/restore publish real central catalog updates. Keep
   // observing beyond their coalescing timer to catch a transient loading title.
