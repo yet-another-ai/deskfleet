@@ -4,6 +4,7 @@ import * as acp from "@agentclientprotocol/sdk"
 const nativeMode = process.env.DESKFLEET_TEST_NATIVE_MODE === "true"
 const loadSession = process.env.DESKFLEET_TEST_LOAD_SESSION === "true"
 const omitResume = process.env.DESKFLEET_TEST_OMIT_RESUME === "true"
+const partialResume = process.env.DESKFLEET_TEST_PARTIAL_RESUME === "true"
 let currentMode = "default"
 let currentModel = "model-a"
 const modes: acp.SessionModeState = {
@@ -35,7 +36,7 @@ const connection = acp.agent({ name: "deskfleet-mode-fixture" })
     sessionId: "modes-session", configOptions: options(), modes,
   }))
   .onRequest(acp.methods.agent.session.resume, () => ({
-    ...omitResume ? {} : { configOptions: options(), modes: { ...modes, currentModeId: currentMode } },
+    ...omitResume ? {} : { configOptions: options(), ...partialResume ? {} : { modes: { ...modes, currentModeId: currentMode } } },
     _meta: { currentMode, currentModel },
   }))
   .onRequest(acp.methods.agent.session.load, async ({ params, client }) => {

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk"
 import { connectAcpProcess } from "./agents/acp.ts"
 import { applyAgentConfiguration } from "./agent-configuration.ts"
-import { AcpSessionModes } from "./agents/session-modes.ts"
+import { AcpSessionModes, withRestoredSessionMode } from "./agents/session-modes.ts"
 
 const launch = {
   command: process.execPath,
@@ -97,6 +97,25 @@ test("ACP restores a saved standalone mode after a fresh process omits its resum
   assert.equal(confirmed._meta?.currentModel, "model-b")
   const changed = await resumed.setConfigOption({ sessionId, configId: "mode", value: "fallback" }, restored)
   assert.equal(selectedMode(changed.configOptions), "default")
+})
+
+test("ACP restores a saved standalone mode when resume returns options without modes", { timeout: 15_000 }, async t => {
+  const original = await connectAcpProcess(launch, { onUpdate() {} })
+  t.after(() => original.close())
+  const { sessionId, configOptions } = await original.newSession(session)
+  const saved = await applyAgentConfiguration(original, sessionId, configOptions ?? [], { model: "model-b", mode: "plan" })
+  await original.close()
+
+  const resumed = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_PARTIAL_RESUME: "true" } }, { onUpdate() {} })
+  t.after(() => resumed.close())
+  const partial = await resumed.resume({ ...session, sessionId })
+  assert.equal(partial.configOptions?.some(option => option.category === "mode"), false)
+  assert.equal(partial.configOptions?.some(option => option.category === "model"), true)
+  const restored = await applyAgentConfiguration(resumed, sessionId, withRestoredSessionMode(partial.configOptions ?? [], saved), { model: "model-b", mode: "plan" })
+  assert.equal(selectedMode(restored), "plan")
+  const confirmed = await resumed.resume({ ...session, sessionId })
+  assert.equal(confirmed._meta?.currentMode, "plan")
+  assert.equal(confirmed._meta?.currentModel, "model-b")
 })
 
 test("ACP does not infer a standalone setter from an ordinary saved mode option", async () => {

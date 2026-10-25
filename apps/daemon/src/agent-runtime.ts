@@ -8,6 +8,7 @@ import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot
 import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
 import { agentConfiguration, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
+import { withRestoredSessionMode } from "./agents/session-modes.ts"
 import { AgentElicitations } from "./agent-elicitations.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
@@ -220,9 +221,12 @@ export class AgentRuntime {
       } finally {
         this.#openingConfiguration = false
       }
-      // ACP may omit the catalog on resume. Saved options still identify the
-      // setters, but their current values do not describe this provider process.
-      let configOptions = responseOptions ?? this.#availableConfiguration ?? availableConfiguration ?? savedConfiguration.options
+      // ACP may omit the catalog on resume, or return model options without modes.
+      // Saved options still identify the setters, but their current values do not
+      // describe this provider process.
+      let configOptions = responseOptions === undefined
+        ? this.#availableConfiguration ?? availableConfiguration ?? savedConfiguration.options
+        : withRestoredSessionMode(responseOptions, savedConfiguration.options)
       this.#availableConfiguration = configOptions
       configOptions = await applyAgentConfiguration(connection, providerSessionId, configOptions, requested,
         options => { this.#availableConfiguration = options }, responseOptions === undefined)

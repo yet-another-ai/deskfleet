@@ -10,6 +10,15 @@ interface SessionConfiguration {
 type SessionResponse = Pick<acp.NewSessionResponse, "configOptions" | "modes">
 const LEGACY_MODE = "deskfleet/sessionMode"
 
+/** Keep a saved standalone mode when resume returns other options but omits `modes`. */
+export function withRestoredSessionMode(live: acp.SessionConfigOption[], saved: acp.SessionConfigOption[]): acp.SessionConfigOption[] {
+  if (live.some(option => option.category === "mode" || option.id === "mode")) return live
+  const legacy = saved.find(option => option.id === "mode" && option.type === "select" && option._meta?.[LEGACY_MODE] === true)
+  if (!legacy || legacy.type !== "select") return live
+  // The saved current value describes the previous process, not this one.
+  return [...live, { ...legacy, currentValue: "" }]
+}
+
 /** Projects advertised ACP session modes into the configuration used by deskfleet. */
 export class AcpSessionModes {
   readonly #sessions = new Map<string, SessionConfiguration>()
@@ -41,10 +50,13 @@ export class AcpSessionModes {
   }
 
   #restoreModes(state: SessionConfiguration, knownOptions: acp.SessionConfigOption[] | undefined): void {
-    if (state.options != null || state.modes != null) return
+    if (state.modes != null) return
+    // Live options that already advertise a mode own the setter. A model catalog
+    // without modes is partial: the saved standalone mode still identifies set_mode.
+    if (state.options?.some(option => option.category === "mode" || option.id === "mode")) return
     const mode = knownOptions?.find(option => option.id === "mode" && option._meta?.[LEGACY_MODE] === true)
     if (mode?.type !== "select") return
-    state.options = knownOptions?.filter(option => option !== mode)
+    if (state.options == null) state.options = knownOptions?.filter(option => option !== mode)
     state.modes = {
       // The saved catalog identifies the setter, but not this process's current mode.
       currentModeId: "",
