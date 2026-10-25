@@ -74,14 +74,16 @@ tray, Web favicon, and website assets from it.
 [`compose.yaml`](../../compose.yaml) runs the supporting services; Rust, Vue,
 Electron, and the machine daemon run on the host with the locked mise toolchain
 for debugging and hot reload. No external identity-provider account is needed.
-The images are pinned to multi-architecture digests.
-PostgreSQL stays on major version 17 to preserve the development database volume;
-upgrading its major version requires a separate data migration. The coturn relay
-uses plain TCP and UDP; DTLS remains disabled because it is opt-in in coturn 4.18.
+The images are pinned to multi-architecture digests. PostgreSQL uses 18.6, the
+[latest stable release](https://www.postgresql.org/support/versioning/) verified
+on October 25, 2026. The [official PostgreSQL 18 image](https://hub.docker.com/_/postgres#pgdata)
+stores `PGDATA` at `/var/lib/postgresql/18/docker`, so both database services
+mount storage at `/var/lib/postgresql`. The coturn relay uses plain TCP and UDP;
+DTLS remains disabled because it is opt-in in coturn 4.18.
 
 | Service | Host endpoint | Data lifetime |
 | --- | --- | --- |
-| `postgres` | `127.0.0.1:55432`, database/user `deskfleet`, password `deskfleet-dev` | Named volume |
+| `postgres` | `127.0.0.1:55432`, database/user `deskfleet`, password `deskfleet-dev` | Named volume `postgres-18-data` |
 | `postgres-test` | `127.0.0.1:55433`, database/user `deskfleet_test`, password `deskfleet-test` | Temporary memory filesystem, cleared on stop |
 | `oidc` (Dex) | `http://127.0.0.1:5556/dex` | Named volume for signing keys and login state |
 | `turn` (coturn) | `127.0.0.1:3478` TCP/UDP, relay ports `49160–49180` UDP | Temporary |
@@ -133,9 +135,33 @@ mise run infra:down
 
 Stopping preserves the development PostgreSQL and Dex volumes. To clear only
 test data, stop `postgres-test`, then bring that service up again with `--wait`.
-`docker compose down --volumes` also deletes the development database and Dex
-state; use it only when intentionally resetting the whole local environment.
 The daemon's host data directory is separate and is never changed by Compose.
+
+### Fresh development database and reset
+
+The PostgreSQL 18 upgrade uses a new `postgres-18-data` volume. On the first
+`mise run infra:up`, it initializes an empty database; the next
+`mise -E development run dev` applies the backend schema. Sign in and create a
+new team to resume development. Local development data is disposable, so this
+upgrade does not migrate rows from PostgreSQL 17. The previous `postgres-data`
+volume is left untouched and must not be attached to the PostgreSQL 18 service.
+
+To reset only the PostgreSQL 18 development database, stop the development API
+first, then run these commands from the repository root with the default
+`deskfleet-dev` Compose project:
+
+```sh
+docker compose stop postgres
+docker compose rm -f postgres
+docker volume rm deskfleet-dev_postgres-18-data
+docker compose up -d --wait postgres
+mise -E development run dev
+```
+
+This deletes only that development database's rows; Dex login state and other
+volumes remain intact. If using a custom Compose project name, use its matching
+PostgreSQL volume name instead. Managed production databases follow their own
+upgrade process; these commands apply only to the local development stack.
 
 ## Toolchain
 
