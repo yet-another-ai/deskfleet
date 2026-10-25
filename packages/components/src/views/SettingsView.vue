@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Bot, SlidersHorizontal, Users } from "@lucide/vue"
+import { client } from "@deskfleet/client/platform"
+import { Bell, Bot, SlidersHorizontal, Users } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRouter } from "vue-router"
 import SettingsLayout from "../components/settings/SettingsLayout.vue"
@@ -22,6 +23,7 @@ function leave(): void {
   <SettingsLayout @back="leave">
     <template #nav>
       <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
+      <SidebarLink v-if="client.platform !== 'web'" :to="{ name: 'settings-notifications' }" :icon="Bell" :label="t('settings.notifications')" replace />
       <SidebarLink :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
       <SidebarLink v-if="account?.team.value" :to="{ name: 'settings-team' }" :icon="Users" :label="t('team.settings')" replace />
     </template>

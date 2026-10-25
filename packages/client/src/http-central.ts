@@ -46,7 +46,11 @@ export class HttpCentralClient implements CentralApi {
   }
   async setServer(address: string): Promise<AccountState> {
     const serverUrl = serverAddress(address)
-    if (serverUrl !== this.#account.serverUrl) { this.#disconnect(); await this.#save({ serverUrl }) }
+    if (serverUrl !== this.#account.serverUrl) {
+      this.#disconnect()
+      await this.#save({ serverUrl })
+      this.#emit({ type: "accountChanged" })
+    }
     return this.status()
   }
   async login(): Promise<void> { await this.#options.authorize(this) }

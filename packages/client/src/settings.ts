@@ -12,6 +12,12 @@ export interface KeepAwakeState {
   enabled: boolean
 }
 
+export interface NotificationSettings {
+  enabled: boolean
+  taskCompleted: boolean
+  taskNeedsInput: boolean
+}
+
 export type SettingsResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 export interface SettingsApi extends LocalAgentSettingsApi {
@@ -19,4 +25,6 @@ export interface SettingsApi extends LocalAgentSettingsApi {
   setLaunchAtStartup(enabled: boolean): Promise<LaunchAtStartupState>
   getKeepAwake(): Promise<KeepAwakeState>
   setKeepAwake(enabled: boolean): Promise<KeepAwakeState>
+  getNotifications(): Promise<NotificationSettings>
+  setNotifications(settings: NotificationSettings): Promise<NotificationSettings>
 }

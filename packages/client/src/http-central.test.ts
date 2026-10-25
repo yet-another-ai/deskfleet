@@ -52,6 +52,16 @@ test("collects Session summary pages without merging equal IDs from another mach
   expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/machines/remote7/sessions?after=1&limit=200", expect.anything())
 })
 
+test("changing servers invalidates account observers before another account connects", async () => {
+  const f = setup()
+  const events = vi.fn()
+  f.client.onEvent(events)
+  expect(await f.client.setServer("https://another.example")).toEqual({ serverUrl: "https://another.example", user: undefined })
+  expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
+  expect(f.sockets[0]!.close).toHaveBeenCalledOnce()
+  expect(f.persist).toHaveBeenCalledExactlyOnceWith({ serverUrl: "https://another.example" })
+})
+
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {
   const f = setup()
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))

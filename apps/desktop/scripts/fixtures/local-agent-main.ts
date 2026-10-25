@@ -9,6 +9,7 @@ import { readDaemonDiscovery } from "@deskfleet/daemon/control-discovery"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
 import { keepRunningInBackground } from "../../src/main/lifecycle.ts"
 import { KeepAwakeController } from "../../src/main/keep-awake.ts"
+import { NotificationSettingsController } from "../../src/main/notification-settings.ts"
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
 import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
@@ -66,6 +67,29 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
   async function leaveSettings(): Promise<void> {
     [...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "Back to app")!.click()
     await until(() => !!settingsButton(), "Return from Settings")
+  }
+  async function verifyNotifications(): Promise<void> {
+    const link = [...document.querySelectorAll("nav a")].find(link => link.textContent?.trim() === "Notifications") as HTMLAnchorElement | undefined
+    require(link, "Missing Notifications settings section")
+    link.click()
+    const switchFor = (key: string) => document.querySelector<HTMLButtonElement>(`[aria-labelledby="notifications-${key}-label"]`)!
+    await until(() => !!switchFor("enabled") && !switchFor("enabled").disabled, "Notification preferences")
+    if (context.phase === "start") {
+      require(["enabled", "taskCompleted", "taskNeedsInput"].every(key => switchFor(key).getAttribute("aria-checked") === "true"), "Notifications must default on")
+      switchFor("taskCompleted").click()
+      await until(() => !switchFor("enabled").disabled && switchFor("taskCompleted").getAttribute("aria-checked") === "false", "Saved completion preference")
+      switchFor("enabled").click()
+      await until(() => !switchFor("enabled").disabled && switchFor("enabled").getAttribute("aria-checked") === "false", "Saved overall preference")
+      require(switchFor("taskCompleted").disabled && switchFor("taskNeedsInput").disabled, "Overall preference must disable category switches")
+    } else {
+      require(switchFor("enabled").getAttribute("aria-checked") === "false", "Overall notification preference must survive restart")
+      switchFor("enabled").click()
+      await until(() => !switchFor("taskCompleted").disabled, "Re-enabled notifications")
+    }
+    const saved = await api.settings.getNotifications()
+    require(saved.enabled === (context.phase !== "start") && !saved.taskCompleted && saved.taskNeedsInput, "Notification choices must persist independently")
+    await leaveSettings()
+    await openSettings()
   }
   async function verifyDeniedPermission(): Promise<void> {
     await until(() => !!document.querySelector('[data-screen-capture-permission="denied"]'), "Screen permission denial")
@@ -230,6 +254,7 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
   await until(() => !!addWorkspace() && addWorkspace()!.getAttribute("aria-disabled") !== "true", "Initial catalog connection")
   await openSettings()
   await verifyDeniedPermission()
+  await verifyNotifications()
   const keepAwakeEnabled = context.phase === "start"
   require(keepAwakeToggle()!.getAttribute("aria-checked") === String(!keepAwakeEnabled), "Keep Awake must default off and restore the saved preference on restart")
   keepAwakeToggle()!.click()
@@ -297,7 +322,7 @@ void app.whenReady().then(async () => {
     stop(id) { return powerSaveBlocker.stop(id) },
   })
   installDesktopMediaIpc()
-  installSettings(controller, keepAwake)
+  installSettings(controller, keepAwake, new NotificationSettingsController(join(app.getPath("userData"), "notifications.json")))
   // Quitting the app closes the daemon it hosts, as client.ts does on will-quit.
   const exit = () => { void controller.close().finally(() => { keepAwake.close(); app.exit(0) }) }
   process.on("message", exit)

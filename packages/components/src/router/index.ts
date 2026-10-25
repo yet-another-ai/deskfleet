@@ -66,6 +66,11 @@ export const router = createRouter({
           component: () => import("../components/settings/PreferencesSettings.vue"),
         },
         {
+          path: "notifications",
+          name: "settings-notifications",
+          component: () => import("../components/settings/NotificationsSettings.vue"),
+        },
+        {
           path: "agents",
           name: "settings-agents",
           component: () => import("../components/settings/AgentsSettings.vue"),

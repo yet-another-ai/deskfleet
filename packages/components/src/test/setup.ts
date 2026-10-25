@@ -29,6 +29,8 @@ const api: DeskfleetDesktopApi = {
     setLaunchAtStartup: async (enabled) => ({ available: true, enabled }),
     getKeepAwake: async () => ({ enabled: false }),
     setKeepAwake: async (enabled) => ({ enabled }),
+    getNotifications: async () => ({ enabled: true, taskCompleted: true, taskNeedsInput: true }),
+    setNotifications: async (settings) => settings,
     onChanged: () => () => {},
   },
   catalog: {

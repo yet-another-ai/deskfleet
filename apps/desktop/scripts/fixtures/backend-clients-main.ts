@@ -7,6 +7,7 @@ import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/deskt
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
 import { KeepAwakeController } from "../../src/main/keep-awake.ts"
+import { NotificationSettingsController } from "../../src/main/notification-settings.ts"
 import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
@@ -218,7 +219,7 @@ void app.whenReady().then(async () => {
     installDesktopMediaIpc()
     controller = new LocalAgentController(join(context.profileDirectory, "settings.json"), createLocalAgentRuntime({ directory: context.daemonDirectory }), publishLocalAgentState)
     keepAwake = new KeepAwakeController(join(context.profileDirectory, "keep-awake.json"), powerSaveBlocker)
-    installSettings(controller, keepAwake)
+    installSettings(controller, keepAwake, new NotificationSettingsController(join(app.getPath("userData"), "notifications.json")))
     keepAwake.get()
     await controller.initialize()
     await installCentralAccount({ openAuthorization: async url => {

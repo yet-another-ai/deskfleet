@@ -281,6 +281,30 @@ The main process saves the preference in `keep-awake.json` under Electron's
 `powerSaveBlocker` with `prevent-app-suspension`, released when the setting is
 disabled or the app quits.
 
+## Desktop notifications
+
+**Settings → Notifications** has an overall desktop notification switch and
+separate switches for completed tasks and tasks needing a response. All three
+default to enabled. Disabling the overall switch preserves the category choices.
+These preferences apply to this installation and are saved in `notifications.json`
+under Electron's `userData` directory. The Web client does not expose them.
+
+The main process observes synchronized Session snapshots for the signed-in
+account's accessible machines, including machines outside the current view.
+It shows a native notification when a turn completes successfully or a new
+question or permission request awaits a response. Cancelled, interrupted, and
+failed turns do not produce completion notifications. Existing history is
+baselined at startup and newly discovered machines; subsequent snapshots and
+reconnections do not repeat the same notification. Requests already resolved
+when synchronization arrives do not notify. When a previously unseen Session
+arrives after the initial read, its event timestamps exclude activity predating
+monitoring; this assumes the desktop and executing machine clocks agree.
+
+Notifications continue while the window is hidden in the tray. Clicking one
+shows the app. Delivery depends on backend synchronization and the operating
+system's notification settings. Electron's native notification API requires a
+signed macOS application; see the [Electron notification documentation](https://www.electronjs.org/docs/latest/api/notification).
+
 ## Local Agent
 
 **Settings → Preferences → Run local Agent** is enabled by default. The main process stores
@@ -406,7 +430,8 @@ verify the saved catalog before deleting it.
 The local Agent smoke uses a temporary profile and daemon directory with the real
 built renderer, preload, Settings controller, and hosted daemon. It verifies
 default startup, switching off and on, catalog refresh, terminal interruption on
-shutdown, the daemon surviving its window but not the app, a fresh daemon on
+shutdown, notification category choices and master-switch persistence across
+restart, the daemon surviving its window but not the app, a fresh daemon on
 relaunch, the persisted disabled preference, and reuse of a standalone daemon
 that outlives the app.
 

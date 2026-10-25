@@ -9,6 +9,9 @@ import { keepRunningInBackground } from "./lifecycle.ts"
 import { KeepAwakeController } from "./keep-awake.ts"
 import { LocalAgentController } from "./local-agent-controller.ts"
 import { createLocalAgentRuntime } from "./local-agent-runtime.ts"
+import { NotificationSettingsController } from "./notification-settings.ts"
+import { DesktopNotifications } from "./notifications.ts"
+import { TaskNotificationMonitor } from "./task-notification-monitor.ts"
 import { installSettings, publishLocalAgentState } from "./settings.ts"
 import {
   denyChromiumPermissions,
@@ -29,7 +32,7 @@ function start(): void {
     setMainLocale(resolveAppLocale(app.getPreferredSystemLanguages()))
     installRendererProtocol()
     installDesktopMediaIpc()
-    await installCentralAccount()
+    const central = await installCentralAccount()
     denyChromiumPermissions()
     // The dev runner, service managers, and session shutdown stop the client with
     // signals. Electron's own handlers, installed during startup, request an
@@ -45,12 +48,19 @@ function start(): void {
       publishLocalAgentState,
     )
     const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), powerSaveBlocker)
-    installSettings(localAgent, keepAwake)
+    const notificationSettings = new NotificationSettingsController(join(app.getPath("userData"), "notifications.json"))
+    const notifications = new DesktopNotifications(notificationSettings, show)
+    const notificationMonitor = new TaskNotificationMonitor(central, notification => notifications.notify(notification), console.error)
+    installSettings(localAgent, keepAwake, notificationSettings)
+    if (process.platform === "win32") app.setAppUserModelId("io.github.yet-another-ai.deskfleet")
+    void notificationMonitor.start().catch(console.error)
     // The hosted daemon outlives windows but not the app. Exit once it has
     // released its sessions, terminals, and discovery.
     let closing: Promise<void> | undefined
     app.on("will-quit", (event) => {
       event.preventDefault()
+      notificationMonitor.close()
+      notifications.close()
       closing ??= localAgent.close().finally(() => keepAwake.close()).then(
         () => app.exit(0),
         (error: unknown) => { console.error(error); app.exit(1) },

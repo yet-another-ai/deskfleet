@@ -22,6 +22,13 @@
   },
   "settings": {
     "preferences": "偏好设置",
+    "notifications": "通知",
+    "notificationsEnabled": "桌面通知",
+    "notificationsDescription": "允许 deskfleet 在本机发送通知。",
+    "notificationTaskCompleted": "任务完成",
+    "notificationTaskCompletedDescription": "智能体完成任务时通知我。",
+    "notificationTaskNeedsInput": "任务需要回应",
+    "notificationTaskNeedsInputDescription": "智能体因等待问题回答或操作批准而暂停时通知我。",
     "thisComputer": "本机",
     "launchAtStartup": "开机自启",
     "launchAtStartupDescription": "登录系统时自动打开 deskfleet。",
@@ -47,6 +54,10 @@
     "screenCaptureDenied": "请在 macOS 系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许访问，然后关闭并重新开启本地 Agent。",
     "screenCaptureError": "无法请求屏幕与系统音频录制权限。请关闭并重新开启本地 Agent 以重试。",
     "agents": "Agents"
+  },
+  "notification": {
+    "taskCompleted": "任务已完成",
+    "taskNeedsInput": "任务需要你回应"
   },
   "machine": {
     "offline": "离线",

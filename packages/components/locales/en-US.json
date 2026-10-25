@@ -22,6 +22,13 @@
   },
   "settings": {
     "preferences": "Preferences",
+    "notifications": "Notifications",
+    "notificationsEnabled": "Desktop notifications",
+    "notificationsDescription": "Allow deskfleet to send notifications on this computer.",
+    "notificationTaskCompleted": "Task completed",
+    "notificationTaskCompletedDescription": "Notify me when an agent finishes a task.",
+    "notificationTaskNeedsInput": "Task needs input",
+    "notificationTaskNeedsInputDescription": "Notify me when an agent pauses for a question or approval.",
     "thisComputer": "This computer",
     "launchAtStartup": "Launch at startup",
     "launchAtStartupDescription": "Open deskfleet automatically when you log in.",
@@ -47,6 +54,10 @@
     "screenCaptureDenied": "Allow access in macOS System Settings → Privacy & Security → Screen & System Audio Recording, then turn the local Agent off and on.",
     "screenCaptureError": "Could not request screen and system audio access. Turn the local Agent off and on to retry.",
     "agents": "Agents"
+  },
+  "notification": {
+    "taskCompleted": "Task completed",
+    "taskNeedsInput": "Task needs input"
   },
   "machine": {
     "offline": "Offline",

@@ -5,6 +5,7 @@ import { isDesktopMediaSender } from "./desktop-media.ts"
 import { getLaunchAtStartup, setLaunchAtStartup } from "./launch-at-startup.ts"
 import type { KeepAwakeController } from "./keep-awake.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"
+import { validateNotificationSettings, type NotificationSettingsController } from "./notification-settings.ts"
 
 const renderers = new Set<WebContents>()
 
@@ -20,7 +21,7 @@ export function publishLocalAgentState(state: LocalAgentState): void {
   }
 }
 
-export function installSettings(controller: LocalAgentController, keepAwake: KeepAwakeController): void {
+export function installSettings(controller: LocalAgentController, keepAwake: KeepAwakeController, notifications: NotificationSettingsController): void {
   ipcMain.handle(SETTINGS_CHANNEL, async (event, method: unknown, enabled: unknown) => {
     if (!renderers.has(event.sender) || !isDesktopMediaSender(event)) {
       throw new Error("Settings IPC is restricted to the main renderer")
@@ -39,6 +40,9 @@ export function installSettings(controller: LocalAgentController, keepAwake: Kee
         case "setKeepAwake":
           if (typeof enabled !== "boolean") throw new Error("Keep Awake setting must be a boolean")
           return { ok: true, value: keepAwake.setEnabled(enabled) }
+        case "getNotifications": return { ok: true, value: notifications.get() }
+        case "setNotifications":
+          return { ok: true, value: notifications.set(validateNotificationSettings(enabled)) }
         default: throw new Error("Unknown settings operation")
       }
     } catch (error) {

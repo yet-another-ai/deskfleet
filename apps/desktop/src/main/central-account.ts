@@ -71,7 +71,7 @@ async function daemonCall(method: "centralStatus" | "centralPrepareEnrollment" |
   finally { client.close() }
 }
 
-export async function installCentralAccount(options: { openAuthorization?: (url: string) => Promise<unknown> } = {}): Promise<void> {
+export async function installCentralAccount(options: { openAuthorization?: (url: string) => Promise<unknown> } = {}): Promise<HttpCentralClient> {
   const path = join(app.getPath("userData"), "account.json")
   const client = new HttpCentralClient({ account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal) })
   const localEnrollment = () => daemonCall("centralStatus", {})
@@ -91,4 +91,5 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
   })
   client.onEvent(event => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(CENTRAL_EVENT, event) })
   app.once("will-quit", () => client.dispose())
+  return client
 }

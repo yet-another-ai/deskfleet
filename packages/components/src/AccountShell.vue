@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SlidersHorizontal, Users } from "@lucide/vue"
+import { Bell, SlidersHorizontal, Users } from "@lucide/vue"
 import { onBeforeUnmount, provide } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
@@ -10,12 +10,13 @@ import SignIn from "./components/account/SignIn.vue"
 import TeamAccessDialog from "./components/account/TeamAccessDialog.vue"
 import TeamOnboarding from "./components/account/TeamOnboarding.vue"
 import PreferencesSettings from "./components/settings/PreferencesSettings.vue"
+import NotificationsSettings from "./components/settings/NotificationsSettings.vue"
 import SettingsLayout from "./components/settings/SettingsLayout.vue"
 import AccountFooter from "./components/sidebar/AccountFooter.vue"
 import AccountNotices from "./components/sidebar/AccountNotices.vue"
 import TeamSwitcher from "./components/sidebar/TeamSwitcher.vue"
 import TeamSettings from "./components/team/TeamSettings.vue"
-import { accountSessionKey, createAccountSession } from "./composables/useAccountSession.ts"
+import { accountSessionKey, createAccountSession, type AccountSettingsSection } from "./composables/useAccountSession.ts"
 
 const props = defineProps<{ host: DeskfleetDesktopApi }>()
 const { t } = useI18n()
@@ -23,7 +24,7 @@ const session = createAccountSession(props.host.central!, props.host.initialErro
 const { ready, account, teams, team, machine, dialog, shellSettings } = session
 provide(accountSessionKey, session)
 onBeforeUnmount(session.dispose)
-const section = (value: "preferences" | "team") => [
+const section = (value: AccountSettingsSection) => [
   "ui-nav-item w-full cursor-pointer px-2.5 text-left",
   shellSettings.value === value && "ui-nav-active",
 ]
@@ -38,9 +39,11 @@ const section = (value: "preferences" | "team") => [
       <SettingsLayout v-else-if="shellSettings" @back="shellSettings = undefined">
         <template #nav>
           <button type="button" :class="section('preferences')" @click="shellSettings = 'preferences'"><SlidersHorizontal :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.preferences") }}</button>
+          <button v-if="host.platform !== 'web'" type="button" :class="section('notifications')" @click="shellSettings = 'notifications'"><Bell :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.notifications") }}</button>
           <button v-if="team" type="button" :class="section('team')" @click="shellSettings = 'team'"><Users :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("team.settings") }}</button>
         </template>
         <TeamSettings v-if="shellSettings === 'team'" />
+        <NotificationsSettings v-else-if="shellSettings === 'notifications'" />
         <PreferencesSettings v-else />
       </SettingsLayout>
       <div v-else class="flex min-h-0 flex-1">

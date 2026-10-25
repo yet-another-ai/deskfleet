@@ -142,6 +142,24 @@ test("a Team without machines still opens Team settings beside Preferences", asy
   expect(fake.central.members).toHaveBeenCalledWith("team-1")
 })
 
+test.each(["darwin", "web"] as const)("notification settings are available without machines only on desktop (%s)", async (platform) => {
+  const fake = fakeCentral()
+  mountShell(fake.central, platform)
+  await flushPromises()
+  await view!.get('button[aria-label="Settings"]').trigger("click")
+  await flushPromises()
+  const notifications = view!.findAll('nav[aria-label="Settings sections"] button').find(button => button.text() === "Notifications")
+  expect(!!notifications).toBe(platform !== "web")
+  if (notifications) {
+    await notifications.trigger("click")
+    await flushPromises()
+    expect(view!.get("h1").text()).toBe("Notifications")
+    expect(view!.findAll('[role="switch"]')).toHaveLength(3)
+    await buttonText("Back to app")!.trigger("click")
+    expect(view!.get("main h1").text()).toBe("Add a machine to Design team")
+  }
+})
+
 test("a removed computer offers reconnection, which opens the new machine", async () => {
   const fake = fakeCentral({
     signedIn: false,

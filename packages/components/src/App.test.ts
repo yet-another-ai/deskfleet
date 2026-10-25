@@ -271,6 +271,21 @@ test("settings replaces the app layout, returns to the previous page, and refres
   expect(listeners.size).toBe(0)
 })
 
+test("notifications have a dedicated settings section and retain the return destination", async () => {
+  const view = await mountApp(`/workspaces/${workspaceId}`)
+  await view.get('button[aria-label="Settings"]').trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-preferences"))
+  await flushPromises()
+  await view.get('main nav a[href="#/settings/notifications"]').trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-notifications"))
+  await flushPromises()
+  expect(view.get('main nav [aria-current="page"]').text()).toBe("Notifications")
+  expect(view.get("main h1").text()).toBe("Notifications")
+  expect(view.findAll('main [role="switch"]')).toHaveLength(3)
+  await button(view, "Back to app").trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
+})
+
 test("sidebar and details panel controls retain their layout behavior", async () => {
   const wrapper = await mountApp()
   const [details, changes] = panel(wrapper).findAll('[role="tab"]')
