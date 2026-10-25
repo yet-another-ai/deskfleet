@@ -82,7 +82,8 @@ function keydown(event: KeyboardEvent): void {
       </template>
       <span v-if="changes.additions || changes.deletions" class="ml-auto shrink-0 rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></span>
     </div>
-    <div class="rounded-2xl border border-ui-border bg-ui-surface shadow-ui-card transition-colors focus-within:border-ui-accent/60">
+    <div class="relative rounded-2xl border border-ui-border bg-ui-surface shadow-ui-card transition-colors focus-within:border-ui-accent/60">
+      <span v-if="showTarget && submitting" class="composer-creation-beam" aria-hidden="true" />
       <textarea ref="textarea" v-model="draft" rows="2" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @keydown="keydown" />
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <AgentConfigurationSelector v-if="location" :workspace-id="location.workspace.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" />
@@ -93,3 +94,63 @@ function keydown(event: KeyboardEvent): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+@property --deskfleet-composer-beam-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: true;
+}
+
+.composer-creation-beam {
+  --beam-colors:
+    radial-gradient(ellipse at 15% 0%, light-dark(#3478d4, #4996ff), transparent 55%),
+    radial-gradient(ellipse at 75% 0%, light-dark(#ce753b, #ef8d51), transparent 50%),
+    radial-gradient(ellipse at 100% 65%, light-dark(#bf4c9b, #dc6bb8), transparent 50%),
+    radial-gradient(ellipse at 60% 100%, light-dark(#7652d5, #9171f8), transparent 55%),
+    radial-gradient(ellipse at 0% 80%, light-dark(#259886, #43baa8), transparent 50%);
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  border-radius: inherit;
+  /* Clip the decoration only: the composer's menus must remain free to overflow. */
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: conic-gradient(
+    from var(--deskfleet-composer-beam-angle),
+    transparent 0% 15%, #000 45% 65%, transparent 95%
+  );
+  animation: composer-beam-sweep 2.3s linear infinite, composer-beam-appear 180ms ease-out;
+}
+
+.composer-creation-beam::before,
+.composer-creation-beam::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--beam-colors);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+.composer-creation-beam::before {
+  padding: 1.5px;
+  opacity: 0.9;
+}
+
+.composer-creation-beam::after {
+  padding: 6px;
+  filter: blur(6px);
+  opacity: 0.3;
+}
+
+@keyframes composer-beam-sweep {
+  to { --deskfleet-composer-beam-angle: 360deg; }
+}
+
+@keyframes composer-beam-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+</style>
