@@ -8,6 +8,7 @@ import { CATALOG_CHANGED_EVENT } from "../../../../packages/client/src/catalog.t
 import { PROVIDERS_CHANGED_EVENT } from "../../../../packages/client/src/providers.ts"
 import type { LocalAgentState } from "../../../../packages/client/src/local-agent.ts"
 import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type SettingsResult } from "../../../../packages/client/src/settings.ts"
+import { filesApi } from "./files.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -44,6 +45,7 @@ return {
   ...(central ? { central } : {}),
   platform: process.platform as DeskfleetDesktopApi["platform"],
   locale: isAppLocale(locale) ? locale : DEFAULT_LOCALE,
+  files: filesApi(),
   settings: {
     get: () => invokeSettings("get"),
     setLocalAgentEnabled: (enabled) => invokeSettings("setLocalAgentEnabled", enabled),

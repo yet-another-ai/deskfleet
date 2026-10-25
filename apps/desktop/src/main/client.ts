@@ -1,4 +1,5 @@
 import { installCentralAccount } from "./central-account.ts"
+import { installFiles } from "./files.ts"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { join } from "node:path"
 import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
@@ -34,6 +35,7 @@ function start(): void {
     installRendererProtocol()
     installDesktopMediaIpc()
     const central = await installCentralAccount()
+    const files = installFiles(central)
     denyChromiumPermissions()
     // The dev runner, service managers, and session shutdown stop the client with
     // signals. Electron's own handlers, installed during startup, request an
@@ -62,7 +64,7 @@ function start(): void {
       event.preventDefault()
       notificationMonitor.close()
       notifications.close()
-      closing ??= localAgent.close().finally(() => keepAwake.close()).then(
+      closing ??= Promise.all([localAgent.close(), files.close()]).finally(() => keepAwake.close()).then(
         () => app.exit(0),
         (error: unknown) => { console.error(error); app.exit(1) },
       )

@@ -17,7 +17,10 @@
     "package:dir": "electron-builder --dir --publish never"
   },
   "devDependencies": {
+    "@deskfleet/client": "workspace:*",
+    "@deskfleet/components": "workspace:*",
     "@deskfleet/daemon": "workspace:*",
+    "@deskfleet/native": "workspace:*",
     "@intlify/unplugin-vue-i18n": "11.2.7",
     "@lobehub/icons-static-svg": "1.99.0",
     "@lucide/vue": "1.61.0",
@@ -41,8 +44,6 @@
     "vue": "3.6.0-rc.13",
     "vue-i18n": "11.4.16",
     "vue-router": "5.4.0",
-    "vue-tsc": "3.3.13",
-    "@deskfleet/client": "workspace:*",
-    "@deskfleet/components": "workspace:*"
+    "vue-tsc": "3.3.13"
   }
 }

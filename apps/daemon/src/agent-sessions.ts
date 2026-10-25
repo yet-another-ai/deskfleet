@@ -97,6 +97,15 @@ export class AgentSessions {
   }
 
   onEvent(listener: (event: AgentEvent) => void): () => void { return this.journal.onEvent(listener) }
+
+  async sessionDirectory(sessionId: string): Promise<string> {
+    const { session } = await this.journal.read(id(sessionId, "Session ID"))
+    if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
+    const worktree = await this.#catalog.sessionWorktree(sessionId)
+    const directory = worktree?.directories[0]?.path
+    if (!directory) throw new Error("Session worktree is unavailable")
+    return directory
+  }
   onSessionArchive(listener: (worktreeId: string) => Promise<void>): () => void {
     this.#archiveListeners.add(listener)
     return () => this.#archiveListeners.delete(listener)

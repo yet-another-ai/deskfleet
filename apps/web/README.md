@@ -38,6 +38,12 @@ revocation or authorization expiry closes it. Reconnecting creates a new grant.
 Machine selection replaces the target's application scope, so equal local IDs
 from different daemon databases cannot share cached state.
 
+The file transfer queue lives outside that selected-machine scope. Its local
+pane requires explicit browser directory access and uses OPFS staging; it lasts
+only while the page remains open. Agent file/image references use the executing
+machine's files peer. See [files and transfers](../../agents/docs/files.md) for
+browser support, destination commit limits, and conflict behavior.
+
 When a machine is offline, the application reads synchronized conversation
 history from the backend, including its completeness watermark. Live operations
 remain unavailable. Archiving a Session retains its history and working context;

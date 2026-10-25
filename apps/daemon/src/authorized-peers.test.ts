@@ -7,6 +7,10 @@ import type { AgentChannelSessions } from "./agent-channel.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import type { MachineCredentials, PeerAuthorization } from "./central-protocol.ts"
 import type { TerminalSessions } from "./terminals.ts"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { encodeFileFrame, FileFrameDecoder } from "./files-wire.ts"
 
 const sdp = "v=0\r\na=fingerprint:sha-256 AA:BB:CC\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\na=ice-ufrag:test\r\n"
 const identity = { originId: "origin", machineId: "1" }
@@ -23,11 +27,12 @@ function grant(): PeerAuthorization {
 function fixture() {
   let now = epoch, closed = false
   const sent: string[] = [], events: PeerEvent[] = [], calls: { method: string; actor: AgentActor }[] = []
+  const packets: Buffer[] = []
   let waiting: ((event: PeerEvent | null) => void) | undefined
   const push = (event: PeerEvent) => { if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) } else events.push(event) }
   const native = {
     answerOffer: async () => sdp, addIceCandidate: async () => {}, startDesktop: async () => {},
-    sendData: async (_label: string, data: Buffer) => { sent.push(data.toString()) },
+    sendData: async (_label: string, data: Buffer) => { sent.push(data.toString()); packets.push(data) },
     nextEvent: async () => events.shift() ?? (closed ? null : new Promise<PeerEvent | null>(resolve => { waiting = resolve })),
   } as unknown as NativePeer
   const agents: AgentChannelSessions = {
@@ -43,7 +48,7 @@ function fixture() {
     push({ kind: "data", label: "deskfleet-acp", data: Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n") })
     for (let tries = 0; tries < 100 && !sent.some(value => value.includes(`"id":${id},`)); tries++) await delay(1)
   }
-  return { peers, calls, sent, rpc, push, expired: () => { now += 86_400_001 }, closed: () => closed }
+  return { peers, calls, sent, packets, rpc, push, expired: () => { now += 86_400_001 }, closed: () => closed }
 }
 
 test("peer grant binds target, user, purpose, and a maximum 24-hour lifetime", async () => {
@@ -96,4 +101,22 @@ test("native ICE without ufrag or mid binds through its SDP media index", () => 
   assert.deepEqual(normalizeCandidate({ candidate: "candidate:1", sdpMid: "", sdpMlineIndex: 0 }, sdp), { candidate: "candidate:1", sdpMid: "0", sdpMlineIndex: 0 })
   assert.throws(() => normalizeCandidate({ candidate: "candidate:1", sdpMid: "wrong", sdpMlineIndex: 0 }, sdp), /media binding/)
   assert.throws(() => normalizeCandidate({ candidate: "candidate:1", sdpMlineIndex: 0, usernameFragment: "old" }, sdp), /another negotiation/)
+})
+
+test("files peers route binary reads and enforce a separate write action", async context => {
+  const f = fixture()
+  const directory = await mkdtemp(join(tmpdir(), "deskfleet-file-peer-"))
+  context.after(async () => { await f.peers.closeAll(); await rm(directory, { recursive: true, force: true }) })
+  const path = join(directory, "source.txt")
+  await writeFile(path, "hello")
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "files", actions: ["files:read"] }, iceServers: [] })
+  f.push({ kind: "data", label: "deskfleet-files", data: Buffer.from(encodeFileFrame({ id: 1, method: "read", params: { path, offset: 0, length: 5 } })) })
+  for (let tries = 0; tries < 100 && !f.packets.length; tries++) await delay(1)
+  const decoder = new FileFrameDecoder()
+  const replies = f.packets.flatMap(packet => decoder.push(packet))
+  assert.equal(Buffer.from(replies[0]!.data).toString(), "hello")
+  f.push({ kind: "data", label: "deskfleet-files", data: Buffer.from(encodeFileFrame({ id: 2, method: "begin", params: { directory, name: "blocked", kind: "file", conflict: "ask" } })) })
+  for (let tries = 0; tries < 100 && !f.closed(); tries++) await delay(1)
+  assert.equal(f.closed(), true)
+  assert.equal(f.calls.length, 0)
 })

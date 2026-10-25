@@ -48,7 +48,7 @@ export interface CentralApi {
   session(machineId: string, sessionId: string): Promise<{ snapshot: AgentSnapshot; lastEventSeq: string; lastObservedAt: string }>
   events(machineId: string, sessionId: string, after: string, limit: number): Promise<{ events: AgentEvent[]; lastEventSeq: string }>
   rpc<T = unknown>(machineId: string, method: string, params: unknown): Promise<T>
-  createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop"): Promise<PeerGrant>
+  createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files"): Promise<PeerGrant>
   offerPeer(peerId: string, sdp: string, options?: unknown): Promise<{ sdp: string }>
   startPeer(peerId: string, options: { displayId: number }): Promise<void>
   candidatePeer(peerId: string, candidate: IceCandidate): Promise<void>

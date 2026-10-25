@@ -127,6 +127,11 @@ run = "node scripts/build-sea.ts"
 description = "Verify an isolated SEA executable without an installed Node.js"
 run = "node scripts/smoke-daemon.ts"
 
+[tasks."files:benchmark"]
+description = "Measure native WebRTC file upload/download throughput with SHA-256 verification"
+depends = ["native:debug"]
+run = "node scripts/benchmark-files.ts"
+
 [tasks."desktop:dev"]
 description = "Run the Electron desktop app with Vite watchers"
 depends = ["native:debug"]

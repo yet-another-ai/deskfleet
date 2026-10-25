@@ -541,5 +541,37 @@
     "credentialsWarning": "These credentials are shown only once. Anyone who has them can act as this machine.",
     "emptyTitle": "Add a machine to {team}",
     "emptyDescription": "Team members run agents and open terminals on the team’s machines. Connect this computer or a server to get started."
+  },
+  "files": {
+    "title": "File transfer",
+    "local": "This computer",
+    "chooseFolder": "Choose folder",
+    "refresh": "Refresh",
+    "select": "Select {name}",
+    "empty": "This folder is empty.",
+    "close": "Close",
+    "send": "Send to remote",
+    "receive": "Download to this computer",
+    "queue": "Transfer queue",
+    "noTransfers": "No transfers",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "keepBoth": "Keep both",
+    "skip": "Skip",
+    "replace": "Replace",
+    "loadingResource": "Loading image…",
+    "imageUnavailable": "Image unavailable",
+    "resourceUnavailable": "This resource is unavailable. Connect to its machine and try again.",
+    "notImage": "This file cannot be displayed as an image.",
+    "state": {
+      "queued": "Queued",
+      "preparing": "Preparing",
+      "transferring": "Transferring",
+      "completed": "Complete",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "conflict": "Exists"
+    },
+    "showHidden": "Show hidden items"
   }
 }

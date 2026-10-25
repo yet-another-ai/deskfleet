@@ -76,6 +76,7 @@ pub async fn create(
         "agent" => vec!["agent:read", "agent:execute", "git:read"],
         "terminal" => vec!["terminal:read", "terminal:write"],
         "desktop" => vec!["desktop:stream"],
+        "files" => vec!["files:read", "files:write"],
         _ => return Err(ApiError::bad("unsupported peer purpose")),
     };
     let now = now_ms();

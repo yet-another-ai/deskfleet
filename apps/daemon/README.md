@@ -4,7 +4,9 @@
 or packaged as a standalone SEA executable for headless machines. It owns local
 Workspace configuration, ACP providers, Session execution, terminals, native
 WebRTC, and the authoritative SQLite journal. The central backend authorizes
-management operations and stores queryable catalog/history replicas.
+management operations and stores queryable catalog/history replicas. The daemon's
+[file service](../../agents/docs/files.md) serves authorized file transfers and
+Agent Markdown resources over an independent files WebRTC peer.
 
 ## Development and enrollment
 

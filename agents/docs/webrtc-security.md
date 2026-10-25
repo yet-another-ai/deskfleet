@@ -54,7 +54,7 @@ The client is the offerer and the daemon is the answerer, matching the existing
 Agent, terminal, and desktop transports.
 
 1. The client requests a peer for a selected Team, target Machine, and transport
-   purpose (`agent`, `terminal`, or `desktop`) through its authenticated API
+   purpose (`agent`, `terminal`, `desktop`, or `files`) through its authenticated API
    session. The server resolves the user/device, checks Team access, and selects
    the target's authenticated daemon connection. A request cannot supply its own
    trusted actor or expand its permissions.
@@ -159,6 +159,11 @@ accepted Agent task, terminate a shell, or archive/delete a Session. Terminal
 controllers detach, provider execution and daemon history continue, and pending
 approvals are not implicitly granted. Archive still has its own explicit
 resource-closing semantics.
+
+Files peers separately require `files:read` or `files:write` on each operation and
+outgoing response. Closing a files peer aborts its unfinished destination staging;
+committed files remain. The application owns the transfer queue independently of
+Agent and desktop viewers. See [files and transfers](files.md).
 
 ## Storage and implementation boundaries
 

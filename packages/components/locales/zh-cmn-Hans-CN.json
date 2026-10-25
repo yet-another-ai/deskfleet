@@ -541,5 +541,37 @@
     "credentialsWarning": "这些凭据只显示一次。持有凭据的任何人都可以冒充此机器。",
     "emptyTitle": "向 {team} 添加机器",
     "emptyDescription": "团队成员在团队机器上运行智能体和打开终端。连接此电脑或一台服务器即可开始。"
+  },
+  "files": {
+    "title": "文件传输",
+    "local": "本机",
+    "chooseFolder": "选择文件夹",
+    "refresh": "刷新",
+    "select": "选择 {name}",
+    "empty": "此文件夹为空。",
+    "close": "关闭",
+    "send": "发送到远端",
+    "receive": "下载到本机",
+    "queue": "传输队列",
+    "noTransfers": "暂无传输",
+    "retry": "重试",
+    "cancel": "取消",
+    "keepBoth": "保留两份",
+    "skip": "跳过",
+    "replace": "替换",
+    "loadingResource": "正在加载图片…",
+    "imageUnavailable": "图片无法加载",
+    "resourceUnavailable": "此资源暂不可用，请连接所属机器后重试。",
+    "notImage": "此文件无法作为图片显示。",
+    "state": {
+      "queued": "排队中",
+      "preparing": "准备中",
+      "transferring": "传输中",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消",
+      "conflict": "已存在"
+    },
+    "showHidden": "显示隐藏项目"
   }
 }

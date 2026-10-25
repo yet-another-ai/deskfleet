@@ -8,6 +8,9 @@ import type { MachineCredentials, PeerAuthorization, PeerOffer, PeerSignal } fro
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
 import type { TerminalSessions } from "./terminals.ts"
+import { FilesChannel, fileAction } from "./files-channel.ts"
+import { FILES_CHANNEL } from "./files-protocol.ts"
+import { FilesService } from "./files-service.ts"
 
 const DAY_MS = 86_400_000
 const AGENT_READ = new Set<AgentMethod>([
@@ -28,6 +31,7 @@ interface AuthorizedPeer {
   localSdp?: string
   terminal?: TerminalChannel
   agent?: AgentChannel
+  files?: FilesChannel
 }
 
 /** Resolve the empty mid emitted by native WebRTC from the authenticated SDP. */
@@ -74,7 +78,7 @@ export class AuthorizedPeers {
     if (!Number.isFinite(issued) || !Number.isFinite(expires) || issued > this.#now() + 60_000 || expires <= this.#now() || expires <= issued || expires - issued > DAY_MS) {
       throw new Error("Peer authorization is expired or exceeds 24 hours")
     }
-    if (!["agent", "terminal", "desktop"].includes(grant.purpose)) throw new Error("Unsupported peer purpose")
+    if (!["agent", "terminal", "desktop", "files"].includes(grant.purpose)) throw new Error("Unsupported peer purpose")
   }
 
   #live(id: string, action?: string): AuthorizedPeer {
@@ -140,6 +144,14 @@ export class AuthorizedPeers {
           return this.#terminals.list().some(terminal => terminal.id === id)
         })
       }
+      if (purpose === "files") {
+        owned.files = new FilesChannel(
+          new FilesService(this.#agents.sessionDirectory ? sessionId => this.#agents.sessionDirectory!(sessionId) : undefined),
+          data => peer.sendData(FILES_CHANNEL, Buffer.from(data)),
+          method => { this.#live(params.peerId, fileAction(method)) },
+          failure,
+        )
+      }
       // Candidate events can race answerOffer. Hold them until the answer SDP is bound.
       const answer = await peer.answerOffer(params.sdp)
       this.#live(params.peerId)
@@ -185,6 +197,7 @@ export class AuthorizedPeers {
         this.#live(id)
         if (event.kind === "data" && event.data) {
           if (owned.agent && event.label === AGENT_CHANNEL) owned.agent.receive(event.data, event.isString === true)
+          if (owned.files && event.label === FILES_CHANNEL) owned.files.receive(event.data, event.isString === true)
           if (owned.terminal && event.label === TERMINAL_CHANNEL) {
             this.#live(id, "terminal:write")
             void owned.terminal.receive(event.data, event.isString === true).catch(error => {
@@ -211,7 +224,9 @@ export class AuthorizedPeers {
     this.#peers.delete(id)
     clearTimeout(peer.timer)
     peer.agent?.close(); peer.terminal?.close()
-    await this.#native.close(id)
+    const results = await Promise.allSettled([peer.files?.close(), this.#native.close(id)])
+    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    if (failures.length) throw new AggregateError(failures, "Failed to close authorized peer")
   }
 
   async closeAll(): Promise<void> {

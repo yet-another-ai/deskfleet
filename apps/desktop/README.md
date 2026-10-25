@@ -238,6 +238,11 @@ Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Remote signa
 See [media integration](../../agents/docs/media.md) for supported capture
 platforms, permissions, ownership, and the native pipeline.
 
+The machine and remote desktop toolbar also open a two-pane file transfer dialog.
+Its queue belongs to Electron main and continues through navigation and tray
+operation, independently of desktop playback. Agent file/image references use
+the same file service. See [files and transfers](../../agents/docs/files.md).
+
 ## Tray lifecycle
 
 The client stays resident in the system tray: the macOS menu bar, the Windows

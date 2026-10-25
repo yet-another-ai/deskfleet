@@ -1,6 +1,7 @@
 import { HttpCentralClient, type SavedAccount } from "./http-central.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { resolveAppLocale } from "./i18n.ts"
+import { createBrowserFiles } from "./browser-files.ts"
 
 const accountKey = "deskfleet.account"
 const verifierKey = "deskfleet.login-verifier"
@@ -36,6 +37,7 @@ export async function browserClient(defaultServerUrl: string): Promise<Deskfleet
   const signaling = { offer: unavailable, candidate: unavailable, close: unavailable, onEvent: subscribe }
   return {
     platform: "web", locale: resolveAppLocale(navigator.languages), central, initialError,
+    files: createBrowserFiles(central),
     settings: {
       get: async () => ({ enabled: false, status: "stopped" }), setLocalAgentEnabled: unavailable,
       getLaunchAtStartup: async () => ({ available: false, enabled: false }), setLaunchAtStartup: unavailable,

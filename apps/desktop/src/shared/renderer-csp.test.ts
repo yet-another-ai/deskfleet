@@ -13,7 +13,7 @@ test("development renderers may reach only the Vite HMR socket", () => {
 })
 
 test("renderers may load images only from the app and Gravatar", () => {
-  expect(injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, true)).toContain("img-src 'self' data: https://gravatar.com;")
+  expect(injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, true)).toContain("img-src 'self' data: blob: https://gravatar.com;")
 })
 
 test("renderer HTML must declare the policy placeholder", () => {

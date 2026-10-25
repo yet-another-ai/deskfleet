@@ -19,6 +19,7 @@ import IconButton from "../common/IconButton.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
 import TreeLink from "./TreeLink.vue"
+import FileTransferButton from "../files/FileTransferButton.vue"
 
 const props = defineProps<{ machine: MachineSummary }>()
 const { t, locale } = useI18n()
@@ -95,6 +96,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
     <WorkspaceCreateDialog v-if="addingWorkspace" @created="workspaceCreated" @cancel="addingWorkspace = false" />
 
     <ul v-if="!collapsed" :id="listId">
+      <li><FileTransferButton :machine-id="machine.id" :machine-name="machine.name" /></li>
       <li v-if="machine.desktop || machine.id === fleet.targetId">
         <TreeLink
           :to="{ name: 'machine-desktop', params: { machineId: machine.id } }"

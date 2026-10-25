@@ -69,3 +69,23 @@ test("reports API errors and falls back to HTTP status for non-JSON failures", a
   f.fetch.mockResolvedValueOnce(new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }))
   await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" })
 })
+
+test("changing servers notifies account-owned file connections and clears the old account", async () => {
+  const f = setup(); const events = vi.fn()
+  f.client.onEvent(events)
+  expect(await f.client.setServer("https://other.example")).toEqual({ serverUrl: "https://other.example", user: undefined })
+  expect(f.sockets[0]!.close).toHaveBeenCalledOnce()
+  expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
+  await f.client.setServer("https://other.example/")
+  expect(events).toHaveBeenCalledOnce()
+})
+
+test("an expired account notifies connections after clearing saved credentials", async () => {
+  const f = setup(); const events = vi.fn()
+  f.client.onEvent(events)
+  f.fetch.mockResolvedValueOnce(new Response("{}", { status: 401 }))
+  expect(await f.client.status()).toEqual({ serverUrl: "https://fleet.example", user: undefined })
+  expect(f.persist).toHaveBeenCalledWith({ serverUrl: "https://fleet.example" })
+  expect(f.sockets[0]!.close).toHaveBeenCalledOnce()
+  expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
+})

@@ -9,7 +9,7 @@ machine enrollment, access grants, and synchronized catalog/history. Electron
 and the independently hosted Web app share the Vue UI and authenticated client
 operations. Each TypeScript daemon connects outbound to the backend and keeps
 its execution journal in SQLite through napi-rs. Management uses authenticated
-backend APIs; Agent interaction, Git, terminals, and desktop streams use WebRTC.
+backend APIs; Agent interaction, Git, files, terminals, and desktop streams use WebRTC.
 
 The daemon runs from source, as a SEA executable, or inside the Electron main
 process. It owns ACP providers, the shared backlog, steering, permissions,
@@ -24,7 +24,7 @@ The MCP facade and desktop input expansion below remain follow-up work.
 flowchart LR
     Client["Electron / Web client"] <-->|"HTTPS / WebSocket: catalog, history, signaling"| Server["Actix Web server"]
     Server <-->|"Outbound connection: presence, history, signaling"| Daemon["Machine daemon"]
-    Client <-->|"WebRTC: operations, terminal, media"| Daemon
+    Client <-->|"WebRTC: operations, files, terminal, media"| Daemon
     Daemon <-->|"ACP"| Agent["Agent process / adapter"]
     Agent <-->|"MCP tools"| MCP["deskfleet MCP facade"]
     MCP <-->|"Operations on a target machine"| Target["Target daemon"]
@@ -385,6 +385,7 @@ created on demand.
 | Terminal dial, hangup, catalog and lifecycle events | Authenticated signaling; IPC for the local client |
 | Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel |
 | Agent prompts, steering, permissions, and live Session events | ACP and deskfleet extensions over WebRTC DataChannel |
+| File browsing, transfer, and Agent file references | Independently authorized files WebRTC DataChannel |
 | Desktop video/audio | WebRTC media tracks |
 | Desktop input | WebRTC DataChannel |
 | Local discovery, catalog operations, and signaling | Authenticated IPC; Agent and terminal streams use DataChannels |
@@ -429,6 +430,16 @@ and its open diff every 1.5 seconds after each completed read, including edits
 from terminals and external editors. Closing the panel or hiding the window
 stops polling. Git results remain transient; Session provisioning still owns
 creation and deletion of managed worktrees.
+
+Machine file access shares one service between the two-pane transfer dialog and
+Agent Markdown resources. File peers and the transfer queue have independent
+lifetimes from Sessions and desktop media. Electron's main process owns its
+queue and local filesystem endpoint; Web owns its queue at page/account scope
+and uses explicitly selected browser directory handles. A folder is one queue
+item, with its contents staged before native publication. Relative Agent file
+references resolve against the Session's captured first directory. See
+[files and transfers](files.md) for authorization, conflicts, browser limits,
+and live-reference semantics.
 
 MCP tools let an agent discover authorized machines and resources, inspect state,
 and request operations on an explicit target. Remotely created sessions belong

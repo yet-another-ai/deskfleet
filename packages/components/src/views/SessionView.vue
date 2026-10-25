@@ -18,6 +18,7 @@ import { useLayoutStore } from "../stores/layout.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
+import { useFileTarget } from "../composables/useFileTarget.ts"
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const sessionLabel = useSessionLabel()
@@ -26,6 +27,7 @@ const agents = useAgentSessionsStore()
 const terminals = useTerminalsStore()
 const { terminalPanelOpen } = storeToRefs(useLayoutStore())
 const location = computed(() => fleet.findSession(props.sessionId))
+const resourceTarget = useFileTarget(() => location.value?.machine.id)
 const view = computed(() => agents.views[props.sessionId])
 const snapshot = computed(() => view.value?.snapshot)
 const run = computed(() => snapshot.value?.runs.at(-1))
@@ -74,7 +76,7 @@ function submit(delivery: "backlog" | "steer"): void {
     <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
       <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
       <template v-else-if="snapshot">
-        <AgentConversation :events="view!.events" :snapshot="snapshot" :disabled="!active || !connected || busy || !!view?.error" />
+        <AgentConversation :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" />
         <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
       </template>
     </div>
