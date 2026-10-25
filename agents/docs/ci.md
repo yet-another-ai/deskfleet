@@ -10,6 +10,7 @@ a stable `Gate` result for branch protection.
   runs. It classifies the changed files with the hosted runner's Node, calls
   Test and Build, and combines their results in `Gate`. Configure `Gate` under
   the `CI` workflow as the required status check in repository branch protection.
+  Successful runs on `main` then deploy the product website to GitHub Pages.
 - `.github/workflows/test.yml` runs static checks and the desktop/Web/website builds
   once on Linux with `mise run ci:check:static`, plus Rust, daemon, and desktop
   tests on Linux, macOS, and Windows with `mise run test`. It supports reusable
@@ -39,6 +40,23 @@ Smoke tests copy the daemon executable alone to an unrelated temporary directory
 clear Node's environment overrides and PATH, then check native information,
 the bundled ACP adapter, startup, and the health endpoint. Unix tests also require
 clean signal-driven shutdown; Windows tests terminate the process forcibly.
+
+## Product website deployment
+
+The static-check job uploads `docs/.vitepress/dist` as the `github-pages`
+artifact on `main`, reusing the website build from `mise run ci:check:static`.
+After `Gate` succeeds, the CI workflow deploys that artifact through the
+`github-pages` environment. Both pushes and manual CI runs on `main` publish;
+pull requests and other branches do not. Documentation-only pushes still
+publish even when release packaging is skipped.
+
+Only the deployment job receives `pages: write` and `id-token: write`; build
+and test jobs keep read-only repository access. Deployment failures are
+reported separately from the required `Gate` check.
+
+Repository Settings → Pages must use **GitHub Actions** as the publishing
+source. The configured custom domain is `www.deskfleet.org`, so VitePress uses
+the default `/` base. Domain and HTTPS settings are managed in GitHub Pages.
 
 ## Documentation-only changes
 

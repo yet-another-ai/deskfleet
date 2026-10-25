@@ -82,3 +82,25 @@ jobs:
             echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, Test: $TEST_RESULT, Build: $BUILD_RESULT)."
             exit 1
           fi
+
+  deploy-pages:
+    name: Deploy website
+    needs: [gate, test]
+    # Documentation-only runs skip Build, so explicitly use Gate's result.
+    if: ${{ !cancelled() && needs.gate.result == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

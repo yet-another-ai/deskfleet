@@ -48,6 +48,12 @@ jobs:
       - name: Run static checks
         run: mise run ci:check:static
 
+      - name: Upload the product website for GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/.vitepress/dist
+
       - name: Report shared compiler cache health
         if: ${{ always() && steps.setup_build.outcome == 'success' }}
         run: mise run ci:report:sccache
