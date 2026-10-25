@@ -9,7 +9,7 @@ import test from "node:test"
 import { createPeer, type NativePeer, type NativeTerminal, type PeerEvent } from "@deskfleet/native"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
 import type { ControlMessage, ControlMethod, ControlMethods, DaemonEvent } from "./control-protocol.ts"
-import { validateControlParams } from "./control-request.ts"
+import { validateControlParams, validateRelayedDesktopStart } from "./control-request.ts"
 import { startControlServer as createControlServer, type ControlPeers } from "./control-server.ts"
 import { startDaemon } from "./daemon.ts"
 import { TerminalSessions } from "./terminals.ts"
@@ -335,6 +335,15 @@ test("local control rejects malformed native settings before crossing the bindin
   assert.throws(() => validateControlParams("start", { sessionId: "screen", displayId: 1, fps: 0 }), /frame rate/)
   assert.throws(() => validateControlParams("start", { sessionId: "screen", displayId: -1 }), /display ID/)
   assert.throws(() => validateControlParams("candidate", { sessionId: "screen", candidate: { candidate: "ice", sdpMlineIndex: 1.5 } }), /media index/)
+})
+
+test("relayed desktop starts treat JSON null as an omitted option and validate the rest", () => {
+  // The backend forwards a client's omitted fps and bitrate as null.
+  assert.deepEqual(validateRelayedDesktopStart({ peerId: "peer", displayId: 1, fps: null, bitrateBps: null }), { displayId: 1, fps: undefined, bitrateBps: undefined })
+  assert.deepEqual(validateRelayedDesktopStart({ peerId: "peer", displayId: 2, fps: 30, bitrateBps: 8_000_000 }), { displayId: 2, fps: 30, bitrateBps: 8_000_000 })
+  assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: null }), /display ID/)
+  assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: 1, fps: 0 }), /frame rate/)
+  assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: 1, bitrateBps: "fast" }), /bitrate/)
 })
 
 test("directory browsing requires authentication and uses the daemon filesystem without a peer", async context => {

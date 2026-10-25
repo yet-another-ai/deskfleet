@@ -7,6 +7,7 @@ import { centralUrl, type CentralStatus, type MachineCredentials, type MachineEn
 import { CentralSync } from "./central-sync.ts"
 import type { ControlPeers } from "./control-server.ts"
 import type { IceCandidate } from "./control-protocol.ts"
+import { validateRelayedDesktopStart } from "./control-request.ts"
 import type { MachineOperations } from "./machine-operations.ts"
 
 /** Outbound machine identity/control link. A lost socket never owns peer cleanup. */
@@ -180,9 +181,7 @@ export class CentralClient {
       case "peer.offer": return this.#peers.offer(value as PeerOffer)
       case "peer.candidate": await this.#peers.candidate(params.peerId as string, params.candidate as IceCandidate); return null
       case "peer.close": await this.#peers.close(params.peerId as string); return null
-      case "peer.start": await this.#peers.start(params.peerId as string, {
-        displayId: params.displayId as number, fps: params.fps as number | undefined, bitrateBps: params.bitrateBps as number | undefined,
-      }); return null
+      case "peer.start": await this.#peers.start(params.peerId as string, validateRelayedDesktopStart(params)); return null
       default: return this.#operations.handle(method, value, actor)
     }
   }
