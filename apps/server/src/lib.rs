@@ -79,6 +79,10 @@ pub fn configure(config: &mut ServiceConfig) {
             .route("/teams/{teamId}/machines", web::post().to(api::enroll))
             .route(
                 "/machines/{machineId}",
+                web::patch().to(api::rename_machine),
+            )
+            .route(
+                "/machines/{machineId}",
                 web::delete().to(api::remove_machine),
             )
             .route("/machines/{machineId}/rpc", web::post().to(api::rpc))

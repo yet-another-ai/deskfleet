@@ -14,7 +14,8 @@ the [server guide](../../apps/server/README.md),
 - Require login and Team selection before resource creation. Enroll each machine
   into its Team; the automatically created local Team is development scaffolding.
 - Members can operate every machine in their Team. Administrators manage members
-  and roles and remove machines. Members can enroll their own machines, configure
+  and roles and remove machines. Members can enroll their own machines, rename
+  Team machines (the name defaults to the hostname), configure
   Providers, create or delete Workspaces, and create, archive, or restore Sessions.
 - Use PostgreSQL for the central server and SQLite for each daemon.
 - Deliver an independent Vue Web client alongside Electron. Extract shared UI

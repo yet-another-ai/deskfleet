@@ -35,9 +35,14 @@ export interface CentralApi {
   setMemberRole(teamId: string, userId: string, role: "admin" | "member"): Promise<void>
   removeMember(teamId: string, userId: string): Promise<void>
   machines(teamId: string): Promise<Machine[]>
+  /** Any Team member can rename a machine; its daemon's hostname is unchanged. */
+  renameMachine(machineId: string, name: string): Promise<Machine>
+  /** Administrator removal revokes the machine's credential and its live peers. */
+  removeMachine(machineId: string): Promise<void>
   enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string }): Promise<{ machine: Machine; token: string }>
   localEnrollment?(): Promise<LocalEnrollment>
-  enrollLocal?(teamId: string): Promise<LocalEnrollment>
+  /** The name defaults to this computer's hostname. */
+  enrollLocal?(teamId: string, name?: string): Promise<LocalEnrollment>
   catalog(machineId: string): Promise<{ machineId: string; snapshot: CatalogSnapshot; lastObservedAt: string; providers?: ProviderDisplaySnapshot }>
   sessions(machineId: string): Promise<AgentSnapshot[]>
   session(machineId: string, sessionId: string): Promise<{ snapshot: AgentSnapshot; lastEventSeq: string; lastObservedAt: string }>

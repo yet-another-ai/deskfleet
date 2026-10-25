@@ -75,13 +75,13 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
   const path = join(app.getPath("userData"), "account.json")
   const client = new HttpCentralClient({ account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal) })
   const localEnrollment = () => daemonCall("centralStatus", {})
-  const enrollLocal = (teamId: string) => enrollLocalMachine(client, {
+  const enrollLocal = (teamId: string, name?: string) => enrollLocalMachine(client, {
     status: localEnrollment,
     prepare: () => daemonCall("centralPrepareEnrollment", {}),
     enroll: credentials => daemonCall("centralEnroll", credentials),
-  }, teamId)
+  }, teamId, name)
   const methods: Record<string, (...args: never[]) => unknown> = Object.fromEntries([
-    "status", "setServer", "login", "logout", "teams", "createTeam", "enrollHeadless", "members", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "machines", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
+    "status", "setServer", "login", "logout", "teams", "createTeam", "enrollHeadless", "members", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "machines", "renameMachine", "removeMachine", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
   ].map(method => [method, (client[method as keyof HttpCentralClient] as (...args: never[]) => unknown).bind(client)]))
   methods.localEnrollment = localEnrollment
   methods.enrollLocal = enrollLocal

@@ -164,6 +164,25 @@ pub async fn machines(
     }
     Ok(web::Json(json!(machines)))
 }
+pub async fn rename_machine(
+    req: HttpRequest,
+    s: web::Data<AppState>,
+    p: web::Path<String>,
+    b: web::Json<Name>,
+) -> Result<web::Json<Value>> {
+    let a = auth::user(&req, &s).await?;
+    let mut m = s.store.rename_machine(&a.user.id, &p, &b.name).await?;
+    m.online = s.hub.online(&m.id).await;
+    // Open clients refetch the catalog, which carries the new name.
+    s.notify_team(
+        &m.team_id,
+        ControlMessage::CatalogChanged {
+            machine_id: m.id.clone(),
+        },
+    )
+    .await;
+    Ok(web::Json(json!(m)))
+}
 pub async fn remove_machine(
     req: HttpRequest,
     s: web::Data<AppState>,
@@ -228,8 +247,13 @@ pub async fn catalog(
     p: web::Path<String>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    s.store.authorized_machine(&a.user.id, &p).await?;
-    Ok(web::Json(s.store.catalog(&p).await?))
+    let m = s.store.authorized_machine(&a.user.id, &p).await?;
+    let mut catalog = s.store.catalog(&p).await?;
+    // The Team's name for the machine replaces the hostname its daemon reports.
+    if let Some(snapshot) = catalog["snapshot"].as_object_mut() {
+        snapshot.insert("machineName".into(), m.name.into());
+    }
+    Ok(web::Json(catalog))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

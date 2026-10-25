@@ -6,6 +6,7 @@ import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import AccountShell from "./AccountShell.vue"
 import { agentEvent, agentInput, agentSnapshot } from "./test/agent.ts"
+import { fakeCentral, machineFixture } from "./test/central.ts"
 
 const host = getClient()
 let view: VueWrapper | undefined
@@ -45,8 +46,9 @@ test("browses synchronized history with the machine offline and isolates equal l
   await router.push("/sessions/30"); await flushPromises()
   await vi.waitFor(() => expect(view!.text()).toContain("Message from 101"))
   expect(central.createPeer).not.toHaveBeenCalled()
-  await view.get('button[aria-label="Machine"]').trigger("click")
-  await view.get('button[data-machine-id="102"]').trigger("click"); await flushPromises()
+  // Other Team machines are collapsed sidebar groups; opening one switches machines.
+  expect(view.find('aside button[data-machine-id="101"]').exists()).toBe(false)
+  await view.get('aside button[data-machine-id="102"]').trigger("click"); await flushPromises()
   await router.push("/sessions/30"); await flushPromises()
   await vi.waitFor(() => expect(view!.text()).toContain("Workspace 102"))
   await vi.waitFor(() => expect(view!.text()).toContain("Message from 102"))
@@ -57,135 +59,149 @@ test("browses synchronized history with the machine offline and isolates equal l
   await flushPromises()
   expect(view.text()).toContain("Sign in to deskfleet")
   expect(view.text()).not.toContain("Workspace 102")
-  await view.get('form').trigger("submit")
+  await view.get("form").trigger("submit")
   await flushPromises()
   await vi.waitFor(() => expect(view!.text()).toContain("Workspace 101"))
 })
 
-function enrollmentFixture({ revoked = false, initiallySignedIn = true, configured = true, role = "admin" }: { revoked?: boolean; initiallySignedIn?: boolean; configured?: boolean; role?: "admin" | "member" } = {}) {
-  let signedIn = initiallySignedIn
-  let enrollment = { configured, connected: false, revoked, serverUrl: "https://fleet.example", machineId: "old-machine", teamId: "original-team", identity: { originId: "old-origin", machineId: "1" }, machineName: "This computer" }
-  const state = () => ({ serverUrl: "https://fleet.example", user: signedIn ? { id: "u1", name: "Ada" } : undefined })
-  const central = {
-    status: vi.fn(async () => state()), setServer: vi.fn(async () => state()),
-    login: vi.fn(async () => { signedIn = true }),
-    teams: vi.fn(async () => [{ id: "other-team", name: "Another team", role }, { id: "original-team", name: "Original team", role }]),
-    machines: vi.fn(async () => []), onEvent: () => () => {},
-    localEnrollment: vi.fn(async () => enrollment),
-    enrollLocal: vi.fn(async (teamId: string) => { enrollment = { ...enrollment, configured: true, teamId, machineId: "fresh-machine", identity: { originId: "fresh-origin", machineId: "1" }, revoked: false }; return enrollment }),
-    enrollHeadless: vi.fn(async () => ({ machine: { id: "headless-machine" }, token: "enrollment-token" })),
-    createTeam: vi.fn(async (name: string) => ({ id: "new-team", name, role: "admin" })),
-    acceptInvite: vi.fn(async () => ({ id: "original-team", name: "Original team", role })),
-  } as unknown as CentralApi
-  return { central, revoke: () => { enrollment = { ...enrollment, revoked: true } } }
+const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin") => {
+  view = mount(AccountShell, { props: { host: { ...host, platform, central } }, global: { plugins: [i18n] }, attachTo: document.body })
+}
+const buttonText = (text: string) => view!.findAll("button").find(button => button.text() === text)
+/**
+ * Machine views read synchronized catalogs and history; these machines have none.
+ * Like the server, the catalog names each machine with its Team name.
+ */
+function withEmptyCatalogs({ central, state }: ReturnType<typeof fakeCentral>): void {
+  Object.assign(central, {
+    catalog: vi.fn(async (machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", snapshot: { teamId: "team-1", machineId, machineName: state.machines.find(machine => machine.id === machineId)?.name ?? "hostname", workspaces: [] } })),
+    sessions: vi.fn(async () => []),
+    rpc: vi.fn(async () => { throw new Error("Offline") }),
+  })
 }
 
-test("signing back in offers the original team and re-registers a revoked computer", async () => {
-  const f = enrollmentFixture({ revoked: true, initiallySignedIn: false })
-  view = mount(AccountShell, { props: { host: { ...host, central: f.central } }, global: { plugins: [i18n] } })
+test("a user without a Team creates one from onboarding and is asked to add a machine", async () => {
+  const fake = fakeCentral({ teams: [] })
+  mountShell(fake.central, "web")
   await flushPromises()
-  await view.get('form').trigger("submit")
+  expect(view!.find('button[aria-label="Team"]').exists()).toBe(false)
+  expect(view!.text()).toContain("Welcome, Ada")
+  await buttonText("Create a teamStart a new team and invite others to it.")!.trigger("click")
   await flushPromises()
-  expect(view.get('button[aria-label="Team"]').text()).toContain("Original team")
-  expect(view.text()).toContain("This computer was removed from its team")
-  const button = view.findAll("button").find(button => button.text() === "Reconnect this computer to the team")!
-  await button.trigger("click")
+  expect(document.activeElement).toBe(view!.get('dialog[open] [name="team-name"]').element)
+  fake.central.createTeam.mockRejectedValueOnce(new Error("Name taken"))
+  await view!.get('dialog[open] [name="team-name"]').setValue("Platform")
+  await view!.get("dialog[open] form").trigger("submit")
   await flushPromises()
-  expect(f.central.enrollLocal).toHaveBeenCalledExactlyOnceWith("original-team")
-  expect(view.text()).not.toContain("This computer was removed from its team")
-  expect(view.text()).toContain("This computer is already enrolled")
+  // The failure belongs to the dialog, not the sidebar.
+  expect(view!.get('dialog[open] [role="alert"]').text()).toBe("Name taken")
+  expect(view!.findAll('[role="alert"]')).toHaveLength(1)
+  await view!.get("dialog[open] form").trigger("submit")
+  await flushPromises()
+  expect(view!.find("dialog").exists()).toBe(false)
+  expect(view!.get('button[aria-label="Team"]').text()).toContain("Platform")
+  expect(view!.get("main h1").text()).toBe("Add a machine to Platform")
 })
 
-test("an active registration stays protected and Refresh discovers its later revocation", async () => {
-  const f = enrollmentFixture()
-  view = mount(AccountShell, { props: { host: { ...host, central: f.central } }, global: { plugins: [i18n] } })
+test("joining from the Team menu selects the joined Team", async () => {
+  const fake = fakeCentral()
+  mountShell(fake.central, "web")
   await flushPromises()
-  expect(view.text()).not.toContain("Reconnect this computer to the team")
-  expect(view.text()).toContain("This computer is already enrolled")
-  f.revoke()
-  await view.get('button[aria-label="Machine"]').trigger("click")
-  await view.findAll("button").find(button => button.text() === "Refresh")!.trigger("click")
-  await flushPromises()
-  expect(view.text()).toContain("Reconnect this computer to the team")
-  expect(f.central.enrollLocal).not.toHaveBeenCalled()
-})
-
-test.each([false, true])("a team member can enroll their local computer (revoked=%s)", async revoked => {
-  const f = enrollmentFixture({ role: "member", configured: revoked, revoked })
-  view = mount(AccountShell, { props: { host: { ...host, central: f.central } }, global: { plugins: [i18n] } })
-  await flushPromises()
-  const label = revoked ? "Reconnect this computer to the team" : "Connect this computer to the team"
-  const buttons = view.findAll("button").filter(button => button.text() === label)
-  expect(buttons).toHaveLength(1)
-  await buttons[0]!.trigger("click")
-  await flushPromises()
-  expect(f.central.enrollLocal).toHaveBeenCalledExactlyOnceWith("original-team")
-  expect(view.text()).toContain("This computer is already enrolled")
-})
-
-test("a team member can enroll a headless machine from the Web client", async () => {
-  const f = enrollmentFixture({ role: "member" })
-  const central = { ...f.central, localEnrollment: undefined, enrollLocal: undefined }
-  view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [i18n] } })
-  await flushPromises()
-  await view.get('button[aria-label="Team"]').trigger("click")
-  await view.get('button[data-team-id="original-team"]').trigger("click")
-  await flushPromises()
-  await view.findAll("button").find(button => button.text() === "Enroll headless machine")!.trigger("click")
-  const form = view.get("dialog form")
-  const inputs = form.findAll("input")
-  await inputs[0]!.setValue("SSH server")
-  await inputs[1]!.setValue("server-origin")
-  await inputs[2]!.setValue("1")
-  await form.trigger("submit")
-  await flushPromises()
-  expect(f.central.enrollHeadless).toHaveBeenCalledExactlyOnceWith("original-team", { name: "SSH server", originId: "server-origin", localMachineId: "1" })
-  expect(JSON.parse((view.get("dialog textarea").element as HTMLTextAreaElement).value)).toEqual({ machineId: "headless-machine", teamId: "original-team", token: "enrollment-token" })
-})
-
-
-test("account management stays in sidebar menus and team creation uses a dialog", async () => {
-  const f = enrollmentFixture()
-  view = mount(AccountShell, { props: { host: { ...host, central: f.central } }, global: { plugins: [i18n] }, attachTo: document.body })
-  await flushPromises()
-  expect(view.find("header").exists()).toBe(false)
-  expect(view.find('[role="menu"]').exists()).toBe(false)
-  expect(view.text()).not.toContain("Create your team")
-  expect(view.text()).not.toContain("Sign out")
-  const trigger = view.get('button[aria-label="Team"]')
+  const trigger = view!.get('button[aria-label="Team"]')
   await trigger.trigger("keydown", { key: "ArrowDown" })
   await flushPromises()
-  expect(view.get('[role="menu"]').attributes("aria-label")).toBe("Team")
-  expect(document.activeElement).toBe(view.get('[data-team-id="other-team"]').element)
-  await view.get('[role="menu"]').trigger("keydown", { key: "Escape" })
-  expect(view.find('[role="menu"]').exists()).toBe(false)
+  expect(document.activeElement).toBe(view!.get('[data-team-id="team-1"]').element)
+  await view!.get('[role="menu"]').trigger("keydown", { key: "Escape" })
   expect(document.activeElement).toBe(trigger.element)
   await trigger.trigger("click")
-  await view.findAll('button[role="menuitem"]').find(button => button.text() === "Create your team")!.trigger("click")
+  await view!.findAll('[role="menuitem"]').find(item => item.text() === "Join a team")!.trigger("click")
   await flushPromises()
-  expect(view.find('[role="menu"]').exists()).toBe(false)
-  expect(view.get('dialog').attributes("aria-label")).toBe("Create your team")
-  expect(view.find('dialog form').exists()).toBe(true)
-  await view.get('dialog input').setValue("My new team")
-  await view.get('dialog form').trigger("submit")
+  await view!.get('dialog[open] [name="invite-code"]').setValue(" invitation-code ")
+  await view!.get("dialog[open] form").trigger("submit")
   await flushPromises()
-  expect(f.central.createTeam).toHaveBeenCalledExactlyOnceWith("My new team")
-  expect(view.find('dialog').exists()).toBe(false)
-  expect(view.get('button[aria-label="Team"]').text()).toContain("My new team")
+  expect(fake.central.acceptInvite).toHaveBeenCalledExactlyOnceWith("invitation-code")
+  expect(trigger.text()).toContain("Invited team")
 })
 
-test("joining a team from the menu closes the dialog and selects that team", async () => {
-  const f = enrollmentFixture()
-  const central = { ...f.central, localEnrollment: undefined, enrollLocal: undefined }
-  view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [i18n] } })
+test("a Team without machines still opens Team settings beside Preferences", async () => {
+  const fake = fakeCentral()
+  mountShell(fake.central)
   await flushPromises()
-  expect(view.get('button[aria-label="Team"]').text()).toContain("Another team")
-  await view.get('button[aria-label="Team"]').trigger("click")
-  await view.findAll('button[role="menuitem"]').find(button => button.text() === "Join a team")!.trigger("click")
-  await view.get('dialog input').setValue("invitation-code")
-  await view.get('dialog form').trigger("submit")
+  await view!.get('button[aria-label="Team"]').trigger("click")
+  await view!.findAll('[role="menuitem"]').find(item => item.text() === "Team settings")!.trigger("click")
   await flushPromises()
-  expect(central.acceptInvite).toHaveBeenCalledExactlyOnceWith("invitation-code")
-  expect(view.find('dialog').exists()).toBe(false)
-  expect(view.get('button[aria-label="Team"]').text()).toContain("Original team")
+  expect(view!.get("h1").text()).toBe("Design team")
+  expect(view!.findAll("[data-member-id]")).toHaveLength(2)
+  expect(view!.get('nav[aria-label="Settings sections"]').text()).toContain("Preferences")
+  await buttonText("Add machine")!.trigger("click")
+  await flushPromises()
+  expect(view!.get("dialog[open] h2").text()).toBe("Add a machine to Design team")
+  await buttonText("Cancel")!.trigger("click")
+  await buttonText("Back to app")!.trigger("click")
+  expect(view!.get("main h1").text()).toBe("Add a machine to Design team")
+  expect(fake.central.members).toHaveBeenCalledWith("team-1")
+})
+
+test("a removed computer offers reconnection, which opens the new machine", async () => {
+  const fake = fakeCentral({
+    signedIn: false,
+    teams: [{ id: "other", name: "Another team", role: "member" }, { id: "home", name: "Original team", role: "member" }],
+    enrollment: { configured: true, connected: false, revoked: true, serverUrl: "https://fleet.example", teamId: "home", machineId: "old", identity: { originId: "old-origin", machineId: "1" }, machineName: "This computer" },
+  })
+  withEmptyCatalogs(fake)
+  mountShell(fake.central)
+  await flushPromises()
+  await view!.get("form").trigger("submit")
+  await flushPromises()
+  // Signing back in returns to the Team this computer belonged to.
+  expect(view!.get('button[aria-label="Team"]').text()).toContain("Original team")
+  expect(view!.text()).toContain("This computer was removed from its team")
+  await buttonText("Reconnect this computer")!.trigger("click")
+  await flushPromises()
+  await view!.get('dialog[open] [data-add-machine="local"]').trigger("click")
+  await flushPromises()
+  await view!.get("dialog[open] form").trigger("submit")
+  await flushPromises()
+  expect(fake.central.enrollLocal).toHaveBeenCalledExactlyOnceWith("home", "This computer")
+  const machineId = fake.state.enrollment!.machineId!
+  await vi.waitFor(() => expect(fake.central.catalog).toHaveBeenCalledWith(machineId))
+  expect(view!.text()).not.toContain("This computer was removed from its team")
+})
+
+test("machines are listed and added from the workspace sidebar", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("m1", "team-1", "Build server"), machineFixture("m2", "team-1", "Laptop", false)] })
+  withEmptyCatalogs(fake)
+  mountShell(fake.central, "web")
+  await flushPromises()
+  await vi.waitFor(() => expect(view!.find('aside button[data-machine-id="m2"]').exists()).toBe(true))
+  expect(view!.get('aside button[data-machine-id="m2"]').text()).toContain("Offline")
+  await view!.get('aside button[aria-label="Add machine"]').trigger("click")
+  await flushPromises()
+  expect(view!.get("dialog[open] h2").text()).toBe("Add a machine to Design team")
+})
+
+test("the open machine's heading follows a rename from any client", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("m1", "team-1", "build-01")] })
+  withEmptyCatalogs(fake)
+  mountShell(fake.central, "web")
+  await flushPromises()
+  await vi.waitFor(() => expect(view!.get("aside").text()).toContain("build-01"))
+  // Another client renamed the machine; the server announces a catalog change.
+  fake.state.machines[0]!.name = "GPU runner"
+  fake.emit({ type: "catalogChanged", machineId: "m1" } as never)
+  await vi.waitFor(() => expect(view!.get("aside").text()).toContain("GPU runner"))
+  await flushPromises()
+  expect(view!.get("aside").text()).not.toContain("build-01")
+})
+
+test("the selected machine shows when central presence reports it offline", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("m1", "team-1", "Build server")] })
+  withEmptyCatalogs(fake)
+  mountShell(fake.central, "web")
+  await flushPromises()
+  await vi.waitFor(() => expect(fake.central.catalog).toHaveBeenCalledWith("m1"))
+  await flushPromises()
+  expect(view!.get("aside").text()).not.toContain("Offline")
+  fake.emit({ type: "presence", machineId: "m1", online: false } as never)
+  await vi.waitFor(() => expect(view!.get("aside").text()).toContain("Offline"))
 })

@@ -168,7 +168,12 @@ export const useFleetStore = defineStore("fleet", () => {
     await refreshLocalDesktop()
     await refreshLocalCatalog()
   }
-  const unsubscribe = platformClient.catalog.onChanged(() => { void refreshLocalCatalog(); void agents.refresh(); void terminals.refresh() })
+  const unsubscribe = platformClient.catalog.onChanged(() => {
+    // A remote machine's presence and renames arrive as catalog changes. Its catalog,
+    // applied after the target, carries the current Team name.
+    void (platformClient.target ? refreshLocal() : refreshLocalCatalog())
+    void agents.refresh(); void terminals.refresh()
+  })
   onScopeDispose(unsubscribe)
   const canManageCatalog = computed(() => localMachine().online && catalogReady.value)
   function requireLocalCatalog(): void {

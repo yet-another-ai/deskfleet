@@ -1,17 +1,14 @@
 <script setup lang="ts">
-import { client as platformClient } from "@deskfleet/client/platform"
-
-import { ArrowLeft, Bot, SlidersHorizontal, Users } from "@lucide/vue"
-import { onBeforeUnmount, onMounted } from "vue"
+import { Bot, SlidersHorizontal, Users } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRouter } from "vue-router"
+import SettingsLayout from "../components/settings/SettingsLayout.vue"
 import SidebarLink from "../components/sidebar/SidebarLink.vue"
-import { useAccountContext } from "../composables/useAccountContext.ts"
+import { useAccountSession } from "../composables/useAccountSession.ts"
 
 const { t } = useI18n()
 const router = useRouter()
-const platform = platformClient.platform
-const account = useAccountContext()
+const account = useAccountSession()
 
 // Section links replace their history entry, so the previous entry is the page Settings opened from.
 function leave(): void {
@@ -19,39 +16,15 @@ function leave(): void {
   if (state?.back != null) router.back()
   else void router.push({ name: "new-session" })
 }
-
-function leaveOnEscape(event: KeyboardEvent): void {
-  if (event.defaultPrevented || document.querySelector("dialog[open]")) return
-  if (event.key === "Escape") leave()
-}
-onMounted(() => window.addEventListener("keydown", leaveOnEscape))
-onBeforeUnmount(() => window.removeEventListener("keydown", leaveOnEscape))
 </script>
 
 <template>
-  <!-- Settings replaces the sidebar and details panel: its sections on the left, the selected one on the right. -->
-  <div class="flex min-h-0 flex-1">
-    <nav :aria-label="t('settings.sections')" class="flex w-65 shrink-0 flex-col border-r border-ui-border bg-ui-sidebar">
-      <!-- On macOS the traffic lights sit at the start of this row. -->
-      <div class="app-drag flex h-12 shrink-0 items-center pr-2" :class="platform === 'darwin' ? 'pl-20' : 'pl-2'">
-        <button type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover hover:text-ui-text" @click="leave">
-          <ArrowLeft :size="16" :stroke-width="1.75" aria-hidden="true" />
-          {{ t("settings.back") }}
-        </button>
-      </div>
-      <div class="flex flex-col gap-0.5 px-2">
-        <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
-        <SidebarLink :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
-        <SidebarLink v-if="account?.team.value" :to="{ name: 'settings-team' }" :icon="Users" :label="t('account.teamSettings')" replace />
-      </div>
-    </nav>
-    <div class="flex min-w-0 flex-1 flex-col">
-      <div class="app-drag titlebar-overlay-inset h-12 shrink-0" />
-      <div class="min-h-0 flex-1 overflow-y-auto px-14 pb-10">
-        <div class="mx-auto max-w-3xl">
-          <RouterView />
-        </div>
-      </div>
-    </div>
-  </div>
+  <SettingsLayout @back="leave">
+    <template #nav>
+      <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
+      <SidebarLink :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
+      <SidebarLink v-if="account?.team.value" :to="{ name: 'settings-team' }" :icon="Users" :label="t('team.settings')" replace />
+    </template>
+    <RouterView />
+  </SettingsLayout>
 </template>

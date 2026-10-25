@@ -73,7 +73,7 @@ export const router = createRouter({
         {
           path: "team",
           name: "settings-team",
-          component: () => import("../components/settings/TeamSettingsPage.vue"),
+          component: () => import("../components/team/TeamSettings.vue"),
         },
       ],
     },

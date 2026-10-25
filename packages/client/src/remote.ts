@@ -19,6 +19,8 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
   const providerEvents = new Set<() => void>()
   let disposed = false
   let online = machine.online
+  // The central catalog carries the Team's current name for the machine, including later renames.
+  let name = machine.name
   let knownTerminals: TerminalSummary[] = []
   const emit = (event: DesktopEvent) => { for (const listener of events) listener(event) }
   const unsubscribe = central.onEvent((event: CentralEvent) => {
@@ -71,7 +73,11 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     ...host,
     target: { id: machine.id, local: false, lastSeen: machine.lastSeenAt ?? undefined },
     catalog: {
-      list: async () => (await central.catalog(machine.id)).snapshot,
+      list: async () => {
+        const { snapshot } = await central.catalog(machine.id)
+        name = snapshot.machineName
+        return snapshot
+      },
       createWorkspace: (name, directories) => rpc("workspaceCreate", { name, directories }),
       updateWorkspace: (workspaceId, name, directories) => rpc("workspaceUpdate", { workspaceId, name, directories }),
       deleteWorkspace: workspaceId => rpc("workspaceDelete", { workspaceId }),
@@ -102,7 +108,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     },
     desktop: {
       ...signaling("desktop"),
-      target: async () => ({ id: machine.id, name: machine.name, online, desktop: machine.capabilities?.desktop === true }),
+      target: async () => ({ id: machine.id, name, online, desktop: machine.capabilities?.desktop === true }),
       capabilities: () => rpc("capabilities"),
       start: (options: DesktopStart) => {
         const peer = peers.get(options.sessionId)

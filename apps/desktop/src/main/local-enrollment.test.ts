@@ -19,6 +19,16 @@ test("re-registers a revoked machine into the original team using only its fresh
   expect(result.configured).toBe(true)
 })
 
+test("the chosen Team name replaces the hostname, which remains the default", async () => {
+  const f = setup(false, false)
+  await enrollLocalMachine(f.central, f.local, "original-team", "  Design MacBook  ")
+  expect(vi.mocked(f.central.enrollHeadless).mock.calls[0]![1].name).toBe("Design MacBook")
+  await enrollLocalMachine(f.central, f.local, "original-team", "   ")
+  expect(vi.mocked(f.central.enrollHeadless).mock.calls[1]![1].name).toBe("My computer")
+  await expect(enrollLocalMachine(f.central, f.local, "original-team", 42)).rejects.toThrow("Invalid machine name")
+  expect(f.central.enrollHeadless).toHaveBeenCalledTimes(2)
+})
+
 test("an active registration cannot be overwritten", async () => {
   const f = setup(false)
   await expect(enrollLocalMachine(f.central, f.local, "other-team")).rejects.toThrow("already enrolled")

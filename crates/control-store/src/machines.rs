@@ -80,6 +80,20 @@ impl ControlStore {
             .map(machine)
             .collect()
     }
+    /// Every Team member can rename a machine; the daemon keeps its own hostname.
+    pub async fn rename_machine(&self, user_id: &str, id: &str, value: &str) -> Result<Machine> {
+        let mut m = self.machine(id).await?;
+        self.team_role(user_id, &m.team_id).await?;
+        let value = name(value)?;
+        self.db
+            .execute_raw(sql(
+                "UPDATE cp_machines SET name=$1 WHERE id=$2 AND NOT revoked",
+                vec![value.into(), resource_id(id)?.into()],
+            ))
+            .await?;
+        m.name = value.to_owned();
+        Ok(m)
+    }
     pub async fn set_machine_capabilities(&self, id: &str, capabilities: Value) -> Result<()> {
         if !capabilities.is_object() {
             return Err(Error::Invalid("invalid machine capabilities"));

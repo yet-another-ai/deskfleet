@@ -37,14 +37,12 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     const element = [...root.querySelectorAll("button")].find(value => value.textContent?.trim() === label || value.getAttribute("aria-label") === label)
     require(element, `Missing ${label} button`); return element
   }
+  // Unselected Team machines are collapsed sidebar groups; opening one switches machines.
+  const machineRow = (index: number) => document.querySelector<HTMLButtonElement>(`aside button[data-machine-id="${context.machines[index]}"]`)
   async function selectMachine(index: number): Promise<void> {
-    await until(() => !!document.querySelector<HTMLButtonElement>('button[aria-label="Machine"]:not(:disabled)'), "machine switcher")
-    button("Machine").click()
-    await until(() => !!document.querySelector(`button[data-machine-id="${context.machines[index]}"]`), "machine menu")
-    const item = document.querySelector<HTMLButtonElement>(`button[data-machine-id="${context.machines[index]}"]`)!
-    require(item.getAttribute("role") === "menuitemradio", "Machine choices must expose radio menu semantics")
-    item.click()
-    await until(() => !document.querySelector('[role="menu"][aria-label="Machine"]'), "closed machine menu")
+    await until(() => context.machines.some((_, other) => other !== index && !!machineRow(other)) || !!machineRow(index), "team machines")
+    machineRow(index)?.click()
+    await until(() => !machineRow(index), "selected machine")
   }
   async function session(index: number): Promise<void> {
     await selectMachine(index)
@@ -58,9 +56,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     require(!JSON.stringify(await api.central.status()).includes('"token"'), "The Electron renderer must not receive the app session token")
   }
   if (offline) {
-    button("Machine").click()
-    await until(() => !!document.querySelector(`button[data-machine-id="${context.machines[0]}"]`)?.textContent?.includes("Offline"), "offline machine presence")
-    button("Machine").click()
+    await until(() => (machineRow(0) ?? document.querySelector("aside"))?.textContent?.includes("Offline") === true, "offline machine presence")
     await session(1)
     await session(0)
     await until(() => !!document.querySelector("main")?.textContent?.includes(`Prompt from ${context.mode}`), "offline synchronized history")
@@ -111,7 +107,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
 }
 
 
-type CaptureView = "session" | "workspace" | "team-menu" | "machine-menu" | "account-menu" | "settings-team" | "create-team" | "invite" | "enroll"
+type CaptureView = "session" | "workspace" | "team-menu" | "account-menu" | "settings-team" | "create-team" | "invite" | "add-machine"
 
 /** Navigation stays within the disposable fixture's authenticated renderer. */
 async function prepareCapture(context: BackendClientsContext, view: CaptureView): Promise<void> {
@@ -125,7 +121,7 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
   for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog[open]")) dialog.close()
   for (const trigger of document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"][aria-expanded="true"]')) trigger.click()
   location.hash = `/sessions/${context.sessionId}`
-  await until(() => !!document.querySelector('button[aria-label="Machine"]') && !!document.querySelector("main")?.textContent?.includes("Machine 0 conversation"), "session")
+  await until(() => !!document.querySelector('button[aria-label="Team"]') && !!document.querySelector("main")?.textContent?.includes("Machine 0 conversation"), "session")
   if (view === "workspace") {
     const link = document.querySelector<HTMLAnchorElement>('aside a[href*="/workspaces/"]')
     if (!link) throw new Error("Fixture workspace link is missing")
@@ -139,22 +135,25 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
     manage.click()
     await until(() => location.hash === "#/settings/team" && !!document.querySelector("[data-member-id]"), "team settings")
     if (view === "invite") {
-      const invite = [...document.querySelectorAll<HTMLButtonElement>("main button")].find(button => button.textContent?.trim() === "Invite a member")
-      if (!invite) throw new Error("Invite a member button is missing")
+      const invite = [...document.querySelectorAll<HTMLButtonElement>("main button")].find(button => button.textContent?.trim() === "Invite")
+      if (!invite) throw new Error("Invite button is missing")
       invite.click()
       await until(() => !!document.querySelector('dialog[open] input[name="invite-email"]'), "invite dialog")
     }
-  } else if (view === "create-team" || view === "enroll") {
-    const label = view === "create-team" ? "Team" : "Machine"
-    const action = view === "create-team" ? "Create your team" : "Enroll headless machine"
-    document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click()
-    await until(() => !!document.querySelector(`[role="menu"][aria-label="${label}"]`), label)
-    const create = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === action)
-    if (!create) throw new Error(`${action} menu item is missing`)
+  } else if (view === "create-team") {
+    document.querySelector<HTMLButtonElement>('button[aria-label="Team"]')!.click()
+    await until(() => !!document.querySelector('[role="menu"][aria-label="Team"]'), "team menu")
+    const create = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === "Create a team")
+    if (!create) throw new Error("Create a team menu item is missing")
     create.click()
-    await until(() => !!document.querySelector("dialog[open]")?.textContent?.includes(action), `${view} dialog`)
+    await until(() => !!document.querySelector("dialog[open]")?.textContent?.includes("Create a team"), "create team dialog")
+  } else if (view === "add-machine") {
+    const add = document.querySelector<HTMLButtonElement>('aside button[aria-label="Add machine"]')
+    if (!add) throw new Error("Add machine button is missing")
+    add.click()
+    await until(() => !!document.querySelector("dialog[open]")?.textContent?.includes("Add a machine"), "add machine dialog")
   } else if (view.endsWith("-menu")) {
-    const label = view === "team-menu" ? "Team" : view === "machine-menu" ? "Machine" : "Client smoke"
+    const label = view === "team-menu" ? "Team" : "Client smoke"
     const trigger = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
     if (!trigger) throw new Error(`Missing ${label} menu trigger`)
     trigger.click()
@@ -170,7 +169,7 @@ async function captureScreenshots(window: BrowserWindow, context: BackendClients
   await mkdir(directory, { recursive: true })
   for (const [width, height] of [[1100, 740], [800, 600]] as const) {
     window.setContentSize(width, height)
-    for (const view of ["session", "workspace", "team-menu", "machine-menu", "account-menu", "settings-team", "create-team", "invite", "enroll"] as const) {
+    for (const view of ["session", "workspace", "team-menu", "account-menu", "settings-team", "create-team", "invite", "add-machine"] as const) {
       await window.webContents.executeJavaScript(`(${prepareCapture.toString()})(${JSON.stringify(context)},${JSON.stringify(view)})`)
       const image = await window.webContents.capturePage()
       if (image.isEmpty()) throw new Error(`Empty screenshot for ${context.mode} ${view}`)
@@ -246,7 +245,7 @@ void app.whenReady().then(async () => {
   await window.webContents.executeJavaScript(`(() => { const input=document.querySelector('input[type="url"]');input.value=${JSON.stringify(context.backend)};input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('form').requestSubmit(); })()`)
   // The Web login replaces the document twice. Wait from the main process for the app to return.
   const deadline = Date.now() + 30_000
-  while (!await window.webContents.executeJavaScript(`!!document.querySelector('button[aria-label="Machine"]')`).catch(() => false)) {
+  while (!await window.webContents.executeJavaScript(`!!document.querySelector('button[aria-label="Team"]') && !!document.querySelector('aside nav')`).catch(() => false)) {
     if (Date.now() > deadline) throw new Error(`OIDC login timed out: ${await window.webContents.executeJavaScript("document.body.innerText")}; authorization: ${await Promise.all(authorizations.map(browser => browser.webContents.executeJavaScript("location.href+' '+document.body.innerText")))}`)
     await new Promise(resolve => setTimeout(resolve, 50))
   }

@@ -87,7 +87,8 @@ The `/api` routes cover:
 
 - `/auth/start`, `/auth/callback`, `/auth/exchange`, `/auth/logout`, and `/me`.
 - `/teams`, membership/role management, invitations, and `/invites/accept`.
-- Team machine enrollment/listing and administrator machine removal.
+- Team machine enrollment/listing, renaming (`PATCH /machines/{id}`), and
+  administrator machine removal.
 - `/machines/{id}/rpc` for an explicit management-method allowlist, including
   Session create, archive, restore, configuration, and operation receipt lookup.
 - Machine catalog, Session snapshots, paginated events, and command audit reads.
@@ -96,7 +97,11 @@ The `/api` routes cover:
   desktop stream start, and revocation.
 
 Admins manage members/roles and remove machines. All members can enroll their
-machines and operate resources on team machines. No route exposes permanent
+machines, rename team machines, and operate resources on them. A machine's Team
+name is chosen at enrollment, where clients default it to the daemon's hostname.
+Catalog reads report that name as `snapshot.machineName` in place of the
+daemon-reported hostname, and a rename notifies the Team with `catalogChanged`.
+No route exposes permanent
 Session deletion. Archive snapshots and Agent command receipts remain available
 when a machine is offline; terminal output is never uploaded.
 

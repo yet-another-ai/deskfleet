@@ -27,9 +27,10 @@ daemon, then inspect its installation identity:
 mise exec -- node apps/daemon/src/main.ts status
 ```
 
-In the Web client's Team controls, enroll a headless machine using that
-`originId` and local `machineId`. The client displays the new machine credential
-once. Save that JSON privately or paste it on stdin:
+In either client, choose Add machine → Another machine and paste that output.
+The client reads the installation `originId` and local `machineId` from it and
+displays the new machine credential once. Save that JSON privately or paste it
+on stdin:
 
 ```sh
 mise exec -- node apps/daemon/src/main.ts enroll --server-url https://backend.example < machine-credentials.json
@@ -49,8 +50,8 @@ deskfleet-daemon prepare-enrollment
 ```
 
 This stops the old Agent and terminal processes, retains their data at its
-original paths, and prints a fresh identity. Use that identity in the enrollment
-dialog, then import the new credential. It can join the original Team or another
+original paths, and prints a fresh identity. Paste that output into the Add
+machine dialog, then import the new credential. It can join the original Team or another
 Team. Electron performs this preparation when enrolling a removed local machine.
 An active registration cannot be overwritten. Old history, Provider settings,
 and Workspaces are not imported into the new registration.
