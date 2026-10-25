@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CircleHelp } from "@lucide/vue"
-import { computed, ref, watch } from "vue"
+import { watchImmediate } from "@vueuse/core"
+import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentElicitation } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { validateElicitationResponse } from "../../../../../apps/daemon/src/agent-elicitation-protocol.ts"
@@ -20,12 +21,12 @@ const draft = computed(() => agents.elicitationDrafts[props.elicitation.id] ?? {
 const formElement = ref<HTMLFormElement | null>(null)
 const invalid = ref(false)
 const failed = ref(false)
-watch(() => [props.elicitation.id, props.elicitation.state], () => {
+watchImmediate(() => [props.elicitation.id, props.elicitation.state], () => {
   invalid.value = false
   failed.value = false
   if (pending.value) agents.elicitationDrafts[props.elicitation.id] ??= elicitationDefaults(form.value?.fields ?? [])
   else delete agents.elicitationDrafts[props.elicitation.id]
-}, { immediate: true })
+})
 
 function setValue(id: string, value: ElicitationValue): void {
   if (disabled.value) return

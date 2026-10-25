@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue"
+import { watchImmediate, whenever } from "@vueuse/core"
+import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
@@ -27,8 +28,7 @@ const redirecting = computed(() => {
   return !!value && (!!(value.session && value.worktree) || (!value.workspace && !value.worktree))
 })
 // Ownership decides the destination; a shell's cwd does not change its scope.
-watch(location, (value) => {
-  if (!value) return
+whenever(location, (value) => {
   if (value.session && value.worktree) {
     terminals.selected[value.worktree.id] = value.terminal.id
     layout.terminalPanelOpen = true
@@ -52,9 +52,9 @@ const activeTerminal = computed({
 })
 // Retain the workspace while a hung-up terminal leaves the catalog and the route advances.
 const lastLocalTerminalId = ref<string>()
-watch(location, (value) => {
+watchImmediate(location, (value) => {
   if (value?.machine.id === fleet.targetId) lastLocalTerminalId.value = value.terminal.id
-}, { immediate: true })
+})
 const localWorkspace = computed(() => props.machineId === fleet.targetId
   || location.value?.machine.id === fleet.targetId
   || (props.terminalId !== undefined && props.terminalId === lastLocalTerminalId.value))

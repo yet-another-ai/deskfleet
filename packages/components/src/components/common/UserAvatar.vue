@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from "vue"
+import { watchImmediate } from "@vueuse/core"
+import { ref } from "vue"
 import { gravatarUrl } from "../../services/gravatar.ts"
 
 const props = defineProps<{
@@ -11,7 +12,7 @@ const props = defineProps<{
 const src = ref<string>()
 const failed = ref(false)
 
-watch(() => [props.email, props.size] as const, async ([email, size], _, onCleanup) => {
+watchImmediate(() => [props.email, props.size] as const, async ([email, size], _, onCleanup) => {
   let current = true
   onCleanup(() => { current = false })
   src.value = undefined
@@ -20,7 +21,7 @@ watch(() => [props.email, props.size] as const, async ([email, size], _, onClean
   // Without Web Crypto (an insecure origin), the initial remains.
   const url = await gravatarUrl(email, size * 2).catch(() => undefined)
   if (current) src.value = url
-}, { immediate: true })
+})
 </script>
 
 <template>

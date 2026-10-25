@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ArrowDown, ArrowUp, Folder, Plus, X } from "@lucide/vue"
-import { ref, watch } from "vue"
+import { whenever } from "@vueuse/core"
+import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
 import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
@@ -15,7 +16,7 @@ const props = defineProps<{
 const { t } = useI18n()
 const picking = ref<{ index: number; initialPath?: string } | null>(null)
 const error = ref<string | null>(null)
-watch(() => props.disabled, disabled => { if (disabled) picking.value = null })
+whenever(() => props.disabled, () => { picking.value = null })
 function pick(index: number): void {
   if (props.disabled) return
   error.value = null

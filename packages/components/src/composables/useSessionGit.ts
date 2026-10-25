@@ -1,3 +1,4 @@
+import { useDocumentVisibility, useTimeoutFn, watchImmediate, whenever } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from "vue"
 import type { GitDiffRequest, GitFileChange, GitFileDiff, GitStatusSnapshot } from "../../../../apps/daemon/src/git-protocol.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
@@ -19,12 +20,12 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
   let generation = 0
   let diffGeneration = 0
   let disposed = false
-  let timer: ReturnType<typeof setTimeout> | undefined
   let pending: Promise<void> | undefined
   let pendingDiff: { request: GitDiffRequest; promise: Promise<void> } | undefined
+  const { start: scheduleRefresh, stop: clearTimer } = useTimeoutFn(() => { void refresh() }, REFRESH_MS, { immediate: false })
+  const visibility = useDocumentVisibility()
 
-  function active(): boolean { return !disposed && toValue(enabled) && !!toValue(sessionId) && document.visibilityState !== "hidden" }
-  function clearTimer(): void { clearTimeout(timer); timer = undefined }
+  function active(): boolean { return !disposed && toValue(enabled) && !!toValue(sessionId) && visibility.value !== "hidden" }
   function closeDiff(): void {
     diffGeneration++
     pendingDiff = undefined
@@ -91,7 +92,7 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
         if (!disposed && current === generation) {
           loading.value = false
           pending = undefined
-          if (active()) timer = setTimeout(() => { void refresh() }, REFRESH_MS)
+          if (active()) scheduleRefresh()
         }
       }
     })()
@@ -99,7 +100,7 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
     return request
   }
 
-  watch([() => toValue(sessionId), () => toValue(enabled)], () => {
+  watchImmediate([() => toValue(sessionId), () => toValue(enabled)], () => {
     generation++
     pending = undefined
     clearTimer()
@@ -108,19 +109,17 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
     error.value = null
     loading.value = false
     void refresh()
-  }, { immediate: true })
-  watch(connected, value => { if (value) void refresh() })
-  function visibilityChanged(): void {
+  })
+  whenever(connected, () => { void refresh() })
+  watch(visibility, () => {
     clearTimer()
     if (active()) void refresh()
-  }
-  document.addEventListener("visibilitychange", visibilityChanged)
+  })
   onScopeDispose(() => {
     disposed = true
     generation++
     closeDiff()
     clearTimer()
-    document.removeEventListener("visibilitychange", visibilityChanged)
   })
   return { snapshot, loading, error, connected, selection, diff, diffLoading, diffError, refresh, select, closeDiff }
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
+import { watchImmediate } from "@vueuse/core"
 import { computed, defineAsyncComponent, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
@@ -52,7 +53,7 @@ const actionError = ref<string | null>(null)
 const scroller = ref<HTMLElement | null>(null)
 const followBottom = ref(true)
 const scroll = () => { const el = scroller.value; if (el) followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 100 }
-watch(() => props.sessionId, id => { busy.value = false; actionError.value = null; followBottom.value = true; void agents.open(id) }, { immediate: true })
+watchImmediate(() => props.sessionId, id => { busy.value = false; actionError.value = null; followBottom.value = true; void agents.open(id) })
 watch(() => [view.value?.events.length, view.value?.loading], () => {
   if (!view.value?.loading && followBottom.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
 }, { flush: "post" })

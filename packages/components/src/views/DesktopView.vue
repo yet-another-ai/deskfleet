@@ -2,7 +2,7 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 
 import { GripVertical, LoaderCircle, Maximize, Minimize, MonitorPlay, Play, RefreshCw, SlidersHorizontal, Unplug } from "@lucide/vue"
-import { onClickOutside } from "@vueuse/core"
+import { onClickOutside, watchImmediate, whenever } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, shallowRef, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DesktopCapabilities } from "../../../client/src/desktop-media.ts"
@@ -84,15 +84,15 @@ async function refresh(): Promise<void> {
   }
 }
 
-watch(() => props.machineId, () => {
+watchImmediate(() => props.machineId, () => {
   ++discoveryGeneration
   void connection.disconnect()
   capabilities.value = null
   loading.value = false
   discoveryError.value = null
   if (local.value) void refresh()
-}, { immediate: true })
-watch(() => props.visible, visible => { if (!visible) void connection.disconnect() })
+})
+whenever(() => !props.visible, () => { void connection.disconnect() })
 watch([() => props.visible, stream, isFullscreen], ([visible, media]) => {
   if (!visible || !media) void exitFullscreen()
 })

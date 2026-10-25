@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from "vue"
+import { useTimeoutFn, watchImmediate } from "@vueuse/core"
+import { computed, onBeforeUnmount, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
 import { decodeTerminalBytes } from "../../services/terminal-client.ts"
@@ -23,7 +24,6 @@ const sessionStatus = ref<TerminalSummary["status"]>("running")
 const exitCode = ref<number | undefined>()
 let size = { cols: 80, rows: 24 }
 let attachment: ReturnType<typeof terminals.attach> | null = null
-let resizeTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 let activating: ReturnType<typeof terminals.attach> | null = null
 
@@ -35,7 +35,10 @@ const connection = computed((): [TerminalConnection, string] => {
   if (sessionStatus.value === "exited") return ["ended", exitCode.value === undefined ? t("terminal.ended") : t("terminal.exited", { code: exitCode.value })]
   return attached.value ? ["connected", t("terminal.connected")] : ["disconnected", t("terminal.disconnected")]
 })
-watch(connection, ([state, label]) => emit("connection", state, label), { immediate: true })
+const { start: scheduleResize, stop: cancelResize } = useTimeoutFn(() => {
+  void terminals.resize(props.terminalId, size.cols, size.rows).catch(failed)
+}, 100, { immediate: false })
+watchImmediate(connection, ([state, label]) => emit("connection", state, label))
 
 function failed(reason: unknown): void {
   if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason)
@@ -56,7 +59,7 @@ async function activate(): Promise<void> {
 
 async function connect(): Promise<void> {
   attachment?.detach()
-  clearTimeout(resizeTimer)
+  cancelResize()
   connecting.value = true
   attached.value = false
   interactive.value = false
@@ -113,11 +116,9 @@ function ready(next: { cols: number; rows: number }): void {
 
 function resize(next: { cols: number; rows: number }): void {
   size = next
-  clearTimeout(resizeTimer)
+  cancelResize()
   if (props.readOnly || !interactive.value) return
-  resizeTimer = setTimeout(() => {
-    void terminals.resize(props.terminalId, size.cols, size.rows).catch(failed)
-  }, 100)
+  scheduleResize()
 }
 
 function input(data: string): void {
@@ -126,7 +127,7 @@ function input(data: string): void {
 
 onBeforeUnmount(() => {
   disposed = true
-  clearTimeout(resizeTimer)
+  cancelResize()
   attachment?.detach()
 })
 </script>

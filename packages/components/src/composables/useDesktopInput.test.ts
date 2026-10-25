@@ -24,7 +24,8 @@ function fixture(platform = "Win32") {
   const scope = effectScope()
   const enabled = ref(true)
   const send = vi.fn(() => true)
-  scope.run(() => useDesktopInput(shallowRef(video), enabled, send))
+  const surface = shallowRef<HTMLVideoElement | null>(video)
+  scope.run(() => useDesktopInput(surface, enabled, send))
   disposers.push(() => { scope.stop(); video.remove() })
   let mouseButtons = 0
   function pointer(type: string, init: PointerEventInit = {}) {
@@ -42,7 +43,7 @@ function fixture(platform = "Win32") {
     video.dispatchEvent(event)
     return event
   }
-  return { video, enabled, send, pointer, key, scope }
+  return { video, surface, enabled, send, pointer, key, scope }
 }
 
 test("maps the visible image rather than letterbox bars, and clamps captured drags", () => {
@@ -185,7 +186,7 @@ test("releases held input on blur, visibility loss, pause, lost capture, and dis
   for (const release of [
     () => f.video.dispatchEvent(new Event("blur")),
     () => window.dispatchEvent(new Event("blur")),
-    () => { vi.spyOn(document, "hidden", "get").mockReturnValueOnce(true); document.dispatchEvent(new Event("visibilitychange")) },
+    () => { vi.spyOn(document, "visibilityState", "get").mockReturnValueOnce("hidden"); document.dispatchEvent(new Event("visibilitychange")) },
     () => { f.enabled.value = false },
     () => f.pointer("lostpointercapture"),
     () => f.scope.stop(),
@@ -198,4 +199,29 @@ test("releases held input on blur, visibility loss, pause, lost capture, and dis
     await nextTick()
     expect(f.send).toHaveBeenCalledExactlyOnceWith({ type: "releaseAll" })
   }
+})
+
+test("replacing the video releases held input and follows the new surface", async () => {
+  const f = fixture()
+  f.pointer("pointerdown")
+  f.key("keydown", "ControlLeft")
+  f.send.mockClear()
+  const next = document.createElement("video")
+  next.tabIndex = 0
+  document.body.append(next)
+  Object.defineProperties(next, {
+    videoWidth: { value: 1920 }, videoHeight: { value: 1080 }, clientHeight: { value: 600 },
+  })
+  vi.spyOn(next, "getBoundingClientRect").mockReturnValue({ left: 10, top: 20, width: 800, height: 600 } as DOMRect)
+  f.surface.value = next
+  await nextTick()
+  expect(f.send).toHaveBeenCalledExactlyOnceWith({ type: "releaseAll" })
+  f.send.mockClear()
+  f.pointer("pointerdown")
+  expect(f.send).not.toHaveBeenCalled()
+  next.dispatchEvent(new PointerEvent("pointerdown", {
+    pointerId: 1, pointerType: "mouse", clientX: 410, clientY: 320, button: 0, buttons: 1, cancelable: true,
+  }))
+  expect(f.send).toHaveBeenCalledExactlyOnceWith({ type: "pointerButton", button: 0, pressed: true, x: 0.5, y: 0.5 })
+  next.remove()
 })

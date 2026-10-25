@@ -288,6 +288,15 @@ test("notifications have a dedicated settings section and retain the return dest
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
 })
 
+test("returning focus to the window refreshes the local machine", async () => {
+  const list = vi.mocked(platformClient.catalog.list)
+  await mountApp()
+  const afterMount = list.mock.calls.length
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(list.mock.calls.length).toBeGreaterThan(afterMount)
+})
+
 test("sidebar and details panel controls retain their layout behavior", async () => {
   const wrapper = await mountApp()
   const [details, changes] = panel(wrapper).findAll('[role="tab"]')

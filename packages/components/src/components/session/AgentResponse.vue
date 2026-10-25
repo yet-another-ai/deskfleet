@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronRight, CircleAlert, CircleX, LoaderCircle } from "@lucide/vue"
-import { useIntervalFn, useNow } from "@vueuse/core"
+import { useIntervalFn, useNow, watchImmediate } from "@vueuse/core"
 import { computed, reactive, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { ConversationResponse } from "../../services/agent-conversation.ts"
@@ -13,7 +13,7 @@ import AgentElicitation from "./AgentElicitation.vue"
 const props = defineProps<{ response: ConversationResponse; disabled?: boolean }>()
 const { t } = useI18n()
 const { now, pause, resume } = useNow({ controls: true, scheduler: callback => useIntervalFn(callback, 1000) })
-watch(() => props.response.live, live => live ? resume() : pause(), { immediate: true })
+watchImmediate(() => props.response.live, live => live ? resume() : pause())
 const duration = computed(() => {
   const value = elapsed(props.response.startedAt, props.response.live ? now.value.getTime() : props.response.endedAt)
   return value === undefined ? undefined : formatDuration(value)

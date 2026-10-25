@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { client } from "@deskfleet/client/platform"
-import { computed, inject, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from "vue"
+import { watchImmediate } from "@vueuse/core"
+import { computed, inject, nextTick, onBeforeUnmount, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
 import { renderResourceMarkdown } from "../../services/markdown.ts"
@@ -61,7 +62,7 @@ function load(uri: string): void {
     if (images.get(uri) === value) value.error = reason instanceof Error ? reason.message : String(reason)
   }).finally(() => { if (!disposed && images.get(uri) === value) hydrate() })
 }
-watch([rendered, context], async () => {
+watchImmediate([rendered, context], async () => {
   const version = ++generation
   const key = JSON.stringify(context.value)
   if (contextKey !== key) {
@@ -73,7 +74,7 @@ watch([rendered, context], async () => {
   for (const uri of used) if (!images.has(uri)) load(uri)
   await nextTick()
   if (!disposed && version === generation) hydrate()
-}, { immediate: true, flush: "post" })
+}, { flush: "post" })
 
 async function click(event: MouseEvent): Promise<void> {
   const target = event.target instanceof Element ? event.target : null

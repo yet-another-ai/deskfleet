@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ChevronRight, Laptop, Server } from "@lucide/vue"
-import { computed, nextTick, onMounted, ref, useId, useTemplateRef, watch } from "vue"
+import { whenever } from "@vueuse/core"
+import { computed, nextTick, onMounted, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import CopyField from "../common/CopyField.vue"
@@ -36,7 +37,7 @@ const localTeam = computed(() => {
   return session.teams.value.find(value => value.id === local.value!.teamId)?.name ?? local.value.serverUrl ?? ""
 })
 
-watch(identity, value => { if (value && !nameEdited.value) name.value = value.name })
+whenever(identity, value => { if (!nameEdited.value) name.value = value.name })
 
 function close(): void { if (!pending.value) emit("close") }
 async function run(work: () => Promise<void>): Promise<void> {

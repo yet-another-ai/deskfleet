@@ -162,3 +162,32 @@ test("an exit delivered before attachment completes is not overwritten by a stal
   expect(fixture.wrapper.get("[data-surface]").attributes("data-interactive")).toBe("false")
   fixture.wrapper.unmount()
 })
+
+test("resize events collapse into the latest size and leave with the view", async () => {
+  const fixture = setup()
+  try {
+    fixture.resolve()
+    await flushPromises()
+    fixture.emit({ kind: "ready", sessionId: "terminal-1" }, () => {})
+    await flushPromises()
+    const resize = vi.mocked(fixture.terminals.resize)
+    resize.mockClear()
+    vi.useFakeTimers()
+    const surface = fixture.wrapper.getComponent({ name: "TerminalSurface" })
+    await surface.vm.$emit("resize", { cols: 110, rows: 40 })
+    await surface.vm.$emit("resize", { cols: 120, rows: 50 })
+    expect(resize).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(99)
+    expect(resize).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(resize).toHaveBeenCalledExactlyOnceWith("terminal-1", 120, 50)
+    resize.mockClear()
+    await surface.vm.$emit("resize", { cols: 130, rows: 60 })
+    fixture.wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(resize).not.toHaveBeenCalled()
+  } finally {
+    fixture.wrapper.unmount()
+    vi.useRealTimers()
+  }
+})

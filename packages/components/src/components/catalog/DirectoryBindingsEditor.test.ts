@@ -56,6 +56,15 @@ test("prevents duplicate paths while preserving ordering and the default directo
   expect(view.props("modelValue")).toEqual([{ path: "/code/api" }])
 })
 
+test("disabling the editor dismisses an open folder picker", async () => {
+  const view = render([{ path: "/code/web" }])
+  await addButton(view).trigger("click")
+  expect(view.findComponent(FolderPickerDialog).exists()).toBe(true)
+  await view.setProps({ disabled: true })
+  await view.setProps({ disabled: false })
+  expect(view.findComponent(FolderPickerDialog).exists()).toBe(false)
+})
+
 test("fills the initial empty directory instead of adding an unselected row", async () => {
   const view = render([{ path: "" }])
   await addButton(view).trigger("click")

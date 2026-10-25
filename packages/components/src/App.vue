@@ -2,7 +2,8 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 
 import { storeToRefs } from "pinia"
-import { onBeforeUnmount, onMounted, watch } from "vue"
+import { useEventListener, whenever } from "@vueuse/core"
+import { onBeforeUnmount, onMounted } from "vue"
 import { RouterView, useRoute } from "vue-router"
 import DetailsPanel from "./components/details/DetailsPanel.vue"
 import AppSidebar from "./components/sidebar/AppSidebar.vue"
@@ -18,7 +19,7 @@ const fleet = useFleetStore()
 const terminals = useTerminalsStore()
 const agents = useAgentSessionsStore()
 const providers = useProvidersStore()
-watch(() => fleet.localDesktopTarget.online, (online) => { if (online) void terminals.refresh() })
+whenever(() => fleet.localDesktopTarget.online, () => { void terminals.refresh() })
 const refresh = () => { void fleet.refreshLocal().then(() => {
   if (fleet.localDesktopTarget.online || platformClient.agent.history) void agents.refresh()
   if (fleet.localDesktopTarget.online || platformClient.providers.display) void providers.refresh()
@@ -29,11 +30,9 @@ const unsubscribeSettings = platformClient.settings.onChanged(({ status }) => {
     void terminals.refresh()
   }
 })
-onMounted(() => { refresh(); window.addEventListener("focus", refresh) })
-onBeforeUnmount(() => {
-  window.removeEventListener("focus", refresh)
-  unsubscribeSettings()
-})
+onMounted(refresh)
+useEventListener(window, "focus", refresh)
+onBeforeUnmount(unsubscribeSettings)
 </script>
 
 <template>

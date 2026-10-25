@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { client as platformClient } from "@deskfleet/client/platform"
 import { FolderSync, MonitorPlay, SquareTerminal } from "@lucide/vue"
-import { computed, defineAsyncComponent, nextTick, ref, useId, watch } from "vue"
+import { watchImmediate } from "@vueuse/core"
+import { computed, defineAsyncComponent, nextTick, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
@@ -31,10 +32,10 @@ type Tool = typeof tabs[number]["id"]
 const active = computed<Tool>(() => tabs.find(tab => tab.id === route.query.tab)?.id
   ?? (machine.value?.desktop ? "desktop" : "terminal"))
 const visited = ref(new Set<Tool>())
-watch(() => [machine.value?.id, active.value] as const, ([id, tool], previous) => {
+watchImmediate(() => [machine.value?.id, active.value] as const, ([id, tool], previous) => {
   if (id !== previous?.[0]) visited.value = new Set()
   if (id) visited.value.add(tool)
-}, { immediate: true })
+})
 const id = useId()
 const tabId = (tool: Tool) => `${id}-${tool}-tab`
 const panelId = (tool: Tool) => `${id}-${tool}-panel`

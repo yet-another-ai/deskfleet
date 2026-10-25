@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Bot } from "@lucide/vue"
-import { computed, ref, watch } from "vue"
+import { watchImmediate } from "@vueuse/core"
+import { computed, ref } from "vue"
 import { loadProviderIcons, matchProviderIcon, type ProviderIcon } from "../../services/provider-icons.ts"
 
 const props = withDefaults(defineProps<{ icon?: string; template?: string; size?: number }>(), { size: 20 })
 const mark = ref<ProviderIcon>()
 const pending = ref(false)
-watch(() => [props.icon, props.template] as const, async ([icon, template], _previous, onCleanup) => {
+watchImmediate(() => [props.icon, props.template] as const, async ([icon, template], _previous, onCleanup) => {
   if (!icon && !template) {
     mark.value = undefined
     pending.value = false
@@ -19,7 +20,7 @@ watch(() => [props.icon, props.template] as const, async ([icon, template], _pre
   if (!current) return
   mark.value = matchProviderIcon(catalog.iconsById, icon, template)
   pending.value = false
-}, { immediate: true })
+})
 const box = computed(() => ({ width: `${props.size}px`, height: `${props.size}px` }))
 const style = computed(() => mark.value ? {
   ...box.value, backgroundColor: "currentColor",

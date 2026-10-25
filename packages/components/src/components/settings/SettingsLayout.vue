@@ -2,7 +2,7 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 
 import { ArrowLeft } from "@lucide/vue"
-import { onBeforeUnmount, onMounted } from "vue"
+import { useEventListener } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
 
 const emit = defineEmits<{ back: [] }>()
@@ -13,8 +13,7 @@ function leaveOnEscape(event: KeyboardEvent): void {
   if (event.defaultPrevented || document.querySelector("dialog[open]")) return
   if (event.key === "Escape") emit("back")
 }
-onMounted(() => window.addEventListener("keydown", leaveOnEscape))
-onBeforeUnmount(() => window.removeEventListener("keydown", leaveOnEscape))
+useEventListener(window, "keydown", leaveOnEscape)
 </script>
 
 <template>

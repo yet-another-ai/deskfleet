@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CircleAlert, CircleCheck, Copy, LoaderCircle, User } from "@lucide/vue"
-import { computed, onBeforeUnmount, ref } from "vue"
+import { useTimeoutFn } from "@vueuse/core"
+import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
@@ -20,17 +21,16 @@ const steered = computed(() => props.input.state === "delivered" && props.input.
 const text = computed(() => props.input.content.flatMap(block => block.type === "text" ? [block.text] : []).join("\n\n"))
 const copied = ref(false)
 const copyFailed = ref(false)
-let resetCopied: ReturnType<typeof setTimeout> | undefined
+const { start: scheduleCopiedReset, stop: cancelCopiedReset } = useTimeoutFn(() => { copied.value = false }, 1500, { immediate: false })
 async function copy(): Promise<void> {
-  clearTimeout(resetCopied)
+  cancelCopiedReset()
   copied.value = false
   copyFailed.value = false
   try { await navigator.clipboard.writeText(text.value) }
   catch { copyFailed.value = true; return }
   copied.value = true
-  resetCopied = setTimeout(() => { copied.value = false }, 1500)
+  scheduleCopiedReset()
 }
-onBeforeUnmount(() => clearTimeout(resetCopied))
 </script>
 
 <template>

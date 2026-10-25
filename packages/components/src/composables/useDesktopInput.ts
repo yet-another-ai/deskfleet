@@ -1,3 +1,4 @@
+import { useDocumentVisibility, useEventListener, watchImmediate } from "@vueuse/core"
 import { onScopeDispose, watch, type Ref } from "vue"
 import type { DesktopInputMessage, DesktopPointerButton } from "../../../client/src/desktop-input.ts"
 
@@ -156,41 +157,21 @@ export function useDesktopInput(
     if (pointers.has(event.pointerId)) release()
   }
 
-  function hidden(): void { if (document.hidden) release() }
-  const stop = watch(video, (element, _previous, cleanup) => {
-    if (!element) return
-    element.addEventListener("pointermove", pointerMove)
-    element.addEventListener("pointerdown", pointerDown)
-    element.addEventListener("pointerup", pointerUp)
-    element.addEventListener("pointercancel", release)
-    element.addEventListener("lostpointercapture", lostPointerCapture)
-    element.addEventListener("wheel", wheel, { passive: false })
-    element.addEventListener("keydown", keyDown)
-    element.addEventListener("keyup", keyUp)
-    element.addEventListener("contextmenu", contextMenu)
-    element.addEventListener("blur", release)
-    cleanup(() => {
-      release()
-      element.removeEventListener("pointermove", pointerMove)
-      element.removeEventListener("pointerdown", pointerDown)
-      element.removeEventListener("pointerup", pointerUp)
-      element.removeEventListener("pointercancel", release)
-      element.removeEventListener("lostpointercapture", lostPointerCapture)
-      element.removeEventListener("wheel", wheel)
-      element.removeEventListener("keydown", keyDown)
-      element.removeEventListener("keyup", keyUp)
-      element.removeEventListener("contextmenu", contextMenu)
-      element.removeEventListener("blur", release)
-    })
-  }, { immediate: true, flush: "post" })
+  // Replacing the surface drops keys and buttons before the listeners move with it.
+  watchImmediate(video, (_element, _previous, onCleanup) => { onCleanup(release) }, { flush: "post" })
+  useEventListener(video, "pointermove", pointerMove)
+  useEventListener(video, "pointerdown", pointerDown)
+  useEventListener(video, "pointerup", pointerUp)
+  useEventListener(video, "pointercancel", release)
+  useEventListener(video, "lostpointercapture", lostPointerCapture)
+  useEventListener(video, "wheel", wheel, { passive: false })
+  useEventListener(video, "keydown", keyDown)
+  useEventListener(video, "keyup", keyUp)
+  useEventListener(video, "contextmenu", contextMenu)
+  useEventListener(video, "blur", release)
   watch(enabled, value => { if (!value) release() }, { flush: "sync" })
-  window.addEventListener("blur", release)
-  document.addEventListener("visibilitychange", hidden)
-  onScopeDispose(() => {
-    stop()
-    release()
-    window.removeEventListener("blur", release)
-    document.removeEventListener("visibilitychange", hidden)
-  })
+  useEventListener(window, "blur", release)
+  watch(useDocumentVisibility(), state => { if (state === "hidden") release() })
+  onScopeDispose(release)
   return { release }
 }

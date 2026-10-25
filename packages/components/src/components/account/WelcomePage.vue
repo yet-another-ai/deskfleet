@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Check, ChevronRight, FolderOpen, KeyRound, Monitor, MousePointer2, Server, ShieldCheck } from "@lucide/vue"
-import { computed, onBeforeUnmount, ref, watch } from "vue"
+import { useEventListener, whenever } from "@vueuse/core"
+import { computed, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { DesktopPermissionsState } from "@deskfleet/client/local-agent"
@@ -88,7 +89,7 @@ async function advancePermission(kind: OnboardingPermission): Promise<void> {
   await act(async () => { move(await onboarding!.advancePermission(kind)) })
 }
 
-watch(permission, () => { if (permission.value) void refreshPermissions() }, { immediate: true })
+whenever(permission, () => { void refreshPermissions() }, { immediate: true })
 const unsubscribe = onboarding ? props.host.settings.onChanged(state => {
   if (!ONBOARDING_PERMISSIONS.some(kind => state[`${kind}Permission`])) return
   ++permissionRevision
@@ -97,8 +98,8 @@ const unsubscribe = onboarding ? props.host.settings.onChanged(state => {
     if (value) permissions.value[`${kind}Permission`] = value
   }
 }) : undefined
-window.addEventListener("focus", refreshPermissions)
-onBeforeUnmount(() => { unsubscribe?.(); window.removeEventListener("focus", refreshPermissions) })
+useEventListener(window, "focus", refreshPermissions)
+onBeforeUnmount(() => { unsubscribe?.() })
 </script>
 
 <template>

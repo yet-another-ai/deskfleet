@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Check, Copy } from "@lucide/vue"
-import { onBeforeUnmount, ref, useId } from "vue"
+import { useTimeoutFn } from "@vueuse/core"
+import { ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 
 const props = defineProps<{
@@ -12,16 +13,14 @@ const props = defineProps<{
 const { t } = useI18n()
 const id = useId()
 const copied = ref(false)
-let reset: ReturnType<typeof setTimeout> | undefined
+const { start: resetCopied } = useTimeoutFn(() => { copied.value = false }, 2000, { immediate: false })
 
 async function copy(): Promise<void> {
   try { await navigator.clipboard.writeText(props.value) } catch { return }
   copied.value = true
-  clearTimeout(reset)
-  reset = setTimeout(() => { copied.value = false }, 2000)
+  resetCopied()
 }
 const selectAll = (event: FocusEvent) => (event.target as HTMLInputElement | HTMLTextAreaElement).select()
-onBeforeUnmount(() => clearTimeout(reset))
 defineExpose({ focus: () => (document.getElementById(id) as HTMLElement | null)?.focus() })
 </script>
 

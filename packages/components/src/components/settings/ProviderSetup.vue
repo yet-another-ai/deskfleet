@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { LoaderCircle, RotateCw } from "@lucide/vue"
+import { useTimeoutFn, watchImmediate } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentProviderInput, ProviderProbeResult } from "../../../../../apps/daemon/src/provider-protocol.ts"
@@ -58,13 +59,13 @@ const summary = computed((): { tone: "success" | "warning" | "danger" | "muted";
 })
 const dot = { success: "bg-ui-success", warning: "bg-ui-warning", danger: "bg-ui-danger", muted: "bg-ui-text-faint" }
 let revision = 0
-let probeTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
+const { start: scheduleProbe, stop: cancelProbe } = useTimeoutFn(() => { void probe() }, 300, { immediate: false })
 
-watch(busy, value => emit("busy", value), { immediate: true, flush: "sync" })
+watchImmediate(busy, value => emit("busy", value), { flush: "sync" })
 
 async function probe(installed = false): Promise<void> {
-  clearTimeout(probeTimer)
+  cancelProbe()
   const provider = props.provider
   if (!provider || props.disabled || disposed) return
   const request = ++revision
@@ -87,10 +88,10 @@ async function probe(installed = false): Promise<void> {
   }
 }
 
-watch(() => [props.provider?.template, props.provider?.binaryPath, JSON.stringify(props.provider?.env), props.disabled] as const, (value, previous) => {
+watchImmediate(() => [props.provider?.template, props.provider?.binaryPath, JSON.stringify(props.provider?.env), props.disabled] as const, (value, previous) => {
   if (finishing.value && operation.value?.kind === "install" && value[1] === result.value?.binaryPath) return
   revision++
-  clearTimeout(probeTimer)
+  cancelProbe()
   result.value = null
   probing.value = false
   probeError.value = null
@@ -100,9 +101,9 @@ watch(() => [props.provider?.template, props.provider?.binaryPath, JSON.stringif
   if (!previous || value[0] !== previous[0] || value[3] !== previous[3]) void probe()
   else {
     probing.value = true
-    probeTimer = setTimeout(() => { void probe() }, 300)
+    scheduleProbe()
   }
-}, { immediate: true, flush: "sync" })
+}, { flush: "sync" })
 
 async function start(kind: "install" | "login"): Promise<void> {
   if (actionsDisabled.value || !props.provider || !(kind === "install" ? canInstall.value : canLogin.value)) return
@@ -156,7 +157,7 @@ function connection(state: TerminalConnection, label: string): void {
   terminalConnection.value = state === "error" || state === "disconnected" ? label : null
 }
 
-onBeforeUnmount(() => { disposed = true; revision++; clearTimeout(probeTimer) })
+onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
 </script>
 
 <template>

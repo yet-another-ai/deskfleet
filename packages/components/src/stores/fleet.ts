@@ -1,5 +1,6 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { defineStore } from "pinia"
+import { watchImmediate } from "@vueuse/core"
 import { computed, onScopeDispose, ref, watch } from "vue"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspace } from "../../../client/src/catalog.ts"
 import type { LocalDesktopTarget } from "../../../client/src/desktop-media.ts"
@@ -80,7 +81,7 @@ export const useFleetStore = defineStore("fleet", () => {
       if (session.worktree) session.worktree.terminals = terminals.sessions.filter(terminal => terminal.worktreeId === session.worktree!.id)
     }
   }
-  watch(() => terminals.sessions, applyTerminals, { immediate: true, deep: true })
+  watchImmediate(() => terminals.sessions, applyTerminals, { deep: true })
   let refreshingTarget: Promise<LocalDesktopTarget> | null = null
   let refreshingCatalog: Promise<void> | null = null
   let refreshRequested = false

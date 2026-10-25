@@ -2,8 +2,8 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 
 import { Bot, Ellipsis, Pencil, Plus, Trash2 } from "@lucide/vue"
-import { onClickOutside } from "@vueuse/core"
-import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from "vue"
+import { onClickOutside, watchImmediate } from "@vueuse/core"
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentProviderConfig, AgentProviderInput, ProviderSnapshot, ProviderTestResult } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -41,7 +41,7 @@ async function refresh(): Promise<void> {
     if (request === revision) error.value = reason instanceof Error ? reason.message : String(reason)
   } finally { if (request === revision) loading.value = false }
 }
-watch(() => [machine.value?.id, available.value], () => { editor.value = null; openMenu.value = null; void refresh() }, { immediate: true })
+watchImmediate(() => [machine.value?.id, available.value], () => { editor.value = null; openMenu.value = null; void refresh() })
 const unsubscribe = platformClient.providers.onChanged(() => { void refresh() })
 onBeforeUnmount(() => { revision++; unsubscribe() })
 const templateName = (provider: AgentProviderConfig) => snapshot.value?.templates.find(template => template.id === provider.template)?.name ?? provider.template
