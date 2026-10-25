@@ -8,6 +8,7 @@ import { promisify } from "node:util"
 import { setTimeout as delay } from "node:timers/promises"
 import { test } from "node:test"
 import type * as acp from "@agentclientprotocol/sdk"
+import { openInMemoryCatalog } from "@deskfleet/native"
 import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { AgentProviders } from "./agent-providers.ts"
 import { DaemonCatalog } from "./catalog.ts"
@@ -126,7 +127,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   const daemon = join(directory, "daemon")
   await mkdir(daemon)
   const catalog = new DaemonCatalog(daemon)
-  await catalog.init()
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
   const workspace = await catalog.native.createWorkspace("Fixture", [{ path: repository }])
   const provider = new Provider()
   provider.failConfiguration = failConfiguration
@@ -215,7 +216,7 @@ test("archive retains files and history, cancels approval and questions, and res
   assert.deepEqual(f.provider.resumes, ["provider-conversation"])
 })
 
-test("failed archive retains archiving admission state and retry survives daemon restart", async t => {
+test("failed archive retains archiving admission state and retry survives service restart", async t => {
   const f = await setup(t)
   let failures = 1
   f.service.onSessionArchive(async () => { if (failures-- > 0) throw new Error("PTY close failed") })
@@ -424,7 +425,7 @@ test("questions cancel on provider abort, turn completion, cancellation, stop, a
   })
 })
 
-test("restart cancels durable questions and stale provider generations cannot publish new questions", async t => {
+test("service restart cancels recorded questions and stale provider generations cannot publish new questions", async t => {
   const f = await setup(t)
   const oldClient = f.provider.client
   await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
@@ -701,7 +702,7 @@ test("an agent that loads sessions instead of resuming them continues its saved 
 })
 
 
-test("draft selections reach the first prompt and live configuration survives daemon restart", async t => {
+test("draft selections reach the first prompt and live configuration survives service restart", async t => {
   const f = await setup(t, { model: "second", reasoningEffort: "low" })
   await f.submit("selected draft").result
   await until(f.read, () => f.provider.prompts.length === 1)

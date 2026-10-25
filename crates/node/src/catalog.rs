@@ -101,6 +101,14 @@ pub async fn open_catalog(database_path: String, machine_name: String) -> Result
 }
 
 #[napi]
+pub async fn open_in_memory_catalog(machine_name: String) -> Result<NativeCatalog> {
+    let catalog = LocalCatalog::open_in_memory(&machine_name)
+        .await
+        .map_err(native_error)?;
+    Ok(NativeCatalog { catalog })
+}
+
+#[napi]
 impl NativeCatalog {
     #[napi]
     pub async fn snapshot(&self) -> Result<CatalogSnapshot> {

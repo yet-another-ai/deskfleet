@@ -242,8 +242,7 @@ async fn state_and_ordered_events_commit_atomically_and_replay_after_restart() {
 
 #[tokio::test]
 async fn failed_foreign_key_rolls_back_command_state_and_sequence() {
-    let file = File::new();
-    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let created = create(&local).await;
     let command = command(&local, Some(created.session.id)).await;
     let run = run(created.session.id, 1);
@@ -278,8 +277,7 @@ async fn failed_foreign_key_rolls_back_command_state_and_sequence() {
 
 #[tokio::test]
 async fn active_run_constraint_and_same_session_links_are_enforced() {
-    let file = File::new();
-    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let first = create(&local).await.session;
     let second = create(&local).await.session;
     let mut commit = transaction(&first);
@@ -314,8 +312,7 @@ async fn active_run_constraint_and_same_session_links_are_enforced() {
 
 #[tokio::test]
 async fn deletion_cascades_domain_records_but_preserves_audit_targets() {
-    let file = File::new();
-    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let created = create(&local).await;
     let command = command(&local, Some(created.session.id)).await;
     let input = input(&local, &command, 1).await;
@@ -373,8 +370,7 @@ async fn deletion_cascades_domain_records_but_preserves_audit_targets() {
 
 #[tokio::test]
 async fn canonical_operation_and_immutable_request_preserve_audit() {
-    let file = File::new();
-    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let command = command(&local, None).await;
     local
         .agent_commit(AgentCommit {
@@ -427,8 +423,7 @@ async fn canonical_operation_and_immutable_request_preserve_audit() {
 
 #[tokio::test]
 async fn failed_input_can_have_another_turn_attempt_but_only_one_active_turn() {
-    let file = File::new();
-    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let created = create(&local).await;
     let submission = command(&local, Some(created.session.id)).await;
     let input = input(&local, &submission, 1).await;
@@ -504,8 +499,7 @@ async fn failed_input_can_have_another_turn_attempt_but_only_one_active_turn() {
 
 #[tokio::test]
 async fn concurrent_permission_decisions_commit_only_the_first_and_preserve_audit() {
-    let file = File::new();
-    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let session = create(&local).await.session;
     let permission: AgentPermission = parse(json!({
         "id": local.agent_allocate_id().await.unwrap().to_string(), "sessionId": session.id,
@@ -584,8 +578,7 @@ async fn concurrent_permission_decisions_commit_only_the_first_and_preserve_audi
 
 #[tokio::test]
 async fn session_context_is_recorded_at_creation_and_immutable() {
-    let file = File::new();
-    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let created = create(&local).await;
     assert_eq!(created.session.context, SessionContext::Worktree);
     let mut commit = transaction(&created.session);

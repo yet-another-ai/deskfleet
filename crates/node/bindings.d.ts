@@ -134,6 +134,8 @@ export interface NativeInfo {
 
 export declare function openCatalog(databasePath: string, machineName: string): Promise<NativeCatalog>
 
+export declare function openInMemoryCatalog(machineName: string): Promise<NativeCatalog>
+
 export interface PeerConfig {
   iceServers?: Array<IceServer>
   relayOnly?: boolean

@@ -6,6 +6,7 @@ import { join } from "node:path"
 import test, { type TestContext } from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
 import type * as acp from "@agentclientprotocol/sdk"
+import { openInMemoryCatalog } from "@deskfleet/native"
 import type { AgentClient, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import type { AgentConfiguration, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentSnapshot } from "./agent-protocol.ts"
@@ -116,7 +117,7 @@ async function setup(t: TestContext, provider: ConfigurationProvider, selection:
   const daemonDirectory = join(directory, "daemon")
   await mkdir(daemonDirectory)
   const catalog = new DaemonCatalog(daemonDirectory)
-  await catalog.init()
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
   const workspace = await catalog.native.createWorkspace("Configuration fixture", [{ path: workspaceDirectory }])
   const service = new AgentSessions(catalog, catalog.native, provider)
   await service.init()
@@ -375,7 +376,7 @@ test("model changes between turns preserve the Agent and publish the provider's 
   assert.equal(provider.model, "second")
 })
 
-test("a saved mode survives a daemon restart and an omitted resume configuration", async t => {
+test("a saved mode survives a service restart and an omitted resume configuration", async t => {
   const provider = new ConfigurationProvider()
   const f = await setup(t, provider, { mode: "auto" })
   const changed = await f.configure({ mode: "full-access" })

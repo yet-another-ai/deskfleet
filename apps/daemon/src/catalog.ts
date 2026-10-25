@@ -19,8 +19,8 @@ export class DaemonCatalog {
   constructor(directory: string, hostDirectory = directory) { this.#directory = directory; this.#hostDirectory = hostDirectory }
 
   // Called only after this daemon has acquired its discovery record.
-  async init(): Promise<void> {
-    this.#catalog = await openCatalog(join(this.#directory, "catalog.db"), hostname())
+  async init(open: typeof openCatalog = openCatalog): Promise<void> {
+    this.#catalog = await open(join(this.#directory, "catalog.db"), hostname())
     const { originId } = JSON.parse(await this.#catalog.agentIdentity()) as { originId: string }
     this.#sessions = new ManagedSessionWorktrees(this.#catalog, this.#directory, {
       originId, root: () => readWorktreeRoot(this.#hostDirectory),

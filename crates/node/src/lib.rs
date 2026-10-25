@@ -10,7 +10,7 @@ mod terminal;
 
 pub use catalog::{
     CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree,
-    NativeCatalog, open_catalog,
+    NativeCatalog, open_catalog, open_in_memory_catalog,
 };
 pub use media::{DesktopConfig, DisplayInfo, capture_displays, supported_video_codecs};
 pub use permissions::{request_accessibility_access, request_screen_capture_access};

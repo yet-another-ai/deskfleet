@@ -8,8 +8,8 @@ use deskfleet_model::{
     Worktree,
 };
 use sea_orm::{
-    ActiveModelTrait, ConnectOptions, Database, EntityTrait, IntoActiveModel, QueryOrder, Set,
-    TransactionTrait,
+    ActiveModelTrait, ConnectOptions, Database, DatabaseConnection, EntityTrait, IntoActiveModel,
+    QueryOrder, Set, TransactionTrait,
 };
 
 use crate::{
@@ -51,6 +51,32 @@ impl LocalCatalog {
                 .foreign_keys(true)
         });
         let database = Database::connect(options).await?;
+        Self::initialize(database, machine_name).await
+    }
+
+    /// Create an isolated in-memory SQLite catalog with the local ownership context.
+    ///
+    /// The single connection stays open until the catalog is closed or dropped.
+    ///
+    /// # Errors
+    /// Returns an error if connecting, migrating, or initializing the catalog fails.
+    pub async fn open_in_memory(machine_name: &str) -> Result<Self, StoreError> {
+        let mut options = ConnectOptions::new("sqlite::memory:");
+        options
+            .max_connections(1)
+            .min_connections(1)
+            .idle_timeout(None)
+            .max_lifetime(None)
+            .sqlx_logging(false);
+        options.map_sqlx_sqlite_opts(|options| options.foreign_keys(true));
+        let database = Database::connect(options).await?;
+        Self::initialize(database, machine_name).await
+    }
+
+    async fn initialize(
+        database: DatabaseConnection,
+        machine_name: &str,
+    ) -> Result<Self, StoreError> {
         Migrator::up(&database, None).await?;
         let transaction = database.begin().await?;
         let row = match machine::Entity::find()

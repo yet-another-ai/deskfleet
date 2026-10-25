@@ -82,8 +82,7 @@ async fn pending_questions_survive_restart_and_recovery_cancellation_is_durable(
 
 #[tokio::test]
 async fn concurrent_question_responses_keep_one_winner_and_immutable_audit() {
-    let file = File::new();
-    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let session = create(&local).await.session;
     let pending = question(&local, session.id).await;
     let mut changes = transaction(&session);
@@ -166,8 +165,7 @@ async fn concurrent_question_responses_keep_one_winner_and_immutable_audit() {
 
 #[tokio::test]
 async fn question_request_is_immutable_and_invalid_links_roll_back_the_transaction() {
-    let file = File::new();
-    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let session = create(&local).await.session;
     let pending = question(&local, session.id).await;
     let mut changes = transaction(&session);

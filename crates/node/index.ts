@@ -60,6 +60,10 @@ export function openCatalog(databasePath: string, machineName: string): Promise<
   return (bindings ??= loadBindings()).openCatalog(databasePath, machineName)
 }
 
+export function openInMemoryCatalog(machineName: string): Promise<NativeCatalog> {
+  return (bindings ??= loadBindings()).openInMemoryCatalog(machineName)
+}
+
 export function supportedVideoCodecs(displayId: number): Promise<string[]> {
   return (bindings ??= loadBindings()).supportedVideoCodecs(displayId)
 }
