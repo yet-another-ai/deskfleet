@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { Bell, SlidersHorizontal, Users } from "@lucide/vue"
-import { onBeforeUnmount, provide } from "vue"
+import { defineAsyncComponent, onBeforeUnmount, provide } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import AddMachineDialog from "./components/account/AddMachineDialog.vue"
 import MachineOnboarding from "./components/account/MachineOnboarding.vue"
-import MachineSurface from "./components/account/MachineSurface.vue"
 import SignIn from "./components/account/SignIn.vue"
 import TeamAccessDialog from "./components/account/TeamAccessDialog.vue"
 import TeamOnboarding from "./components/account/TeamOnboarding.vue"
@@ -17,6 +16,11 @@ import AccountNotices from "./components/sidebar/AccountNotices.vue"
 import TeamSwitcher from "./components/sidebar/TeamSwitcher.vue"
 import TeamSettings from "./components/team/TeamSettings.vue"
 import { accountSessionKey, createAccountSession, type AccountSettingsSection } from "./composables/useAccountSession.ts"
+
+const loadMachineSurface = () => import("./components/account/MachineSurface.vue")
+const MachineSurface = defineAsyncComponent(loadMachineSurface)
+// Overlap the workspace bundle with the account status request.
+void loadMachineSurface()
 
 const props = defineProps<{ host: DeskfleetDesktopApi }>()
 const { t } = useI18n()

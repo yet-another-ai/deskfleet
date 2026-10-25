@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Check, ChevronDown, Search } from "@lucide/vue"
-import { computed, nextTick, ref, useId, useTemplateRef } from "vue"
+import { computed, nextTick, ref, shallowRef, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import { iconForProvider, providerIcons } from "../../services/provider-icons.ts"
+import { loadProviderIcons, matchProviderIcon, type ProviderIcon as ProviderIconMark } from "../../services/provider-icons.ts"
 import ProviderIcon from "../common/ProviderIcon.vue"
 
 const props = defineProps<{ template: string; disabled?: boolean }>()
@@ -10,17 +10,31 @@ const icon = defineModel<string | undefined>()
 const { t } = useI18n()
 const id = useId()
 const open = ref(false)
+const ready = ref(false)
 const query = ref("")
 const search = useTemplateRef<HTMLInputElement>("search")
 const trigger = useTemplateRef<HTMLButtonElement>("trigger")
-const selected = computed(() => iconForProvider(icon.value, props.template))
+const catalog = shallowRef<readonly ProviderIconMark[]>([])
+const iconsById = shallowRef<ReadonlyMap<string, ProviderIconMark>>(new Map())
+let loading: Promise<void> | undefined
+function ensureIcons(): Promise<void> {
+  loading ??= loadProviderIcons().then(loaded => {
+    catalog.value = loaded.providerIcons
+    iconsById.value = loaded.iconsById
+    ready.value = true
+  })
+  return loading
+}
+void ensureIcons()
+const selected = computed(() => matchProviderIcon(iconsById.value, icon.value, props.template))
 const label = computed(() => icon.value ? selected.value?.name ?? icon.value : t("providers.iconDefault"))
 const icons = computed(() => {
   const term = query.value.trim().toLocaleLowerCase()
-  return providerIcons.filter(item => `${item.name} ${item.id}`.toLocaleLowerCase().includes(term))
+  return catalog.value.filter(item => `${item.name} ${item.id}`.toLocaleLowerCase().includes(term))
 })
 async function toggle(): Promise<void> {
   if (props.disabled) return
+  if (!open.value) await ensureIcons()
   open.value = !open.value
   if (open.value) {
     query.value = ""
@@ -70,7 +84,7 @@ function select(value?: string): void {
           <span class="w-full truncate text-center text-[10px] text-ui-text-muted">{{ item.name }}</span>
         </button>
       </div>
-      <p v-if="!icons.length" role="status" class="m-0 px-2 py-4 text-center text-[13px] text-ui-text-muted">{{ t("providers.iconNoResults") }}</p>
+      <p v-if="ready && !icons.length" role="status" class="m-0 px-2 py-4 text-center text-[13px] text-ui-text-muted">{{ t("providers.iconNoResults") }}</p>
     </div>
   </div>
 </template>

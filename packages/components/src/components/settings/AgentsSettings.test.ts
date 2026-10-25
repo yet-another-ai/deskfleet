@@ -72,6 +72,7 @@ test("adds a provider and edits its settings without sending a template change",
   expect(view.find("select").exists()).toBe(false)
   await view.get('[name="provider-name"]').setValue("Renamed")
   await view.get('form button[aria-expanded]').trigger("click")
+  await vi.waitFor(() => expect(view.find('input[type="search"]').exists()).toBe(true))
   await view.get('input[type="search"]').setValue("gemini")
   await view.get('[data-provider-icon-choice="gemini"]').trigger("click")
   await view.get("form").trigger("submit")

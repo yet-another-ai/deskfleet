@@ -3,6 +3,7 @@ import VueI18nPlugin from "@intlify/unplugin-vue-i18n/vite"
 import vue from "@vitejs/plugin-vue"
 import UnoCSS from "unocss/vite"
 import { defineConfig } from "vite"
+import { clientCodeSplitting } from "../../packages/components/src/chunking.ts"
 
 export default defineConfig({
   plugins: [
@@ -11,5 +12,8 @@ export default defineConfig({
     VueI18nPlugin({ strictMessage: false, runtimeOnly: true }),
   ],
   server: { host: "127.0.0.1", port: 5174, strictPort: true },
-  build: { target: "es2023" },
+  build: {
+    target: "es2023",
+    rolldownOptions: { output: { codeSplitting: clientCodeSplitting } },
+  },
 })

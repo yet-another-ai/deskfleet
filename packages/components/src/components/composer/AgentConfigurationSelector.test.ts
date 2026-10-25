@@ -167,7 +167,7 @@ test("switches configured providers without reusing another provider's model or 
   expect(api).toHaveBeenLastCalledWith({ provider: "work-agent", workspaceId: "11" })
   expect(providers.selectedId).toBe("work-agent")
   expect(trigger(view).text()).toBe("Work agent · work-model · Medium")
-  expect(trigger(view).find('[data-provider-icon="claude"]').exists()).toBe(true)
+  await vi.waitFor(() => expect(trigger(view).find('[data-provider-icon="claude"]').exists()).toBe(true))
   previous.resolve(configuration("retired-model", "high")); await flushPromises()
   expect(agents.draftConfiguration).toEqual({ provider: "work-agent", model: "work-model", reasoningEffort: "medium" })
   await choose(view, "reasoning", "high")

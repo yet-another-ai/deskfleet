@@ -190,7 +190,7 @@ test("a machine outside the current adapter cannot start local terminal, desktop
   await select(wrapper, 2)
   expect(wrapper.findComponent(FilesStub).exists()).toBe(false)
   await select(wrapper, 1)
-  expect(wrapper.find("[data-desktop-stage]").exists()).toBe(true)
+  await vi.waitFor(() => expect(wrapper.find("[data-desktop-stage]").exists()).toBe(true))
   expect(target).not.toHaveBeenCalled()
   expect(capabilities).not.toHaveBeenCalled()
   expect(offer).not.toHaveBeenCalled()

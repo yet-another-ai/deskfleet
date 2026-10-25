@@ -3,4 +3,4 @@ import "virtual:uno.css"
 
 configureClient(window.deskfleet)
 const { mountDeskfleet } = await import("@deskfleet/components")
-mountDeskfleet()
+await mountDeskfleet()

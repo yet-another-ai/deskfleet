@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
-import { computed, ref, watch } from "vue"
+import { computed, defineAsyncComponent, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
@@ -12,13 +12,15 @@ import AgentNotice from "../components/session/AgentNotice.vue"
 import AgentPermissions from "../components/session/AgentPermissions.vue"
 import AgentSessionMenu from "../components/session/AgentSessionMenu.vue"
 import IconButton from "../components/common/IconButton.vue"
-import SessionTerminalPanel from "../components/terminal/SessionTerminalPanel.vue"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useLayoutStore } from "../stores/layout.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
-import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
+import { useSessionLabel } from "../composables/useSessionLabel.ts"
+
+// xterm stays out of the session bundle until the panel is opened.
+const SessionTerminalPanel = defineAsyncComponent(() => import("../components/terminal/SessionTerminalPanel.vue"))
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const sessionLabel = useSessionLabel()

@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { client as platformClient } from "@deskfleet/client/platform"
 import { FolderSync, MonitorPlay, SquareTerminal } from "@lucide/vue"
-import { computed, nextTick, ref, useId, watch } from "vue"
+import { computed, defineAsyncComponent, nextTick, ref, useId, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
-import FileTransferPanel from "../components/files/FileTransferPanel.vue"
-import TerminalWorkspace from "../components/terminal/TerminalWorkspace.vue"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
-import DesktopView from "./DesktopView.vue"
+
+const TerminalWorkspace = defineAsyncComponent(() => import("../components/terminal/TerminalWorkspace.vue"))
+const FileTransferPanel = defineAsyncComponent(() => import("../components/files/FileTransferPanel.vue"))
+const DesktopView = defineAsyncComponent(() => import("./DesktopView.vue"))
 
 const props = defineProps<{ machineId: string }>()
 const { t } = useI18n()
