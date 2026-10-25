@@ -6,6 +6,7 @@ import type { Team, TeamMember } from "@deskfleet/client/central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import IconButton from "../common/IconButton.vue"
+import UserAvatar from "../common/UserAvatar.vue"
 import InviteDialog from "./InviteDialog.vue"
 
 const props = defineProps<{ team: Team; userId?: string }>()
@@ -68,7 +69,7 @@ onMounted(load)
     <p v-if="loading" role="status" class="m-0 py-4 text-sm text-ui-text-muted">{{ t("settings.loading") }}</p>
     <ul v-else-if="members.length" class="ui-card m-0 list-none p-0 shadow-ui-card">
       <li v-for="(member, index) in members" :key="member.userId" class="flex items-center gap-3 px-4 py-3" :class="index > 0 && 'border-t border-ui-border'" :data-member-id="member.userId">
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ui-badge text-[13px] font-medium text-ui-text-muted" aria-hidden="true">{{ member.name.charAt(0).toUpperCase() }}</span>
+        <UserAvatar :name="member.name" :email="member.email" :size="32" class="text-[13px]" />
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm">
             {{ member.name }}<span v-if="member.userId === userId" class="ml-1.5 text-[13px] text-ui-text-muted">{{ t("team.you") }}</span>

@@ -3,6 +3,7 @@ import { ChevronUp, LogOut } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import MenuPopover from "../common/MenuPopover.vue"
+import UserAvatar from "../common/UserAvatar.vue"
 
 const session = useAccountSession()
 const { t } = useI18n()
@@ -15,7 +16,7 @@ function signOut(): void {
 <template>
   <MenuPopover v-if="session?.account.value.user" :label="session.account.value.user.name" placement="top" class="min-w-0 flex-1">
     <template #trigger>
-      <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ui-badge text-xs font-semibold text-ui-text-muted" aria-hidden="true">{{ session.account.value.user.name.charAt(0).toUpperCase() }}</span>
+      <UserAvatar :name="session.account.value.user.name" :email="session.account.value.user.email" :size="24" class="text-xs" />
       <span class="min-w-0 flex-1 truncate">{{ session.account.value.user.name }}</span>
       <ChevronUp :size="13" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
     </template>

@@ -69,7 +69,7 @@ test("discovers displays without capturing, then connects with the selected sett
   expect(mock.api.start).toHaveBeenCalledWith(expect.objectContaining({ displayId: 2 }))
   expect(wrapper.get('[role="status"]').text()).toBe("Connected")
   expect((wrapper.get("video").element as HTMLVideoElement).srcObject).toBeTruthy()
-  expect(button(wrapper, "Full screen").exists()).toBe(true)
+  expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
   await button(wrapper, "Disconnect").trigger("click")
   await flushPromises()
   expect((wrapper.get("video").element as HTMLVideoElement).srcObject).toBeNull()
@@ -145,4 +145,41 @@ test("changing machine routes cancels an in-flight offer", async () => {
   expect(mock.api.start).not.toHaveBeenCalled()
   expect(mock.api.close).toHaveBeenCalledTimes(2)
   expect(wrapper.find("video").exists()).toBe(false)
+})
+
+test("stream settings open from the floating toolbar and close with Escape", async () => {
+  const wrapper = await mountDesktop()
+  const trigger = wrapper.get('[aria-label="Stream settings"]')
+  const panel = wrapper.get('[role="dialog"]')
+  expect((panel.element as HTMLElement).style.display).toBe("none")
+  await trigger.trigger("click")
+  expect((panel.element as HTMLElement).style.display).toBe("")
+  expect(trigger.attributes("aria-expanded")).toBe("true")
+  await panel.trigger("keydown", { key: "Escape" })
+  expect((panel.element as HTMLElement).style.display).toBe("none")
+  expect(trigger.attributes("aria-expanded")).toBe("false")
+})
+
+test("the floating toolbar moves by keyboard and drag, stays inside the stage, and opens settings toward the open side", async () => {
+  const wrapper = await mountDesktop()
+  const size = (element: Element, sizes: Record<string, number>) => {
+    for (const [key, value] of Object.entries(sizes)) Object.defineProperty(element, key, { configurable: true, value })
+  }
+  size(wrapper.get("[data-desktop-stage]").element, { clientWidth: 800, clientHeight: 600 })
+  const handle = wrapper.get("[data-move-controls]")
+  const toolbar = handle.element.parentElement!
+  size(toolbar, { offsetWidth: 200, offsetHeight: 40 })
+  vi.spyOn(handle.element, "setPointerCapture").mockImplementation(() => {})
+
+  await handle.trigger("keydown", { key: "ArrowLeft" })
+  expect([toolbar.style.left, toolbar.style.top]).toEqual(["572px", "12px"])
+
+  await handle.trigger("pointerdown", { button: 0, pointerId: 1, clientX: 600, clientY: 20 })
+  await handle.trigger("pointermove", { pointerId: 1, clientX: -400, clientY: 520 })
+  await handle.trigger("pointerup", { pointerId: 1 })
+  expect([toolbar.style.left, toolbar.style.top]).toEqual(["12px", "512px"])
+  await handle.trigger("pointermove", { pointerId: 1, clientX: 300, clientY: 300 })
+  expect(toolbar.style.left).toBe("12px")
+
+  expect(wrapper.get('[role="dialog"]').classes()).toEqual(expect.arrayContaining(["bottom-full", "left-0"]))
 })

@@ -5,7 +5,8 @@ export function rendererContentSecurityPolicy(production: boolean): string {
     "default-src 'none'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
+    // User avatars come from Gravatar.
+    "img-src 'self' data: https://gravatar.com",
     "font-src 'self'",
     "media-src 'self' blob:",
     // Vite's HMR client is the only development connection.
