@@ -191,6 +191,7 @@ onBeforeUnmount(() => { disposed = true; revision++; clearTimeout(probeTimer) })
         </p>
         <button v-if="operation && !operation.completed" type="button" class="ui-button" :disabled="stopping" data-provider-stop @click="stop">{{ t("providers.setup.stop") }}</button>
       </div>
+      <p v-if="provider?.template === 'pi' && operation?.kind === 'login' && !operation.completed" class="m-0 text-xs text-ui-text-muted" data-provider-login-hint>{{ t("providers.setup.piLoginHint") }}</p>
       <p v-if="terminalConnection" role="alert" class="m-0 text-xs text-ui-danger">{{ terminalConnection }}</p>
       <div v-if="operation" class="flex h-56 min-h-0 overflow-hidden rounded-lg border border-ui-border" data-provider-terminal>
         <LiveTerminal :key="operation.terminal.id" :terminal-id="operation.terminal.id" @connection="connection" />

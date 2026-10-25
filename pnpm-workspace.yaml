@@ -21,3 +21,4 @@ overrides:
 
 patchedDependencies:
   '@agentclientprotocol/codex-acp@2.2.2': patches/@agentclientprotocol__codex-acp@2.2.2.patch
+  pi-acp@0.0.34: patches/pi-acp@0.0.34.patch

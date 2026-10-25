@@ -153,10 +153,10 @@ See [Agent Sessions](../../agents/docs/agent-sessions.md) and
 
 ## Agents through ACP
 
-The daemon uses the [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp)
-to connect the installed Codex CLI to ACP, and the
-[Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp)
-to connect the installed Claude Code CLI. Both adapters are pinned pnpm
+The daemon connects installed CLIs to ACP through the
+[Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp),
+[Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp),
+and [Pi ACP adapter](https://github.com/svkozak/pi-acp). These are pinned pnpm
 dependencies and ship inside the SEA executable. Install and authenticate the
 CLI before sending prompts; the daemon uses that CLI's credentials.
 
@@ -190,6 +190,7 @@ mise exec -- node apps/daemon/src/main.ts agent codex --cwd /path/to/repository 
 mise exec -- node apps/daemon/src/main.ts agent claude-code --check
 mise exec -- node apps/daemon/src/main.ts agent cursor --check
 mise exec -- node apps/daemon/src/main.ts agent grok --check
+mise exec -- node apps/daemon/src/main.ts agent pi --check
 ```
 
 `--check` initializes ACP and exits without creating a session or sending a
@@ -201,8 +202,8 @@ Agent configuration uses these common options:
 
 | Option | Meaning |
 | --- | --- |
-| `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, or `Grok`, separate from the provider ID |
-| `--binary-path <executable>` | CLI executable; omitted or empty uses `codex`, `claude`, `agent`, or `grok` on PATH |
+| `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, or `Pi Coding Agent`, separate from the provider ID |
+| `--binary-path <executable>` | CLI executable; omitted or empty uses `codex`, `claude`, `agent`, `grok`, or `pi` on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` or
@@ -219,6 +220,14 @@ methods are left unused, and `--always-approve` is not added, so permission
 requests reach the client. When the caller accepts questions, `cursor/ask_question`,
 `x.ai/ask_user_question`, and `_x.ai/ask_user_question` are answered through that
 form. `cursor/create_plan` and Cursor's notification methods stay unrecognized.
+Pi uses the bundled `pi-acp` bridge to run `` `<binary> --mode rpc` ``; the
+selected path overrides `PI_ACP_PI_COMMAND`. It supports saved-session loading
+and model/thinking configuration. Pi executes tools locally, and the bridge does
+not forward client-provided MCP servers or additional Workspace directories.
+Settings installs Pi with the official `pi.dev` installer. For login, start `pi`,
+enter `/login`, then `/quit` when setup is complete. Executable discovery leaves
+its credential status unknown; **Test Connection** opens a session using existing
+credentials.
 `--cwd` sets an unmanaged ACP session's working directory and defaults to the
 current directory. This one-shot development helper does not create a team
 Session. Use the authenticated Web or Electron client for persistent Sessions;
@@ -238,8 +247,16 @@ that has not exited. See the
 for capability negotiation and delivery semantics. Remove each patch hunk when
 the pinned adapter provides its corresponding behavior upstream.
 
-Source and SEA launches route adapter subprocesses through `--codex-acp` or
-`--claude-agent-acp` on their own entry point. The Claude adapter's published
+The Pi adapter is pinned to `0.0.34` with
+[`patches/pi-acp@0.0.34.patch`](../../patches/pi-acp@0.0.34.patch). The patch reuses
+its static `spawnSync` import instead of top-level await so it can be bundled for
+SEA, and imports its package metadata statically to preserve its identity in
+bundles. It also retains the agent handler directly so closing the adapter
+terminates its Pi subprocesses; the upstream shutdown code accesses a handler
+that the ACP SDK does not expose.
+
+Source and SEA launches route adapter subprocesses through `--codex-acp`,
+`--claude-agent-acp`, or `--pi-acp` on their own entry point. The Claude adapter's published
 entry uses top-level await, which the CommonJS SEA bundle cannot contain, so
 `--claude-agent-acp` starts its exported stdio server directly. The Electron daemon configures its bundled main entry as the
 adapter host and starts it with `ELECTRON_RUN_AS_NODE=1`, including from ASAR.

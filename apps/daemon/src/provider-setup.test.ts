@@ -113,6 +113,37 @@ test("Grok cached-token status is unknown without starting an auth flow", async 
   assert.equal((await f.setup.probe(input("grok", { env: { XAI_API_KEY: "configured-key" } }))).auth, "unknown")
 })
 
+test("Pi validates its bare version with help and leaves authentication unknown", async () => {
+  const f = fixture({ files: ["/home/someone/.pi/agent/bin/pi", "/bin/bash"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("1.4.0") : result("pi - AI coding assistant with read, bash, edit, write tools") })
+  assert.deepEqual(await f.setup.probe(input("pi", { env: { ANTHROPIC_API_KEY: "configured-key" } })), {
+    status: "found", binaryPath: "/home/someone/.pi/agent/bin/pi", version: "1.4.0", auth: "unknown", installable: true, loginAvailable: true,
+  })
+  assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+})
+
+test("Pi rejects an unrelated executable with a bare version", async () => {
+  const f = fixture({ files: ["/tools/pi"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("1.4.0") : result("pi - calculate digits of pi") })
+  const value = await f.setup.probe(input("pi"))
+  assert.equal(value.status, "invalid")
+  assert.equal(value.loginAvailable, false)
+})
+
+test("Pi discovers configured managed installs and npm global prefixes", async () => {
+  for (const [platform, env, binary] of [
+    ["linux", { PATH: "", PI_CODING_AGENT_DIR: "/custom/pi-agent" }, "/custom/pi-agent/bin/pi"],
+    ["linux", { PATH: "", NPM_CONFIG_PREFIX: "/custom/npm" }, "/custom/npm/bin/pi"],
+    ["win32", { PATH: "", PI_CODING_AGENT_DIR: "C:\\Pi Agent" }, "C:\\Pi Agent\\bin\\pi.cmd"],
+    ["win32", { PATH: "", APPDATA: "C:\\Roaming" }, "C:\\Roaming\\npm\\pi.cmd"],
+    ["win32", { PATH: "", NPM_CONFIG_PREFIX: "C:\\npm-prefix" }, "C:\\npm-prefix\\pi.cmd"],
+  ] as const) {
+    const f = fixture({ platform, env, files: [binary], answer: async (_command, args) =>
+      args[0] === "--version" ? result("1.4.0") : result("pi - AI coding assistant with read, bash, edit, write tools") })
+    assert.equal((await f.setup.probe(input("pi"))).binaryPath, binary)
+  }
+})
+
 test("custom ACP probe checks presence without invoking unsupported CLI metadata commands", async () => {
   const f = fixture({ files: ["/tools/custom"] })
   const value = await f.setup.probe(input("acp", { binaryPath: "custom" }))
@@ -127,7 +158,7 @@ test("custom ACP probe checks presence without invoking unsupported CLI metadata
 test("official installers start dedicated terminals and do not start login or ACP", async () => {
   for (const [template, url] of [
     ["codex", "https://chatgpt.com/codex/install.sh"], ["claude-code", "https://claude.ai/install.sh"],
-    ["cursor", "https://cursor.com/install"], ["grok", "https://x.ai/cli/install.sh"],
+    ["cursor", "https://cursor.com/install"], ["grok", "https://x.ai/cli/install.sh"], ["pi", "https://pi.dev/install.sh"],
   ] as const) {
     const f = fixture({ files: ["/bin/bash"] })
     const terminal = await f.setup.install(input(template, { binaryPath: "/missing/old", env: { TOKEN: "sensitive-value" } }))
@@ -162,6 +193,37 @@ test("login rejects a missing executable without spawning a terminal", async () 
   assert.equal(f.runs.length, 0)
 })
 
+test("Pi sign in opens its interactive CLI without sending a slash command as a prompt", async () => {
+  const f = fixture({ files: ["/tools/pi"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("1.4.0") : result("pi - AI coding assistant with read, bash, edit, write tools") })
+  await f.setup.login(input("pi", { env: { PI_CODING_AGENT_DIR: "/custom/pi-agent" } }))
+  assert.equal(f.runs[0]!.command, "/tools/pi")
+  assert.deepEqual(f.runs[0]!.args, [])
+  assert.equal(f.runs[0]!.env?.PI_CODING_AGENT_DIR, "/custom/pi-agent")
+  assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+})
+
+test("Pi Windows setup uses the native installer and safely launches its managed shim", async () => {
+  const directory = "C:\\User's $tools\\pi-agent"
+  const binary = `${directory}\\bin\\pi.cmd`
+  const powershell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+  const f = fixture({ platform: "win32", env: { PATH: "" }, files: [binary, powershell], answer: async (_command, args) =>
+    args[0] === "--version" ? result("1.4.0") : result("pi - AI coding assistant with read, bash, edit, write tools") })
+  const provider = input("pi", { env: { PI_CODING_AGENT_DIR: directory, TOKEN: "sensitive-value" } })
+  await f.setup.install(provider)
+  assert.equal(f.runs[0]!.command, powershell)
+  assert.match(f.runs[0]!.args!.at(-1)!, /https:\/\/pi\.dev\/install\.ps1/u)
+  assert.equal(f.runs[0]!.env?.PI_CODING_AGENT_DIR, directory)
+  assert.equal(f.runs[0]!.env?.TOKEN, "sensitive-value")
+  assert.ok(!f.runs[0]!.args!.join(" ").includes("sensitive-value"))
+  await f.setup.login(provider)
+  assert.equal(f.runs[1]!.command, powershell)
+  assert.equal(f.runs[1]!.env?.DESKFLEET_PROVIDER_COMMAND, binary)
+  assert.equal(f.runs[1]!.env?.PI_CODING_AGENT_DIR, directory)
+  assert.ok(!f.runs[1]!.args!.join(" ").includes(binary))
+  assert.equal(f.runs[1]!.args!.at(-1), "& $env:DESKFLEET_PROVIDER_COMMAND ; exit $LASTEXITCODE")
+})
+
 test("Windows uses case-insensitive environment overrides and official install locations", async () => {
   const f = fixture({ platform: "win32", env: { Path: "C:\\original", LOCALAPPDATA: "C:\\Local" },
     files: ["C:\\override\\codex.exe", "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"],
@@ -191,6 +253,18 @@ test("Windows adapters reject shell shims they cannot directly execute", async (
     assert.match(value.message!, /native \.exe/u)
     assert.equal(f.calls.length, 0)
   }
+})
+
+test("Pi Windows discovery skips PowerShell shims its ACP adapter cannot execute", async () => {
+  const f = fixture({ platform: "win32", env: { PATH: "C:\\tools" }, files: ["C:\\tools\\pi.ps1", "C:\\tools\\pi.cmd"],
+    answer: async (_command, args) => args[0] === "--version" ? result("1.4.0") : result("pi - AI coding assistant with read, bash, edit, write tools") })
+  assert.equal((await f.setup.probe(input("pi"))).binaryPath, "C:\\tools\\pi.cmd")
+  assert.ok(f.calls.every(call => call.command === "C:\\tools\\pi.cmd"))
+  const value = await f.setup.probe(input("pi", { binaryPath: "C:\\tools\\pi.ps1" }))
+  assert.equal(value.status, "invalid")
+  assert.equal(value.loginAvailable, false)
+  assert.match(value.message!, /Select Pi's \.cmd launcher/u)
+  assert.equal(f.calls.length, 2)
 })
 
 test("one deadline bounds a probe across slow candidates and aborts metadata work", async () => {

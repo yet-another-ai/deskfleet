@@ -7,6 +7,7 @@ import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { promisify } from "node:util"
 import { DaemonClient } from "../../daemon/src/control-client.ts"
+import { connectAcpProcess } from "../../daemon/src/agents/acp.ts"
 import { createPeer } from "../../../crates/node/index.ts"
 
 // Exercise the real package entry, including its static imports and startup
@@ -228,8 +229,20 @@ try {
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 15_000,
   })
   assert.equal(claudeVersion.stdout.trim(), dependencies["@agentclientprotocol/claude-agent-acp"])
+  const piVersion = await promisify(execFile)(executable, [join(appPath, "out/main/index.js"), "--pi-acp", "--version"], {
+    env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 15_000,
+  })
+  assert.equal(piVersion.stdout.trim(), dependencies["pi-acp"])
+  const pi = await connectAcpProcess({
+    command: executable, args: [join(appPath, "out/main/index.js"), "--pi-acp"],
+    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
+  }, { onUpdate() {} })
+  try {
+    assert.equal(pi.initialization.agentInfo?.name, "pi-acp")
+    assert.equal(pi.initialization.agentInfo?.version, dependencies["pi-acp"])
+  } finally { await pi.close() }
   await probeHostedDaemon()
-  console.log("Electron startup smoke passed: welcome server setup, saved progress, disabled auto-start, Codex and Claude Code adapters, hosted daemon identity, and authenticated management boundary")
+  console.log("Electron startup smoke passed: welcome server setup, saved progress, disabled auto-start, Codex, Claude Code, and Pi adapters, hosted daemon identity, and authenticated management boundary")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error

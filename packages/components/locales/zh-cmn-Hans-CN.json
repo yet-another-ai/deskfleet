@@ -460,6 +460,7 @@
       "claude-code": "Anthropic 的编程 Agent。",
       "cursor": "Cursor 的 Agent CLI。",
       "grok": "xAI 的 Grok CLI。",
+      "pi": "Pi 的编程 Agent CLI。",
       "acp": "任何支持 Agent Client Protocol 的 Agent。"
     },
     "iconDefault": "模板默认图标",
@@ -487,6 +488,7 @@
       "starting": "正在启动…",
       "installing": "正在安装…",
       "loggingIn": "等待登录，请按下方提示操作。",
+      "piLoginHint": "输入 /login 登录，完成后输入 /quit 返回。",
       "output": "设置输出",
       "installNotFound": "安装程序已结束，但未找到可执行文件。请查看输出，或在“高级”中设置路径。",
       "interrupted": "设置已中断。",

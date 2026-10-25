@@ -33,7 +33,16 @@ export class AcpSessionModes {
   }
 
   #usesLegacyMode(state: SessionConfiguration): boolean {
-    return !!state.modes && !state.options?.some(option => option.category === "mode" || option.id === "mode")
+    if (!state.modes) return false
+    const modes = state.modes.availableModes
+    return !state.options?.some(option => {
+      if (option.category === "mode" || option.id === "mode") return true
+      // Pi also publishes its thinking levels as legacy modes. The thought
+      // selector already owns that setting, including its confirmed updates.
+      if (option.type !== "select" || option.category !== "thought_level") return false
+      const choices = option.options.flatMap(value => "group" in value ? value.options : [value])
+      return choices.length === modes.length && modes.every(mode => choices.some(choice => choice.value === mode.id))
+    })
   }
 
   #options(state: SessionConfiguration): acp.SessionConfigOption[] | null | undefined {

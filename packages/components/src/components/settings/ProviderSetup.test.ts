@@ -25,7 +25,7 @@ function render(probe = vi.fn<(provider: AgentProviderInput) => Promise<Provider
   return { view: wrapper, probe, install, login, terminals }
 }
 
-afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers() })
+afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers(); i18n.global.locale.value = "en-US" })
 
 test("probes as soon as the form opens and when its selected template changes", async () => {
   const { view, probe } = render()
@@ -91,11 +91,29 @@ test("login runs independently and refreshes auth without assuming a successful 
   await flushPromises()
   expect(login).toHaveBeenCalledExactlyOnceWith({ ...provider, binaryPath: found.binaryPath })
   expect(install).not.toHaveBeenCalled()
+  expect(view.find("[data-provider-login-hint]").exists()).toBe(false)
   terminals.sessions.push({ ...terminal, status: "exited", exitCode: 0 })
   await flushPromises()
   expect(probe).toHaveBeenCalledTimes(2)
   // An unknown status is not reported as signed in or signed out.
   expect(view.get("[data-provider-status]").text()).toBe("Installedcodex-cli 1.0")
+})
+
+test.each([
+  ["en-US", "Enter /login to sign in, then /quit to return."],
+  ["zh-cmn-Hans-CN", "输入 /login 登录，完成后输入 /quit 返回。"],
+] as const)("guides Pi login in %s until its terminal exits", async (locale, hint) => {
+  i18n.global.locale.value = locale
+  const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>().mockResolvedValue({ ...found, binaryPath: "/tools/pi", version: "0.65.0" })
+  const { view, terminals } = render(probe, { template: "pi", name: "Pi Coding Agent", env: {} })
+  await flushPromises()
+  expect(view.find("[data-provider-login-hint]").exists()).toBe(false)
+  await view.get("[data-provider-login]").trigger("click")
+  await flushPromises()
+  expect(view.get("[data-provider-login-hint]").text()).toBe(hint)
+  terminals.sessions.push({ ...terminal, status: "exited", exitCode: 0 })
+  await flushPromises()
+  expect(view.find("[data-provider-login-hint]").exists()).toBe(false)
 })
 
 test("a failed installer retains its output and reports its exit without adopting a path", async () => {

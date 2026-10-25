@@ -24,6 +24,8 @@ export default defineConfig({
     minify: false,
     outDir: resolve(import.meta.dirname, "out/main"),
     rolldownOptions: {
+      // Bundled adapters include CommonJS modules that require Node built-ins.
+      platform: "node",
       external: ["electron", ...nodeBuiltins],
     },
     sourcemap: true,

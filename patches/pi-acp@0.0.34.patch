@@ -1,0 +1,38 @@
+diff --git a/dist/index.js b/dist/index.js
+index 64758f027a38a7ecbe7d6e05e88edcc72ee9f193..5eea81248c0e116ecef54c41f72bcdc77b4f99d6 100755
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1887,7 +1887,7 @@ function mergeCommands(a, b) {
+   }
+   return out;
+ }
+-var pkg = readNearestPackageJson(import.meta.url);
++import pkg from "../package.json" with { type: "json" };
+ var PiAcpAgent = class {
+   conn;
+   sessions = new SessionManager();
+@@ -3039,8 +3039,7 @@ function readNearestPackageJson(metaUrl) {
+ // src/index.ts
+ if (process.argv.includes("--terminal-login")) {
+-  const { spawnSync: spawnSync2 } = await import("child_process");
+   const cmd = getPiCommand(process.env.PI_ACP_PI_COMMAND);
+-  const res = spawnSync2(cmd, [], {
++  const res = spawnSync(cmd, [], {
+     stdio: "inherit",
+     env: process.env,
+     shell: shouldUseShellForPiCommand(cmd)
+@@ -3077,11 +3076,12 @@ var output = new ReadableStream({
+   }
+ });
+ var stream = ndJsonStream(input, output);
+-var agent = new AgentSideConnection((conn) => new PiAcpAgent(conn), stream);
++var piAgent;
++var agent = new AgentSideConnection((conn) => piAgent = new PiAcpAgent(conn), stream);
+ function shutdown() {
+   try {
+     ;
+-    agent?.agent?.dispose?.();
++    piAgent?.dispose();
+   } catch {
+   }
+   try {

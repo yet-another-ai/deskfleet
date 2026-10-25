@@ -460,6 +460,7 @@
       "claude-code": "Anthropic's coding agent.",
       "cursor": "Cursor's agent CLI.",
       "grok": "xAI's Grok CLI.",
+      "pi": "Pi's coding agent CLI.",
       "acp": "Any agent that speaks the Agent Client Protocol."
     },
     "iconDefault": "Template default",
@@ -487,6 +488,7 @@
       "starting": "Starting…",
       "installing": "Installing…",
       "loggingIn": "Waiting for sign-in. Follow the prompts below.",
+      "piLoginHint": "Enter /login to sign in, then /quit to return.",
       "output": "Setup output",
       "installNotFound": "The installer finished, but the executable wasn't found. Check the output or set its path under Advanced.",
       "interrupted": "Setup was interrupted.",

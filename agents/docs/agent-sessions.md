@@ -93,6 +93,13 @@ is advertised, and otherwise with `cached_token` from `grok login`. Interactive
 methods are not passed to `authenticate`. Deskfleet does not add
 `--always-approve`, so tool approval stays on the existing permission UI.
 `x.ai/ask_user_question` and `_x.ai/ask_user_question` use the same question form.
+The Pi Coding Agent template runs the installed `pi` CLI through the bundled
+[`pi-acp`](https://github.com/svkozak/pi-acp) adapter, which starts Pi in RPC mode.
+It supports model and thinking-level selection and loading saved sessions.
+Pi executes its tools locally; the adapter does not delegate filesystem or
+terminal operations, forward client-provided MCP servers, or expose additional
+Workspace directories. Pi extension select/confirm requests use the permission
+UI; extension free-text input requests are unsupported.
 The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the
@@ -122,6 +129,10 @@ imply authentication: completion triggers a new probe, and successful installati
 fills the executable's absolute path. Custom ACP providers have discovery but no
 built-in installation or login action. Setup uses authenticated machine management
 RPC; terminal interaction uses the existing WebRTC terminal channel.
+Pi installation uses the official `pi.dev` installer. Its **Log in** action opens
+Pi; enter `/login`, complete provider setup, then `/quit`. Discovery leaves Pi's
+credential status unknown because its credential check requires a specific model
+or model provider. **Test Connection** checks whether a session can be opened.
 
 The provider dialog's **Test Connection** button sends the unsaved settings to the daemon, which starts the agent,
 initializes ACP, and opens one session in an empty temporary directory without
@@ -490,6 +501,7 @@ Provider capabilities determine which controls are available:
 | Claude Code | The bundled adapter offers Manual, Accept edits, Plan, Auto, and Bypass permissions where available. Auto can fall back for an unsupported model. | Uses the advertised model option; the returned configuration can also change the effective mode. |
 | Cursor | Uses advertised ACP modes, including its documented Agent, Plan, and Ask workflows. These are not its Auto-review permission setting. | Uses model choices advertised by the installed CLI. Initialization requests parameterized model options so reasoning effort is separate from fast variants. Available choices depend on that CLI version. |
 | Grok | Current upstream session setup advertises no mode catalog. Its startup Auto/YOLO settings are not exposed as a Session mode selector. Reasoning levels carried beside the model are not Session modes. | Model and reasoning options support changes. A model that does not advertise adjustable effort leaves the reasoning control unavailable. |
+| Pi Coding Agent | Thinking levels are reasoning choices, not permission modes. | The bundled adapter advertises model and thinking-level configuration options and supports changing both. |
 
 These are integration observations, not hardcoded option lists. See
 [Codex permission modes](https://learn.chatgpt.com/docs/permission-modes),

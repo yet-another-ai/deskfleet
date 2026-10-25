@@ -48,6 +48,7 @@ test.each([
   ["claude-code", "Claude Code", "claude", "claudecode"],
   ["cursor", "Cursor", "agent", "cursor"],
   ["grok", "Grok", "grok", "grok"],
+  ["pi", "Pi Coding Agent", "pi", "pi"],
 ] as const)("the %s template defaults to its installed CLI and mark", async (template, name, binary, mark) => {
   const { view, save } = render()
   await pick(view, template)

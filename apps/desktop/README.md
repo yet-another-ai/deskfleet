@@ -146,8 +146,11 @@ describes its target Workspace.
 ## Agent sessions
 
 Settings → Agents manages the machine's configured providers, including their
-names, icons, executable paths, and environment overrides. The Codex and Claude
-Code templates use their installed and authenticated CLIs through bundled ACP adapters.
+names, icons, executable paths, and environment overrides. The Codex, Claude
+Code, and Pi Coding Agent templates use their installed and authenticated CLIs
+through bundled ACP adapters. Pi setup opens its terminal interface: enter
+`/login`, complete authentication, then `/quit`. Pi supports model and reasoning
+selection and resuming saved sessions.
 The Cursor template runs the installed Cursor CLI as `agent acp`.
 The Grok template runs the installed Grok CLI as `grok agent stdio`.
 Their multiple-choice questions use the session question cards.
@@ -439,8 +442,8 @@ mise run desktop:package      # dmg and zip, NSIS, or AppImage for the host plat
 to the main bundle and unpacked from ASAR for loading; installer builds use the
 release addon. The app has no runtime `node_modules` or external Node dependency.
 The app's main process hosts the daemon. The same installed executable runs the
-bundled Codex and Claude Code ACP adapters with `--codex-acp` and
-`--claude-agent-acp` in Electron's Node mode. The `RunAsNode` fuse stays enabled
+bundled Codex, Claude Code, and Pi ACP adapters with `--codex-acp`,
+`--claude-agent-acp`, and `--pi-acp` in Electron's Node mode. The `RunAsNode` fuse stays enabled
 for those adapter processes. Packages enable ASAR
 integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
@@ -488,7 +491,7 @@ returning to the session, live staged/unstaged/untracked diff previews, and hist
 recovery after restarting both daemon and client. It edits a file while its diff
 is open to verify live updates independent of provider events. The startup smoke
 checks entry-point routing and starts the bundled
-Codex and Claude Code adapters without paid inference.
+Codex, Claude Code, and Pi adapters without paid inference.
 
 vue-tsc uses the TypeScript compiler API, which TypeScript 7 does not provide. The
 package therefore installs TypeScript 6 under the `typescript` name. The root

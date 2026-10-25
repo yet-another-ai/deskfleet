@@ -4,7 +4,7 @@ export interface ProviderIcon {
   url: string
 }
 
-const templateIcons: Record<string, string> = { codex: "openai", "claude-code": "claudecode", cursor: "cursor", grok: "grok" }
+const templateIcons: Record<string, string> = { codex: "openai", "claude-code": "claudecode", cursor: "cursor", grok: "grok", pi: "pi" }
 
 export interface ProviderIconCatalog {
   providerIcons: readonly ProviderIcon[]

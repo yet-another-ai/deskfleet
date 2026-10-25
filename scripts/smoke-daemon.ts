@@ -47,6 +47,15 @@ try {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()
   assert.equal(claudeAdapterVersion, manifest.dependencies["@agentclientprotocol/claude-agent-acp"])
+  const piAdapterVersion = execFileSync(command, ["--pi-acp", "--version"], {
+    cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+  }).trim()
+  assert.equal(piAdapterVersion, manifest.dependencies["pi-acp"])
+  const piInitialization = JSON.parse(execFileSync(command, ["agent", "pi", "--check"], {
+    cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+  })) as { agentInfo: { name: string; version: string } }
+  assert.equal(piInitialization.agentInfo.name, "pi-acp")
+  assert.equal(piInitialization.agentInfo.version, manifest.dependencies["pi-acp"])
 
   const child = spawn(command, ["--port", "0"], {
     cwd: directory, env: environment, stdio: ["ignore", "pipe", "pipe"],

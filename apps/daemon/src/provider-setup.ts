@@ -60,12 +60,21 @@ function locations(template: AgentProviderTemplateId, ctx: Context): string[] {
   directories.push(path.join(home, ".local", "bin"))
   if (template === "grok") directories.push(path.join(home, ".grok", "bin"))
   if (template === "claude-code") directories.push(path.join(home, ".claude", "local"))
+  if (template === "pi") directories.push(...npmLocations(ctx), path.join(env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent"), "bin"))
   if (platform === "win32") {
     const local = env.LOCALAPPDATA ?? path.join(home, "AppData", "Local")
     if (template === "codex") directories.push(path.join(local, "Programs", "OpenAI", "Codex", "bin"))
     if (template === "cursor") directories.push(path.join(local, "cursor-agent"))
   } else directories.push("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin")
   return directories
+}
+
+function npmLocations({ path, home, env, platform }: Context): string[] {
+  const prefix = env.NPM_CONFIG_PREFIX ?? env.npm_config_prefix
+  return [
+    ...(prefix ? [platform === "win32" ? prefix : path.join(prefix, "bin")] : []),
+    ...(platform === "win32" ? [path.join(env.APPDATA ?? path.join(home, "AppData", "Roaming"), "npm")] : []),
+  ]
 }
 
 function candidates(command: string, ctx: Context, extraDirectories: string[] = []): string[] {
@@ -96,7 +105,8 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
     ])
     if (!shell) return "PowerShell is required to run the official installer."
     const url = template === "codex" ? "https://chatgpt.com/codex/install.ps1"
-      : template === "claude-code" ? "https://claude.ai/install.ps1" : "https://cursor.com/install?win32=true"
+      : template === "claude-code" ? "https://claude.ai/install.ps1"
+        : template === "pi" ? "https://pi.dev/install.ps1" : "https://cursor.com/install?win32=true"
     return { command: shell, args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
       `$ErrorActionPreference = 'Stop'; Invoke-RestMethod '${url}' | Invoke-Expression; if ($LASTEXITCODE) { exit $LASTEXITCODE }`] }
   }
@@ -111,8 +121,9 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
   if (!shell) return ctx.platform === "win32" ? "Git for Windows is required to install Grok." : "Bash is required to run the official installer."
   const url = template === "codex" ? "https://chatgpt.com/codex/install.sh"
     : template === "claude-code" ? "https://claude.ai/install.sh"
-      : template === "cursor" ? "https://cursor.com/install" : "https://x.ai/cli/install.sh"
-  return { command: shell, args: ["-o", "pipefail", "-c", `curl -fsSL '${url}' | ${template === "codex" ? "sh" : "bash"}`] }
+      : template === "cursor" ? "https://cursor.com/install"
+        : template === "pi" ? "https://pi.dev/install.sh" : "https://x.ai/cli/install.sh"
+  return { command: shell, args: ["-o", "pipefail", "-c", `curl -fsSL '${url}' | ${template === "codex" || template === "pi" ? "sh" : "bash"}`] }
 }
 
 function text(output: string): string {
@@ -124,9 +135,9 @@ async function identity(template: AgentProviderTemplateId, binary: string, ctx: 
   if (result.code !== 0) return undefined
   const version = text(`${result.stdout}\n${result.stderr}`)
   const pattern = template === "codex" ? /\bcodex\b/iu : template === "claude-code" ? /\bclaude\b/iu
-    : template === "cursor" ? /\bcursor\b/iu : /\bgrok\b/iu
+    : template === "cursor" ? /\bcursor\b/iu : template === "pi" ? /\bpi\s+-\s+AI coding assistant\b/iu : /\bgrok\b/iu
   if (!pattern.test(version)) {
-    // Cursor prints just a build version. Its help identifies it, unlike Grok's `agent` alias.
+    // Cursor and Pi print just a version; their help identifies the provider.
     const help = await ctx.run(binary, ["--help"], ctx.env, ctx.home)
     if (help.code !== 0 || !pattern.test(text(`${help.stdout}\n${help.stderr}`))) return undefined
   }
@@ -135,8 +146,8 @@ async function identity(template: AgentProviderTemplateId, binary: string, ctx: 
 
 async function authentication(template: AgentProviderTemplateId, binary: string, ctx: Context): Promise<ProviderProbeResult["auth"]> {
   if (template === "acp") return "unknown"
-  // Grok has no documented noninteractive status command; key presence cannot prove authentication.
-  if (template === "grok") return "unknown"
+  // Grok has no noninteractive status command; Pi's check requires a selected model/provider.
+  if (template === "grok" || template === "pi") return "unknown"
   try {
     const args = template === "codex" ? ["login", "status"] : template === "claude-code" ? ["auth", "status"] : ["status", "--format", "json"]
     const result = await ctx.run(binary, args, ctx.env, ctx.home)
@@ -200,6 +211,11 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
         message = "Select the native .exe for this provider, or install its official native CLI."
         continue
       }
+      if (ctx.platform === "win32" && provider.template === "pi" && /\.ps1$/iu.test(binary)) {
+        invalid = true
+        message = "Select Pi's .cmd launcher or native .exe; its ACP adapter cannot execute PowerShell scripts."
+        continue
+      }
       try {
         const version = await identity(provider.template, binary, ctx)
         if (version === undefined) { invalid = true; continue }
@@ -239,7 +255,7 @@ export class ProviderSetup {
     if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
     const ctx = context(provider, this.#dependencies)
     const args = provider.template === "claude-code" ? ["auth", "login"]
-      : provider.template === "cursor" ? ["login"] : ["login", "--device-auth"]
+      : provider.template === "cursor" ? ["login"] : provider.template === "pi" ? [] : ["login", "--device-auth"]
     const launch = launchProviderCommand(result.binaryPath, args,
       provider.template === "cursor" ? { ...ctx.env, NO_OPEN_BROWSER: "1" } : ctx.env, ctx.platform)
     return this.#run({ ...launch, cwd: ctx.home }, `${provider.name} sign in`)

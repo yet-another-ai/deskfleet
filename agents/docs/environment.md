@@ -213,9 +213,11 @@ a package manifest, run `mise exec -- pnpm install` and include the lockfile in
 the change. See the [daemon guide](../../apps/daemon/README.md) for packaging and
 runtime commands.
 
-The ACP SDK, Codex adapter, and Claude Agent adapter are pinned daemon
+The ACP SDK, Codex adapter, Claude Agent adapter, and Pi ACP adapter are pinned daemon
 dependencies in pnpm. The SEA build embeds those adapters. Running a session
-still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`), or Grok (`grok agent stdio`).
+still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`),
+Grok (`grok agent stdio`), or Pi (`pi --mode rpc`). Pi's official installer can
+provide its required Node.js runtime; the bundled adapter does not include Pi.
 Use `--binary-path` to select it and repeated `--env` options for environment
 overrides. See the [agent setup](../../apps/daemon/README.md#agents-through-acp)
 for initialization checks and prompt commands.
