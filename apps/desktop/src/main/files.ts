@@ -1,11 +1,10 @@
-import { BrowserWindow, dialog, ipcMain } from "electron"
+import { BrowserWindow, dialog, ipcMain, type WebContents } from "electron"
 import type { CentralApi } from "@deskfleet/client/central"
-import { FileTransferManager } from "@deskfleet/client/file-transfers"
 import { FILES_CHANGED_EVENT, FILES_IPC_CHANNEL, type FileConflict, type FileLocation, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer } from "@deskfleet/client/files"
-import { FilesService } from "../../../daemon/src/files-service.ts"
 import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { createNativeFileEndpoint } from "./files-peer.ts"
+import { WindowFiles } from "./files-controller.ts"
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid file operation")
@@ -17,7 +16,7 @@ function text(value: unknown): string {
 }
 function target(value: unknown): FileTarget {
   const input = object(value)
-  if (input.kind === "local") return { kind: "local" }
+  if (input.kind === "local") return { kind: "local", ...(input.grantId === undefined ? {} : { grantId: text(input.grantId) }) }
   if (input.kind === "machine") return { kind: "machine", machineId: text(input.machineId), teamId: text(input.teamId) }
   throw new Error("Invalid file target")
 }
@@ -41,6 +40,10 @@ export async function invokeFiles(api: FilesApi, method: unknown, args: unknown)
   switch (method) {
     case "list": return api.list(target(args[0]), args[1] === undefined ? undefined : text(args[1]))
     case "chooseLocalDirectory": return api.chooseLocalDirectory()
+    case "authorizeLocalSession": {
+      if (!api.authorizeLocalSession) throw new Error("Local Session authorization is unavailable")
+      return api.authorizeLocalSession(text(args[0]))
+    }
     case "enqueue": {
       const request = object(args[0])
       if (request.kind !== undefined && request.kind !== "file" && request.kind !== "directory") throw new Error("Invalid file kind")
@@ -68,44 +71,84 @@ export async function localSessionDirectory(sessionId: string): Promise<string> 
   } finally { client.close() }
 }
 
-/** Hosted outside every BrowserWindow so transfers continue while the app is in the tray. */
+/** Main owns queues; each renderer document receives its own revocable authority. */
 export function installFiles(central: CentralApi): { close(): Promise<void> } {
-  const publish = (transfers: FileTransfer[]) => {
-    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(FILES_CHANGED_EVENT, transfers)
-  }
-  const create = () => {
-    const local = new FilesService(localSessionDirectory)
-    const manager = new FileTransferManager({
-      endpoint: async fileTarget => fileTarget.kind === "local" ? local : createNativeFileEndpoint(central, fileTarget),
-      chooseLocalDirectory: async () => {
-        const result = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] })
-        const path = result.filePaths[0]
-        return result.canceled || !path ? null : (await local.call("list", { path })).value
-      },
-    })
-    return manager
-  }
-  let manager = create()
-  let unpublish = manager.onChanged(publish)
+  const owners = new Map<WebContents, WindowFiles>()
+  const watched = new Map<WebContents, () => void>()
   const closing = new Set<Promise<void>>()
-  const unsubscribe = central.onEvent(event => {
-    if (event.type !== "accountChanged") return
-    const previous = manager
-    unpublish()
-    manager = create()
-    unpublish = manager.onChanged(publish)
+  let closed = false
+  const retire = (contents: WebContents) => {
+    const previous = owners.get(contents)
+    owners.delete(contents)
+    if (!previous) return
+    // close revokes synchronously, before dialogs and queued operations resume.
     const pending = previous.close().catch(error => console.error("File transfer cleanup failed", error)).finally(() => { closing.delete(pending) })
     closing.add(pending)
-    publish([])
+    if (!contents.isDestroyed()) contents.send(FILES_CHANGED_EVENT, [])
+  }
+  const owner = (contents: WebContents) => {
+    if (closed || contents.isDestroyed()) throw new Error("File window has closed")
+    let manager = owners.get(contents)
+    if (manager) return manager
+    const window = BrowserWindow.fromWebContents(contents)
+    if (!window) throw new Error("File operation requires a window")
+    manager = new WindowFiles({
+      remoteEndpoint: async target => createNativeFileEndpoint(central, target),
+      sessionDirectory: localSessionDirectory,
+      chooseDirectory: async () => {
+        const result = await dialog.showOpenDialog(window, {
+          title: "Allow deskfleet to read and save files in a folder",
+          buttonLabel: "Allow folder", properties: ["openDirectory", "createDirectory"],
+        })
+        return result.canceled ? null : result.filePaths[0] ?? null
+      },
+      confirmSession: async directory => (await dialog.showMessageBox(window, {
+        type: "question", title: "Allow local Session files", message: "Allow previews and downloads from this Session folder?",
+        detail: directory, buttons: ["Cancel", "Allow reading"], defaultId: 0, cancelId: 0, noLink: true,
+      })).response === 1,
+      confirmOverwrite: async path => (await dialog.showMessageBox(window, {
+        type: "warning", title: "Replace local files", message: "Replace this item and all of its contents?",
+        detail: path, buttons: ["Cancel", "Replace"], defaultId: 0, cancelId: 0, noLink: true,
+      })).response === 1,
+    })
+    const current = manager
+    manager.onChanged((transfers: FileTransfer[]) => {
+      if (owners.get(contents) === current && !contents.isDestroyed()) contents.send(FILES_CHANGED_EVENT, transfers)
+    })
+    owners.set(contents, manager)
+    if (!watched.has(contents)) {
+      const navigate = (_event: unknown, _url: string, inPlace: boolean, isMainFrame: boolean) => {
+        if (isMainFrame && !inPlace) retire(contents)
+      }
+      const gone = () => retire(contents)
+      const destroyed = () => { retire(contents); watched.get(contents)?.(); watched.delete(contents) }
+      contents.on("did-start-navigation", navigate)
+      contents.on("render-process-gone", gone)
+      contents.once("destroyed", destroyed)
+      watched.set(contents, () => {
+        contents.removeListener("did-start-navigation", navigate)
+        contents.removeListener("render-process-gone", gone)
+        contents.removeListener("destroyed", destroyed)
+      })
+    }
+    return manager
+  }
+  const unsubscribe = central.onEvent(event => {
+    if (event.type !== "accountChanged") return
+    for (const contents of owners.keys()) retire(contents)
   })
   ipcMain.handle(FILES_IPC_CHANNEL, async (event, method: unknown, args: unknown) => {
     if (!isDesktopMediaSender(event)) throw new Error("File IPC is restricted to the main renderer")
-    return invokeFiles(manager, method, args)
+    return invokeFiles(owner(event.sender), method, args)
   })
   return {
     async close() {
-      unsubscribe(); unpublish(); ipcMain.removeHandler(FILES_IPC_CHANNEL)
-      await Promise.all([manager.close(), ...closing])
+      closed = true
+      unsubscribe(); ipcMain.removeHandler(FILES_IPC_CHANNEL)
+      for (const contents of owners.keys()) retire(contents)
+      for (const unwatch of watched.values()) unwatch()
+      watched.clear()
+      await Promise.all(closing)
     },
   }
 }

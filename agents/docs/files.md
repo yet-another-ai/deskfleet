@@ -36,11 +36,48 @@ end access and close the endpoint's unfinished writes. A later request may obtai
 a new peer; pending writes are not automatically replayed on it.
 
 Electron's main process owns its transfer manager, native WebRTC peers, local
-filesystem endpoint, and narrow preload API. Transfers continue when a renderer
-is hidden or destroyed and while the application stays in the tray. Application
-quit closes this manager. The Web client owns its manager at page/account scope,
+filesystem endpoint, and narrow preload API. Each renderer document has a separate
+queue and receives only its own transfer events. Transfers continue when its window
+is hidden and while the application stays in the tray. Full document navigation,
+renderer destruction/crash, account changes, and application quit revoke its local
+grants and close its queue. Hash-route changes and switching views keep it alive.
+The Web client owns its manager at page/account scope,
 outside the selected machine's Vue/Pinia scope. Leaving that browser page ends
 its transfers. The queue is not persisted or resumed across application restarts.
+
+## Electron local folder authorization
+
+The renderer cannot authorize a local path by supplying it to IPC. A native folder
+picker issues an opaque grant for reading and saving files in the selected folder.
+The main process binds it to the requesting window document and current account
+epoch. Local listings carry that grant back through browsing and transfer selection;
+the queue retains it for recursive reads, destination creation, and retries. Missing,
+forged, cross-window, and revoked grants fail before filesystem access. The local
+pane starts with folder selection rather than unrestricted home-directory browsing.
+
+The local endpoint checks both lexical and canonical path containment for every
+operation, confines parent/home/root navigation to the selected folder, and omits
+file links whose targets escape it. Strict transfer scans reject escaping entries.
+Windows drive-relative paths, device namespaces, alternate data streams, and
+ambiguous trailing-dot/space names are rejected; ordinary absolute drive and UNC
+paths retain their filesystem meaning. These path checks reject existing symlink
+and junction escapes. They are not a race-safe filesystem sandbox against another
+local process replacing entries between validation and Node's path-based I/O.
+
+Saving new files does not authorize replacement. Every local `replace` attempt
+requires a native confirmation displaying the exact destination, including retries;
+the endpoint rechecks the grant after that dialog. A folder replacement still replaces
+the complete item. Revocation also prevents pending selection/confirmation dialogs
+from issuing authority into the previous document or account.
+
+Local Agent previews require an explicit **Allow local file previews** action.
+Main resolves the Session's captured first directory through its daemon connection
+and displays that directory in a native confirmation. The resulting grant is
+read-only and bound to that Session; absolute references, file URLs, and relative
+paths must stay within it. A renderer-provided Session ID or path alone grants no
+access. Downloading those resources selects a separate writable destination.
+Remote file peers and explicitly authorized daemon terminal operations retain their
+OS-user authority; Session roots do not globally restrict daemon filesystem access.
 
 ## Protocol and transfer behavior
 
@@ -168,7 +205,8 @@ snapshot policy is introduced.
   protocol to authorized peer access.
 - `packages/client/src/files-rpc.ts` and `files-signaling.ts` own common remote
   requests and peer lifetime; `file-transfers.ts` owns queue behavior.
-- `apps/desktop/src/main/files.ts` owns the Electron host, while
+- `apps/desktop/src/main/files.ts`, `files-controller.ts`, and `files-grants.ts` own
+  the Electron host, window/account lifetime, and local capability checks, while
   `packages/client/src/browser-files.ts` owns browser directory handles and OPFS.
 - Shared files components and Agent Markdown/resource components live under
   `packages/components/src/components/`.

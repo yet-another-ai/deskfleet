@@ -1,10 +1,10 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import { FilesService } from "../../../apps/daemon/src/files-service.ts"
 import type { FileEndpoint } from "../../../apps/daemon/src/files-protocol.ts"
-import type { FileTransfer } from "./files.ts"
+import type { FileTarget, FileTransfer } from "./files.ts"
 import { FileTransferManager } from "./file-transfers.ts"
 
 const cleanups: Array<() => Promise<void>> = []
@@ -167,4 +167,42 @@ test("closing the account interrupts pending file calls before waiting for the q
   await manager.close()
   expect((await manager.transfers()).find(job => job.id === id)?.state).toBe("cancelled")
   expect(await readdir(destination)).toEqual([])
+})
+
+test("distinct local grants use distinct endpoints", async () => {
+  const { source } = await fixture()
+  const endpoint = vi.fn(async (_target: FileTarget) => new FilesService())
+  const manager = new FileTransferManager({ endpoint, chooseLocalDirectory: async () => null })
+  cleanups.push(() => manager.close())
+  await manager.list({ kind: "local", grantId: "first" }, source)
+  await manager.list({ kind: "local", grantId: "second" }, source)
+  await manager.list({ kind: "local", grantId: "first" }, source)
+  expect(endpoint.mock.calls.map(([target]) => target)).toEqual([{ kind: "local", grantId: "first" }, { kind: "local", grantId: "second" }])
+})
+
+test("separate local grants cannot copy a directory into its descendant", async () => {
+  const { source } = await fixture()
+  const child = join(source, "child")
+  await mkdir(child)
+  const manager = new FileTransferManager({ endpoint: async () => new FilesService(), chooseLocalDirectory: async () => null })
+  cleanups.push(() => manager.close())
+  const id = await manager.enqueue({ source: { target: { kind: "local", grantId: "source" }, path: source }, destination: { target: { kind: "local", grantId: "destination" }, path: child }, kind: "directory" })
+  expect((await settled(manager, id, "failed")).error).toContain("itself")
+  expect(await readdir(child)).toEqual([])
+})
+
+test("saving a resource carries the selected destination grant into the queue", async () => {
+  const { source, destination } = await fixture()
+  const file = join(source, "report.txt")
+  await writeFile(file, "report")
+  const endpoint = new FilesService(async () => source)
+  const manager = new FileTransferManager({
+    endpoint: async () => endpoint,
+    chooseLocalDirectory: async () => ({ path: destination, homePath: destination, parentPath: null, roots: [], entries: [], grantId: "destination" }),
+  })
+  cleanups.push(() => manager.close())
+  const enqueue = vi.spyOn(manager, "enqueue").mockResolvedValue("saved")
+  const target = { kind: "local", grantId: "preview" } as const
+  expect(await manager.saveResource({ target, sessionId: "session", uri: "report.txt" })).toBe("saved")
+  expect(enqueue).toHaveBeenCalledExactlyOnceWith({ source: { target, path: await realpath(file) }, destination: { target: { kind: "local", grantId: "destination" }, path: destination }, kind: "file" })
 })

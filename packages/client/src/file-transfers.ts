@@ -1,9 +1,9 @@
-import { FILE_CHUNK_BYTES, type FileEndpoint, type FileEntry, type FileListing } from "../../../apps/daemon/src/files-protocol.ts"
-import type { FileConflict, FileResourceRequest, FilesApi, FileTarget, FileTransfer, FileTransferRequest } from "./files.ts"
+import { FILE_CHUNK_BYTES, type FileEndpoint, type FileEntry } from "../../../apps/daemon/src/files-protocol.ts"
+import type { FileConflict, FileListing, FileResourceRequest, FilesApi, FileTarget, FileTransfer, FileTransferRequest } from "./files.ts"
 import { copyFileChunks } from "./file-pipeline.ts"
 
 const PREVIEW_BYTES = 16 * 1024 * 1024
-const targetKey = (target: FileTarget) => target.kind === "local" ? "local" : `${target.teamId}/${target.machineId}`
+const targetKey = (target: FileTarget) => target.kind === "local" ? `local/${target.grantId ?? ""}` : `${target.teamId}/${target.machineId}`
 const reasonOf = (error: unknown) => error instanceof Error ? error.message : String(error)
 interface Job { value: FileTransfer; conflict: FileConflict; cancelled: boolean; run?: Promise<void>; abort?: () => Promise<void> }
 interface ManifestEntry { file: FileEntry; relative: string }
@@ -138,7 +138,7 @@ export class FileTransferManager implements FilesApi {
       this.#check(job)
       const root = (await source.call("stat", { path: job.value.source.path })).value
       job.value.name = root.name; job.value.kind = root.kind
-      if (source === destination) {
+      if (source === destination || (job.value.source.target.kind === "local" && job.value.destination.target.kind === "local")) {
         const directory = (await destination.call("list", { path: job.value.destination.path })).value.path
         const normalize = (path: string) => {
           const result = path.replaceAll("\\", "/").replace(/\/+$/u, "")
@@ -228,7 +228,8 @@ export class FileTransferManager implements FilesApi {
     const directory = await this.#choose()
     if (!directory) return null
     const file = await this.resolveResource(request)
-    return this.enqueue({ source: { target: request.target, path: file.path }, destination: { target: { kind: "local" }, path: directory.path }, kind: file.kind })
+    const target: FileTarget = { kind: "local", ...(directory.grantId ? { grantId: directory.grantId } : {}) }
+    return this.enqueue({ source: { target: request.target, path: file.path }, destination: { target, path: directory.path }, kind: file.kind })
   }
 
   async close(): Promise<void> {

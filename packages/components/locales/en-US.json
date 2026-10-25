@@ -556,6 +556,7 @@
     "emptyDescription": "Team members run agents and open terminals on the team’s machines. Connect this computer or a server to get started."
   },
   "files": {
+    "allowLocalPreviews": "Allow local file previews",
     "title": "File transfer",
     "local": "This computer",
     "chooseFolder": "Choose folder",

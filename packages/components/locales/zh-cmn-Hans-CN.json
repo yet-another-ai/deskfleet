@@ -556,6 +556,7 @@
     "emptyDescription": "团队成员在团队机器上运行智能体和打开终端。连接此电脑或一台服务器即可开始。"
   },
   "files": {
+    "allowLocalPreviews": "允许预览本地文件",
     "title": "文件传输",
     "local": "本机",
     "chooseFolder": "选择文件夹",

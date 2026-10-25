@@ -2,13 +2,15 @@
 import { ArrowUp, File, Folder, FolderOpen, Home, RefreshCw } from "@lucide/vue"
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { FileEntry, FileListing, FilesApi, FileTarget } from "../../../../client/src/files.ts"
+import type { FileEntry, FileListing, FileLocation, FilesApi, FileTarget } from "../../../../client/src/files.ts"
 import { fileSize } from "../../services/file-format.ts"
 import IconButton from "../common/IconButton.vue"
 const props = defineProps<{ api: FilesApi; target: FileTarget; name: string; revision: number; selection: FileEntry[] }>()
-const emit = defineEmits<{ selection: [entries: FileEntry[]]; location: [path: string | undefined] }>()
+const emit = defineEmits<{ selection: [entries: FileEntry[]]; location: [location: FileLocation | undefined] }>()
 const { t } = useI18n()
 const listing = ref<FileListing>()
+const target = computed<FileTarget>(() => props.target.kind === "local" && listing.value?.grantId
+  ? { kind: "local", grantId: listing.value.grantId } : props.target)
 const selected = computed(() => new Set(props.selection.map(entry => entry.path)))
 const hidden = ref(false)
 const loading = ref(false)
@@ -29,10 +31,10 @@ async function navigate(path?: string, chosen?: FileListing): Promise<void> {
   loading.value = true; error.value = undefined
   emit("location", undefined); clearSelection()
   try {
-    const next = chosen ?? await props.api.list(props.target, path)
+    const next = chosen ?? await props.api.list(target.value, path)
     if (disposed || current !== generation) return
     listing.value = next
-    emit("location", next.path)
+    emit("location", { target: target.value, path: next.path })
   } catch (reason) {
     if (!disposed && current === generation) error.value = reason instanceof Error ? reason.message : String(reason)
   } finally { if (current === generation) loading.value = false }

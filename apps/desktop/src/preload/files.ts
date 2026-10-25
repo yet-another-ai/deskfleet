@@ -7,6 +7,7 @@ export function filesApi(): FilesApi {
   return {
     list: (target, path) => invoke("list", target, path),
     chooseLocalDirectory: () => invoke("chooseLocalDirectory"),
+    authorizeLocalSession: sessionId => invoke("authorizeLocalSession", sessionId),
     enqueue: request => invoke("enqueue", request),
     transfers: () => invoke("transfers"),
     cancel: id => invoke("cancel", id),

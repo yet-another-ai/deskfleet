@@ -59,3 +59,26 @@ test("conflicts offer task-level choices and failed tasks remain retryable", asy
   await view.get('button[aria-label="Retry"]').trigger("click")
   expect(api.retry).toHaveBeenLastCalledWith(task.id, undefined)
 })
+
+test("keeps native directory grants through navigation and both transfer directions", async () => {
+  const { view, api, update } = setup()
+  await flushPromises()
+  const chosen = { ...local, grantId: "chosen-folder", parentPath: null }
+  vi.mocked(api.chooseLocalDirectory).mockResolvedValue(chosen)
+  await view.get('button[aria-label="Choose folder"]').trigger("click")
+  await flushPromises()
+  await view.get('input[aria-label="Select assets"]').setValue(true)
+  await view.get('button[aria-label="Send to remote"]').trigger("click")
+  await flushPromises()
+  expect(api.enqueue).toHaveBeenLastCalledWith({ kind: "directory", source: { target: { kind: "local", grantId: "chosen-folder" }, path: local.entries[0]!.path }, destination: task.destination })
+
+  const remoteEntry = { name: "report.txt", path: "D:\\output\\report.txt", kind: "file" as const, size: 5, modifiedAt: 1 }
+  vi.mocked(api.list).mockImplementation(async value => value.kind === "local" ? chosen : { ...remote, entries: [remoteEntry] })
+  update([{ ...task, state: "completed" }])
+  await flushPromises()
+  expect(api.list).toHaveBeenCalledWith({ kind: "local", grantId: "chosen-folder" }, local.path)
+  await view.get('input[aria-label="Select report.txt"]').setValue(true)
+  await view.get('button[aria-label="Download to this computer"]').trigger("click")
+  await flushPromises()
+  expect(api.enqueue).toHaveBeenLastCalledWith({ kind: "file", source: { target, path: remoteEntry.path }, destination: { target: { kind: "local", grantId: "chosen-folder" }, path: local.path } })
+})

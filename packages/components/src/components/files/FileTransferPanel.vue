@@ -2,14 +2,14 @@
 import { ArrowLeft, ArrowRight, File, Folder, RotateCcw, X } from "@lucide/vue"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
-import type { FileConflict, FileEntry, FilesApi, FileTarget, FileTransfer } from "../../../../client/src/files.ts"
+import type { FileConflict, FileEntry, FileLocation, FilesApi, FileTarget, FileTransfer } from "../../../../client/src/files.ts"
 import { fileSize } from "../../services/file-format.ts"
 import FileBrowserPane from "./FileBrowserPane.vue"
 import IconButton from "../common/IconButton.vue"
 const props = defineProps<{ api: FilesApi; target: FileTarget; machineName: string }>()
 const { t } = useI18n()
 const local: FileTarget = { kind: "local" }
-const paths = ref<{ local?: string; remote?: string }>({})
+const paths = ref<{ local?: FileLocation; remote?: FileLocation }>({})
 const selection = ref<{ local: FileEntry[]; remote: FileEntry[] }>({ local: [], remote: [] })
 const transfers = ref<FileTransfer[]>([])
 const error = ref<string>()
@@ -37,11 +37,12 @@ async function operation(action: () => Promise<unknown>): Promise<void> {
 function transfer(side: "local" | "remote"): void {
   const other = side === "local" ? "remote" : "local"
   const destination = paths.value[other]
-  if (!destination) return
+  const source = paths.value[side]
+  if (!destination || !source) return
   const entries = [...selection.value[side]]
   void operation(async () => {
     for (const entry of entries) {
-      await props.api.enqueue({ kind: entry.kind, source: { target: side === "local" ? local : props.target, path: entry.path }, destination: { target: other === "local" ? local : props.target, path: destination } })
+      await props.api.enqueue({ kind: entry.kind, source: { target: source.target, path: entry.path }, destination })
       selection.value[side] = selection.value[side].filter(selected => selected.path !== entry.path)
     }
   })
