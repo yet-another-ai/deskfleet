@@ -62,7 +62,10 @@ curl http://127.0.0.1:8080/healthz
 
 `DESKFLEET_BIND_ADDR` sets the listener's IP and port, and `RUST_LOG` configures
 logging. See [server configuration](apps/server/README.md) and
-[native binding development](crates/node/README.md).
+[native binding development](crates/node/README.md). Hosting the API,
+PostgreSQL, OIDC, and TURN yourself is the
+[self-hosted backend guide](agents/docs/self-hosted.md). The repository
+Compose file is the local development stack.
 
 ## Daemon
 
@@ -129,6 +132,8 @@ the repository together with `apm.yml` and `apm.lock.yaml`. Restore them with
 
 - [Architecture](agents/docs/architecture.md): component boundaries, data ownership,
   protocols, deployment, and implementation milestones.
+- [Self-hosted backend](agents/docs/self-hosted.md): production layout for the
+  API, database, identity provider, reverse proxy, and TURN relay.
 - [Agent guide](AGENTS.md): repository conventions and engineering workflow.
 
 ## License

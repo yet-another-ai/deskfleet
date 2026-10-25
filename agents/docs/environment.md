@@ -29,9 +29,10 @@ a team. `bob@example.test` has the same password and can join with an invitation
 from Alice's team to exercise the ordinary member role. OIDC accounts have no
 preassigned team roles. The backend creates its PostgreSQL schema on startup.
 
-For an existing PostgreSQL/OIDC deployment, use the
+For an existing PostgreSQL/OIDC deployment during development, use the
 [server guide](../../apps/server/README.md) and `mise run dev` without the
-`development` environment.
+`development` environment. Running that API outside the local Compose stack is
+the [self-hosted backend guide](self-hosted.md).
 
 Use PowerShell 7 (`pwsh`) on Windows. `mise exec -- <command>` runs a focused
 command with the project tools even when the shell has not activated mise.
