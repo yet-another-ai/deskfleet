@@ -2,17 +2,17 @@ import { randomUUID } from "node:crypto"
 import { lstat, realpath, stat } from "node:fs/promises"
 import { basename, dirname, join, posix, win32 } from "node:path"
 import type { FileTarget } from "@deskfleet/client/files"
-import { fileError, sessionResourcePath, uploadPath } from "../../../daemon/src/files-paths.ts"
+import { defaultDirectory, fileError, sessionResourcePath, uploadPath } from "../../../daemon/src/files-paths.ts"
 import type { FileEndpoint, FileMethod, FileMethods, FileReply } from "../../../daemon/src/files-protocol.ts"
 import { FilesService } from "../../../daemon/src/files-service.ts"
 
 type LocalTarget = Extract<FileTarget, { kind: "local" }>
 type Permission = "read" | "write"
 interface Permissions { read: boolean; write: boolean; sessionId?: string }
-interface Grant extends Permissions { root: string }
+interface Grant extends Permissions { root: string; scope: "folder" | "filesystem" }
 interface Upload { directory: string; name: string }
 
-const denied = () => fileError("Choose a local folder to authorize file access", "file_grant_required")
+const denied = () => fileError("Local file access has expired; reopen the file transfer panel", "file_grant_required")
 const outside = () => fileError("File path is outside the authorized folder", "file_grant_path")
 
 /** Validate path syntax independently of authorization, so realpath can resolve selected-root aliases. */
@@ -71,15 +71,24 @@ export class FileGrants {
     return grant
   }
 
-  /** Roots come from main-owned folder selection or captured daemon Session context, never renderer paths. */
+  /** Session preview roots come from captured daemon context, never renderer paths. */
   async issue(root: string, permissions: Permissions): Promise<LocalTarget> {
+    return this.#issue(root, permissions, "folder")
+  }
+
+  /** Desktop transfers use the hosting process's OS access without a folder consent step. */
+  async issueLocal(): Promise<LocalTarget> {
+    return this.#issue(defaultDirectory(), { read: true, write: true }, "filesystem")
+  }
+
+  async #issue(root: string, permissions: Permissions, scope: Grant["scope"]): Promise<LocalTarget> {
     this.#checkActive()
     absoluteGrantPath(root)
     const canonical = await realpath(root)
     if (!(await stat(canonical)).isDirectory()) throw fileError("Select a folder", "invalid")
     this.#checkActive()
     const grantId = randomUUID()
-    this.#grants.set(grantId, { ...permissions, root: canonical })
+    this.#grants.set(grantId, { ...permissions, root: canonical, scope })
     return { kind: "local", grantId }
   }
 
@@ -87,10 +96,10 @@ export class FileGrants {
     const grant = this.#get(target)
     if (!grant[permission]) throw fileError(`This folder is not authorized for ${permission} access`, "file_grant_permission")
     const candidate = absoluteGrantPath(path ?? grant.root)
-    // Reject roots/ancestors replaced by links and links which resolve outside the selected tree.
-    if (await realpath(grant.root) !== grant.root) throw outside()
+    // Session previews stay in their captured tree; transfers follow OS filesystem access.
+    if (grant.scope === "folder" && await realpath(grant.root) !== grant.root) throw outside()
     const canonical = await realpath(candidate)
-    canonicalGrantedPath(grant.root, canonical)
+    if (grant.scope === "folder") canonicalGrantedPath(grant.root, canonical)
     this.#get(target)
     return canonical
   }
@@ -100,7 +109,7 @@ export class FileGrants {
     const parts = uploadPath(name)
     if (parts.length !== 1) throw fileError("Select one file or folder name", "invalid")
     const canonical = await this.assert(target, "write", directory)
-    const path = grantedPath(grant.root, join(canonical, name))
+    const path = grant.scope === "folder" ? grantedPath(grant.root, join(canonical, name)) : absoluteGrantPath(join(canonical, name))
     let exists = true
     try { await lstat(path) }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") exists = false; else throw error }
@@ -124,8 +133,8 @@ export class FileGrants {
   }
 
   endpoint(target: FileTarget): FileEndpoint {
-    this.#get(target)
-    const endpoint = new GrantedFilesEndpoint(this, { ...target } as LocalTarget)
+    const grant = this.#get(target)
+    const endpoint = new GrantedFilesEndpoint(this, { ...target } as LocalTarget, grant.scope)
     this.#endpoints.add(endpoint)
     return endpoint
   }
@@ -139,20 +148,20 @@ export class FileGrants {
 }
 
 /**
- * Only the Electron local bridge uses this endpoint. Authorized remote daemons retain
- * their OS-user authority. Checks stop renderer-controlled escapes, including existing
- * symlinks/junctions; Node path-based I/O is not a race-safe sandbox against another
- * local process concurrently replacing filesystem entries between checks and use.
+ * The Electron local bridge owns this endpoint for one document/account. Transfers
+ * use OS-user access; Session previews remain read-only and confined to their root.
+ * Folder checks are not a race-safe sandbox against concurrent filesystem changes.
  */
 class GrantedFilesEndpoint implements FileEndpoint {
   readonly #grants: FileGrants
   readonly #target: LocalTarget
+  readonly #scope: Grant["scope"]
   readonly #service = new FilesService()
   readonly #uploads = new Map<string, Upload>()
   #running: Promise<unknown> = Promise.resolve()
   #closed = false
 
-  constructor(grants: FileGrants, target: LocalTarget) { this.#grants = grants; this.#target = target }
+  constructor(grants: FileGrants, target: LocalTarget, scope: Grant["scope"]) { this.#grants = grants; this.#target = target; this.#scope = scope }
 
   call<M extends FileMethod>(method: M, params: FileMethods[M]["params"], data?: Uint8Array): Promise<FileReply<FileMethods[M]["result"]>> {
     const next = this.#running.then(async () => {
@@ -174,6 +183,7 @@ class GrantedFilesEndpoint implements FileEndpoint {
         const root = await this.#grants.assert(this.#target, "read")
         const path = await this.#grants.assert(this.#target, "read", request.path)
         const reply = await this.#service.call("list", { ...request, path })
+        if (this.#scope === "filesystem") return reply
         const entries = []
         for (const entry of reply.value.entries) {
           try { await this.#grants.assert(this.#target, "read", entry.path); entries.push(entry) }

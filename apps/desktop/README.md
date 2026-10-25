@@ -242,6 +242,9 @@ See [media integration](../../agents/docs/media.md) for supported capture
 platforms, permissions, ownership, and the native pipeline.
 
 The Remote control page's File transfer tab contains the two-pane file browser.
+The local pane opens the user's home directory with the app's existing OS file
+access. **Choose folder** changes the location without an additional authorization
+step; browsing and transfers remain subject to OS permissions.
 Its queue belongs to Electron main and continues through navigation and tray
 operation, independently of desktop playback. Agent file/image references use
 the same file service. See [files and transfers](../../agents/docs/files.md).

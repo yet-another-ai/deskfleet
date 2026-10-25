@@ -70,8 +70,8 @@ async function hostFixture() {
 test("IPC grants and transfer events stay with the requesting window", async () => {
   const f = await hostFixture(), first = new TestContents(), second = new TestContents()
   const target = await f.choose(first)
-  await expect(f.request(second, "list", target)).rejects.toThrow("Choose a local folder")
-  expect((await f.request(first, "list", target) as FileListing).entries[0]?.name).toBe("visible.txt")
+  await expect(f.request(second, "list", target)).rejects.toThrow("Local file access has expired")
+  expect((await f.request(first, "list", target, f.root) as FileListing).entries[0]?.name).toBe("visible.txt")
   const id = await f.request(first, "enqueue", { source: { target, path: join(f.root, "visible.txt") }, destination: { target, path: f.root } })
   expect(first.send).toHaveBeenCalledWith(FILES_CHANGED_EVENT, expect.arrayContaining([expect.objectContaining({ id })]))
   expect(second.send).not.toHaveBeenCalled()
@@ -84,9 +84,9 @@ test("hash routing and hiding preserve grants, full document navigation revokes 
   contents.emit("did-start-navigation", {}, "deskfleet://app/#/files", true, true)
   contents.emit("did-start-navigation", {}, "https://frame.test", false, false)
   contents.emit("hide")
-  await expect(f.request(contents, "list", target)).resolves.toMatchObject({ path: f.root })
+  await expect(f.request(contents, "list", target, f.root)).resolves.toMatchObject({ path: f.root })
   contents.emit("did-start-navigation", {}, "deskfleet://app/", false, true)
-  await expect(f.request(contents, "list", target)).rejects.toThrow("Choose a local folder")
+  await expect(f.request(contents, "list", target)).rejects.toThrow("Local file access has expired")
   expect(contents.send).toHaveBeenCalledWith(FILES_CHANGED_EVENT, [])
 })
 
@@ -95,8 +95,8 @@ test("account changes revoke every window and old transfer identifiers", async (
   const firstTarget = await f.choose(first), secondTarget = await f.choose(second)
   const id = await f.request(first, "enqueue", { source: { target: firstTarget, path: join(f.root, "visible.txt") }, destination: { target: firstTarget, path: f.root } })
   f.accountChanged()
-  await expect(f.request(first, "list", firstTarget)).rejects.toThrow("Choose a local folder")
-  await expect(f.request(second, "list", secondTarget)).rejects.toThrow("Choose a local folder")
+  await expect(f.request(first, "list", firstTarget)).rejects.toThrow("Local file access has expired")
+  await expect(f.request(second, "list", secondTarget)).rejects.toThrow("Local file access has expired")
   await expect(f.request(first, "retry", id)).rejects.toThrow("Unknown file transfer")
 })
 

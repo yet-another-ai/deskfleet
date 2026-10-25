@@ -45,37 +45,42 @@ The Web client owns its manager at page/account scope,
 outside the selected machine's Vue/Pinia scope. Leaving that browser page ends
 its transfers. The queue is not persisted or resumed across application restarts.
 
-## Electron local folder authorization
+## Electron local file access
 
-The renderer cannot authorize a local path by supplying it to IPC. A native folder
-picker issues an opaque grant for reading and saving files in the selected folder.
-The main process binds it to the requesting window document and current account
-epoch. Local listings carry that grant back through browsing and transfer selection;
-the queue retains it for recursive reads, destination creation, and retries. Missing,
-forged, cross-window, and revoked grants fail before filesystem access. The local
-pane starts with folder selection rather than unrestricted home-directory browsing.
+The local pane opens the OS user's home directory immediately. Desktop transfers
+use the hosting process's OS file access, including Full Disk Access granted during
+setup on macOS. **Choose folder** navigates to another directory; it does not grant
+access or restrict subsequent browsing to that folder. Parent, home, and filesystem
+root navigation remain available, subject to OS permissions.
 
-The local endpoint checks both lexical and canonical path containment for every
-operation, confines parent/home/root navigation to the selected folder, and omits
-file links whose targets escape it. Strict transfer scans reject escaping entries.
+On the first local browse or transfer request, the main process creates an opaque
+filesystem grant bound to the requesting window document and current account epoch. Local
+listings carry it through browsing and transfer selection; the queue retains it for
+recursive reads, destination creation, and retries. Requests without an explicit
+grant use that document's default grant. Forged, cross-window, and revoked grants
+fail before filesystem access. These grants track access lifetime rather than
+adding a separate user authorization step.
+
 Windows drive-relative paths, device namespaces, alternate data streams, and
 ambiguous trailing-dot/space names are rejected; ordinary absolute drive and UNC
-paths retain their filesystem meaning. These path checks reject existing symlink
-and junction escapes. They are not a race-safe filesystem sandbox against another
-local process replacing entries between validation and Node's path-based I/O.
+paths retain their filesystem meaning.
 
 Saving new files does not authorize replacement. Every local `replace` attempt
 requires a native confirmation displaying the exact destination, including retries;
 the endpoint rechecks the grant after that dialog. A folder replacement still replaces
 the complete item. Revocation also prevents pending selection/confirmation dialogs
-from issuing authority into the previous document or account.
+from continuing access after their document or account has ended.
 
 Local Agent previews load automatically. Main resolves the Session's captured
 first directory through its daemon connection on the first resource request and
 retains a read-only grant bound to that Session and the current window/account.
 Absolute references, file URLs, and relative paths must stay within it; the renderer
-cannot supply the captured root. There is no per-Session preview button or consent
-dialog. Operating-system file permissions are handled when creating the daemon.
+cannot supply the captured root. The endpoint checks path containment and rejects
+symlink and junction escapes for these Session grants. These path checks are not a
+race-safe filesystem sandbox against another local process replacing entries
+between validation and Node's path-based I/O. There is no per-Session preview button
+or consent dialog. Operating-system file permissions are handled when creating the
+daemon.
 Downloading those resources selects a separate writable destination.
 Remote file peers and explicitly authorized daemon terminal operations retain their
 OS-user authority; Session roots do not globally restrict daemon filesystem access.
@@ -212,8 +217,9 @@ snapshot policy is introduced.
 - Shared files components and Agent Markdown/resource components live under
   `packages/components/src/components/`.
 
-Focused tests cover binary framing, grant checks and revocation, captured Session
-paths, empty files/directories, traversal rejection, conflict choices, concurrent
+Focused tests cover binary framing, default local browsing and transfers without
+folder selection, grant checks and revocation, captured Session paths, empty
+files/directories, traversal rejection, conflict choices, concurrent
 native commits, cancellation cleanup, queue aggregation, and renderer resources.
 Run daemon tests with `mise exec -- node --test apps/daemon/src/files-*.test.ts
 apps/daemon/src/authorized-peers.test.ts`; shared client/UI tests use

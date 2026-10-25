@@ -93,8 +93,8 @@ export function installFiles(central: CentralApi): { close(): Promise<void> } {
       sessionDirectory: localSessionDirectory,
       chooseDirectory: async () => {
         const result = await dialog.showOpenDialog(window, {
-          title: "Allow deskfleet to read and save files in a folder",
-          buttonLabel: "Allow folder", properties: ["openDirectory", "createDirectory"],
+          title: "Choose a local folder",
+          properties: ["openDirectory", "createDirectory"],
         })
         return result.canceled ? null : result.filePaths[0] ?? null
       },

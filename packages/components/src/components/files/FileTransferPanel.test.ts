@@ -6,10 +6,10 @@ import FileTransferPanel from "./FileTransferPanel.vue"
 
 let wrapper: VueWrapper | undefined
 const target = { kind: "machine", machineId: "22", teamId: "3" } as const
-const local: FileListing = { path: "/Users/me", parentPath: "/Users", homePath: "/Users/me", roots: [], entries: [{ name: "assets", path: "/Users/me/assets", kind: "directory", size: 0, modifiedAt: 1 }] }
+const local: FileListing = { grantId: "local-files", path: "/Users/me", parentPath: "/Users", homePath: "/Users/me", roots: [], entries: [{ name: "assets", path: "/Users/me/assets", kind: "directory", size: 0, modifiedAt: 1 }] }
 const remote: FileListing = { path: "D:\\output", parentPath: "D:\\", homePath: "D:\\", roots: [], entries: [] }
-const task: FileTransfer = { id: "transfer-1", name: "assets", kind: "directory", source: { target: { kind: "local" }, path: "/Users/me/assets" }, destination: { target, path: remote.path }, state: "transferring", transferredBytes: 32, totalBytes: 64, bytesPerSecond: 16 }
-function setup() {
+const task: FileTransfer = { id: "transfer-1", name: "assets", kind: "directory", source: { target: { kind: "local", grantId: "local-files" }, path: "/Users/me/assets" }, destination: { target, path: remote.path }, state: "transferring", transferredBytes: 32, totalBytes: 64, bytesPerSecond: 16 }
+function setup(overrides: Partial<FilesApi> = {}) {
   let update!: (transfers: FileTransfer[]) => void
   const unsubscribe = vi.fn()
   const api: FilesApi = {
@@ -18,6 +18,7 @@ function setup() {
     transfers: vi.fn(async () => [task]), cancel: vi.fn(async () => {}), retry: vi.fn(async () => {}),
     onChanged: listener => { update = listener; return unsubscribe },
     resolveResource: vi.fn(), readResource: vi.fn(), saveResource: vi.fn(),
+    ...overrides,
   }
   wrapper = mount(FileTransferPanel, { props: { api, target, machineName: "builder" }, global: { plugins: [i18n] } })
   return { view: wrapper, api, update, unsubscribe }
@@ -34,6 +35,8 @@ test("copies each selected folder as one task into the other pane's actual direc
   expect(view.get('[role="progressbar"]').attributes("aria-valuenow")).toBe("50")
   expect(view.text()).toContain("16 B/s")
   expect(api.list).toHaveBeenCalledTimes(2)
+  expect(api.list).toHaveBeenCalledWith({ kind: "local" }, undefined)
+  expect(api.chooseLocalDirectory).not.toHaveBeenCalled()
   await view.get('input[aria-label="Select assets"]').setValue(true)
   await view.get('button[aria-label="Send to remote"]').trigger("click")
   await flushPromises()
@@ -42,6 +45,19 @@ test("copies each selected folder as one task into the other pane's actual direc
   wrapper!.unmount(); wrapper = undefined
   expect(unsubscribe).toHaveBeenCalledOnce()
   expect(api.cancel).not.toHaveBeenCalled()
+})
+
+test("downloads into the desktop home directory without choosing or authorizing a folder", async () => {
+  const remoteEntry = { name: "report.txt", path: "D:\\output\\report.txt", kind: "file" as const, size: 5, modifiedAt: 1 }
+  const { view, api } = setup({ list: vi.fn(async value => value.kind === "local" ? local : { ...remote, entries: [remoteEntry] }) })
+  await flushPromises()
+  expect(view.find('[role="alert"]').exists()).toBe(false)
+  expect(view.get(`[data-current-path="${local.path}"]`).text()).toBe(local.path)
+  await view.get('input[aria-label="Select report.txt"]').setValue(true)
+  await view.get('button[aria-label="Download to this computer"]').trigger("click")
+  await flushPromises()
+  expect(api.enqueue).toHaveBeenCalledExactlyOnceWith({ kind: "file", source: { target, path: remoteEntry.path }, destination: { target: { kind: "local", grantId: "local-files" }, path: local.path } })
+  expect(api.chooseLocalDirectory).not.toHaveBeenCalled()
 })
 
 test("conflicts offer task-level choices and failed tasks remain retryable", async () => {
@@ -60,7 +76,7 @@ test("conflicts offer task-level choices and failed tasks remain retryable", asy
   expect(api.retry).toHaveBeenLastCalledWith(task.id, undefined)
 })
 
-test("keeps native directory grants through navigation and both transfer directions", async () => {
+test("keeps local access grants through navigation and both transfer directions", async () => {
   const { view, api, update } = setup()
   await flushPromises()
   const chosen = { ...local, grantId: "chosen-folder", parentPath: null }

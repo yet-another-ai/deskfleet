@@ -15,6 +15,7 @@ export class WindowFiles implements FilesApi {
   readonly #dialogs: FileDialogs
   readonly #sessionDirectory: (sessionId: string) => Promise<string>
   readonly #sessionTargets = new Map<string, Promise<FileTarget>>()
+  #localTarget: Promise<FileTarget> | undefined
   #closed = false
 
   constructor(options: FileDialogs & {
@@ -30,7 +31,7 @@ export class WindowFiles implements FilesApi {
     })
   }
 
-  #check(): void { if (this.#closed) throw new Error("File authorization has expired; select the folder again") }
+  #check(): void { if (this.#closed) throw new Error("File access has expired; reopen the file transfer panel") }
   async #live<T>(operation: () => Promise<T>): Promise<T> {
     this.#check()
     const result = await operation()
@@ -40,6 +41,7 @@ export class WindowFiles implements FilesApi {
 
   async list(target: FileTarget, path?: string): Promise<FileListing> {
     return this.#live(async () => {
+      target = await this.#target(target)
       const listing = await this.#manager.list(target, path)
       return target.kind === "local" ? { ...listing, grantId: target.grantId } : listing
     })
@@ -49,9 +51,13 @@ export class WindowFiles implements FilesApi {
       const path = await this.#dialogs.chooseDirectory()
       this.#check()
       if (!path) return null
-      const target = await this.#grants.issue(path, { read: true, write: true })
-      return this.list(target)
+      return this.list({ kind: "local" }, path)
     })
+  }
+  async #target(target: FileTarget): Promise<FileTarget> {
+    if (target.kind !== "local" || target.grantId) return target
+    this.#localTarget ??= this.#grants.issueLocal().catch(error => { this.#localTarget = undefined; throw error })
+    return this.#localTarget
   }
   async #resource(request: FileResourceRequest): Promise<FileResourceRequest> {
     if (request.target.kind !== "local" || request.target.grantId) return request
@@ -70,6 +76,11 @@ export class WindowFiles implements FilesApi {
   }
   async enqueue(request: FileTransferRequest): Promise<string> {
     return this.#live(async () => {
+      request = {
+        ...request,
+        source: { ...request.source, target: await this.#target(request.source.target) },
+        destination: { ...request.destination, target: await this.#target(request.destination.target) },
+      }
       if (request.source.target.kind === "local") await this.#grants.assert(request.source.target, "read", request.source.path)
       if (request.destination.target.kind === "local") await this.#grants.assert(request.destination.target, "write", request.destination.path)
       this.#check()

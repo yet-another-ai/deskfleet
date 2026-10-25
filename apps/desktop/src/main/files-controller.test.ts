@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { homedir, tmpdir } from "node:os"
+import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 import type { FileTarget, FileTransfer } from "@deskfleet/client/files"
 import { FilesService } from "../../../daemon/src/files-service.ts"
@@ -52,24 +52,52 @@ function finished(controller: WindowFiles, id: string): Promise<FileTransfer> {
   })
 }
 
-test("native directory selection supplies isolated grants for browsing and copying", async () => {
+test("desktop browsing and copying use OS access without directory selection", async () => {
   const f = await fixture(), controller = f.create(), other = f.create()
-  await expect(controller.list({ kind: "local" })).rejects.toThrow("Choose a local folder")
-  await expect(controller.list({ kind: "local", grantId: "forged" }, f.source)).rejects.toThrow("Choose a local folder")
-  const source = await selected(controller)
-  expect((await controller.list(source)).entries.map(entry => entry.name)).toEqual(["hello.txt"])
-  await expect(other.list(source)).rejects.toThrow("Choose a local folder")
-  await expect(controller.enqueue({ source: { target: source, path: join(f.source, "hello.txt") }, destination: { target: source, path: f.destination } })).rejects.toThrow("outside")
-  f.chooseDirectory.mockResolvedValueOnce(f.destination)
-  const destination = await selected(controller)
-  const id = await controller.enqueue({ source: { target: source, path: join(f.source, "hello.txt") }, destination: { target: destination, path: f.destination } })
+  const home = await controller.list({ kind: "local" })
+  expect(home.path).toBe(await realpath(homedir()))
+  expect(home.homePath).toBe(homedir())
+  expect(home.grantId).toBeTypeOf("string")
+  await expect(controller.list({ kind: "local", grantId: "forged" }, f.source)).rejects.toThrow("Local file access has expired")
+  const source: FileTarget = { kind: "local", grantId: home.grantId }
+  const listing = await controller.list(source, f.source)
+  expect(listing.entries.map(entry => entry.name)).toEqual(["hello.txt"])
+  expect(listing.parentPath).toBe(dirname(f.source))
+  expect(listing.homePath).toBe(homedir())
+  await expect(other.list(source)).rejects.toThrow("Local file access has expired")
+  const id = await controller.enqueue({ source: { target: { kind: "local" }, path: join(f.source, "hello.txt") }, destination: { target: { kind: "local" }, path: f.destination } })
   expect((await finished(controller, id)).state).toBe("completed")
   expect(await readFile(join(f.destination, "hello.txt"), "utf8")).toBe("selected content")
+  expect(f.chooseDirectory).not.toHaveBeenCalled()
   expect(await other.transfers()).toEqual([])
   await expect(other.cancel(id)).rejects.toThrow("Unknown file transfer")
   await expect(other.retry(id)).rejects.toThrow("Unknown file transfer")
   await controller.close()
   await expect(controller.list(source)).rejects.toThrow("expired")
+})
+
+test("choosing a directory navigates without confining later browsing to it", async () => {
+  const f = await fixture(), controller = f.create()
+  const listing = await controller.chooseLocalDirectory()
+  expect(listing).toMatchObject({ path: f.source, parentPath: dirname(f.source), homePath: homedir() })
+  const target: FileTarget = { kind: "local", grantId: listing!.grantId }
+  expect((await controller.list(target, f.destination)).path).toBe(f.destination)
+  expect((await controller.list(target)).path).toBe(await realpath(homedir()))
+  expect(f.chooseDirectory).toHaveBeenCalledOnce()
+})
+
+test("uploads and downloads work before any local folder is selected", async () => {
+  const f = await fixture(), controller = f.create()
+  const local = { kind: "local" } as const
+  const remote = { kind: "machine", machineId: "machine", teamId: "team" } as const
+  const upload = await controller.enqueue({ source: { target: local, path: join(f.source, "hello.txt") }, destination: { target: remote, path: f.destination } })
+  expect((await finished(controller, upload)).state).toBe("completed")
+  const downloadDirectory = join(f.source, "download")
+  await mkdir(downloadDirectory)
+  const download = await controller.enqueue({ source: { target: remote, path: join(f.destination, "hello.txt") }, destination: { target: local, path: downloadDirectory } })
+  expect((await finished(controller, download)).state).toBe("completed")
+  expect(await readFile(join(downloadDirectory, "hello.txt"), "utf8")).toBe("selected content")
+  expect(f.chooseDirectory).not.toHaveBeenCalled()
 })
 
 test("Session resources load automatically from a shared read-only captured directory grant", async () => {
@@ -96,13 +124,13 @@ test("Session resources load automatically from a shared read-only captured dire
   await expect(controller.enqueue({ source: { target, path: join(f.source, "hello.txt") }, destination: { target, path: f.source } })).rejects.toThrow("write access")
 })
 
-test("Session resolution failure can retry without authorizing arbitrary local paths", async () => {
+test("Session resolution failures can retry independently of local file browsing", async () => {
   const f = await fixture(), controller = f.create()
   const request = { target: { kind: "local" } as const, sessionId: "session", uri: "hello.txt" }
   f.sessionDirectory.mockRejectedValueOnce(new Error("Session unavailable"))
   await expect(controller.readResource(request)).rejects.toThrow("Session unavailable")
-  await expect(controller.list({ kind: "local" }, f.source)).rejects.toThrow("Choose a local folder")
-  await expect(controller.readResource({ ...request, target: { kind: "local", grantId: "forged" } })).rejects.toThrow("Choose a local folder")
+  await expect(controller.list({ kind: "local" }, f.source)).resolves.toMatchObject({ path: f.source })
+  await expect(controller.readResource({ ...request, target: { kind: "local", grantId: "forged" } })).rejects.toThrow("Local file access has expired")
   expect(new TextDecoder().decode((await controller.readResource(request)).data)).toBe("selected content")
   expect(f.sessionDirectory).toHaveBeenCalledTimes(2)
 })

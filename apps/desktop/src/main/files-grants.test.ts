@@ -36,10 +36,10 @@ test("missing, forged and another window's grants are rejected before file acces
   const first = authority(), second = authority()
   const target = await first.issue(root, { read: true, write: true })
   expect(target.grantId).toMatch(/^[0-9a-f-]{36}$/u)
-  await expect(first.assert({ kind: "local" }, "read", root)).rejects.toThrow("Choose a local folder")
-  await expect(first.assert({ kind: "local", grantId: "forged" }, "read", root)).rejects.toThrow("Choose a local folder")
-  await expect(second.assert(target, "read", root)).rejects.toThrow("Choose a local folder")
-  expect(() => first.endpoint({ kind: "local", grantId: "forged" })).toThrow("Choose a local folder")
+  await expect(first.assert({ kind: "local" }, "read", root)).rejects.toThrow("Local file access has expired")
+  await expect(first.assert({ kind: "local", grantId: "forged" }, "read", root)).rejects.toThrow("Local file access has expired")
+  await expect(second.assert(target, "read", root)).rejects.toThrow("Local file access has expired")
+  expect(() => first.endpoint({ kind: "local", grantId: "forged" })).toThrow("Local file access has expired")
   expect(await first.assert(target, "read", join(root, "inside.txt"))).toBe(join(root, "inside.txt"))
 })
 
@@ -147,13 +147,13 @@ test("revocation invalidates tokens, pending issuance and an overwrite dialog be
   await showing
   grants.revoke()
   approve(true)
-  await expect(pending).rejects.toThrow("Choose a local folder")
-  await expect(endpoint.call("read", { path: join(root, "inside.txt"), offset: 0, length: 8 })).rejects.toThrow("Choose a local folder")
+  await expect(pending).rejects.toThrow("Local file access has expired")
+  await expect(endpoint.call("read", { path: join(root, "inside.txt"), offset: 0, length: 8 })).rejects.toThrow("Local file access has expired")
   expect(await readFile(join(root, "inside.txt"), "utf8")).toBe("selected")
   const issuing = authority()
   const issue = issuing.issue(root, { read: true, write: true })
   issuing.revoke()
-  await expect(issue).rejects.toThrow("Choose a local folder")
+  await expect(issue).rejects.toThrow("Local file access has expired")
 })
 
 test("revocation stops subsequent upload chunks and close cleans its unfinished staging", async () => {
@@ -161,7 +161,7 @@ test("revocation stops subsequent upload chunks and close cleans its unfinished 
   const grants = authority(), endpoint = grants.endpoint(await grants.issue(root, { read: true, write: true }))
   const { transferId } = (await endpoint.call("begin", { directory: root, name: "new.txt", kind: "file", conflict: "ask" })).value
   grants.revoke()
-  await expect(endpoint.call("write", { transferId, path: "", offset: 0 }, Buffer.from("no"))).rejects.toThrow("Choose a local folder")
+  await expect(endpoint.call("write", { transferId, path: "", offset: 0 }, Buffer.from("no"))).rejects.toThrow("Local file access has expired")
   await grants.close()
   await expect(readFile(join(root, "new.txt"))).rejects.toMatchObject({ code: "ENOENT" })
 })
@@ -183,7 +183,7 @@ test("bytes already read are withheld when the window or account is revoked befo
     await waiting
     grants.revoke()
     release()
-    await expect(read).rejects.toThrow("Choose a local folder")
+    await expect(read).rejects.toThrow("Local file access has expired")
   } finally { release(); call.mockRestore() }
 })
 
