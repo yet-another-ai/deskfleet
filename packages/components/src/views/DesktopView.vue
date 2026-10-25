@@ -139,7 +139,7 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
     <div v-if="local" class="flex flex-wrap items-end gap-3">
       <label v-if="capabilities?.displays.length" class="flex flex-col gap-1 text-xs text-ui-text-muted">
         {{ t("desktop.display") }}
-        <select v-model="displayId" class="desktop-select" :disabled="active">
+        <select v-model="displayId" class="ui-input w-auto" :disabled="active">
           <option v-for="display in capabilities.displays" :key="display.id" :value="display.id">
             {{ t("desktop.displayOption", { id: display.id, width: display.width, height: display.height }) }}
           </option>
@@ -147,7 +147,7 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
       </label>
       <label v-if="codecs.length" class="flex flex-col gap-1 text-xs text-ui-text-muted">
         {{ t("desktop.codec") }}
-        <select v-model="codec" class="desktop-select" :disabled="active">
+        <select v-model="codec" class="ui-input w-auto" :disabled="active">
           <option v-for="supported in codecs" :key="supported" :value="supported">{{ supported.toUpperCase() }}</option>
         </select>
       </label>
@@ -155,16 +155,16 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
         <input v-model="audio" type="checkbox" :disabled="active" />
         {{ t("desktop.audio") }}
       </label>
-      <button v-if="active" type="button" class="ui-text-button border border-ui-border" @click="connection.disconnect()">
+      <button v-if="active" type="button" class="ui-button" @click="connection.disconnect()">
         {{ t("desktop.disconnect") }}
       </button>
-      <button v-else type="button" class="ui-text-button border border-ui-border disabled:op-40" :disabled="!canConnect" @click="connect">
+      <button v-else type="button" class="ui-button-primary" :disabled="!canConnect" @click="connect">
         {{ t("desktop.connect") }}
       </button>
-      <button type="button" class="ui-text-button disabled:op-40" :disabled="loading || active" @click="refresh">
+      <button type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:op-40" :disabled="loading || active" @click="refresh">
         {{ t("desktop.retry") }}
       </button>
-      <button v-if="state === 'connected'" type="button" class="ui-text-button" @click="fullscreen">
+      <button v-if="state === 'connected'" type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover hover:text-ui-text" @click="fullscreen">
         {{ t("desktop.fullscreen") }}
       </button>
     </div>
@@ -183,21 +183,10 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
       <MonitorPlay v-if="!stream" :size="32" :stroke-width="1.5" aria-hidden="true" />
       <p class="m-0 text-center" role="status">{{ status }}</p>
       <p v-if="detail" class="m-0 max-w-xl break-words text-center text-xs" role="alert">{{ detail }}</p>
-      <button v-if="playbackBlocked" type="button" class="ui-text-button border border-ui-border" @click="play">
+      <button v-if="playbackBlocked" type="button" class="ui-button" @click="play">
         {{ t("desktop.play") }}
       </button>
       <p v-if="fullscreenError" class="m-0 text-xs" role="alert">{{ t("desktop.fullscreenFailed") }}</p>
     </div>
   </div>
 </template>
-
-<style scoped>
-.desktop-select {
-  min-height: 2rem;
-  padding: 0.25rem 0.5rem;
-  color: var(--ui-color-text);
-  background: var(--ui-color-surface);
-  border: 1px solid var(--ui-color-border);
-  border-radius: 0.375rem;
-}
-</style>

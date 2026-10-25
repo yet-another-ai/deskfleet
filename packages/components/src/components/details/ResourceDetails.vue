@@ -92,7 +92,7 @@ const directories = computed<DirectoryBinding[]>(() => {
     <DetailsList :rows="rows" />
 
     <section v-if="directories.length">
-      <h3 class="ui-section-title">{{ t("panel.directories") }}</h3>
+      <h3 class="ui-section-title mb-2">{{ t("panel.directories") }}</h3>
       <ul class="flex flex-col gap-3">
         <li v-for="(directory, index) in directories" :key="index" class="text-[13px]">
           <div v-if="index === 0" class="mb-1 text-xs text-ui-text-muted">{{ t("catalog.defaultDirectory") }}</div>

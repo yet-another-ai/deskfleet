@@ -37,7 +37,7 @@ onClickOutside(root, () => close(false))
     <button ref="trigger" type="button" class="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] hover:bg-ui-hover disabled:cursor-default disabled:op-50" :aria-label="label" aria-haspopup="menu" :aria-expanded="open" :aria-controls="id" :disabled="disabled" @click="open ? close() : expand()" @keydown.down.prevent="expand()" @keydown.up.prevent="expand(true)">
       <slot name="trigger" />
     </button>
-    <div v-if="open" :id="id" ref="menu" role="menu" :aria-label="label" class="absolute left-0 z-50 max-h-[70vh] w-full min-w-56 overflow-y-auto rounded-xl border border-ui-border bg-ui-surface p-1 shadow-ui-card" :class="placement === 'top' ? 'bottom-full mb-2' : 'top-full mt-1'" @keydown="move">
+    <div v-if="open" :id="id" ref="menu" role="menu" :aria-label="label" class="ui-menu absolute left-0 z-50 max-h-[70vh] w-full min-w-56 overflow-y-auto" :class="placement === 'top' ? 'bottom-full mb-2' : 'top-full mt-1'" @keydown="move">
       <slot :close="close" />
     </div>
   </div>

@@ -24,8 +24,8 @@ const { ready, account, teams, team, machine, dialog, shellSettings } = session
 provide(accountSessionKey, session)
 onBeforeUnmount(session.dispose)
 const section = (value: "preferences" | "team") => [
-  "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-left hover:bg-ui-hover",
-  shellSettings.value === value && "bg-ui-active",
+  "ui-nav-item w-full cursor-pointer px-2.5 text-left",
+  shellSettings.value === value && "ui-nav-active",
 ]
 </script>
 

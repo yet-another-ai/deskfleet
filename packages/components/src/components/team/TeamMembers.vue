@@ -53,17 +53,17 @@ onMounted(load)
 
 <template>
   <section :aria-labelledby="`${id}-title`" class="mb-8">
-    <div class="mb-2 flex min-h-8 items-center justify-between gap-3">
-      <h2 :id="`${id}-title`" class="ui-section-title !mb-0">
+    <div class="ui-section-header">
+      <h2 :id="`${id}-title`" class="ui-section-title">
         {{ t("team.members") }}<span v-if="!loading && !error" class="ml-1.5 text-ui-text-faint">{{ members.length }}</span>
       </h2>
-      <button v-if="admin" type="button" class="catalog-button shrink-0" @click="inviting = true">
+      <button v-if="admin" type="button" class="ui-button shrink-0" @click="inviting = true">
         <UserPlus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("team.invite") }}
       </button>
     </div>
     <div v-if="error" class="mb-3 flex items-center justify-between gap-4">
       <p role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
-      <button v-if="!members.length" type="button" class="catalog-button shrink-0" :disabled="loading" @click="load">{{ t("settings.retryLoad") }}</button>
+      <button v-if="!members.length" type="button" class="ui-button shrink-0" :disabled="loading" @click="load">{{ t("settings.retryLoad") }}</button>
     </div>
     <p v-if="loading" role="status" class="m-0 py-4 text-sm text-ui-text-muted">{{ t("settings.loading") }}</p>
     <ul v-else-if="members.length" class="ui-card m-0 list-none p-0 shadow-ui-card">
@@ -77,7 +77,7 @@ onMounted(load)
         </div>
         <div v-if="manageable(member)" class="w-28 shrink-0">
           <select
-            class="catalog-input py-1 text-[13px]"
+            class="ui-input py-1 text-[13px]"
             :aria-label="t('team.roleFor', { name: member.name })"
             :value="member.role"
             :disabled="!!updating"
@@ -87,7 +87,7 @@ onMounted(load)
             <option value="admin">{{ t("team.admin") }}</option>
           </select>
         </div>
-        <span v-else class="ui-badge shrink-0 text-ui-text-muted">{{ t(member.role === "admin" ? "team.admin" : "team.member") }}</span>
+        <span v-else class="ui-badge shrink-0">{{ t(member.role === "admin" ? "team.admin" : "team.member") }}</span>
         <IconButton v-if="manageable(member)" :icon="Trash2" :label="t('team.removeMemberLabel', { name: member.name })" :disabled="!!updating" @click="removing = member" />
         <span v-else-if="admin" class="w-7 shrink-0" aria-hidden="true" />
       </li>

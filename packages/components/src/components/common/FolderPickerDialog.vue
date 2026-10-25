@@ -67,29 +67,29 @@ onBeforeUnmount(() => { finished = true; requestId++; dialog.value?.close() })
   <Teleport to="body">
     <dialog ref="dialog" class="ui-dialog app-no-drag w-[36rem]" aria-labelledby="folder-picker-title" @cancel.prevent.stop="cancel" @close.stop="cancel">
       <div class="mb-4 flex items-baseline justify-between gap-3">
-        <h2 id="folder-picker-title" class="m-0 text-base font-semibold">{{ t("folderPicker.title") }}</h2>
+        <h2 id="folder-picker-title" class="ui-dialog-title">{{ t("folderPicker.title") }}</h2>
         <span class="min-w-0 truncate text-sm text-ui-text-muted" :title="machineName">{{ machineName }}</span>
       </div>
       <nav class="mb-3 flex flex-wrap items-center gap-2" :aria-label="t('folderPicker.locations')">
-        <button type="button" class="catalog-button" :aria-label="t('folderPicker.home')" @click="navigate(listing?.homePath)"><Home :size="14" aria-hidden="true" />{{ t("folderPicker.home") }}</button>
-        <button type="button" class="catalog-button" :disabled="!listing?.parentPath" :aria-label="t('folderPicker.up')" @click="navigate(listing?.parentPath ?? undefined)"><ArrowUp :size="14" aria-hidden="true" />{{ t("folderPicker.up") }}</button>
-        <button v-for="root in listing?.roots" :key="root.path" type="button" class="catalog-button font-mono" :data-path="root.path" @click="navigate(root.path)">{{ root.name }}</button>
+        <button type="button" class="ui-button" :aria-label="t('folderPicker.home')" @click="navigate(listing?.homePath)"><Home :size="14" aria-hidden="true" />{{ t("folderPicker.home") }}</button>
+        <button type="button" class="ui-button" :disabled="!listing?.parentPath" :aria-label="t('folderPicker.up')" @click="navigate(listing?.parentPath ?? undefined)"><ArrowUp :size="14" aria-hidden="true" />{{ t("folderPicker.up") }}</button>
+        <button v-for="root in listing?.roots" :key="root.path" type="button" class="ui-button font-mono" :data-path="root.path" @click="navigate(root.path)">{{ root.name }}</button>
       </nav>
       <nav v-if="listing" class="mb-3 flex flex-wrap items-center gap-1 text-sm" :aria-label="t('folderPicker.location')">
         <template v-for="(item, index) in trail" :key="item.path">
           <ChevronRight v-if="index > 0" :size="12" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-          <button type="button" class="max-w-full break-all rounded px-1.5 py-1 text-left font-mono hover:bg-ui-hover" :aria-current="index === trail.length - 1 ? 'location' : undefined" @click="navigate(item.path)">{{ item.name }}</button>
+          <button type="button" class="max-w-full cursor-pointer break-all rounded-md px-1.5 py-1 text-left font-mono hover:bg-ui-hover [&[aria-current]]:font-semibold" :aria-current="index === trail.length - 1 ? 'location' : undefined" @click="navigate(item.path)">{{ item.name }}</button>
         </template>
       </nav>
-      <div class="h-64 overflow-y-auto rounded-lg border border-ui-border bg-ui-surface" :aria-busy="loading">
+      <div class="h-64 overflow-y-auto rounded-xl border border-ui-border bg-ui-canvas" :aria-busy="loading">
         <p v-if="loading" role="status" class="m-0 p-4 text-sm text-ui-text-muted">{{ t("folderPicker.loading") }}</p>
         <div v-else-if="error" class="flex flex-col items-start gap-3 p-4">
           <p role="alert" class="m-0 break-all text-sm text-ui-danger">{{ error }}</p>
-          <button type="button" class="catalog-button" @click="navigate(requestedPath)">{{ t("folderPicker.retry") }}</button>
+          <button type="button" class="ui-button" @click="navigate(requestedPath)">{{ t("folderPicker.retry") }}</button>
         </div>
         <ul v-else-if="visibleDirectories.length" :aria-label="t('folderPicker.folders')">
           <li v-for="directory in visibleDirectories" :key="directory.path">
-            <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ui-hover" :aria-label="t('folderPicker.openFolder', { name: directory.name })" :data-path="directory.path" @click="navigate(directory.path, directory.name)">
+            <button type="button" class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ui-hover" :aria-label="t('folderPicker.openFolder', { name: directory.name })" :data-path="directory.path" @click="navigate(directory.path, directory.name)">
               <Folder :size="16" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
               <span class="min-w-0 flex-1 truncate">{{ directory.name }}</span>
               <ChevronRight :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
@@ -102,9 +102,9 @@ onBeforeUnmount(() => { finished = true; requestId++; dialog.value?.close() })
         <input v-model="showHidden" type="checkbox" />{{ t("folderPicker.showHidden") }}
       </label>
       <p v-if="listing" class="mb-0 mt-3 break-all text-xs font-mono text-ui-text-muted" :data-current-path="listing.path">{{ listing.path }}</p>
-      <div class="mt-4 flex justify-end gap-2">
-        <button type="button" class="catalog-button" @click="cancel">{{ t("catalog.cancel") }}</button>
-        <button type="button" class="catalog-button" :disabled="loading || !!error || !listing" @click="select">{{ t("folderPicker.select") }}</button>
+      <div class="ui-dialog-actions">
+        <button type="button" class="ui-button" @click="cancel">{{ t("catalog.cancel") }}</button>
+        <button type="button" class="ui-button-primary" :disabled="loading || !!error || !listing" @click="select">{{ t("folderPicker.select") }}</button>
       </div>
     </dialog>
   </Teleport>

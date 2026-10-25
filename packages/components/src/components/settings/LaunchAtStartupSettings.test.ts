@@ -87,7 +87,7 @@ test("offers a reload after the initial read fails", async () => {
   await flushPromises()
   expect(view.get('[role="switch"]').attributes("disabled")).toBeDefined()
   expect(view.get('[role="alert"]').text()).toBe("Login settings unavailable")
-  await view.get("button.catalog-button").trigger("click")
+  await view.get("button.ui-button").trigger("click")
   await flushPromises()
   expect(view.get('[role="switch"]').attributes("disabled")).toBeUndefined()
   expect(view.find('[role="alert"]').exists()).toBe(false)

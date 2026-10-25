@@ -88,16 +88,16 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
           <p v-if="field.description" class="m-0 mb-2 whitespace-pre-wrap text-ui-text-muted">{{ field.description }}</p>
           <div v-if="field.type === 'boolean'" class="flex flex-wrap gap-3">
             <label v-for="value in [true, false]" :key="String(value)" class="inline-flex cursor-pointer items-center gap-2">
-              <input type="radio" :name="field.id" :value="String(value)" :checked="draft[field.id] === value" :required="field.required" class="accent-ui-action" @change="setValue(field.id, value)" />{{ t(value ? 'agent.questions.yes' : 'agent.questions.no') }}
+              <input type="radio" :name="field.id" :value="String(value)" :checked="draft[field.id] === value" :required="field.required" @change="setValue(field.id, value)" />{{ t(value ? 'agent.questions.yes' : 'agent.questions.no') }}
             </label>
           </div>
           <div v-else-if="field.choices.length && !field.secret" class="flex flex-col gap-2">
-            <label v-for="choice in field.choices" :key="choice.value" class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2" :class="(field.type === 'array' ? selected(field.id, choice.value) : draft[field.id] === choice.value) ? 'border-ui-action bg-ui-hover' : 'border-ui-border'">
-              <input :type="field.type === 'array' ? 'checkbox' : 'radio'" :name="field.id" :value="choice.value" :checked="field.type === 'array' ? selected(field.id, choice.value) : draft[field.id] === choice.value" :required="field.type !== 'array' && field.required" class="mt-1 shrink-0 accent-ui-action" @change="field.type === 'array' ? selectMany(field.id, choice.value, ($event.target as HTMLInputElement).checked) : setValue(field.id, choice.value)" />
+            <label v-for="choice in field.choices" :key="choice.value" class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2" :class="(field.type === 'array' ? selected(field.id, choice.value) : draft[field.id] === choice.value) ? 'border-ui-accent bg-ui-accent/6' : 'border-ui-border hover:border-ui-border-strong'">
+              <input :type="field.type === 'array' ? 'checkbox' : 'radio'" :name="field.id" :value="choice.value" :checked="field.type === 'array' ? selected(field.id, choice.value) : draft[field.id] === choice.value" :required="field.type !== 'array' && field.required" class="mt-1 shrink-0" @change="field.type === 'array' ? selectMany(field.id, choice.value, ($event.target as HTMLInputElement).checked) : setValue(field.id, choice.value)" />
               <span class="min-w-0"><span class="block break-words">{{ choice.title }}</span><span v-if="choice.description" class="mt-0.5 block whitespace-pre-wrap text-xs text-ui-text-muted">{{ choice.description }}</span></span>
             </label>
           </div>
-          <input v-else-if="['string', 'number', 'integer'].includes(field.type)" :type="elicitationInputType(field)" :name="field.id" :aria-label="field.title" :value="draft[field.id] ?? ''" :required="field.required" :min="field.minimum" :max="field.maximum" :minlength="field.minLength" :maxlength="field.maxLength" :pattern="field.pattern" :step="field.type === 'integer' ? 1 : 'any'" :autocomplete="field.secret ? 'off' : undefined" class="h-9 w-full rounded-md border border-ui-border bg-ui-surface px-3 text-sm text-ui-text outline-none focus:border-ui-action disabled:opacity-50" @input="setValue(field.id, ($event.target as HTMLInputElement).value)" />
+          <input v-else-if="['string', 'number', 'integer'].includes(field.type)" :type="elicitationInputType(field)" :name="field.id" :aria-label="field.title" :value="draft[field.id] ?? ''" :required="field.required" :min="field.minimum" :max="field.maximum" :minlength="field.minLength" :maxlength="field.maxLength" :pattern="field.pattern" :step="field.type === 'integer' ? 1 : 'any'" :autocomplete="field.secret ? 'off' : undefined" class="ui-input text-sm" @input="setValue(field.id, ($event.target as HTMLInputElement).value)" />
           <p v-else class="m-0 text-ui-text-muted">{{ t('agent.questions.unsupported') }}</p>
           <button v-if="!field.required && draft[field.id] !== undefined" type="button" class="mt-1 cursor-pointer text-xs text-ui-text-muted hover:text-ui-text disabled:cursor-default" @click="clearValue(field.id)">{{ t('agent.questions.clear') }}</button>
         </fieldset>
@@ -106,9 +106,9 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
       <p v-if="invalid" role="alert" class="m-0 text-ui-danger">{{ t('agent.questions.invalid') }}</p>
       <p v-if="failed || operation?.error" role="alert" class="m-0 text-ui-warning">{{ t('agent.operationPending') }}</p>
       <div class="flex flex-wrap justify-end gap-2">
-        <button type="button" data-testid="elicitation-cancel" class="catalog-button" :disabled="disabled" @click="respond('cancel')">{{ t('agent.questions.cancel') }}</button>
-        <button type="button" data-testid="elicitation-decline" class="catalog-button" :disabled="disabled" @click="respond('decline')">{{ t('agent.questions.decline') }}</button>
-        <button type="submit" data-testid="elicitation-submit" class="inline-flex h-8 cursor-pointer items-center rounded-md bg-ui-action px-3 text-ui-action-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || !supported">{{ t(operation ? 'agent.questions.sending' : 'agent.questions.submit') }}</button>
+        <button type="button" data-testid="elicitation-cancel" class="ui-button" :disabled="disabled" @click="respond('cancel')">{{ t('agent.questions.cancel') }}</button>
+        <button type="button" data-testid="elicitation-decline" class="ui-button" :disabled="disabled" @click="respond('decline')">{{ t('agent.questions.decline') }}</button>
+        <button type="submit" data-testid="elicitation-submit" class="ui-button-primary" :disabled="disabled || !supported">{{ t(operation ? 'agent.questions.sending' : 'agent.questions.submit') }}</button>
       </div>
     </form>
     <dl v-else-if="answers.length" class="m-0 mt-3 flex flex-col gap-2">

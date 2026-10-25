@@ -1,29 +1,43 @@
-/* Design tokens. UnoCSS exposes the colors as `*-ui-<name>` utilities. */
+/*
+ * Design tokens. UnoCSS exposes each color as `*-ui-<name>` utilities, including
+ * opacity modifiers such as `bg-ui-warning/10`; component classes live in
+ * uno.config.ts. Text tokens meet WCAG AA on canvas, sidebar, and surface, and
+ * `text-faint` meets 3:1 for secondary labels.
+ */
 :root {
   color-scheme: light dark;
-  /* Keep canvas and text in sync with src/main/window-chrome.ts. */
-  --ui-color-canvas: #f9f9f9;
-  --ui-color-sidebar: #efeff2;
+  /* Keep canvas and text in sync with apps/desktop/src/main/window-chrome.ts. */
+  --ui-color-canvas: #fbfbfd;
+  --ui-color-sidebar: #f3f4f8;
   --ui-color-surface: #ffffff;
-  --ui-color-text: #1f1f22;
-  --ui-color-text-muted: #6b6b73;
-  --ui-color-text-faint: #9a9aa3;
-  --ui-color-border: #e2e2e7;
-  --ui-color-hover: rgb(0 0 0 / 4.5%);
-  --ui-color-active: rgb(0 0 0 / 7%);
-  --ui-color-badge: rgb(0 0 0 / 6%);
-  --ui-color-accent: #7c5cd6;
-  --ui-color-action: #1f1f22;
+  /* Fields and secondary buttons. */
+  --ui-color-control: #ffffff;
+  --ui-color-control-hover: #f3f4f8;
+  --ui-color-text: #1b1f2b;
+  --ui-color-text-muted: #596173;
+  --ui-color-text-faint: #838a9a;
+  --ui-color-border: #e3e6ed;
+  --ui-color-border-strong: #d3d7e0;
+  --ui-color-hover: rgb(27 31 43 / 5%);
+  --ui-color-active: rgb(27 31 43 / 8%);
+  --ui-color-badge: rgb(27 31 43 / 6%);
+  --ui-color-accent: #4a5bd4;
+  --ui-color-action: #4a5bd4;
+  --ui-color-action-hover: #3d4dbf;
   --ui-color-action-text: #ffffff;
-  --ui-color-action-disabled: #b4b4bb;
-  --ui-color-avatar: #34c759;
-  --ui-color-focus: #5b8def;
-  --ui-color-success: #1a7f37;
-  --ui-color-warning: #9a6700;
-  --ui-color-danger: #cf222e;
+  --ui-color-action-disabled: #c5cad6;
+  --ui-color-avatar: #4a5bd4;
+  --ui-color-avatar-text: #ffffff;
+  --ui-color-focus: #4a5bd4;
+  --ui-color-success: #167a4a;
+  --ui-color-warning: #975a00;
+  --ui-color-danger: #c4372f;
+  --ui-color-switch-thumb: #ffffff;
   /* Terminals stay dark in both themes; TerminalSurface.vue themes xterm.js to match. */
-  --ui-color-terminal: #17171a;
-  --ui-shadow-card: 0 1px 2px rgb(0 0 0 / 4%), 0 4px 16px rgb(0 0 0 / 4%);
+  --ui-color-terminal: #15171d;
+  --ui-shadow-card: 0 1px 2px rgb(27 31 43 / 4%), 0 2px 8px rgb(27 31 43 / 4%);
+  --ui-shadow-popover: 0 4px 12px rgb(27 31 43 / 8%), 0 12px 32px rgb(27 31 43 / 8%);
+  --ui-shadow-dialog: 0 8px 24px rgb(27 31 43 / 10%), 0 24px 64px rgb(27 31 43 / 14%);
   --ui-font-interface:
     -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC",
     "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
@@ -32,25 +46,33 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ui-color-canvas: #1a1a1d;
-    --ui-color-sidebar: #141416;
-    --ui-color-surface: #232327;
-    --ui-color-text: #ececef;
-    --ui-color-text-muted: #a1a1aa;
-    --ui-color-text-faint: #71717a;
-    --ui-color-border: #303036;
-    --ui-color-hover: rgb(255 255 255 / 6%);
-    --ui-color-active: rgb(255 255 255 / 10%);
-    --ui-color-badge: rgb(255 255 255 / 9%);
-    --ui-color-accent: #a78bfa;
-    --ui-color-action: #ececef;
-    --ui-color-action-text: #1a1a1d;
-    --ui-color-action-disabled: #4a4a52;
-    --ui-color-avatar: #30b14f;
-    --ui-color-success: #3fb950;
-    --ui-color-warning: #d29922;
-    --ui-color-danger: #f85149;
-    --ui-shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 4px 16px rgb(0 0 0 / 20%);
+    --ui-color-canvas: #17191f;
+    --ui-color-sidebar: #121419;
+    --ui-color-surface: #1f222a;
+    --ui-color-control: #23262f;
+    --ui-color-control-hover: #2a2e38;
+    --ui-color-text: #e7e9ef;
+    --ui-color-text-muted: #a3a9b7;
+    --ui-color-text-faint: #7c8393;
+    --ui-color-border: #2c303a;
+    --ui-color-border-strong: #3a3f4b;
+    --ui-color-hover: rgb(231 233 239 / 6%);
+    --ui-color-active: rgb(231 233 239 / 10%);
+    --ui-color-badge: rgb(231 233 239 / 9%);
+    --ui-color-accent: #8e9bff;
+    --ui-color-action: #8e9bff;
+    --ui-color-action-hover: #a5afff;
+    --ui-color-action-text: #12141a;
+    --ui-color-action-disabled: #353a47;
+    --ui-color-avatar: #5b6be0;
+    --ui-color-avatar-text: #ffffff;
+    --ui-color-focus: #8e9bff;
+    --ui-color-success: #4cc38a;
+    --ui-color-warning: #e3a64c;
+    --ui-color-danger: #f47c71;
+    --ui-shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 2px 8px rgb(0 0 0 / 20%);
+    --ui-shadow-popover: 0 4px 12px rgb(0 0 0 / 35%), 0 12px 32px rgb(0 0 0 / 30%);
+    --ui-shadow-dialog: 0 8px 24px rgb(0 0 0 / 40%), 0 24px 64px rgb(0 0 0 / 40%);
   }
 }
 
@@ -82,8 +104,9 @@ ol {
   list-style: none;
 }
 
-/* Rows in a `ui-card` list are separated by its border color. */
-.ui-card > li + li {
+/* Rows in a `ui-card` list, and settings rows in a card, are separated by its border color. */
+.ui-card > li + li,
+.ui-card > .ui-setting ~ .ui-setting {
   border-top-width: 1px;
 }
 
@@ -106,9 +129,21 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
   color: inherit;
+}
+
+input,
+select,
+textarea {
+  accent-color: var(--ui-color-accent);
+}
+
+::placeholder {
+  color: var(--ui-color-text-faint);
+  opacity: 1;
 }
 
 /*
@@ -125,44 +160,9 @@ textarea {
   outline-offset: -2px;
 }
 
-.ui-dialog {
-  max-width: calc(100vw - 2rem);
-  padding: 1.25rem;
-  border: 1px solid var(--ui-color-border);
-  border-radius: 0.75rem;
-  background: var(--ui-color-canvas);
-  color: var(--ui-color-text);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 24%);
-}
 .ui-dialog::backdrop {
-  background: rgb(0 0 0 / 40%);
+  background: rgb(12 14 20 / 45%);
 }
-
-.catalog-input {
-  width: 100%;
-  min-width: 0;
-  padding: 0.5rem 0.625rem;
-  border: 1px solid var(--ui-color-border);
-  border-radius: 0.375rem;
-  background: var(--ui-color-canvas);
-  color: var(--ui-color-text);
-  user-select: text;
-}
-
-.catalog-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.625rem;
-  border: 1px solid var(--ui-color-border);
-  border-radius: 0.375rem;
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-.catalog-button:hover:not(:disabled) { background: var(--ui-color-hover); }
-.catalog-button:disabled,
-.catalog-input:disabled { opacity: 0.5; cursor: default; }
 
 /* Agent-authored Markdown in the conversation. */
 .ui-markdown {

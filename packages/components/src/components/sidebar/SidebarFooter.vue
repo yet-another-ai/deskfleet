@@ -18,7 +18,7 @@ const initial = computed(() => t("catalog.local").charAt(0).toUpperCase())
   <footer v-else class="flex h-12 shrink-0 items-center gap-1 border-t border-ui-border px-2">
     <div class="flex min-w-0 flex-1 items-center gap-2 px-1">
       <span
-        class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-ui-avatar text-xs font-semibold text-white"
+        class="ui-avatar h-6 w-6 rounded-md"
         aria-hidden="true"
       >
         {{ initial }}

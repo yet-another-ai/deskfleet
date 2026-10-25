@@ -30,18 +30,18 @@ async function rename(): Promise<void> {
 <template>
   <template v-if="session && team">
     <header class="mb-8">
-      <h1 class="m-0 truncate text-lg font-semibold">{{ team.name }}</h1>
+      <h1 class="ui-page-title truncate">{{ team.name }}</h1>
       <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t(admin ? "team.youAreAdmin" : "team.youAreMember") }}</p>
     </header>
     <section v-if="admin" :aria-labelledby="`${id}-general`" class="mb-8">
-      <h2 :id="`${id}-general`" class="ui-section-title">{{ t("team.general") }}</h2>
-      <form @submit.prevent="rename">
+      <h2 :id="`${id}-general`" class="ui-section-title mb-2">{{ t("team.general") }}</h2>
+      <form class="ui-card px-4" @submit.prevent="rename">
         <SettingsRow :label="t('team.name')" :label-id="`${id}-name`">
-          <input v-model="name" class="catalog-input w-56" :aria-labelledby="`${id}-name`" name="team-name" required maxlength="256" autocomplete="off" :disabled="saving" />
-          <button type="submit" class="catalog-button shrink-0" :disabled="saving || !changed">{{ saving ? t("catalog.saving") : t("catalog.save") }}</button>
+          <input v-model="name" class="ui-input w-56" :aria-labelledby="`${id}-name`" name="team-name" required maxlength="256" autocomplete="off" :disabled="saving" />
+          <button type="submit" class="ui-button shrink-0" :disabled="saving || !changed">{{ saving ? t("catalog.saving") : t("catalog.save") }}</button>
         </SettingsRow>
       </form>
-      <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
+      <p v-if="error" role="alert" class="m-0 mt-2 text-sm text-ui-danger">{{ error }}</p>
     </section>
     <TeamMembers :key="team.id" :team="team" :user-id="session.account.value.user?.id" />
     <TeamMachines />

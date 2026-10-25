@@ -63,8 +63,8 @@ function keydown(event: KeyboardEvent): void {
           <button type="button" class="inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :aria-label="t('composer.contextChoice', { context: t(`composer.contextOption.${selected.id}`) })" aria-haspopup="menu" :aria-expanded="choosing" data-composer-context @click="choosing = !choosing">
             <component :is="selected.icon" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ t(`composer.contextOption.${selected.id}`) }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           </button>
-          <div v-if="choosing" role="menu" class="absolute bottom-full left-0 z-20 mb-1 flex w-72 flex-col rounded-lg border border-ui-border bg-ui-surface p-1 shadow-ui-card">
-            <button v-for="option in contexts" :key="option.id" type="button" role="menuitemradio" :aria-checked="option.id === context" class="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-ui-hover" @click="choose(option.id)">
+          <div v-if="choosing" role="menu" class="ui-menu absolute bottom-full left-0 z-20 mb-1 flex w-72 flex-col">
+            <button v-for="option in contexts" :key="option.id" type="button" role="menuitemradio" :aria-checked="option.id === context" class="ui-menu-item items-start" @click="choose(option.id)">
               <component :is="option.icon" :size="15" :stroke-width="1.75" class="mt-0.5 shrink-0 text-ui-text-muted" aria-hidden="true" />
               <span class="min-w-0 flex-1"><span class="block text-[13px] text-ui-text">{{ t(`composer.contextOption.${option.id}`) }}</span><span class="block text-xs text-ui-text-muted">{{ t(`composer.contextHint.${option.id}`) }}</span></span>
               <Check v-if="option.id === context" :size="15" :stroke-width="2" class="mt-0.5 shrink-0" aria-hidden="true" />
@@ -82,13 +82,13 @@ function keydown(event: KeyboardEvent): void {
       </template>
       <span v-if="changes.additions || changes.deletions" class="ml-auto shrink-0 rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></span>
     </div>
-    <div class="rounded-2xl border border-ui-border bg-ui-surface shadow-ui-card focus-within:border-ui-text-faint">
+    <div class="rounded-2xl border border-ui-border bg-ui-surface shadow-ui-card transition-colors focus-within:border-ui-accent/60">
       <textarea ref="textarea" v-model="draft" rows="2" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @keydown="keydown" />
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <AgentConfigurationSelector v-if="location" :workspace-id="location.workspace.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" />
         <button v-if="canSteer && !empty" type="button" class="ui-text-button ml-auto cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</button>
-        <button v-if="canCancel && empty" type="button" class="ml-auto inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-ui-action text-ui-action-text" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></button>
-        <button v-else type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-ui-action text-ui-action-text disabled:cursor-default disabled:bg-ui-action-disabled disabled:text-ui-action-text" :class="!(canSteer && !empty) && 'ml-auto'" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></button>
+        <button v-if="canCancel && empty" type="button" class="ml-auto inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-ui-action text-ui-action-text hover:bg-ui-action-hover" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></button>
+        <button v-else type="button" class="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-ui-action text-ui-action-text enabled:hover:bg-ui-action-hover disabled:cursor-default disabled:bg-ui-action-disabled disabled:text-ui-text-faint" :class="!(canSteer && !empty) && 'ml-auto'" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></button>
       </div>
     </div>
   </div>

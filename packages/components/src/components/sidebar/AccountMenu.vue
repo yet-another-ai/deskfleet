@@ -25,7 +25,7 @@ function signOut(): void {
         <div v-if="session.account.value.user.email" class="mt-0.5 truncate text-xs text-ui-text-muted">{{ session.account.value.user.email }}</div>
         <div class="mt-0.5 truncate text-xs text-ui-text-faint">{{ session.account.value.serverUrl }}</div>
       </div>
-      <button type="button" role="menuitem" tabindex="-1" class="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] hover:bg-ui-hover focus:bg-ui-hover" @click="close(); signOut()"><LogOut :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.signOut") }}</button>
+      <button type="button" role="menuitem" tabindex="-1" class="ui-menu-item mt-1" @click="close(); signOut()"><LogOut :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.signOut") }}</button>
     </template>
   </MenuPopover>
 </template>

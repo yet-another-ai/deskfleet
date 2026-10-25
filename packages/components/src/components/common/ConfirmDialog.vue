@@ -32,12 +32,12 @@ onMounted(() => dialog.value?.showModal())
 
 <template>
   <dialog ref="dialog" class="ui-dialog app-no-drag w-[26rem]" :aria-labelledby="`${id}-title`" :aria-describedby="`${id}-description`" @cancel.prevent="cancel">
-    <h2 :id="`${id}-title`" class="m-0 mb-2 text-base font-semibold">{{ title }}</h2>
-    <p :id="`${id}-description`" class="m-0 mb-4 text-sm text-ui-text-muted">{{ description }}</p>
-    <p v-if="error" role="alert" class="m-0 mb-4 text-sm text-ui-danger">{{ error }}</p>
-    <div class="flex justify-end gap-2">
-      <button type="button" class="catalog-button" :disabled="pending" @click="cancel">{{ t("catalog.cancel") }}</button>
-      <button type="button" class="catalog-button text-ui-danger" :disabled="pending" @click="submit">{{ confirmLabel }}</button>
+    <h2 :id="`${id}-title`" class="ui-dialog-title">{{ title }}</h2>
+    <p :id="`${id}-description`" class="ui-dialog-description">{{ description }}</p>
+    <p v-if="error" role="alert" class="m-0 mt-4 text-sm text-ui-danger">{{ error }}</p>
+    <div class="ui-dialog-actions">
+      <button type="button" class="ui-button" :disabled="pending" @click="cancel">{{ t("catalog.cancel") }}</button>
+      <button type="button" class="ui-button-danger" :disabled="pending" @click="submit">{{ confirmLabel }}</button>
     </div>
   </dialog>
 </template>

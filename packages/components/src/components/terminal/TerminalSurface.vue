@@ -21,10 +21,10 @@ const emit = defineEmits<{
 
 // Terminals stay dark in both themes; the background matches --ui-color-terminal.
 const theme: ITheme = {
-  background: "#17171a",
-  foreground: "#e4e4e7",
-  cursor: "#e4e4e7",
-  selectionBackground: "#3f3f46",
+  background: "#15171d",
+  foreground: "#e3e6ee",
+  cursor: "#e3e6ee",
+  selectionBackground: "#3a3f4c",
 }
 
 const container = useTemplateRef<HTMLDivElement>("container")

@@ -16,9 +16,9 @@ const indent = { 0: "pl-2.5", 1: "pl-6", 2: "pl-10" } as const
 <template>
   <RouterLink
     :to="to"
-    class="flex h-8 items-center gap-2.5 rounded-lg pr-2.5 hover:bg-ui-hover"
+    class="ui-nav-item pr-2.5"
     :class="indent[depth]"
-    active-class="bg-ui-active"
+    active-class="ui-nav-active"
   >
     <slot name="icon"><component :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /></slot>
     <span class="truncate">{{ label }}</span>

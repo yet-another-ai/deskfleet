@@ -3,10 +3,10 @@ import { nativeTheme, type BrowserWindow, type BrowserWindowConstructorOptions }
 /** Height of the renderer's toolbar rows, which host the native window controls. */
 const TOOLBAR_HEIGHT = 48
 
-// Match --ui-color-canvas and --ui-color-text in the renderer's styles.css.
+// Match --ui-color-canvas and --ui-color-text in packages/components/src/styles.css.
 const themes = {
-  light: { color: "#f9f9f9", symbolColor: "#1f1f22" },
-  dark: { color: "#1a1a1d", symbolColor: "#ececef" },
+  light: { color: "#fbfbfd", symbolColor: "#1b1f2b" },
+  dark: { color: "#17191f", symbolColor: "#e7e9ef" },
 }
 
 function theme() {

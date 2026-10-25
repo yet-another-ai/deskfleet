@@ -49,7 +49,7 @@ function select(value?: string): void {
 <template>
   <div class="flex flex-col gap-1.5" @keydown.esc="escape">
     <label :for="`${id}-trigger`" class="text-sm">{{ t("providers.icon") }}</label>
-    <button :id="`${id}-trigger`" ref="trigger" type="button" class="catalog-input flex cursor-pointer items-center gap-3 text-left hover:border-ui-text-muted" :disabled="disabled" :aria-expanded="open" :aria-controls="`${id}-choices`" @click="toggle">
+    <button :id="`${id}-trigger`" ref="trigger" type="button" class="ui-input flex cursor-pointer items-center gap-3 text-left" :disabled="disabled" :aria-expanded="open" :aria-controls="`${id}-choices`" @click="toggle">
       <ProviderIcon :icon="icon" :template="template" :size="22" />
       <span class="min-w-0 flex-1 truncate text-sm">{{ label }}</span>
       <ChevronDown :size="15" :stroke-width="1.75" class="text-ui-text-muted" :class="open && 'rotate-180'" aria-hidden="true" />
@@ -57,7 +57,7 @@ function select(value?: string): void {
     <div v-if="open" :id="`${id}-choices`" class="rounded-lg border border-ui-border bg-ui-surface p-2">
       <div class="relative mb-2">
         <Search :size="15" :stroke-width="1.75" class="pointer-events-none absolute left-2.5 top-2.5 text-ui-text-muted" aria-hidden="true" />
-        <input ref="search" v-model="query" type="search" name="provider-icon-search" class="catalog-input !pl-8 text-[13px]" :aria-label="t('providers.iconSearch')" :placeholder="t('providers.iconSearch')" :disabled="disabled" autocomplete="off" :spellcheck="false" @keydown.enter.prevent />
+        <input ref="search" v-model="query" type="search" name="provider-icon-search" class="ui-input pl-8 text-[13px]" :aria-label="t('providers.iconSearch')" :placeholder="t('providers.iconSearch')" :disabled="disabled" autocomplete="off" :spellcheck="false" @keydown.enter.prevent />
       </div>
       <button type="button" class="mb-2 flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] hover:bg-ui-hover disabled:cursor-default" :aria-pressed="!icon" :disabled="disabled" data-default-icon @click="select()">
         <ProviderIcon :template="template" :size="18" />

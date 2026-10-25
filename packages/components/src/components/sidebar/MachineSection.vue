@@ -65,7 +65,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
     <div class="group flex h-8 items-center gap-1 pl-2.5 pr-1">
       <button
         type="button"
-        class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[13px] text-ui-text-faint hover:text-ui-text-muted"
+        class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[13px] font-medium text-ui-text-muted hover:text-ui-text"
         :aria-expanded="!collapsed"
         :aria-controls="listId"
         @click="fleet.toggleMachine(machine.id)"
@@ -73,7 +73,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
         <span class="truncate">{{ machine.name }}</span>
         <span
           v-if="!machine.online"
-          class="ui-badge shrink-0 rounded-full border border-ui-border"
+          class="ui-badge shrink-0 rounded-full font-normal"
           :title="lastSeen"
         >
           {{ t("machine.offline") }}
@@ -91,7 +91,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
         <IconButton :icon="FolderPlus" :label="t('machine.addWorkspace')" :placeholder="false" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = true" />
       </div>
     </div>
-    <p v-if="createError" role="alert" class="px-2.5 text-xs text-red-500">{{ createError }}</p>
+    <p v-if="createError" role="alert" class="px-2.5 text-xs text-ui-danger">{{ createError }}</p>
     <WorkspaceCreateDialog v-if="addingWorkspace" @created="workspaceCreated" @cancel="addingWorkspace = false" />
 
     <ul v-if="!collapsed" :id="listId">
@@ -112,7 +112,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
       <li v-for="workspace in machine.workspaces" :key="workspace.id">
         <div class="group flex h-8 items-center gap-2.5 pl-2.5 pr-1 text-ui-text-muted">
           <Folder :size="16" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
-          <RouterLink :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" class="min-w-0 flex-1 truncate hover:text-ui-text">{{ workspace.name }}</RouterLink>
+          <RouterLink :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" class="min-w-0 flex-1 truncate hover:text-ui-text" active-class="text-ui-accent">{{ workspace.name }}</RouterLink>
         </div>
         <ul>
           <li v-for="terminal in workspace.terminals" :key="terminal.id">

@@ -90,13 +90,13 @@ async function remove(): Promise<void> {
 
 <template>
   <div class="mb-6 flex items-center justify-between gap-4">
-    <h1 class="m-0 text-lg font-semibold">{{ t("settings.agents") }}</h1>
-    <button type="button" class="catalog-button inline-flex items-center gap-1.5" :disabled="!available || !snapshot || loading" @click="editor = {}">
+    <h1 class="ui-page-title">{{ t("settings.agents") }}</h1>
+    <button type="button" class="ui-button" :disabled="!available || !snapshot || loading" @click="editor = {}">
       <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.add") }}
     </button>
   </div>
   <nav :aria-label="t('providers.machines')" class="mb-5 flex gap-5 overflow-x-auto border-b border-ui-border">
-    <button v-for="item in fleet.machines" :key="item.id" type="button" class="relative flex shrink-0 cursor-pointer items-center gap-2 border-b-2 px-0 pb-3 text-sm" :class="item.id === selectedMachineId ? 'border-ui-text text-ui-text' : 'border-transparent text-ui-text-muted hover:text-ui-text'" :aria-current="item.id === selectedMachineId ? 'page' : undefined" @click="selectedMachineId = item.id">
+    <button v-for="item in fleet.machines" :key="item.id" type="button" class="relative flex shrink-0 cursor-pointer items-center gap-2 border-b-2 px-0 pb-3 text-sm" :class="item.id === selectedMachineId ? 'border-ui-accent text-ui-text' : 'border-transparent text-ui-text-muted hover:text-ui-text'" :aria-current="item.id === selectedMachineId ? 'page' : undefined" @click="selectedMachineId = item.id">
       <span class="h-1.5 w-1.5 rounded-full" :class="item.online ? 'bg-ui-success' : 'bg-ui-text-muted'" aria-hidden="true" />
       {{ item.name }}
       <span v-if="!item.online" class="sr-only">{{ t("machine.offline") }}</span>
@@ -106,7 +106,7 @@ async function remove(): Promise<void> {
   <div v-else>
     <div v-if="error" class="mb-4 flex items-center justify-between gap-4">
       <p role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
-      <button type="button" class="catalog-button shrink-0" :disabled="loading" @click="refresh">{{ t("folderPicker.retry") }}</button>
+      <button type="button" class="ui-button shrink-0" :disabled="loading" @click="refresh">{{ t("folderPicker.retry") }}</button>
     </div>
     <p v-if="loading && !snapshot" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t("providers.loading") }}</p>
     <template v-if="snapshot">
@@ -123,14 +123,14 @@ async function remove(): Promise<void> {
           </div>
           <div class="relative shrink-0">
             <IconButton :icon="Ellipsis" :label="t('providers.actions', { name: provider.name })" :aria-expanded="openMenu === provider.id" aria-haspopup="menu" @click="openMenu = openMenu === provider.id ? null : provider.id" />
-            <div v-if="openMenu === provider.id" role="menu" class="absolute top-full right-0 z-20 mt-1 flex w-40 flex-col rounded-lg border border-ui-border bg-ui-surface p-1 shadow-ui-card">
-              <button type="button" role="menuitem" class="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px] hover:bg-ui-hover" @click="edit(provider)"><Pencil :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.edit") }}</button>
-              <button type="button" role="menuitem" class="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px] text-ui-danger hover:bg-ui-hover" @click="askRemove(provider)"><Trash2 :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.remove") }}</button>
+            <div v-if="openMenu === provider.id" role="menu" class="ui-menu absolute top-full right-0 z-20 mt-1 flex w-40 flex-col">
+              <button type="button" role="menuitem" class="ui-menu-item" @click="edit(provider)"><Pencil :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.edit") }}</button>
+              <button type="button" role="menuitem" class="ui-menu-item text-ui-danger" @click="askRemove(provider)"><Trash2 :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.remove") }}</button>
             </div>
           </div>
         </div>
       </div>
-      <div v-else class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-ui-border px-6 py-12 text-center">
+      <div v-else class="ui-empty gap-2 py-12">
         <Bot :size="28" :stroke-width="1.5" class="mb-1 text-ui-text-muted" aria-hidden="true" />
         <p class="m-0 text-sm font-medium">{{ t("providers.empty") }}</p>
         <p class="m-0 max-w-sm text-[13px] text-ui-text-muted">{{ t("providers.emptyDescription") }}</p>
@@ -139,12 +139,12 @@ async function remove(): Promise<void> {
   </div>
   <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :disabled="!available" :save="save" :test="test" @saved="editor = null" @cancel="editor = null" />
   <dialog ref="removeDialog" class="ui-dialog app-no-drag w-[26rem]" aria-labelledby="provider-remove-title" @cancel.prevent="cancelRemove" @close="cancelRemove">
-    <h2 id="provider-remove-title" class="m-0 mb-2 text-base font-semibold">{{ t("providers.removeQuestion", { name: removing?.name ?? '' }) }}</h2>
-    <p class="m-0 mb-4 text-sm text-ui-text-muted">{{ t("providers.removeDescription") }}</p>
-    <p v-if="removeError" role="alert" class="m-0 mb-4 text-sm text-ui-danger">{{ removeError }}</p>
-    <div class="flex justify-end gap-2">
-      <button type="button" class="catalog-button" :disabled="removePending" @click="cancelRemove">{{ t("catalog.cancel") }}</button>
-      <button type="button" class="catalog-button text-ui-danger" :disabled="removePending || !available" @click="remove">{{ t("providers.remove") }}</button>
+    <h2 id="provider-remove-title" class="ui-dialog-title">{{ t("providers.removeQuestion", { name: removing?.name ?? '' }) }}</h2>
+    <p class="ui-dialog-description">{{ t("providers.removeDescription") }}</p>
+    <p v-if="removeError" role="alert" class="m-0 mt-4 text-sm text-ui-danger">{{ removeError }}</p>
+    <div class="ui-dialog-actions">
+      <button type="button" class="ui-button" :disabled="removePending" @click="cancelRemove">{{ t("catalog.cancel") }}</button>
+      <button type="button" class="ui-button-danger" :disabled="removePending || !available" @click="remove">{{ t("providers.remove") }}</button>
     </div>
   </dialog>
 </template>

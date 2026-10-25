@@ -19,13 +19,13 @@ async function submit(): Promise<void> {
 
 <template>
   <div class="flex flex-col items-start gap-2">
-    <button v-if="!confirming" type="button" class="catalog-button text-ui-danger" :disabled="disabled" @click="confirming = true">{{ label }}</button>
-    <div v-else class="flex flex-col gap-3 rounded-lg border border-ui-border p-3">
+    <button v-if="!confirming" type="button" class="ui-button-danger" :disabled="disabled" @click="confirming = true">{{ label }}</button>
+    <div v-else class="flex flex-col gap-3 rounded-xl border border-ui-danger/30 bg-ui-danger/6 p-3">
       <p class="m-0 text-sm">{{ question }}</p>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="flex gap-2">
-        <button type="button" class="catalog-button text-ui-danger" :disabled="deleting || disabled" @click="submit">{{ t("catalog.confirmDelete") }}</button>
-        <button type="button" class="catalog-button" :disabled="deleting" @click="confirming = false">{{ t("catalog.cancel") }}</button>
+        <button type="button" class="ui-button-danger" :disabled="deleting || disabled" @click="submit">{{ t("catalog.confirmDelete") }}</button>
+        <button type="button" class="ui-button" :disabled="deleting" @click="confirming = false">{{ t("catalog.cancel") }}</button>
       </div>
     </div>
   </div>

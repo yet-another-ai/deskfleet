@@ -13,13 +13,13 @@ const { t } = useI18n()
   <section class="mt-4 first:mt-0">
     <button
       type="button"
-      class="flex h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg pr-2 pl-2.5 text-left text-[13px] text-ui-text-faint hover:bg-ui-hover hover:text-ui-text-muted"
+      class="flex h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg pr-2 pl-2.5 text-left text-[13px] font-medium text-ui-text-muted hover:bg-ui-hover hover:text-ui-text"
       :aria-label="t('account.openMachine', { name: machine.name })"
       :data-machine-id="machine.id"
       @click="emit('select')"
     >
       <span class="truncate">{{ machine.name }}</span>
-      <span v-if="!machine.online" class="ui-badge shrink-0 rounded-full border border-ui-border">{{ t("machine.offline") }}</span>
+      <span v-if="!machine.online" class="ui-badge shrink-0 rounded-full font-normal">{{ t("machine.offline") }}</span>
       <ChevronRight :size="14" class="shrink-0" aria-hidden="true" />
     </button>
   </section>

@@ -35,7 +35,7 @@ async function copy(): Promise<void> {
         <span v-if="state">{{ state }}</span>
         <time v-if="time" :datetime="input.deliveredAt ?? input.createdAt">{{ time }}</time>
       </div>
-      <div class="max-w-full rounded-2xl bg-ui-surface px-4 py-2.5">
+      <div class="max-w-full rounded-2xl bg-ui-accent/8 px-4 py-2.5">
         <AgentContent :content="input.content" />
       </div>
       <p v-if="input.state === 'uncertain'" class="m-0 max-w-md text-right text-xs text-ui-warning">{{ t('agent.uncertainInput') }}</p>
@@ -43,7 +43,7 @@ async function copy(): Promise<void> {
         <IconButton :icon="copied ? CircleCheck : Copy" :label="t(copied ? 'agent.copied' : 'agent.copy')" @click="copy" />
       </div>
     </div>
-    <span class="mt-6 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ui-avatar text-xs font-semibold text-white" :title="input.author.userId ?? t('agent.localUser')" aria-hidden="true">
+    <span class="ui-avatar mt-6 h-8 w-8 rounded-full" :title="input.author.userId ?? t('agent.localUser')" aria-hidden="true">
       <template v-if="input.author.userId">{{ initials(input.author.userId) }}</template>
       <User v-else :size="16" :stroke-width="2" />
     </span>

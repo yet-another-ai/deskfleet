@@ -29,14 +29,14 @@ const available = computed(() => fleet.canManageCatalog && location.value?.machi
     {{ fleet.catalogLoading ? t("catalog.loading") : t("worktree.notFound") }}
   </div>
   <div v-else class="min-h-0 flex-1 overflow-y-auto">
-    <div class="mx-auto flex max-w-3xl flex-col gap-8 px-6 pb-8 pt-4">
-      <p v-if="!available" class="m-0 text-sm text-ui-text-muted">{{ t("catalog.offline") }}</p>
+    <div class="mx-auto flex max-w-3xl flex-col gap-8 px-6 pb-10 pt-6">
+      <p v-if="!available" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t("catalog.offline") }}</p>
       <section>
-        <h2 class="ui-section-title">{{ t("worktree.directories") }}</h2>
+        <h2 class="ui-section-title mb-2">{{ t("worktree.directories") }}</h2>
         <DirectoryList :directories="location.worktree.directories" :disabled="!available" :owner="{ sessionId: location.session.id, worktreeId: location.worktree.id }" />
       </section>
       <section>
-        <h2 class="ui-section-title">{{ t("worktree.session") }}</h2>
+        <h2 class="ui-section-title mb-2">{{ t("worktree.session") }}</h2>
         <ul class="ui-card">
           <li>
             <RouterLink :to="{ name: 'session', params: { sessionId: location.session.id } }" class="ui-card-row hover:bg-ui-hover">{{ sessionLabel(location.session) }}</RouterLink>

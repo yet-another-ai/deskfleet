@@ -84,8 +84,8 @@ onBeforeUnmount(unsubscribe)
       <span class="h-1.5 w-1.5 rounded-full" :class="statusColor" aria-hidden="true" />
       <span role="status">{{ statusLabel }}</span>
     </span>
-    <button v-if="state?.status === 'error'" type="button" class="catalog-button" :disabled="busy" @click="setEnabled(state.enabled)">{{ state.enabled ? t("settings.retryStart") : t("settings.retryStop") }}</button>
-    <button v-else-if="!state && requestError" type="button" class="catalog-button" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</button>
+    <button v-if="state?.status === 'error'" type="button" class="ui-button" :disabled="busy" @click="setEnabled(state.enabled)">{{ state.enabled ? t("settings.retryStart") : t("settings.retryStop") }}</button>
+    <button v-else-if="!state && requestError" type="button" class="ui-button" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</button>
     <button
       type="button"
       role="switch"
@@ -93,16 +93,15 @@ onBeforeUnmount(unsubscribe)
       aria-describedby="local-agent-description"
       :aria-checked="state?.enabled ?? false"
       :disabled="busy || !state"
-      class="relative ml-2 h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors disabled:cursor-wait disabled:opacity-50"
-      :class="state?.enabled ? 'bg-ui-accent' : 'bg-ui-active'"
+      class="ui-switch ml-2 disabled:cursor-wait"
       @click="setEnabled(!state?.enabled)"
     >
-      <span class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform" :class="state?.enabled && 'translate-x-4'" />
+      <span class="ui-switch-thumb" :class="state?.enabled && 'translate-x-4'" />
     </button>
   </SettingsRow>
-  <div v-if="screenCapture" :data-screen-capture-permission="screenCapture.status" class="mt-2 text-[13px]" :class="screenCaptureNeedsAction ? 'text-ui-warning' : 'text-ui-text-muted'" :role="screenCaptureNeedsAction ? 'alert' : 'status'">
+  <div v-if="screenCapture" :data-screen-capture-permission="screenCapture.status" class="-mt-1 pb-3 text-[13px]" :class="screenCaptureNeedsAction ? 'text-ui-warning' : 'text-ui-text-muted'" :role="screenCaptureNeedsAction ? 'alert' : 'status'">
     <p class="m-0">{{ screenCaptureLabel }}</p>
     <p v-if="screenCapture.status === 'error' && screenCapture.error" class="mb-0 mt-1 break-words">{{ screenCapture.error }}</p>
   </div>
-  <p v-if="requestError || state?.error" role="alert" class="m-0 mt-1 break-words text-[13px] text-ui-danger">{{ requestError || state?.error }}</p>
+  <p v-if="requestError || state?.error" role="alert" class="m-0 -mt-1 break-words pb-3 text-[13px] text-ui-danger">{{ requestError || state?.error }}</p>
 </template>

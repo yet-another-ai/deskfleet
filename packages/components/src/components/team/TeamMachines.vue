@@ -63,11 +63,11 @@ async function rename(machine: Machine): Promise<void> {
 
 <template>
   <section :aria-labelledby="`${id}-title`">
-    <div class="mb-2 flex min-h-8 items-center justify-between gap-3">
-      <h2 :id="`${id}-title`" class="ui-section-title !mb-0">
+    <div class="ui-section-header">
+      <h2 :id="`${id}-title`" class="ui-section-title">
         {{ t("team.machines") }}<span class="ml-1.5 text-ui-text-faint">{{ session.machines.value.length }}</span>
       </h2>
-      <button type="button" class="catalog-button shrink-0" @click="session.dialog.value = 'add-machine'">
+      <button type="button" class="ui-button shrink-0" @click="session.dialog.value = 'add-machine'">
         <Plus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.addMachine") }}
       </button>
     </div>
@@ -83,21 +83,21 @@ async function rename(machine: Machine): Promise<void> {
             :ref="setNameInput"
             v-model="name"
             name="machine-name"
-            class="catalog-input py-1 text-sm"
+            class="ui-input py-1 text-sm"
             :aria-label="t('team.machineNameFor', { name: machine.name })"
             required
             maxlength="200"
             autocomplete="off"
             :disabled="saving"
           />
-          <button type="submit" class="catalog-button shrink-0" :disabled="saving || !name.trim()">{{ saving ? t("catalog.saving") : t("catalog.save") }}</button>
-          <button type="button" class="catalog-button shrink-0" :disabled="saving" @click="cancelRename">{{ t("catalog.cancel") }}</button>
+          <button type="submit" class="ui-button shrink-0" :disabled="saving || !name.trim()">{{ saving ? t("catalog.saving") : t("catalog.save") }}</button>
+          <button type="button" class="ui-button shrink-0" :disabled="saving" @click="cancelRename">{{ t("catalog.cancel") }}</button>
         </form>
         <template v-else>
           <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-1.5 text-sm">
               <span class="truncate">{{ machine.name }}</span>
-              <span v-if="machine.id === session.localMachineId.value" class="ui-badge shrink-0 text-ui-text-muted">{{ t("account.thisComputer") }}</span>
+              <span v-if="machine.id === session.localMachineId.value" class="ui-badge shrink-0">{{ t("account.thisComputer") }}</span>
             </div>
             <div class="truncate text-[13px] text-ui-text-muted">{{ status(machine) }}</div>
           </div>
@@ -106,7 +106,7 @@ async function rename(machine: Machine): Promise<void> {
         </template>
       </li>
     </ul>
-    <div v-else class="flex flex-col items-center gap-1 rounded-xl border border-dashed border-ui-border px-6 py-8 text-center">
+    <div v-else class="ui-empty">
       <p class="m-0 text-sm">{{ t("team.noMachines") }}</p>
       <p class="m-0 max-w-sm text-[13px] text-ui-text-muted">{{ t("team.noMachinesDescription") }}</p>
     </div>

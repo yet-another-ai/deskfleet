@@ -81,10 +81,10 @@ function submit(delivery: "backlog" | "steer"): void {
   </div>
   <div v-if="location" class="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-2 empty:hidden">
     <AgentNotice v-if="!view?.loading && (!connected || view?.error)" tone="warning" :text="t('agent.disconnected')" :detail="view?.error || agents.error">
-      <button type="button" class="catalog-button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</button>
+      <button type="button" class="ui-button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</button>
     </AgentNotice>
     <AgentNotice v-for="operation in pending" :key="operation.operationId" tone="warning" :text="t('agent.operationPending')" :detail="operation.error">
-      <button type="button" class="catalog-button" :disabled="busy" @click="action(() => agents.checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</button>
+      <button type="button" class="ui-button" :disabled="busy" @click="action(() => agents.checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</button>
     </AgentNotice>
     <AgentNotice v-if="actionError && !pending.some(operation => operation.error === actionError)" tone="danger" :text="actionError" />
     <template v-if="snapshot">

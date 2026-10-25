@@ -105,12 +105,12 @@ onBeforeUnmount(() => { finished = true; dialog.value?.close() })
 
 <template>
   <dialog ref="dialog" class="ui-dialog app-no-drag w-[32rem] max-h-[85vh] overflow-y-auto" aria-labelledby="provider-dialog-title" @cancel.prevent="cancel" @close="cancel">
-    <h2 id="provider-dialog-title" class="m-0 mb-5 text-base font-semibold">{{ t(initial ? "providers.edit" : "providers.add") }}</h2>
+    <h2 id="provider-dialog-title" class="ui-dialog-title mb-5">{{ t(initial ? "providers.edit" : "providers.add") }}</h2>
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <div class="flex flex-col gap-1.5 text-sm">
         <label for="provider-template">{{ t("providers.template") }}</label>
-        <input v-if="initial" id="provider-template" class="catalog-input text-ui-text-muted" :value="selectedTemplate.name" readonly data-provider-template />
-        <select v-else id="provider-template" v-model="template" class="catalog-input" :disabled="saving || disabled">
+        <input v-if="initial" id="provider-template" class="ui-input text-ui-text-muted" :value="selectedTemplate.name" readonly data-provider-template />
+        <select v-else id="provider-template" v-model="template" class="ui-input" :disabled="saving || disabled">
           <option v-for="item in templates" :key="item.id" :value="item.id">{{ item.name }}</option>
         </select>
         <p class="m-0 text-xs text-ui-text-muted">{{ t(`providers.templateDescription.${template}`) }}</p>
@@ -118,12 +118,12 @@ onBeforeUnmount(() => { finished = true; dialog.value?.close() })
       </div>
       <label class="flex flex-col gap-1.5 text-sm">
         {{ t("providers.name") }}
-        <input v-model="name" name="provider-name" class="catalog-input" required maxlength="256" :disabled="saving || disabled" autocomplete="off" />
+        <input v-model="name" name="provider-name" class="ui-input" required maxlength="256" :disabled="saving || disabled" autocomplete="off" />
       </label>
       <ProviderIconPicker v-model="icon" :template="template" :disabled="saving || disabled" />
       <label class="flex flex-col gap-1.5 text-sm">
         {{ t("providers.binaryPath") }}
-        <input v-model="binaryPath" name="provider-binary" class="catalog-input font-mono text-[13px]" :placeholder="selectedTemplate.defaultBinaryPath" :disabled="saving || disabled" autocomplete="off" :spellcheck="false" />
+        <input v-model="binaryPath" name="provider-binary" class="ui-input font-mono text-[13px]" :placeholder="selectedTemplate.defaultBinaryPath" :disabled="saving || disabled" autocomplete="off" :spellcheck="false" />
         <span class="text-xs text-ui-text-muted">{{ t("providers.binaryDefault", { binary: selectedTemplate.defaultBinaryPath }) }}</span>
       </label>
       <fieldset class="m-0 min-w-0 border-0 p-0" :disabled="saving || disabled">
@@ -131,8 +131,8 @@ onBeforeUnmount(() => { finished = true; dialog.value?.close() })
         <p class="m-0 mb-3 text-xs text-ui-text-muted">{{ t("providers.environmentDescription") }}</p>
         <div class="flex flex-col gap-2">
           <div v-for="(row, index) in environment" :key="row.id" class="flex items-center gap-2" data-environment-row>
-            <input v-model="row.key" class="catalog-input min-w-0 flex-1 font-mono text-xs" :aria-label="t('providers.environmentKey', { n: index + 1 })" :placeholder="t('providers.key')" autocomplete="off" :spellcheck="false" />
-            <input v-model="row.value" class="catalog-input min-w-0 flex-[1.4] font-mono text-xs" :aria-label="t('providers.environmentValue', { n: index + 1 })" :placeholder="t('providers.value')" autocomplete="off" :spellcheck="false" />
+            <input v-model="row.key" class="ui-input min-w-0 flex-1 font-mono text-xs" :aria-label="t('providers.environmentKey', { n: index + 1 })" :placeholder="t('providers.key')" autocomplete="off" :spellcheck="false" />
+            <input v-model="row.value" class="ui-input min-w-0 flex-[1.4] font-mono text-xs" :aria-label="t('providers.environmentValue', { n: index + 1 })" :placeholder="t('providers.value')" autocomplete="off" :spellcheck="false" />
             <IconButton :icon="Trash2" :label="t('providers.removeEnvironment', { n: index + 1 })" :disabled="saving || disabled" @click="environment.splice(index, 1)" />
           </div>
           <button type="button" class="ui-text-button w-fit cursor-pointer hover:bg-ui-hover" @click="environment.push({ id: nextRowId++, key: '', value: '' })">
@@ -144,10 +144,10 @@ onBeforeUnmount(() => { finished = true; dialog.value?.close() })
       <p v-if="testing" role="status" class="m-0 text-sm text-ui-text-muted" data-provider-test-result>{{ t("providers.testing") }}</p>
       <p v-else-if="testResult?.ok" role="status" class="m-0 text-sm text-ui-text-muted" data-provider-test-result>{{ t("providers.testSucceeded", { agent: testResult.agentName }) }}</p>
       <p v-else-if="testResult" role="alert" class="m-0 whitespace-pre-wrap break-words text-sm text-ui-danger" data-provider-test-result>{{ t("providers.testFailed", { error: testResult.error }) }}</p>
-      <div class="mt-1 flex justify-end gap-2">
-        <button type="button" class="catalog-button mr-auto" :title="t('providers.testDescription')" :disabled="testing || saving || disabled" @click="runTest">{{ testing ? t("providers.testing") : t("providers.test") }}</button>
-        <button type="button" class="catalog-button" :disabled="saving" @click="cancel">{{ t("catalog.cancel") }}</button>
-        <button type="submit" class="catalog-button" :disabled="saving || disabled">{{ saving ? t("catalog.saving") : t(initial ? "catalog.save" : "providers.add") }}</button>
+      <div class="mt-2 flex justify-end gap-2">
+        <button type="button" class="ui-button mr-auto" :title="t('providers.testDescription')" :disabled="testing || saving || disabled" @click="runTest">{{ testing ? t("providers.testing") : t("providers.test") }}</button>
+        <button type="button" class="ui-button" :disabled="saving" @click="cancel">{{ t("catalog.cancel") }}</button>
+        <button type="submit" class="ui-button-primary" :disabled="saving || disabled">{{ saving ? t("catalog.saving") : t(initial ? "catalog.save" : "providers.add") }}</button>
       </div>
     </form>
   </dialog>

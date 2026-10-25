@@ -179,7 +179,7 @@ onMounted(() => {
       <button
         type="button"
         :disabled="readOnly || creating"
-        class="catalog-button"
+        class="ui-button"
         @click="create()"
       >{{ t("terminal.newTab") }}</button>
     </div>

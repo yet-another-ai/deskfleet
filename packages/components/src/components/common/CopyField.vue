@@ -29,9 +29,9 @@ defineExpose({ focus: () => (document.getElementById(id) as HTMLElement | null)?
   <div class="flex flex-col gap-1.5">
     <label :for="id" class="text-[13px] text-ui-text-muted">{{ label }}</label>
     <div class="flex items-start gap-2">
-      <textarea v-if="multiline" :id="id" readonly class="catalog-input h-28 resize-none font-mono text-xs" :value="value" :spellcheck="false" @focus="selectAll" />
-      <input v-else :id="id" readonly class="catalog-input font-mono text-xs" :value="value" :spellcheck="false" @focus="selectAll" />
-      <button type="button" class="catalog-button shrink-0" :aria-label="t('common.copyLabel', { label })" @click="copy">
+      <textarea v-if="multiline" :id="id" readonly class="ui-input h-28 resize-none font-mono text-xs" :value="value" :spellcheck="false" @focus="selectAll" />
+      <input v-else :id="id" readonly class="ui-input font-mono text-xs" :value="value" :spellcheck="false" @focus="selectAll" />
+      <button type="button" class="ui-button shrink-0" :aria-label="t('common.copyLabel', { label })" @click="copy">
         <component :is="copied ? Check : Copy" :size="14" :stroke-width="1.75" aria-hidden="true" />
         {{ copied ? t("common.copied") : t("common.copy") }}
       </button>
