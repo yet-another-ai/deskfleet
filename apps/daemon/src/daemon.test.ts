@@ -3,7 +3,7 @@ import test from "node:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { nativeInfo } from "@deskfleet/native"
+import { nativeInfo, openInMemoryCatalog } from "@deskfleet/native"
 import { DaemonClient, readDaemonDiscovery, startDaemon } from "./index.ts"
 import type { DesktopPermission } from "./control-protocol.ts"
 
@@ -16,7 +16,10 @@ function deferred<T>() {
 
 test("headless daemon serves information from the Rust addon", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-test-"))
-  const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null })
+  const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory,
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
+    requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null,
+  })
   context.after(async () => { await (await starting).close(); await rm(directory, { recursive: true, force: true }) })
   const daemon = await starting
   context.signal.throwIfAborted()
@@ -86,6 +89,7 @@ test("startup requests both desktop permissions once without blocking health and
   const requests = { screen: 0, accessibility: 0 }
   const starting = startDaemon(0, { allowLocalControlForTests: true,
     controlDirectory: directory,
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: () => { requests.screen++; return screen.promise },
     requestAccessibilityAccess: () => { requests.accessibility++; return accessibility.promise },
   })
@@ -115,6 +119,7 @@ test("startup requests both desktop permissions once without blocking health and
   let competingRequests = 0
   await assert.rejects(startDaemon(0, { allowLocalControlForTests: true,
     controlDirectory: directory,
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: async () => { competingRequests++; return null },
     requestAccessibilityAccess: async () => { competingRequests++; return null },
   }), /already running/u)
@@ -142,6 +147,7 @@ test("daemon shutdown does not wait for either desktop permission response", { t
   const accessibility = deferred<boolean | null>()
   const starting = startDaemon(0, {
     allowLocalControlForTests: true, controlDirectory: directory,
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: () => screen.promise,
     requestAccessibilityAccess: () => accessibility.promise,
   })
@@ -178,6 +184,7 @@ for (const permissionKey of ["screenCapturePermission", "accessibilityPermission
       const otherKey = permissionKey === "screenCapturePermission" ? "accessibilityPermission" : "screenCapturePermission"
       const starting = startDaemon(0, {
         allowLocalControlForTests: true, controlDirectory: directory,
+        openCatalog: (_path, name) => openInMemoryCatalog(name),
         requestScreenCaptureAccess: permissionKey === "screenCapturePermission" ? () => permission.promise : async () => true,
         requestAccessibilityAccess: permissionKey === "accessibilityPermission" ? () => permission.promise : async () => true,
       })

@@ -96,6 +96,10 @@ Catalog behavior tests use independent in-memory SQLite databases with the same
 migrations, foreign keys, and transaction logic as file catalogs. Agent Session
 and runtime configuration tests keep that database open when rebuilding the
 service; their Git repositories and worktrees still use temporary directories.
+Local control and desktop permission behavior tests also inject in-memory
+catalogs, while discovery records and terminal files still exercise the
+filesystem. This keeps SQLite file creation and migrations out of their timeout
+budgets.
 Tests that close and reopen a catalog, restart a daemon, or verify machine
 registration persistence continue to use temporary database files. Select the
 in-memory catalog explicitly in each fixture rather than switching all CI

@@ -7,12 +7,14 @@ import { startControlServer } from "./control-server.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
 import { DesktopPermissions } from "./desktop-permissions.ts"
 import type { AgentProvider } from "./agents/acp.ts"
+import type { DaemonCatalog } from "./catalog.ts"
 
 export async function startDaemon(port = 0, options: {
   controlDirectory?: string
   requestScreenCaptureAccess?: () => Promise<boolean | null>
   requestAccessibilityAccess?: () => Promise<boolean | null>
   agentProvider?: AgentProvider
+  openCatalog?: Parameters<DaemonCatalog["init"]>[0]
   /** In-process fixtures only. Never enabled by configuration, IPC, or the CLI. */
   allowLocalControlForTests?: boolean
 } = {}) {
@@ -60,7 +62,9 @@ export async function startDaemon(port = 0, options: {
     return closed
   }
   try {
-    control = await startControlServer(peers, controlDirectory, undefined, undefined, () => { void close() }, permissions, options.agentProvider, { allowLocalControlForTests: options.allowLocalControlForTests })
+    control = await startControlServer(peers, controlDirectory, undefined, undefined, () => { void close() }, permissions, options.agentProvider, {
+      allowLocalControlForTests: options.allowLocalControlForTests, openCatalog: options.openCatalog,
+    })
   } catch (error) {
     const cleanup = await Promise.allSettled([peers.closeAll(), server[Symbol.asyncDispose]()])
     const failures = cleanup.flatMap(result => result.status === "rejected" ? [result.reason] : [])

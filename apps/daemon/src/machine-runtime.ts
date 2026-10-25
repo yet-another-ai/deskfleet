@@ -18,6 +18,7 @@ interface MachineOptions {
   agentProvider?: AgentProvider
   terminals?: TerminalSessions
   allowLocalControlForTests?: boolean
+  openCatalog?: Parameters<DaemonCatalog["init"]>[0]
 }
 
 async function openMachine(directory: string, hostDirectory: string, options: MachineOptions) {
@@ -43,7 +44,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     }
   })()
   try {
-    await catalog.init()
+    await catalog.init(options.openCatalog)
     catalog.onSessionRelease(worktreeId => terminals.hangupOwned(worktreeId))
     await providers.init()
     agents = new AgentSessions(catalog, catalog.native, options.agentProvider, providers)

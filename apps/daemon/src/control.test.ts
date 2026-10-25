@@ -6,7 +6,7 @@ import { connect, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { createPeer, type NativePeer, type NativeTerminal, type PeerEvent } from "@deskfleet/native"
+import { createPeer, openInMemoryCatalog, type NativePeer, type NativeTerminal, type PeerEvent } from "@deskfleet/native"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
 import { encoderFailure, type ControlMessage, type ControlMethod, type ControlMethods, type DaemonEvent } from "./control-protocol.ts"
 import { validateControlParams, validateRelayedDesktopStart } from "./control-request.ts"
@@ -15,7 +15,7 @@ import { startDaemon } from "./daemon.ts"
 import { TerminalSessions } from "./terminals.ts"
 
 function startControlServer(...args: Parameters<typeof createControlServer>) {
-  args[7] = { ...args[7], allowLocalControlForTests: true }
+  args[7] = { ...args[7], allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name) }
   return createControlServer(...args)
 }
 
@@ -439,8 +439,10 @@ test("request validation errors retain authenticated connections and their activ
 test("duplicate local desktop starts preserve the running capture and input controller", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-duplicate-"))
   const fake = desktopPeers({ close: async () => {} })
-  const server = await startControlServer(fake.service, directory, capabilities)
-  context.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }) })
+  const starting = startControlServer(fake.service, directory, capabilities)
+  context.after(async () => { await (await starting).close(); await rm(directory, { recursive: true, force: true }) })
+  await starting
+  context.signal.throwIfAborted()
   const discovery = await readDaemonDiscovery(directory)
   const client = new Client(discovery.endpoint, context.signal)
   context.after(() => client.close())
@@ -472,8 +474,11 @@ for (const primaryEncoder of [true, false]) {
       failure: () => failure,
       close: async () => { await closeGate.promise; failure = null; throw cleanup },
     })
-    const server = await startControlServer(fake.service, directory, capabilities)
-    context.after(async () => { closeGate.resolve(); await server.close(); await rm(directory, { recursive: true, force: true }) })
+    // Own cleanup before awaiting startup, which can outlive the test deadline.
+    const starting = startControlServer(fake.service, directory, capabilities)
+    context.after(async () => { closeGate.resolve(); await (await starting).close(); await rm(directory, { recursive: true, force: true }) })
+    await starting
+    context.signal.throwIfAborted()
     const discovery = await readDaemonDiscovery(directory)
     const client = new Client(discovery.endpoint, context.signal)
     context.after(() => client.close())
@@ -505,11 +510,13 @@ for (const failure of ["ready send", "channel closes during capture start"] as c
       close: () => closeGate.promise,
       ...(failure === "ready send" ? { ready: async () => { throw new Error("Input ready send failed") } } : { start: () => startGate.promise }),
     })
-    const server = await startControlServer(fake.service, directory, capabilities)
+    const starting = startControlServer(fake.service, directory, capabilities)
     context.after(async () => {
       startGate.resolve(); closeGate.resolve()
-      await server.close(); await rm(directory, { recursive: true, force: true })
+      await (await starting).close(); await rm(directory, { recursive: true, force: true })
     })
+    await starting
+    context.signal.throwIfAborted()
     const discovery = await readDaemonDiscovery(directory)
     const client = new Client(discovery.endpoint, context.signal)
     context.after(() => client.close())
@@ -539,11 +546,13 @@ test("local session IDs and shutdown wait for cleanup already started by an inpu
   const directory = await mkdtemp(join(tmpdir(), "df-control-closing-"))
   const closeGate = deferred<void>()
   const fake = desktopPeers({ close: () => closeGate.promise })
-  const server = await startControlServer(fake.service, directory, capabilities)
+  const starting = startControlServer(fake.service, directory, capabilities)
   context.after(async () => {
     closeGate.resolve()
-    await server.close(); await rm(directory, { recursive: true, force: true })
+    await (await starting).close(); await rm(directory, { recursive: true, force: true })
   })
+  const server = await starting
+  context.signal.throwIfAborted()
   const discovery = await readDaemonDiscovery(directory)
   const client = new Client(discovery.endpoint, context.signal)
   context.after(() => client.close())
