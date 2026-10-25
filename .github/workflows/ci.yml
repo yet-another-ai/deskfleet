@@ -28,9 +28,9 @@ jobs:
           persist-credentials: false
 
       - name: Install locked Node toolchain
-        uses: jdx/mise-action@v5.2.2
+        uses: jdx/mise-action@v5.2.3
         with:
-          version: 2026.10.17
+          version: 2026.10.19
           install_args: --locked node
           cache: true
           cache_save: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}

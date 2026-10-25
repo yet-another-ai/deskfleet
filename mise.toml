@@ -5,11 +5,11 @@ lockfile = true
 lockfile_platforms = ["linux-x64", "linux-arm64", "macos-arm64", "windows-x64"]
 
 [tools]
-apm = "0.34.0"
+apm = "0.35.0"
 rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustfmt"] }
-node = "24.21.0"
-pnpm = "12.14.0"
-"cargo:cargo-shear" = "1.13.5"
+node = "24.22.1"
+pnpm = "12.15.0"
+"cargo:cargo-shear" = "1.14.0"
 cmake = "4.4.4"
 
 [env]

@@ -142,8 +142,8 @@ jobs:
           docker run --detach --name deskfleet-turn-test
           -p 127.0.0.1:3478:3478/udp -p 127.0.0.1:3478:3478/tcp
           -p 127.0.0.1:49160-49180:49160-49180/udp
-          coturn/coturn:4.6.3@sha256:71c3c990283385567f11794ee692e3a47b66fd9b0bb39e42afbe776e331dd888
-          --no-cli --no-tls --no-dtls --fingerprint --use-auth-secret
+          coturn/coturn:4.18.0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
+          --no-cli --no-tls --fingerprint --use-auth-secret
           --static-auth-secret=deskfleet-test-relay-secret --realm=deskfleet.test
           --listening-port=3478 --min-port=49160 --max-port=49180
           --external-ip=127.0.0.1 --allow-loopback-peers --log-file=stdout

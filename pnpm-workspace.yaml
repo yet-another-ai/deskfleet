@@ -12,7 +12,7 @@ allowBuilds:
   esbuild: true
 
 minimumReleaseAgeExclude:
-  - '@agentclientprotocol/sdk@2.0.1'
+  - '@lobehub/icons-static-svg@1.99.0'
 
 patchedDependencies:
   '@agentclientprotocol/codex-acp@2.2.2': patches/@agentclientprotocol__codex-acp@2.2.2.patch

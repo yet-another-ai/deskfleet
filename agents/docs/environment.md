@@ -42,6 +42,9 @@ command with the project tools even when the shell has not activated mise.
 Electron, and the machine daemon run on the host with the locked mise toolchain
 for debugging and hot reload. No external identity-provider account is needed.
 The images are pinned to multi-architecture digests.
+PostgreSQL stays on major version 17 to preserve the development database volume;
+upgrading its major version requires a separate data migration. The coturn relay
+uses plain TCP and UDP; DTLS remains disabled because it is opt-in in coturn 4.18.
 
 | Service | Host endpoint | Data lifetime |
 | --- | --- | --- |
@@ -111,8 +114,8 @@ compiler requirements; it does not select the installed toolchain.
 
 Native media builds use locked CMake 4.4 to compile bundled Opus, plus the host C/C++
 toolchain. CMake 4.2 or newer is required for the Visual Studio 18 2026 generator
-on current GitHub-hosted Windows runners. Cargo sets `CMAKE_POLICY_VERSION_MINIMUM`
-so the vendored Opus project, which still declares CMake 3.1, configures on CMake 4.
+on current GitHub-hosted Windows runners. Opus 0.4 uses `opusic-sys` with its
+default bundled static library; its CMake 3.16 baseline works with CMake 4.
 On macOS install the Xcode command-line tools. mise loads
 `.config/build-env/macos.toml` to select Apple Clang for C/C++ and Rust linking,
 even if Nix's compiler wrappers precede it on `PATH`. It also clears the inherited

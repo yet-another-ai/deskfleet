@@ -50,11 +50,13 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
-webrtc = "0.17"
-opus = "0.3"
+webrtc = "0.21.1"
+rtc = { version = "0.21.1", default-features = false }
+rand = "0.10"
+opus = "0.4"
 portable-pty = "0.9"
 filedescriptor = "0.8"
-nix = { version = "0.28", features = ["signal"] }
+nix = { version = "0.31", features = ["signal"] }
 libloading = "0.9"
 
 block2 = "0.6"
@@ -69,7 +71,7 @@ objc2-foundation = "0.3"
 objc2-io-surface = "0.3"
 objc2-screen-capture-kit = "0.3"
 objc2-video-toolbox = "0.3"
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",

@@ -438,7 +438,7 @@ impl MacOSEncoder {
         Ok(self.drain_packets())
     }
 
-    fn drain_packets(&self) -> Vec<EncodedPacket> {
+    pub(crate) fn drain_packets(&self) -> Vec<EncodedPacket> {
         let mut state = self.state.lock().expect("encoder state lock poisoned");
         std::mem::take(&mut state.packets)
     }

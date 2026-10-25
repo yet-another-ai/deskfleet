@@ -8,12 +8,14 @@ import { createInterface } from "node:readline"
 import ts from "typescript"
 import { rendererContentSecurityPolicy } from "../src/shared/renderer-csp.ts"
 
-// Generates no screen recording and needs no capture permission. Recreate the
-// 663-byte red-frame fixture with FFmpeg if changing its dimensions or profile:
+// The default fixture needs no capture permission. DESKFLEET_SMOKE_CAPTURE=1
+// streams a real display into the hidden test window without saving a recording.
+// Recreate the 663-byte red-frame fixture with FFmpeg if changing its dimensions or profile:
 // ffmpeg -f lavfi -i color=c=red:s=64x64:r=10 -frames:v 1 -c:v libx264 \
 //   -profile:v baseline -level 3.1 -pix_fmt yuv420p \
 //   -x264-params keyint=1:min-keyint=1:scenecut=0 -f h264 red-64x64.h264
 const root = resolve(import.meta.dirname, "../../..")
+const capture = process.env.DESKFLEET_SMOKE_CAPTURE === "1"
 const executable = createRequire(import.meta.url)("electron") as string
 const nativeExecutable = join(root, "target/debug/examples", process.platform === "win32" ? "media_smoke.exe" : "media_smoke")
 const directory = await mkdtemp(join(tmpdir(), "deskfleet-media-smoke-"))
@@ -42,9 +44,9 @@ try {
       compilerOptions: { target: ts.ScriptTarget.ES2023, module },
     }).outputText)
   }
-  await writeFile(join(directory, "index.html"), `<!doctype html>
+  await writeFile(join(directory, "index.html"), `<!doctype html><html data-capture="${capture ? "1" : "0"}">
 <meta http-equiv="Content-Security-Policy" content="${rendererContentSecurityPolicy(true)}">
-<video autoplay muted playsinline></video><script type="module" src="/renderer.js"></script>`)
+<video autoplay muted playsinline></video><script type="module" src="/renderer.js"></script></html>`)
   const native = spawn(nativeExecutable, [], { stdio: ["pipe", "pipe", "pipe"] })
   track(native)
   const electron = spawn(executable, [join(directory, "main.cjs"), `--user-data-dir=${join(directory, "profile")}`], {
@@ -78,9 +80,17 @@ try {
   }).finally(() => lines.close())
   assert.equal(result.connection, "connected")
   assert.equal(result.dataChannel, true)
-  assert.equal(result.width, 64)
-  assert.equal(result.height, 64)
-  console.log("Electron/native WebRTC: H.264 decode, Opus reception, video srcObject, trickle ICE, and DataChannel echo passed", result)
+  assert.equal(result.source, capture ? "desktop" : "fixture")
+  if (capture) {
+    assert.ok(typeof result.framesDecoded === "number" && result.framesDecoded >= 1)
+    assert.ok(typeof result.width === "number" && result.width > 0)
+    assert.ok(typeof result.height === "number" && result.height > 0)
+    console.log("Electron/native WebRTC: real desktop H.264 decode, video srcObject, trickle ICE, and DataChannel echo passed", result)
+  } else {
+    assert.equal(result.width, 64)
+    assert.equal(result.height, 64)
+    console.log("Electron/native WebRTC: H.264 decode, Opus reception, video srcObject, trickle ICE, and DataChannel echo passed", result)
+  }
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error
@@ -89,7 +99,7 @@ try {
     if (child.exitCode !== null || child.signalCode !== null) continue
     if (child.connected) child.send({ kind: "close" })
     else child.stdin?.end(`${JSON.stringify({ kind: "close" })}\n`)
-    const timer = setTimeout(() => child.kill("SIGKILL"), 3_000)
+    const timer = setTimeout(() => child.kill("SIGKILL"), capture ? 8_000 : 3_000)
     await exits.get(child)
     clearTimeout(timer)
   }

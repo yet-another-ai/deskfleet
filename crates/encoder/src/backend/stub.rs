@@ -25,6 +25,10 @@ impl PlatformEncoder {
         ))
     }
 
+    pub(crate) fn poll_output(&mut self) -> Result<Vec<EncodedPacket>, EncoderError> {
+        Ok(Vec::new())
+    }
+
     pub(crate) fn request_keyframe(&mut self) {
         // No-op on unsupported platforms.
     }

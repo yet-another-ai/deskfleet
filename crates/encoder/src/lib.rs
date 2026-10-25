@@ -3,7 +3,7 @@
 //! Hardware video encoding abstraction for Desk Fleet.
 
 mod backend;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 mod bitstream;
 mod error;
 #[cfg(target_os = "macos")]
@@ -13,6 +13,8 @@ mod packet;
 mod types;
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(target_os = "windows")]
+mod windows_mf;
 
 pub use error::EncoderError;
 pub use opus_enc::{OpusEncoder, OpusEncoderConfig, OpusPacket};
@@ -62,6 +64,11 @@ impl Encoder {
             ));
         }
         self.inner.encode(frame)
+    }
+
+    /// Collect asynchronous output even when the desktop has not produced a new frame.
+    pub fn poll_output(&mut self) -> Result<Vec<EncodedPacket>, EncoderError> {
+        self.inner.poll_output()
     }
 
     /// Flush any pending frames from the encoder.

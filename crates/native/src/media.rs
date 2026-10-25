@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 
 use deskfleet_capture::{CaptureConfig, CaptureError, Display};
 use deskfleet_encoder::{
-    Codec, Encoder, EncoderConfig, EncoderError, H264Profile, OpusEncoder, OpusEncoderConfig,
+    Codec, EncodedPacket, Encoder, EncoderConfig, EncoderError, H264Profile, OpusEncoder,
+    OpusEncoderConfig,
 };
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
@@ -32,7 +33,7 @@ pub enum MediaError {
     Transport(String),
     #[error("media worker stopped during startup")]
     Startup,
-    #[error("capture did not produce its first frame within 5 seconds")]
+    #[error("capture and encoding did not produce the first video packet within 5 seconds")]
     FirstFrameTimeout,
 }
 
@@ -250,7 +251,7 @@ fn capture_loop(
     let first_frame_deadline = Instant::now() + Duration::from_secs(5);
     let result = (|| {
         while !stop.load(Ordering::Relaxed) {
-            if encoder.is_none() && Instant::now() >= first_frame_deadline {
+            if ready.is_some() && Instant::now() >= first_frame_deadline {
                 return Err(MediaError::FirstFrameTimeout);
             }
             if let Some(frame) = capture.poll_frame()? {
@@ -272,23 +273,17 @@ fn capture_loop(
                         encoder.request_keyframe();
                     }
                     let encoded = encoder.encode(&frame)?;
-                    if let Some(ready) = ready.take() {
-                        let _ = ready.send(());
-                    }
-                    for packet in encoded {
-                        let duration = if packet.duration_ns == 0 {
-                            Duration::from_secs_f64(1.0 / fps)
-                        } else {
-                            Duration::from_nanos(packet.duration_ns)
-                        };
-                        if packets
-                            .blocking_send(Packet::Video(packet.data, duration))
-                            .is_err()
-                        {
-                            return Ok(());
-                        }
+                    if !deliver_video(encoded, &packets, &mut ready, fps) {
+                        return Ok(());
                     }
                 }
+            }
+            // Hardware MFTs can produce their first or last packet after encode
+            // returns, including when a static desktop never supplies another frame.
+            if let Some(encoder) = encoder.as_mut()
+                && !deliver_video(encoder.poll_output()?, &packets, &mut ready, fps)
+            {
+                return Ok(());
             }
             // Drain audio even when there is no new video frame (a static desktop).
             if let Some(opus) = opus.as_mut() {
@@ -319,9 +314,91 @@ fn capture_loop(
     result.and(stopped)
 }
 
+fn deliver_video(
+    encoded: Vec<EncodedPacket>,
+    packets: &mpsc::Sender<Packet>,
+    ready: &mut Option<oneshot::Sender<()>>,
+    fps: f64,
+) -> bool {
+    for packet in encoded {
+        if packet.data.is_empty() {
+            continue;
+        }
+        let duration = if packet.duration_ns == 0 {
+            Duration::from_secs_f64(1.0 / fps)
+        } else {
+            Duration::from_nanos(packet.duration_ns)
+        };
+        if packets
+            .blocking_send(Packet::Video(packet.data, duration))
+            .is_err()
+        {
+            return false;
+        }
+        if let Some(ready) = ready.take() {
+            let _ = ready.send(());
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_waits_for_nonempty_output_and_delivery() {
+        let (packets, mut receiver) = mpsc::channel(2);
+        let (sender, mut started) = oneshot::channel();
+        let mut ready = Some(sender);
+        assert!(deliver_video(Vec::new(), &packets, &mut ready, 30.0));
+        assert!(matches!(
+            started.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        let mut packet = EncodedPacket {
+            data: Vec::new(),
+            timestamp_ns: 0,
+            duration_ns: 0,
+            is_keyframe: true,
+        };
+        assert!(deliver_video(
+            vec![packet.clone()],
+            &packets,
+            &mut ready,
+            30.0
+        ));
+        assert!(matches!(
+            started.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        packet.data = vec![0, 0, 0, 1, 0x65];
+        assert!(deliver_video(vec![packet], &packets, &mut ready, 30.0));
+        assert!(started.try_recv().is_ok());
+        let Packet::Video(bytes, duration) = receiver.try_recv().unwrap() else {
+            panic!("expected video")
+        };
+        assert_eq!(bytes, [0, 0, 0, 1, 0x65]);
+        assert_eq!(duration, Duration::from_secs_f64(1.0 / 30.0));
+        drop(receiver);
+        let (sender, mut started) = oneshot::channel();
+        let mut ready = Some(sender);
+        assert!(!deliver_video(
+            vec![EncodedPacket {
+                data: bytes,
+                timestamp_ns: 0,
+                duration_ns: 0,
+                is_keyframe: true
+            }],
+            &packets,
+            &mut ready,
+            30.0
+        ));
+        assert!(matches!(
+            started.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+    }
 
     #[test]
     fn invalid_settings_fail_before_capture() {

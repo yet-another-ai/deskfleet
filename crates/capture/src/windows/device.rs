@@ -5,14 +5,16 @@
 use std::sync::Arc;
 
 use windows::Win32::Foundation::HMODULE;
-use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
+use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
-    D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Multithread, ID3D11Texture2D,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_SDK_VERSION,
+    D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11CreateDevice, ID3D11Device,
+    ID3D11DeviceContext, ID3D11Multithread, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use windows::Win32::Graphics::Dxgi::{
-    DXGI_OUTPUT_DESC, IDXGIAdapter, IDXGIDevice, IDXGIOutput, IDXGIOutput1, IDXGIOutputDuplication,
+    CreateDXGIFactory1, DXGI_ERROR_NOT_FOUND, DXGI_OUTPUT_DESC, IDXGIAdapter, IDXGIDevice,
+    IDXGIFactory1, IDXGIOutput, IDXGIOutput1, IDXGIOutputDuplication,
 };
 use windows::Win32::Graphics::Gdi::{
     ENUM_CURRENT_SETTINGS, EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW, HDC,
@@ -90,19 +92,22 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
     Ok(monitors)
 }
 
-/// Create a D3D11 device suitable for DXGI desktop duplication.
-pub(super) fn create_d3d11_device() -> Result<(ID3D11Device, ID3D11DeviceContext), CaptureError> {
+/// Create a D3D11 device on the adapter that owns the selected display.
+pub(super) fn create_d3d11_device(
+    monitor_id: u32,
+) -> Result<(ID3D11Device, ID3D11DeviceContext), CaptureError> {
+    let adapter = find_display_adapter(monitor_id)?;
     let mut device = None;
     let mut context = None;
 
-    // SAFETY: Out pointers reference live Options; no single-threaded device flag
-    // is requested, and the hardware driver is selected without a software module.
+    // SAFETY: The retained adapter owns this monitor; UNKNOWN is required for an
+    // explicit adapter. Out pointers reference live Options, with no software module.
     unsafe {
         D3D11CreateDevice(
-            None, // default adapter
-            D3D_DRIVER_TYPE_HARDWARE,
+            &adapter,
+            D3D_DRIVER_TYPE_UNKNOWN,
             HMODULE::default(), // no software module
-            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
             None, // default feature levels
             D3D11_SDK_VERSION,
             Some(&raw mut device),
@@ -126,6 +131,30 @@ pub(super) fn create_d3d11_device() -> Result<(ID3D11Device, ID3D11DeviceContext
     Ok((device, context))
 }
 
+fn find_display_adapter(monitor_id: u32) -> Result<IDXGIAdapter, CaptureError> {
+    // SAFETY: This creates a new factory interface without caller-owned pointers.
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }
+        .map_err(|e| CaptureError::Platform(format!("CreateDXGIFactory1: {e}")))?;
+    let mut index = 0;
+    loop {
+        // SAFETY: The factory remains alive; out-of-range indexes return NOT_FOUND.
+        let adapter = match unsafe { factory.EnumAdapters(index) } {
+            Ok(adapter) => adapter,
+            Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
+            Err(error) => {
+                return Err(CaptureError::Platform(format!("EnumAdapters: {error}")));
+            }
+        };
+        if find_adapter_output(&adapter, monitor_id)?.is_some() {
+            return Ok(adapter);
+        }
+        index += 1;
+    }
+    Err(CaptureError::Platform(format!(
+        "no DXGI adapter found for monitor 0x{monitor_id:x}"
+    )))
+}
+
 /// Locate the DXGI output whose `HMONITOR` matches `monitor_id`.
 ///
 /// Returns the output cast to `IDXGIOutput1` (required for `DuplicateOutput`)
@@ -142,6 +171,15 @@ pub(super) fn find_dxgi_output(
     let adapter: IDXGIAdapter = unsafe { dxgi_device.GetAdapter() }
         .map_err(|e| CaptureError::Platform(format!("GetAdapter: {e}")))?;
 
+    find_adapter_output(&adapter, monitor_id)?.ok_or_else(|| {
+        CaptureError::Platform(format!("no DXGI output found for monitor 0x{monitor_id:x}"))
+    })
+}
+
+fn find_adapter_output(
+    adapter: &IDXGIAdapter,
+    monitor_id: u32,
+) -> Result<Option<(IDXGIOutput1, DXGI_OUTPUT_DESC)>, CaptureError> {
     let hmon = HMONITOR(monitor_id as isize as *mut _);
 
     let mut idx = 0u32;
@@ -149,27 +187,24 @@ pub(super) fn find_dxgi_output(
         // SAFETY: adapter remains retained and an absent index returns an error.
         let output: IDXGIOutput = match unsafe { adapter.EnumOutputs(idx) } {
             Ok(o) => o,
-            Err(_) => break, // exhausted all outputs
+            Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => return Ok(None),
+            Err(error) => {
+                return Err(CaptureError::Platform(format!("EnumOutputs: {error}")));
+            }
         };
         idx += 1;
 
         // SAFETY: output is retained for this immutable description query.
-        let desc = match unsafe { output.GetDesc() } {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
+        let desc = unsafe { output.GetDesc() }
+            .map_err(|e| CaptureError::Platform(format!("GetDesc: {e}")))?;
 
         if desc.Monitor == hmon {
             let output1: IDXGIOutput1 = output
                 .cast()
                 .map_err(|e| CaptureError::Platform(format!("cast to IDXGIOutput1: {e}")))?;
-            return Ok((output1, desc));
+            return Ok(Some((output1, desc)));
         }
     }
-
-    Err(CaptureError::Platform(format!(
-        "no DXGI output found for monitor 0x{monitor_id:x}"
-    )))
 }
 
 /// Create a DXGI output duplication for the given monitor.

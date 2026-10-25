@@ -9,8 +9,9 @@ napi-rs boundary. The TypeScript daemon owns peer sessions.
 
 ## Transport
 
-`deskfleet_native::rtc::Peer` uses `webrtc-rs` 0.17. Each peer owns its connection,
-optional video/Opus tracks, DataChannels, and RTCP reader tasks. The API accepts
+`deskfleet_native::rtc::Peer` uses `webrtc-rs` 0.21.1 and its `rtc` Sans-I/O core.
+Each peer owns its connection, optional video/Opus tracks, DataChannel event
+readers, and RTCP reader tasks. The API accepts
 ICE servers and credentials from the signaling caller, including TURN and a
 relay-only policy. No public STUN server or credentials are hardcoded.
 
@@ -27,7 +28,14 @@ callers must pace/chunk larger terminal or operation results. Default RTCP
 interceptors handle reports and retransmission. PLI/FIR requests and connection
 establishment request encoder keyframes.
 
-The H.265 RTP payloader and sample track are carried over from the old project.
+The 0.21 transport resolves mDNS candidates before matching incoming STUN
+responses and keeps receiving after recoverable UDP errors, including Windows
+`WSAECONNRESET` during ICE checks. These fixes replace the legacy 0.17 transport;
+no local ICE dependency patch is required.
+
+The H.265 RTP payloader is carried over from the old project to support mixed
+three- and four-byte Annex B start codes. The sample track uses the negotiated
+payload type and validates the encoded codec profile with the new sender API.
 Video uses H.264 constrained baseline, H.265 Main, or AV1 Main, selected before
 negotiation. H.264/H.265 input is Annex B; AV1 is an OBU stream. Encoders select
 levels automatically; resolution/frame-rate adaptation to the remote decoder's
@@ -40,7 +48,7 @@ stack owns receive-side decoding and playback.
 | Platform | Capture | Video encoder | System audio |
 | --- | --- | --- | --- |
 | macOS | ScreenCaptureKit / IOSurface | VideoToolbox H.264/H.265/AV1, subject to runtime support | ScreenCaptureKit → Opus |
-| Windows | DXGI Desktop Duplication / D3D11 | NVIDIA NVENC H.264/H.265/AV1, subject to GPU/driver support | Unsupported |
+| Windows | DXGI Desktop Duplication / D3D11 | NVENC H.264/H.265/AV1; Media Foundation hardware H.264 fallback, subject to GPU/driver support | Unsupported |
 | Linux | Unsupported | Unsupported | Unsupported |
 
 WebRTC DataChannels and Opus encoding work without a display. Loading the addon,
@@ -48,6 +56,24 @@ creating a peer, or starting the daemon does not enumerate displays or probe
 video encoders. `captureDisplays()`, `supportedVideoCodecs()`, and
 `startDesktop()` are explicit operations. Capture requires an interactive
 graphical session and any platform recording permission.
+
+On Windows, capture creates its D3D11 device on the adapter that owns the
+selected display. Encoding first tries NVENC on that device. If H.264 startup
+fails, it tries hardware Media Foundation transforms on the same adapter.
+There is no software encoder fallback. H.265 and AV1 remain NVENC-only;
+changing the negotiated codec requires a new peer.
+
+The Media Foundation backend converts BGRA to limited-range BT.709 NV12 on the
+GPU and supplies retained D3D11 textures to the asynchronous hardware encoder.
+It requires a D3D11-aware H.264 hardware MFT and a compatible video processor.
+It uses bounded input buffering, low-latency settings, and requested keyframes.
+Enumeration reports candidate codec support; starting the selected display's
+stream verifies its actual device, dimensions, and profile.
+
+For diagnostics, set `DESKFLEET_WINDOWS_ENCODER` in the daemon's environment to
+`auto` (default), `nvenc`, or `media-foundation` before starting the process.
+An explicit backend never falls back to another encoder. `media-foundation`
+advertises only H.264. This also allows testing MF on a machine with NVENC.
 
 On macOS, the daemon requests Screen Recording consent as soon as startup owns
 discovery and local IPC is ready. `requestScreenCaptureAccess()` checks existing
@@ -72,8 +98,9 @@ Raw frames stay in Rust. Encoded packets enter a bounded queue of eight packets
 and one async task delivers them in order. Shutdown closes delivery before
 joining capture, unblocking a producer waiting on a full queue. `stopDesktop()`
 and `close()` report worker failures; the event loop also receives media errors.
-`startDesktop()` resolves after the first captured frame is submitted to the
-encoder successfully. Dropping a stream also cancels its work.
+`startDesktop()` resolves after the first nonempty encoded video packet enters
+delivery. The worker polls asynchronous encoder output even when the desktop
+has not changed. Dropping a stream also cancels its work.
 
 Desktop options select a display, frame rate, average bitrate, and optional
 maximum bitrate. Frame rate is capped at the display's refresh rate when known.
@@ -98,13 +125,12 @@ all peers, including pending creation.
 
 ## Electron playback
 
-Start `mise run daemon:dev` and `mise run desktop:dev` in separate terminals. Open
-**Remote desktop** under the real local machine, refresh capabilities if needed,
-choose a display and a common codec, then connect. The local target is separate
-from the sample catalog and is not an enrolled machine identity. Remote sample
-machines cannot start local capture. On macOS, the daemon process needs Screen
-Recording permission; system audio can be enabled explicitly. Windows currently
-supports video on NVIDIA hardware. Linux capture is unavailable.
+After login and machine enrollment, select the target machine in the Web or
+Electron client and open **Remote desktop**. Refresh capabilities if needed,
+choose a display and a common codec, then connect. On macOS, the daemon process
+needs Screen Recording permission; system audio can be enabled explicitly.
+Windows supports NVENC video and the hardware H.264 fallback described above.
+Linux capture is unavailable.
 
 The Electron main process reads discovery/authentication data and proxies a narrow
 preload API. Calls are accepted only from the registered main renderer frame.
@@ -121,9 +147,10 @@ tray keeps the renderer and its current stream alive. Failed or timed-out
 connections expose an error and can be retried. The renderer retains its sandbox
 and denied capture permissions: capture belongs to the daemon.
 
-The UI uses local signaling and direct ICE without STUN/TURN. Central server
-authentication/signaling, remote machine discovery, client TURN configuration,
-and desktop keyboard/mouse input are not integrated.
+Selected-machine desktop connections use central authorization and signaling,
+including server-provided STUN/TURN configuration. The daemon checks the
+`desktop:stream` grant before starting capture. Desktop keyboard/mouse input
+is not implemented.
 
 The native package can also be used directly:
 
@@ -146,9 +173,9 @@ try {
 
 ## Builds and checks
 
-The locked CMake 4.4 toolchain builds the bundled Opus source. Cargo forces
-static Opus linkage and bypasses pkg-config so the SEA addon does not depend on
-a separately installed libopus. Windows NVENC loads the NVIDIA driver at runtime;
+The locked CMake 4.4 toolchain builds the bundled Opus source. Opus 0.4 uses
+`opusic-sys`'s bundled static library by default, so the SEA addon does not depend
+on a separately installed libopus. Windows NVENC loads the NVIDIA driver at runtime;
 building its bundled header bindings requires LLVM/libclang and the Windows SDK.
 CI sets `LIBCLANG_PATH` to the hosted runner's LLVM installation. No NVIDIA SDK
 binary is redistributed.
@@ -157,7 +184,7 @@ binary is redistributed.
 local WebRTC peers, binary/text DataChannel delivery, SDP profile and H.265
 packetization checks, and Opus encode/decode roundtrips. Capture tests requiring
 a screen or recording permission are ignored in ordinary runs.
-Run them on a graphical host with:
+Run the macOS capture and hardware-encoder tests on a graphical host with:
 
 ```sh
 mise exec -- cargo test -p deskfleet-capture -- --ignored
@@ -168,3 +195,22 @@ mise exec -- cargo test -p deskfleet-encoder -- --ignored
 H.264 fixture to exercise Chromium negotiation and video decoding without screen
 capture. TURN service connectivity, GPU/driver combinations, and physical
 screen/audio capture need integration testing on the target devices.
+
+On an interactive Windows host, explicitly exercise MF hardware encoding and
+decode a real desktop stream in Chromium (PowerShell):
+
+```powershell
+$env:DESKFLEET_WINDOWS_ENCODER = "media-foundation"
+mise exec -- cargo test -p deskfleet-encoder --locked windows_hardware_encodes -- --ignored --nocapture
+$env:DESKFLEET_SMOKE_CAPTURE = "1"
+mise run desktop:smoke-media
+Remove-Item Env:DESKFLEET_SMOKE_CAPTURE
+Remove-Item Env:DESKFLEET_WINDOWS_ENCODER
+```
+
+The hardware test submits a single retained desktop frame, waits for output
+without another input, and checks a requested keyframe and timestamps. Capture
+smoke mode validates real H.264 decoding without saving screen pixels to disk;
+the default smoke remains the generated fixture. Run again with `nvenc` to
+check the existing path. Intel/AMD and non-default-adapter displays require
+corresponding hardware; success on one GPU does not validate other drivers.

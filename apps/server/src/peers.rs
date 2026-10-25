@@ -8,7 +8,7 @@ use actix_web::{HttpRequest, web};
 use base64::Engine;
 use deskfleet_control_store::{now_ms, timestamp};
 use deskfleet_protocol::control::{IceServer, PeerAuthorization, PeerTarget};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sdp::description::{common::Attribute, session::SessionDescription};
 use serde::Deserialize;
 use serde_json::{Value, json};

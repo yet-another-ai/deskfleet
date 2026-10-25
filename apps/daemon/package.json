@@ -12,9 +12,9 @@
     "./agent-protocol": "./src/agent-protocol.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.94.0",
+    "@agentclientprotocol/claude-agent-acp": "0.95.0",
     "@agentclientprotocol/codex-acp": "2.2.2",
-    "@agentclientprotocol/sdk": "2.0.1",
+    "@agentclientprotocol/sdk": "2.0.2",
     "@deskfleet/native": "workspace:*"
   }
 }

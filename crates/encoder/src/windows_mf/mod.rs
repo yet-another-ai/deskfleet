@@ -1,0 +1,325 @@
+//! Windows hardware H.264 fallback through Media Foundation.
+//!
+//! Only hardware MFTs on the capture device's adapter are considered. Captured
+//! BGRA remains on that GPU and each submitted NV12 sample owns a fresh texture.
+
+#![allow(unsafe_code)]
+
+mod convert;
+mod output;
+mod setup;
+
+use std::time::{Duration, Instant};
+
+use deskfleet_capture::Frame;
+use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
+use windows::Win32::Media::MediaFoundation::*;
+use windows::Win32::System::Variant::VARIANT;
+use windows::core::Interface;
+
+use crate::{Codec, EncodedPacket, EncoderConfig, EncoderError};
+use convert::GpuConverter;
+use output::Output;
+use setup::{Runtime, Session, set_codec_value};
+
+const MAX_IN_FLIGHT: usize = 4;
+const MAX_EVENTS_PER_POLL: usize = 64;
+
+pub(crate) fn is_supported() -> bool {
+    match setup::probe() {
+        Ok(supported) => supported,
+        Err(error) => {
+            tracing::debug!(%error, "hardware Media Foundation H.264 probe failed");
+            false
+        }
+    }
+}
+
+fn platform_error(operation: &str, error: windows::core::Error) -> EncoderError {
+    EncoderError::Platform(format!("{operation}: {error}"))
+}
+
+pub(crate) struct MfEncoder {
+    session: Session,
+    converter: GpuConverter,
+    output: Output,
+    config: EncoderConfig,
+    pending: Option<IMFSample>,
+    input_requests: usize,
+    in_flight: usize,
+    keyframe_requested: bool,
+    draining: bool,
+    drain_complete: bool,
+    last_progress: Instant,
+    // COM/MF outlive every interface above and are released on the same worker.
+    _runtime: Runtime,
+}
+
+impl MfEncoder {
+    pub(crate) fn new(config: &EncoderConfig, frame: &Frame) -> Result<Self, EncoderError> {
+        if config.codec != Codec::H264 {
+            return Err(EncoderError::Unsupported(
+                "Media Foundation fallback only supports H.264",
+            ));
+        }
+        config.validate()?;
+        let runtime = Runtime::new()?;
+        let surface = frame.surface();
+        let device = surface.d3d11_device();
+        let converter =
+            GpuConverter::new(device, surface.d3d11_context(), config.width, config.height)?;
+        let luid = setup::adapter_luid(device)
+            .map_err(|error| platform_error("query capture adapter", error))?;
+        let candidates = setup::hardware_candidates(luid)
+            .map_err(|error| platform_error("enumerate hardware H.264 MFTs", error))?;
+        let mut failures = Vec::new();
+        for candidate in candidates {
+            let initialized =
+                Session::new(candidate, config, device).and_then(|session| {
+                    let mut output = Output::new(config);
+                    output.update_type(&session.output_type().map_err(|error| {
+                        platform_error("query initial MFT output type", error)
+                    })?)?;
+                    Ok((session, output))
+                });
+            match initialized {
+                Ok((session, output)) => {
+                    return Ok(Self {
+                        session,
+                        converter,
+                        output,
+                        config: config.clone(),
+                        pending: None,
+                        input_requests: 0,
+                        in_flight: 0,
+                        keyframe_requested: true,
+                        draining: false,
+                        drain_complete: false,
+                        last_progress: Instant::now(),
+                        _runtime: runtime,
+                    });
+                }
+                Err(error) => failures.push(error.to_string()),
+            }
+        }
+        if failures.is_empty() {
+            Err(EncoderError::Unsupported(
+                "no hardware H.264 MFT for the capture adapter",
+            ))
+        } else {
+            Err(EncoderError::Platform(format!(
+                "hardware H.264 MFT initialization failed: {}",
+                failures.join("; ")
+            )))
+        }
+    }
+
+    pub(crate) fn encode(&mut self, frame: &Frame) -> Result<Vec<EncodedPacket>, EncoderError> {
+        if self.draining {
+            return Err(EncoderError::InvalidConfig(
+                "MFT encoder is draining".into(),
+            ));
+        }
+        let mut packets = self.poll_output()?;
+        if self.in_flight < MAX_IN_FLIGHT {
+            let texture = self.converter.convert(frame)?;
+            let timestamp = i64::try_from(frame.timestamp_ns / 100).map_err(|_| {
+                EncoderError::InvalidConfig("capture timestamp exceeds MF range".into())
+            })?;
+            let duration = (10_000_000.0 / self.config.fps).round() as i64;
+            // SAFETY: The new sample owns its DXGI buffer, which retains this
+            // unique texture. MF may retain the sample after ProcessInput; it is
+            // never returned to the capture pool or reused by the converter.
+            let sample = unsafe {
+                let buffer = MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, &texture, 0, false)
+                    .map_err(|error| platform_error("wrap NV12 texture", error))?;
+                let length = buffer
+                    .cast::<IMF2DBuffer>()
+                    .and_then(|buffer| buffer.GetContiguousLength())
+                    .map_err(|error| platform_error("query NV12 buffer length", error))?;
+                buffer
+                    .SetCurrentLength(length)
+                    .map_err(|error| platform_error("set NV12 buffer length", error))?;
+                let sample = MFCreateSample()
+                    .map_err(|error| platform_error("create MFT input sample", error))?;
+                sample
+                    .AddBuffer(&buffer)
+                    .map_err(|error| platform_error("attach NV12 texture", error))?;
+                sample
+                    .SetSampleTime(timestamp)
+                    .map_err(|error| platform_error("set MFT input timestamp", error))?;
+                sample
+                    .SetSampleDuration(duration)
+                    .map_err(|error| platform_error("set MFT input duration", error))?;
+                sample
+            };
+            // Keep the latest frame until NeedInput arrives, including the first
+            // frame of an otherwise completely static desktop. At most one waits.
+            self.pending = Some(sample);
+            self.submit_pending()?;
+            packets.extend(self.poll_output()?);
+        }
+        Ok(packets)
+    }
+
+    pub(crate) fn poll_output(&mut self) -> Result<Vec<EncodedPacket>, EncoderError> {
+        let mut packets = Vec::new();
+        for _ in 0..MAX_EVENTS_PER_POLL {
+            // SAFETY: This MFT is exclusively driven by its owning COM worker.
+            // NO_WAIT makes each poll bounded rather than blocking shutdown.
+            let event = match unsafe { self.session.events.GetEvent(MF_EVENT_FLAG_NO_WAIT) } {
+                Ok(event) => event,
+                Err(error) if error.code() == MF_E_NO_EVENTS_AVAILABLE => break,
+                Err(error) => return Err(platform_error("poll MFT event", error)),
+            };
+            // SAFETY: The event is retained for these immutable attribute reads.
+            let event_type = unsafe {
+                event
+                    .GetStatus()
+                    .and_then(|status| status.ok())
+                    .map_err(|error| platform_error("hardware MFT event failed", error))?;
+                event
+                    .GetType()
+                    .map_err(|error| platform_error("read MFT event type", error))?
+            };
+            if event_type == METransformNeedInput.0 as u32 {
+                self.input_requests = (self.input_requests + 1).min(MAX_IN_FLIGHT);
+            } else if event_type == METransformHaveOutput.0 as u32 {
+                if let Some(packet) = self.output.read(&self.session, &self.config)? {
+                    self.in_flight = self.in_flight.saturating_sub(1);
+                    self.last_progress = Instant::now();
+                    packets.push(packet);
+                }
+            } else if event_type == METransformDrainComplete.0 as u32 {
+                self.drain_complete = true;
+                self.in_flight = 0;
+            }
+        }
+        if !self.draining {
+            self.submit_pending()?;
+        }
+        if self.in_flight != 0 && self.last_progress.elapsed() >= Duration::from_secs(5) {
+            return Err(EncoderError::Platform(
+                "hardware H.264 MFT output timed out".into(),
+            ));
+        }
+        Ok(packets)
+    }
+
+    fn submit_pending(&mut self) -> Result<(), EncoderError> {
+        if self.input_requests == 0 || self.in_flight >= MAX_IN_FLIGHT {
+            return Ok(());
+        }
+        let Some(sample) = self.pending.as_ref() else {
+            return Ok(());
+        };
+        if self.keyframe_requested {
+            set_codec_value(
+                &self.session.codec,
+                &CODECAPI_AVEncVideoForceKeyFrame,
+                VARIANT::from(1u32),
+            )
+            .map_err(|error| platform_error("request MFT keyframe", error))?;
+        }
+        // SAFETY: An outstanding NeedInput event authorizes this submission. The
+        // sample owns its unique NV12 buffer for however long the MFT retains it.
+        match unsafe {
+            self.session
+                .active
+                .transform
+                .ProcessInput(self.session.input_id, sample, 0)
+        } {
+            Ok(()) => {
+                self.pending = None;
+                self.input_requests -= 1;
+                if self.in_flight == 0 {
+                    self.last_progress = Instant::now();
+                }
+                self.in_flight += 1;
+                self.keyframe_requested = false;
+            }
+            Err(error) if error.code() == MF_E_NOTACCEPTING => {
+                // Preserve one latest frame while waiting for fresh input credit.
+                self.input_requests = 0;
+            }
+            Err(error) => return Err(platform_error("submit MFT frame", error)),
+        }
+        Ok(())
+    }
+
+    pub(crate) fn request_keyframe(&mut self) {
+        self.keyframe_requested = true;
+    }
+
+    pub(crate) fn set_bitrate(&self, average: u32, _maximum: u32) -> Result<(), EncoderError> {
+        set_codec_value(
+            &self.session.codec,
+            &CODECAPI_AVEncCommonMeanBitRate,
+            VARIANT::from(average),
+        )
+        .map_err(|error| platform_error("set MFT bitrate", error))
+    }
+
+    pub(crate) fn flush(&mut self) -> Result<Vec<EncodedPacket>, EncoderError> {
+        if self.drain_complete {
+            return Ok(Vec::new());
+        }
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let mut packets = Vec::new();
+        // An accepted encode call may still be waiting for its first NeedInput
+        // event. Submit that sample before requesting drain, including on a
+        // static desktop where there will not be another encode call.
+        while self.pending.is_some() {
+            packets.extend(self.poll_output()?);
+            if self.pending.is_none() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err(EncoderError::Platform(
+                    "hardware H.264 MFT input timed out before drain".into(),
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        self.draining = true;
+        // SAFETY: No further input is submitted once draining begins.
+        unsafe {
+            self.session
+                .active
+                .transform
+                .ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0)
+        }
+        .map_err(|error| platform_error("drain MFT encoder", error))?;
+        while !self.drain_complete {
+            packets.extend(self.poll_output()?);
+            if Instant::now() >= deadline {
+                return Err(EncoderError::Platform(
+                    "hardware H.264 MFT drain timed out".into(),
+                ));
+            }
+            if !self.drain_complete {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        Ok(packets)
+    }
+}
+
+impl Drop for MfEncoder {
+    fn drop(&mut self) {
+        // SAFETY: The worker has stopped submitting/reading this transform. Flush
+        // drops queued samples; Session then shuts the MFT down before Runtime.
+        unsafe {
+            let _ = self
+                .session
+                .active
+                .transform
+                .ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+            let _ = self
+                .session
+                .active
+                .transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
+        }
+    }
+}

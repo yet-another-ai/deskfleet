@@ -155,16 +155,6 @@ impl WindowsEncoder {
         ))
     }
 
-    pub fn set_fps(&mut self, fps: f64) -> Result<(), EncoderError> {
-        if self.inner.is_some() {
-            return Err(EncoderError::Unsupported(
-                "live NVENC frame-rate reconfiguration",
-            ));
-        }
-        self.config.fps = fps;
-        Ok(())
-    }
-
     /// Probe which codecs are supported by the local NVENC hardware.
     ///
     /// Creates a temporary D3D11 device to open an NVENC query session

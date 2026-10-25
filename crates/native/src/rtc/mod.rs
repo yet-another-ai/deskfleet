@@ -6,6 +6,8 @@
 
 mod channels;
 mod codecs;
+mod events;
+mod feedback;
 mod h265_payloader;
 mod sample_track;
 mod types;
@@ -19,26 +21,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use bytes::Bytes;
+pub use channels::MAX_DATA_MESSAGE_SIZE;
+use rtc::interceptor::Slot;
+use rtc::media::Sample;
+use rtc::rtp_transceiver::rtp_sender::RtpCodecKind;
+use sample_track::SampleTrack;
 use tokio::sync::{Mutex, broadcast, watch};
 use tokio::task::JoinHandle;
-use webrtc::api::APIBuilder;
-use webrtc::api::interceptor_registry::register_default_interceptors;
-use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
-use webrtc::ice_transport::ice_server::RTCIceServer;
-use webrtc::interceptor::registry::Registry;
-use webrtc::media::Sample;
-use webrtc::peer_connection::RTCPeerConnection;
-use webrtc::peer_connection::configuration::RTCConfiguration;
-use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
-use webrtc::peer_connection::policy::ice_transport_policy::RTCIceTransportPolicy;
-use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-use webrtc::rtp_transceiver::rtp_sender::RTCRtpSender;
-use webrtc::track::track_local::TrackLocal;
-
-pub use channels::MAX_DATA_MESSAGE_SIZE;
-use sample_track::SampleTrack;
 pub use types::{
     IceCandidate, IceServer, PeerConfig, PeerError, PeerEvent, PeerState, Result, VideoCodec,
+};
+use webrtc::media_stream::track_local::{TrackLocal, TrackLocalEvent};
+use webrtc::peer_connection::{
+    PeerConnection, PeerConnectionBuilder, RTCConfigurationBuilder, RTCIceCandidateInit,
+    RTCIceServer, RTCIceTransportPolicy, RTCSessionDescription, Registry,
+    register_default_interceptors,
 };
 
 const EVENT_CAPACITY: usize = 256;
@@ -46,7 +43,7 @@ const EVENT_CAPACITY: usize = 256;
 /// One independently owned peer connection. Call [`close`](Self::close) when
 /// its session ends; dropping it schedules best-effort asynchronous cleanup.
 pub struct Peer {
-    pc: Arc<RTCPeerConnection>,
+    pc: Arc<dyn PeerConnection>,
     video: Option<Arc<SampleTrack>>,
     audio: Option<Arc<SampleTrack>>,
     video_codec: Option<VideoCodec>,
@@ -65,34 +62,54 @@ impl Peer {
     /// Create a peer with optional sending tracks and caller-provided ICE
     /// servers. The default configuration supports DataChannels only.
     pub async fn new(config: PeerConfig) -> Result<Self> {
-        let mut media = codecs::media_engine(&config)?;
-        let interceptors = register_default_interceptors(Registry::new(), &mut media)?;
-        let api = APIBuilder::new()
-            .with_media_engine(media)
-            .with_interceptor_registry(interceptors)
-            .build();
-        let rtc_config = RTCConfiguration {
-            ice_servers: config
-                .ice_servers
-                .into_iter()
-                .map(|server| RTCIceServer {
-                    urls: server.urls,
-                    username: server.username,
-                    credential: server.credential,
-                })
-                .collect(),
-            ice_transport_policy: if config.relay_only {
+        let media = codecs::media_engine(&config)?;
+        Self::with_media_engine(config, media).await
+    }
+
+    async fn with_media_engine(
+        config: PeerConfig,
+        mut media: webrtc::peer_connection::MediaEngine,
+    ) -> Result<Self> {
+        let interceptors = register_default_interceptors(Registry::new(), &mut media)?
+            .with(Slot::from(14_000), feedback::KeyframeFeedback::default());
+        let rtc_config = RTCConfigurationBuilder::default()
+            .with_ice_servers(
+                config
+                    .ice_servers
+                    .into_iter()
+                    .map(|server| RTCIceServer {
+                        urls: server.urls,
+                        username: server.username,
+                        credential: server.credential,
+                    })
+                    .collect(),
+            )
+            .with_ice_transport_policy(if config.relay_only {
                 RTCIceTransportPolicy::Relay
             } else {
                 RTCIceTransportPolicy::All
-            },
-            ..Default::default()
-        };
-        let pc = Arc::new(api.new_peer_connection(rtc_config).await?);
+            })
+            .build();
         let (events, receiver) = broadcast::channel(EVENT_CAPACITY);
         let (closed, _) = watch::channel(false);
         let keyframe_requested = Arc::new(AtomicBool::new(config.video.is_some()));
         let channels = Arc::new(Mutex::new(HashMap::new()));
+        let pc = Arc::new(
+            PeerConnectionBuilder::new()
+                .with_configuration(rtc_config)
+                .with_media_engine(media)
+                .with_interceptor_registry(interceptors)
+                .with_handler(Arc::new(events::Handler {
+                    channels: Arc::clone(&channels),
+                    events: events.clone(),
+                    keyframe: Arc::clone(&keyframe_requested),
+                    has_video: config.video.is_some(),
+                }))
+                .with_data_channel_send_buffer_limit(channels::MAX_BUFFERED_AMOUNT)
+                .with_udp_addrs(vec!["0.0.0.0:0", "[::]:0"])
+                .build()
+                .await?,
+        );
         let mut peer = Self {
             pc,
             video: None,
@@ -108,107 +125,35 @@ impl Peer {
             readers: Mutex::new(Vec::new()),
             runtime: tokio::runtime::Handle::current(),
         };
-        peer.install_callbacks();
         if let Some(codec) = config.video {
-            let track = Arc::new(SampleTrack::new(
-                codecs::video_capability(codec),
-                "video".to_owned(),
-                "deskfleet".to_owned(),
+            let track = Arc::new(
+                SampleTrack::new(
+                    peer.pc.as_ref(),
+                    codecs::video_capability(codec),
+                    "video",
+                    RtpCodecKind::Video,
+                )
+                .await?,
+            );
+            peer.readers.lock().await.push(rtcp_reader(
+                track.track.clone(),
+                peer.events.clone(),
+                Arc::clone(&peer.keyframe_requested),
             ));
-            peer.add_track(Arc::clone(&track), true).await?;
             peer.video = Some(track);
         }
         if config.audio {
-            let track = Arc::new(SampleTrack::new(
-                codecs::audio_capability(),
-                "audio".to_owned(),
-                "deskfleet".to_owned(),
+            peer.audio = Some(Arc::new(
+                SampleTrack::new(
+                    peer.pc.as_ref(),
+                    codecs::audio_capability(),
+                    "audio",
+                    RtpCodecKind::Audio,
+                )
+                .await?,
             ));
-            peer.add_track(Arc::clone(&track), false).await?;
-            peer.audio = Some(track);
         }
         Ok(peer)
-    }
-
-    fn install_callbacks(&self) {
-        let events = self.events.clone();
-        self.pc.on_ice_candidate(Box::new(move |candidate| {
-            let events = events.clone();
-            Box::pin(async move {
-                let event = match candidate {
-                    Some(candidate) => match candidate.to_json() {
-                        Ok(candidate) => PeerEvent::IceCandidate(Some(IceCandidate {
-                            candidate: candidate.candidate,
-                            sdp_mid: candidate.sdp_mid,
-                            sdp_mline_index: candidate.sdp_mline_index,
-                            username_fragment: candidate.username_fragment,
-                        })),
-                        Err(error) => PeerEvent::Error(error.to_string()),
-                    },
-                    None => PeerEvent::IceCandidate(None),
-                };
-                let _ = events.send(event);
-            })
-        }));
-
-        let events = self.events.clone();
-        let keyframe = Arc::clone(&self.keyframe_requested);
-        let has_video = self.video_codec.is_some();
-        self.pc
-            .on_peer_connection_state_change(Box::new(move |state| {
-                let events = events.clone();
-                let keyframe = Arc::clone(&keyframe);
-                Box::pin(async move {
-                    let state = match state {
-                        RTCPeerConnectionState::Unspecified | RTCPeerConnectionState::New => {
-                            PeerState::New
-                        }
-                        RTCPeerConnectionState::Connecting => PeerState::Connecting,
-                        RTCPeerConnectionState::Connected => PeerState::Connected,
-                        RTCPeerConnectionState::Disconnected => PeerState::Disconnected,
-                        RTCPeerConnectionState::Failed => PeerState::Failed,
-                        RTCPeerConnectionState::Closed => PeerState::Closed,
-                    };
-                    tracing::debug!(?state, "peer connection state changed");
-                    let _ = events.send(PeerEvent::StateChanged(state));
-                    if has_video && state == PeerState::Connected {
-                        keyframe.store(true, Ordering::Relaxed);
-                        let _ = events.send(PeerEvent::KeyframeRequested);
-                    }
-                })
-            }));
-
-        let channels = Arc::clone(&self.channels);
-        let events = self.events.clone();
-        self.pc.on_data_channel(Box::new(move |channel| {
-            let channels = Arc::clone(&channels);
-            let events = events.clone();
-            Box::pin(async move {
-                if let Err(error) =
-                    channels::register(Arc::clone(&channel), &channels, &events).await
-                {
-                    let _ = events.send(PeerEvent::Error(error.to_string()));
-                    if let Err(error) = channel.close().await {
-                        let _ = events.send(PeerEvent::Error(error.to_string()));
-                    }
-                }
-            })
-        }));
-    }
-
-    async fn add_track(&self, track: Arc<SampleTrack>, video: bool) -> Result<()> {
-        let sender = self
-            .pc
-            .add_track(track as Arc<dyn TrackLocal + Send + Sync>)
-            .await?;
-        let task = rtcp_reader(
-            sender,
-            self.events.clone(),
-            Arc::clone(&self.keyframe_requested),
-            video,
-        );
-        self.readers.lock().await.push(task);
-        Ok(())
     }
 
     fn ensure_open(&self) -> Result<()> {
@@ -280,6 +225,7 @@ impl Peer {
                 sdp_mid: candidate.sdp_mid,
                 sdp_mline_index: candidate.sdp_mline_index,
                 username_fragment: candidate.username_fragment,
+                ..Default::default()
             })
             .await?;
         Ok(())
@@ -342,7 +288,7 @@ impl Peer {
             .write_sample(&Sample {
                 data,
                 duration,
-                ..Default::default()
+                ..Sample::new(std::time::Instant::now())
             })
             .await?;
         Ok(())
@@ -411,18 +357,17 @@ impl Drop for Peer {
 }
 
 fn rtcp_reader(
-    sender: Arc<RTCRtpSender>,
+    track: Arc<dyn TrackLocal>,
     events: broadcast::Sender<PeerEvent>,
     keyframe: Arc<AtomicBool>,
-    video: bool,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let mut buffer = vec![0u8; 1500];
-        while let Ok((packets, _)) = sender.read(&mut buffer).await {
-            if video && packets.iter().any(|packet| {
-                packet.as_any().is::<webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication>()
-                    || packet.as_any().is::<webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest>()
-            }) {
+        while let Some(event) = track.poll().await {
+            if let TrackLocalEvent::OnRtcpPacket(packets) = event
+                && packets
+                    .iter()
+                    .any(|packet| feedback::is_keyframe_request(packet.as_ref()))
+            {
                 keyframe.store(true, Ordering::Relaxed);
                 let _ = events.send(PeerEvent::KeyframeRequested);
             }

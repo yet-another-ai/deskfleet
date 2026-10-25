@@ -1,12 +1,12 @@
 //! H.265/HEVC RTP payloader (RFC 7798).
 //!
-//! webrtc-rs ships with payloaders for VP8, VP9, H.264, AV1, and Opus,
-//! but **not** H.265. This module provides a minimal payloader that
+//! The upstream H.265 payloader does not split mixed three- and four-byte
+//! Annex B start codes. This payloader preserves that encoder input contract and
 //! splits Annex-B encoded H.265 NALUs into single-NALU packets or
 //! Fragmentation Unit (FU) packets according to RFC 7798.
 
 use bytes::{BufMut, Bytes, BytesMut};
-use webrtc::rtp::packetizer::Payloader;
+use rtc::rtp::packetizer::Payloader;
 
 /// Minimum size of an H.265 NAL unit header (2 bytes).
 const NALU_HEADER_SIZE: usize = 2;
@@ -26,7 +26,7 @@ const FU_OVERHEAD: usize = 3;
 pub struct H265Payloader;
 
 impl Payloader for H265Payloader {
-    fn payload(&mut self, mtu: usize, payload: &Bytes) -> Result<Vec<Bytes>, webrtc::rtp::Error> {
+    fn payload(&mut self, mtu: usize, payload: &Bytes) -> Result<Vec<Bytes>, webrtc::error::Error> {
         if payload.is_empty() || mtu == 0 {
             return Ok(vec![]);
         }
@@ -41,7 +41,7 @@ impl Payloader for H265Payloader {
         Ok(payloads)
     }
 
-    fn clone_to(&self) -> Box<dyn Payloader + Send + Sync> {
+    fn clone_to(&self) -> Box<dyn Payloader> {
         Box::new(self.clone())
     }
 }
@@ -193,6 +193,22 @@ mod tests {
         assert_eq!(nalus.len(), 2);
         assert_eq!(nalus[0], &[0x40, 0x01]);
         assert_eq!(nalus[1], &[0x42, 0x01, 0xBB]);
+    }
+
+    #[test]
+    fn mixed_annex_b_start_codes_produce_separate_nalus() {
+        let data = Bytes::from_static(&[
+            0, 0, 0, 1, 0x40, 1, 0xaa, 0, 0, 1, 0x42, 1, 0xbb, 0, 0, 0, 1, 0x26, 1, 0xcc,
+        ]);
+        let payloads = H265Payloader.payload(1200, &data).unwrap();
+        assert_eq!(
+            payloads,
+            [
+                Bytes::from_static(&[0x40, 1, 0xaa]),
+                Bytes::from_static(&[0x42, 1, 0xbb]),
+                Bytes::from_static(&[0x26, 1, 0xcc]),
+            ]
+        );
     }
 
     #[test]

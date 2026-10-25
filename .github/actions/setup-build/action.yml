@@ -25,9 +25,9 @@ runs:
         "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Install locked tools
-      uses: jdx/mise-action@v5.2.2
+      uses: jdx/mise-action@v5.2.3
       with:
-        version: 2026.10.17
+        version: 2026.10.19
         install_args: --locked
         cache: true
         cache_save: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'true' || 'false' }}

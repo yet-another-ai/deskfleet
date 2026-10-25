@@ -79,8 +79,8 @@ impl WindowsStream {
         }
         let (video_tx, video_rx) = mpsc::sync_channel::<Frame>(3);
 
-        // 1. Create a D3D11 device.
-        let (device, context) = create_d3d11_device()?;
+        // 1. Create a D3D11 device on the adapter that owns this display.
+        let (device, context) = create_d3d11_device(display.id)?;
 
         // 2. Find the DXGI output matching this monitor.
         let (_output1, desc) = find_dxgi_output(&device, display.id)?;

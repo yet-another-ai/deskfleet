@@ -1,13 +1,11 @@
-use webrtc::api::media_engine::MediaEngine;
-use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-use webrtc::rtp_transceiver::RTCPFeedback;
-use webrtc::rtp_transceiver::rtp_codec::{
-    RTCRtpCodecCapability, RTCRtpCodecParameters, RTPCodecType,
-};
+use rtc::rtp_transceiver::rtp_sender::RTCPFeedback;
+use rtc::rtp_transceiver::rtp_sender::{RTCRtpCodec, RTCRtpCodecParameters, RtpCodecKind};
+use webrtc::peer_connection::MediaEngine;
+use webrtc::peer_connection::RTCSessionDescription;
 
 use super::{PeerConfig, PeerError, Result, VideoCodec};
 
-pub(super) fn video_capability(codec: VideoCodec) -> RTCRtpCodecCapability {
+pub(super) fn video_capability(codec: VideoCodec) -> RTCRtpCodec {
     let (mime_type, fmtp) = match codec {
         VideoCodec::H264 => (
             "video/H264",
@@ -16,7 +14,7 @@ pub(super) fn video_capability(codec: VideoCodec) -> RTCRtpCodecCapability {
         VideoCodec::H265 => ("video/H265", "profile-id=1;tier-flag=0;level-id=120"),
         VideoCodec::Av1 => ("video/AV1", "profile=0;level-idx=8;tier=0"),
     };
-    RTCRtpCodecCapability {
+    RTCRtpCodec {
         mime_type: mime_type.to_owned(),
         clock_rate: 90_000,
         channels: 0,
@@ -38,8 +36,8 @@ pub(super) fn video_capability(codec: VideoCodec) -> RTCRtpCodecCapability {
     }
 }
 
-pub(super) fn audio_capability() -> RTCRtpCodecCapability {
-    RTCRtpCodecCapability {
+pub(super) fn audio_capability() -> RTCRtpCodec {
+    RTCRtpCodec {
         mime_type: "audio/opus".to_owned(),
         clock_rate: 48_000,
         channels: 2,
@@ -53,25 +51,23 @@ pub(super) fn media_engine(config: &PeerConfig) -> Result<MediaEngine> {
     if let Some(codec) = config.video {
         media.register_codec(
             RTCRtpCodecParameters {
-                capability: video_capability(codec),
+                rtp_codec: video_capability(codec),
                 payload_type: match codec {
                     VideoCodec::H264 => 102,
                     VideoCodec::H265 => 104,
                     VideoCodec::Av1 => 45,
                 },
-                ..Default::default()
             },
-            RTPCodecType::Video,
+            RtpCodecKind::Video,
         )?;
     }
     if config.audio {
         media.register_codec(
             RTCRtpCodecParameters {
-                capability: audio_capability(),
+                rtp_codec: audio_capability(),
                 payload_type: 111,
-                ..Default::default()
             },
-            RTPCodecType::Audio,
+            RtpCodecKind::Audio,
         )?;
     }
     Ok(media)
@@ -79,10 +75,7 @@ pub(super) fn media_engine(config: &PeerConfig) -> Result<MediaEngine> {
 
 // webrtc-rs deliberately falls back to a MIME-only match. Encoded streams
 // cannot use that fallback when the remote codec has another profile.
-pub(super) fn profiles_match(
-    expected: &RTCRtpCodecCapability,
-    actual: &RTCRtpCodecCapability,
-) -> bool {
+pub(super) fn profiles_match(expected: &RTCRtpCodec, actual: &RTCRtpCodec) -> bool {
     if !expected.mime_type.eq_ignore_ascii_case(&actual.mime_type) {
         return false;
     }
@@ -161,7 +154,7 @@ pub(super) fn validate_remote_video(
                 .filter_map(|attribute| attribute.value.as_deref()?.split_once(' '))
                 .find_map(|(id, parameters)| (id == payload_type).then_some(parameters))
                 .unwrap_or("");
-            let actual = RTCRtpCodecCapability {
+            let actual = RTCRtpCodec {
                 mime_type: format!("video/{name}"),
                 sdp_fmtp_line: fmtp.to_owned(),
                 ..Default::default()

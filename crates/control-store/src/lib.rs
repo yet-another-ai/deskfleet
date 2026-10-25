@@ -13,6 +13,7 @@ use sea_orm::{
 };
 use serde_json::Value as Json;
 use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -87,7 +88,11 @@ pub fn secret() -> String {
     )
 }
 pub fn secret_hash(token: &str) -> String {
-    format!("{:x}", Sha256::digest(token.as_bytes()))
+    let mut encoded = String::with_capacity(64);
+    for byte in Sha256::digest(token.as_bytes()) {
+        write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    encoded
 }
 pub fn resource_id(id: &str) -> Result<i64> {
     id.parse::<i64>()
@@ -124,5 +129,24 @@ pub(crate) fn name(value: &str) -> Result<&str> {
         Err(Error::Invalid("name must contain 1 to 200 bytes"))
     } else {
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn secret_hash_preserves_sha256_lowercase_hex() {
+        for (token, expected) in [
+            (
+                "",
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ),
+            (
+                "abc",
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
+        ] {
+            assert_eq!(super::secret_hash(token), expected);
+        }
     }
 }

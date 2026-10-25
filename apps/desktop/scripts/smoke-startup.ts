@@ -76,12 +76,42 @@ async function evaluate<T>(expression: string): Promise<T> {
   })
 }
 
+async function requestQuit(): Promise<void> {
+  if (process.platform !== "win32") {
+    client!.kill("SIGTERM")
+    return
+  }
+  // Windows kill("SIGTERM") terminates the process instead of delivering the
+  // signal. Invoke its registered handler in the main process through Node's
+  // inspector so the same graceful daemon shutdown path is exercised.
+  const endpoint = await until(async () => /Debugger listening on (ws:\/\/\S+)/u.exec(diagnostics)?.[1])
+  const inspector = new WebSocket(endpoint)
+  await new Promise<void>((resolveOpen, reject) => {
+    inspector.addEventListener("open", () => resolveOpen(), { once: true })
+    inspector.addEventListener("error", () => reject(new Error("Could not request Electron shutdown")), { once: true })
+  })
+  try {
+    await new Promise<void>((resolveQuit, reject) => {
+      inspector.addEventListener("close", () => resolveQuit(), { once: true })
+      inspector.addEventListener("message", event => {
+        const message = JSON.parse(String(event.data))
+        if (message.id !== 1) return
+        if (message.error || message.result?.exceptionDetails) reject(new Error(JSON.stringify(message.error ?? message.result.exceptionDetails)))
+        else resolveQuit()
+      })
+      inspector.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression: 'process.emit("SIGTERM")' } }))
+    })
+  } finally {
+    inspector.close()
+  }
+}
+
 /** The app hosts the daemon in its own process and stops it when it quits. */
 async function probeHostedDaemon(): Promise<void> {
   const hostProfile = join(directory, "host-profile")
   await mkdir(hostProfile)
   await writeFile(join(hostProfile, "settings.json"), JSON.stringify({ localAgentEnabled: true }))
-  launch([`--user-data-dir=${hostProfile}`])
+  launch([`--user-data-dir=${hostProfile}`, ...process.platform === "win32" ? ["--inspect=0"] : []])
   const control = await until(async () => {
     try { return await DaemonClient.connect(() => {}, () => {}, daemonDirectory) }
     catch (error) {
@@ -101,9 +131,8 @@ async function probeHostedDaemon(): Promise<void> {
     await peer.close()
     control.close()
   }
-  client!.kill("SIGTERM")
   const timer = setTimeout(() => client?.kill("SIGKILL"), 15_000)
-  try { await exited } finally { clearTimeout(timer) }
+  try { await requestQuit(); await exited } finally { clearTimeout(timer) }
   assert.equal(client!.exitCode, 0, "Quitting the app must finish its daemon's shutdown")
   await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
 }
@@ -132,14 +161,15 @@ try {
   await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
   await stop()
 
+  const { dependencies } = JSON.parse(await readFile(join(appPath, "../daemon/package.json"), "utf8")) as { dependencies: Record<string, string> }
   const version = await promisify(execFile)(executable, [join(appPath, "out/main/index.js"), "--codex-acp", "--version"], {
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 15_000,
   })
-  assert.match(version.stdout, /\b2\.2\.2\b/u)
+  assert.equal(version.stdout.trim(), `@agentclientprotocol/codex-acp ${dependencies["@agentclientprotocol/codex-acp"]}`)
   const claudeVersion = await promisify(execFile)(executable, [join(appPath, "out/main/index.js"), "--claude-agent-acp", "--version"], {
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 15_000,
   })
-  assert.equal(claudeVersion.stdout.trim(), "0.94.0")
+  assert.equal(claudeVersion.stdout.trim(), dependencies["@agentclientprotocol/claude-agent-acp"])
   await probeHostedDaemon()
   console.log("Electron startup smoke passed: account UI, Codex and Claude Code adapters, hosted daemon identity, and authenticated management boundary")
 } catch (error) {

@@ -22,7 +22,7 @@ export async function runClaudeCodeAdapter(): Promise<void> {
   // stdout carries ACP messages; diagnostics go to stderr.
   console.log = console.info = console.warn = console.debug = console.error
   process.on("unhandledRejection", reason => console.error("Unhandled rejection:", reason))
-  const acp = serveAcp(undefined, { experimentalV2: false })
+  const acp = serveAcp(undefined, { protocols: "v1" })
   const shutdown = () => {
     void acp.dispose().catch(error => console.error("Error during cleanup:", error)).finally(() => process.exit(0))
   }

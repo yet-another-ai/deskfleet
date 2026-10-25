@@ -25,7 +25,7 @@ pub fn platform_supported_codecs() -> Vec<Codec> {
 
 #[cfg(target_os = "windows")]
 pub fn platform_supported_codecs() -> Vec<Codec> {
-    crate::windows::WindowsEncoder::probe_supported_codecs()
+    windows::supported_codecs()
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]

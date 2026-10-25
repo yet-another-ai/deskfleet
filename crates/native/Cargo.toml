@@ -17,6 +17,8 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 webrtc.workspace = true
+rtc.workspace = true
+rand.workspace = true
 portable-pty.workspace = true
 
 [target.'cfg(unix)'.dependencies]

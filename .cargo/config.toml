@@ -1,6 +1,0 @@
-[env]
-# Bundle the pinned Opus source in the addon instead of selecting a host library.
-OPUS_NO_PKG = "1"
-# Vendored Opus declares cmake_minimum_required(VERSION 3.1). CMake 4 removed
-# compatibility with projects older than 3.5; this is CMake's own workaround.
-CMAKE_POLICY_VERSION_MINIMUM = "3.5"

@@ -71,6 +71,9 @@ async fn headless_peers_exchange_binary_and_text_then_close() {
             true
         )
     );
+    let maximum = Bytes::from(vec![0xa5; MAX_DATA_MESSAGE_SIZE]);
+    left.send_data("operations", maximum.clone()).await.unwrap();
+    assert_eq!(next_data(&right).await.1, maximum);
     assert!(matches!(
         left.send_data(
             "operations",
@@ -98,7 +101,7 @@ async fn headless_peers_exchange_binary_and_text_then_close() {
 
 #[tokio::test]
 async fn media_tracks_send_h265_and_opus_without_capture() {
-    use webrtc::rtp_transceiver::rtp_codec::RTPCodecType;
+    use webrtc::media_stream::track_remote::TrackRemoteEvent;
     let config = PeerConfig {
         video: Some(VideoCodec::H265),
         audio: true,
@@ -107,15 +110,6 @@ async fn media_tracks_send_h265_and_opus_without_capture() {
     let left = Peer::new(config.clone()).await.unwrap();
     let right = Peer::new(config).await.unwrap();
     let (packets, mut received) = tokio::sync::mpsc::channel(8);
-    right.pc.on_track(Box::new(move |track, _, _| {
-        let packets = packets.clone();
-        Box::pin(async move {
-            tokio::spawn(async move {
-                let (packet, _) = track.read_rtp().await.unwrap();
-                packets.send((track.kind(), packet)).await.unwrap();
-            });
-        })
-    }));
     connect(&left, &right).await;
     let video = Bytes::from_static(&[0, 0, 0, 1, 0x26, 1, 0xab, 0xcd]);
     let audio = Bytes::from_static(&[0xf8, 0xff, 0xfe]);
@@ -125,6 +119,29 @@ async fn media_tracks_send_h265_and_opus_without_capture() {
     left.write_audio(audio.clone(), Duration::from_millis(20))
         .await
         .unwrap();
+    let receivers = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let receivers = right.pc.get_receivers().await;
+            if receivers.len() == 2 {
+                break receivers;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first RTP packets should create remote tracks");
+    for receiver in &receivers {
+        let track = Arc::clone(receiver.track());
+        let packets = packets.clone();
+        tokio::spawn(async move {
+            while let Some(event) = track.poll().await {
+                if let TrackRemoteEvent::OnRtpPacket(packet) = event {
+                    packets.send((track.kind().await, packet)).await.unwrap();
+                    break;
+                }
+            }
+        });
+    }
     let mut kinds = Vec::new();
     let mut video_ssrc = 0;
     for _ in 0..2 {
@@ -134,35 +151,72 @@ async fn media_tracks_send_h265_and_opus_without_capture() {
             .unwrap();
         assert!(packet.header.marker);
         match kind {
-            RTPCodecType::Video => {
+            RtpCodecKind::Video => {
                 assert_eq!(packet.payload.as_ref(), &[0x26, 1, 0xab, 0xcd]);
                 video_ssrc = packet.header.ssrc;
             }
-            RTPCodecType::Audio => assert_eq!(packet.payload, audio),
+            RtpCodecKind::Audio => assert_eq!(packet.payload, audio),
             _ => panic!("unexpected track"),
         }
         kinds.push(kind);
     }
-    assert!(kinds.contains(&RTPCodecType::Video) && kinds.contains(&RTPCodecType::Audio));
-    assert!(left.take_keyframe_request());
-    assert!(!left.take_keyframe_request());
-    let mut feedback = left.events.subscribe();
+    assert!(kinds.contains(&RtpCodecKind::Video) && kinds.contains(&RtpCodecKind::Audio));
+    // Both directions must expose remote tracks before checking feedback: the
+    // RTC driver routes local and remote feedback by track ID.
     right
-        .pc
-        .write_rtcp(&[Box::new(
-            webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication {
-                sender_ssrc: 0,
-                media_ssrc: video_ssrc,
-            },
-        )])
+        .write_video(
+            Bytes::from_static(&[0, 0, 0, 1, 0x26, 1, 0xab, 0xcd]),
+            Duration::from_millis(33),
+        )
         .await
         .unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
-        while !matches!(feedback.recv().await.unwrap(), PeerEvent::KeyframeRequested) {}
+        while left.pc.get_receivers().await.is_empty() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     })
     .await
-    .expect("PLI should request an encoder keyframe");
+    .expect("reverse media should expose the remote track");
     assert!(left.take_keyframe_request());
+    assert!(!left.take_keyframe_request());
+    let mut feedback = left.events.subscribe();
+    let mut video_track = None;
+    for receiver in &receivers {
+        if receiver.track().kind().await == RtpCodecKind::Video {
+            video_track = Some(receiver.track());
+        }
+    }
+    use rtc::rtcp::payload_feedbacks::{
+        full_intra_request::{FirEntry, FullIntraRequest},
+        picture_loss_indication::PictureLossIndication,
+    };
+    let requests: Vec<Box<dyn rtc::rtcp::Packet>> = vec![
+        Box::new(PictureLossIndication {
+            sender_ssrc: 0,
+            media_ssrc: video_ssrc,
+        }),
+        Box::new(FullIntraRequest {
+            sender_ssrc: 0,
+            media_ssrc: 0,
+            fir: vec![FirEntry {
+                ssrc: video_ssrc,
+                sequence_number: 1,
+            }],
+        }),
+    ];
+    for request in requests {
+        video_track
+            .unwrap()
+            .write_rtcp(vec![request])
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !matches!(feedback.recv().await.unwrap(), PeerEvent::KeyframeRequested) {}
+        })
+        .await
+        .expect("PLI and FIR should request an encoder keyframe");
+        assert!(left.take_keyframe_request());
+    }
     let (a, b) = tokio::join!(left.close(), right.close());
     a.unwrap();
     b.unwrap();
@@ -182,10 +236,71 @@ async fn rtc_configuration_keeps_turn_credentials_and_relay_policy() {
     .await
     .unwrap();
     let config = peer.pc.get_configuration().await;
-    assert_eq!(config.ice_transport_policy, RTCIceTransportPolicy::Relay);
-    assert_eq!(config.ice_servers[0].credential, "session-password");
+    assert_eq!(config.ice_transport_policy(), RTCIceTransportPolicy::Relay);
+    assert_eq!(config.ice_servers()[0].credential, "session-password");
     assert!(peer.video_codec().is_none() && !peer.has_audio());
     peer.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn media_tracks_use_the_payload_type_from_the_remote_offer() {
+    use rtc::rtp_transceiver::rtp_sender::RTCRtpCodecParameters;
+    use webrtc::media_stream::track_remote::TrackRemoteEvent;
+
+    for codec in [VideoCodec::H264, VideoCodec::Av1] {
+        let config = PeerConfig {
+            video: Some(codec),
+            ..Default::default()
+        };
+        let mut media = webrtc::peer_connection::MediaEngine::default();
+        media
+            .register_codec(
+                RTCRtpCodecParameters {
+                    rtp_codec: codecs::video_capability(codec),
+                    payload_type: 125,
+                },
+                RtpCodecKind::Video,
+            )
+            .unwrap();
+        let remote = Peer::with_media_engine(config.clone(), media)
+            .await
+            .unwrap();
+        let sender = Peer::new(config).await.unwrap();
+        connect(&remote, &sender).await;
+        let description = sender.pc.remote_description().await.unwrap();
+        assert!(description.sdp.contains("a=rtpmap:125 "));
+        let sample = match codec {
+            VideoCodec::H264 => Bytes::from_static(&[0, 0, 0, 1, 0x65, 0xab, 0xcd]),
+            // OBU_FRAME with an explicit two-byte payload size.
+            VideoCodec::Av1 => Bytes::from_static(&[0x32, 2, 0xab, 0xcd]),
+            _ => unreachable!(),
+        };
+        sender
+            .write_video(sample, Duration::from_millis(33))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let receivers = remote.pc.get_receivers().await;
+                if let Some(receiver) = receivers.first() {
+                    while let Some(event) = receiver.track().poll().await {
+                        if let TrackRemoteEvent::OnRtpPacket(packet) = event {
+                            assert_eq!(packet.header.payload_type, 125);
+                            assert!(packet.header.marker);
+                            assert!(!packet.payload.is_empty());
+                            return;
+                        }
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("media should use the remote payload type");
+        let (a, b) = tokio::join!(remote.close(), sender.close());
+        a.unwrap();
+        b.unwrap();
+    }
 }
 
 #[tokio::test]

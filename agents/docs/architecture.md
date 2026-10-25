@@ -509,7 +509,7 @@ The Rust workspace contains:
 | `deskfleet-control-store` | PostgreSQL central identity, authorization, catalog, and history persistence |
 | `deskfleet-native` | Native capabilities independent of Node.js |
 | `deskfleet-capture` | Native display capture and retained GPU surfaces |
-| `deskfleet-encoder` | VideoToolbox/NVENC video encoding and Opus audio encoding |
+| `deskfleet-encoder` | VideoToolbox/NVENC/Media Foundation hardware video encoding and Opus audio encoding |
 | `deskfleet-nvenc` | Windows NVENC session and D3D11 resource ownership |
 | `deskfleet-nvenc-sys` | Windows NVENC FFI and runtime driver loading |
 | `deskfleet-node` | napi-rs wrapper over native capabilities |

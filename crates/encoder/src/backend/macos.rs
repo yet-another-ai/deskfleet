@@ -25,6 +25,10 @@ impl PlatformEncoder {
         self.encoder.flush()
     }
 
+    pub(crate) fn poll_output(&mut self) -> Result<Vec<EncodedPacket>, EncoderError> {
+        Ok(self.encoder.drain_packets())
+    }
+
     pub(crate) fn request_keyframe(&mut self) {
         self.encoder.request_keyframe();
     }

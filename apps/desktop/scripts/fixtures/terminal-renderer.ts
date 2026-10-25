@@ -73,13 +73,14 @@ async function writeHistory(): Promise<void> {
     : "stty -echo; printf '\\nDF_%s:%s\\n' READY $$\r")
   await until(() => /DF_READY:\d+/.test(output))
   const pid = /DF_READY:(\d+)/.exec(output)![1]!
+  terminal.resize(91, 37)
   await client.call("resize", { sessionId: summary.id, cols: 91, rows: 37 })
   await client.input(summary.id, windows
-    ? "echo DF_UNICODE:终端\rpowershell -NoProfile -Command \"Write-Output ('DF_' + 'SIZE:' + [Console]::WindowWidth + ':' + [Console]::WindowHeight)\"\r"
+    ? "echo DF_UNICODE:终端\rpwsh -Command \"Write-Output ('DF_' + 'SIZE:' + [Console]::WindowWidth + ':' + [Console]::WindowHeight)\"\r"
     : "printf 'DF_%s:终端\\n' UNICODE; printf DF_SIZE:; stty size\r")
   await until(() => output.includes("DF_UNICODE:终端") && output.includes(windows ? "DF_SIZE:91:37" : "DF_SIZE:37 91"))
   await client.input(summary.id, windows
-    ? "powershell -NoProfile -Command \"Write-Output ('x' * 300000); Write-Output ('DF_' + 'HISTORY_END')\"\r"
+    ? "pwsh -Command \"Write-Output ('x' * 300000); Write-Output ('DF_' + 'HISTORY_END')\"\r"
     : "head -c 300000 /dev/zero | tr '\\0' x; printf '\\nDF_%s\\n' HISTORY_END\r")
   await until(() => output.includes("DF_HISTORY_END"))
   require(output.includes("DF_UNICODE:终端"), "Full output before client change was lost")
@@ -93,6 +94,8 @@ async function restoreHistory(): Promise<void> {
   client = newClient()
   const sessions = await deskfleet.terminal.list()
   require(sessions.length === 2 && sessions.some(session => session.id === terminalId), "A new client did not discover both shells")
+  const restored = sessions.find(session => session.id === terminalId)!
+  terminal.resize(restored.cols, restored.rows)
   await attach(terminalId)
   require(output.length > 300_000 && output.includes(`DF_READY:${pid}`) && output.includes("DF_UNICODE:终端") && output.includes("DF_HISTORY_END"), "Full history was not restored on a fresh client")
   const replayedBytes = new TextEncoder().encode(output).byteLength
