@@ -1,7 +1,10 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, expect, test, vi } from "vitest"
+import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
+import { loadProviderIcons } from "../../services/provider-icons.ts"
 import ProviderIconPicker from "./ProviderIconPicker.vue"
+
+beforeAll(() => loadProviderIcons(), 30_000)
 
 let wrapper: VueWrapper | undefined
 async function render(icon?: string, disabled = false) {

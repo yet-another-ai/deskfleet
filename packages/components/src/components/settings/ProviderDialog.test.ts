@@ -1,8 +1,11 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, expect, test, vi } from "vitest"
+import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import { AGENT_PROVIDER_TEMPLATES, type AgentProviderConfig } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import { i18n } from "../../i18n/index.ts"
+import { loadProviderIcons } from "../../services/provider-icons.ts"
 import ProviderDialog from "./ProviderDialog.vue"
+
+beforeAll(() => loadProviderIcons(), 30_000)
 
 let wrapper: VueWrapper | undefined
 function render(save = vi.fn().mockResolvedValue(undefined), initial?: AgentProviderConfig, test = vi.fn().mockResolvedValue({ agentName: "Claude Agent" })) {
