@@ -222,6 +222,49 @@ Use `--binary-path` to select it and repeated `--env` options for environment
 overrides. See the [agent setup](../../apps/daemon/README.md#agents-through-acp)
 for initialization checks and prompt commands.
 
+## Dependency updates
+
+[`renovate.json`](../../renovate.json) follows
+[Heron's grouped update policy](https://github.com/minori-live/heron/blob/main/renovate.json):
+weekly dependency updates, monthly GitHub Actions updates, at most two open PRs,
+and a separate lockfile maintenance group. Majors and minors share the update
+group and require maintainer review; automerge is disabled. npm releases age for
+three days before ordinary updates. Lockfile maintenance delegates resolution to
+Cargo and pnpm and does not apply that release-age filter.
+
+Built-in managers cover Cargo, pnpm, Compose images, and GitHub Actions, including
+the mise and sccache action inputs. Keep Renovate's Node, pnpm, and Rust `constraints`
+aligned with `mise.toml` so lockfile generation uses the repository's tools.
+Node types stay on 24 because the standalone daemon's SEA build targets Node 24.
+PostgreSQL major updates use a separate group and require Dependency Dashboard
+approval so the development volume migration or reset can be reviewed explicitly.
+
+The patched `@agentclientprotocol/codex-acp` and `pi-acp` dependencies are updated
+manually: review or rebase their patches, update the version-specific
+`patchedDependencies` entries, regenerate `pnpm-lock.yaml`, and run the affected
+adapter tests and daemon packaging smoke checks. Other ACP dependencies remain
+eligible for Renovate updates. Preserve the TypeScript 6 npm aliases used by
+vue-tsc when reviewing the grouped PR.
+
+Toolchain and APM updates remain manual. Renovate supports mise lockfiles, but
+[lock regeneration requires host support](https://docs.renovatebot.com/modules/manager/mise/#trust-model-for-lock-file-updates)
+that repository configuration cannot grant. Enable the mise rule only after the
+host can refresh `mise.lock`, and review Node runtime/SEA target changes together.
+APM updates must include the installed skill tree; Renovate ignores that tree
+and leaves the pinned sources to the workflow below.
+
+Validate configuration-only edits from the repository root with the official
+validator; this does not update project dependencies:
+
+```sh
+mise exec -- pnpm dlx --package=renovate renovate-config-validator --strict
+```
+
+The Renovate GitHub App must have access to this repository, and the configuration
+must be on the default branch before hosted updates can run. An organization
+owner can select `yet-another-ai/deskfleet` in the existing Renovate installation,
+or install [Renovate](https://github.com/apps/renovate) for that repository.
+
 ## Agent skills
 
 APM installs `rust-skills`, `stop-that-shit`, and `stss` from the commit references

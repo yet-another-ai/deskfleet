@@ -1,0 +1,75 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":configMigration",
+    "security:minimumReleaseAgeNpm",
+    "schedule:weekly"
+  ],
+  "automerge": false,
+  "prConcurrentLimit": 2,
+  "separateMajorMinor": false,
+  "group": {
+    "groupSingleUpdates": true
+  },
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    ".agents/skills/**"
+  ],
+  "constraints": {
+    "node": "24.22.1",
+    "pnpm": "12.15.0",
+    "rust": "1.99.1"
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "groupName": "lock"
+  },
+  "packageRules": [
+    {
+      "matchPackageNames": ["*"],
+      "groupName": "update"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "pinDigests": false,
+      "extends": ["schedule:monthly"]
+    },
+    {
+      "description": "Rebase the version-specific pnpm patches and validate bundled adapters before updating.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@agentclientprotocol/codex-acp", "pi-acp"],
+      "enabled": false
+    },
+    {
+      "description": "The standalone daemon targets Node 24; update its runtime and SEA target together.",
+      "matchDatasources": ["npm"],
+      "matchPackageNames": ["@types/node"],
+      "allowedVersions": ">=24 <25"
+    },
+    {
+      "description": "Review PostgreSQL majors separately, including the development volume migration or reset.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["postgres"],
+      "separateMajorMinor": true
+    },
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["postgres"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "PostgreSQL major",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Keep mise.toml and mise.lock paired; enable after the Renovate host can regenerate the lockfile.",
+      "matchManagers": ["mise"],
+      "enabled": false
+    },
+    {
+      "description": "Update pinned APM sources, lockfile, and installed skills together with apm install.",
+      "matchManagers": ["apm"],
+      "enabled": false
+    }
+  ]
+}
