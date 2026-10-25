@@ -26,7 +26,9 @@ export async function savedAgentConfiguration(journal: AgentJournal, sessionId: 
       }
       if (event.kind === "command") {
         const command = event.payload as AgentCommand
-        if (command.method === "_deskfleet/session/create") return {
+        // Creation completes after the first provider catalog is recorded. Only
+        // its original accepted command is a fallback when no catalog exists.
+        if (command.method === "_deskfleet/session/create" && command.isCanonical && command.status === "accepted") return {
           options: [], selection: {
             model: command.params.model as string | undefined,
             reasoningEffort: command.params.reasoningEffort as string | undefined,

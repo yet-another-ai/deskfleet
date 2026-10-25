@@ -126,9 +126,10 @@ async function setup(t: TestContext, provider: ConfigurationProvider, selection:
   })
   const actor = service.actor()
   beforeCreate?.(service)
-  const created = await service.handle("_deskfleet/session/create", {
+  const create = {
     workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "directory", ...selection,
-  }, actor) as AgentSnapshot
+  }
+  const created = await service.handle("_deskfleet/session/create", create, actor) as AgentSnapshot
   const sessionId = created.session.id
   const read = () => service.journal.read(sessionId)
   const configuration = () => service.handle("_deskfleet/session/configuration", { sessionId }, actor) as Promise<AgentConfiguration>
@@ -140,7 +141,33 @@ async function setup(t: TestContext, provider: ConfigurationProvider, selection:
   const submit = () => service.handle("_deskfleet/input/submit", {
     sessionId, operationId: randomUUID(), content: [{ type: "text", text: "Use my settings" }], delivery: "backlog",
   }, actor)
-  return { service, catalog, sessionId, read, configuration, configure, stop, resume, submit }
+  return { service, catalog, create, sessionId, read, configuration, configure, stop, resume, submit }
+}
+
+for (const rejectedRetry of [false, true]) {
+  test(`initial configuration survives restart after ${rejectedRetry ? "a rejected creation retry" : "the completed creation receipt"}`, async t => {
+    const provider = new ConfigurationProvider()
+    const f = await setup(t, provider, { model: "second", reasoningEffort: "low", mode: "full-access" })
+    const original = await f.configuration()
+    assert.deepEqual(original.models?.options.map(option => option.id), ["first", "second"])
+    assert.equal(original.models?.currentValue, "second")
+    assert.deepEqual(original.reasoningEfforts?.options.map(option => option.id), ["low", "high"])
+    assert.equal(original.reasoningEfforts?.currentValue, "low")
+    assert.deepEqual(original.modes?.options.map(option => option.id), ["manual", "auto", "full-access"])
+    assert.equal(original.modes?.currentValue, "full-access")
+    if (rejectedRetry) await assert.rejects(f.service.handle("_deskfleet/session/create", {
+      ...f.create, model: "first",
+    }, f.service.actor()), /Operation ID was reused/)
+    await f.service.close()
+    const connections = provider.connections
+    const service = new AgentSessions(f.catalog, f.catalog.native, provider)
+    try {
+      await service.init()
+      const configuration = await service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, service.actor()) as AgentConfiguration
+      assert.deepEqual(configuration, original)
+      assert.equal(provider.connections, connections, "Reading saved choices does not start the provider")
+    } finally { await service.close() }
+  })
 }
 
 test("a resume without configOptions reapplies the saved choices before the next prompt", async t => {
