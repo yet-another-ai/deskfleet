@@ -6,10 +6,7 @@ import { onClickOutside } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, shallowRef, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DesktopCapabilities } from "../../../client/src/desktop-media.ts"
-import PaneHeader from "../components/chrome/PaneHeader.vue"
-import ResourcePath from "../components/chrome/ResourcePath.vue"
 import IconButton from "../components/common/IconButton.vue"
-import FileTransferButton from "../components/files/FileTransferButton.vue"
 import { commonDesktopCodecs, desktopCodecLabel, useDesktopConnection } from "../composables/useDesktopConnection.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
@@ -147,15 +144,7 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
 </script>
 
 <template>
-  <PaneHeader>
-    <template v-if="machine">
-      {{ t("machine.remoteDesktop") }}
-      <ResourcePath :segments="[machine.name]" />
-    </template>
-    <template v-if="machine && !local" #actions><FileTransferButton :machine-id="machine.id" :machine-name="machine.name" compact /></template>
-  </PaneHeader>
-
-  <div class="flex min-h-0 flex-1 flex-col px-4 pb-4">
+  <div class="flex min-h-0 flex-1 flex-col">
     <!-- The stream fills the pane; its controls and settings float above it. -->
     <div ref="stage" data-desktop-stage class="relative flex min-h-64 min-w-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors" :class="stream ? 'border-transparent bg-ui-terminal' : 'border-ui-border bg-ui-surface'">
       <video
@@ -214,7 +203,6 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
           <span class="h-1.5 w-1.5 rounded-full" :class="state === 'connected' ? 'bg-ui-success' : 'bg-ui-text-faint'" aria-hidden="true" />{{ status }}
         </span>
         <IconButton v-if="stream && state === 'connected'" :icon="Maximize" :label="t('desktop.fullscreen')" @click="fullscreen" />
-        <FileTransferButton v-if="machine" :machine-id="machine.id" :machine-name="machine.name" compact />
         <IconButton ref="settingsTrigger" :icon="SlidersHorizontal" :label="t('desktop.settings')" :disabled="!capabilities" aria-haspopup="dialog" :aria-expanded="settingsOpen" :aria-controls="settingsId" @click="settingsOpen = !settingsOpen" />
         <button v-if="stream && active" type="button" class="ui-button-danger py-1" @click="connection.disconnect()">
           <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("desktop.disconnect") }}

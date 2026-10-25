@@ -70,7 +70,7 @@
     "local": "This machine",
     "addWorkspace": "Add workspace",
     "noWorkspaces": "No workspaces",
-    "remoteDesktop": "Remote desktop",
+    "remoteControl": "Remote control",
     "online": "Online"
   },
   "newSession": {
@@ -151,6 +151,11 @@
     "showPanel": "Show terminal",
     "hidePanel": "Hide terminal"
   },
+  "remoteControl": {
+    "terminal": "Terminal",
+    "desktop": "Desktop",
+    "filesUnavailable": "File transfer is unavailable for this machine."
+  },
   "desktop": {
     "notFound": "This machine does not exist.",
     "unavailable": "Remote desktop is not available yet.",
@@ -186,7 +191,7 @@
     "label": "Details",
     "details": "Details",
     "changes": "Changes",
-    "nothingSelected": "Select a worktree, session, terminal, or desktop to see its details.",
+    "nothingSelected": "Select a worktree, session, terminal, or machine control page to see its details.",
     "noWorktree": "Git changes are available within a session.",
     "machine": "Machine",
     "workspace": "Workspace",

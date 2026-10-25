@@ -1,50 +1,61 @@
-import { flushPromises, mount } from "@vue/test-utils"
+import { mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
-import { afterEach, expect, test, vi } from "vitest"
+import { expect, test } from "vitest"
+import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
-import { router } from "../../router/index.ts"
-import { useTerminalsStore } from "../../stores/terminals.ts"
+import type { MachineSummary } from "../../stores/fleet-types.ts"
 import MachineSection from "./MachineSection.vue"
 
-function setup(id = "local-daemon") {
+async function setup(machine: Partial<MachineSummary> = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
-  const terminals = useTerminalsStore()
-  const create = vi.spyOn(terminals, "create").mockResolvedValue({
-    id: "terminal-real", title: "zsh", cwd: "/home/user", cols: 80, rows: 24, status: "running",
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/machines/:machineId/control", name: "machine-control", component: {} },
+      { path: "/workspaces/:workspaceId", name: "workspace", component: {} },
+      { path: "/sessions/:sessionId", name: "session", component: {} },
+      { path: "/terminals/:terminalId", name: "terminal", component: {} },
+    ],
   })
-  const navigate = vi.spyOn(router, "push").mockResolvedValue()
+  await router.push("/machines/local-daemon/control?tab=files")
   const wrapper = mount(MachineSection, {
-    props: { machine: { id, name: "host", local: id === "local-daemon", online: true, desktop: false, terminals: [], workspaces: [] } },
+    props: { machine: {
+      id: "local-daemon", name: "host", local: true, online: true, desktop: false,
+      terminals: [{ id: "shell", title: "Machine shell", cwd: "/home/user" }], workspaces: [], ...machine,
+    } },
     global: { plugins: [pinia, router, i18n] },
   })
-  return { wrapper, create, navigate }
+  return { wrapper, router }
 }
 
-afterEach(() => vi.restoreAllMocks())
-
-test("the local machine opens a real terminal and navigates to its session", async () => {
-  const { wrapper, create, navigate } = setup()
-  await wrapper.get('[title="New terminal"]').trigger("click")
-  await flushPromises()
-  expect(create).toHaveBeenCalledOnce()
-  expect(navigate).toHaveBeenCalledWith({ name: "terminal", params: { terminalId: "terminal-real" } })
+test("headless machines expose one control entry for their tools", async () => {
+  const { wrapper, router } = await setup()
+  const links = wrapper.findAll("a")
+  expect(links.map(link => link.text())).toEqual(["Remote control"])
+  expect(links[0]!.attributes("href")).toBe("/machines/local-daemon/control")
+  expect(links[0]!.attributes("aria-current")).toBe("page")
+  expect(wrapper.find('[title="New terminal"]').exists()).toBe(false)
+  await router.push("/machines/local-daemon/control?tab=terminal&terminal=shell")
+  expect(links[0]!.attributes("aria-current")).toBe("page")
   wrapper.unmount()
 })
 
-test("sample machine controls never create a local shell", async () => {
-  const { wrapper, create } = setup("machine-development-box")
-  await wrapper.get('[title="New terminal (not available yet)"]').trigger("click")
-  expect(create).not.toHaveBeenCalled()
-  wrapper.unmount()
-})
-
-test("terminal creation failure stays visible and allows another attempt", async () => {
-  const { wrapper, create } = setup()
-  create.mockRejectedValueOnce(new Error("Daemon disconnected"))
-  await wrapper.get('[title="New terminal"]').trigger("click")
-  await flushPromises()
-  expect(wrapper.get('[role="alert"]').text()).toBe("Daemon disconnected")
-  expect(wrapper.get('[title="New terminal"]').attributes("aria-disabled")).toBeUndefined()
+test("machine tool consolidation preserves Workspace and Session navigation", async () => {
+  const { wrapper } = await setup({
+    desktop: true,
+    workspaces: [{
+      id: "workspace", name: "Project", directories: [{ path: "/project" }],
+      terminals: [{ id: "workspace-shell", title: "Workspace shell", cwd: "/project" }],
+      sessions: [{ id: "session", title: "Implement feature", provider: "Codex" }],
+    }],
+  })
+  expect(wrapper.findAll("a").map(link => [link.text(), link.attributes("href")])).toEqual([
+    ["Remote control", "/machines/local-daemon/control"],
+    ["Project", "/workspaces/workspace"],
+    ["Workspace shell", "/terminals/workspace-shell"],
+    ["Implement feature", "/sessions/session"],
+  ])
+  expect(wrapper.text()).not.toContain("Machine shell")
   wrapper.unmount()
 })

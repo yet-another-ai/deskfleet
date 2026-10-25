@@ -431,7 +431,11 @@ from terminals and external editors. Closing the panel or hiding the window
 stops polling. Git results remain transient; Session provisioning still owns
 creation and deletion of managed worktrees.
 
-Machine file access shares one service between the two-pane transfer dialog and
+The machine's Remote control page groups Terminal, Desktop, and File transfer.
+Tools mount when first visited and retain their connections while switching tabs.
+Machine-owned shells live here; Session-owned shells stay in the Session panel.
+
+Machine file access shares one service between the two-pane transfer panel and
 Agent Markdown resources. File peers and the transfer queue have independent
 lifetimes from Sessions and desktop media. Electron's main process owns its
 queue and local filesystem endpoint; Web owns its queue at page/account scope

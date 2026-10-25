@@ -37,10 +37,15 @@ export const router = createRouter({
       props: true,
     },
     {
+      path: "/machines/:machineId/control",
+      name: "machine-control",
+      component: () => import("../views/RemoteControlView.vue"),
+      props: true,
+    },
+    {
       path: "/machines/:machineId/terminals",
       name: "machine-terminals",
-      component: () => import("../views/TerminalView.vue"),
-      props: true,
+      redirect: to => ({ name: "machine-control", params: { machineId: to.params.machineId }, query: { tab: "terminal" } }),
     },
     {
       path: "/terminals/:terminalId",
@@ -51,8 +56,7 @@ export const router = createRouter({
     {
       path: "/machines/:machineId/desktop",
       name: "machine-desktop",
-      component: () => import("../views/DesktopView.vue"),
-      props: true,
+      redirect: to => ({ name: "machine-control", params: { machineId: to.params.machineId }, query: { tab: "desktop" } }),
     },
     {
       path: "/settings",

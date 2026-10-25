@@ -142,7 +142,7 @@ all peers, including pending creation.
 ## Electron playback
 
 After login and machine enrollment, select the target machine in the Web or
-Electron client and open **Remote desktop**. Refresh capabilities if needed,
+Electron client and open **Remote control → Desktop**. Refresh capabilities if needed,
 choose a display, then connect. The viewer selects H.264, then HEVC, then AV1
 from the codecs that display and the browser share, and shows the choice as
 status text. On macOS, the daemon process

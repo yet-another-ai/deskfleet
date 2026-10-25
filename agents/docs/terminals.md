@@ -119,9 +119,10 @@ keystrokes that the shell does not echo are not recorded separately.
 
 Run the central backend and either client, sign in, select a Team, and enroll
 the machine. Electron can host its daemon; headless installations run
-`mise run daemon:dev`. Use **New terminal** on the selected machine.
+`mise run daemon:dev`. Open the selected machine's **Remote control → Terminal**
+tab and choose **New shell**.
 Use the tab bar to switch shells or open another, and its hangup action to close
-one explicitly. Reopening a sidebar terminal attaches to its existing process. A
+one explicitly. Returning to the Terminal tab attaches to its existing process. A
 Session's terminal button opens its bottom panel with shells in that Session's
 Worktree, creating a shell automatically when none exists. Hiding and reopening
 the panel keeps the existing shells; hanging up its last shell closes the panel.

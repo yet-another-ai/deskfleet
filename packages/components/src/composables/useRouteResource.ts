@@ -9,7 +9,7 @@ export type RouteResource =
   | ({ kind: "worktree" } & WorktreeLocation)
   | ({ kind: "session" } & SessionLocation)
   | ({ kind: "terminal" } & TerminalLocation)
-  | { kind: "desktop"; machine: MachineSummary }
+  | { kind: "control"; machine: MachineSummary }
 
 function param(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : ""
@@ -37,9 +37,16 @@ export function useRouteResource() {
         const location = fleet.findTerminal(param(route.params.terminalId))
         return location && { kind: "terminal", ...location }
       }
-      case "machine-desktop": {
+      case "machine-control": {
         const machine = fleet.findMachine(param(route.params.machineId))
-        return machine && { kind: "desktop", machine }
+        if (!machine) return null
+        const tab = ["terminal", "desktop", "files"].find(value => value === route.query.tab)
+          ?? (machine.desktop ? "desktop" : "terminal")
+        if (tab === "terminal") {
+          const location = typeof route.query.terminal === "string" ? fleet.findTerminal(route.query.terminal) : null
+          if (location?.machine.id === machine.id && !location.workspace && !location.worktree) return { kind: "terminal", ...location }
+        }
+        return { kind: "control", machine }
       }
       case "new-session": {
         const location = fleet.newSessionTarget
@@ -50,10 +57,10 @@ export function useRouteResource() {
     }
   })
 
-  /** Terminals and desktops outside a worktree have no Git changes to show. */
+  /** Machine control and terminals outside a worktree have no Git changes to show. */
   const worktree = computed<WorktreeLocation | null>(() => {
     const value = resource.value
-    if (!value || value.kind === "desktop" || value.kind === "workspace") return null
+    if (!value || value.kind === "control" || value.kind === "workspace") return null
     if (value.kind === "terminal" || value.kind === "session") {
       return value.worktree ? fleet.findWorktree(value.worktree.id) : null
     }

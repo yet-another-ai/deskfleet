@@ -172,8 +172,10 @@ test.each([
   const wrapper = await mountApp(`/workspaces/${workspaceId}`)
   const target = wrapper.findAll("button").find(entry => entry.text() === label || entry.attributes("aria-label") === label)!
   await target.trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("terminal"))
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("machine-control"))
   expect(dial).toHaveBeenCalledWith({ mode: "create", terminalId: expect.any(String), cols: 80, rows: 24, cwd })
+  expect(router.currentRoute.value.query).toEqual({ tab: "terminal", terminal: dial.mock.calls[0]![0].terminalId })
+  expect(wrapper.get('[role="tablist"][aria-label="Remote control"] [aria-selected="true"]').text()).toBe("Terminal")
   expect(panel(wrapper).text()).toContain("ScopeMachine")
 })
 

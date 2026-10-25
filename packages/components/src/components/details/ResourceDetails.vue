@@ -50,7 +50,7 @@ const rows = computed<DetailsRow[]>(() => {
         { label: t("panel.cwd"), value: resource.terminal.cwd, code: true },
       ]
     }
-    case "desktop":
+    case "control":
       return [
         machine,
         { label: t("panel.status"), value: machineStatus(resource.machine) },
@@ -73,14 +73,14 @@ const title = computed(() => {
       return sessionLabel(resource.session)
     case "terminal":
       return resource.terminal.title
-    case "desktop":
-      return t("machine.remoteDesktop")
+    case "control":
+      return t("machine.remoteControl")
   }
 })
 
 const directories = computed<DirectoryBinding[]>(() => {
   const resource = props.resource
-  if (resource.kind === "desktop") return []
+  if (resource.kind === "control") return []
   if (resource.kind === "workspace") return resource.workspace.directories
   return resource.worktree?.directories ?? []
 })

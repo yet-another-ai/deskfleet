@@ -1,8 +1,8 @@
-import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
 import type { FileListing, FilesApi, FileTransfer } from "../../../../client/src/files.ts"
 import { i18n } from "../../i18n/index.ts"
-import FileTransferDialog from "./FileTransferDialog.vue"
+import FileTransferPanel from "./FileTransferPanel.vue"
 
 let wrapper: VueWrapper | undefined
 const target = { kind: "machine", machineId: "22", teamId: "3" } as const
@@ -19,14 +19,17 @@ function setup() {
     onChanged: listener => { update = listener; return unsubscribe },
     resolveResource: vi.fn(), readResource: vi.fn(), saveResource: vi.fn(),
   }
-  wrapper = mount(FileTransferDialog, { props: { api, target, machineName: "builder" }, global: { plugins: [i18n] } })
-  return { view: new DOMWrapper(document.body), api, update, unsubscribe }
+  wrapper = mount(FileTransferPanel, { props: { api, target, machineName: "builder" }, global: { plugins: [i18n] } })
+  return { view: wrapper, api, update, unsubscribe }
 }
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
 test("copies each selected folder as one task into the other pane's actual directory", async () => {
   const { view, api, unsubscribe } = setup()
   await flushPromises()
+  expect(view.find("dialog").exists()).toBe(false)
+  expect(view.find("h2").exists()).toBe(false)
+  expect(view.find('button[aria-label="Close"]').exists()).toBe(false)
   expect(view.findAll("[data-transfer-id]")).toHaveLength(1)
   expect(view.get('[role="progressbar"]').attributes("aria-valuenow")).toBe("50")
   expect(view.text()).toContain("16 B/s")

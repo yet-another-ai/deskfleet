@@ -34,6 +34,18 @@ test("loads images from the executing machine, shares reads through streamed tex
   expect(revoke).toHaveBeenCalledExactlyOnceWith("blob:chart")
 })
 
+test.each(["image/bmp", "image/vnd.microsoft.icon", "image/x-icon"])("renders remote %s images as typed Blob URLs", async mimeType => {
+  const readResource = vi.fn().mockResolvedValue({ data: new Uint8Array([1, 2, 3]), name: "preview", mimeType })
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview")
+  const view = render({ readResource }, "![Preview](/tmp/preview)")
+  await flushPromises()
+  expect(view.get("img").attributes("src")).toBe("blob:preview")
+  const blob = create.mock.calls[0]![0] as Blob
+  expect(blob.type).toBe(mimeType)
+  expect(new Uint8Array(await blob.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+  expect(view.find("[data-resource-retry]").exists()).toBe(false)
+})
+
 test("discards image completion after changing machines and keeps file links on trusted context", async () => {
   let resolve!: (value: { data: Uint8Array; name: string; mimeType: string }) => void
   const readResource = vi.fn().mockImplementationOnce(() => new Promise(done => { resolve = done })).mockRejectedValue(new Error("Machine offline"))

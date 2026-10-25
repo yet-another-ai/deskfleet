@@ -1,8 +1,8 @@
 # Files, transfers, and Agent resources
 
-The machine file service supplies the two-pane file transfer dialog and files
-referenced by Agent Markdown. The dialog is available from a machine and its
-remote desktop toolbar, including machines without desktop capture. Both clients
+The machine file service supplies the two-pane file transfer panel and files
+referenced by Agent Markdown. The panel lives in the machine's **Remote control**
+page alongside **Terminal** and **Desktop**, including on headless machines. Both clients
 use the same file contracts and transfer queue. The backend authorizes peers and
 relays signaling; file contents travel directly over WebRTC, with TURN fallback.
 File contents are not synchronized into central conversation history.
@@ -28,7 +28,7 @@ OS user permissions; Session association supplies path context, not a separate
 filesystem sandbox.
 
 File peers have their own lifetime, separate from Agent, terminal, and desktop
-media peers. Closing the transfer dialog, navigating to another page, changing
+media peers. Switching tools, navigating to another page, changing
 the selected machine, or disconnecting a desktop stream does not cancel the
 queue. A functioning peer survives signaling loss under its existing grant.
 Revocation, account changes, peer closure, or the grant's maximum 24-hour lifetime
@@ -148,6 +148,8 @@ line-aware editor.
 Images are fetched through the same authenticated file endpoint and rendered
 using locally created Blob URLs. The renderer permits `blob:` image sources and
 releases those URLs when their content or Session context leaves the view.
+BMP uses `image/bmp`; ICO uses `image/vnd.microsoft.icon`, with the legacy
+`image/x-icon` type also accepted for previews.
 Preview reads are capped at 16 MiB; larger files use the streaming transfer queue.
 Downloading a file link selects a local destination and creates a normal queue
 item. Loading failures retain a visible retry action.

@@ -205,7 +205,7 @@ async function captureScreenshots(window: BrowserWindow, context: BackendClients
 }
 
 async function openTerminal(machineId: string): Promise<void> {
-  location.hash = `/machines/${machineId}/terminals`
+  location.hash = `/machines/${machineId}/control?tab=terminal`
   const deadline = Date.now() + 30_000
   async function until(predicate: () => boolean): Promise<void> {
     while (!predicate()) {
@@ -213,9 +213,12 @@ async function openTerminal(machineId: string): Promise<void> {
       await new Promise(resolve => setTimeout(resolve, 25))
     }
   }
+  await until(() => document.querySelector('[role="tablist"][aria-label="Remote control"] [aria-selected="true"]')?.textContent?.trim() === "Terminal")
   await until(() => !!document.querySelector('button[aria-label="New shell"]'))
   document.querySelector<HTMLButtonElement>('button[aria-label="New shell"]')!.click()
   await until(() => !!document.querySelector('[data-connection="connected"]'))
+  const terminalId = new URLSearchParams(location.hash.split("?", 2)[1]).get("terminal")
+  if (!terminalId || document.getElementById(`terminal-tab-${terminalId}`)?.getAttribute("aria-selected") !== "true") throw new Error("Control route did not select the new terminal")
   await until(() => !!document.querySelector(".xterm-rows")?.textContent?.trim())
   // A login shell can finish its startup repaint after the peer's replay marker.
   await new Promise(resolve => setTimeout(resolve, 300))

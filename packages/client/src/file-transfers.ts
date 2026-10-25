@@ -10,7 +10,7 @@ interface ManifestEntry { file: FileEntry; relative: string }
 
 function mimeType(name: string): string {
   const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase()
-  return ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", svg: "image/svg+xml", pdf: "application/pdf", json: "application/json", txt: "text/plain", md: "text/plain", csv: "text/plain", ts: "text/plain", js: "text/plain", rs: "text/plain", py: "text/plain" } as Record<string, string>)[extension] ?? "application/octet-stream"
+  return ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", bmp: "image/bmp", ico: "image/vnd.microsoft.icon", svg: "image/svg+xml", pdf: "application/pdf", json: "application/json", txt: "text/plain", md: "text/plain", csv: "text/plain", ts: "text/plain", js: "text/plain", rs: "text/plain", py: "text/plain" } as Record<string, string>)[extension] ?? "application/octet-stream"
 }
 
 /** The app/account owns this queue; closing a view never interrupts a transfer. */

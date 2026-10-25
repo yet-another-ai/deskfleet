@@ -129,6 +129,20 @@ test("the same endpoint cannot copy a directory into its own descendant", async 
   expect(await readdir(join(source, "child"))).toEqual([])
 })
 
+test.each([
+  ["preview.BMP", "image/bmp", [0x42, 0x4d]],
+  ["preview.ico", "image/vnd.microsoft.icon", [0, 0, 1, 0]],
+])("reads %s resources with their image MIME type", async (name, mimeType, bytes) => {
+  const directory = await mkdtemp(join(tmpdir(), "deskfleet-resource-"))
+  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  const endpoint = new FilesService(async () => directory)
+  const manager = new FileTransferManager({ endpoint: async () => endpoint, chooseLocalDirectory: async () => null })
+  cleanups.push(() => manager.close())
+  await writeFile(join(directory, name), new Uint8Array(bytes))
+  const result = await manager.readResource({ target: remote, sessionId: "12", uri: name })
+  expect(result).toEqual({ name, mimeType, data: new Uint8Array(bytes) })
+})
+
 test("closing the account interrupts pending file calls before waiting for the queue", async () => {
   const directory = await mkdtemp(join(tmpdir(), "deskfleet-close-copy-"))
   cleanups.push(() => rm(directory, { recursive: true, force: true }))

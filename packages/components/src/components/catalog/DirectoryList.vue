@@ -4,6 +4,7 @@ import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouter } from "vue-router"
 import type { DirectoryBinding } from "../../stores/fleet-types.ts"
+import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 
@@ -13,6 +14,7 @@ const layout = useLayoutStore()
 const { t } = useI18n()
 const router = useRouter()
 const terminals = useTerminalsStore()
+const fleet = useFleetStore()
 const launching = ref(false)
 const error = ref<string | null>(null)
 async function open(cwd?: string): Promise<void> {
@@ -25,7 +27,10 @@ async function open(cwd?: string): Promise<void> {
     if (props.owner) {
       layout.terminalPanelOpen = true
       await router.push({ name: "session", params: { sessionId: props.owner.sessionId } })
-    } else await router.push({ name: "terminal", params: { terminalId: terminal.id } })
+    } else await router.push({
+      name: "machine-control", params: { machineId: fleet.targetId },
+      query: { tab: "terminal", terminal: terminal.id },
+    })
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { launching.value = false }
 }

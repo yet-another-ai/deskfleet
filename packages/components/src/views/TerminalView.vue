@@ -21,12 +21,24 @@ const terminals = useTerminalsStore()
 const layout = useLayoutStore()
 const router = useRouter()
 const location = computed(() => props.terminalId ? fleet.findTerminal(props.terminalId) : null)
-// Session terminals live in their Session's bottom panel.
+// Loading the destination must not briefly attach a second viewer to the same shell.
+const redirecting = computed(() => {
+  const value = location.value
+  return !!value && (!!(value.session && value.worktree) || (!value.workspace && !value.worktree))
+})
+// Ownership decides the destination; a shell's cwd does not change its scope.
 watch(location, (value) => {
-  if (!value?.session || !value.worktree) return
-  terminals.selected[value.worktree.id] = value.terminal.id
-  layout.terminalPanelOpen = true
-  void router.replace({ name: "session", params: { sessionId: value.session.id } })
+  if (!value) return
+  if (value.session && value.worktree) {
+    terminals.selected[value.worktree.id] = value.terminal.id
+    layout.terminalPanelOpen = true
+    void router.replace({ name: "session", params: { sessionId: value.session.id } })
+  } else if (!value.workspace && !value.worktree) {
+    void router.replace({
+      name: "machine-control", params: { machineId: value.machine.id },
+      query: { tab: "terminal", terminal: value.terminal.id },
+    })
+  }
 }, { immediate: true })
 const machineTerminals = computed(() => terminals.sessions.filter(terminal => terminal.worktreeId === undefined))
 // A click adds history; following a hung-up tab to its neighbour replaces it.
@@ -64,14 +76,14 @@ const banner = computed(() => `\x1b[2m${t("terminal.unavailable")}\x1b[0m\n`)
     </template>
   </PaneHeader>
 
-  <div v-if="localWorkspace" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
+  <div v-if="localWorkspace && !redirecting" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
     <TerminalWorkspace v-model:active-id="activeTerminal" :terminals="machineTerminals" :create="() => terminals.create()" />
   </div>
   <div
     v-else-if="!location"
     class="flex min-h-0 flex-1 items-center justify-center px-6 text-ui-text-muted"
   >{{ t("terminal.notFound") }}</div>
-  <div v-else class="flex min-h-0 flex-1 flex-col px-4 pb-4">
+  <div v-else-if="!redirecting" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
     <div class="min-h-0 flex-1 overflow-hidden rounded-xl bg-ui-terminal p-3">
       <TerminalSurface :key="terminalId" :banner="banner" />
     </div>

@@ -50,15 +50,15 @@ onBeforeUnmount(() => { disposed = true; ++generation })
 </script>
 
 <template>
-  <section class="min-w-0 overflow-hidden rounded-lg border border-ui-border" :aria-label="name">
-    <div class="flex items-center justify-between px-3 py-2"><span class="truncate text-sm font-medium">{{ name }}</span><IconButton v-if="target.kind === 'local'" :icon="FolderOpen" :label="t('files.chooseFolder')" @click="choose" /></div>
-    <nav class="flex min-w-0 items-center gap-1 px-2 pb-2" :aria-label="t('folderPicker.location')">
+  <section class="file-browser-pane flex min-h-64 min-w-0 flex-col overflow-hidden rounded-lg border border-ui-border" :aria-label="name">
+    <div class="flex shrink-0 items-center justify-between px-3 py-2"><span class="truncate text-sm font-medium">{{ name }}</span><IconButton v-if="target.kind === 'local'" :icon="FolderOpen" :label="t('files.chooseFolder')" @click="choose" /></div>
+    <nav class="flex min-w-0 shrink-0 items-center gap-1 px-2 pb-2" :aria-label="t('folderPicker.location')">
       <IconButton :icon="Home" :label="t('folderPicker.home')" @click="navigate(listing?.homePath)" />
       <IconButton :icon="ArrowUp" :label="t('folderPicker.up')" :disabled="!listing?.parentPath" @click="navigate(listing?.parentPath ?? undefined)" />
       <span v-if="listing" class="min-w-0 flex-1 truncate text-xs" :title="listing.path" :data-current-path="listing.path">{{ listing.path }}</span>
       <IconButton :icon="RefreshCw" :label="t('files.refresh')" :disabled="loading" @click="navigate(requestedPath)" />
     </nav>
-    <div class="h-56 overflow-y-auto border-t border-ui-border bg-ui-canvas" :aria-busy="loading">
+    <div class="file-browser-entries max-h-80 min-h-40 flex-1 overflow-y-auto border-t border-ui-border bg-ui-canvas" :aria-busy="loading">
       <p v-if="loading" class="m-0 p-3 text-sm text-ui-text-muted" role="status">{{ t('folderPicker.loading') }}</p>
       <div v-else-if="error" class="flex flex-col items-start gap-2 p-3">
         <p class="m-0 break-all text-xs text-ui-danger" role="alert">{{ error }}</p>
@@ -76,9 +76,16 @@ onBeforeUnmount(() => { disposed = true; ++generation })
       </ul>
       <p v-else class="m-0 p-3 text-sm text-ui-text-muted">{{ t('files.empty') }}</p>
     </div>
-    <div class="flex flex-wrap items-center gap-2 border-t border-ui-border px-3 py-1.5 text-xs text-ui-text-muted">
+    <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-ui-border px-3 py-1.5 text-xs text-ui-text-muted">
       <button v-for="root in listing?.roots" :key="root.path" type="button" class="cursor-pointer rounded px-1 hover:bg-ui-hover" :title="root.path" @click="navigate(root.path)">{{ root.name }}</button>
       <label class="ml-auto flex items-center gap-1.5"><input v-model="hidden" type="checkbox" />{{ t('files.showHidden') }}</label>
     </div>
   </section>
 </template>
+
+<style scoped>
+@container files (min-width: 36rem) {
+  .file-browser-pane, .file-browser-entries { min-height: 0; }
+  .file-browser-entries { max-height: none; }
+}
+</style>

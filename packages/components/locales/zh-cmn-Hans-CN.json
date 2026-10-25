@@ -70,7 +70,7 @@
     "local": "本机",
     "addWorkspace": "添加工作区",
     "noWorkspaces": "没有工作区",
-    "remoteDesktop": "远程桌面",
+    "remoteControl": "远程控制",
     "online": "在线"
   },
   "newSession": {
@@ -151,6 +151,11 @@
     "showPanel": "显示终端",
     "hidePanel": "隐藏终端"
   },
+  "remoteControl": {
+    "terminal": "终端",
+    "desktop": "桌面",
+    "filesUnavailable": "此机器暂不可使用文件传输。"
+  },
   "desktop": {
     "notFound": "该机器不存在。",
     "unavailable": "远程桌面尚不可用。",
@@ -186,7 +191,7 @@
     "label": "详情",
     "details": "详情",
     "changes": "变更",
-    "nothingSelected": "选择工作树、会话、终端或桌面以查看详情。",
+    "nothingSelected": "选择工作树、会话、终端或远程控制页面以查看详情。",
     "noWorktree": "Git 变更会显示在会话中。",
     "machine": "机器",
     "workspace": "工作区",

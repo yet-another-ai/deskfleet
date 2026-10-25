@@ -96,9 +96,11 @@ rightmost header reserves with `.titlebar-overlay-inset`
 (`src/main/window-chrome.ts`).
 
 The tree follows the resource model: machines contain workspaces, and workspaces
-list their Sessions. Each Session exposes its associated Worktree. Machine terminals
-appear under the machine; a Session's terminals stay in its bottom panel. Machines with a
-graphical session list Remote desktop first; headless machines omit it. Offline
+list their Sessions. Each Session exposes its associated Worktree. Each machine has
+one **Remote control** entry with Terminal, Desktop, and File transfer tabs.
+Machine terminals live there; a Session's terminals stay in its bottom panel.
+Headless machines default to Terminal, and graphical machines default to Desktop.
+Switching tabs preserves mounted tools and their connections. Offline
 machines start collapsed and report when they were last seen.
 
 | Route | View |
@@ -107,9 +109,10 @@ machines start collapsed and report when they were last seen.
 | `/workspaces/:workspaceId` | Workspace name, ordered directories, Sessions, default-directory terminal, and deletion |
 | `/worktrees/:worktreeId` | Directory bindings and the owning Session of a session Worktree |
 | `/sessions/:sessionId` | Conversation, tools, permissions, candidate backlog, composer, and agent lifecycle |
-| `/terminals/:terminalId` | A machine terminal's tab; a Session terminal redirects to its Session's panel |
-| `/machines/:machineId/terminals` | Terminal tabs and the empty terminal workspace |
-| `/machines/:machineId/desktop` | A machine's remote desktop surface, or why it is unavailable |
+| `/terminals/:terminalId` | Redirects machine terminals to Remote control and Session terminals to their Session's panel |
+| `/machines/:machineId/control` | Machine tools selected by `tab=terminal`, `tab=desktop`, or `tab=files`; `terminal` selects a shell |
+| `/machines/:machineId/terminals` | Redirects to the Terminal tab in Remote control |
+| `/machines/:machineId/desktop` | Redirects to the Desktop tab in Remote control |
 | `/settings/preferences` | Preferences, including launch at startup and the local Agent under This computer |
 
 A Workspace page's New session action makes that Workspace the composer's target.
@@ -221,14 +224,14 @@ authorized remote signaling.
 
 ## Desktop playback
 
-With the local Agent running, open **Remote desktop** under the real local
-machine. Select a display, then connect. The viewer uses the first of H.264,
+With the local Agent running, open **Remote control → Desktop** under the real
+local machine. Select a display, then connect. The viewer uses the first of H.264,
 HEVC, and AV1 that both the display's encoder and Chromium support, shows that
 codec as status text, and opens a new peer for the next codec only when the
 encoder fails. System audio is optional and defaults off.
 The video surface hides Chromium's playback controls; the page provides its own
-fullscreen action. Disconnect or leave the route to release capture; the daemon
-keeps running.
+fullscreen action. Switching tools keeps capture connected; disconnect or leave
+the Remote control page to release it. The daemon keeps running.
 
 Electron's main process discovers the local daemon through
 `~/.deskfleet/daemon.json`. Set `DESKFLEET_DAEMON_DIRECTORY` in both processes to
@@ -238,7 +241,7 @@ Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Remote signa
 See [media integration](../../agents/docs/media.md) for supported capture
 platforms, permissions, ownership, and the native pipeline.
 
-The machine and remote desktop toolbar also open a two-pane file transfer dialog.
+The Remote control page's File transfer tab contains the two-pane file browser.
 Its queue belongs to Electron main and continues through navigation and tray
 operation, independently of desktop playback. Agent file/image references use
 the same file service. See [files and transfers](../../agents/docs/files.md).

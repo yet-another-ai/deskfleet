@@ -54,7 +54,7 @@ function load(uri: string): void {
   if (!files || !current) { value.error = t("files.resourceUnavailable"); return }
   void files.readResource({ ...current, uri }).then(result => {
     if (disposed || images.get(uri) !== value) return
-    if (!/^image\/(?:png|jpeg|gif|webp|avif|bmp|svg\+xml|x-icon)$/iu.test(result.mimeType)) throw new Error(t("files.notImage"))
+    if (!/^image\/(?:png|jpeg|gif|webp|avif|bmp|svg\+xml|vnd\.microsoft\.icon|x-icon)$/iu.test(result.mimeType)) throw new Error(t("files.notImage"))
     // The only URL exposed to img is created here from the authenticated file bytes.
     value.url = URL.createObjectURL(new Blob([new Uint8Array(result.data)], { type: result.mimeType }))
   }).catch(reason => {

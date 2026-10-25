@@ -158,10 +158,15 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   require(main.directories[0]?.path === context.updatedPath, "Moving a path to first must change the default")
 
   await click("Open terminal in default directory")
-  await until(() => location.hash.includes("/terminals/"), "Default terminal navigation")
+  await until(() => /^#\/machines\/[^/]+\/control\?/u.test(location.hash), "Default terminal control navigation")
   const terminals = await api.terminal.list()
   require(terminals.length === 1 && terminals[0]?.cwd === context.updatedPath, "Default terminal did not use the first path")
-  return { workspaceId: workspace.id, worktreeId: main.id, terminalId: terminals[0].id }
+  const terminalId = terminals[0].id
+  const query = new URLSearchParams(location.hash.split("?", 2)[1])
+  require(query.get("tab") === "terminal" && query.get("terminal") === terminalId, "Default terminal route must select its control tab and terminal ID")
+  await until(() => document.querySelector('[role="tablist"][aria-label="Remote control"] [aria-selected="true"]')?.textContent?.trim() === "Terminal", "Selected Terminal control tab")
+  await until(() => document.getElementById(`terminal-tab-${terminalId}`)?.getAttribute("aria-selected") === "true", "Selected default shell")
+  return { workspaceId: workspace.id, worktreeId: main.id, terminalId }
 
 }
 
