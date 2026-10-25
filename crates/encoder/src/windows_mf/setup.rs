@@ -4,9 +4,7 @@ use std::{marker::PhantomData, rc::Rc};
 
 use windows::Win32::Foundation::{E_NOTIMPL, E_POINTER, LUID};
 use windows::Win32::Graphics::Direct3D11::ID3D11Device;
-use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIDevice, IDXGIFactory1,
-};
+use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::Media::MediaFoundation::*;
 use windows::Win32::System::Com::{
     COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize,
@@ -95,27 +93,13 @@ pub(super) fn hardware_candidates(luid: LUID) -> windows::core::Result<Vec<IMFAc
     }
 }
 
-pub(super) fn probe() -> Result<bool, EncoderError> {
+pub(super) fn probe(device: &ID3D11Device) -> Result<bool, EncoderError> {
     let _runtime = Runtime::new()?;
-    // SAFETY: The factory is created and used on the initialized COM worker.
-    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }
-        .map_err(|error| platform_error("enumerate DXGI adapters", error))?;
-    let mut index = 0;
-    // SAFETY: Adapter indices are advanced until DXGI reports exhaustion.
-    while let Ok(adapter) = unsafe { factory.EnumAdapters1(index) } {
-        index += 1;
-        // SAFETY: The adapter interface remains retained during GetDesc1.
-        let desc = unsafe { adapter.GetDesc1() }
-            .map_err(|error| platform_error("describe DXGI adapter", error))?;
-        if desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 == 0
-            && !hardware_candidates(desc.AdapterLuid)
-                .map_err(|error| platform_error("enumerate hardware H.264 MFTs", error))?
-                .is_empty()
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    let luid =
+        adapter_luid(device).map_err(|error| platform_error("query display adapter", error))?;
+    Ok(!hardware_candidates(luid)
+        .map_err(|error| platform_error("enumerate hardware H.264 MFTs", error))?
+        .is_empty())
 }
 
 /// Shut down failed activations as well as successfully streaming transforms.

@@ -3,7 +3,7 @@
 This crate exposes `deskfleet-native` through napi-rs. Its private pnpm package,
 `@deskfleet/native`, exports `nativeInfo()` with the addon version and Rust target
 OS/architecture, `createPeer()` for WebRTC, and explicit
-`captureDisplays()` / `supportedVideoCodecs()` capability queries.
+`captureDisplays()` / `supportedVideoCodecs(displayId)` capability queries.
 
 `createTerminal({ cwd, cols, rows })` starts the OS user's default shell in a
 native PTY. Terminals provide async byte `write()`, `resize()`, `nextEvent()`, and

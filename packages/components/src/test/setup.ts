@@ -51,7 +51,7 @@ const api: DeskfleetDesktopApi = {
   },
   desktop: {
     target: async () => ({ id: "local-daemon", name: "localhost", online: false, desktop: false }),
-    capabilities: async () => ({ displays: [], codecs: [], audio: false }),
+    capabilities: async () => ({ displays: [], audio: false }),
     offer: async () => { throw new Error("Daemon unavailable") },
     candidate: async () => {},
     start: async () => {},

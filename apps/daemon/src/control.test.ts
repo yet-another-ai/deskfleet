@@ -106,7 +106,7 @@ function fakePeers() {
   return { service, peers, configCalls, answerCalls, candidateCalls, startCalls }
 }
 
-const capabilities = async () => ({ displays: [{ id: 4, width: 1280, height: 720, refreshRateHz: 60 }], codecs: ["h264" as const], audio: false })
+const capabilities = async () => ({ displays: [{ id: 4, width: 1280, height: 720, refreshRateHz: 60, codecs: ["h264" as const] }], audio: false })
 const offer = { sessionId: "screen-1", sdp: "browser-offer", codec: "h264" as const, audio: false }
 
 test("local control authenticates before native calls and privately publishes discovery", async context => {

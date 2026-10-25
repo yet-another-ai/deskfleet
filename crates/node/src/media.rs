@@ -12,10 +12,12 @@ pub struct DisplayInfo {
     pub refresh_rate_hz: f64,
 }
 
-/// Probe encoders on a worker thread; never required for headless operations.
+/// Probe the selected display's encoders on a worker thread.
 #[napi]
-pub async fn supported_video_codecs() -> Result<Vec<String>> {
-    media::supported_video_codecs().await.map_err(native_error)
+pub async fn supported_video_codecs(display_id: u32) -> Result<Vec<String>> {
+    media::supported_video_codecs(display_id)
+        .await
+        .map_err(native_error)
 }
 
 /// Enumerate capture displays only on explicit request.

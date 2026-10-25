@@ -53,12 +53,16 @@ stack owns receive-side decoding and playback.
 
 WebRTC DataChannels and Opus encoding work without a display. Loading the addon,
 creating a peer, or starting the daemon does not enumerate displays or probe
-video encoders. `captureDisplays()`, `supportedVideoCodecs()`, and
+video encoders. `captureDisplays()`, `supportedVideoCodecs(displayId)`, and
 `startDesktop()` are explicit operations. Capture requires an interactive
 graphical session and any platform recording permission.
 
 On Windows, capture creates its D3D11 device on the adapter that owns the
-selected display. Encoding first tries NVENC on that device. If H.264 startup
+selected display. Codec discovery probes NVENC and Media Foundation on that
+same display's adapter, without a global cache or a union of other GPUs' codecs.
+The capability response attaches codecs to each display, and Desktop Settings
+updates its codec choices when the selected display changes.
+Encoding first tries NVENC on that device. If H.264 startup
 fails, it tries hardware Media Foundation transforms on the same adapter.
 There is no software encoder fallback. H.265 and AV1 remain NVENC-only;
 changing the negotiated codec requires a new peer.
@@ -67,6 +71,11 @@ The Media Foundation backend converts BGRA to limited-range BT.709 NV12 on the
 GPU and supplies retained D3D11 textures to the asynchronous hardware encoder.
 It requires a D3D11-aware H.264 hardware MFT and a compatible video processor.
 It uses bounded input buffering, low-latency settings, and requested keyframes.
+An unsupported optional force-keyframe property is logged without aborting frame
+submission. The capture worker retains the latest owned frame so PLI/FIR can
+request a new keyframe even when the desktop stops changing; repeated submissions
+receive increasing timestamps. At most four MF inputs are in flight and one
+latest sample waits for input capacity.
 Enumeration reports candidate codec support; starting the selected display's
 stream verifies its actual device, dimensions, and profile.
 

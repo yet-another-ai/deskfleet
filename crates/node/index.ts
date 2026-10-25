@@ -60,8 +60,8 @@ export function openCatalog(databasePath: string, machineName: string): Promise<
   return (bindings ??= loadBindings()).openCatalog(databasePath, machineName)
 }
 
-export function supportedVideoCodecs(): Promise<string[]> {
-  return (bindings ??= loadBindings()).supportedVideoCodecs()
+export function supportedVideoCodecs(displayId: number): Promise<string[]> {
+  return (bindings ??= loadBindings()).supportedVideoCodecs(displayId)
 }
 
 export function captureDisplays(): Promise<DisplayInfo[]> {

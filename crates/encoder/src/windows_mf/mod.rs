@@ -6,13 +6,14 @@
 #![allow(unsafe_code)]
 
 mod convert;
+mod keyframe;
 mod output;
 mod setup;
 
 use std::time::{Duration, Instant};
 
 use deskfleet_capture::Frame;
-use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
+use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11Texture2D};
 use windows::Win32::Media::MediaFoundation::*;
 use windows::Win32::System::Variant::VARIANT;
 use windows::core::Interface;
@@ -25,8 +26,8 @@ use setup::{Runtime, Session, set_codec_value};
 const MAX_IN_FLIGHT: usize = 4;
 const MAX_EVENTS_PER_POLL: usize = 64;
 
-pub(crate) fn is_supported() -> bool {
-    match setup::probe() {
+pub(crate) fn is_supported(device: &ID3D11Device) -> bool {
+    match setup::probe(device) {
         Ok(supported) => supported,
         Err(error) => {
             tracing::debug!(%error, "hardware Media Foundation H.264 probe failed");
@@ -121,44 +122,44 @@ impl MfEncoder {
             ));
         }
         let mut packets = self.poll_output()?;
-        if self.in_flight < MAX_IN_FLIGHT {
-            let texture = self.converter.convert(frame)?;
-            let timestamp = i64::try_from(frame.timestamp_ns / 100).map_err(|_| {
-                EncoderError::InvalidConfig("capture timestamp exceeds MF range".into())
-            })?;
-            let duration = (10_000_000.0 / self.config.fps).round() as i64;
-            // SAFETY: The new sample owns its DXGI buffer, which retains this
-            // unique texture. MF may retain the sample after ProcessInput; it is
-            // never returned to the capture pool or reused by the converter.
-            let sample = unsafe {
-                let buffer = MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, &texture, 0, false)
-                    .map_err(|error| platform_error("wrap NV12 texture", error))?;
-                let length = buffer
-                    .cast::<IMF2DBuffer>()
-                    .and_then(|buffer| buffer.GetContiguousLength())
-                    .map_err(|error| platform_error("query NV12 buffer length", error))?;
-                buffer
-                    .SetCurrentLength(length)
-                    .map_err(|error| platform_error("set NV12 buffer length", error))?;
-                let sample = MFCreateSample()
-                    .map_err(|error| platform_error("create MFT input sample", error))?;
-                sample
-                    .AddBuffer(&buffer)
-                    .map_err(|error| platform_error("attach NV12 texture", error))?;
-                sample
-                    .SetSampleTime(timestamp)
-                    .map_err(|error| platform_error("set MFT input timestamp", error))?;
-                sample
-                    .SetSampleDuration(duration)
-                    .map_err(|error| platform_error("set MFT input duration", error))?;
-                sample
-            };
-            // Keep the latest frame until NeedInput arrives, including the first
-            // frame of an otherwise completely static desktop. At most one waits.
-            self.pending = Some(sample);
-            self.submit_pending()?;
-            packets.extend(self.poll_output()?);
-        }
+        let texture = self.converter.convert(frame)?;
+        let timestamp = i64::try_from(frame.timestamp_ns / 100).map_err(|_| {
+            EncoderError::InvalidConfig("capture timestamp exceeds MF range".into())
+        })?;
+        let duration = (10_000_000.0 / self.config.fps).round() as i64;
+        // SAFETY: The new sample owns its DXGI buffer, which retains this
+        // unique texture. MF may retain the sample after ProcessInput; it is
+        // never returned to the capture pool or reused by the converter.
+        let sample = unsafe {
+            let buffer = MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, &texture, 0, false)
+                .map_err(|error| platform_error("wrap NV12 texture", error))?;
+            let length = buffer
+                .cast::<IMF2DBuffer>()
+                .and_then(|buffer| buffer.GetContiguousLength())
+                .map_err(|error| platform_error("query NV12 buffer length", error))?;
+            buffer
+                .SetCurrentLength(length)
+                .map_err(|error| platform_error("set NV12 buffer length", error))?;
+            let sample = MFCreateSample()
+                .map_err(|error| platform_error("create MFT input sample", error))?;
+            sample
+                .AddBuffer(&buffer)
+                .map_err(|error| platform_error("attach NV12 texture", error))?;
+            sample
+                .SetSampleTime(timestamp)
+                .map_err(|error| platform_error("set MFT input timestamp", error))?;
+            sample
+                .SetSampleDuration(duration)
+                .map_err(|error| platform_error("set MFT input duration", error))?;
+            sample
+        };
+        // Keep one latest sample even when all input slots are occupied. A
+        // static desktop may never call encode again after requesting a keyframe;
+        // poll_output must be able to submit it once capacity returns. Only
+        // submit_pending admits samples to the four-slot in-flight budget.
+        self.pending = Some(sample);
+        self.submit_pending()?;
+        packets.extend(self.poll_output()?);
         Ok(packets)
     }
 
@@ -213,22 +214,27 @@ impl MfEncoder {
         let Some(sample) = self.pending.as_ref() else {
             return Ok(());
         };
-        if self.keyframe_requested {
-            set_codec_value(
-                &self.session.codec,
-                &CODECAPI_AVEncVideoForceKeyFrame,
-                VARIANT::from(1u32),
-            )
-            .map_err(|error| platform_error("request MFT keyframe", error))?;
-        }
-        // SAFETY: An outstanding NeedInput event authorizes this submission. The
-        // sample owns its unique NV12 buffer for however long the MFT retains it.
-        match unsafe {
-            self.session
-                .active
-                .transform
-                .ProcessInput(self.session.input_id, sample, 0)
-        } {
+        let result = keyframe::submit_frame(
+            self.keyframe_requested,
+            |value| {
+                set_codec_value(
+                    &self.session.codec,
+                    &CODECAPI_AVEncVideoForceKeyFrame,
+                    value,
+                )
+            },
+            || {
+                // SAFETY: An outstanding NeedInput event authorizes this submission.
+                // The sample owns its NV12 buffer for however long the MFT retains it.
+                unsafe {
+                    self.session
+                        .active
+                        .transform
+                        .ProcessInput(self.session.input_id, sample, 0)
+                }
+            },
+        );
+        match result {
             Ok(()) => {
                 self.pending = None;
                 self.input_requests -= 1;
@@ -321,5 +327,89 @@ impl Drop for MfEncoder {
                 .transform
                 .ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::H264Profile;
+
+    #[test]
+    #[ignore = "requires an interactive Windows desktop and a hardware Media Foundation H.264 encoder"]
+    fn saturated_input_preserves_latest_static_keyframe() {
+        let display = deskfleet_capture::displays()
+            .unwrap()
+            .into_iter()
+            .next()
+            .expect("a display");
+        let capture = deskfleet_capture::create_capture_stream(
+            &display,
+            &deskfleet_capture::CaptureConfig {
+                fps: 30.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut frame = loop {
+            if let Some(frame) = capture.poll_frame().unwrap() {
+                break frame;
+            }
+            assert!(Instant::now() < deadline, "capture produced no frame");
+        };
+        let config = EncoderConfig {
+            width: frame.width,
+            height: frame.height,
+            fps: 30.0,
+            h264_profile: H264Profile::ConstrainedBaseline,
+            ..Default::default()
+        };
+        let mut encoder = MfEncoder::new(&config, &frame).unwrap();
+        frame.timestamp_ns = 100_000_000;
+        let mut packets = encoder.encode(&frame).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while packets.is_empty() {
+            assert!(Instant::now() < deadline, "initial output timed out");
+            std::thread::sleep(Duration::from_millis(5));
+            packets.extend(encoder.poll_output().unwrap());
+        }
+        assert_eq!(encoder.in_flight, 0);
+
+        // Hold the admission limit full deterministically rather than racing
+        // the GPU. Real capture, conversion, retained samples and MFT output
+        // still exercise the normal encode/poll path.
+        encoder.in_flight = MAX_IN_FLIGHT;
+        encoder.request_keyframe();
+        for timestamp in [133_333_300, 166_666_600] {
+            frame.timestamp_ns = timestamp;
+            assert!(encoder.encode(&frame).unwrap().is_empty());
+            assert!(encoder.pending.is_some());
+            assert!(encoder.keyframe_requested);
+            assert_eq!(encoder.in_flight, MAX_IN_FLIGHT);
+        }
+        encoder.in_flight = 0;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut packets = Vec::new();
+        while packets.is_empty() {
+            assert!(
+                Instant::now() < deadline,
+                "retained keyframe output timed out"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+            packets.extend(encoder.poll_output().unwrap());
+        }
+        assert_eq!(
+            packets.len(),
+            1,
+            "only the newest waiting frame is submitted"
+        );
+        assert_eq!(packets[0].timestamp_ns, frame.timestamp_ns);
+        assert!(packets[0].is_keyframe);
+        assert!(encoder.pending.is_none());
+        assert_eq!(encoder.in_flight, 0);
+        encoder.flush().unwrap();
+        drop(encoder);
+        capture.stop().unwrap();
     }
 }

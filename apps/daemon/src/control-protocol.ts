@@ -19,11 +19,11 @@ export interface DesktopDisplay {
   width: number
   height: number
   refreshRateHz: number
+  codecs: VideoCodec[]
 }
 
 export interface DesktopCapabilities {
   displays: DesktopDisplay[]
-  codecs: VideoCodec[]
   audio: boolean
 }
 

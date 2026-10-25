@@ -76,6 +76,36 @@ test("discovers displays without capturing, then connects with the selected sett
   expect(track.stop).toHaveBeenCalledTimes(1)
 })
 
+test("switching displays selects a codec supported by that display's GPU", async () => {
+  mock.api.capabilities.mockResolvedValueOnce({
+    displays: [
+      { id: 1, width: 1920, height: 1080, refreshRateHz: 60, codecs: ["h264", "h265", "av1"] },
+      { id: 2, width: 2560, height: 1440, refreshRateHz: 60, codecs: ["h264"] },
+      { id: 3, width: 1280, height: 720, refreshRateHz: 60, codecs: [] },
+    ],
+    audio: false,
+  })
+  const wrapper = await mountDesktop()
+  const [display, codec] = wrapper.findAll("select")
+  await codec!.setValue("av1")
+  await display!.setValue("2")
+  expect(codec!.findAll("option").map(option => option.text())).toEqual(["H264"])
+  expect(codec!.element.value).toBe("h264")
+
+  await display!.setValue("3")
+  expect(wrapper.findAll("select")).toHaveLength(1)
+  expect(button(wrapper, "Connect").attributes("disabled")).toBeDefined()
+  expect(wrapper.get('[role="status"]').text()).toBe("No compatible video codec is available in Electron.")
+
+  await display!.setValue("2")
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  expect(mock.api.offer).toHaveBeenCalledWith(expect.objectContaining({ codec: "h264" }))
+  TestPeer.instances[0]!.changeState("connected")
+  await flushPromises()
+  expect(mock.api.start).toHaveBeenCalledWith(expect.objectContaining({ displayId: 2 }))
+})
+
 test("an unavailable daemon remains reachable through refresh", async () => {
   mock.api.target.mockRejectedValueOnce(new Error("No daemon discovery file"))
   const wrapper = await mountDesktop()
@@ -95,7 +125,7 @@ test("reports unsupported capture, missing displays, and incompatible codecs", a
   expect(unsupported.get('[role="status"]').text()).toBe("Screen capture is unavailable on this machine.")
   expect(mock.api.capabilities).not.toHaveBeenCalled()
 
-  mock.api.capabilities.mockResolvedValueOnce({ displays: [], codecs: ["h264"], audio: false })
+  mock.api.capabilities.mockResolvedValueOnce({ displays: [], audio: false })
   const headless = await mountDesktop()
   expect(headless.get('[role="status"]').text()).toBe("test-host has no display to share.")
   expect(button(headless, "Connect").attributes("disabled")).toBeDefined()

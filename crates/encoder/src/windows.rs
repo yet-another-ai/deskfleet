@@ -155,48 +155,16 @@ impl WindowsEncoder {
         ))
     }
 
-    /// Probe which codecs are supported by the local NVENC hardware.
-    ///
-    /// Creates a temporary D3D11 device to open an NVENC query session
-    /// with `NV_ENC_DEVICE_TYPE_DIRECTX`, since the default CUDA-with-
-    /// null-device path typically fails on Windows.
-    pub fn probe_supported_codecs() -> Vec<Codec> {
-        probe_codecs_via_d3d11().unwrap_or_default()
+    /// Probe NVENC on the selected display's D3D11 device.
+    pub fn probe_supported_codecs(device: &ID3D11Device) -> Vec<Codec> {
+        probe_codecs_via_d3d11(device)
     }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-/// Create a throw-away D3D11 device and probe NVENC codecs via DirectX.
-fn probe_codecs_via_d3d11() -> Option<Vec<Codec>> {
-    use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
-    use windows::Win32::Graphics::Direct3D11::{
-        D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION, D3D11CreateDevice,
-    };
-
-    // Create a minimal D3D11 device (no swap chain needed).
-    let mut device = None;
-    // SAFETY: all optional output pointers are null or point to initialized writable COM storage.
-    let hr = unsafe {
-        D3D11CreateDevice(
-            None, // default adapter
-            D3D_DRIVER_TYPE_HARDWARE,
-            windows::Win32::Foundation::HMODULE::default(),
-            D3D11_CREATE_DEVICE_FLAG(0),
-            None, // default feature levels
-            D3D11_SDK_VERSION,
-            Some(&raw mut device),
-            None, // don't need chosen level
-            None, // don't need immediate context
-        )
-    };
-
-    if hr.is_err() {
-        tracing::warn!("probe_codecs_via_d3d11: D3D11CreateDevice failed: {hr:?}");
-        return None;
-    }
-
-    let device = device?;
+/// Query the supplied display adapter without creating a default-adapter device.
+fn probe_codecs_via_d3d11(device: &ID3D11Device) -> Vec<Codec> {
     let device_ptr: *mut std::os::raw::c_void = device.as_raw();
 
     // SAFETY: the retained D3D11 device remains alive until the synchronous capability query returns.
@@ -207,17 +175,15 @@ fn probe_codecs_via_d3d11() -> Option<Vec<Codec>> {
         )
     };
 
-    Some(
-        codecs
-            .into_iter()
-            .filter_map(|sc| match sc.name.as_str() {
-                "H.264" => Some(Codec::H264),
-                "H.265" => Some(Codec::H265),
-                "AV1" => Some(Codec::AV1),
-                _ => None,
-            })
-            .collect(),
-    )
+    codecs
+        .into_iter()
+        .filter_map(|sc| match sc.name.as_str() {
+            "H.264" => Some(Codec::H264),
+            "H.265" => Some(Codec::H265),
+            "AV1" => Some(Codec::AV1),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Map the crate-level `Codec` and profile enums to NVENC GUIDs.

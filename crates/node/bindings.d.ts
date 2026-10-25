@@ -146,8 +146,8 @@ export interface PeerEvent {
  */
 export declare function requestScreenCaptureAccess(): Promise<boolean | null>
 
-/** Probe encoders on a worker thread; never required for headless operations. */
-export declare function supportedVideoCodecs(): Promise<Array<string>>
+/** Probe the selected display's encoders on a worker thread. */
+export declare function supportedVideoCodecs(displayId: number): Promise<Array<string>>
 
 export interface TerminalConfig {
   cwd: string

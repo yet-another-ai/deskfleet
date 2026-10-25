@@ -21,7 +21,7 @@ const execute = promisify(execFile)
 const credentials = { serverUrl: "http://127.0.0.1:9", serverId: "server", teamId: "team", machineId: "machine", token: "retired-token", revoked: true }
 const options = {
   peers: { create: async () => { throw new Error("Unexpected peer creation") }, close: async () => {} },
-  capabilities: async () => ({ displays: [], codecs: [], audio: false }),
+  capabilities: async () => ({ displays: [], audio: false }),
 }
 async function seed(directory: string, revoked = true): Promise<void> {
   await mkdir(join(directory, "machine"), { recursive: true })

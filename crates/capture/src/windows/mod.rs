@@ -19,11 +19,8 @@ use crate::types::{CaptureConfig, Display};
 
 mod device;
 mod frames;
-pub use device::displays;
-use device::{
-    create_d3d11_device, create_duplication, find_dxgi_output, pre_allocate_pool,
-    try_recreate_duplication,
-};
+pub use device::{create_d3d11_device, displays};
+use device::{create_duplication, find_dxgi_output, pre_allocate_pool, try_recreate_duplication};
 use frames::{
     make_frame_from_resource, process_frame, send_frame_from_texture, update_last_desktop,
 };

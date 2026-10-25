@@ -4,7 +4,8 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { connect, createServer, type Socket } from "node:net"
 import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
-import { captureDisplays, supportedVideoCodecs, type NativePeer, type PeerConfig } from "@deskfleet/native"
+import type { NativePeer, PeerConfig } from "@deskfleet/native"
+import { desktopCapabilities } from "./desktop-capabilities.ts"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
 import { MAX_CONTROL_MESSAGE_BYTES, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
 import { parseControlRequest, readControlRequestId } from "./control-request.ts"
@@ -31,15 +32,6 @@ export interface ControlPeers {
 }
 
 type Capabilities = () => Promise<DesktopCapabilities>
-
-async function desktopCapabilities(): Promise<DesktopCapabilities> {
-  const [displays, codecs] = await Promise.all([captureDisplays(), supportedVideoCodecs()])
-  return {
-    displays,
-    codecs: codecs.filter((codec): codec is "h264" | "h265" | "av1" => codec === "h264" || codec === "h265" || codec === "av1"),
-    audio: process.platform === "darwin",
-  }
-}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)

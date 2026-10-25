@@ -48,9 +48,12 @@ function closeSettings(): void {
 const { position: toolbarPosition, startDrag, moveDrag, endDrag, nudge: nudgeToolbar, panelSide: settingsSide } = useFloatingToolbar(stage, toolbar)
 
 const codecs = computed(() => commonDesktopCodecs(
-  capabilities.value?.codecs ?? [],
+  capabilities.value?.displays.find(display => display.id === displayId.value)?.codecs ?? [],
   typeof RTCRtpReceiver === "undefined" ? [] : RTCRtpReceiver.getCapabilities("video")?.codecs ?? [],
 ))
+watch(codecs, available => {
+  if (codec.value === null || !available.includes(codec.value)) codec.value = available[0] ?? null
+}, { flush: "sync" })
 const active = computed(() => ["connecting", "starting", "connected"].includes(state.value))
 const canConnect = computed(() => local.value && !loading.value && !active.value
   && fleet.localDesktopTarget.online && displayId.value !== null && codec.value !== null)

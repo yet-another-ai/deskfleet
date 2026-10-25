@@ -23,15 +23,13 @@ pub use types::{AV1Profile, Codec, EncoderConfig, H264Profile, H265Profile};
 
 use deskfleet_capture::Frame;
 
-/// Return the list of video codecs supported by the platform encoder.
+/// Return the hardware video codecs available for the selected display.
 ///
-/// Probes the hardware encoder at runtime to determine which codecs
-/// can be used.  The result is cached for the lifetime of the process.
-pub fn supported_codecs() -> Vec<Codec> {
-    static CACHE: std::sync::OnceLock<Vec<Codec>> = std::sync::OnceLock::new();
-    CACHE
-        .get_or_init(backend::platform_supported_codecs)
-        .clone()
+/// Windows probes both hardware backends on the adapter that owns this display.
+/// Results are queried afresh so changing displays or GPUs cannot reuse another
+/// adapter's capabilities. This does not start screen capture.
+pub fn supported_codecs(display_id: u32) -> Result<Vec<Codec>, EncoderError> {
+    backend::platform_supported_codecs(display_id)
 }
 
 /// A hardware-accelerated video encoder (H.264, H.265, or AV1).

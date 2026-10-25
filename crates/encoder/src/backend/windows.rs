@@ -71,19 +71,31 @@ fn select<T>(
     }
 }
 
-pub(crate) fn supported_codecs() -> Vec<Codec> {
-    let Ok(preference) = Preference::current() else {
-        return Vec::new();
-    };
+pub(crate) fn supported_codecs(display_id: u32) -> Result<Vec<Codec>, EncoderError> {
+    let preference = Preference::current()?;
+    let (device, _context) = deskfleet_capture::create_d3d11_device_for_display(display_id)
+        .map_err(|error| EncoderError::Platform(format!("open display adapter: {error}")))?;
+    Ok(probe_device_codecs(
+        preference,
+        &device,
+        windows::WindowsEncoder::probe_supported_codecs,
+        windows_mf::is_supported,
+    ))
+}
+
+/// Both backends must inspect the same display device, including fallback probes.
+fn probe_device_codecs<D>(
+    preference: Preference,
+    device: &D,
+    nvenc: impl FnOnce(&D) -> Vec<Codec>,
+    mf: impl FnOnce(&D) -> bool,
+) -> Vec<Codec> {
     let mut codecs = if preference == Preference::MediaFoundation {
         Vec::new()
     } else {
-        windows::WindowsEncoder::probe_supported_codecs()
+        nvenc(device)
     };
-    if preference != Preference::Nvenc
-        && !codecs.contains(&Codec::H264)
-        && windows_mf::is_supported()
-    {
+    if preference != Preference::Nvenc && !codecs.contains(&Codec::H264) && mf(device) {
         codecs.push(Codec::H264);
     }
     codecs
@@ -195,6 +207,40 @@ impl PlatformEncoder {
 mod tests {
     use super::*;
     use std::cell::Cell;
+
+    #[test]
+    fn codec_probes_never_combine_different_display_adapters() {
+        #[derive(Clone, Copy)]
+        enum Adapter {
+            Nvidia,
+            Integrated,
+            WithoutHardwareEncoder,
+        }
+        let nvenc = |adapter: &Adapter| match adapter {
+            Adapter::Nvidia => vec![Codec::H264, Codec::H265, Codec::AV1],
+            Adapter::Integrated | Adapter::WithoutHardwareEncoder => Vec::new(),
+        };
+        let mf = |adapter: &Adapter| matches!(adapter, Adapter::Integrated);
+
+        // Changing displays must not retain the discrete GPU's capabilities or
+        // borrow H.264 support from the other display's integrated GPU.
+        for (adapter, expected) in [
+            (Adapter::Nvidia, vec![Codec::H264, Codec::H265, Codec::AV1]),
+            (Adapter::Integrated, vec![Codec::H264]),
+            (Adapter::WithoutHardwareEncoder, Vec::new()),
+            (Adapter::Nvidia, vec![Codec::H264, Codec::H265, Codec::AV1]),
+        ] {
+            assert_eq!(
+                probe_device_codecs(Preference::Auto, &adapter, nvenc, mf),
+                expected,
+            );
+        }
+        assert!(probe_device_codecs(Preference::Nvenc, &Adapter::Integrated, nvenc, mf).is_empty());
+        assert!(
+            probe_device_codecs(Preference::MediaFoundation, &Adapter::Nvidia, nvenc, mf)
+                .is_empty()
+        );
+    }
 
     #[test]
     fn nvenc_first_with_same_codec_fallback() {

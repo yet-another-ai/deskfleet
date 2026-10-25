@@ -38,14 +38,20 @@ pub enum MediaError {
 }
 
 /// Video codec support is probed only when explicitly requested.
-pub async fn supported_video_codecs() -> Result<Vec<String>, MediaError> {
-    Ok(tokio::task::spawn_blocking(|| {
-        deskfleet_encoder::supported_codecs()
+pub async fn supported_video_codecs(display_id: u32) -> Result<Vec<String>, MediaError> {
+    tokio::task::spawn_blocking(move || {
+        if !deskfleet_capture::displays()?
+            .iter()
+            .any(|display| display.id == display_id)
+        {
+            return Err(MediaError::DisplayNotFound(display_id));
+        }
+        Ok(deskfleet_encoder::supported_codecs(display_id)?
             .into_iter()
             .map(|codec| codec.as_str().to_owned())
-            .collect()
+            .collect())
     })
-    .await?)
+    .await?
 }
 
 /// Enumerating displays can require a graphical session and capture permission.
@@ -246,6 +252,7 @@ fn capture_loop(
         .then(|| OpusEncoder::new(&OpusEncoderConfig::default()))
         .transpose()?;
     let mut encoder: Option<Encoder> = None;
+    let mut retained = RetainedVideoFrame::new();
     let mut dimensions = (0, 0);
     let mut ready = Some(ready);
     let first_frame_deadline = Instant::now() + Duration::from_secs(5);
@@ -254,29 +261,45 @@ fn capture_loop(
             if ready.is_some() && Instant::now() >= first_frame_deadline {
                 return Err(MediaError::FirstFrameTimeout);
             }
-            if let Some(frame) = capture.poll_frame()? {
-                if dimensions != (frame.width, frame.height) {
-                    encoder = Some(Encoder::new(&EncoderConfig {
-                        width: frame.width,
-                        height: frame.height,
-                        fps,
-                        codec,
-                        bitrate_bps: config.bitrate_bps,
-                        max_bitrate_bps: config.max_bitrate_bps,
-                        h264_profile: H264Profile::ConstrainedBaseline,
-                        ..EncoderConfig::default()
-                    })?);
-                    dimensions = (frame.width, frame.height);
-                }
-                if let Some(encoder) = encoder.as_mut() {
-                    if peer.take_keyframe_request() {
+            let captured = capture.poll_frame()?;
+            if let Some(frame) = captured.as_ref()
+                && dimensions != (frame.width, frame.height)
+            {
+                encoder = Some(Encoder::new(&EncoderConfig {
+                    width: frame.width,
+                    height: frame.height,
+                    fps,
+                    codec,
+                    bitrate_bps: config.bitrate_bps,
+                    max_bitrate_bps: config.max_bitrate_bps,
+                    h264_profile: H264Profile::ConstrainedBaseline,
+                    ..EncoderConfig::default()
+                })?);
+                dimensions = (frame.width, frame.height);
+            }
+            // Keep one owned surface outside the capture pool. PLI/FIR can
+            // arrive after the desktop stops changing, so consume requests on
+            // every bounded capture poll and re-encode that retained frame.
+            let keyframe = peer.take_keyframe_request();
+            let captured = captured.map(|frame| {
+                let timestamp = frame.timestamp_ns;
+                (frame, timestamp)
+            });
+            if let Some(encoded) = retained.submit(
+                captured,
+                keyframe,
+                Instant::now(),
+                |frame, timestamp, keyframe| -> Result<_, MediaError> {
+                    frame.timestamp_ns = timestamp;
+                    let encoder = encoder.as_mut().ok_or(MediaError::Startup)?;
+                    if keyframe {
                         encoder.request_keyframe();
                     }
-                    let encoded = encoder.encode(&frame)?;
-                    if !deliver_video(encoded, &packets, &mut ready, fps) {
-                        return Ok(());
-                    }
-                }
+                    Ok(encoder.encode(frame)?)
+                },
+            ) && !deliver_video(encoded?, &packets, &mut ready, fps)
+            {
+                return Ok(());
             }
             // Hardware MFTs can produce their first or last packet after encode
             // returns, including when a static desktop never supplies another frame.
@@ -310,8 +333,55 @@ fn capture_loop(
     {
         let _encoder = encoder.take();
     }
+    retained.latest = None;
     let stopped = capture.stop().map_err(MediaError::from);
     result.and(stopped)
+}
+
+/// Holds exactly one capture-owned surface until a newer frame replaces it.
+/// The generic frame lets scheduling and ownership be exercised without a GPU.
+struct RetainedVideoFrame<T> {
+    latest: Option<(T, u64, Instant)>,
+    last_timestamp: Option<u64>,
+    keyframe_requested: bool,
+}
+
+impl<T> RetainedVideoFrame<T> {
+    fn new() -> Self {
+        Self {
+            latest: None,
+            last_timestamp: None,
+            keyframe_requested: false,
+        }
+    }
+
+    fn submit<R>(
+        &mut self,
+        captured: Option<(T, u64)>,
+        keyframe_requested: bool,
+        now: Instant,
+        encode: impl FnOnce(&mut T, u64, bool) -> R,
+    ) -> Option<R> {
+        let fresh = captured.is_some();
+        if let Some((frame, timestamp)) = captured {
+            self.latest = Some((frame, timestamp, now));
+        }
+        self.keyframe_requested |= keyframe_requested;
+        if !fresh && !self.keyframe_requested {
+            return None;
+        }
+        let (frame, captured_timestamp, captured_at) = self.latest.as_mut()?;
+        let elapsed =
+            u64::try_from(now.duration_since(*captured_at).as_nanos()).unwrap_or(u64::MAX);
+        let mut timestamp = captured_timestamp.saturating_add(elapsed);
+        if let Some(previous) = self.last_timestamp {
+            // MF uses 100 ns ticks; preserve ordering after its time conversion.
+            timestamp = timestamp.max(previous.saturating_add(100));
+        }
+        self.last_timestamp = Some(timestamp);
+        let keyframe = std::mem::take(&mut self.keyframe_requested);
+        Some(encode(frame, timestamp, keyframe))
+    }
 }
 
 fn deliver_video(
@@ -345,6 +415,109 @@ fn deliver_video(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keyframe_feedback_resubmits_unchanged_frame_without_repeating_idle_polls() {
+        let start = Instant::now();
+        let mut retained = RetainedVideoFrame::new();
+        let mut submitted = Vec::new();
+        let mut encode = |frame: &mut u8, timestamp, keyframe| {
+            submitted.push((*frame, timestamp, keyframe));
+        };
+
+        retained.submit(Some((7, 1_000)), false, start, &mut encode);
+        assert!(
+            retained
+                .submit(None, false, start + Duration::from_millis(10), &mut encode)
+                .is_none()
+        );
+        retained.submit(None, true, start + Duration::from_millis(20), &mut encode);
+        assert!(
+            retained
+                .submit(None, false, start + Duration::from_millis(30), &mut encode)
+                .is_none()
+        );
+        retained.submit(None, true, start + Duration::from_millis(40), &mut encode);
+        // A newly queued capture may predate the most recent repeated frame.
+        retained.submit(
+            Some((8, 30_001_000)),
+            false,
+            start + Duration::from_millis(50),
+            &mut encode,
+        );
+        assert_eq!(
+            submitted,
+            [
+                (7, 1_000, false),
+                (7, 20_001_000, true),
+                (7, 40_001_000, true),
+                (8, 40_001_100, false),
+            ]
+        );
+        assert!(
+            submitted
+                .windows(2)
+                .all(|pair| pair[0].1 / 100 < pair[1].1 / 100)
+        );
+    }
+
+    #[test]
+    fn retains_surface_until_replaced_and_coalesces_feedback_before_first_frame() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        struct Surface(Rc<Cell<usize>>);
+        impl Drop for Surface {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+
+        let dropped = Rc::new(Cell::new(0));
+        let mut retained = RetainedVideoFrame::new();
+        let now = Instant::now();
+        assert!(
+            retained
+                .submit(None, true, now, |_: &mut Surface, _, _| panic!(
+                    "no capture yet"
+                ))
+                .is_none()
+        );
+        assert!(
+            retained
+                .submit(None, true, now, |_: &mut Surface, _, _| panic!(
+                    "no capture yet"
+                ))
+                .is_none()
+        );
+        let keyframe = retained.submit(
+            Some((Surface(Rc::clone(&dropped)), 0)),
+            false,
+            now,
+            |_, _, keyframe| keyframe,
+        );
+        assert_eq!(keyframe, Some(true));
+        assert_eq!(dropped.get(), 0);
+        retained.submit(None, true, now + Duration::from_millis(10), |_, _, _| {});
+        assert_eq!(
+            dropped.get(),
+            0,
+            "a repeated frame must retain the same surface"
+        );
+        retained.submit(
+            Some((Surface(Rc::clone(&dropped)), 20_000_000)),
+            false,
+            now + Duration::from_millis(20),
+            |_, _, _| {},
+        );
+        assert_eq!(
+            dropped.get(),
+            1,
+            "only the replaced surface returns to capture"
+        );
+        drop(retained);
+        assert_eq!(dropped.get(), 2);
+    }
 
     #[test]
     fn startup_waits_for_nonempty_output_and_delivery() {

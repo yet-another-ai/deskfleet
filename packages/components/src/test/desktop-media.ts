@@ -52,10 +52,10 @@ export function mockDesktopApi() {
     target: vi.fn<DesktopMediaApi["target"]>(async () => ({ id: "local-daemon", name: "test-host", online: true, desktop: true })),
     capabilities: vi.fn<DesktopMediaApi["capabilities"]>(async () => ({
       displays: [
-        { id: 1, width: 1920, height: 1080, refreshRateHz: 60 },
-        { id: 2, width: 2560, height: 1440, refreshRateHz: 60 },
+        { id: 1, width: 1920, height: 1080, refreshRateHz: 60, codecs: ["av1", "h265", "h264"] },
+        { id: 2, width: 2560, height: 1440, refreshRateHz: 60, codecs: ["av1", "h265", "h264"] },
       ],
-      codecs: ["av1", "h265", "h264"], audio: true,
+      audio: true,
     })),
     offer: vi.fn<DesktopMediaApi["offer"]>(async () => ({ sdp: "native-answer" })),
     candidate: vi.fn<DesktopMediaApi["candidate"]>(async () => {}),

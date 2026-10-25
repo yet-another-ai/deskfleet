@@ -93,7 +93,9 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
 }
 
 /// Create a D3D11 device on the adapter that owns the selected display.
-pub(super) fn create_d3d11_device(
+///
+/// This does not create a duplication session or capture any desktop pixels.
+pub fn create_d3d11_device(
     monitor_id: u32,
 ) -> Result<(ID3D11Device, ID3D11DeviceContext), CaptureError> {
     let adapter = find_display_adapter(monitor_id)?;

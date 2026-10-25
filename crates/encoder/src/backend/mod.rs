@@ -1,4 +1,4 @@
-use crate::types::Codec;
+use crate::{EncoderError, types::Codec};
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -19,16 +19,16 @@ pub use windows::PlatformEncoder;
 pub(crate) use stub::PlatformEncoder;
 
 #[cfg(target_os = "macos")]
-pub fn platform_supported_codecs() -> Vec<Codec> {
-    crate::macos::probe_supported_codecs()
+pub fn platform_supported_codecs(_display_id: u32) -> Result<Vec<Codec>, EncoderError> {
+    Ok(crate::macos::probe_supported_codecs())
 }
 
 #[cfg(target_os = "windows")]
-pub fn platform_supported_codecs() -> Vec<Codec> {
-    windows::supported_codecs()
+pub fn platform_supported_codecs(display_id: u32) -> Result<Vec<Codec>, EncoderError> {
+    windows::supported_codecs(display_id)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub(crate) fn platform_supported_codecs() -> Vec<Codec> {
-    Vec::new()
+pub(crate) fn platform_supported_codecs(_display_id: u32) -> Result<Vec<Codec>, EncoderError> {
+    Ok(Vec::new())
 }

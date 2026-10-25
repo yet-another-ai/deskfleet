@@ -20,6 +20,9 @@ pub use frame::{Frame, PixelFormat};
 pub use surface::NativeSurface;
 pub use types::{CaptureConfig, Display};
 
+#[cfg(target_os = "windows")]
+pub use windows::create_d3d11_device as create_d3d11_device_for_display;
+
 /// Request screen and system-audio recording access for the current process.
 ///
 /// On macOS, this prompts only when access has not yet been determined and
