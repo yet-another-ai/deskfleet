@@ -15,7 +15,11 @@ const locale = process.argv
 
 async function invokeDesktop<T>(method: string, params?: unknown): Promise<T> {
   const result = await ipcRenderer.invoke(DESKTOP_MEDIA_CHANNEL, method, params) as DesktopMediaResult<T>
-  if (!result.ok) throw new Error(result.error)
+  if (!result.ok) {
+    const error = new Error(result.error)
+    if (result.reason === "encoder") (error as Error & { reason?: "encoder" }).reason = "encoder"
+    throw error
+  }
   return result.value
 }
 

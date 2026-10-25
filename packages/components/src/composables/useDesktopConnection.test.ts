@@ -12,7 +12,7 @@ function setup() {
   const connection = scope.run(() => useDesktopConnection(mock.api))!
   return { ...mock, scope, connection }
 }
-const options = { codec: "h264", displayId: 2, audio: false } as const
+const options = { codecs: ["h264", "h265", "av1"], displayId: 2, audio: false } as const
 beforeEach(stubWebRtc)
 afterEach(() => {
   for (const scope of scopes.splice(0)) scope.stop()
@@ -148,10 +148,75 @@ test("native errors and browser connection failures close the peer and surface e
   expect(connection.failure.value).toEqual({ kind: "operation", detail: "Screen recording permission denied" })
   expect(connection.state.value).toBe("error")
   expect(listeners.size).toBe(0)
+  expect(api.offer).toHaveBeenCalledTimes(1)
   await connection.connect(options)
   TestPeer.instances[1]!.changeState("failed")
   expect(connection.failure.value).toEqual({ kind: "connection" })
   expect(TestPeer.instances[1]!.close).toHaveBeenCalled()
+  expect(api.offer).toHaveBeenCalledTimes(2)
+})
+
+test("an encoder failure opens a new peer for the next codec at startup and mid-session", async () => {
+  const { connection, api, emit } = setup()
+  let starts = 0
+  api.start.mockImplementation(async () => {
+    starts += 1
+    if (starts === 1) {
+      const sessionId = api.offer.mock.calls.at(-1)![0].sessionId
+      emit({ sessionId, kind: "error", error: "NVENC session open failed", reason: "encoder" })
+      throw Object.assign(new Error("NVENC session open failed"), { reason: "encoder" })
+    }
+  })
+  const connecting = connection.connect(options)
+  await flushPromises()
+  TestPeer.instances[0]!.changeState("connected")
+  await flushPromises()
+  TestPeer.instances[1]!.changeState("connected")
+  await connecting
+  await flushPromises()
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["h264", "h265"])
+  expect(connection.codec.value).toBe("h265")
+  expect(connection.state.value).toBe("connected")
+
+  const sessionId = api.offer.mock.calls[1]![0].sessionId
+  emit({ sessionId, kind: "error", error: "encoder reset", reason: "encoder" })
+  await flushPromises()
+  TestPeer.instances[2]!.changeState("connected")
+  await flushPromises()
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["h264", "h265", "av1"])
+  expect(connection.codec.value).toBe("av1")
+  expect(connection.state.value).toBe("connected")
+})
+
+test("encoder fallback stops at the end of the common list and ignores unclassified failures", async () => {
+  const { connection, api, emit } = setup()
+  api.start.mockImplementation(async () => {
+    const sessionId = api.offer.mock.calls.at(-1)![0].sessionId
+    emit({ sessionId, kind: "error", error: "encoder produced no packet", reason: "encoder" })
+    throw Object.assign(new Error("encoder produced no packet"), { reason: "encoder" })
+  })
+  const connecting = connection.connect(options)
+  await flushPromises()
+  for (const peer of [0, 1, 2]) {
+    TestPeer.instances[peer]!.changeState("connected")
+    await flushPromises()
+  }
+  await connecting
+  await flushPromises()
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["h264", "h265", "av1"])
+  expect(connection.state.value).toBe("error")
+  expect(connection.failure.value).toEqual({ kind: "operation", detail: "encoder produced no packet" })
+  expect(connection.codec.value).toBeNull()
+
+  api.start.mockReset()
+  api.start.mockResolvedValue(undefined)
+  await connection.connect({ codecs: ["h264", "h265"], displayId: 2, audio: false })
+  TestPeer.instances[3]!.changeState("connected")
+  await flushPromises()
+  emit({ sessionId: api.offer.mock.calls.at(-1)![0].sessionId, kind: "error", error: "media transport failed" })
+  await flushPromises()
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["h264", "h265", "av1", "h264"])
+  expect(connection.failure.value).toEqual({ kind: "operation", detail: "media transport failed" })
 })
 
 test("times out stalled connection attempts and closes both ends", async () => {

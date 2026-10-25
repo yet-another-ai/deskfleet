@@ -6,5 +6,5 @@ export type PeerActor = { kind: string, userId: string, deviceId: string, source
 export type PeerTarget = { id: string, originId: string, localMachineId: string, };
 export type PeerAuthorization = { peerId: string, serverId: string, teamId: string, actor: PeerActor, targetMachine: PeerTarget, purpose: string, actions: Array<string>, issuedAt: string, expiresAt: string, };
 export type IceServer = { urls: Array<string>, username?: string, credential?: string, };
-export type RpcError = { code: string, message: string, };
+export type RpcError = { code: string, message: string, reason?: string, };
 export type ControlMessage = { "type": "authenticate", token: string, } | { "type": "ready", serverId: string, machineId?: string, teamId?: string, } | { "type": "request", id: string, method: string, params: unknown, actor?: PeerActor, } | { "type": "response", id: string, result?: unknown, error?: RpcError, } | { "type": "peerEvent", peerId: string, event: unknown, } | { "type": "peerRevoked", peerId: string, reason: string, } | { "type": "reconcilePeers", peers: Array<PeerAuthorization>, } | { "type": "catalogChanged", machineId: string, } | { "type": "machinesChanged", teamId: string, } | { "type": "presence", machineId: string, online: boolean, } | { "type": "ping" } | { "type": "pong" };

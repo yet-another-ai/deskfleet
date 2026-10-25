@@ -17,6 +17,7 @@ mod tests;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -51,6 +52,7 @@ pub struct Peer {
     events: broadcast::Sender<PeerEvent>,
     receiver: Mutex<broadcast::Receiver<PeerEvent>>,
     keyframe_requested: Arc<AtomicBool>,
+    media_failure: StdMutex<Option<(String, Option<String>)>>,
     closing: AtomicBool,
     closed: watch::Sender<bool>,
     close_lock: Mutex<()>,
@@ -119,6 +121,7 @@ impl Peer {
             events,
             receiver: Mutex::new(receiver),
             keyframe_requested,
+            media_failure: StdMutex::new(None),
             closing: AtomicBool::new(false),
             closed,
             close_lock: Mutex::new(()),
@@ -183,8 +186,27 @@ impl Peer {
         self.keyframe_requested.swap(false, Ordering::Relaxed)
     }
 
-    pub(crate) fn report_media_error(&self, error: String) {
-        let _ = self.events.send(PeerEvent::Error(error));
+    /// Record a capture/encoder failure and wake the daemon event loop.
+    ///
+    /// `reason` is `"encoder"` when another negotiated codec may succeed.
+    /// The latest failure stays available to the `startDesktop` caller because
+    /// that RPC can return before the event loop forwards the same failure.
+    pub(crate) fn report_media_error(&self, message: String, reason: Option<&str>) {
+        let reason = reason.map(str::to_owned);
+        *self
+            .media_failure
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some((message.clone(), reason.clone()));
+        let _ = self.events.send(PeerEvent::Error { message, reason });
+    }
+
+    /// Take the media failure reported by the capture worker, if any.
+    pub fn take_media_failure(&self) -> Option<(String, Option<String>)> {
+        self.media_failure
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
     }
 
     /// Create an SDP offer and begin trickling ICE candidates through events.

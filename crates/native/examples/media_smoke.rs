@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             peer.send_data(&label, data).await?;
                         }
                     }
-                    Some(PeerEvent::Error(error)) => return Err(error.into()),
+                    Some(PeerEvent::Error { message, .. }) => return Err(message.into()),
                     None => break,
                     _ => {},
                 },

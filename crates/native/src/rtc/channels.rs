@@ -56,7 +56,7 @@ pub(super) async fn register(
                 }
                 DataChannelEvent::OnMessage(message) => {
                     if message.data.len() > MAX_DATA_MESSAGE_SIZE {
-                        PeerEvent::Error(PeerError::MessageTooLarge.to_string())
+                        PeerEvent::error(PeerError::MessageTooLarge.to_string())
                     } else {
                         PeerEvent::Data {
                             label: reader_label.clone(),
@@ -66,7 +66,7 @@ pub(super) async fn register(
                     }
                 }
                 DataChannelEvent::OnError => {
-                    PeerEvent::Error(format!("data channel error: {reader_label}"))
+                    PeerEvent::error(format!("data channel error: {reader_label}"))
                 }
                 _ => continue,
             };

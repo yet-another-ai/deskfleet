@@ -65,7 +65,21 @@ pub enum PeerEvent {
         is_string: bool,
     },
     KeyframeRequested,
-    Error(String),
+    /// `reason` is `Some("encoder")` when the viewer may open a new peer for the next codec.
+    /// Older consumers ignore `reason` and treat the failure as terminal.
+    Error {
+        message: String,
+        reason: Option<String>,
+    },
+}
+
+impl PeerEvent {
+    pub(crate) fn error(message: impl Into<String>) -> Self {
+        Self::Error {
+            message: message.into(),
+            reason: None,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

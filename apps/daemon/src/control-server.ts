@@ -7,7 +7,7 @@ import { join } from "node:path"
 import type { NativePeer, PeerConfig } from "@deskfleet/native"
 import { desktopCapabilities } from "./desktop-capabilities.ts"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
-import { MAX_CONTROL_MESSAGE_BYTES, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
+import { MAX_CONTROL_MESSAGE_BYTES, desktopErrorEvent, encoderFailure, isEncoderFailure, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
 import { parseControlRequest, readControlRequestId } from "./control-request.ts"
 import { endControlSocket } from "./control-socket.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
@@ -139,7 +139,7 @@ class ControlConnection {
             }
             this.#send({ id: request.id, result })
           } catch (error) {
-            this.#send({ id, error: message(error) })
+            this.#send({ id, error: message(error), ...(isEncoderFailure(error) ? { reason: "encoder" as const } : {}) })
             if (!this.#authenticated) {
               await endControlSocket(this.#socket)
               return
@@ -268,7 +268,14 @@ class ControlConnection {
       case "start": {
         const { sessionId, displayId, fps, bitrateBps } = request.params
         if (this.#sessions.get(sessionId)?.terminal || this.#sessions.get(sessionId)?.agent) throw new Error("Data-only peers cannot start desktop capture")
-        await (await this.#session(sessionId)).startDesktop({ displayId, fps, bitrateBps })
+        const peer = await this.#session(sessionId)
+        try {
+          await peer.startDesktop({ displayId, fps, bitrateBps })
+        } catch (error) {
+          const failure = peer.takeMediaFailure?.()
+          if (failure?.reason === "encoder") throw encoderFailure(failure.message)
+          throw error
+        }
         return null
       }
       case "close":
@@ -309,7 +316,7 @@ class ControlConnection {
         let outgoing: DesktopEvent | undefined
         if (event.kind === "iceCandidate" && event.candidate) outgoing = { sessionId, kind: "iceCandidate", candidate: event.candidate }
         if (event.kind === "stateChanged" && event.state) outgoing = { sessionId, kind: "stateChanged", state: event.state }
-        if (event.kind === "error") outgoing = { sessionId, kind: "error", error: event.error ?? "Desktop stream failed" }
+        if (event.kind === "error") outgoing = desktopErrorEvent(sessionId, event.error ?? "Desktop stream failed", event.reason)
         if (outgoing) this.#send({ event: outgoing })
         if (event.kind === "error" || event.state === "failed" || event.state === "closed") {
           await this.#closeSession(sessionId)

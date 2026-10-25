@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
 import { AGENT_CHANNEL, type AgentMethod } from "./agent-protocol.ts"
 import type { ControlPeers } from "./control-server.ts"
-import type { DesktopStart, IceCandidate } from "./control-protocol.ts"
+import { desktopErrorEvent, encoderFailure, type DesktopStart, type IceCandidate } from "./control-protocol.ts"
 import type { MachineCredentials, PeerAuthorization, PeerOffer, PeerSignal } from "./central-protocol.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
@@ -157,7 +157,14 @@ export class AuthorizedPeers {
   async start(id: string, options: Omit<DesktopStart, "sessionId">): Promise<void> {
     const owned = this.#live(id, "desktop:stream")
     if (owned.authorization.purpose !== "desktop") throw new Error("A desktop peer is required")
-    await (await owned.native).startDesktop(options)
+    const native = await owned.native
+    try {
+      await native.startDesktop(options)
+    } catch (error) {
+      const failure = native.takeMediaFailure?.()
+      if (failure?.reason === "encoder") throw encoderFailure(failure.message)
+      throw error
+    }
   }
 
   async reconcile(grants: PeerAuthorization[]): Promise<void> {
@@ -187,7 +194,10 @@ export class AuthorizedPeers {
         }
         if (event.kind === "iceCandidate" && event.candidate) this.#signal(id, { kind: "iceCandidate", candidate: normalizeCandidate(event.candidate, owned.localSdp!) })
         if (event.kind === "stateChanged" && event.state) this.#signal(id, { kind: "stateChanged", state: event.state })
-        if (event.kind === "error") this.#signal(id, { kind: "error", error: event.error ?? "Peer failed" })
+        if (event.kind === "error") {
+          const reported = desktopErrorEvent(id, event.error ?? "Peer failed", event.reason)
+          this.#signal(id, { kind: "error", error: reported.error, ...(reported.reason ? { reason: reported.reason } : {}) })
+        }
         if (event.kind === "error" || event.state === "failed" || event.state === "closed" || event.kind === "dataChannelClosed") break
       }
     } catch (error) {

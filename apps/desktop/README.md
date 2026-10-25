@@ -222,8 +222,10 @@ authorized remote signaling.
 ## Desktop playback
 
 With the local Agent running, open **Remote desktop** under the real local
-machine. Select a display and a codec supported by both the native
-encoder and Chromium, then connect. System audio is optional and defaults off.
+machine. Select a display, then connect. The viewer uses the first of H.264,
+HEVC, and AV1 that both the display's encoder and Chromium support, shows that
+codec as status text, and opens a new peer for the next codec only when the
+encoder fails. System audio is optional and defaults off.
 The video surface hides Chromium's playback controls; the page provides its own
 fullscreen action. Disconnect or leave the route to release capture; the daemon
 keeps running.

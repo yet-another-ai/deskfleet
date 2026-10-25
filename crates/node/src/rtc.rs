@@ -76,6 +76,15 @@ pub struct PeerEvent {
     pub data: Option<Buffer>,
     pub is_string: Option<bool>,
     pub error: Option<String>,
+    /// `"encoder"` when the viewer may negotiate the next codec. Absent for every other failure.
+    pub reason: Option<String>,
+}
+
+/// The capture worker's latest media failure, if `startDesktop` observed it first.
+#[napi(object)]
+pub struct MediaFailure {
+    pub message: String,
+    pub reason: Option<String>,
 }
 
 impl From<rtc::PeerEvent> for PeerEvent {
@@ -88,6 +97,7 @@ impl From<rtc::PeerEvent> for PeerEvent {
             data: None,
             is_string: None,
             error: None,
+            reason: None,
         };
         match event {
             rtc::PeerEvent::IceCandidate(candidate) => {
@@ -132,9 +142,10 @@ impl From<rtc::PeerEvent> for PeerEvent {
                 result.is_string = Some(is_string);
             }
             rtc::PeerEvent::KeyframeRequested => result.kind = "keyframeRequested".to_owned(),
-            rtc::PeerEvent::Error(error) => {
+            rtc::PeerEvent::Error { message, reason } => {
                 result.kind = "error".to_owned();
-                result.error = Some(error);
+                result.error = Some(message);
+                result.reason = reason;
             }
         }
         result
@@ -232,6 +243,14 @@ impl NativePeer {
             .await
             .map(|event| event.map(Into::into))
             .map_err(native_error)
+    }
+
+    /// Take the capture worker's latest media failure, if one was reported.
+    #[napi]
+    pub fn take_media_failure(&self) -> Option<MediaFailure> {
+        self.peer
+            .take_media_failure()
+            .map(|(message, reason)| MediaFailure { message, reason })
     }
 
     /// Capture and encode entirely in Rust; call only after authorizing desktop access.

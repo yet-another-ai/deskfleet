@@ -50,8 +50,11 @@ class Client {
         } else {
           const waiting = this.#pending.get(message.id)
           this.#pending.delete(message.id)
-          if (message.error) waiting?.reject(new Error(message.error))
-          else waiting?.resolve(message.result)
+          if (message.error) {
+            const error = new Error(message.error)
+            if (message.reason === "encoder") (error as Error & { reason?: "encoder" }).reason = "encoder"
+            waiting?.reject(error)
+          } else waiting?.resolve(message.result)
         }
       }
     })
@@ -388,6 +391,50 @@ test("request validation errors retain authenticated connections and their activ
   assert.deepEqual(fake.startCalls, [{ displayId: 4, fps: undefined, bitrateBps: undefined }])
   await client.call("close", { sessionId: offer.sessionId })
   assert.equal(fake.peers.size, 0)
+})
+
+test("desktop error events keep an encoder reason and omit it for other failures", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-reason-"))
+  const queued: PeerEvent[] = []
+  let waiting: ((event: PeerEvent | null) => void) | undefined
+  const push = (event: PeerEvent) => {
+    if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) }
+    else queued.push(event)
+  }
+  const service: ControlPeers = {
+    async create() {
+      return {
+        answerOffer: async () => "answer",
+        addIceCandidate: async () => {},
+        startDesktop: async () => { throw new Error("stale start failure") },
+        takeMediaFailure: () => ({ message: "the video encoder produced no packet within 5 seconds", reason: "encoder" }),
+        nextEvent: () => {
+          const event = queued.shift()
+          return event ? Promise.resolve(event) : new Promise<PeerEvent | null>(resolve => { waiting = resolve })
+        },
+      } as unknown as NativePeer
+    },
+    async close() { waiting?.(null) },
+  }
+  const server = await startControlServer(service, directory, capabilities)
+  context.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }) })
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  await client.call("offer", offer)
+  const rejected = await client.call("start", { sessionId: offer.sessionId, displayId: 4 }).then(() => {
+    throw new Error("start should fail")
+  }, (error: Error & { reason?: string }) => error)
+  assert.equal(rejected.message, "the video encoder produced no packet within 5 seconds")
+  assert.equal(rejected.reason, "encoder")
+  const delivered = new Promise<void>((resolve) => { client.onEvent = () => resolve() })
+  push({ kind: "error", error: "NVENC encode failed", reason: "encoder" })
+  push({ kind: "error", error: "display 4 was not found" })
+  await delivered
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(client.events[0], { sessionId: "screen-1", kind: "error", error: "NVENC encode failed", reason: "encoder" })
+  assert.equal(client.events.length, 1)
 })
 
 test("invalid framing and request IDs still disconnect, as do unauthenticated validation errors", { timeout: 15_000 }, async context => {

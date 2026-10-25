@@ -9,6 +9,7 @@ pub struct ApiError {
     pub status: StatusCode,
     pub code: &'static str,
     pub message: String,
+    pub reason: Option<String>,
 }
 pub type Result<T> = std::result::Result<T, ApiError>;
 impl ApiError {
@@ -17,6 +18,7 @@ impl ApiError {
             status,
             code,
             message: message.into(),
+            reason: None,
         }
     }
     pub fn bad(message: impl Into<String>) -> Self {
@@ -52,8 +54,11 @@ impl ResponseError for ApiError {
         self.status
     }
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status)
-            .json(json!({"error":{"code":self.code,"message":self.message}}))
+        let mut body = json!({"error": {"code": self.code, "message": self.message}});
+        if self.reason.as_deref() == Some("encoder") {
+            body["error"]["reason"] = json!("encoder");
+        }
+        HttpResponse::build(self.status).json(body)
     }
 }
 impl From<deskfleet_control_store::Error> for ApiError {

@@ -15,13 +15,13 @@ async fn connect(left: &Peer, right: &Peer) {
                 event = left.next_event() => match event.unwrap().unwrap() {
                     PeerEvent::IceCandidate(Some(candidate)) => right.add_ice_candidate(candidate).await.unwrap(),
                     PeerEvent::DataChannelOpen { label } => { assert_eq!(label, "operations"); left_open = true; }
-                    PeerEvent::Error(error) => panic!("left peer: {error}"),
+                    PeerEvent::Error { message, .. } => panic!("left peer: {message}"),
                     _ => {},
                 },
                 event = right.next_event() => match event.unwrap().unwrap() {
                     PeerEvent::IceCandidate(Some(candidate)) => left.add_ice_candidate(candidate).await.unwrap(),
                     PeerEvent::DataChannelOpen { label } => { assert_eq!(label, "operations"); right_open = true; }
-                    PeerEvent::Error(error) => panic!("right peer: {error}"),
+                    PeerEvent::Error { message, .. } => panic!("right peer: {message}"),
                     _ => {},
                 },
             }
@@ -38,7 +38,7 @@ async fn next_data(peer: &Peer) -> (String, Bytes, bool) {
                     data,
                     is_string,
                 } => return (label, data, is_string),
-                PeerEvent::Error(error) => panic!("data channel: {error}"),
+                PeerEvent::Error { message, .. } => panic!("data channel: {message}"),
                 _ => {}
             }
         }

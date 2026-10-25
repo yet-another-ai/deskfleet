@@ -27,6 +27,9 @@ pub enum MediaError {
     Capture(#[from] CaptureError),
     #[error(transparent)]
     Encoder(#[from] EncoderError),
+    /// The negotiated video encoder failed. Audio encoder failures stay on [`Self::Encoder`].
+    #[error(transparent)]
+    VideoEncoder(EncoderError),
     #[error("media worker failed: {0}")]
     Worker(#[from] tokio::task::JoinError),
     #[error("media transport failed: {0}")]
@@ -35,6 +38,21 @@ pub enum MediaError {
     Startup,
     #[error("capture and encoding did not produce the first video packet within 5 seconds")]
     FirstFrameTimeout,
+    /// The video encoder was open but never emitted a packet. Capture that never
+    /// produces a frame stays [`Self::FirstFrameTimeout`].
+    #[error("the video encoder produced no packet within 5 seconds")]
+    EncoderStall,
+}
+
+impl MediaError {
+    /// `"encoder"` asks the viewer to open a new peer with the next common codec.
+    /// Permission, display, transport, and audio failures stay unclassified.
+    pub(crate) fn fallback_reason(&self) -> Option<&'static str> {
+        match self {
+            Self::VideoEncoder(_) | Self::EncoderStall => Some("encoder"),
+            _ => None,
+        }
+    }
 }
 
 /// Video codec support is probed only when explicitly requested.
@@ -136,7 +154,7 @@ impl DesktopStream {
                 ready,
             );
             if let Err(error) = &result {
-                capture_peer.report_media_error(error.to_string());
+                capture_peer.report_media_error(error.to_string(), error.fallback_reason());
             }
             result
         });
@@ -166,7 +184,7 @@ impl DesktopStream {
             }.await;
             delivery_stop.store(true, Ordering::Relaxed);
             if let Err(error) = &result {
-                peer.report_media_error(error.to_string());
+                peer.report_media_error(error.to_string(), error.fallback_reason());
             }
             result
         });
@@ -259,22 +277,29 @@ fn capture_loop(
     let result = (|| {
         while !stop.load(Ordering::Relaxed) {
             if ready.is_some() && Instant::now() >= first_frame_deadline {
-                return Err(MediaError::FirstFrameTimeout);
+                return Err(if encoder.is_some() {
+                    MediaError::EncoderStall
+                } else {
+                    MediaError::FirstFrameTimeout
+                });
             }
             let captured = capture.poll_frame()?;
             if let Some(frame) = captured.as_ref()
                 && dimensions != (frame.width, frame.height)
             {
-                encoder = Some(Encoder::new(&EncoderConfig {
-                    width: frame.width,
-                    height: frame.height,
-                    fps,
-                    codec,
-                    bitrate_bps: config.bitrate_bps,
-                    max_bitrate_bps: config.max_bitrate_bps,
-                    h264_profile: H264Profile::ConstrainedBaseline,
-                    ..EncoderConfig::default()
-                })?);
+                encoder = Some(
+                    Encoder::new(&EncoderConfig {
+                        width: frame.width,
+                        height: frame.height,
+                        fps,
+                        codec,
+                        bitrate_bps: config.bitrate_bps,
+                        max_bitrate_bps: config.max_bitrate_bps,
+                        h264_profile: H264Profile::ConstrainedBaseline,
+                        ..EncoderConfig::default()
+                    })
+                    .map_err(MediaError::VideoEncoder)?,
+                );
                 dimensions = (frame.width, frame.height);
             }
             // Keep one owned surface outside the capture pool. PLI/FIR can
@@ -295,7 +320,7 @@ fn capture_loop(
                     if keyframe {
                         encoder.request_keyframe();
                     }
-                    Ok(encoder.encode(frame)?)
+                    encoder.encode(frame).map_err(MediaError::VideoEncoder)
                 },
             ) && !deliver_video(encoded?, &packets, &mut ready, fps)
             {
@@ -304,7 +329,12 @@ fn capture_loop(
             // Hardware MFTs can produce their first or last packet after encode
             // returns, including when a static desktop never supplies another frame.
             if let Some(encoder) = encoder.as_mut()
-                && !deliver_video(encoder.poll_output()?, &packets, &mut ready, fps)
+                && !deliver_video(
+                    encoder.poll_output().map_err(MediaError::VideoEncoder)?,
+                    &packets,
+                    &mut ready,
+                    fps,
+                )
             {
                 return Ok(());
             }
@@ -590,5 +620,29 @@ mod tests {
         assert!(config.validate().is_err());
         config.max_bitrate_bps = 0;
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn only_video_encoder_failures_name_another_codec() {
+        use deskfleet_encoder::EncoderError;
+
+        assert_eq!(
+            MediaError::VideoEncoder(EncoderError::Unsupported("nvenc")).fallback_reason(),
+            Some("encoder")
+        );
+        assert_eq!(MediaError::EncoderStall.fallback_reason(), Some("encoder"));
+        assert_eq!(
+            MediaError::Encoder(EncoderError::Unsupported("opus")).fallback_reason(),
+            None
+        );
+        for error in [
+            MediaError::FirstFrameTimeout,
+            MediaError::DisplayNotFound(1),
+            MediaError::Transport("write failed".to_owned()),
+            MediaError::Startup,
+            MediaError::InvalidConfig("fps must be between 1 and 240"),
+        ] {
+            assert_eq!(error.fallback_reason(), None);
+        }
     }
 }

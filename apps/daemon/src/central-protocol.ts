@@ -40,7 +40,7 @@ export interface PeerOffer {
 export type PeerSignal =
   | { kind: "iceCandidate"; candidate: IceCandidate }
   | { kind: "stateChanged"; state: string }
-  | { kind: "error"; error: string }
+  | { kind: "error"; error: string; reason?: "encoder" }
 
 export type ServerMessage = Extract<ControlMessage, { type: "ready" | "peerRevoked" | "ping" | "pong" }>
   | (Omit<Extract<ControlMessage, { type: "request" }>, "actor"> & { actor?: PeerAuthorization["actor"] })

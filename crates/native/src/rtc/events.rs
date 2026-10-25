@@ -27,7 +27,7 @@ impl PeerConnectionEventHandler for Handler {
                 sdp_mline_index: candidate.sdp_mline_index,
                 username_fragment: candidate.username_fragment,
             })),
-            Err(error) => PeerEvent::Error(error.to_string()),
+            Err(error) => PeerEvent::error(error.to_string()),
         };
         let _ = self.events.send(event);
     }
@@ -59,9 +59,9 @@ impl PeerConnectionEventHandler for Handler {
         if let Err(error) =
             channels::register(Arc::clone(&channel), &self.channels, &self.events).await
         {
-            let _ = self.events.send(PeerEvent::Error(error.to_string()));
+            let _ = self.events.send(PeerEvent::error(error.to_string()));
             if let Err(error) = channel.close().await {
-                let _ = self.events.send(PeerEvent::Error(error.to_string()));
+                let _ = self.events.send(PeerEvent::error(error.to_string()));
             }
         }
     }

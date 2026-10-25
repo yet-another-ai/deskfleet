@@ -5,11 +5,11 @@ import { GripVertical, LoaderCircle, Maximize, MonitorPlay, Play, RefreshCw, Sli
 import { onClickOutside } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, shallowRef, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { DesktopCapabilities, VideoCodec } from "../../../client/src/desktop-media.ts"
+import type { DesktopCapabilities } from "../../../client/src/desktop-media.ts"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import IconButton from "../components/common/IconButton.vue"
-import { commonDesktopCodecs, useDesktopConnection } from "../composables/useDesktopConnection.ts"
+import { commonDesktopCodecs, desktopCodecLabel, useDesktopConnection } from "../composables/useDesktopConnection.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 
@@ -17,14 +17,13 @@ const props = defineProps<{ machineId: string }>()
 const { t } = useI18n()
 const fleet = useFleetStore()
 const connection = useDesktopConnection(platformClient.desktop)
-const { state, failure, stream } = connection
+const { state, failure, stream, codec: activeCodec } = connection
 const machine = computed(() => fleet.findMachine(props.machineId))
 const local = computed(() => props.machineId === fleet.targetId)
 const capabilities = shallowRef<DesktopCapabilities | null>(null)
 const loading = ref(false)
 const discoveryError = ref<string | null>(null)
 const displayId = ref<number | null>(null)
-const codec = ref<VideoCodec | null>(null)
 const audio = ref(false)
 const video = shallowRef<HTMLVideoElement | null>(null)
 const playbackBlocked = ref(false)
@@ -51,12 +50,11 @@ const codecs = computed(() => commonDesktopCodecs(
   capabilities.value?.displays.find(display => display.id === displayId.value)?.codecs ?? [],
   typeof RTCRtpReceiver === "undefined" ? [] : RTCRtpReceiver.getCapabilities("video")?.codecs ?? [],
 ))
-watch(codecs, available => {
-  if (codec.value === null || !available.includes(codec.value)) codec.value = available[0] ?? null
-}, { flush: "sync" })
+const chosenCodec = computed(() => activeCodec.value ?? codecs.value[0] ?? null)
+const codecLabel = computed(() => chosenCodec.value ? desktopCodecLabel(chosenCodec.value) : "")
 const active = computed(() => ["connecting", "starting", "connected"].includes(state.value))
 const canConnect = computed(() => local.value && !loading.value && !active.value
-  && fleet.localDesktopTarget.online && displayId.value !== null && codec.value !== null)
+  && fleet.localDesktopTarget.online && displayId.value !== null && chosenCodec.value !== null)
 
 async function refresh(): Promise<void> {
   const generation = ++discoveryGeneration
@@ -64,7 +62,6 @@ async function refresh(): Promise<void> {
   discoveryError.value = null
   capabilities.value = null
   displayId.value = null
-  codec.value = null
   try {
     const target = await fleet.refreshLocalDesktop()
     if (generation !== discoveryGeneration || !local.value) return
@@ -73,7 +70,6 @@ async function refresh(): Promise<void> {
     if (generation !== discoveryGeneration || !local.value) return
     capabilities.value = available
     displayId.value = available.displays[0]?.id ?? null
-    codec.value = codecs.value[0] ?? null
     if (!available.audio) audio.value = false
   } catch (error) {
     if (generation === discoveryGeneration) {
@@ -116,8 +112,8 @@ watch([video, stream], ([element, media]) => {
 }, { flush: "post" })
 
 function connect(): void {
-  if (!canConnect.value || displayId.value === null || codec.value === null) return
-  void connection.connect({ displayId: displayId.value, codec: codec.value, audio: audio.value })
+  if (!canConnect.value || displayId.value === null || codecs.value.length === 0) return
+  void connection.connect({ displayId: displayId.value, codecs: codecs.value, audio: audio.value })
 }
 
 async function fullscreen(): Promise<void> {
@@ -132,9 +128,9 @@ const status = computed(() => {
     if (!machine.value.desktop) return t("desktop.noDisplay", { machine: machine.value.name })
     return t("desktop.unavailable")
   }
-  if (state.value === "connecting") return t("desktop.connecting")
-  if (state.value === "starting") return t("desktop.starting")
-  if (state.value === "connected") return t("desktop.connected")
+  if (state.value === "connecting") return t("desktop.connecting", { codec: codecLabel.value })
+  if (state.value === "starting") return t("desktop.starting", { codec: codecLabel.value })
+  if (state.value === "connected") return t("desktop.connected", { codec: codecLabel.value })
   if (failure.value?.kind === "timeout") return t("desktop.timeout")
   if (failure.value) return t("desktop.connectionFailed")
   if (loading.value) return t("desktop.checking")
@@ -143,7 +139,7 @@ const status = computed(() => {
   if (!fleet.localDesktopTarget.desktop) return t("desktop.captureUnavailable")
   if (capabilities.value?.displays.length === 0) return t("desktop.noDisplay", { machine: machine.value.name })
   if (codecs.value.length === 0) return t("desktop.noCodec")
-  return t("desktop.ready")
+  return t("desktop.ready", { codec: codecLabel.value })
 })
 const detail = computed(() => local.value ? failure.value?.detail ?? discoveryError.value
   ?? (!fleet.localDesktopTarget.online ? fleet.localDesktopTarget.error : undefined) : undefined)
@@ -231,12 +227,7 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
               </option>
             </select>
           </label>
-          <label v-if="codecs.length" class="flex flex-col gap-1.5 text-[13px] text-ui-text-muted">
-            {{ t("desktop.codec") }}
-            <select v-model="codec" class="ui-input text-ui-text" :disabled="active">
-              <option v-for="supported in codecs" :key="supported" :value="supported">{{ supported.toUpperCase() }}</option>
-            </select>
-          </label>
+          <p v-if="chosenCodec" class="m-0 text-[13px] text-ui-text-muted" data-desktop-codec>{{ t("desktop.codecStatus", { codec: codecLabel }) }}</p>
           <label v-if="capabilities?.audio" class="flex items-center gap-2 text-[13px]">
             <input v-model="audio" type="checkbox" :disabled="active" />
             {{ t("desktop.audio") }}

@@ -53,10 +53,23 @@ interface Session {
   localSending: Promise<void>
   remoteAdding: Promise<void>
   start: DesktopStart
+  options: DesktopConnectOptions
+  replaced: boolean
+}
+
+export function desktopCodecLabel(codec: VideoCodec): string {
+  if (codec === "h264") return "H.264"
+  if (codec === "h265") return "HEVC"
+  return "AV1"
+}
+
+function isEncoderReason(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { reason?: unknown }).reason === "encoder"
 }
 
 export interface DesktopConnectOptions {
-  codec: VideoCodec
+  /** Common codecs in preference order. The connection tries the next one only after an encoder failure. */
+  codecs: readonly VideoCodec[]
   displayId: number
   audio: boolean
 }
@@ -66,8 +79,11 @@ export function useDesktopConnection(api: DesktopMediaApi) {
   const state = ref<DesktopConnectionState>("idle")
   const failure = shallowRef<DesktopFailure | null>(null)
   const stream = shallowRef<MediaStream | null>(null)
+  const codec = ref<VideoCodec | null>(null)
   let current: Session | null = null
   let generation = 0
+  let running = false
+  let chain: VideoCodec[] = []
 
   function release(session: Session): void {
     clearTimeout(session.timeout)
@@ -83,15 +99,47 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     }
   }
 
+  function stopChain(): void {
+    running = false
+    chain = []
+  }
+
   function fail(session: Session, reason: DesktopFailure): void {
-    if (current !== session) return
+    if (current !== session || session.replaced) return
+    session.replaced = true
+    stopChain()
     release(session)
+    codec.value = null
     failure.value = reason
     state.value = "error"
     void api.close(session.id).catch(() => {})
   }
 
+  function continueWithNext(session: Session, detail: string): void {
+    if (current !== session || session.replaced) return
+    session.replaced = true
+    const run = generation
+    const options = session.options
+    release(session)
+    void api.close(session.id).catch(() => {})
+    chain.shift()
+    if (generation !== run) return
+    const next = chain[0]
+    if (!next) {
+      stopChain()
+      codec.value = null
+      failure.value = { kind: "operation", detail }
+      state.value = "error"
+      return
+    }
+    void begin(options, run)
+  }
+
   function operationFailed(session: Session, error: unknown): void {
+    if (isEncoderReason(error)) {
+      continueWithNext(session, error instanceof Error ? error.message : String(error))
+      return
+    }
     fail(session, { kind: "operation", detail: error instanceof Error ? error.message : String(error) })
   }
 
@@ -140,15 +188,16 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     }
   }
 
-  async function connect(options: DesktopConnectOptions): Promise<void> {
-    if (current) return
-    ++generation
+  async function begin(options: DesktopConnectOptions, run: number): Promise<void> {
+    const selected = chain[0]
+    if (!selected || generation !== run) return
+    codec.value = selected
     state.value = "connecting"
     failure.value = null
     let session: Session | null = null
     try {
       const preferences = browserCodecPreferences(
-        options.codec, RTCRtpReceiver.getCapabilities("video")?.codecs ?? [],
+        selected, RTCRtpReceiver.getCapabilities("video")?.codecs ?? [],
       )
       if (preferences.length === 0) throw new Error("The selected video codec is unavailable.")
       const id = crypto.randomUUID()
@@ -162,6 +211,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
         offered: false, remoteReady: false, startRequested: false,
         localCandidates: [], remoteCandidates: [], localSending: Promise.resolve(), remoteAdding: Promise.resolve(),
         start: { sessionId: id, displayId: options.displayId },
+        options, replaced: false,
       }
       current = session
       stream.value = session.stream
@@ -172,7 +222,8 @@ export function useDesktopConnection(api: DesktopMediaApi) {
           active.remoteCandidates.push(event.candidate)
           addCandidates(active)
         } else if (event.kind === "error") {
-          fail(active, { kind: "operation", detail: event.error })
+          if (event.reason === "encoder") continueWithNext(active, event.error)
+          else fail(active, { kind: "operation", detail: event.error })
         } else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) {
           fail(active, { kind: "connection" })
         }
@@ -204,7 +255,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       if (current !== active) return
       await peer.setLocalDescription(offer)
       if (current !== active) return
-      const answer = await api.offer({ sessionId: id, sdp: offer.sdp!, codec: options.codec, audio: options.audio })
+      const answer = await api.offer({ sessionId: id, sdp: offer.sdp!, codec: selected, audio: options.audio })
       // An offer or capture start may finish after the user has already left.
       if (current !== active) {
         await api.close(id)
@@ -218,16 +269,36 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       addCandidates(active)
       await startWhenConnected(active)
     } catch (error) {
-      if (session) operationFailed(session, error)
-      else {
+      if (session && !session.replaced) operationFailed(session, error)
+      else if (!session) {
+        stopChain()
+        codec.value = null
         failure.value = { kind: "operation", detail: error instanceof Error ? error.message : String(error) }
         state.value = "error"
       }
     }
   }
 
+  async function connect(options: DesktopConnectOptions): Promise<void> {
+    if (current || running) return
+    const run = ++generation
+    running = true
+    chain = [...options.codecs]
+    failure.value = null
+    codec.value = null
+    if (chain.length === 0) {
+      stopChain()
+      failure.value = { kind: "operation", detail: "The selected video codec is unavailable." }
+      state.value = "error"
+      return
+    }
+    await begin(options, run)
+  }
+
   async function disconnect(): Promise<void> {
     const closingGeneration = ++generation
+    stopChain()
+    codec.value = null
     const session = current
     if (session) release(session)
     state.value = "idle"
@@ -244,5 +315,5 @@ export function useDesktopConnection(api: DesktopMediaApi) {
   }
 
   onScopeDispose(() => { void disconnect() })
-  return { state, failure, stream, connect, disconnect }
+  return { state, failure, stream, codec, connect, disconnect }
 }

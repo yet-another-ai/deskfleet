@@ -31,6 +31,8 @@ export declare class NativePeer {
   sendText(label: string, text: string): Promise<void>
   /** Consume events from one daemon loop. Resolves with null after close. */
   nextEvent(): Promise<PeerEvent | null>
+  /** Take the capture worker's latest media failure, if one was reported. */
+  takeMediaFailure(): MediaFailure | null
   /** Capture and encode entirely in Rust; call only after authorizing desktop access. */
   startDesktop(config: DesktopConfig): Promise<void>
   stopDesktop(): Promise<void>
@@ -110,6 +112,12 @@ export interface IceServer {
   credential?: string
 }
 
+/** The capture worker's latest media failure, if `startDesktop` observed it first. */
+export interface MediaFailure {
+  message: string
+  reason?: string
+}
+
 /** Report the loaded addon version and platform without requiring a display. */
 export declare function nativeInfo(): NativeInfo
 
@@ -138,6 +146,8 @@ export interface PeerEvent {
   data?: Buffer
   isString?: boolean
   error?: string
+  /** `"encoder"` when the viewer may negotiate the next codec. Absent for every other failure. */
+  reason?: string
 }
 
 /**

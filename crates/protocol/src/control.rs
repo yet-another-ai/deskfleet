@@ -83,6 +83,11 @@ pub struct IceServer {
 pub struct RpcError {
     pub code: String,
     pub message: String,
+    // Present only for a desktop encoder failure that can try another codec.
+    // Older daemons omit it; callers treat absence as a terminal failure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reason: Option<String>,
 }
 
 /// The first message on either WebSocket authenticates that connection. Tokens

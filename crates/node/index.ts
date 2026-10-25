@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
 import type { DisplayInfo, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, TerminalConfig } from "./bindings.d.ts"
 
-export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec } from "./bindings.d.ts"
+export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec } from "./bindings.d.ts"
 export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
 
 type Bindings = typeof import("./bindings.d.ts")

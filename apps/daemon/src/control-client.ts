@@ -120,8 +120,11 @@ export class DaemonClient {
           if (!pending) continue
           this.#pending.delete(message.id)
           clearTimeout(pending.timeout)
-          if (typeof message.error === "string") pending.reject(new Error(message.error))
-          else pending.resolve(message.result)
+          if (typeof message.error === "string") {
+            const error = new Error(message.error)
+            if (message.reason === "encoder") (error as Error & { reason?: "encoder" }).reason = "encoder"
+            pending.reject(error)
+          } else pending.resolve(message.result)
         }
       } catch (error) {
         this.#end(error instanceof Error ? error : new Error("Invalid daemon response"))

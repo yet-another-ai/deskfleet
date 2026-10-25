@@ -47,10 +47,25 @@ export interface DesktopStart {
   bitrateBps?: number
 }
 
+/** Omitted by older daemons. Only `"encoder"` may open another peer. */
+export type DesktopErrorReason = "encoder"
+
 export type DesktopEvent =
   | { sessionId: string; kind: "iceCandidate"; candidate: IceCandidate }
   | { sessionId: string; kind: "stateChanged"; state: string }
-  | { sessionId: string; kind: "error"; error: string }
+  | { sessionId: string; kind: "error"; error: string; reason?: DesktopErrorReason }
+
+export function desktopErrorEvent(sessionId: string, error: string, reason?: string | null): Extract<DesktopEvent, { kind: "error" }> {
+  return { sessionId, kind: "error", error, ...(reason === "encoder" ? { reason: "encoder" } : {}) }
+}
+
+export function encoderFailure(message: string): Error & { reason: DesktopErrorReason } {
+  return Object.assign(new Error(message), { reason: "encoder" as const })
+}
+
+export function isEncoderFailure(error: unknown): error is Error & { reason: DesktopErrorReason } {
+  return typeof error === "object" && error !== null && (error as { reason?: unknown }).reason === "encoder"
+}
 
 export interface ScreenCapturePermission {
   status: "requesting" | "granted" | "denied" | "not-required" | "error"
@@ -90,7 +105,7 @@ export type ControlRequest = {
 }[ControlMethod]
 export type ControlMessage =
   | { id: number; result: unknown; error?: never }
-  | { id: number; error: string; result?: never }
+  | { id: number; error: string; reason?: DesktopErrorReason; result?: never }
   | { event: DaemonEvent }
 
 export interface DaemonDiscovery {

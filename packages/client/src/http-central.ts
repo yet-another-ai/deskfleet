@@ -74,8 +74,8 @@ export class HttpCentralClient implements CentralApi {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     if (!response.ok) {
-      const error = await response.json().catch(() => ({})) as { error?: { code: string; message: string } }
-      throw new HttpError(response.status, error.error?.message ?? response.statusText)
+      const error = await response.json().catch(() => ({})) as { error?: { code: string; message: string; reason?: string } }
+      throw new HttpError(response.status, error.error?.message ?? response.statusText, error.error?.reason === "encoder" ? "encoder" : undefined)
     }
     return response.status === 204 ? undefined as T : await response.json() as T
   }
@@ -141,5 +141,6 @@ export class HttpCentralClient implements CentralApi {
 }
 export class HttpError extends Error {
   readonly status: number
-  constructor(status: number, message: string) { super(message); this.status = status }
+  readonly reason?: "encoder"
+  constructor(status: number, message: string, reason?: "encoder") { super(message); this.status = status; this.reason = reason }
 }

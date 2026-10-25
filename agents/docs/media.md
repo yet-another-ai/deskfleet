@@ -60,12 +60,19 @@ graphical session and any platform recording permission.
 On Windows, capture creates its D3D11 device on the adapter that owns the
 selected display. Codec discovery probes NVENC and Media Foundation on that
 same display's adapter, without a global cache or a union of other GPUs' codecs.
-The capability response attaches codecs to each display, and Desktop Settings
-updates its codec choices when the selected display changes.
+The capability response attaches codecs to each display. Desktop Settings
+shows the codec the viewer will use and updates it when the selected display
+changes. The viewer picks the first codec in H.264, HEVC, AV1 order that both
+that display and the browser can use. It does not offer a codec menu.
 Encoding first tries NVENC on that device. If H.264 startup
 fails, it tries hardware Media Foundation transforms on the same adapter.
-There is no software encoder fallback. H.265 and AV1 remain NVENC-only;
-changing the negotiated codec requires a new peer.
+There is no software encoder fallback. H.265 and AV1 remain NVENC-only.
+Changing the negotiated codec requires a new peer. If the video encoder fails
+while starting, while waiting for its first packet, or mid-session, the viewer
+closes that peer and negotiates the next common codec. Permission, missing
+display, ICE, and transport failures stop without another codec. The desktop
+error event includes `reason: "encoder"` for the failures that may continue.
+Older callers omit `reason`; those failures are not retried.
 
 The Media Foundation backend converts BGRA to limited-range BT.709 NV12 on the
 GPU and supplies retained D3D11 textures to the asynchronous hardware encoder.
@@ -136,7 +143,9 @@ all peers, including pending creation.
 
 After login and machine enrollment, select the target machine in the Web or
 Electron client and open **Remote desktop**. Refresh capabilities if needed,
-choose a display and a common codec, then connect. On macOS, the daemon process
+choose a display, then connect. The viewer selects H.264, then HEVC, then AV1
+from the codecs that display and the browser share, and shows the choice as
+status text. On macOS, the daemon process
 needs Screen Recording permission; system audio can be enabled explicitly.
 Windows supports NVENC video and the hardware H.264 fallback described above.
 Linux capture is unavailable.
@@ -144,7 +153,7 @@ Linux capture is unavailable.
 The Electron main process reads discovery/authentication data and proxies a narrow
 preload API. Calls are accepted only from the registered main renderer frame.
 The renderer subscribes before negotiation, creates receive-only transceivers,
-selects a codec supported by Chromium and the native encoder, exchanges SDP/ICE,
+selects the first codec supported by Chromium and the native encoder, exchanges SDP/ICE,
 and starts capture after the peer connects. Candidates received before the answer
 are queued. A media track feeds a standard `<video>` via `srcObject`; Chromium
 owns decoding, audio playback, scaling, and fullscreen. Raw frames never cross the

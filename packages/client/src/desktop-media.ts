@@ -36,7 +36,7 @@ export interface DesktopMediaApi {
   onEvent(listener: (event: DesktopEvent) => void): () => void
 }
 
-export type DesktopMediaResult<T> = { ok: true; value: T } | { ok: false; error: string }
+export type DesktopMediaResult<T> = { ok: true; value: T } | { ok: false; error: string; reason?: "encoder" }
 
 export const DESKTOP_MEDIA_CHANNEL = "deskfleet:desktop-media"
 export const DESKTOP_MEDIA_EVENT = "deskfleet:desktop-event"

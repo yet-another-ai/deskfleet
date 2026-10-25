@@ -1,4 +1,5 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type WebContents } from "electron"
+import { isEncoderFailure } from "../../../daemon/src/control-protocol.ts"
 import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT } from "../../../../packages/client/src/desktop-media.ts"
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import { DesktopMediaController } from "./desktop-media-controller.ts"
@@ -21,7 +22,7 @@ export function installDesktopMediaIpc(): void {
     }
     return owner.invoke(method, params).then(
       (value) => ({ ok: true, value }),
-      (error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }),
+      (error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error), ...(isEncoderFailure(error) ? { reason: "encoder" as const } : {}) }),
     )
   })
 }

@@ -132,7 +132,14 @@ async fn connect(
                             ControlMessage::Ping=>{last_pong=std::time::Instant::now();let _=send_json(&mut session,&ControlMessage::Pong).await;},
                             ControlMessage::Pong=>last_pong=std::time::Instant::now(),
                             ControlMessage::Response{id:request_id,result,error} if is_daemon=>{
-                                let result=match error{Some(e)=>Err(ApiError::new(actix_web::http::StatusCode::BAD_GATEWAY,"daemon_error",e.message)),None=>Ok(result.unwrap_or(Value::Null))};
+                                let result=match error{
+                                    Some(e)=>{
+                                        let mut failure=ApiError::new(actix_web::http::StatusCode::BAD_GATEWAY,"daemon_error",e.message);
+                                        if e.reason.as_deref()==Some("encoder"){failure.reason=Some("encoder".to_owned());}
+                                        Err(failure)
+                                    }
+                                    None=>Ok(result.unwrap_or(Value::Null)),
+                                };
                                 state.hub.response(&id,&connection_id,&request_id,result).await;
                             },
                             ControlMessage::PeerEvent{peer_id,event} if is_daemon=>{

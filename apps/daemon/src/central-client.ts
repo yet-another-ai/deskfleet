@@ -6,7 +6,7 @@ import { AuthorizedPeers } from "./authorized-peers.ts"
 import { centralUrl, type CentralStatus, type MachineCredentials, type MachineEnrollment, type PeerOffer, type ServerMessage } from "./central-protocol.ts"
 import { CentralSync } from "./central-sync.ts"
 import type { ControlPeers } from "./control-server.ts"
-import type { IceCandidate } from "./control-protocol.ts"
+import { isEncoderFailure, type IceCandidate } from "./control-protocol.ts"
 import { validateRelayedDesktopStart } from "./control-request.ts"
 import type { MachineOperations } from "./machine-operations.ts"
 
@@ -171,7 +171,7 @@ export class CentralClient {
       const result = await this.#request(message.method, message.params, message.actor)
       this.#send({ type: "response", id: message.id, result })
     } catch (error) {
-      this.#send({ type: "response", id: message.id, error: { code: "operation_failed", message: error instanceof Error ? error.message : String(error) } })
+      this.#send({ type: "response", id: message.id, error: { code: "operation_failed", message: error instanceof Error ? error.message : String(error), ...(isEncoderFailure(error) ? { reason: "encoder" as const } : {}) } })
     }
   }
 
