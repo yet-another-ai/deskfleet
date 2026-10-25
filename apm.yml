@@ -9,5 +9,9 @@ dependencies:
     - leonardomso/rust-skills#fd2a861ab0406a4ac536a55274d14ea6fd1ca9c9
     - lennney/stop-that-shit/skills/stop-that-shit#694bbd59e26b522cd63801a01590ccaa77c7fe84
     - lennney/stop-that-shit/skills/stss#694bbd59e26b522cd63801a01590ccaa77c7fe84
+    - git: vueuse/skills
+      ref: 004812b4aa0815f5745ac30a6a7dc4927aec7b3d
+      skills:
+        - vueuse-functions
 includes: auto
 scripts: {}

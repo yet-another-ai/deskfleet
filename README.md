@@ -121,9 +121,11 @@ for individual Cargo commands without relying on shell activation. See the
 [CI workflow](agents/docs/ci.md) for platform validation and build artifacts.
 
 Repository-local agent skills are managed by APM. The installed `rust-skills`,
-`stop-that-shit`, and `stss` skills live in `.agents/skills/` and are included in
-the repository together with `apm.yml` and `apm.lock.yaml`. Restore them with
-`mise run skills:install`; only the `apm_modules/` download cache is ignored.
+`stop-that-shit`, `stss`, and `vueuse-functions` skills live in `.agents/skills/`
+and are included in the repository together with `apm.yml` and `apm.lock.yaml`.
+Restore them with `mise run skills:install`; only the `apm_modules/` download
+cache is ignored. `vueuse-functions` is the official VueUse skill; invoke it as
+`/vueuse-functions` when working on Vue or Nuxt.
 
 ## Design
 

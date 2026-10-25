@@ -73,3 +73,10 @@ Only `apm_modules/`, the local package download cache, is ignored.
 Use the installed Rust guidance for Rust work and the other skills when their
 stated triggers apply. The upstream Rust example harness is excluded from the
 deskfleet Cargo workspace; it is not part of the product or its build.
+
+`vueuse-functions` applies when assisting Vue or Nuxt work. Invoke it as
+`/vueuse-functions`. Before using a VueUse API, read the matching file under
+`.agents/skills/vueuse-functions/references/`. Each function is `AUTO` (use when
+it fits), `EXTERNAL` (only when its extra dependency is already installed), or
+`EXPLICIT_ONLY` (only when asked). Instructions in this file override those
+defaults.

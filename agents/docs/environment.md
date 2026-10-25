@@ -224,10 +224,15 @@ for initialization checks and prompt commands.
 
 ## Agent skills
 
-APM installs `rust-skills`, `stop-that-shit`, and `stss` from the commit references
-in `apm.yml`. `apm.lock.yaml` records their resolved sources and deployed files.
-Both manifests and the installed `.agents/skills/` tree belong in source control.
-Only the local download cache, `apm_modules/`, is ignored.
+APM installs `rust-skills`, `stop-that-shit`, `stss`, and `vueuse-functions` from
+the commit references in `apm.yml`. `apm.lock.yaml` records their resolved sources
+and deployed files. Both manifests and the installed `.agents/skills/` tree belong
+in source control. Only the local download cache, `apm_modules/`, is ignored.
+
+`vueuse-functions` is the official VueUse agent skill from `vueuse/skills`, pinned
+to that single skill. Cursor loads `.agents/skills/`, and the skill can be invoked
+as `/vueuse-functions`. `AGENTS.md` states when to apply it. To update it, change
+the `vueuse/skills` `ref` and keep `skills` limited to `vueuse-functions`.
 
 A fresh checkout already contains the skills. To restore the exact installation:
 
