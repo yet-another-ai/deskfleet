@@ -2,13 +2,13 @@ import type { CentralApi } from "./central.ts"
 import { FileTransferManager } from "./file-transfers.ts"
 import { createBrowserFileEndpoint } from "./files-peer.ts"
 import type { FilesApi, FileTransfer } from "./files.ts"
-import { FILE_CHUNK_BYTES, type FileEndpoint, type FileEntry, type FileKind, type FileListing, type FileMethod, type FileMethods, type FileReply } from "../../../apps/daemon/src/files-protocol.ts"
+import { FILE_CHUNK_BYTES, type FileConflict, type FileEndpoint, type FileEntry, type FileKind, type FileListing, type FileMethod, type FileMethods, type FileReply } from "../../../apps/daemon/src/files-protocol.ts"
 
 type DirectoryHandle = FileSystemDirectoryHandle
 interface Upload {
-  directory: DirectoryHandle; directoryPath: string; name: string; kind: FileKind; stage: DirectoryHandle
+  directory: DirectoryHandle; directoryPath: string; requestedName: string; name: string; kind: FileKind; stage: DirectoryHandle
   files: Map<string, { stream: FileSystemWritableFileStream; offset: number }>
-  finished: Set<string>; replace: boolean
+  finished: Set<string>; conflict: FileConflict
   stop: AbortController; calls: Set<Promise<unknown>>; tail: Promise<void>
 }
 const codeOf = (error: unknown) => error instanceof Error ? error.name : ""
@@ -72,6 +72,16 @@ export class BrowserFilesEndpoint implements FileEndpoint {
     for await (const [name, handle] of directory.entries()) entries.push(await this.#entry(`${path}/${name}`, handle))
     entries.sort((left, right) => Number(right.kind === "directory") - Number(left.kind === "directory") || left.name.localeCompare(right.name))
     return { path, parentPath: this.#roots.has(path) ? null : path.slice(0, path.lastIndexOf("/")), homePath: this.#selected!, roots: [...this.#roots].map(([path, handle]) => ({ path, name: handle.name })), entries }
+  }
+  async #unusedName(directory: DirectoryHandle, name: string, kind: FileKind): Promise<string> {
+    if (!await this.#exists(directory, name)) return name
+    const dot = kind === "file" ? name.lastIndexOf(".") : -1
+    const stem = dot > 0 ? name.slice(0, dot) : name
+    const extension = dot > 0 ? name.slice(dot) : ""
+    for (let index = 1; ; index++) {
+      const candidate = `${stem} (${index})${extension}`
+      if (!await this.#exists(directory, candidate)) return candidate
+    }
   }
   async #exists(directory: DirectoryHandle, name: string): Promise<FileKind | null> {
     try { await directory.getFileHandle(name); return "file" }
@@ -166,19 +176,15 @@ export class BrowserFilesEndpoint implements FileEndpoint {
         if (segments(request.name).length !== 1) throw new Error("Invalid file name")
         const directory = await this.#directory(request.directory)
         let name = request.name
-        let existing = await this.#exists(directory, name)
+        const existing = await this.#exists(directory, name)
         if (existing && request.conflict === "skip") return { value: { transferId: "", skipped: true } }
         if (existing && request.conflict === "ask") throw conflict()
-        if (existing && request.conflict === "rename") {
-          const dot = request.kind === "file" ? name.lastIndexOf(".") : -1
-          const stem = dot > 0 ? name.slice(0, dot) : name, extension = dot > 0 ? name.slice(dot) : ""
-          for (let index = 2; existing; index++) { name = `${stem} (${index})${extension}`; existing = await this.#exists(directory, name) }
-        }
-        if (existing && (existing !== "file" || request.kind !== "file")) throw Object.assign(new Error("This browser cannot replace an existing folder. Keep both instead."), { code: "conflict" })
+        if (existing && request.conflict === "rename") name = await this.#unusedName(directory, name, request.kind)
+        else if (existing && (existing !== "file" || request.kind !== "file")) throw Object.assign(new Error("This browser cannot replace an existing folder. Keep both instead."), { code: "conflict" })
         const transferId = crypto.randomUUID()
         const stage = await (await navigator.storage.getDirectory()).getDirectoryHandle(`deskfleet-${transferId}`, { create: true }) as DirectoryHandle
         if (request.kind === "directory") await stage.getDirectoryHandle("directory", { create: true })
-        this.#uploads.set(transferId, { directory, directoryPath: request.directory, name, kind: request.kind, stage, files: new Map(), finished: new Set(), replace: request.conflict === "replace", stop: new AbortController(), calls: new Set(), tail: Promise.resolve() })
+        this.#uploads.set(transferId, { directory, directoryPath: request.directory, requestedName: request.name, name, kind: request.kind, stage, files: new Map(), finished: new Set(), conflict: request.conflict, stop: new AbortController(), calls: new Set(), tail: Promise.resolve() })
         return { value: { transferId, skipped: false } }
       }
       case "mkdir": {
@@ -216,8 +222,17 @@ export class BrowserFilesEndpoint implements FileEndpoint {
         const { transferId } = params as FileMethods["commit"]["params"]
         const upload = this.#upload(transferId)
         if (upload.files.size) throw new Error("Transfer has unfinished files")
-        const existing = await this.#exists(upload.directory, upload.name)
-        if (existing && (!upload.replace || existing !== "file" || upload.kind !== "file")) throw conflict()
+        let existing = await this.#exists(upload.directory, upload.name)
+        if (existing && upload.conflict === "skip") {
+          const path = `${upload.directoryPath}/${upload.name}`
+          await this.#remove(transferId)
+          return { value: { path, skipped: true } }
+        }
+        if (existing && upload.conflict === "rename") {
+          upload.name = await this.#unusedName(upload.directory, upload.requestedName, upload.kind)
+          existing = null
+        }
+        if (existing && (upload.conflict !== "replace" || existing !== "file" || upload.kind !== "file")) throw conflict()
         try {
           upload.stop.signal.throwIfAborted()
           if (upload.kind === "file") {

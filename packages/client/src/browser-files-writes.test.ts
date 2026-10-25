@@ -84,7 +84,7 @@ test("browser receiver preserves empty directories and chunked file contents, th
   await vi.waitFor(async () => { expect((await manager.transfers()).find(job => job.id === next)?.state).toBe("conflict") })
   await manager.retry(next, "rename")
   await vi.waitFor(async () => { expect((await manager.transfers()).find(job => job.id === next)?.state).toBe("completed") })
-  expect((await destination.getDirectoryHandle("bundle (2)")).children.size).toBe(3)
+  expect((await destination.getDirectoryHandle("bundle (1)")).children.size).toBe(3)
   expect((await manager.transfers()).find(job => job.id === id)?.transferredBytes).toBe(80_005)
 })
 
@@ -116,6 +116,31 @@ async function receiverFixture(stageWrite?: WriteHook) {
   await endpoint.choose()
   return { endpoint, chosen, storage }
 }
+
+test("browser keep-both starts at (1) and commit still skips or renames a name that appears later", async () => {
+  const { endpoint, chosen } = await receiverFixture()
+  await chosen.getFileHandle("notes.txt", { create: true })
+  const renamed = (await endpoint.call("begin", { directory: "/chosen", name: "notes.txt", kind: "file", conflict: "rename" })).value
+  expect(renamed.skipped).toBe(false)
+  await endpoint.call("write", { transferId: renamed.transferId, path: "", offset: 0 }, new TextEncoder().encode("kept"))
+  await endpoint.call("finish", { transferId: renamed.transferId, path: "", size: 4 })
+  expect((await endpoint.call("commit", { transferId: renamed.transferId })).value.path).toBe("/chosen/notes (1).txt")
+
+  const late = (await endpoint.call("begin", { directory: "/chosen", name: "later.txt", kind: "file", conflict: "rename" })).value
+  await endpoint.call("write", { transferId: late.transferId, path: "", offset: 0 }, new TextEncoder().encode("new"))
+  await endpoint.call("finish", { transferId: late.transferId, path: "", size: 3 })
+  await chosen.getFileHandle("later.txt", { create: true })
+  expect((await endpoint.call("commit", { transferId: late.transferId })).value.path).toBe("/chosen/later (1).txt")
+
+  const skipped = (await endpoint.call("begin", { directory: "/chosen", name: "existing.txt", kind: "file", conflict: "skip" })).value
+  await endpoint.call("write", { transferId: skipped.transferId, path: "", offset: 0 }, new TextEncoder().encode("x"))
+  await endpoint.call("finish", { transferId: skipped.transferId, path: "", size: 1 })
+  const occupied = await chosen.getFileHandle("existing.txt", { create: true })
+  occupied.bytes = new TextEncoder().encode("stay")
+  const result = await endpoint.call("commit", { transferId: skipped.transferId })
+  expect(result.value).toEqual({ path: "/chosen/existing.txt", skipped: true })
+  expect(new TextDecoder().decode((await chosen.getFileHandle("existing.txt")).bytes)).toBe("stay")
+})
 
 test("browser receiver serializes pipelined mkdir, writes, finish, and commit for one upload", async () => {
   const { endpoint, chosen, storage } = await receiverFixture()
