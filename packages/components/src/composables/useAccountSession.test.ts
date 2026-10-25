@@ -33,6 +33,55 @@ test("otherwise opens a reachable machine, and presence updates it in place", as
   expect(session.machines.value.find(machine => machine.id === "a")?.online).toBe(true)
 })
 
+test("Team roster notifications add, rename and remove machines without replacing a valid selection", async () => {
+  const fake = fakeCentral()
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  fake.state.machines.push(machineFixture("a", "team-1", "New machine", false))
+  fake.emit({ type: "machinesChanged", teamId: "another-team" })
+  await flushPromises()
+  expect(fake.central.machines).toHaveBeenCalledTimes(1)
+  expect(session.machines.value).toEqual([])
+
+  fake.emit({ type: "machinesChanged", teamId: "team-1" })
+  await flushPromises()
+  expect(session.machineId.value).toBe("a")
+  fake.state.machines.push(machineFixture("b", "team-1", "Second machine"))
+  fake.state.machines[0]!.name = "Renamed machine"
+  fake.emit({ type: "machinesChanged", teamId: "team-1" })
+  await flushPromises()
+  expect(session.machines.value.map(machine => machine.name)).toEqual(["Renamed machine", "Second machine"])
+  expect(session.machineId.value).toBe("a")
+
+  fake.state.machines = fake.state.machines.filter(machine => machine.id !== "a")
+  fake.emit({ type: "machinesChanged", teamId: "team-1" })
+  await flushPromises()
+  expect(session.machineId.value).toBe("b")
+  fake.state.machines = []
+  fake.emit({ type: "machinesChanged", teamId: "team-1" })
+  await flushPromises()
+  expect(session.machine.value).toBeUndefined()
+  expect(session.machines.value).toEqual([])
+})
+
+test("reconnecting refreshes missed roster changes and this computer's enrollment", async () => {
+  const fake = fakeCentral({
+    machines: [machineFixture("mine", "team-1", "This computer"), machineFixture("other", "team-1", "Other machine")],
+    enrollment: enrollment({ configured: true, serverUrl: "https://fleet.example", teamId: "team-1", machineId: "mine" }),
+  })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  expect(session.machineId.value).toBe("mine")
+  fake.emit({ type: "connection", connected: false })
+  fake.state.machines = fake.state.machines.filter(machine => machine.id !== "mine")
+  fake.state.enrollment = { ...fake.state.enrollment!, revoked: true }
+  fake.emit({ type: "connection", connected: true })
+  await flushPromises()
+  expect(session.machineId.value).toBe("other")
+  expect(session.localMachineId.value).toBeUndefined()
+  expect(session.canEnrollLocal.value).toBe(true)
+})
+
 test("a slow machine list for a Team the user already left is discarded", async () => {
   const fake = fakeCentral({
     teams: [{ id: "first", name: "First", role: "admin" }, { id: "second", name: "Second", role: "admin" }],

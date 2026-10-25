@@ -73,6 +73,51 @@ async fn postgres_http_permissions_replication_and_signaling() {
     ))
     .await;
     let team_id = team["id"].as_str().unwrap();
+    let teammate = state
+        .store
+        .oidc_user(
+            &issuer,
+            "teammate",
+            "Teammate",
+            Some("teammate@test.example"),
+            true,
+        )
+        .await
+        .unwrap();
+    let invite = state
+        .store
+        .invite(&user.id, team_id, "teammate@test.example", "member")
+        .await
+        .unwrap();
+    state
+        .store
+        .accept_invite(&teammate.id, invite["token"].as_str().unwrap())
+        .await
+        .unwrap();
+    let (send, mut roster) = tokio::sync::mpsc::channel(128);
+    let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
+    state
+        .hub
+        .add_client(
+            "teammate-login",
+            &teammate.id,
+            "teammate-connection",
+            send,
+            shutdown,
+        )
+        .await;
+    let (send, mut outside_roster) = tokio::sync::mpsc::channel(128);
+    let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
+    state
+        .hub
+        .add_client(
+            "outside-login",
+            &outside.id,
+            "outside-connection",
+            send,
+            shutdown,
+        )
+        .await;
     let path = format!("/api/teams/{team_id}/machines");
     assert_eq!(
         call!(get, &path, outside_token, &json!({})).status(),
@@ -87,6 +132,53 @@ async fn postgres_http_permissions_replication_and_signaling() {
     .await;
     let machine_id = enrollment["machine"]["id"].as_str().unwrap();
     let machine_token = enrollment["token"].as_str().unwrap();
+    assert!(
+        matches!(roster.try_recv().unwrap(), ControlMessage::MachinesChanged { team_id: changed } if changed == team_id)
+    );
+    assert_eq!(
+        call!(
+            patch,
+            &format!("/api/machines/{machine_id}"),
+            token,
+            &json!({"name":"Renamed"})
+        )
+        .status(),
+        StatusCode::OK
+    );
+    assert!(
+        matches!(roster.try_recv().unwrap(), ControlMessage::CatalogChanged { machine_id: changed } if changed == machine_id)
+    );
+    assert!(
+        matches!(roster.try_recv().unwrap(), ControlMessage::MachinesChanged { team_id: changed } if changed == team_id)
+    );
+    // Removing an offline machine must notify its Team even without a daemon disconnect.
+    let offline: Value = test::read_body_json(call!(
+        post,
+        &path,
+        token,
+        &json!({"name":"Offline","originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"})
+    ))
+    .await;
+    assert!(
+        matches!(roster.try_recv().unwrap(), ControlMessage::MachinesChanged { team_id: changed } if changed == team_id)
+    );
+    assert_eq!(
+        call!(
+            delete,
+            &format!(
+                "/api/machines/{}",
+                offline["machine"]["id"].as_str().unwrap()
+            ),
+            token,
+            &json!({})
+        )
+        .status(),
+        StatusCode::OK
+    );
+    assert!(
+        matches!(roster.try_recv().unwrap(), ControlMessage::MachinesChanged { team_id: changed } if changed == team_id)
+    );
+    assert!(outside_roster.try_recv().is_err());
     let me: Value =
         test::read_body_json(call!(get, "/api/daemon/me", machine_token, &json!({}))).await;
     assert_eq!(me["machine"]["id"], machine_id);

@@ -92,12 +92,16 @@ export class MachineRuntime {
     if (!status.configured) return Promise.resolve(status)
     if (!status.revoked) return Promise.reject(new Error("This machine is already enrolled"))
     this.#preparing = (async () => {
-      await this.current.close()
+      const previous = this.current
       const directory = await newMachineDirectory(this.#directory)
       const next = await openMachine(directory.path, { ...this.#options, terminals: undefined })
-      try { await directory.activate() }
+      try {
+        await previous.stop()
+        await directory.activate()
+      }
       catch (error) { await next.close(); throw error }
       this.#machine = next
+      await previous.close()
       return next.central.status()
     })().finally(() => { this.#preparing = undefined })
     return this.#preparing

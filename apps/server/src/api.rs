@@ -151,6 +151,13 @@ pub async fn enroll(
             b.capabilities,
         )
         .await?;
+    s.notify_team(
+        &m.team_id,
+        ControlMessage::MachinesChanged {
+            team_id: m.team_id.clone(),
+        },
+    )
+    .await;
     Ok(web::Json(json!({"machine":m,"token":t})))
 }
 pub async fn machines(
@@ -182,6 +189,13 @@ pub async fn rename_machine(
         },
     )
     .await;
+    s.notify_team(
+        &m.team_id,
+        ControlMessage::MachinesChanged {
+            team_id: m.team_id.clone(),
+        },
+    )
+    .await;
     Ok(web::Json(json!(m)))
 }
 pub async fn remove_machine(
@@ -190,10 +204,18 @@ pub async fn remove_machine(
     p: web::Path<String>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
+    let machine = s.store.machine(&p).await?;
     s.store.revoke_machine(&a.user.id, &p).await?;
     let peers = s.store.revoke_machine_peers(&p).await?;
     s.hub.revoke(peers, "machine_removed").await;
     s.hub.disconnect_machine(&p).await;
+    s.notify_team(
+        &machine.team_id,
+        ControlMessage::MachinesChanged {
+            team_id: machine.team_id.clone(),
+        },
+    )
+    .await;
     Ok(web::Json(json!({})))
 }
 #[derive(Deserialize)]

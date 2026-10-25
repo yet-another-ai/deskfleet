@@ -1,0 +1,2 @@
+# Keep generated protocol bindings identical across platform checkouts.
+/crates/protocol/control.ts text eol=lf

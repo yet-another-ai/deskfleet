@@ -18,6 +18,8 @@ a stable `Gate` result for branch protection.
   both directly and with relay-only peers through an isolated coturn container.
   The same job drives the built Web and Electron clients under Xvfb through
   actual login, remote execution, archive/restore, and offline history flows.
+  It installs Electron's Linux sandbox helper with root ownership and mode 4755
+  before launching the clients.
 - `.github/workflows/build.yml` builds release artifacts using `mise run build`.
   Pull requests use a Linux x64 smoke build; main and manual runs use the full
   platform matrix. Each target packages and verifies the standalone SEA daemon.

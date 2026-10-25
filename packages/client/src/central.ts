@@ -16,7 +16,7 @@ export interface LocalEnrollment {
 export interface PeerGrant { peerId: string; authorization: PeerAuthorization; iceServers: RTCIceServer[] }
 export type CentralEvent =
   | { type: "peerEvent"; peerId: string; event: Omit<DesktopEvent, "sessionId"> }
-  | Extract<ControlMessage, { type: "peerRevoked" | "catalogChanged" | "presence" }>
+  | Extract<ControlMessage, { type: "peerRevoked" | "catalogChanged" | "machinesChanged" | "presence" }>
   | { type: "connection"; connected: boolean }
   | { type: "accountChanged" }
 

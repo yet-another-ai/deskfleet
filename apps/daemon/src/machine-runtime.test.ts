@@ -10,6 +10,7 @@ import { openCatalog } from "@deskfleet/native"
 import { BackendAgent } from "../../../scripts/fixtures/backend-agent.ts"
 import { until } from "../../../scripts/fixtures/backend-peer.ts"
 import type { AgentSnapshot } from "./agent-protocol.ts"
+import { AgentProviders } from "./agent-providers.ts"
 import { DaemonClient } from "./control-client.ts"
 import { readDaemonDiscovery } from "./control-discovery.ts"
 import { startDaemon } from "./daemon.ts"
@@ -143,6 +144,44 @@ test("an enrolled machine cannot prepare another registration just because it is
   await assert.rejects(runtime.prepareEnrollment(), /already enrolled/u)
   assert.deepEqual(runtime.current.central.status().identity, identity)
   assert.equal(await activeMachineDirectory(directory), join(directory, "machine"))
+})
+
+test("failed registration preparation keeps the retired catalog usable and can be retried", async context => {
+  for (const failure of ["directory", "startup", "activation"] as const) await context.test(failure, async context => {
+    const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-retry-"))
+    await seed(directory)
+    const runtime = new MachineRuntime(directory, options)
+    context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
+    await runtime.init()
+    const previous = runtime.current
+    const original = previous.central.status()
+    const workspace = await previous.catalog.native.createWorkspace("Retained", [{ path: directory }])
+    let removeFailure = async () => {}
+    if (failure === "directory") {
+      const path = join(directory, "machines")
+      await writeFile(path, "not a directory")
+      removeFailure = () => rm(path)
+    } else if (failure === "startup") {
+      const init = context.mock.method(AgentProviders.prototype, "init", async () => { throw new Error("Provider settings unavailable") })
+      removeFailure = async () => { init.mock.restore() }
+    } else {
+      const path = join(directory, "active-machine.json.tmp")
+      await mkdir(path)
+      removeFailure = () => rm(path, { recursive: true })
+    }
+    await assert.rejects(runtime.prepareEnrollment())
+    assert.equal(runtime.current, previous)
+    assert.deepEqual(runtime.current.central.status(), original)
+    assert.equal((await runtime.current.catalog.native.snapshot()).workspaces[0]?.id, workspace.id)
+    assert.equal(await activeMachineDirectory(directory), previous.directory)
+    await removeFailure()
+    const prepared = await runtime.prepareEnrollment()
+    assert.equal(prepared.configured, false)
+    assert.notEqual(prepared.identity.originId, original.identity.originId)
+    assert.equal(await activeMachineDirectory(directory), runtime.current.directory)
+    assert.deepEqual((await runtime.current.catalog.native.snapshot()).workspaces, [])
+    await runtime.close()
+  })
 })
 
 test("host shutdown waits for an accepted reset and closes its replacement context", async context => {

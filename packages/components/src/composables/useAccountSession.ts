@@ -93,6 +93,9 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       ?? list.find(value => value.online)?.id ?? list[0]?.id
     if (machineId.value) shellSettings.value = undefined
   }
+  function refreshMachines(): Promise<void> {
+    return background(async () => { await loadEnrollment(); await loadMachines() })
+  }
   async function reload(): Promise<void> {
     account.value = await central.status()
     if (!account.value.user) {
@@ -145,7 +148,10 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
 
   const unsubscribe = central.onEvent(event => {
     if (event.type === "accountChanged") void background(reload)
-    else if (event.type === "connection") connected.value = event.connected
+    else if (event.type === "connection") {
+      connected.value = event.connected
+      if (event.connected && teamId.value) void refreshMachines()
+    } else if (event.type === "machinesChanged" && event.teamId === teamId.value) void refreshMachines()
     else if (event.type === "presence") {
       const target = machines.value.find(value => value.id === event.machineId)
       if (target) target.online = event.online
@@ -156,7 +162,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   return {
     central, ready, account, teams, teamId, team, machines, machineId, machine, enrollment, localMachineId, canEnrollLocal,
     connected, notice, dialog, shellSettings, reload,
-    refreshMachines: () => background(async () => { await loadEnrollment(); await loadMachines() }),
+    refreshMachines,
     async signIn(serverUrl) { await central.setServer(serverUrl); await central.login(); await reload() },
     async signOut() { await central.logout(); await reload() },
     selectTeam,

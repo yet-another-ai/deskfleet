@@ -127,6 +127,13 @@ jobs:
       - name: Run authenticated remote workflow
         run: mise run backend:smoke
 
+      - name: Configure Electron sandbox
+        run: |
+          mise exec -- pnpm --filter @deskfleet/desktop exec install-electron
+          electron_sandbox=$(mise exec -- pnpm --filter @deskfleet/desktop exec node -p 'require.resolve("electron/dist/chrome-sandbox")')
+          sudo chown root:root "$electron_sandbox"
+          sudo chmod 4755 "$electron_sandbox"
+
       - name: Run the built Web and Electron clients
         run: xvfb-run -a mise run backend:smoke-clients
 

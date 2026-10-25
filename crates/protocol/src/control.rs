@@ -139,6 +139,10 @@ pub enum ControlMessage {
         #[serde(rename = "machineId")]
         machine_id: String,
     },
+    MachinesChanged {
+        #[serde(rename = "teamId")]
+        team_id: String,
+    },
     Presence {
         #[serde(rename = "machineId")]
         machine_id: String,
