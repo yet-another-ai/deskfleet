@@ -184,7 +184,7 @@
     "controlHint": "点击远程桌面即可发送鼠标和键盘输入。",
     "video": "远程桌面视频",
     "checking": "正在检查本机桌面…",
-    "ready": "选择显示器并连接以开始共享。视频编码：{codec}。",
+    "ready": "选择显示器并连接以开始共享。",
     "connecting": "正在使用 {codec} 连接…",
     "starting": "正在使用 {codec} 启动屏幕捕获…",
     "connected": "已连接 · {codec}",

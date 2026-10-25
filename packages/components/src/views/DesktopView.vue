@@ -160,7 +160,7 @@ const status = computed(() => {
   if (!fleet.localDesktopTarget.desktop) return t("desktop.captureUnavailable")
   if (capabilities.value?.displays.length === 0) return t("desktop.noDisplay", { machine: machine.value.name })
   if (codecs.value.length === 0) return t("desktop.noCodec")
-  return t("desktop.ready", { codec: codecLabel.value })
+  return t("desktop.ready")
 })
 const detail = computed(() => local.value ? failure.value?.detail ?? discoveryError.value
   ?? (!fleet.localDesktopTarget.online ? fleet.localDesktopTarget.error : undefined) : undefined)

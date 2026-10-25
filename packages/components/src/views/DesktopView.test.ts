@@ -43,7 +43,7 @@ afterEach(() => {
 
 test("discovers displays without capturing, then connects with the automatic codec", async () => {
   const wrapper = await mountDesktop()
-  expect(wrapper.get('[role="status"]').text()).toBe("Choose a display and connect to start sharing. Video codec: AV1.")
+  expect(wrapper.get('[role="status"]').text()).toBe("Choose a display and connect to start sharing.")
   expect(wrapper.findAll("select")).toHaveLength(1)
   const display = wrapper.get("select")
   expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: AV1")
@@ -166,7 +166,7 @@ test("switching displays selects a codec supported by that display's GPU", async
   expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: AV1")
   await display.setValue("2")
   expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: H.264")
-  expect(wrapper.get('[role="status"]').text()).toContain("Video codec: H.264.")
+  expect(wrapper.get('[role="status"]').text()).toBe("Choose a display and connect to start sharing.")
 
   await display.setValue("3")
   expect(wrapper.find("[data-desktop-codec]").exists()).toBe(false)

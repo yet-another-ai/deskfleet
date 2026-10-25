@@ -184,7 +184,7 @@
     "controlHint": "Click the desktop to send mouse and keyboard input.",
     "video": "Remote desktop video",
     "checking": "Checking the local desktop…",
-    "ready": "Choose a display and connect to start sharing. Video codec: {codec}.",
+    "ready": "Choose a display and connect to start sharing.",
     "connecting": "Connecting with {codec}…",
     "starting": "Starting screen capture with {codec}…",
     "connected": "Connected · {codec}",
