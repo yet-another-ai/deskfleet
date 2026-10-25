@@ -196,7 +196,7 @@
     "timeout": "桌面连接超时。请检查守护进程后重试。",
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏",
-    "fullscreenFailed": "无法进入全屏。",
+    "fullscreenFailed": "无法切换全屏模式。",
     "play": "播放桌面视频"
   },
   "panel": {

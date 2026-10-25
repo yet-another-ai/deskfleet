@@ -10,6 +10,7 @@ import DesktopView from "./DesktopView.vue"
 const originalApi = platformClient.desktop
 let mock: ReturnType<typeof mockDesktopApi>
 const wrappers: VueWrapper[] = []
+const fullscreenCleanups: (() => void)[] = []
 async function mountDesktop(machineId = "local-daemon") {
   const wrapper = mount(DesktopView, {
     props: { machineId },
@@ -21,6 +22,38 @@ async function mountDesktop(machineId = "local-daemon") {
 }
 function button(wrapper: VueWrapper, label: string) {
   return wrapper.findAll("button").find((entry) => entry.text() === label)!
+}
+async function connectDesktop() {
+  const wrapper = await mountDesktop()
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  const peer = TestPeer.instances[0]!
+  const track = { stop: vi.fn() } as unknown as MediaStreamTrack
+  peer.ontrack?.({ track })
+  peer.changeState("connected")
+  await flushPromises()
+  return { wrapper, peer, track }
+}
+function mockFullscreen(stage: Element) {
+  let fullscreenElement: Element | null = null
+  const originalElement = Object.getOwnPropertyDescriptor(document, "fullscreenElement")
+  const originalExit = Object.getOwnPropertyDescriptor(document, "exitFullscreen")
+  const change = (element: Element | null) => {
+    fullscreenElement = element
+    stage.dispatchEvent(new Event("fullscreenchange"))
+  }
+  const request = vi.fn(async () => { change(stage) })
+  const exit = vi.fn(async () => { change(null) })
+  Object.defineProperty(stage, "requestFullscreen", { value: request })
+  Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => fullscreenElement })
+  Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exit })
+  fullscreenCleanups.push(() => {
+    if (originalElement) Object.defineProperty(document, "fullscreenElement", originalElement)
+    else Reflect.deleteProperty(document, "fullscreenElement")
+    if (originalExit) Object.defineProperty(document, "exitFullscreen", originalExit)
+    else Reflect.deleteProperty(document, "exitFullscreen")
+  })
+  return { request, exit, change }
 }
 beforeEach(() => {
   stubWebRtc()
@@ -37,6 +70,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+  for (const cleanup of fullscreenCleanups.splice(0).reverse()) cleanup()
   platformClient.desktop = originalApi
   vi.unstubAllGlobals()
 })
@@ -89,48 +123,88 @@ test("selects HEVC ahead of H264 when the display has no AV1 encoder", async () 
 })
 
 test("fullscreen keeps the desktop toolbar available and follows browser exit events", async () => {
-  const wrapper = await mountDesktop()
-  await button(wrapper, "Connect").trigger("click")
-  await flushPromises()
-  const peer = TestPeer.instances[0]!
-  peer.ontrack?.({ track: { stop: vi.fn() } as unknown as MediaStreamTrack })
-  peer.changeState("connected")
-  await flushPromises()
-
+  const { wrapper } = await connectDesktop()
   const stage = wrapper.get("[data-desktop-stage]").element
-  let fullscreenElement: Element | null = null
-  const originalElement = Object.getOwnPropertyDescriptor(document, "fullscreenElement")
-  const originalExit = Object.getOwnPropertyDescriptor(document, "exitFullscreen")
-  const change = (element: Element | null) => {
-    fullscreenElement = element
-    stage.dispatchEvent(new Event("fullscreenchange"))
-  }
-  const request = vi.fn(async () => { change(stage) })
-  const exit = vi.fn(async () => { change(null) })
-  Object.defineProperty(stage, "requestFullscreen", { value: request })
-  Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => fullscreenElement })
-  Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exit })
-  try {
-    await wrapper.get('[aria-label="Full screen"]').trigger("click")
-    await flushPromises()
-    expect(request).toHaveBeenCalledTimes(1)
-    expect(stage.contains(wrapper.get('[aria-label="Exit full screen"]').element)).toBe(true)
-    expect(stage.contains(button(wrapper, "Disconnect").element)).toBe(true)
-    await wrapper.get('[aria-label="Exit full screen"]').trigger("click")
-    await flushPromises()
-    expect(exit).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
+  const { request, exit, change } = mockFullscreen(stage)
+  await wrapper.get('[aria-label="Full screen"]').trigger("click")
+  await flushPromises()
+  expect(request).toHaveBeenCalledTimes(1)
+  expect(stage.contains(wrapper.get('[aria-label="Exit full screen"]').element)).toBe(true)
+  expect(stage.contains(button(wrapper, "Disconnect").element)).toBe(true)
+  await wrapper.get('[aria-label="Exit full screen"]').trigger("click")
+  await flushPromises()
+  expect(exit).toHaveBeenCalledTimes(1)
+  expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
 
-    await wrapper.get('[aria-label="Full screen"]').trigger("click")
-    change(null) // The browser also exits fullscreen when the user presses Escape.
-    await flushPromises()
-    expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
-  } finally {
-    if (originalElement) Object.defineProperty(document, "fullscreenElement", originalElement)
-    else Reflect.deleteProperty(document, "fullscreenElement")
-    if (originalExit) Object.defineProperty(document, "exitFullscreen", originalExit)
-    else Reflect.deleteProperty(document, "exitFullscreen")
-  }
+  await wrapper.get('[aria-label="Full screen"]').trigger("click")
+  change(null) // The browser also exits fullscreen when the user presses Escape.
+  await flushPromises()
+  expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
+})
+
+test("hiding Desktop exits its fullscreen stage while disconnecting the stream", async () => {
+  const { wrapper, peer, track } = await connectDesktop()
+  const { exit } = mockFullscreen(wrapper.get("[data-desktop-stage]").element)
+  await wrapper.get('[aria-label="Full screen"]').trigger("click")
+  await flushPromises()
+  await wrapper.setProps({ visible: false })
+  await flushPromises()
+  expect(exit).toHaveBeenCalled()
+  expect(document.fullscreenElement).toBeNull()
+  expect(peer.close).toHaveBeenCalledOnce()
+  expect(track.stop).toHaveBeenCalledOnce()
+  expect(wrapper.find('[aria-label="Exit full screen"]').exists()).toBe(false)
+})
+
+test("a fullscreen request completing after Desktop is hidden exits immediately", async () => {
+  const { wrapper } = await connectDesktop()
+  const stage = wrapper.get("[data-desktop-stage]").element
+  const { request, exit, change } = mockFullscreen(stage)
+  const entering = deferred<void>()
+  request.mockImplementation(async () => { await entering.promise; change(stage) })
+  await wrapper.get('[aria-label="Full screen"]').trigger("click")
+  await wrapper.setProps({ visible: false })
+  await flushPromises()
+  expect(exit).not.toHaveBeenCalled()
+
+  entering.resolve()
+  await flushPromises()
+  expect(exit).toHaveBeenCalled()
+  expect(document.fullscreenElement).toBeNull()
+  expect(wrapper.find('[aria-label="Exit full screen"]').exists()).toBe(false)
+})
+
+test.each(["disconnect", "connection loss"])("%s keeps a manual fullscreen exit when automatic exit fails", async reason => {
+  const { wrapper, peer } = await connectDesktop()
+  const stage = wrapper.get("[data-desktop-stage]").element
+  const { exit, change } = mockFullscreen(stage)
+  await wrapper.get('[aria-label="Full screen"]').trigger("click")
+  await flushPromises()
+  exit.mockRejectedValue(new Error("Could not exit fullscreen"))
+  if (reason === "disconnect") await button(wrapper, "Disconnect").trigger("click")
+  else peer.changeState("failed")
+  await flushPromises()
+  expect(exit).toHaveBeenCalled()
+  expect(document.fullscreenElement).toBe(stage)
+  expect((wrapper.get("video").element as HTMLVideoElement).srcObject).toBeNull()
+  expect(wrapper.get('[aria-label="Exit full screen"]').isVisible()).toBe(true)
+
+  exit.mockImplementation(async () => { change(null) })
+  await wrapper.get('[aria-label="Exit full screen"]').trigger("click")
+  await flushPromises()
+  expect(document.fullscreenElement).toBeNull()
+  expect(wrapper.find('[aria-label="Exit full screen"]').exists()).toBe(false)
+})
+
+test("hiding Desktop does not exit fullscreen owned by another element", async () => {
+  const { wrapper } = await connectDesktop()
+  const { exit, change } = mockFullscreen(wrapper.get("[data-desktop-stage]").element)
+  const other = document.createElement("div")
+  change(other)
+  await wrapper.setProps({ visible: false })
+  await flushPromises()
+  expect(exit).not.toHaveBeenCalled()
+  expect(document.fullscreenElement).toBe(other)
 })
 
 test("fullscreen failures are visible and a successful retry clears the error", async () => {
@@ -146,7 +220,7 @@ test("fullscreen failures are visible and a successful retry clears the error", 
   Object.defineProperty(wrapper.get("[data-desktop-stage]").element, "requestFullscreen", { value: request })
   await wrapper.get('[aria-label="Full screen"]').trigger("click")
   await flushPromises()
-  expect(wrapper.get('[role="alert"]').text()).toBe("Could not enter full screen.")
+  expect(wrapper.get('[role="alert"]').text()).toBe("Could not change full screen mode.")
   await wrapper.get('[aria-label="Full screen"]').trigger("click")
   await flushPromises()
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)

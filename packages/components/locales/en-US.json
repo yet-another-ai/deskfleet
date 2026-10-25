@@ -196,7 +196,7 @@
     "timeout": "The desktop connection timed out. Check the daemon and try again.",
     "fullscreen": "Full screen",
     "exitFullscreen": "Exit full screen",
-    "fullscreenFailed": "Could not enter full screen.",
+    "fullscreenFailed": "Could not change full screen mode.",
     "play": "Play desktop video"
   },
   "panel": {

@@ -93,7 +93,13 @@ watch(() => props.machineId, () => {
   if (local.value) void refresh()
 }, { immediate: true })
 watch(() => props.visible, visible => { if (!visible) void connection.disconnect() })
-onBeforeUnmount(() => { ++discoveryGeneration })
+watch([() => props.visible, stream, isFullscreen], ([visible, media]) => {
+  if (!visible || !media) void exitFullscreen()
+})
+onBeforeUnmount(() => {
+  ++discoveryGeneration
+  void exitFullscreen()
+})
 
 async function play(): Promise<void> {
   const element = video.value
@@ -131,10 +137,17 @@ async function fullscreen(): Promise<void> {
   fullscreenError.value = false
   const element = stage.value
   if (!element) return
+  if (document.fullscreenElement === element) return exitFullscreen()
   try {
-    if (document.fullscreenElement === element) await document.exitFullscreen()
-    else await element.requestFullscreen()
+    await element.requestFullscreen()
   }
+  catch { fullscreenError.value = true }
+}
+
+async function exitFullscreen(): Promise<void> {
+  if (!stage.value || document.fullscreenElement !== stage.value) return
+  fullscreenError.value = false
+  try { await document.exitFullscreen() }
   catch { fullscreenError.value = true }
 }
 
@@ -228,7 +241,7 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
         <span v-if="stream" role="status" class="flex items-center gap-1.5 px-2 text-[13px] text-ui-text-muted">
           <span class="h-1.5 w-1.5 rounded-full" :class="state === 'connected' ? 'bg-ui-success' : 'bg-ui-text-faint'" aria-hidden="true" />{{ status }}
         </span>
-        <IconButton v-if="stream && state === 'connected'" :icon="isFullscreen ? Minimize : Maximize" :label="t(isFullscreen ? 'desktop.exitFullscreen' : 'desktop.fullscreen')" @click="fullscreen" />
+        <IconButton v-if="isFullscreen || (stream && state === 'connected')" :icon="isFullscreen ? Minimize : Maximize" :label="t(isFullscreen ? 'desktop.exitFullscreen' : 'desktop.fullscreen')" @click="fullscreen" />
         <button v-if="stream && control && state === 'connected'" type="button" class="ui-button py-1" :disabled="!connection.inputReady.value" :aria-pressed="!controlPaused" @click="toggleControl">
           {{ controlPaused ? t("desktop.resumeControl") : t("desktop.pauseControl") }}
         </button>
