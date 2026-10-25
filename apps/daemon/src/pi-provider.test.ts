@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test, { type TestContext } from "node:test"
@@ -12,7 +12,7 @@ import type { AgentConnection } from "./agents/acp.ts"
 import { configureAdapterHost } from "./agents/adapter-host.ts"
 
 async function fixture(t: TestContext, auth = "configured") {
-  const directory = await mkdtemp(join(tmpdir(), "df-provider-pi-"))
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "df-provider-pi-")))
   const connections: AgentConnection[] = []
   const logPath = join(directory, "pi-rpc.jsonl")
   async function log(): Promise<Array<Record<string, unknown>>> {
