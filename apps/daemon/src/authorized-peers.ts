@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
 import { AGENT_CHANNEL, type AgentMethod } from "./agent-protocol.ts"
 import type { ControlPeers } from "./control-server.ts"
-import { desktopErrorEvent, encoderFailure, type DesktopStart, type IceCandidate } from "./control-protocol.ts"
+import { desktopErrorEvent, desktopStartupCleanupFailure, encoderFailure, type DesktopStart, type IceCandidate } from "./control-protocol.ts"
 import type { MachineCredentials, PeerAuthorization, PeerOffer, PeerSignal } from "./central-protocol.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
@@ -34,6 +34,7 @@ interface AuthorizedPeer {
   agent?: AgentChannel
   files?: FilesChannel
   input?: DesktopInputChannel
+  desktopStart?: "starting" | "started"
 }
 
 /** Resolve the empty mid emitted by native WebRTC from the authenticated SDP. */
@@ -174,6 +175,8 @@ export class AuthorizedPeers {
     const owned = this.#live(id, "desktop:stream")
     if (owned.authorization.purpose !== "desktop") throw new Error("A desktop peer is required")
     if (options.control) this.#live(id, "desktop:control")
+    if (owned.desktopStart) throw new Error(`Desktop stream is already ${owned.desktopStart}`)
+    owned.desktopStart = "starting"
     const native = await owned.native
     try {
       this.#live(id, "desktop:stream")
@@ -181,12 +184,13 @@ export class AuthorizedPeers {
       this.#live(id, "desktop:stream")
       if (options.control) await owned.input!.enable()
       this.#live(id, "desktop:stream")
+      owned.desktopStart = "started"
     } catch (error) {
       const failure = native.takeMediaFailure?.()
       const startupError = failure?.reason === "encoder" ? encoderFailure(failure.message) : error
       try { await this.close(id) }
       catch (cleanup) {
-        throw new AggregateError([startupError, cleanup], `Desktop startup failed: ${startupError instanceof Error ? startupError.message : String(startupError)}; peer cleanup failed`, { cause: startupError })
+        throw desktopStartupCleanupFailure(startupError, cleanup)
       }
       throw startupError
     }

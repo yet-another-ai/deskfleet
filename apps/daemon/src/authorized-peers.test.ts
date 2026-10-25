@@ -11,6 +11,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { encodeFileFrame, FileFrameDecoder } from "./files-wire.ts"
+import { encoderFailure, isEncoderFailure } from "./control-protocol.ts"
 
 const sdp = "v=0\r\na=fingerprint:sha-256 AA:BB:CC\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\na=ice-ufrag:test\r\n"
 const identity = { originId: "origin", machineId: "1" }
@@ -24,7 +25,7 @@ function grant(): PeerAuthorization {
   }
 }
 
-function fixture(closeGate?: Promise<void>) {
+function fixture(closeGate?: Promise<void>, closeError?: Error) {
   let now = epoch, closed = false, closeCalls = 0
   let closing!: () => void
   const closeStarted = new Promise<void>(resolve => { closing = resolve })
@@ -45,7 +46,13 @@ function fixture(closeGate?: Promise<void>) {
     handle: async (method, _params, actor) => { calls.push({ method, actor }); return null },
   }
   const peers = new AuthorizedPeers({
-    peers: { create: async () => native, close: async () => { closeCalls++; closing(); await closeGate; closed = true; waiting?.(null) } },
+    peers: {
+      create: async () => native,
+      close: async () => {
+        closeCalls++; closing(); await closeGate; closed = true; waiting?.(null)
+        if (closeError) throw closeError
+      },
+    },
     agents, terminals: {} as TerminalSessions, identity, signal: (_id, event) => { signals.push(event) }, now: () => now,
   })
   peers.bind(credentials)
@@ -101,6 +108,71 @@ test("desktop control binds the capture display and expires before further input
   assert.equal(f.closed(), true)
   assert.equal(f.input.length, 1)
 })
+
+for (const phase of ["before native startup", "during input readiness"] as const) {
+  test(`desktop starts reject duplicates ${phase} and after startup without closing the peer`, { timeout: 5_000 }, async context => {
+    const f = fixture()
+    let release!: () => void, ready!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const enabling = new Promise<void>(resolve => { ready = resolve })
+    context.after(async () => { release(); await f.peers.closeAll() })
+    const startDesktop = f.native.startDesktop.bind(f.native)
+    f.native.startDesktop = async options => {
+      await startDesktop(options)
+      if (phase === "before native startup") await gate
+    }
+    const sendText = f.native.sendText.bind(f.native)
+    f.native.sendText = async (label, text) => {
+      ready()
+      if (phase === "during input readiness") await gate
+      await sendText(label, text)
+    }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+    f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+    await delay(0)
+    const first = f.peers.start("peer", { displayId: 7, control: true })
+    if (phase === "during input readiness") await enabling
+    await assert.rejects(f.peers.start("peer", { displayId: 8, control: true }), /already starting/)
+    assert.equal(f.closeCalls(), 0)
+    release()
+    await first
+    await assert.rejects(f.peers.start("peer", { displayId: 8 }), /already started/)
+    assert.deepEqual(f.starts, [{ displayId: 7, control: true }])
+    assert.deepEqual(f.sent, ['{"type":"ready"}'])
+    assert.equal(f.closeCalls(), 0)
+    f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyA","pressed":true}') })
+    for (let tries = 0; tries < 100 && !f.input.length; tries++) await delay(1)
+    assert.equal(f.input.length, 1)
+    assert.equal(f.closed(), false)
+  })
+}
+
+for (const primaryEncoder of [true, false]) {
+  test(`desktop startup keeps ${primaryEncoder ? "encoder" : "generic"} classification when cleanup also fails`, async context => {
+    const cleanup = encoderFailure("encoder worker terminated during cleanup")
+    const f = fixture(undefined, cleanup)
+    context.mock.method(console, "error", () => {})
+    context.after(() => f.peers.closeAll())
+    const startup = new Error(primaryEncoder ? "video encoder failed during startup" : "screen capture permission denied")
+    f.native.startDesktop = async () => { throw startup }
+    f.native.takeMediaFailure = () => primaryEncoder ? { message: startup.message, reason: "encoder" } : null
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+    await assert.rejects(f.peers.start("peer", { displayId: 7, control: true }), error => {
+      assert.ok(error instanceof AggregateError)
+      assert.equal(isEncoderFailure(error), primaryEncoder)
+      assert.ok(error.cause instanceof Error)
+      assert.equal(error.cause.message, startup.message)
+      assert.equal(error.errors[0], error.cause)
+      assert.ok(error.errors[1] instanceof AggregateError)
+      assert.deepEqual(error.errors[1].errors, [cleanup])
+      assert.ok(error.message.includes(startup.message))
+      assert.ok(error.message.includes(cleanup.message))
+      return true
+    })
+    assert.equal(f.closed(), true)
+    assert.equal(f.closeCalls(), 1)
+  })
+}
 
 for (const failure of ["ready send", "expiry after capture", "expiry during ready send"] as const) {
   test(`desktop startup rolls back ${failure} and waits for native cleanup`, { timeout: 5_000 }, async context => {

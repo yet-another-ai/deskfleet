@@ -7,7 +7,7 @@ import { join } from "node:path"
 import type { NativePeer, PeerConfig } from "@deskfleet/native"
 import { desktopCapabilities } from "./desktop-capabilities.ts"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
-import { MAX_CONTROL_MESSAGE_BYTES, desktopErrorEvent, encoderFailure, isEncoderFailure, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
+import { MAX_CONTROL_MESSAGE_BYTES, desktopErrorEvent, desktopStartupCleanupFailure, encoderFailure, isEncoderFailure, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
 import { parseControlRequest, readControlRequestId } from "./control-request.ts"
 import { endControlSocket } from "./control-socket.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
@@ -44,6 +44,7 @@ interface OwnedPeer {
   terminal?: TerminalChannel
   agent?: AgentChannel
   input?: DesktopInputChannel
+  desktopStart?: "starting" | "started"
 }
 
 class ControlConnection {
@@ -276,6 +277,8 @@ class ControlConnection {
         const owned = this.#sessions.get(sessionId)
         if (!owned) throw new Error("Unknown desktop session on this connection")
         if (owned.terminal || owned.agent) throw new Error("Data-only peers cannot start desktop capture")
+        if (owned.desktopStart) throw new Error(`Desktop stream is already ${owned.desktopStart}`)
+        owned.desktopStart = "starting"
         const peer = await owned.peer
         const assertLive = () => {
           if (this.#sessions.get(sessionId) !== owned || this.#closing) throw new Error("Desktop session is closed")
@@ -286,12 +289,13 @@ class ControlConnection {
           assertLive()
           if (control) await owned.input!.enable()
           assertLive()
+          owned.desktopStart = "started"
         } catch (error) {
           const failure = peer.takeMediaFailure?.()
           const startupError = failure?.reason === "encoder" ? encoderFailure(failure.message) : error
           try { await this.#closeSession(sessionId) }
           catch (cleanup) {
-            throw new AggregateError([startupError, cleanup], `Desktop startup failed: ${message(startupError)}; peer cleanup failed`, { cause: startupError })
+            throw desktopStartupCleanupFailure(startupError, cleanup)
           }
           throw startupError
         }

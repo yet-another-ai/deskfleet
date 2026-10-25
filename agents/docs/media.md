@@ -206,7 +206,10 @@ per daemon process is allowed; additional peers may continue viewing.
 
 The daemon starts input for the capture's selected display and sends `ready` only
 after startup and DataChannel opening. If capture or input enablement fails, start
-waits for peer cleanup before reporting the failure. Input arriving before enablement, without
+waits for peer cleanup before reporting the failure. Cleanup diagnostics preserve
+the original encoder failure classification so codec fallback remains available.
+Duplicate start requests are rejected without interrupting capture or input that
+is already starting or running. Input arriving before enablement, without
 a control grant, or with malformed fields fails the connection. Focus loss,
 hidden pages, and pointer cancellation release held controls. Peer disconnect,
 revocation, expiry, capture failure, and daemon shutdown release native state.

@@ -8,7 +8,7 @@ import { join } from "node:path"
 import test from "node:test"
 import { createPeer, type NativePeer, type NativeTerminal, type PeerEvent } from "@deskfleet/native"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
-import type { ControlMessage, ControlMethod, ControlMethods, DaemonEvent } from "./control-protocol.ts"
+import { encoderFailure, type ControlMessage, type ControlMethod, type ControlMethods, type DaemonEvent } from "./control-protocol.ts"
 import { validateControlParams, validateRelayedDesktopStart } from "./control-request.ts"
 import { startControlServer as createControlServer, type ControlPeers } from "./control-server.ts"
 import { startDaemon } from "./daemon.ts"
@@ -109,11 +109,12 @@ function fakePeers() {
   return { service, peers, configCalls, answerCalls, candidateCalls, startCalls }
 }
 
-function desktopPeers(options: { start?: () => Promise<void>; ready?: () => Promise<void>; close: () => Promise<void> }) {
+function desktopPeers(options: { start?: () => Promise<void>; ready?: () => Promise<void>; close: () => Promise<void>; failure?: NativePeer["takeMediaFailure"] }) {
   const opened = deferred<void>(), started = deferred<void>(), closing = deferred<void>()
   const queued: PeerEvent[] = [{ kind: "dataChannelOpen", label: "deskfleet-input" }]
   let waiting: ((event: PeerEvent | null) => void) | undefined
-  let active = false, closeCalls = 0
+  let active = false, closeCalls = 0, startCalls = 0
+  const input: string[] = []
   const push = (event: PeerEvent) => {
     if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) }
     else queued.push(event)
@@ -122,8 +123,14 @@ function desktopPeers(options: { start?: () => Promise<void>; ready?: () => Prom
     async create() {
       return {
         answerOffer: async () => "answer",
-        startDesktop: async () => { active = true; started.resolve(); await options.start?.() },
+        startDesktop: async () => {
+          startCalls++
+          if (active) throw new Error("desktop stream is already started")
+          active = true; started.resolve(); await options.start?.()
+        },
+        takeMediaFailure: () => options.failure?.() ?? null,
         sendText: async () => { await options.ready?.() },
+        sendDesktopInput: async (text: string) => { input.push(text) },
         nextEvent: async () => {
           const event = queued.shift()
           if (event) return event
@@ -134,12 +141,11 @@ function desktopPeers(options: { start?: () => Promise<void>; ready?: () => Prom
     },
     async close() {
       closeCalls++; closing.resolve()
-      await options.close()
-      active = false
-      waiting?.(null)
+      try { await options.close() }
+      finally { active = false; waiting?.(null) }
     },
   }
-  return { service, push, opened: opened.promise, started: started.promise, closing: closing.promise, active: () => active, closeCalls: () => closeCalls }
+  return { service, push, input, opened: opened.promise, started: started.promise, closing: closing.promise, active: () => active, closeCalls: () => closeCalls, startCalls: () => startCalls }
 }
 
 const capabilities = async () => ({ displays: [{ id: 4, width: 1280, height: 720, refreshRateHz: 60, codecs: ["h264" as const] }], audio: false })
@@ -429,6 +435,67 @@ test("request validation errors retain authenticated connections and their activ
   await client.call("close", { sessionId: offer.sessionId })
   assert.equal(fake.peers.size, 0)
 })
+
+test("duplicate local desktop starts preserve the running capture and input controller", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-duplicate-"))
+  const fake = desktopPeers({ close: async () => {} })
+  const server = await startControlServer(fake.service, directory, capabilities)
+  context.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }) })
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint, context.signal)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  await client.call("offer", offer)
+  await fake.opened
+  await client.call("start", { sessionId: offer.sessionId, displayId: 4, control: true })
+  await assert.rejects(client.call("start", { sessionId: offer.sessionId, displayId: 5 }), /already started/)
+  assert.equal(fake.startCalls(), 1)
+  assert.equal(fake.closeCalls(), 0)
+  assert.equal(fake.active(), true)
+  const input = '{"type":"key","code":"KeyA","pressed":true}'
+  fake.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from(input) })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(fake.input, [input])
+  await client.call("close", { sessionId: offer.sessionId })
+  assert.equal(fake.active(), false)
+})
+
+for (const primaryEncoder of [true, false]) {
+  test(`local startup reports ${primaryEncoder ? "encoder" : "generic"} classification after failed native cleanup`, { timeout: 15_000 }, async context => {
+    const directory = await mkdtemp(join(tmpdir(), "df-control-cleanup-error-"))
+    const closeGate = deferred<void>()
+    const startup = new Error(primaryEncoder ? "video encoder failed during startup" : "screen capture permission denied")
+    const cleanup = encoderFailure("encoder worker terminated during cleanup")
+    let failure = primaryEncoder ? { message: startup.message, reason: "encoder" } : null
+    const fake = desktopPeers({
+      start: async () => { throw startup },
+      failure: () => failure,
+      close: async () => { await closeGate.promise; failure = null; throw cleanup },
+    })
+    const server = await startControlServer(fake.service, directory, capabilities)
+    context.after(async () => { closeGate.resolve(); await server.close(); await rm(directory, { recursive: true, force: true }) })
+    const discovery = await readDaemonDiscovery(directory)
+    const client = new Client(discovery.endpoint, context.signal)
+    context.after(() => client.close())
+    await client.call("hello", { token: discovery.token })
+    await client.call("offer", offer)
+    let settled = false
+    const start = client.call("start", { sessionId: offer.sessionId, displayId: 4, control: true }).finally(() => { settled = true })
+    const rejected = assert.rejects(start, (error: Error & { reason?: string }) => {
+      assert.equal(error.reason, primaryEncoder ? "encoder" : undefined)
+      assert.ok(error.message.includes(startup.message))
+      assert.ok(error.message.includes(cleanup.message))
+      return true
+    })
+    await fake.closing
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(settled, false)
+    closeGate.resolve()
+    await rejected
+    assert.equal(fake.active(), false)
+    assert.equal(fake.closeCalls(), 1)
+  })
+}
 
 for (const failure of ["ready send", "channel closes during capture start"] as const) {
   test(`local desktop startup rolls back when ${failure} and awaits native cleanup`, { timeout: 15_000 }, async context => {
