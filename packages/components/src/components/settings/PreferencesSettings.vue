@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n"
 import KeepAwakeSettings from "./KeepAwakeSettings.vue"
 import LaunchAtStartupSettings from "./LaunchAtStartupSettings.vue"
 import LocalAgentSettings from "./LocalAgentSettings.vue"
+import WorktreeRootSettings from "./WorktreeRootSettings.vue"
 
 const { t } = useI18n()
 </script>
@@ -15,6 +16,7 @@ const { t } = useI18n()
     <div class="ui-card px-4">
       <LaunchAtStartupSettings />
       <KeepAwakeSettings />
+      <WorktreeRootSettings />
       <LocalAgentSettings />
     </div>
   </section>

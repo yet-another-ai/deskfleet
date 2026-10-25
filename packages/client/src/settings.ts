@@ -12,6 +12,11 @@ export interface KeepAwakeState {
   enabled: boolean
 }
 
+export interface WorktreeRootState {
+  root: string | null
+  defaultRoot: string
+}
+
 export interface NotificationSettings {
   enabled: boolean
   taskCompleted: boolean
@@ -25,6 +30,9 @@ export interface SettingsApi extends LocalAgentSettingsApi {
   setLaunchAtStartup(enabled: boolean): Promise<LaunchAtStartupState>
   getKeepAwake(): Promise<KeepAwakeState>
   setKeepAwake(enabled: boolean): Promise<KeepAwakeState>
+  getWorktreeRoot(): Promise<WorktreeRootState>
+  setWorktreeRoot(root: string | null): Promise<WorktreeRootState>
+  chooseWorktreeRoot(): Promise<string | null>
   getNotifications(): Promise<NotificationSettings>
   setNotifications(settings: NotificationSettings): Promise<NotificationSettings>
 }

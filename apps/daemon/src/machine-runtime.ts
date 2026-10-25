@@ -20,9 +20,9 @@ interface MachineOptions {
   allowLocalControlForTests?: boolean
 }
 
-async function openMachine(directory: string, options: MachineOptions) {
+async function openMachine(directory: string, hostDirectory: string, options: MachineOptions) {
   await mkdir(directory, { recursive: true, mode: 0o700 })
-  const catalog = new DaemonCatalog(directory)
+  const catalog = new DaemonCatalog(directory, hostDirectory)
   const providers = new AgentProviders(directory, options.agentProvider)
   const terminals = options.terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
   let agents: AgentSessions | undefined
@@ -82,7 +82,7 @@ export class MachineRuntime {
   /** The caller owns discovery before selecting and opening the active directory. */
   async init(): Promise<void> {
     const directory = this.#options.allowLocalControlForTests ? this.#directory : await activeMachineDirectory(this.#directory)
-    this.#machine = await openMachine(directory, this.#options)
+    this.#machine = await openMachine(directory, this.#directory, this.#options)
   }
 
   prepareEnrollment(): Promise<CentralStatus> {
@@ -94,7 +94,7 @@ export class MachineRuntime {
     this.#preparing = (async () => {
       const previous = this.current
       const directory = await newMachineDirectory(this.#directory)
-      const next = await openMachine(directory.path, { ...this.#options, terminals: undefined })
+      const next = await openMachine(directory.path, this.#directory, { ...this.#options, terminals: undefined })
       try {
         await previous.stop()
         await directory.activate()

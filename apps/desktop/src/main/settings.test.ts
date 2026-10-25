@@ -4,9 +4,10 @@ import { beforeEach, expect, test, vi } from "vitest"
 import type { LocalAgentController } from "./local-agent-controller.ts"
 import type { KeepAwakeController } from "./keep-awake.ts"
 import type { NotificationSettingsController } from "./notification-settings.ts"
+import type { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 
-const { handle } = vi.hoisted(() => ({ handle: vi.fn() }))
-vi.mock("electron", () => ({ ipcMain: { handle } }))
+const { handle, showOpenDialog, fromWebContents } = vi.hoisted(() => ({ handle: vi.fn(), showOpenDialog: vi.fn(), fromWebContents: vi.fn() }))
+vi.mock("electron", () => ({ ipcMain: { handle }, dialog: { showOpenDialog }, BrowserWindow: { fromWebContents } }))
 vi.mock("./launch-at-startup.ts", () => ({ getLaunchAtStartup: vi.fn(), setLaunchAtStartup: vi.fn() }))
 import { getLaunchAtStartup, setLaunchAtStartup } from "./launch-at-startup.ts"
 import { attachSettings, installSettings } from "./settings.ts"
@@ -14,10 +15,47 @@ import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
 
 beforeEach(() => vi.clearAllMocks())
 
+test("worktree root settings restrict callers, validate paths, and use a local folder chooser", async () => {
+  const state = { root: null, defaultRoot: "/home/user/.deskfleet/machine/session-worktrees" }
+  const worktrees = { get: vi.fn(async () => state), set: vi.fn(async (root: string | null) => ({ ...state, root })) }
+  installSettings({} as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController, worktrees as unknown as WorktreeRootSettingsController)
+  const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
+  const mainFrame = { url: BUNDLED_RENDERER_URL }
+  const sender = Object.assign(new EventEmitter(), { mainFrame })
+  const window = { webContents: sender } as unknown as BrowserWindow
+  const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
+  for (const method of ["getWorktreeRoot", "setWorktreeRoot", "chooseWorktreeRoot"]) {
+    await expect(invoke(event, method, "/mnt/worktrees")).rejects.toThrow("restricted")
+  }
+  attachSettings(window)
+  await expect(invoke({ ...event, senderFrame: { ...mainFrame } } as IpcMainInvokeEvent, "chooseWorktreeRoot")).rejects.toThrow("restricted")
+  for (const value of [undefined, true, 42, {}, ["/mnt/worktrees"]]) {
+    expect(await invoke(event, "setWorktreeRoot", value)).toMatchObject({ ok: false })
+  }
+  expect(worktrees.set).not.toHaveBeenCalled()
+  expect(await invoke(event, "getWorktreeRoot")).toEqual({ ok: true, value: state })
+  expect(await invoke(event, "setWorktreeRoot", "/mnt/worktrees")).toEqual({ ok: true, value: { ...state, root: "/mnt/worktrees" } })
+  expect(await invoke(event, "setWorktreeRoot", null)).toEqual({ ok: true, value: state })
+  worktrees.set.mockRejectedValueOnce(new Error("Directory is not writable"))
+  expect(await invoke(event, "setWorktreeRoot", "/mnt/readonly")).toEqual({ ok: false, error: "Directory is not writable" })
+  fromWebContents.mockReturnValue(window)
+  showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ["/mnt/worktrees"] })
+  expect(await invoke(event, "chooseWorktreeRoot")).toEqual({ ok: true, value: "/mnt/worktrees" })
+  expect(showOpenDialog).toHaveBeenCalledWith(window, {
+    title: "Worktree root directory", defaultPath: state.defaultRoot, properties: ["openDirectory", "createDirectory"],
+  })
+  worktrees.set.mockClear()
+  showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+  expect(await invoke(event, "chooseWorktreeRoot")).toEqual({ ok: true, value: null })
+  expect(worktrees.set).not.toHaveBeenCalled()
+  sender.emit("destroyed")
+  await expect(invoke(event, "chooseWorktreeRoot")).rejects.toThrow("restricted")
+})
+
 test("notification preferences validate all fields and restrict IPC to the registered renderer", async () => {
   const preferences = { enabled: true, taskCompleted: false, taskNeedsInput: true }
   const notifications = { get: vi.fn(() => preferences), set: vi.fn(() => preferences) }
-  installSettings({} as LocalAgentController, {} as KeepAwakeController, notifications as unknown as NotificationSettingsController)
+  installSettings({} as LocalAgentController, {} as KeepAwakeController, notifications as unknown as NotificationSettingsController, {} as WorktreeRootSettingsController)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
   const mainFrame = { url: BUNDLED_RENDERER_URL }
   const sender = Object.assign(new EventEmitter(), { mainFrame })
@@ -40,7 +78,7 @@ test("notification preferences validate all fields and restrict IPC to the regis
 
 test("only a registered main renderer can change the local Agent preference", async () => {
   const controller = { state: { enabled: true, status: "running" }, setEnabled: vi.fn() }
-  installSettings(controller as unknown as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController)
+  installSettings(controller as unknown as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController, {} as WorktreeRootSettingsController)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
   const mainFrame = { url: BUNDLED_RENDERER_URL }
   const sender = Object.assign(new EventEmitter(), { mainFrame })
@@ -58,7 +96,7 @@ test("only a registered main renderer can change the local Agent preference", as
 })
 
 test("startup settings use the same renderer restriction and validate writes", async () => {
-  installSettings({} as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController)
+  installSettings({} as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController, {} as WorktreeRootSettingsController)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
   const mainFrame = { url: BUNDLED_RENDERER_URL }
   const sender = Object.assign(new EventEmitter(), { mainFrame })
@@ -81,7 +119,7 @@ test("startup settings use the same renderer restriction and validate writes", a
 
 test("Keep Awake settings restrict callers, validate writes, and report failures", async () => {
   const keepAwake = { get: vi.fn(() => ({ enabled: false })), setEnabled: vi.fn((enabled: boolean) => ({ enabled })) }
-  installSettings({} as LocalAgentController, keepAwake as unknown as KeepAwakeController, {} as NotificationSettingsController)
+  installSettings({} as LocalAgentController, keepAwake as unknown as KeepAwakeController, {} as NotificationSettingsController, {} as WorktreeRootSettingsController)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
   const mainFrame = { url: BUNDLED_RENDERER_URL }
   const sender = Object.assign(new EventEmitter(), { mainFrame })

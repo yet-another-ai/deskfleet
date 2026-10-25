@@ -10,6 +10,7 @@ import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/deskt
 import { keepRunningInBackground } from "../../src/main/lifecycle.ts"
 import { KeepAwakeController } from "../../src/main/keep-awake.ts"
 import { NotificationSettingsController } from "../../src/main/notification-settings.ts"
+import { WorktreeRootSettingsController } from "../../src/main/worktree-root-settings.ts"
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
 import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
@@ -322,7 +323,7 @@ void app.whenReady().then(async () => {
     stop(id) { return powerSaveBlocker.stop(id) },
   })
   installDesktopMediaIpc()
-  installSettings(controller, keepAwake, new NotificationSettingsController(join(app.getPath("userData"), "notifications.json")))
+  installSettings(controller, keepAwake, new NotificationSettingsController(join(app.getPath("userData"), "notifications.json")), new WorktreeRootSettingsController(context.daemonDirectory))
   // Quitting the app closes the daemon it hosts, as client.ts does on will-quit.
   const exit = () => { void controller.close().finally(() => { keepAwake.close(); app.exit(0) }) }
   process.on("message", exit)

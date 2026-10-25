@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
-import { isAbsolute, join, relative, resolve, sep } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspaceSession } from "@deskfleet/native"
 
@@ -23,7 +23,12 @@ interface SourceDirectory {
   relativePath: string
 }
 interface OwnedWorktree { path: string; repository: string }
-interface Manifest { sessionId: string; worktrees: OwnedWorktree[] }
+interface Manifest { sessionId: string; directory?: string; worktrees: OwnedWorktree[] }
+
+interface WorktreeStorage {
+  originId: string
+  root(): Promise<string | null>
+}
 
 async function git(args: string[]): Promise<string> {
   return (await execute("git", args, { encoding: "utf8", maxBuffer: 1024 * 1024 })).stdout.replace(/\r?\n$/u, "")
@@ -58,11 +63,13 @@ async function sourceDirectory(path: string): Promise<SourceDirectory> {
 export class ManagedSessionWorktrees {
   readonly #catalog: ManagedSessionCatalog
   readonly #directory: string
+  readonly #storage: WorktreeStorage | undefined
   readonly #destroying = new Map<string, Promise<void>>()
 
-  constructor(catalog: ManagedSessionCatalog, directory: string) {
+  constructor(catalog: ManagedSessionCatalog, directory: string, storage?: WorktreeStorage) {
     this.#catalog = catalog
     this.#directory = resolve(directory, "session-worktrees")
+    this.#storage = storage
   }
 
   async create(workspaceId: string, allocated?: CatalogWorkspaceSession): Promise<ManagedWorkspaceSession> {
@@ -73,13 +80,28 @@ export class ManagedSessionWorktrees {
     // usable for terminals but cannot supply isolated agent sessions.
     const sources: SourceDirectory[] = []
     for (const directory of main.directories) sources.push(await sourceDirectory(directory.path))
+    // A settings change affects the next Session, never an in-flight creation.
+    const root = await this.#storage?.root()
+    const physicalRoot = root ? await realpath(root) : undefined
+    if (physicalRoot && !(await stat(physicalRoot)).isDirectory()) throw new Error("Worktree root must be a directory")
     if (allocated && allocated.workspaceId !== workspaceId) throw new Error("Session belongs to a different workspace")
     const session = allocated ?? await this.#catalog.createWorkspaceSession(workspaceId)
     const directory = this.#sessionDirectory(session.id)
     const manifest: Manifest = { sessionId: session.id, worktrees: [] }
     try {
       await mkdir(directory, { recursive: true, mode: 0o700 })
-      const physicalDirectory = await realpath(directory)
+      let physicalDirectory = await realpath(directory)
+      if (physicalRoot) {
+        const parent = join(physicalRoot, this.#storage!.originId)
+        await mkdir(parent, { recursive: true, mode: 0o700 })
+        const target = join(await realpath(parent), session.id)
+        this.#checkStorageDirectory(target, session.id)
+        // Do not take ownership of an existing directory in a shared root.
+        await mkdir(target, { mode: 0o700 })
+        manifest.directory = target
+        physicalDirectory = target
+        await this.#save(manifest)
+      }
       const groups = new Map<string, string>()
       const directories: CatalogDirectory[] = []
       for (const source of sources) {
@@ -149,7 +171,8 @@ export class ManagedSessionWorktrees {
       return
     }
     if (manifest.sessionId !== sessionId || !Array.isArray(manifest.worktrees)) throw new Error("Invalid session worktree ownership manifest")
-    const physicalDirectory = await realpath(directory)
+    const physicalDirectory = manifest.directory ?? await realpath(directory)
+    if (manifest.directory !== undefined) this.#checkStorageDirectory(manifest.directory, sessionId)
     for (const [index, worktree] of manifest.worktrees.entries()) {
       if (!worktree || worktree.path !== join(physicalDirectory, `repo-${index}`) || typeof worktree.repository !== "string" || !isAbsolute(worktree.repository)) {
         throw new Error("Invalid session worktree ownership manifest")
@@ -162,6 +185,13 @@ export class ManagedSessionWorktrees {
   #sessionDirectory(sessionId: string): string {
     if (!/^[1-9][0-9]*$/u.test(sessionId)) throw new Error("Invalid workspace session ID")
     return join(this.#directory, sessionId)
+  }
+
+  #checkStorageDirectory(directory: string, sessionId: string): void {
+    if (!this.#storage || typeof directory !== "string" || !isAbsolute(directory) || resolve(directory) !== directory
+      || basename(directory) !== sessionId || basename(dirname(directory)) !== this.#storage.originId) {
+      throw new Error("Invalid session worktree ownership manifest")
+    }
   }
 
   async #save(manifest: Manifest): Promise<void> {
@@ -182,6 +212,7 @@ export class ManagedSessionWorktrees {
       manifest.worktrees.pop()
       await this.#save(manifest)
     }
+    if (manifest.directory) await rm(manifest.directory, { recursive: true, force: true })
     await rm(this.#sessionDirectory(manifest.sessionId), { recursive: true, force: true })
   }
 }

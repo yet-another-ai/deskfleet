@@ -10,6 +10,7 @@ import type { CatalogDirectory, CatalogWorktree, CatalogWorkspaceSession } from 
 import { connectAcpProcess, type AgentProvider } from "./agents/acp.ts"
 import { runAgent } from "./agent-cli.ts"
 import { ManagedSessionWorktrees, type ManagedSessionCatalog, type ManagedWorkspaceSession } from "./session-worktrees.ts"
+import { readWorktreeRoot, writeWorktreeRoot } from "./worktree-settings.ts"
 
 const execute = promisify(execFile)
 const git = async (directory: string, ...args: string[]) => (await execute("git", ["-C", directory, ...args], { encoding: "utf8" })).stdout.trimEnd()
@@ -87,6 +88,186 @@ test("managed sessions preserve directory order, share a checkout for one revisi
   assert.equal(await readFile(join(source, "backend", "source.txt"), "utf8"), "original backend\n")
   assert.equal((await git(source, "worktree", "list", "--porcelain")).match(/^worktree /gmu)?.length, 1)
   assert.equal(state.sessions.size, 0)
+})
+
+test("changing or resetting the root affects new sessions and preserves cleanup after restart", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const host = join(directory, "daemon")
+  const machine = join(host, "machine")
+  const firstRoot = join(directory, "first disk")
+  const secondRoot = join(directory, "second disk")
+  await repository(source)
+  const state = catalogFixture([{ path: join(source, "backend") }, { path: source }])
+  const storage = { originId: "origin-a", root: () => readWorktreeRoot(host) }
+  const managed = new ManagedSessionWorktrees(state.catalog, machine, storage)
+  await writeWorktreeRoot(host, firstRoot)
+  const first = await managed.create("1")
+  assert.equal(first.worktree.directories[1]!.path, join(firstRoot, "origin-a", first.id, "repo-0"))
+  await access(join(machine, "session-worktrees", first.id, "manifest.json"))
+  await writeFile(join(first.worktree.directories[0]!.path, "source.txt"), "retained changes\n")
+
+  await writeWorktreeRoot(host, secondRoot)
+  const second = await managed.create("1")
+  assert.equal(second.worktree.directories[1]!.path, join(secondRoot, "origin-a", second.id, "repo-0"))
+  await writeWorktreeRoot(host, null)
+  const third = await managed.create("1")
+  assert.equal(third.worktree.directories[1]!.path, join(machine, "session-worktrees", third.id, "repo-0"))
+  assert.equal(await readFile(join(first.worktree.directories[0]!.path, "source.txt"), "utf8"), "retained changes\n")
+
+  const restarted = new ManagedSessionWorktrees(state.catalog, machine, storage)
+  for (const session of [first, second, third]) {
+    await restarted.destroy(session.id)
+    await assert.rejects(access(session.worktree.directories[1]!.path))
+    await assert.rejects(access(join(machine, "session-worktrees", session.id)))
+  }
+  assert.equal(await readFile(join(source, "backend", "source.txt"), "utf8"), "original backend\n")
+  assert.equal((await git(source, "worktree", "list", "--porcelain")).match(/^worktree /gmu)?.length, 1)
+})
+
+test("catalog origins isolate equal session IDs in a shared custom root", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const root = join(directory, "worktrees")
+  await repository(source)
+  await mkdir(root)
+  const firstState = catalogFixture([{ path: source }])
+  const secondState = catalogFixture([{ path: source }])
+  const first = new ManagedSessionWorktrees(firstState.catalog, join(directory, "machine"), { originId: "first-origin", root: async () => root })
+  const second = new ManagedSessionWorktrees(secondState.catalog, join(directory, "next-machine"), { originId: "second-origin", root: async () => root })
+  const firstSession = await first.create("1")
+  const secondSession = await second.create("1")
+  assert.equal(firstSession.id, secondSession.id)
+  assert.notEqual(firstSession.worktree.directories[0]!.path, secondSession.worktree.directories[0]!.path)
+  await first.destroy(firstSession.id)
+  await access(secondSession.worktree.directories[0]!.path)
+  await second.destroy(secondSession.id)
+})
+
+test("real catalogs read host preferences live and keep separate origins in the same root", async context => {
+  const { DaemonCatalog } = await import("./catalog.ts")
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "df-worktree-catalogs-")))
+  const host = join(directory, "daemon")
+  const firstMachine = join(host, "machine")
+  const secondMachine = join(host, "machines", "next-registration")
+  const firstCatalog = new DaemonCatalog(firstMachine, host)
+  const secondCatalog = new DaemonCatalog(secondMachine, host)
+  context.after(async () => {
+    await Promise.all([firstCatalog.close(), secondCatalog.close()])
+    await rm(directory, { recursive: true, force: true })
+  })
+  await Promise.all([mkdir(firstMachine, { recursive: true }), mkdir(secondMachine, { recursive: true })])
+  await Promise.all([firstCatalog.init(), secondCatalog.init()])
+  const firstOrigin = JSON.parse(await firstCatalog.native.agentIdentity()).originId as string
+  const secondOrigin = JSON.parse(await secondCatalog.native.agentIdentity()).originId as string
+  assert.notEqual(firstOrigin, secondOrigin)
+  const source = join(directory, "source")
+  await repository(source)
+  const firstWorkspace = await firstCatalog.native.createWorkspace("first", [{ path: source }])
+  const secondWorkspace = await secondCatalog.native.createWorkspace("second", [{ path: source }])
+  const root = join(directory, "other disk")
+  await writeWorktreeRoot(host, root)
+  const first = await firstCatalog.handle({ method: "workspaceSessionCreate", params: { workspaceId: firstWorkspace.id } }) as ManagedWorkspaceSession
+  const second = await secondCatalog.handle({ method: "workspaceSessionCreate", params: { workspaceId: secondWorkspace.id } }) as ManagedWorkspaceSession
+  assert.equal(first.id, second.id)
+  assert.equal(first.worktree.directories[0]!.path, join(root, firstOrigin, first.id, "repo-0"))
+  assert.equal(second.worktree.directories[0]!.path, join(root, secondOrigin, second.id, "repo-0"))
+
+  const nextRoot = join(directory, "next disk")
+  await writeWorktreeRoot(host, nextRoot)
+  const next = await firstCatalog.handle({ method: "workspaceSessionCreate", params: { workspaceId: firstWorkspace.id } }) as ManagedWorkspaceSession
+  assert.equal(next.worktree.directories[0]!.path, join(nextRoot, firstOrigin, next.id, "repo-0"))
+  await access(first.worktree.directories[0]!.path)
+  await access(second.worktree.directories[0]!.path)
+  await writeWorktreeRoot(host, null)
+  for (const [catalog, session] of [[firstCatalog, first], [secondCatalog, second], [firstCatalog, next]] as const) {
+    await catalog.handle({ method: "workspaceSessionDestroy", params: { sessionId: session.id } })
+    await assert.rejects(access(session.worktree.directories[0]!.path))
+  }
+})
+
+test("failed provisioning rolls back custom checkouts and stable ownership records", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const host = join(directory, "daemon")
+  const root = join(directory, "worktrees")
+  await repository(source)
+  await writeWorktreeRoot(host, root)
+  const state = catalogFixture([{ path: source }])
+  state.failAttachment()
+  const managed = new ManagedSessionWorktrees(state.catalog, host, { originId: "origin", root: () => readWorktreeRoot(host) })
+  await assert.rejects(managed.create("1"), /catalog attachment failed/u)
+  assert.equal(state.sessions.size, 0)
+  await assert.rejects(access(join(root, "origin", "1")))
+  await assert.rejects(access(join(host, "session-worktrees", "1")))
+  assert.equal((await git(source, "worktree", "list", "--porcelain")).match(/^worktree /gmu)?.length, 1)
+})
+
+test("unavailable custom roots fail without falling back or allocating a session", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const host = join(directory, "daemon")
+  const root = join(directory, "worktrees")
+  await repository(source)
+  await writeWorktreeRoot(host, root)
+  await rm(root, { recursive: true })
+  const state = catalogFixture([{ path: source }])
+  const managed = new ManagedSessionWorktrees(state.catalog, host, { originId: "origin", root: () => readWorktreeRoot(host) })
+  await assert.rejects(managed.create("1"), { code: "ENOENT" })
+  assert.equal(state.sessions.size, 0)
+  await assert.rejects(access(join(host, "session-worktrees")))
+})
+
+test("custom creation does not claim or remove an existing session directory", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const root = join(directory, "worktrees")
+  const existing = join(root, "origin", "1")
+  await repository(source)
+  await mkdir(existing, { recursive: true })
+  await writeFile(join(existing, "keep.txt"), "unowned")
+  const state = catalogFixture([{ path: source }])
+  const managed = new ManagedSessionWorktrees(state.catalog, join(directory, "daemon"), { originId: "origin", root: async () => root })
+  await assert.rejects(managed.create("1"), { code: "EEXIST" })
+  assert.equal(await readFile(join(existing, "keep.txt"), "utf8"), "unowned")
+  assert.equal(state.sessions.size, 0)
+})
+
+test("custom ownership manifests cannot redirect removal to workspace directories", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const host = join(directory, "daemon")
+  const root = join(directory, "worktrees")
+  await repository(source)
+  await writeWorktreeRoot(host, root)
+  const state = catalogFixture([{ path: source }])
+  const managed = new ManagedSessionWorktrees(state.catalog, host, { originId: "origin", root: () => readWorktreeRoot(host) })
+  const session = await managed.create("1")
+  const path = join(host, "session-worktrees", session.id, "manifest.json")
+  const original = await readFile(path, "utf8")
+  const manifest = JSON.parse(original)
+  manifest.directory = source
+  await writeFile(path, JSON.stringify(manifest))
+  await assert.rejects(managed.destroy(session.id), /ownership manifest/u)
+  await access(join(source, "frontend", "source.txt"))
+  await writeFile(path, original)
+  await managed.destroy(session.id)
+})
+
+test("directory sessions ignore worktree storage settings and never remove workspace files", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  await mkdir(source)
+  await writeFile(join(source, "keep.txt"), "workspace")
+  const state = catalogFixture([{ path: source }])
+  const managed = new ManagedSessionWorktrees(state.catalog, join(directory, "daemon"), {
+    originId: "origin", root: async () => { throw new Error("Storage settings must not be read") },
+  })
+  const allocated = await state.catalog.createWorkspaceSession("1")
+  const session = await managed.useDirectories(allocated)
+  assert.equal(session.worktree.directories[0]!.path, source)
+  await managed.destroy(session.id)
+  assert.equal(await readFile(join(source, "keep.txt"), "utf8"), "workspace")
 })
 
 test("separate revisions of the same Git repository receive separate session trees", async context => {

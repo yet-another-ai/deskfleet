@@ -5,21 +5,26 @@ import { openCatalog, type NativeCatalog } from "@deskfleet/native"
 import type { AgentSessionContext } from "./agent-protocol.ts"
 import type { CatalogDirectory, CatalogEvent, CatalogMethods, CatalogRequest } from "./catalog-protocol.ts"
 import { ManagedSessionWorktrees } from "./session-worktrees.ts"
+import { readWorktreeRoot } from "./worktree-settings.ts"
 
 /** The daemon owns this machine's persistent catalog, independently of its clients. */
 export class DaemonCatalog {
   readonly #directory: string
+  readonly #hostDirectory: string
   readonly #listeners = new Set<(event: CatalogEvent) => void>()
   readonly #releasing = new Set<(worktreeId: string) => Promise<void>>()
   #catalog: NativeCatalog | undefined
   #sessions: ManagedSessionWorktrees | undefined
 
-  constructor(directory: string) { this.#directory = directory }
+  constructor(directory: string, hostDirectory = directory) { this.#directory = directory; this.#hostDirectory = hostDirectory }
 
   // Called only after this daemon has acquired its discovery record.
   async init(): Promise<void> {
     this.#catalog = await openCatalog(join(this.#directory, "catalog.db"), hostname())
-    this.#sessions = new ManagedSessionWorktrees(this.#catalog, this.#directory)
+    const { originId } = JSON.parse(await this.#catalog.agentIdentity()) as { originId: string }
+    this.#sessions = new ManagedSessionWorktrees(this.#catalog, this.#directory, {
+      originId, root: () => readWorktreeRoot(this.#hostDirectory),
+    })
   }
 
   onChange(listener: (event: CatalogEvent) => void): () => void {

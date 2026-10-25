@@ -72,7 +72,7 @@ registration uses a fresh `machines/<uuid>/` directory, selected by the host's
 - `central.json`: private machine registration and credential.
 - `catalog.db`: SQLite Workspace/Session ownership, conversation, and audit.
 - `agent-providers.json`: machine-local provider launch settings and environment.
-- `session-worktrees/`: ownership manifests and generated Session checkouts.
+- `session-worktrees/`: ownership manifests and, by default, generated Session checkouts.
 - `terminals/`: terminal metadata and full output transcripts.
 
 Earlier unauthenticated development data outside this namespace is not imported.
@@ -80,6 +80,22 @@ Retired directories stay in place because Git worktrees and saved working
 directories contain absolute paths. A reset never renames or deletes them.
 Local integer IDs remain decimal strings and are qualified by the catalog origin
 and central machine identity. Equal IDs on different machines stay distinct.
+
+Desktop Settings → Preferences → This computer includes **Worktree root directory**
+for placing new Session checkouts on another disk. The preference is stored in
+`<daemon directory>/worktree-settings.json` as `{ "root": "/absolute/path" }`;
+headless installations can write the same file. Use `{ "root": null }` or remove
+the file to restore the default. The chosen directory must exist when creating a
+Session; an unavailable root fails creation instead of using the default disk.
+Desktop Settings creates the selected directory when saving it.
+
+The running daemon reads this setting for each new worktree Session, including
+when Electron reuses a standalone daemon. Custom checkouts live under
+`<root>/<catalog origin>/<session ID>/`, keeping different machine registrations
+separate. Changing or resetting the root does not move existing checkouts or
+affect Sessions using Workspace directories directly. Ownership manifests stay
+in the machine directory and record each custom checkout location so rollback
+and internal destruction keep working after a settings change or restart.
 
 The daemon connects outbound to the central control WebSocket. Workspace,
 Provider, Session archive/restore, directory browsing, and terminal lifecycle

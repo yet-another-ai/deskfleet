@@ -225,8 +225,19 @@ daemon. It returns the current path, parent, home, roots, and child directories.
 Clients treat paths as opaque so browsing follows the target machine's rules.
 
 Worktree Session creation allocates a durable ID and creates Git worktrees beneath
-`<daemon directory>/machine/session-worktrees/<session ID>/`. A manifest records
-generated paths. Provisioning failure rolls back partial checkouts. Archive
+`<machine directory>/session-worktrees/<session ID>/` by default. The host's
+`<daemon directory>/worktree-settings.json` can select an absolute root directory,
+configured through Desktop Settings → Preferences → This computer. Each new
+worktree Session reads the current preference and creates custom checkouts under
+`<root>/<catalog origin>/<session ID>/`; the catalog origin keeps repeated local
+IDs in different machine registrations separate. A changed root affects new
+Sessions without restarting the daemon or moving existing checkouts. An
+unavailable configured root fails creation instead of falling back to the
+default disk. Directory Sessions continue to use their Workspace paths.
+
+Ownership manifests remain beneath the machine's `session-worktrees/` directory
+and record custom checkout locations independently of the current preference.
+Provisioning failure rolls back partial checkouts. Archive
 retains those checkouts and their local changes; disconnect never destroys them.
 Internal destruction remains available for rollback and development tests only.
 

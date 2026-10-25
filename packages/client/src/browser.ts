@@ -40,6 +40,7 @@ export async function browserClient(defaultServerUrl: string): Promise<Deskfleet
       get: async () => ({ enabled: false, status: "stopped" }), setLocalAgentEnabled: unavailable,
       getLaunchAtStartup: async () => ({ available: false, enabled: false }), setLaunchAtStartup: unavailable,
       getKeepAwake: async () => ({ enabled: false }), setKeepAwake: unavailable,
+      getWorktreeRoot: unavailable, setWorktreeRoot: unavailable, chooseWorktreeRoot: unavailable,
       getNotifications: async () => ({ enabled: false, taskCompleted: false, taskNeedsInput: false }), setNotifications: unavailable,
       onChanged: subscribe,
     },

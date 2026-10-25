@@ -119,8 +119,8 @@ Settings routes (`meta.fullWindow`) replace the sidebar and details panel with
 two panels: the sections on the left and the selected section on the right.
 Section links replace their history entry, so **Back to app** or Escape returns
 to the page Settings opened from. **Preferences → This computer** contains
-**Launch at startup** alongside the local Agent startup preference, run state,
-and retry.
+**Launch at startup**, **Keep Awake**, and **Worktree root directory** alongside
+the local Agent startup preference, run state, and retry.
 
 The details panel has two tabs:
 
@@ -280,6 +280,18 @@ The main process saves the preference in `keep-awake.json` under Electron's
 `userData` directory and restores it on startup. It owns an Electron
 `powerSaveBlocker` with `prevent-app-suspension`, released when the setting is
 disabled or the app quits.
+
+## Worktree root directory
+
+**Settings → Preferences → Worktree root directory** chooses where this computer
+stores worktrees for new Sessions. **Choose folder** opens the native folder
+picker and saves the selected directory. **Use default** restores the default
+directory displayed by Settings. Choose a location on another disk when the
+default disk has limited free space.
+
+Changes apply to newly created Session worktrees immediately, without restarting
+the app. Existing worktrees stay at their recorded paths. Sessions using
+**Working directory** continue to use their Workspace's directories.
 
 ## Desktop notifications
 
