@@ -36,6 +36,39 @@ For an existing PostgreSQL/OIDC deployment, use the
 Use PowerShell 7 (`pwsh`) on Windows. `mise exec -- <command>` runs a focused
 command with the project tools even when the shell has not activated mise.
 
+## Product website
+
+The VitePress website and user guide live in `docs/`. Run `mise run docs:dev`
+and open `http://127.0.0.1:5175/`. `mise run docs:typecheck` checks the shared
+component demos; `mise run docs:build` generates `docs/.vitepress/dist/` and
+validates internal links. Preview that output with `mise run docs:preview`.
+
+The landing page follows Heron's refactored VitePress homepage at commit
+`b61a783b` (v0.9.1): assembling desktop windows, a scroll-driven showcase,
+staggered text reveals, and segmented installation controls. Its hero scales the
+actual application into windows that fan out in depth, respond to pointer
+movement, and disperse on scroll. Hero sizing reserves VitePress's navigation
+height and the copy's actual height before sizing the scene. Reduced-motion
+preferences show the assembled scene without animation. The showcase mounts the same
+`App.vue`, routes, stores, and controls with independent browser-local sample
+state. It needs no backend, agent credentials, or model calls. English and
+Simplified Chinese content share those components. The sticky showcase reserves
+the fixed navigation height; short viewports use normal page flow with tabs so
+the application controls and explanatory text remain reachable.
+
+`packages/components/src/theme-tokens.css` owns the product palette. Both the
+application and website consume it; `color-scheme` selects the website's explicit
+light/dark theme. `product-demo.css` only restores application typography and
+dialog centering within VitePress. Fonts and brand assets are bundled locally.
+The desktop example uses the production `DesktopView` and a browser-local WebRTC
+peer streaming recorded product screens (`demo-desktop-light.png` and
+`demo-desktop-dark.png`). These screenshots are media fixtures, not a separate
+implementation of the application UI.
+
+The supplied brand master lives in `packages/components/src/assets/deskfleet.png`;
+`mise exec -- pnpm --filter @deskfleet/desktop icons` regenerates the application,
+tray, Web favicon, and website assets from it.
+
 ## Local Docker Compose
 
 [`compose.yaml`](../../compose.yaml) runs the supporting services; Rust, Vue,

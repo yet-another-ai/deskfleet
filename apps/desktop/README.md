@@ -424,11 +424,13 @@ integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
 
-`build/icon.png` is the source for the macOS `.icns` and Windows `.ico`. The tray
-uses `build/trayTemplate*.png` on macOS and `build/tray*.png` elsewhere. These
-images are placeholders that `scripts/generate-icons.ts` draws. Regenerate them
-with `mise exec -- pnpm --filter @deskfleet/desktop icons`, or replace them with
-real artwork of the same sizes.
+The original brand artwork lives in
+`packages/components/src/assets/deskfleet.png`. Run
+`mise exec -- pnpm --filter @deskfleet/desktop icons` to regenerate the app, tray,
+Web, and website icons from it. `build/icon.png` is the source for the macOS
+`.icns` and Windows `.ico`. The tray uses `build/trayTemplate*.png` on macOS,
+with the artwork's luminance adapted to an alpha mask for system tinting, and
+full-color `build/tray*.png` elsewhere. Commit generated assets with the source.
 
 ## Checks
 

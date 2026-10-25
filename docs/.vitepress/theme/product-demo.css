@@ -1,0 +1,13 @@
+/* Product components inherit their own tokens and typography inside the site. */
+.product-demo, .ui-dialog {
+  color: var(--ui-color-text);
+  font-family: var(--ui-font-interface);
+  font-size: 14px;
+  line-height: normal;
+  letter-spacing: normal;
+  user-select: none;
+  isolation: isolate;
+}
+
+/* Restore native dialog centering after VitePress's global margin reset. */
+.ui-dialog { margin: auto; }

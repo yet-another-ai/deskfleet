@@ -2,6 +2,7 @@
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import BrandLogo from "../common/BrandLogo.vue"
 
 defineProps<{ platform: string }>()
 const { t } = useI18n()
@@ -23,10 +24,11 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <div class="app-drag titlebar-overlay-inset flex h-12 shrink-0 items-center px-5 text-[13px] font-medium" :class="platform === 'darwin' && 'pl-20'">deskfleet</div>
+  <div class="app-drag titlebar-overlay-inset flex h-12 shrink-0 items-center gap-2 px-5 text-[13px] font-medium" :class="platform === 'darwin' && 'pl-20'"><BrandLogo :size="24" decorative />deskfleet</div>
   <div class="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-6 pb-18">
     <form class="ui-card flex w-full max-w-sm flex-col gap-5 p-6 shadow-ui-card" @submit.prevent="submit">
       <div>
+        <BrandLogo :size="64" class="mb-5" />
         <h1 class="m-0 text-xl font-semibold">{{ t("account.signIn") }}</h1>
         <p class="m-0 mt-2 text-sm text-ui-text-muted">{{ t("account.signInDescription") }}</p>
       </div>

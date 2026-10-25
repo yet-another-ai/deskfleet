@@ -2,6 +2,7 @@
 import { ChevronRight, Plus, Ticket } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import BrandLogo from "../common/BrandLogo.vue"
 
 const { t } = useI18n()
 const session = useAccountSession()!
@@ -11,6 +12,7 @@ const session = useAccountSession()!
   <!-- A signed-in user with no Team chooses between starting one and accepting an invitation. -->
   <div class="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-6 pb-16">
     <div>
+      <BrandLogo :size="64" class="mb-5" />
       <h1 class="m-0 text-xl font-semibold">{{ t("team.welcome", { name: session.account.value.user?.name ?? "" }) }}</h1>
       <p class="m-0 mt-2 text-sm text-ui-text-muted">{{ t("team.welcomeDescription") }}</p>
     </div>

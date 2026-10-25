@@ -5,6 +5,7 @@
 /deskfleet.db-journal
 **/node_modules/
 **/dist/
+/docs/.vitepress/cache/
 /apps/desktop/out/
 /apps/desktop/release/
 *.node

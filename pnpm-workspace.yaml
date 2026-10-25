@@ -5,6 +5,7 @@ packages:
   - apps/web
   - packages/client
   - packages/components
+  - docs
 
 allowBuilds:
   # Squirrel.Windows support; electron-builder's NSIS target does not use it.
@@ -13,6 +14,10 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - '@lobehub/icons-static-svg@1.99.0'
+
+overrides:
+  # The docs render the same Vue components as the desktop and Web clients.
+  'vitepress>vue': '3.6.0-rc.13'
 
 patchedDependencies:
   '@agentclientprotocol/codex-acp@2.2.2': patches/@agentclientprotocol__codex-acp@2.2.2.patch

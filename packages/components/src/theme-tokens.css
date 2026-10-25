@@ -1,0 +1,45 @@
+/*
+ * Design tokens. UnoCSS exposes each color as `*-ui-<name>` utilities, including
+ * opacity modifiers such as `bg-ui-warning/10`; component classes live in
+ * uno.config.ts. Text tokens meet WCAG AA on canvas, sidebar, and surface, and
+ * `text-faint` meets 3:1 for secondary labels.
+ */
+/* A host can select its theme with color-scheme; the product follows the OS. */
+:root {
+  color-scheme: light dark;
+  /* Keep canvas and text in sync with apps/desktop/src/main/window-chrome.ts. */
+  --ui-color-canvas: light-dark(#fbfbfd, #17191f);
+  --ui-color-sidebar: light-dark(#f3f4f8, #121419);
+  --ui-color-surface: light-dark(#ffffff, #1f222a);
+  --ui-color-control: light-dark(#ffffff, #23262f);
+  --ui-color-control-hover: light-dark(#f3f4f8, #2a2e38);
+  --ui-color-text: light-dark(#1b1f2b, #e7e9ef);
+  --ui-color-text-muted: light-dark(#596173, #a3a9b7);
+  --ui-color-text-faint: light-dark(#838a9a, #7c8393);
+  --ui-color-border: light-dark(#e3e6ed, #2c303a);
+  --ui-color-border-strong: light-dark(#d3d7e0, #3a3f4b);
+  --ui-color-hover: light-dark(rgb(27 31 43 / 5%), rgb(231 233 239 / 6%));
+  --ui-color-active: light-dark(rgb(27 31 43 / 8%), rgb(231 233 239 / 10%));
+  --ui-color-badge: light-dark(rgb(27 31 43 / 6%), rgb(231 233 239 / 9%));
+  --ui-color-accent: light-dark(#4a5bd4, #8e9bff);
+  --ui-color-action: light-dark(#4a5bd4, #8e9bff);
+  --ui-color-action-hover: light-dark(#3d4dbf, #a5afff);
+  --ui-color-action-text: light-dark(#ffffff, #12141a);
+  --ui-color-action-disabled: light-dark(#c5cad6, #353a47);
+  --ui-color-avatar: light-dark(#4a5bd4, #5b6be0);
+  --ui-color-avatar-text: #ffffff;
+  --ui-color-focus: light-dark(#4a5bd4, #8e9bff);
+  --ui-color-success: light-dark(#167a4a, #4cc38a);
+  --ui-color-warning: light-dark(#975a00, #e3a64c);
+  --ui-color-danger: light-dark(#c4372f, #f47c71);
+  --ui-color-switch-thumb: #ffffff;
+  --ui-color-terminal: #15171d;
+  --ui-shadow-color-near: light-dark(rgb(27 31 43 / 4%), rgb(0 0 0 / 30%));
+  --ui-shadow-color: light-dark(rgb(27 31 43 / 4%), rgb(0 0 0 / 20%));
+  --ui-shadow-card: 0 1px 2px var(--ui-shadow-color-near), 0 2px 8px var(--ui-shadow-color);
+  --ui-shadow-popover: 0 4px 12px light-dark(rgb(27 31 43 / 8%), rgb(0 0 0 / 35%)), 0 12px 32px light-dark(rgb(27 31 43 / 8%), rgb(0 0 0 / 30%));
+  --ui-shadow-dialog: 0 8px 24px light-dark(rgb(27 31 43 / 10%), rgb(0 0 0 / 40%)), 0 24px 64px light-dark(rgb(27 31 43 / 14%), rgb(0 0 0 / 40%));
+  --ui-font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC",
+    "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --ui-font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}

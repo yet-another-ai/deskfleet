@@ -1,3 +1,5 @@
+<img src="packages/components/src/assets/deskfleet.png" width="96" height="96" alt="deskfleet logo" />
+
 # deskfleet
 
 deskfleet manages AI agents and their working environments across a team's computers.
@@ -96,6 +98,14 @@ mise run desktop:dev
 Closing the window keeps the app in the system tray. Use the tray menu to quit;
 the daemon keeps running. See the [desktop guide](apps/desktop/README.md) for
 development and packaging details.
+
+## Product website
+
+The VitePress website in `docs/` includes English and Simplified Chinese pages
+and interactive examples built from the application's shared Vue components.
+Start it with `mise run docs:dev` and open `http://127.0.0.1:5175/`.
+Build the static site with `mise run docs:build`; the output is
+`docs/.vitepress/dist/`. The demos run with browser-local sample data.
 
 ## Checks
 

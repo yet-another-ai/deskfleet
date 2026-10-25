@@ -10,7 +10,7 @@ a stable `Gate` result for branch protection.
   runs. It classifies the changed files, calls Test and Build, and combines their
   results in `Gate`. Configure `Gate` under the `CI` workflow as the required
   status check in repository branch protection.
-- `.github/workflows/test.yml` runs static checks and the desktop/Web bundle builds
+- `.github/workflows/test.yml` runs static checks and the desktop/Web/website builds
   once on Linux with `mise run ci:check:static`, plus Rust, daemon, and desktop
   tests on Linux, macOS, and Windows with `mise run test`. It supports reusable
   calls and manual runs. A separate Linux job runs real PostgreSQL integration
@@ -43,6 +43,10 @@ clean signal-driven shutdown; Windows tests terminate the process forcibly.
 Static validation still runs for documentation changes. The independent runtime
 test and build jobs can be skipped only when the complete change is ordinary
 documentation under the classifier's explicit allowlist.
+
+This static tier includes the website typecheck and VitePress build, even for
+Markdown-only edits under `docs/content/`. Website theme components,
+configuration, and assets require the full tier because they are not Markdown.
 
 The classifier checks the PR merge-base-to-head diff or the entire main push's
 before-to-after diff. Executable files, symlinks, skills, manifests, lockfiles,

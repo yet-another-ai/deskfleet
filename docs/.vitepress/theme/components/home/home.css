@@ -1,0 +1,111 @@
+/* Landing-page layout and motion use the shared product palette. */
+.deskfleet-home {
+  --home-ink: var(--ui-color-text);
+  --home-ink-2: var(--ui-color-text-muted);
+  --home-edge: var(--ui-color-border);
+  --home-fill: var(--ui-color-hover);
+  --home-panel: var(--ui-color-surface);
+  --home-window: var(--ui-color-canvas);
+  --home-window-solid: var(--ui-color-surface);
+  --home-shadow: var(--ui-shadow-color);
+  --home-shadow-near: var(--ui-shadow-color-near);
+  --home-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --home-sticky-top: 0px;
+
+  position: relative;
+  isolation: isolate;
+  color: var(--ui-color-text);
+}
+
+/* VitePress keeps the mobile nav in flow and fixes it from 60rem onward. */
+@media (min-width: 60rem) {
+  .deskfleet-home { --home-sticky-top: var(--vp-nav-height); }
+}
+
+.reveal-line {
+  display: block;
+  opacity: 0;
+  filter: blur(4px);
+  transform: translateY(14px);
+  transition:
+    opacity 0.22s ease,
+    filter 0.22s ease,
+    transform 0s linear 0.22s;
+}
+
+.reveal.is-shown .reveal-line {
+  opacity: 1;
+  filter: none;
+  transform: none;
+  transition:
+    opacity 0.6s var(--home-ease) calc(var(--line, 0) * 70ms),
+    filter 0.6s var(--home-ease) calc(var(--line, 0) * 70ms),
+    transform 0.7s var(--home-ease) calc(var(--line, 0) * 70ms);
+}
+
+.home-kicker {
+  margin: 0 0 12px;
+  color: var(--ui-color-text-muted);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.home-heading {
+  margin: 0;
+  color: var(--home-ink);
+  font-size: clamp(32px, 4.4vw, 48px);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.home-button {
+  display: inline-flex;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 24px;
+  border: 1px solid var(--home-edge);
+  border-radius: 23px;
+  color: var(--home-ink);
+  background: var(--home-panel);
+  font-size: 15px;
+  font-weight: 650;
+  text-decoration: none;
+  backdrop-filter: blur(18px);
+  transition:
+    transform 160ms ease,
+    background 160ms ease;
+}
+
+.home-button:hover {
+  background: color-mix(in srgb, var(--home-ink) 8%, var(--home-panel));
+  transform: translateY(-1px);
+}
+
+.home-button:focus-visible {
+  outline: 2px solid var(--ui-color-focus);
+  outline-offset: 3px;
+}
+
+.home-button--solid {
+  border-color: transparent;
+  color: var(--ui-color-action-text);
+  background: var(--ui-color-action);
+}
+
+.home-button--solid:hover {
+  background: var(--ui-color-action-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-line,
+  .reveal.is-shown .reveal-line,
+  .home-button {
+    transition: none;
+  }
+}

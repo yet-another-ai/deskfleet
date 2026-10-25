@@ -1,0 +1,176 @@
+/* Website surfaces use the product palette; the theme switch selects color-scheme. */
+:root {
+  --deskfleet-display: "Barlow Condensed", ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-base: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-mono: "Cascadia Mono Variable", ui-monospace, monospace;
+  --vp-c-brand-1: var(--ui-color-text);
+  --vp-c-brand-2: var(--ui-color-text-muted);
+  --vp-c-brand-3: var(--ui-color-action);
+  --vp-c-brand-soft: var(--ui-color-hover);
+  --vp-c-default-1: var(--ui-color-active);
+  --vp-c-default-2: var(--ui-color-hover);
+  --vp-c-default-3: var(--ui-color-sidebar);
+  --vp-c-default-soft: var(--ui-color-hover);
+  --vp-c-important-1: var(--ui-color-text);
+  --vp-c-important-2: var(--ui-color-text-muted);
+  --vp-c-important-3: var(--ui-color-text-muted);
+  --vp-c-important-soft: var(--ui-color-hover);
+  --vp-c-success-1: var(--ui-color-success);
+  --vp-c-success-2: var(--ui-color-success);
+  --vp-c-success-3: var(--ui-color-success);
+  --vp-c-success-soft: color-mix(in srgb, var(--ui-color-success) 10%, transparent);
+  --vp-c-warning-1: var(--ui-color-warning);
+  --vp-c-warning-2: var(--ui-color-warning);
+  --vp-c-warning-3: var(--ui-color-warning);
+  --vp-c-warning-soft: color-mix(in srgb, var(--ui-color-warning) 10%, transparent);
+  --vp-c-danger-1: var(--ui-color-danger);
+  --vp-c-danger-2: var(--ui-color-danger);
+  --vp-c-danger-3: var(--ui-color-danger);
+  --vp-c-danger-soft: color-mix(in srgb, var(--ui-color-danger) 10%, transparent);
+  --vp-c-caution-1: var(--ui-color-danger);
+  --vp-c-caution-2: var(--ui-color-danger);
+  --vp-c-caution-3: var(--ui-color-danger);
+  --vp-c-caution-soft: var(--vp-c-danger-soft);
+  --vp-c-bg: var(--ui-color-canvas);
+  --vp-c-bg-alt: var(--ui-color-sidebar);
+  --vp-c-bg-elv: var(--ui-color-surface);
+  --vp-c-bg-soft: var(--ui-color-sidebar);
+  --vp-c-divider: var(--ui-color-border);
+  --vp-c-border: var(--ui-color-border);
+  --vp-c-gutter: var(--ui-color-border);
+  --vp-c-text-1: var(--ui-color-text);
+  --vp-c-text-2: var(--ui-color-text-muted);
+  --vp-c-text-3: var(--ui-color-text-faint);
+  --vp-code-block-bg: var(--ui-color-sidebar);
+  --vp-home-hero-name-color: var(--ui-color-text);
+  --vp-nav-bg-color: var(--ui-color-canvas);
+  --vp-sidebar-bg-color: var(--ui-color-sidebar);
+  --vp-button-brand-bg: var(--ui-color-action);
+  --vp-button-brand-hover-bg: var(--ui-color-action-hover);
+  --vp-button-brand-active-bg: var(--ui-color-action-hover);
+  --vp-button-brand-text: var(--ui-color-action-text);
+  --vp-button-brand-hover-text: var(--ui-color-action-text);
+  --vp-button-brand-active-text: var(--ui-color-action-text);
+}
+
+:root:lang(zh),
+:root:lang(zh-CN),
+:root:lang(zh-Hans) {
+  --deskfleet-display:
+    "Noto Sans SC Variable", "Barlow Condensed", ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-base:
+    "Noto Sans SC Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  background: var(--vp-c-bg);
+  transition: background-color 180ms ease;
+}
+
+body {
+  letter-spacing: -0.005em;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  font-family: var(--vp-font-family-base);
+  font-size: 16px;
+  user-select: text;
+}
+
+:root { color-scheme: light; }
+:root.dark { color-scheme: dark; }
+
+.VPNavBarTitle .logo { border-radius: 6px; }
+
+.VPNavBar {
+  border-bottom-color: var(--vp-c-divider) !important;
+}
+
+.VPNavBarTitle .logo {
+  width: 25px;
+  height: 25px;
+}
+
+.VPNavBarTitle .title {
+  font-family: var(--vp-font-family-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.VPNavBarMenuLink,
+.VPNavBarMenuGroup .text {
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.VPDoc h1,
+.VPDoc h2,
+.VPDoc h3 {
+  font-family: var(--deskfleet-display);
+  letter-spacing: -0.025em;
+}
+
+.VPDoc h1 {
+  font-size: clamp(38px, 5vw, 52px);
+  line-height: 1;
+}
+
+.VPDoc h2 {
+  border-top-color: var(--vp-c-divider);
+}
+
+.VPDoc a {
+  text-underline-offset: 3px;
+}
+
+.VPDoc img {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+.VPDoc .custom-block {
+  border-radius: 6px;
+}
+
+.VPSidebarItem .text {
+  font-size: 13px;
+}
+
+.VPSidebarItem.level-0 > .item > .text {
+  font-family: var(--vp-font-family-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.VPFooter {
+  border-top-color: var(--vp-c-divider) !important;
+  background: var(--vp-c-bg) !important;
+}
+
+.deskfleet-landing .VPNavBar::before {
+  background-color: color-mix(in srgb, var(--vp-c-bg) 62%, transparent);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+
+.deskfleet-landing .VPNavBar .divider-line {
+  background-color: transparent;
+}
+
+.deskfleet-landing .VPLocalNav {
+  display: none;
+}
+
+@media (min-width: 960px) {
+  .VPNavBar.has-sidebar .title {
+    border-bottom-color: transparent !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    transition: none;
+  }
+}

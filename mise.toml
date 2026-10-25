@@ -72,7 +72,7 @@ run = "cargo run -p deskfleet-migration --features cli --locked --"
 
 [tasks.check]
 description = "Run TypeScript and Rust checks, tests, and debug builds"
-depends = ["check:static", "test", "rust:build", "desktop:build", "web:build"]
+depends = ["check:static", "test", "rust:build", "desktop:build", "web:build", "docs:build"]
 
 [tasks."check-fast"]
 description = "Run the Rust edit-loop checks"
@@ -151,6 +151,25 @@ run = "pnpm --filter @deskfleet/web build"
 description = "Check the Web client and shared Vue components"
 depends = ["install"]
 run = "pnpm --filter @deskfleet/web typecheck"
+
+[tasks."docs:dev"]
+description = "Run the VitePress product website and interactive demos"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/docs dev"
+
+[tasks."docs:build"]
+description = "Build the product website and user guide"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/docs build"
+
+[tasks."docs:preview"]
+description = "Preview the built product website"
+run = "pnpm --filter @deskfleet/docs preview"
+
+[tasks."docs:typecheck"]
+description = "Check the product website and shared component demo types"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/docs typecheck"
 
 [tasks."desktop:smoke-media"]
 description = "Verify Chromium decoding native WebRTC media without screen capture"
@@ -236,7 +255,16 @@ run = "node scripts/check-rust-skills-harness.ts"
 
 [tasks."check:static"]
 hide = true
-depends = ["check:rust-skills-harness", "check:types", "check:desktop-types", "web:typecheck", "rust:format:check", "rust:shear", "rust:clippy"]
+depends = [
+    "check:rust-skills-harness",
+    "check:types",
+    "check:desktop-types",
+    "web:typecheck",
+    "docs:typecheck",
+    "rust:format:check",
+    "rust:shear",
+    "rust:clippy",
+]
 
 [tasks."check:types"]
 hide = true
@@ -271,7 +299,7 @@ depends = ["rust:test"]
 
 [tasks."ci:check:static"]
 hide = true
-depends = ["check:static", "check:scripts", "desktop:build", "web:build"]
+depends = ["check:static", "check:scripts", "desktop:build", "web:build", "docs:build"]
 
 [tasks."ci:report:sccache"]
 hide = true
