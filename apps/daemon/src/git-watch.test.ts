@@ -201,7 +201,11 @@ test("linked worktrees observe their separate index and HEAD plus common refs", 
   await git(f.root, "worktree", "add", "--detach", worktree, "HEAD")
   const errors: string[] = []
   await f.inspection.watch([worktree], error => { if (error) errors.push(error) })
-  const [gitDir, commonDir] = (await git(worktree, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")).split("\n")
+  // Git may print forward-slash absolute paths on Windows; fs.watch keys use
+  // the platform form returned by realpath, matching GitWatch's subscriptions.
+  const [gitDir, commonDir] = await Promise.all(
+    (await git(worktree, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")).split("\n").map(path => realpath(path!)),
+  )
   const notify = (directory: string, event: "change" | "rename", filename: string) => {
     const callback = callbacks.get(directory)
     assert.ok(callback, `missing watch for ${directory}`)
