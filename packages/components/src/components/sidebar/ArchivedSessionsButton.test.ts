@@ -70,7 +70,7 @@ async function render() {
 
 test("footer control lists archived sessions and restores one after confirmation", async () => {
   const { router, restore, refresh } = await render()
-  expect(wrapper!.get('[aria-label="Archived sessions"]').exists()).toBe(true)
+  expect(wrapper!.find('[aria-label="Archived sessions"]').exists()).toBe(true)
   await wrapper!.get("[data-archived-sessions]").trigger("click")
   await flushPromises()
   expect(refresh).toHaveBeenCalledOnce()
@@ -103,5 +103,5 @@ test("opening an archived session navigates without restoring", async () => {
 test("zh locale labels the archived sessions chrome control", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
   await render()
-  expect(wrapper!.get('[aria-label="已归档会话"]').exists()).toBe(true)
+  expect(wrapper!.find('[aria-label="已归档会话"]').exists()).toBe(true)
 })
