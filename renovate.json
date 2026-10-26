@@ -9,9 +9,7 @@
   "automerge": false,
   "prConcurrentLimit": 2,
   "separateMajorMinor": false,
-  "group": {
-    "groupSingleUpdates": true
-  },
+  "groupSingleUpdates": true,
   "ignorePaths": [
     "**/node_modules/**",
     "**/bower_components/**",
@@ -33,6 +31,7 @@
     },
     {
       "matchManagers": ["github-actions"],
+      "groupName": "actions",
       "pinDigests": false,
       "extends": ["schedule:monthly"]
     },
