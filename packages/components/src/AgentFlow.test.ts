@@ -345,9 +345,11 @@ test("a supported idle Session forks in the chosen workspace context and navigat
   await dialog.get('[role="radio"][value="directory"]').trigger("click")
   const forked = agentSnapshot()
   forked.session = { ...snapshot.session, id: "32", context: "directory", title: "Forked conversation", lastEventSeq: "0" }
+  const forkResponse = deferred<AgentSnapshot>()
   const normal = transport.call.getMockImplementation()!
   transport.call.mockImplementation(async (method: string, params: Record<string, unknown>) => {
-    if (method === "_deskfleet/session/fork" || (method === "_deskfleet/session/subscribe" && params.sessionId === "32")) return structuredClone(forked)
+    if (method === "_deskfleet/session/fork") return forkResponse.promise
+    if (method === "_deskfleet/session/subscribe" && params.sessionId === "32") return structuredClone(forked)
     if (method === "_deskfleet/session/history" && params.sessionId === "32") return []
     return normal(method, params)
   })
@@ -355,13 +357,18 @@ test("a supported idle Session forks in the chosen workspace context and navigat
   await dialog.get(".ui-button-primary").trigger("click")
   await flushPromises()
   expect(transport.call).toHaveBeenCalledWith("_deskfleet/session/fork", { sessionId: "30", context: "directory", operationId: expect.any(String) })
+  expect(wrapper.get('[aria-label="Session actions"]').attributes("aria-disabled")).toBe("true")
+  expect(button("Check result")).toBeUndefined()
+  expect(router.currentRoute.value.params.sessionId).toBe("30")
+  forkResponse.resolve(structuredClone(forked))
+  await flushPromises()
   expect(router.currentRoute.value.params.sessionId).toBe("32")
   expect(wrapper.get("main").text()).toContain("Forked conversation")
   expect(wrapper.find('aside a[href="#/sessions/30"]').exists()).toBe(true)
   expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit")).toHaveLength(submittedBefore)
 })
 
-test("checking a lost fork response opens the recorded child without creating another conversation", async () => {
+test.each(["completed", "failed"] as const)("checking a lost fork response recovers a %s operation without repeating the fork", async status => {
   snapshot.session.capabilities = { steering: true, resume: true, fork: true }
   await wrapper.get("textarea").setValue("Implement the feature")
   await wrapper.get('[aria-label="Send"]').trigger("click")
@@ -374,7 +381,8 @@ test("checking a lost fork response opens the recorded child without creating an
     if (method === "_deskfleet/session/fork") {
       command = {
         id: "51", operationId: String(params.operationId), actor, sessionId: "32", method,
-        params, isCanonical: true, status: "completed", result: structuredClone(forked), receivedAt: "now",
+        params, isCanonical: true, status, receivedAt: "now",
+        ...(status === "completed" ? { result: structuredClone(forked) } : { error: "Fork failed" }),
       }
       throw new Error("Fork response lost")
     }
@@ -392,13 +400,50 @@ test("checking a lost fork response opens the recorded child without creating an
   expect(dialog.findAll('[role="radio"]').every(radio => radio.attributes("disabled") !== undefined)).toBe(true)
   expect(dialog.get(".ui-button-primary").text()).toBe("Check result")
   expect(router.currentRoute.value.params.sessionId).toBe("30")
+  expect(wrapper.get('[aria-label="Session actions"]').attributes("aria-disabled")).toBe("true")
+  emit("elicitation", agentElicitation())
+  await flushPromises()
+  expect(dialog.get(".ui-button-primary").attributes("disabled")).toBeUndefined()
   await dialog.get(".ui-button").trigger("click")
+  expect(wrapper.get('[aria-label="Session actions"]').attributes("aria-disabled")).toBe("true")
   await button("Check result").trigger("click")
   await flushPromises()
-  expect(router.currentRoute.value.params.sessionId).toBe("32")
-  expect(wrapper.get("main").text()).toContain("Recovered fork")
+  if (status === "completed") {
+    expect(router.currentRoute.value.params.sessionId).toBe("32")
+    expect(wrapper.get("main").text()).toContain("Recovered fork")
+  } else {
+    expect(router.currentRoute.value.params.sessionId).toBe("30")
+    expect(wrapper.get("main").text()).toContain("Fork failed")
+    expect(wrapper.get('[aria-label="Session actions"]').attributes("aria-disabled")).toBeUndefined()
+    expect(button("Check result")).toBeUndefined()
+  }
   expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/session/fork")).toHaveLength(1)
   expect(transport.call).toHaveBeenCalledWith("_deskfleet/command/get", { operationId: command!.operationId })
+})
+
+test.each(["permission", "elicitation"] as const)("a pending %s blocks fresh forks from the menu and an already-open dialog", async kind => {
+  snapshot.session.capabilities = { steering: true, resume: true, fork: true }
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('[aria-label="Session actions"]').trigger("click"); await flushPromises()
+  const question = kind === "permission" ? agentPermission() : agentElicitation()
+  emit(kind, question)
+  await flushPromises()
+  expect(page().findAll('[role="menuitem"]').some(item => item.text() === "Fork session")).toBe(false)
+  emit(kind, { ...question, state: "cancelled" })
+  await flushPromises()
+  await page().findAll('[role="menuitem"]').find(item => item.text() === "Fork session")!.trigger("click"); await flushPromises()
+  const dialog = page().get('[role="dialog"]')
+  expect(dialog.get(".ui-button-primary").attributes("disabled")).toBeUndefined()
+  emit(kind, question)
+  await flushPromises()
+  expect(dialog.get(".ui-button-primary").attributes("disabled")).toBeDefined()
+  await dialog.get(".ui-button-primary").trigger("click")
+  expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/session/fork")).toBe(false)
+  emit(kind, { ...question, state: "cancelled" })
+  await flushPromises()
+  expect(dialog.get(".ui-button-primary").attributes("disabled")).toBeUndefined()
 })
 
 test("fork is unavailable while a Session is running a turn or archived", async () => {

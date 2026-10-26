@@ -45,7 +45,9 @@ const connected = computed(() => agents.state === "connected")
 const canResume = computed(() => !snapshot.value?.session.providerSessionId || !!snapshot.value.session.capabilities?.resume)
 const canSteer = computed(() => !!snapshot.value?.session.capabilities?.steering && activeTurn.value?.state === "running")
 const runActive = computed(() => !!run.value && ["starting", "running"].includes(run.value.state))
-const canFork = computed(() => active.value && snapshot.value?.session.lifecycle === "ready" && !!snapshot.value.session.capabilities?.fork && !activeTurn.value)
+const canFork = computed(() => active.value && snapshot.value?.session.lifecycle === "ready" && !!snapshot.value.session.capabilities?.fork && !activeTurn.value
+  && !snapshot.value.permissions.some(permission => permission.state === "pending")
+  && !snapshot.value.elicitations.some(elicitation => elicitation.state === "pending"))
 const pendingFork = computed(() => Object.values(agents.operations).find(operation => operation.sessionId === props.sessionId && operation.method === "_deskfleet/session/fork"))
 const forkContext = computed(() => pendingFork.value?.params.context as AgentSessionContext | undefined ?? snapshot.value?.session.context ?? "worktree")
 const forkDisabled = computed(() => !connected.value || !!view.value?.loading || !!view.value?.error)
@@ -83,8 +85,11 @@ async function showFork(snapshot: AgentSnapshot, sourceId: string): Promise<void
   if (router.currentRoute.value.name === "session" && props.sessionId === sourceId) await router.push({ name: "session", params: { sessionId: snapshot.session.id } })
 }
 async function fork(context: AgentSessionContext): Promise<void> {
+  if (busy.value) return
   const sourceId = props.sessionId
-  await showFork(await agents.fork(sourceId, context), sourceId)
+  busy.value = true
+  try { await showFork(await agents.fork(sourceId, context), sourceId) }
+  finally { if (props.sessionId === sourceId) busy.value = false }
 }
 async function checkOperation(operationId: string): Promise<void> {
   const operation = agents.operations[operationId]
@@ -96,7 +101,7 @@ async function checkOperation(operationId: string): Promise<void> {
 <template>
   <PaneHeader>
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, location.workspace.name]" /></template>
-    <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" /></template>
+    <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" /></template>
   </PaneHeader>
   <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @scroll="scroll">
     <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
@@ -127,5 +132,5 @@ async function checkOperation(operationId: string): Promise<void> {
   </div>
   <SessionComposer v-if="location" v-model="draft" :location="location" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
   <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
-  <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :retrying="!!pendingFork" :disabled="!canFork || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
+  <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
 </template>
