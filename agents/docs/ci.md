@@ -27,12 +27,19 @@ a stable `Gate` result for branch protection.
   platform matrix. Packaging keeps Cargo's parallel release codegen: 16 units,
   LTO off, no debug info, and stripped symbols. Each target packages and verifies
   the standalone SEA daemon.
-  It supports reusable calls and manual runs.
+  The same matrix packages Electron installers and smoke-tests the backend
+  container on each native Linux runner. macOS signing is enabled only by the
+  Publish caller. It supports reusable calls and manual runs.
+- `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
+  creates a draft GitHub Release and pushes the backend image to GHCR after
+  both workflows succeed.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
   and configures shared caches for both reusable workflows.
 
 The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each archive
 contains `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
+Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
+Linux x64/arm64 AppImage installers. PRs exercise packaging on Linux x64.
 The Linux x64 job also uploads `deskfleet-web` with the static Vue application.
 Its default API origin is the hosting origin; deployments with a separate API
 origin build with `VITE_DESKFLEET_SERVER_URL` as described in the Web guide.
@@ -58,6 +65,61 @@ reported separately from the required `Gate` check.
 Repository Settings → Pages must use **GitHub Actions** as the publishing
 source. The configured custom domain is `www.deskfleet.org`, so VitePress uses
 the default `/` base. Domain and HTTPS settings are managed in GitHub Pages.
+
+## Tagged releases
+
+Use a `vMAJOR.MINOR.PATCH` tag, optionally with a SemVer prerelease suffix such as
+`v0.2.0-beta.1`. The tag must match the root `package.json`,
+`apps/desktop/package.json`, and Cargo workspace version. Update those versions
+and regenerate `Cargo.lock` before tagging. Build metadata (`+...`) is not
+accepted because it cannot be represented in a container tag.
+
+Publish calls the same Test and Build workflows used by CI, with the full
+platform matrix and mandatory macOS signing/notarization. It waits for both
+before publishing. The Build workflow keeps read-only repository access;
+only the release job receives `contents: write`, and only the image job receives
+`packages: write`.
+
+Configure these GitHub Actions repository secrets before the first tag:
+
+| Secret | Value |
+| --- | --- |
+| `MAC_CSC_LINK` | Base64 Developer ID Application certificate and private key in a PKCS#12 archive. |
+| `MAC_CSC_KEY_PASSWORD` | Password for that archive. |
+| `APPLE_API_KEY_P8` | Base64 App Store Connect API private key (`.p8`). |
+| `APPLE_API_KEY_ID` | App Store Connect API key ID. |
+| `APPLE_API_ISSUER` | App Store Connect API issuer ID. |
+
+The release overlay requires signing and notarization; missing credentials or a
+failure prevents publication. PR, main, and manual Build runs package without
+those credentials. Windows installers are unsigned in this initial pipeline.
+
+Each tag produces a **draft** GitHub Release containing the five desktop
+installers and four server/daemon archives. Review its generated notes and
+assets, then publish it in GitHub. Prerelease tags create prerelease drafts.
+Reruns can replace assets on a draft; they refuse to modify an already published
+release. There is no client auto-updater in this pipeline.
+
+The website reads GitHub's public `releases/latest` API in the browser and selects
+the matching published stable release asset for the chosen platform and
+architecture. Publishing a stable release makes it discoverable without another
+Pages build. Drafts and prereleases do not replace the website's stable downloads;
+failed requests and unavailable assets retain a link to GitHub Releases.
+
+The same successful tag build pushes
+`ghcr.io/yet-another-ai/deskfleet-server:<version>` as one Linux amd64/arm64 image.
+Stable tags also update `:latest`; prerelease tags publish only their version.
+This image push happens on the tag build, independently of the later manual
+publication of the draft desktop release. It uses `GITHUB_TOKEN`, so no registry
+password secret is needed. After the first push, set the GHCR package visibility
+to public if anonymous image pulls are required; repository visibility alone does
+not make a new package public. See the [server guide](../../apps/server/README.md)
+for configuration and a container run example.
+
+The image reuses the native Linux server binaries from Build. Each Linux runner
+builds that runtime image, starts it against a disposable PostgreSQL container,
+checks `/healthz`, and verifies graceful shutdown before uploading its archive.
+It does not compile the Rust server again inside Docker.
 
 ## Documentation-only changes
 

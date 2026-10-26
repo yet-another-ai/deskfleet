@@ -445,6 +445,39 @@ integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
 
+Tagged releases use `electron-builder.release.yml` on macOS. This overlay
+requires Developer ID signing and Apple notarization; missing credentials or
+failed notarization fail the release build. It keeps the base installer targets
+and fuses, with the final Developer ID signature applied after the fuse changes.
+The app and helpers receive the V8 JIT entitlement. The bundled native addon is
+signed with the app; loading it does not require disabling library validation.
+
+Configure these GitHub Actions secrets before pushing a release tag:
+
+| Secret | Value |
+| --- | --- |
+| `MAC_CSC_LINK` | Base64-encoded Developer ID Application certificate and private key exported as a `.p12` file. |
+| `MAC_CSC_KEY_PASSWORD` | Password for that `.p12` file. |
+| `APPLE_API_KEY_P8` | Base64-encoded App Store Connect API `.p8` private key. |
+| `APPLE_API_KEY_ID` | App Store Connect API key ID. |
+| `APPLE_API_ISSUER` | App Store Connect API issuer ID. |
+
+The release workflow decodes the API key into a temporary runner file and passes
+it as `APPLE_API_KEY`, alongside `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`.
+electron-builder imports the certificate from `CSC_LINK` with
+`CSC_KEY_PASSWORD`. For local signed packaging with those environment variables
+configured:
+
+```sh
+mise run desktop:release-build
+mise exec -- pnpm --filter @deskfleet/desktop exec electron-builder --config electron-builder.release.yml --publish never
+```
+
+The tagged build stages macOS arm64 DMG/ZIP, Windows x64 NSIS, and Linux x64/arm64
+AppImage installers in a draft GitHub Release. After that release is published,
+the website resolves the latest stable installers through GitHub's releases API.
+See [release workflow](../../agents/docs/ci.md) for tag validation and publishing.
+
 The original brand artwork lives in
 `packages/components/src/assets/deskfleet.png`. Run
 `mise exec -- pnpm --filter @deskfleet/desktop icons` to regenerate the app, tray,

@@ -1,23 +1,32 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { useAsyncState } from "@vueuse/core"
 import { withBase } from "vitepress"
 import { ArrowUpRight, Check, Copy, Download, Terminal } from "@lucide/vue"
 import SegmentedControl from "./SegmentedControl.vue"
 import { useRevealOnce } from "./home-motion.ts"
+import { fetchLatestRelease, findDownload, formatSize, releasesPage, type InstallMode, type InstallPlatform, type LinuxArchitecture } from "./home-downloads.ts"
 const props = withDefaults(defineProps<{ chinese?: boolean }>(), { chinese: false })
 const root = ref<HTMLElement>()
 const shown = useRevealOnce(root, 0.15)
-const mode = ref("desktop")
-const platform = ref("macos")
+const mode = ref<InstallMode>("desktop")
+const platform = ref<InstallPlatform>("macos")
+const linuxArchitecture = ref<LinuxArchitecture>("x64")
 const copied = ref(false)
 const copyError = ref(false)
-const platforms = [{ value: "macos", label: "macOS" }, { value: "windows", label: "Windows" }, { value: "linux", label: "Linux" }]
-const modes = computed(() => [{ value: "desktop", label: props.chinese ? "桌面应用" : "Desktop app" }, { value: "headless", label: props.chinese ? "无桌面机器" : "Headless machine" }])
+const platforms: { value: InstallPlatform; label: string }[] = [{ value: "macos", label: "macOS" }, { value: "windows", label: "Windows" }, { value: "linux", label: "Linux" }]
+const linuxArchitectures: { value: LinuxArchitecture; label: string }[] = [{ value: "x64", label: "x64" }, { value: "arm64", label: "arm64" }]
+const modes = computed<{ value: InstallMode; label: string }[]>(() => [{ value: "desktop", label: props.chinese ? "桌面应用" : "Desktop app" }, { value: "headless", label: props.chinese ? "无桌面机器" : "Headless machine" }])
 const command = computed(() => mode.value === "desktop" ? "mise run desktop:dev" : `mise run daemon:pack\n${platform.value === "windows" ? ".\\apps\\daemon\\dist\\deskfleet-daemon.exe" : "./apps/daemon/dist/deskfleet-daemon"}`)
-const architecture = computed(() => platform.value === "macos" ? "Apple Silicon" : platform.value === "windows" ? "x64" : "x64 / arm64")
+const architecture = computed(() => platform.value === "macos" ? "Apple Silicon" : platform.value === "windows" ? "x64" : linuxArchitecture.value)
 const guide = computed(() => withBase(`${props.chinese ? "/zh" : ""}/guide/getting-started`))
+const { state: release, isLoading, executeImmediate: loadRelease } = useAsyncState(fetchLatestRelease, undefined, { immediate: false })
+const download = computed(() => findDownload(release.value, mode.value, platform.value, linuxArchitecture.value))
+const locale = computed(() => props.chinese ? "zh-CN" : "en-US")
+const releaseSummary = computed(() => release.value && `v${release.value.version} · ${new Intl.DateTimeFormat(locale.value, { dateStyle: "medium" }).format(new Date(release.value.publishedAt))}`)
 let timer: ReturnType<typeof setTimeout> | undefined
 onMounted(() => {
+  void loadRelease()
   if (/Windows/i.test(navigator.userAgent)) platform.value = "windows"
   else if (/Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent)) platform.value = "linux"
 })
@@ -41,12 +50,14 @@ async function copy() {
       <div class="install__controls reveal-line" style="--line: 4">
         <SegmentedControl v-model="mode" :options="modes" :label="chinese ? '运行方式' : 'How to run deskfleet'" />
         <SegmentedControl v-model="platform" :options="platforms" size="small" :label="chinese ? '操作系统' : 'Operating system'" />
+        <SegmentedControl v-if="platform === 'linux'" v-model="linuxArchitecture" :options="linuxArchitectures" size="small" :label="chinese ? '处理器架构' : 'Processor architecture'" />
       </div>
+      <p class="install__release" aria-live="polite">{{ releaseSummary || (isLoading ? (chinese ? '正在查询最新版本…' : 'Checking the latest release…') : (chinese ? '在 GitHub 查看发布版本' : 'View releases on GitHub')) }}</p>
       <Transition name="install-swap" mode="out-in">
         <div :key="`${mode}-${platform}`" class="install__target">
-          <a class="install__download" href="https://github.com/yet-another-ai/deskfleet/releases">
+          <a class="install__download" :href="download?.url ?? releasesPage">
             <span class="install__download-icon"><Download :size="24" aria-hidden="true" /></span>
-            <span><strong>{{ mode === 'desktop' ? 'deskfleet' : 'deskfleet daemon' }} {{ chinese ? '发布版本' : 'releases' }}</strong><small>{{ platforms.find(item => item.value === platform)?.label }} · {{ architecture }}</small></span>
+            <span><strong>{{ mode === 'desktop' ? 'deskfleet' : 'deskfleet daemon' }} · {{ download ? (chinese ? '下载' : 'Download') : (chinese ? '查看发布版本' : 'View releases') }}</strong><small>{{ platforms.find(item => item.value === platform)?.label }} · {{ architecture }}</small><small v-if="download" class="install__file">{{ download.name }} · {{ formatSize(download.size, locale) }}</small></span>
             <ArrowUpRight :size="20" aria-hidden="true" />
           </a>
           <div class="install__command">
@@ -57,7 +68,7 @@ async function copy() {
           <p class="install__note">{{ chinese ? '需要已安装并登录的 Agent CLI。开发环境配置、机器注册和平台要求请查看入门指南。' : 'Bring an installed, authenticated agent CLI. The setup guide covers the development environment, enrollment, and platform requirements.' }}</p>
         </div>
       </Transition>
-      <p class="install__links reveal-line" style="--line: 5"><a :href="guide">{{ chinese ? '入门指南' : 'Setup guide' }} →</a><a href="https://github.com/yet-another-ai/deskfleet">{{ chinese ? '查看完整源码' : 'Explore the source' }} →</a></p>
+      <p class="install__links reveal-line" style="--line: 5"><a :href="guide">{{ chinese ? '入门指南' : 'Setup guide' }} →</a><a :href="releasesPage">{{ chinese ? '所有下载' : 'All downloads' }} →</a><a href="https://github.com/yet-another-ai/deskfleet">{{ chinese ? '查看完整源码' : 'Explore the source' }} →</a></p>
     </div>
   </section>
 </template>
@@ -69,11 +80,14 @@ async function copy() {
 .install__lead { max-width: 580px; margin: 14px 0 32px; color: var(--home-ink-2); font-size: 18px; line-height: 1.55; }
 .install__controls { display: grid; justify-items: start; gap: 12px; margin-bottom: 16px; }
 .install__controls > :first-child { width: 100%; }
+.install__release { margin: 0 0 12px; min-height: 20px; color: var(--home-ink-2); font-size: 13px; }
 .install__download { display: flex; align-items: center; gap: 16px; padding: 24px; border: 1px solid var(--home-edge); border-radius: 18px; background: var(--home-panel); backdrop-filter: blur(18px); transition: background 160ms ease; }
 .install__download:hover { background: var(--home-fill); }
 .install__download-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; color: var(--ui-color-text-muted); background: var(--ui-color-hover); }
 .install__download strong { display: block; font-size: 18px; font-weight: 650; }
 .install__download small { display: block; margin-top: 4px; color: var(--home-ink-2); font-size: 13px; }
+.install__download > span:nth-child(2) { min-width: 0; }
+.install__file { overflow-wrap: anywhere; }
 .install__download > :last-child { margin-left: auto; }
 .install__command { margin-top: 14px; overflow: hidden; border: 1px solid var(--home-edge); border-radius: 16px; background: var(--home-panel); }
 .install__command-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--home-edge); color: var(--home-ink-2); font-size: 12px; }

@@ -70,6 +70,45 @@ requires one central instance; adding instances needs shared routing first.
 and configured OIDC discovery complete before the HTTP listener starts. Database,
 migration, or discovery failures stop startup. Actix handles graceful shutdown.
 
+## Container image
+
+Version-tag builds publish `ghcr.io/yet-another-ai/deskfleet-server` for
+`linux/amd64` and `linux/arm64`. The image contains the server binary from the
+Linux release artifacts. It runs as UID/GID `10001:10001` and listens on
+`0.0.0.0:8080` inside the container.
+
+Put the configuration above in an environment file, including `DATABASE_URL`,
+the public API URL, and OIDC settings. Use a database hostname reachable from
+the container; `127.0.0.1` inside it refers to the server container itself.
+For example, behind a reverse proxy on the same host:
+
+```sh
+docker run --detach --name deskfleet-server \
+  --env-file /path/to/deskfleet-server.env \
+  --publish 127.0.0.1:8080:8080 \
+  ghcr.io/yet-another-ai/deskfleet-server:0.1.0
+```
+
+PostgreSQL remains an external service with persistent storage. The image needs
+no application data volume. Use `/healthz` for the deployment's HTTP liveness
+probe, and allow at least 15 seconds for graceful shutdown.
+
+`apps/server/Dockerfile` packages already-built Linux binaries. Its build context
+contains `amd64/deskfleet-server` and/or `arm64/deskfleet-server`; the target
+platform selects the binary. On a Linux build host, for example:
+
+```sh
+mkdir -p dist/server-image/arm64
+cp target/release/deskfleet-server dist/server-image/arm64/
+docker build --platform linux/arm64 -f apps/server/Dockerfile \
+  --tag deskfleet-server:local dist/server-image
+mise exec -- node scripts/smoke-server-image.ts deskfleet-server:local
+```
+
+Use `amd64` for a Linux x64 binary. The smoke script starts an isolated,
+temporary PostgreSQL container, verifies non-root server startup, migrations,
+HTTP health, and signal-driven shutdown, then removes its containers and network.
+
 ## Authentication and API
 
 All protected HTTP requests use `Authorization: Bearer <opaque token>`. OIDC

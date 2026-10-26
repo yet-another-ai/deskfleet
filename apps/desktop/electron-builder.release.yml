@@ -1,0 +1,14 @@
+extends: ./electron-builder.yml
+
+# Tagged macOS releases must not silently fall back to an unsigned installer.
+forceCodeSigning: true
+
+electronFuses:
+  # The Developer ID signature is applied after the fuse changes.
+  resetAdHocDarwinSignature: false
+
+mac:
+  hardenedRuntime: true
+  notarize: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
