@@ -21,9 +21,10 @@ export const router = createRouter({
       component: () => import("../views/NewSessionView.vue"),
     },
     {
-      path: "/schedules",
+      path: "/schedules/:scheduleId?",
       name: "schedules",
       component: () => import("../views/ScheduledTasksView.vue"),
+      props: true,
       meta: { hideDetails: true },
     },
     {

@@ -93,5 +93,7 @@ export default defineConfig({
     // Frameless windows move by dragging these regions; controls inside opt out.
     ["app-drag", { "app-region": "drag", "-webkit-app-region": "drag" }],
     ["app-no-drag", { "app-region": "no-drag", "-webkit-app-region": "no-drag" }],
+    // Visually hidden but still announced; presetMini has no equivalent.
+    ["sr-only", { position: "absolute", width: "1px", height: "1px", padding: "0", margin: "-1px", overflow: "hidden", clip: "rect(0, 0, 0, 0)", "white-space": "nowrap", "border-width": "0" }],
   ],
 })

@@ -1,8 +1,8 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
-import { defineComponent } from "vue"
-import { createMemoryHistory, createRouter } from "vue-router"
+import { defineComponent, h } from "vue"
+import { createMemoryHistory, createRouter, RouterView } from "vue-router"
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi } from "@deskfleet/client/central"
 import type { ScheduleInput, ScheduleRun, ScheduledTask } from "@deskfleet/client/schedules"
@@ -33,6 +33,12 @@ const task = (overrides: Partial<ScheduledTask> = {}): ScheduledTask => ({
   ...clone(input), id: "schedule-1", createdAt: "2026-10-26T00:00:00Z", updatedAt: "2026-10-26T00:00:00Z",
   nextRunAt: "2026-10-27T01:00:00Z", runs: [], ...overrides,
 })
+
+async function open(wrapper: Awaited<ReturnType<typeof setup>>["wrapper"], id = "schedule-1") {
+  await wrapper.get(`[data-schedule-id="${id}"]`).trigger("click")
+  await flushPromises()
+}
+const choose = (wrapper: Awaited<ReturnType<typeof setup>>["wrapper"], name: string, value: string) => wrapper.get(`[name="${name}"][value="${value}"]`).setValue()
 
 async function setup(initial: ScheduledTask[] = []) {
   platformClient.target = { id: "machine-1", local: false }
@@ -81,25 +87,48 @@ async function setup(initial: ScheduledTask[] = []) {
   agents.sessions["20"] = { id: "20", workspaceId: "10", provider: "codex", title: "Review session", context: "directory", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "2026-10-26T00:00:00Z", updatedAt: "2026-10-26T00:00:00Z" }
   agents.sessions["21"] = { ...agents.sessions["20"], id: "21", title: "Archived session", archiveState: "archived" }
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: "/schedules", name: "schedules", component: ScheduledTasksView },
+    { path: "/schedules/:scheduleId?", name: "schedules", component: ScheduledTasksView, props: true },
     { path: "/sessions/:sessionId", name: "session", component: { template: "<div />" } },
   ] })
   await router.push("/schedules")
-  const wrapper = mount(ScheduledTasksView, {
+  const wrapper = mount(defineComponent({ render: () => h(RouterView) }), {
     attachTo: document.body,
     global: { plugins: [pinia, router, i18n], provide: { [accountSessionKey as symbol]: account }, stubs: { AgentConfigurationSelector: ConfigurationStub, PaneHeader: { template: "<header><slot /></header>" } } },
   })
   cleanup.push(() => { wrapper.unmount(); disposePinia(pinia); account.dispose() })
   await flushPromises()
-  return { wrapper, rpc, account, fleet, agents, providers }
+  return { wrapper, rpc, router, account, fleet, agents, providers }
 }
 
-test("creates a manual task on the selected machine with the chosen workspace, context, and agent configuration", async () => {
-  const { wrapper, rpc } = await setup()
+test("the list summarizes each task's cadence, destination, next run, and last result", async () => {
+  const run: ScheduleRun = { id: "run-1", state: "failed", scheduledFor: "2026-10-26T01:00:00Z", startedAt: "2026-10-26T01:00:00Z", error: "Provider unavailable" }
+  const { wrapper } = await setup([
+    task({ runs: [run], lastRun: run }),
+    task({ id: "schedule-2", title: "Release notes", enabled: false, target: { kind: "existing", sessionId: "20" }, trigger: { kind: "weekly", time: "17:30", timeZone: "Asia/Singapore", weekdays: [1, 3, 5] } }),
+    task({ id: "schedule-3", title: "On demand", trigger: { kind: "manual" }, nextRunAt: undefined }),
+    task({ id: "schedule-4", title: "Poll", trigger: { kind: "interval", minutes: 120 } }),
+  ])
+  const rows = wrapper.findAll("li")
+  expect(rows[0]!.text()).toContain("Every day at 9:00 AM")
+  expect(rows[0]!.text()).toContain("Codex · New worktree")
+  expect(rows[0]!.text()).toContain("Failed")
+  expect(rows[1]!.text()).toContain("Mon, Wed, Fri at 5:30 PM")
+  expect(rows[1]!.text()).toContain("Review session")
+  expect(rows[1]!.text()).toContain("Paused")
+  expect(rows[1]!.get("[data-schedule-toggle]").attributes("aria-checked")).toBe("false")
+  expect(rows[2]!.text()).toContain("On demand")
+  expect(rows[2]!.find("[data-schedule-toggle]").exists()).toBe(false)
+  expect(rows[3]!.text()).toContain("Every 2 hours")
+})
+
+test("creates a manual task on the selected machine with the chosen workspace, destination, and agent configuration", async () => {
+  const { wrapper, rpc, router } = await setup()
+  await wrapper.get("[data-schedule-new]").trigger("click")
+  await flushPromises()
   await wrapper.get('[name="schedule-title"]').setValue("  Review on demand  ")
   await wrapper.get('[name="schedule-prompt"]').setValue("Review the changes")
-  await wrapper.get('[name="schedule-repeat"]').setValue("manual")
-  await wrapper.get('[name="schedule-context"]').setValue("directory")
+  await choose(wrapper, "schedule-repeat", "manual")
+  await choose(wrapper, "schedule-target", "directory")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
   expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleCreate", { schedule: {
@@ -107,14 +136,26 @@ test("creates a manual task on the selected machine with the chosen workspace, c
     target: { kind: "new", provider: "codex", context: "directory", configuration: { model: "draft-model", reasoningEffort: "medium" } },
     trigger: { kind: "manual" },
   } })
-  expect(wrapper.get('[data-schedule-id="schedule-new"]').attributes("aria-current")).toBe("true")
+  expect(router.currentRoute.value.params.scheduleId).toBe("schedule-new")
+  expect(wrapper.get("h1").text()).toBe("Review on demand")
+})
+
+test("cancelling a new task returns to the list without saving", async () => {
+  const { wrapper, rpc, router } = await setup([task()])
+  await wrapper.get("[data-schedule-new]").trigger("click")
+  await flushPromises()
+  await wrapper.findAll("button").find(button => button.text() === "Cancel")!.trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.params.scheduleId).toBeFalsy()
+  expect(wrapper.find('[data-schedule-id="schedule-1"]').exists()).toBe(true)
+  expect(rpc.mock.calls.filter(([, method]) => method === "scheduleCreate")).toHaveLength(0)
 })
 
 test("opening and editing a scheduled task keeps composer defaults unchanged and saves local agent choices", async () => {
   const { wrapper, rpc, agents } = await setup([task()])
   const defaults = clone(agents.draftConfiguration)
   const persisted = localStorage.getItem("deskfleet.agent-configuration")
-  await wrapper.get('[data-schedule-id="schedule-1"]').trigger("click")
+  await open(wrapper)
   const selector = wrapper.getComponent(ConfigurationStub)
   expect(selector.props("selection")).toEqual({ provider: "codex", model: "review-model", reasoningEffort: "high" })
   expect(agents.draftConfiguration).toEqual(defaults)
@@ -132,8 +173,9 @@ test("opening and editing a scheduled task keeps composer defaults unchanged and
 
 test("editing an existing-session task keeps workspace ownership and never configures the live agent", async () => {
   const { wrapper, rpc } = await setup([task({ target: { kind: "existing", sessionId: "20" } })])
-  await wrapper.get('[data-schedule-id="schedule-1"]').trigger("click")
+  await open(wrapper)
   expect(wrapper.find("[data-configuration]").exists()).toBe(false)
+  expect((wrapper.get('[name="schedule-target"][value="existing"]').element as HTMLInputElement).checked).toBe(true)
   expect(wrapper.get('[name="schedule-workspace"]').attributes("disabled")).toBeDefined()
   expect(wrapper.get('[name="schedule-session"]').text()).not.toContain("Archived session")
   await wrapper.get('[name="schedule-prompt"]').setValue("Continue the current review")
@@ -145,21 +187,25 @@ test("editing an existing-session task keeps workspace ownership and never confi
   expect(rpc.mock.calls.every(([, method]) => method.startsWith("schedule"))).toBe(true)
 })
 
-test("pausing retains the editor draft while updating the enabled control", async () => {
+test("pausing retains the editor draft, and a later save keeps the task paused", async () => {
   const { wrapper, rpc } = await setup([task()])
-  await wrapper.get('[data-schedule-id="schedule-1"]').trigger("click")
+  await open(wrapper)
   await wrapper.get('[name="schedule-title"]').setValue("Unsaved title")
   await wrapper.get("[data-schedule-toggle]").trigger("click")
   await flushPromises()
   expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", { scheduleId: "schedule-1", changes: { enabled: false } })
   expect((wrapper.get('[name="schedule-title"]').element as HTMLInputElement).value).toBe("Unsaved title")
-  expect((wrapper.get('[name="schedule-enabled"]').element as HTMLInputElement).checked).toBe(false)
+  expect(wrapper.findAll("header").at(-1)!.text()).toContain("Paused")
   expect(wrapper.get("[data-schedule-toggle]").text()).toContain("Resume")
+  await wrapper.get("form").trigger("submit")
+  await flushPromises()
+  expect(rpc).toHaveBeenLastCalledWith("machine-1", "scheduleUpdate", { scheduleId: "schedule-1", changes: expect.objectContaining({ title: "Unsaved title", enabled: false }) })
 })
 
 test("run errors remain visible and a later successful run links to its session", async () => {
   const { wrapper, rpc } = await setup([task()])
-  await wrapper.get('[data-schedule-id="schedule-1"]').trigger("click")
+  await open(wrapper)
+  expect(wrapper.text()).toContain("No runs yet")
   rpc.mockRejectedValueOnce(new Error("The agent provider is unavailable"))
   await wrapper.get("[data-schedule-run]").trigger("click")
   await flushPromises()
@@ -171,19 +217,53 @@ test("run errors remain visible and a later successful run links to its session"
   expect(wrapper.text()).toContain("Queued or running")
 })
 
-test("weekly timing rejects an invalid time zone and saves selected weekdays with the corrected zone", async () => {
+test("runs a task from its list row without opening it", async () => {
+  const { wrapper, rpc, router } = await setup([task()])
+  await wrapper.get("[data-schedule-run]").trigger("click")
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleRun", { scheduleId: "schedule-1" })
+  expect(router.currentRoute.value.params.scheduleId).toBeFalsy()
+})
+
+test("weekly timing starts on weekdays and saves the chosen days, time, and zone", async () => {
   const { wrapper, rpc } = await setup([task()])
-  await wrapper.get('[data-schedule-id="schedule-1"]').trigger("click")
-  await wrapper.get('[name="schedule-repeat"]').setValue("weekly")
-  await wrapper.get('[name="schedule-timezone"]').setValue("Invalid/Timezone")
-  await wrapper.get("form").trigger("submit")
-  expect(wrapper.get('[role="alert"]').text()).toContain("valid time zone")
-  expect(rpc.mock.calls.filter(([, method]) => method === "scheduleUpdate")).toHaveLength(0)
+  await open(wrapper)
+  await choose(wrapper, "schedule-repeat", "weekly")
+  const weekday = (day: number) => wrapper.get(`[name="schedule-weekday"][value="${day}"]`)
+  expect([0, 1, 2, 3, 4, 5, 6].filter(day => (weekday(day).element as HTMLInputElement).checked)).toEqual([1, 2, 3, 4, 5])
+  for (const day of [1, 2, 3, 4, 5]) await weekday(day).setValue(false)
+  expect(wrapper.get("[data-schedule-save]").attributes("disabled")).toBeDefined()
+  await weekday(5).setValue(true)
+  await weekday(1).setValue(true)
   await wrapper.get('[name="schedule-timezone"]').setValue("Europe/London")
   await wrapper.get('[name="schedule-time"]').setValue("14:30")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "weekly", time: "14:30", timeZone: "Europe/London", weekdays: [1] } }) }))
+  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "weekly", time: "14:30", timeZone: "Europe/London", weekdays: [1, 5] } }) }))
+})
+
+test("a task in a regional time zone can be changed to UTC", async () => {
+  const { wrapper, rpc } = await setup([task()])
+  await open(wrapper)
+  await wrapper.get('[name="schedule-timezone"]').setValue("UTC")
+  await wrapper.get("form").trigger("submit")
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "daily", time: "09:00", timeZone: "UTC" } }) }))
+})
+
+test("interval timing saves hours as minutes and keeps the typed number when the unit changes", async () => {
+  const { wrapper, rpc } = await setup([task()])
+  await open(wrapper)
+  await choose(wrapper, "schedule-repeat", "interval")
+  expect((wrapper.get('[name="schedule-minutes"]').element as HTMLInputElement).value).toBe("1")
+  expect((wrapper.get('[name="schedule-interval-unit"]').element as HTMLSelectElement).value).toBe("hours")
+  await wrapper.get('[name="schedule-minutes"]').setValue("3")
+  await wrapper.get('[name="schedule-interval-unit"]').setValue("minutes")
+  expect((wrapper.get('[name="schedule-minutes"]').element as HTMLInputElement).value).toBe("3")
+  await wrapper.get('[name="schedule-interval-unit"]').setValue("hours")
+  await wrapper.get("form").trigger("submit")
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "interval", minutes: 180 } }) }))
 })
 
 test.each([
@@ -192,8 +272,8 @@ test.each([
   ["daily", "14:30"], ["weekly", "14:30"],
 ] as const)("saves %s browser time %s at minute precision", async (kind, value) => {
   const { wrapper, rpc } = await setup([task()])
-  await wrapper.get('[data-schedule-id="schedule-1"]').trigger("click")
-  await wrapper.get('[name="schedule-repeat"]').setValue(kind)
+  await open(wrapper)
+  await choose(wrapper, "schedule-repeat", kind)
   const control = wrapper.get('[name="schedule-time"]')
   // Preserve the browser payload; happy-dom otherwise strips zero seconds.
   Object.defineProperty(control.element, "value", { configurable: true, writable: true, value })
@@ -201,13 +281,38 @@ test.each([
   await wrapper.get("form").trigger("submit")
   await flushPromises()
   expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({
-    trigger: { kind, time: value.slice(0, 5), timeZone: "Asia/Singapore", ...(kind === "weekly" ? { weekdays: [1] } : {}) },
+    trigger: { kind, time: value.slice(0, 5), timeZone: "Asia/Singapore", ...(kind === "weekly" ? { weekdays: [1, 2, 3, 4, 5] } : {}) },
   }) }))
+})
+
+test("deleting a task from its page returns to the list", async () => {
+  const { wrapper, rpc, router } = await setup([task(), task({ id: "schedule-2", title: "Other task" })])
+  rpc.mockImplementation(async (_machineId, method, params) => {
+    if (method === "scheduleList") return [task({ id: "schedule-2", title: "Other task" })]
+    if (method === "scheduleDelete") return null
+    throw new Error(`Unexpected method ${method} ${JSON.stringify(params)}`)
+  })
+  await open(wrapper)
+  await wrapper.get("[data-schedule-delete]").trigger("click")
+  await flushPromises()
+  await wrapper.get("dialog .ui-button-danger").trigger("click")
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleDelete", { scheduleId: "schedule-1" })
+  expect(router.currentRoute.value.params.scheduleId).toBeFalsy()
+  expect(wrapper.find('[data-schedule-id="schedule-1"]').exists()).toBe(false)
+  expect(wrapper.find('[data-schedule-id="schedule-2"]').exists()).toBe(true)
+})
+
+test("a link to a task this machine does not have returns to the list", async () => {
+  const { wrapper, router } = await setup([task()])
+  await router.push({ name: "schedules", params: { scheduleId: "missing" } })
+  await flushPromises()
+  expect(router.currentRoute.value.params.scheduleId).toBeFalsy()
+  expect(wrapper.find('[data-schedule-id="schedule-1"]').exists()).toBe(true)
 })
 
 test("an offline transition disables actions and rejects a late list response", async () => {
   const { wrapper, rpc, account } = await setup([task()])
-  await wrapper.get('[data-schedule-id="schedule-1"]').trigger("click")
   let resolve!: (tasks: ScheduledTask[]) => void
   rpc.mockImplementationOnce(async () => new Promise<ScheduledTask[]>(done => { resolve = done }))
   await wrapper.get('button[aria-label="Refresh"]').trigger("click")
@@ -217,6 +322,8 @@ test("an offline transition disables actions and rejects a late list response", 
   await flushPromises()
   expect(wrapper.find('[data-schedule-id="stale-task"]').exists()).toBe(false)
   expect(wrapper.get("[data-schedule-run]").attributes("disabled")).toBeDefined()
+  expect(wrapper.get("[data-schedule-toggle]").attributes("disabled")).toBeDefined()
+  expect(wrapper.find("[data-schedule-new]").exists()).toBe(false)
   expect(wrapper.text()).toContain("This machine is offline")
 })
 
@@ -229,7 +336,7 @@ test("machine choice uses the account target switch", async () => {
 
 test("a removed saved provider never silently falls back to the machine default", async () => {
   const { wrapper, rpc } = await setup([task({ target: { kind: "new", provider: "removed-provider", context: "worktree" } })])
-  await wrapper.get('[data-schedule-id="schedule-1"]').trigger("click")
+  await open(wrapper)
   expect(wrapper.getComponent(ConfigurationStub).props("providerId")).toBe("removed-provider")
   expect(wrapper.get("[data-schedule-save]").attributes("disabled")).toBeDefined()
   await wrapper.get("form").trigger("submit")

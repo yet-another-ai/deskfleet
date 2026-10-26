@@ -8,6 +8,8 @@ defineProps<{
   label: string
   /** Replace the current history entry instead of adding one. */
   replace?: boolean
+  /** Stay highlighted on the pages beneath this link, not only on the link's own page. */
+  section?: boolean
 }>()
 </script>
 
@@ -16,6 +18,7 @@ defineProps<{
     :to="to"
     :replace="replace"
     class="ui-nav-item px-2.5"
+    :active-class="section ? 'ui-nav-active' : undefined"
     exact-active-class="ui-nav-active"
   >
     <component :is="icon" :size="16" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
