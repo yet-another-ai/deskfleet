@@ -260,6 +260,17 @@ test("idle expiry and maximum age bound retained metadata", async context => {
   assert.equal(fake.closes, 2)
 })
 
+test("a failed probe close still frees capacity for the next draft", async () => {
+  const fake = fakeProvider({ async close() { throw new Error("stdin teardown failed") } })
+  const probes = new AgentConfigurationProbes({ maxProbes: 1 })
+  await probes.read("alice", params, "/workspace", fake)
+  await probes.read("bob", params, "/workspace", fake)
+  await probes.read("carol", params, "/workspace", fake)
+  assert.equal(fake.configs.length, 3)
+  assert.equal(fake.closes, 2)
+  await assert.rejects(probes.close(), /Could not close Agent configuration probes/)
+})
+
 test("request timeout closes a stalled session and releases capacity for retry", async context => {
   context.mock.timers.enable({ apis: ["setTimeout"] })
   const entered = deferred()

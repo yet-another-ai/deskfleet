@@ -52,7 +52,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
 
   const layout = useLayoutStore(pinia)
   // Embedded applications get independent, nonpersistent layout preferences.
-  for (const [key, value] of Object.entries({ sidebarOpen: options.sidebar ?? target.clientWidth >= 700, detailsOpen: options.details ?? false, detailsTab: "changes", sessionContext: "worktree", terminalPanelOpen: false, terminalPanelHeight: 220 })) Reflect.set(layout, key, ref(value))
+  for (const [key, value] of Object.entries({ sidebarOpen: options.sidebar ?? target.clientWidth >= 700, detailsOpen: options.details ?? false, sessionContext: "worktree", terminalPanelOpen: false, terminalPanelHeight: 220 })) Reflect.set(layout, key, ref(value))
   layout.toggleSidebar = () => { layout.sidebarOpen = !layout.sidebarOpen }
   layout.toggleDetails = () => { layout.detailsOpen = !layout.detailsOpen }
 

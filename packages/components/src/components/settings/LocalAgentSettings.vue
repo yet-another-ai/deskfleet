@@ -43,7 +43,7 @@ const permissions = computed(() => {
     { kind: "accessibility", permission: state.value.accessibilityPermission },
   ] as const
   return values.flatMap(({ kind, permission }) => {
-    if (!permission || permission.status === "not-required" || permission.status === "granted") return []
+    if (!permission || permission.status === "not-required" || permission.status === "granted" || permission.status === "checking") return []
     const messageKind = platformClient.platform === "linux" && kind !== "fullDiskAccess"
       ? kind === "screenCapture" ? "waylandScreenCapture" : "waylandControl" : kind
     const label = permission.status === "requesting" ? t(`settings.${messageKind}Requesting`)

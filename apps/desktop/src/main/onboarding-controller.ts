@@ -1,5 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
-import { dirname } from "node:path"
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
 import type { CentralApi } from "../../../../packages/client/src/central.ts"
 import { ONBOARDING_PERMISSIONS, type OnboardingPermission, type OnboardingState, type OnboardingStep } from "../../../../packages/client/src/onboarding.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"
@@ -9,6 +9,23 @@ interface OnboardingOptions {
   platform: NodeJS.Platform
   central: Pick<CentralApi, "setServer">
   localAgent: Pick<LocalAgentController, "state" | "startIfEnabled" | "refreshPermissions" | "requestPermission">
+  /** True when this user-data directory already belongs to an install that predates welcome progress. */
+  established?: () => boolean | Promise<boolean>
+}
+
+const establishedProfileFiles = ["account.json", "settings.json"] as const
+
+/** An account or saved desktop settings means this profile is not a fresh install. */
+export async function establishedDesktopProfile(directory: string): Promise<boolean> {
+  for (const name of establishedProfileFiles) {
+    try {
+      await access(join(directory, name))
+      return true
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
+    }
+  }
+  return false
 }
 
 const steps: readonly OnboardingStep[] = ["server", ...ONBOARDING_PERMISSIONS, "account", "complete"]
@@ -31,7 +48,10 @@ export class OnboardingController {
         this.#state = { step: stored.step as OnboardingStep }
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
-        this.#state = { step: "server" }
+        if (await this.#options.established?.()) {
+          try { this.#state = await this.#save("complete") }
+          catch { this.#state = { step: "complete" } }
+        } else this.#state = { step: "server" }
       }
     }
     return { ...this.#state }

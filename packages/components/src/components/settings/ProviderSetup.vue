@@ -60,6 +60,7 @@ const summary = computed((): { tone: "success" | "warning" | "danger" | "muted";
 const dot = { success: "bg-ui-success", warning: "bg-ui-warning", danger: "bg-ui-danger", muted: "bg-ui-text-faint" }
 let revision = 0
 let disposed = false
+let resumeProbe = false
 const { start: scheduleProbe, stop: cancelProbe } = useTimeoutFn(() => { void probe() }, 300, { immediate: false })
 
 watchImmediate(busy, value => emit("busy", value), { flush: "sync" })
@@ -67,11 +68,14 @@ watchImmediate(busy, value => emit("busy", value), { flush: "sync" })
 async function probe(installed = false): Promise<void> {
   cancelProbe()
   const provider = props.provider
-  if (!provider || props.disabled || disposed) return
+  // A disabled or missing provider never starts the request, so a debounced call must not leave the spinner up.
+  if (!provider || props.disabled || disposed) {
+    probing.value = false
+    return
+  }
   const request = ++revision
   probing.value = true
   result.value = null
-  emit("resolved", undefined)
   probeError.value = null
   try {
     // A missing custom path must not hide a successful install in the vendor's default location.
@@ -88,17 +92,37 @@ async function probe(installed = false): Promise<void> {
   }
 }
 
-watchImmediate(() => [props.provider?.template, props.provider?.binaryPath, JSON.stringify(props.provider?.env), props.disabled] as const, (value, previous) => {
+watchImmediate(() => [props.provider?.template, props.provider?.binaryPath, JSON.stringify(props.provider?.env), props.disabled, props.provider != null] as const, (value, previous) => {
   if (finishing.value && operation.value?.kind === "install" && value[1] === result.value?.binaryPath) return
+  // An invalid environment row drops the provider until its name is valid. Keep the last probe and rediscover when it returns.
+  if (previous && !value[4] && previous[4]) {
+    revision++
+    cancelProbe()
+    resumeProbe = true
+    return
+  }
+  // Test connection disables this card without changing the launch settings it is checking.
+  // Cancel the debounce too: the timer would otherwise call probe while disabled and leave probing set.
+  if (previous && value[0] === previous[0] && value[1] === previous[1] && value[2] === previous[2] && value[4] === previous[4] && value[3] !== previous[3]) {
+    cancelProbe()
+    probing.value = false
+    return
+  }
   revision++
   cancelProbe()
-  result.value = null
-  probing.value = false
-  probeError.value = null
-  emit("resolved", undefined)
+  const resumed = resumeProbe
+  resumeProbe = false
+  const templateChanged = !resumed && (!previous || value[0] !== previous[0])
+  const binaryChanged = !resumed && previous != null && value[1] !== previous[1]
+  if (templateChanged || binaryChanged || !value[4]) {
+    result.value = null
+    probing.value = false
+    probeError.value = null
+    emit("resolved", undefined)
+  } else probeError.value = null
   if (!busy.value) { error.value = null; operation.value = null; terminalConnection.value = null }
-  if (!props.provider || props.disabled || busy.value) return
-  if (!previous || value[0] !== previous[0] || value[3] !== previous[3]) void probe()
+  if (!value[4] || props.disabled || busy.value) return
+  if (templateChanged || (previous != null && value[3] !== previous[3])) void probe()
   else {
     probing.value = true
     scheduleProbe()

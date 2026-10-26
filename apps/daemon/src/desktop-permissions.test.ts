@@ -31,13 +31,41 @@ test("permission requests run once and a synchronous failure does not skip other
     accessibilityPermission: { status: "granted" },
     fullDiskAccessPermission: { status: "denied" },
   })
-  assert.equal(changes.length, 3)
-  assert.deepEqual(changes[0]?.accessibilityPermission, { status: "requesting" })
+  // Each prompt publishes requesting, then its result. The initial silent state is checking.
+  assert.equal(changes.length, 6)
+  assert.deepEqual(changes[0]?.fullDiskAccessPermission, { status: "requesting" })
+  assert.equal(changes[0]?.accessibilityPermission.status, "checking")
   const snapshot = permissions.state
   snapshot.accessibilityPermission.status = "denied"
   snapshot.fullDiskAccessPermission.status = "granted"
   assert.deepEqual(permissions.state.accessibilityPermission, { status: "granted" })
   assert.deepEqual(permissions.state.fullDiskAccessPermission, { status: "denied" })
+})
+
+test("guided initialization does not report requesting while a silent check is in progress", async () => {
+  const permissions = new DesktopPermissions()
+  const changes: DesktopPermissionsState[] = []
+  permissions.onChange(state => changes.push(state))
+  const pending = deferred<boolean>()
+  permissions.initialize({
+    fullDiskAccess: async () => true,
+    screenCapture: async () => true,
+    accessibility: async () => true,
+  }, {
+    fullDiskAccess: () => pending.promise,
+    screenCapture: async () => false,
+    accessibility: async () => null,
+  }, "guided")
+  assert.equal(permissions.state.fullDiskAccessPermission.status, "checking")
+  assert.equal(permissions.state.screenCapturePermission.status, "checking")
+  assert.equal(permissions.state.accessibilityPermission.status, "checking")
+  assert.equal(changes.some(state => Object.values(state).some(permission => permission.status === "requesting")), false)
+  pending.resolve(true)
+  const state = await permissions.refresh()
+  assert.equal(state.fullDiskAccessPermission.status, "granted")
+  assert.equal(state.screenCapturePermission.status, "denied")
+  assert.equal(state.accessibilityPermission.status, "not-required")
+  assert.equal(changes.some(state => Object.values(state).some(permission => permission.status === "requesting")), false)
 })
 
 test("guided initialization checks silently and coalesces pending requests without blocking refresh", async () => {

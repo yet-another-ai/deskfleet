@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { client } from "@deskfleet/client/platform"
 import { ArrowLeft, ArrowRight, File, Folder, RotateCcw, X } from "@lucide/vue"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -11,6 +12,7 @@ const { t } = useI18n()
 const local: FileTarget = { kind: "local" }
 const paths = ref<{ local?: FileLocation; remote?: FileLocation }>({})
 const selection = ref<{ local: FileEntry[]; remote: FileEntry[] }>({ local: [], remote: [] })
+const resetKey = ref(0)
 const transfers = ref<FileTransfer[]>([])
 const error = ref<string>()
 const busy = ref(false)
@@ -28,6 +30,13 @@ function apply(next: FileTransfer[]): void {
   if (finished) ++revision.value
 }
 const unsubscribe = props.api.onChanged(next => { ++eventRevision; apply(next) })
+function resetBrowsers(): void {
+  paths.value = {}
+  selection.value = { local: [], remote: [] }
+  error.value = undefined
+  resetKey.value += 1
+}
+const unsubscribeAccount = client.central?.onEvent(event => { if (event.type === "accountChanged") resetBrowsers() })
 async function operation(action: () => Promise<unknown>): Promise<void> {
   if (busy.value) return
   busy.value = true; error.value = undefined
@@ -52,19 +61,19 @@ onMounted(() => {
   const version = eventRevision
   void operation(async () => { const next = await props.api.transfers(); if (version === eventRevision) apply(next) })
 })
-onBeforeUnmount(() => { disposed = true; unsubscribe() })
+onBeforeUnmount(() => { disposed = true; unsubscribe(); unsubscribeAccount?.() })
 </script>
 
 <template>
   <div class="file-transfer-container flex min-h-0 min-w-0 flex-1 flex-col">
     <div class="file-transfer-panel flex min-w-0 flex-1 flex-col">
       <div class="file-transfer-grid grid flex-1 grid-cols-1 gap-3">
-        <FileBrowserPane :api="api" :target="local" :name="t('files.local')" :revision="revision" :selection="selection.local" @selection="selection.local = $event" @location="paths.local = $event" />
+        <FileBrowserPane :api="api" :target="local" :name="t('files.local')" :revision="revision" :reset-key="resetKey" :selection="selection.local" @selection="selection.local = $event" @location="paths.local = $event" />
         <div class="file-transfer-actions flex items-center justify-center gap-2">
           <IconButton :icon="ArrowRight" :label="t('files.send')" :disabled="busy || !selection.local.length || !paths.remote" class="file-transfer-arrow" @click="transfer('local')" />
           <IconButton :icon="ArrowLeft" :label="t('files.receive')" :disabled="busy || !selection.remote.length || !paths.local" class="file-transfer-arrow" @click="transfer('remote')" />
         </div>
-        <FileBrowserPane :api="api" :target="target" :name="machineName" :revision="revision" :selection="selection.remote" @selection="selection.remote = $event" @location="paths.remote = $event" />
+        <FileBrowserPane :api="api" :target="target" :name="machineName" :revision="revision" :reset-key="resetKey" :selection="selection.remote" @selection="selection.remote = $event" @location="paths.remote = $event" />
       </div>
       <section class="mt-5 shrink-0" :aria-label="t('files.queue')">
         <div class="mb-2 text-sm font-medium">{{ t('files.queue') }}<span v-if="activeCount" class="ml-1.5 text-xs font-normal text-ui-text-muted">({{ activeCount }})</span></div>

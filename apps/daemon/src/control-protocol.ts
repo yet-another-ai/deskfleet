@@ -81,7 +81,7 @@ export function desktopStartupCleanupFailure(startupError: unknown, cleanup: unk
 }
 
 export interface DesktopPermission {
-  status: "requesting" | "granted" | "denied" | "not-required" | "error"
+  status: "checking" | "requesting" | "granted" | "denied" | "not-required" | "error"
   error?: string
 }
 

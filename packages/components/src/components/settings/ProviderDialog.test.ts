@@ -15,7 +15,7 @@ function render(save = vi.fn().mockResolvedValue(undefined), initial?: AgentProv
 const button = (view: VueWrapper, text: string) => view.findAll("button").find(value => value.text() === text)!
 const pick = (view: VueWrapper, template: AgentProviderTemplateId) => view.get(`[data-provider-template-choice="${template}"]`).trigger("click")
 const advancedOpen = (view: VueWrapper) => (view.get("[data-provider-advanced]").element as HTMLDetailsElement).open
-afterEach(() => { wrapper?.unmount(); wrapper = undefined; i18n.global.locale.value = "en-US" })
+afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers(); i18n.global.locale.value = "en-US" })
 
 test("chooses a template, leaves the binary default implicit, and preserves environment values", async () => {
   const { view, save } = render()
@@ -238,6 +238,75 @@ test("a completed installation fills the binary field and retains the refreshed 
   expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
   expect(view.get("[data-provider-login]").attributes("disabled")).toBeUndefined()
   expect(probe).toHaveBeenCalledTimes(2)
+})
+
+test("testing the connection keeps a discovered executable", async () => {
+  let finish!: (result: { agentName: string }) => void
+  const { view, save, test: testConnection } = render(undefined, undefined, vi.fn(() => new Promise(resolve => { finish = resolve })))
+  const found = { status: "found" as const, binaryPath: "/tools/cursor-agent", version: "1.0", auth: "unauthenticated" as const, installable: true, loginAvailable: true }
+  const probe = vi.fn().mockResolvedValue(found)
+  await view.setProps({ probe })
+  await pick(view, "cursor")
+  await flushPromises()
+  expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe(found.binaryPath)
+  const probeCalls = probe.mock.calls.length
+  await button(view, "Test connection").trigger("click")
+  expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe(found.binaryPath)
+  expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
+  expect(probe).toHaveBeenCalledTimes(probeCalls)
+  finish({ agentName: "Cursor" })
+  await flushPromises()
+  expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe(found.binaryPath)
+  expect(probe).toHaveBeenCalledTimes(probeCalls)
+  await view.get("form").trigger("submit")
+  expect(testConnection).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ binaryPath: found.binaryPath }))
+  expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ template: "cursor", binaryPath: found.binaryPath, env: {} }))
+})
+
+test("environment edits keep a discovered executable and rediscover after an invalid row", async () => {
+  vi.useFakeTimers()
+  const found = { status: "found" as const, binaryPath: "/tools/cursor-agent", version: "1.0", auth: "authenticated" as const, installable: true, loginAvailable: true }
+  let finish!: (result: typeof found) => void
+  const probe = vi.fn().mockResolvedValueOnce(found).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const { view, save } = render()
+  await view.setProps({ probe })
+  await pick(view, "cursor")
+  await flushPromises()
+  await button(view, "Add variable").trigger("click")
+  expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe(found.binaryPath)
+  expect(view.get("[data-provider-status]").text()).toContain("Ready")
+  await view.get("form").trigger("submit")
+  expect(save).not.toHaveBeenCalled()
+  expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe(found.binaryPath)
+  await view.get('[aria-label="Environment variable 1 key"]').setValue("API_KEY")
+  await vi.advanceTimersByTimeAsync(300)
+  expect(probe).toHaveBeenCalledTimes(2)
+  await view.get("form").trigger("submit")
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: found.binaryPath, icon: undefined, env: { API_KEY: "" } })
+  finish(found)
+  await flushPromises()
+  expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ template: "cursor", env: { API_KEY: "" } }))
+})
+
+test("choosing a different template drops the previous executable and environment", async () => {
+  const found = { status: "found" as const, binaryPath: "/tools/codex", version: "1.0", auth: "unauthenticated" as const, installable: true, loginAvailable: true }
+  const { view, save } = render()
+  const probe = vi.fn().mockImplementation(async (provider: { template: string }) => provider.template === "cursor" ? new Promise(() => {}) : found)
+  await view.setProps({ probe })
+  await pick(view, "codex")
+  await flushPromises()
+  await view.get('[name="provider-binary"]').setValue("/custom/codex")
+  await button(view, "Add variable").trigger("click")
+  await view.get('[aria-label="Environment variable 1 key"]').setValue("TOKEN")
+  await view.get('[aria-label="Environment variable 1 value"]').setValue("secret")
+  await view.get("[data-provider-back]").trigger("click")
+  await pick(view, "cursor")
+  expect((view.get('[name="provider-binary"]').element as HTMLInputElement).value).toBe("")
+  expect(view.find("[data-environment-row]").exists()).toBe(false)
+  expect(view.get('[name="provider-binary"]').attributes("placeholder")).not.toBe("/tools/codex")
+  await view.get("form").trigger("submit")
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: undefined, icon: undefined, env: {} })
+  expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ template: "cursor", binaryPath: undefined, env: {} }))
 })
 
 test("Set path opens Advanced when the CLI cannot be installed automatically", async () => {

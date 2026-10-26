@@ -139,7 +139,7 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   const targets = [...document.querySelectorAll("[data-composer-context]")].map(chip => chip.textContent?.trim())
   // Machine, Workspace, the choice of a new Session context, and the provider.
   require(targets.length === 4 && targets.includes(created.name) && targets.includes("New worktree") && targets.includes("Codex"), "The composer must target the selected workspace and provider without an existing worktree")
-  require(document.querySelector('aside[aria-label="Details"]')!.textContent?.includes(context.checkoutPath), "Composer details must show the workspace's configured directories")
+  require(document.querySelector('aside[aria-label="Changes"]')!.textContent?.includes("Git changes are available within a session."), "Composer must not inspect a workspace as a Session Worktree")
   const workspaceLink = [...document.querySelectorAll("a")].find(element => element.textContent?.trim() === created.name)
   require(workspaceLink, "Created workspace must remain available in the sidebar")
   workspaceLink.click()

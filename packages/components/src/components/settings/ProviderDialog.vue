@@ -67,10 +67,11 @@ watch(template, (value, previous) => {
   }
 })
 
+// A custom executable replaces a discovered one. Environment edits keep the last discovery until the next probe.
+watch([template, binaryPath], () => { resolvedBinaryPath.value = undefined }, { flush: "sync" })
 // A result describes the settings it tested; any later edit makes it stale.
 // Invalidate synchronously so an edit and a Test click in one tick cannot race.
 watch([template, binaryPath, environment], () => {
-  resolvedBinaryPath.value = undefined
   testRevision += 1
   testing.value = false
   testResult.value = null
@@ -79,6 +80,11 @@ watch([template, binaryPath, environment], () => {
 
 function choose(id: AgentProviderTemplateId): void {
   if (formDisabled.value) return
+  if (template.value !== id) {
+    binaryPath.value = ""
+    environment.value = []
+    resolvedBinaryPath.value = undefined
+  }
   template.value = id
   step.value = "details"
 }

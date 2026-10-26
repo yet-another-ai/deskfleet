@@ -142,6 +142,57 @@ test("fullscreen keeps the desktop toolbar available and follows browser exit ev
   expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
 })
 
+test("encoder fallback keeps fullscreen while the stream is briefly empty", async () => {
+  const { wrapper } = await connectDesktop()
+  const stage = wrapper.get("[data-desktop-stage]").element
+  const { exit } = mockFullscreen(stage)
+  await wrapper.get('[aria-label="Full screen"]').trigger("click")
+  await flushPromises()
+  const closed = deferred<void>()
+  mock.api.close.mockReturnValueOnce(closed.promise)
+  mock.emit({ sessionId: mock.api.offer.mock.calls[0]![0].sessionId, kind: "error", error: "encoder reset", reason: "encoder" })
+  await flushPromises()
+  expect(exit).not.toHaveBeenCalled()
+  expect(document.fullscreenElement).toBe(stage)
+  // The replacement codec starts after the old peer closes. Fullscreen stays through that empty gap.
+  expect(wrapper.get('[role="status"]').text()).toBe("Connecting with AV1…")
+
+  closed.resolve()
+  await flushPromises()
+  expect(wrapper.get('[role="status"]').text()).toBe("Connecting with HEVC…")
+  expect(exit).not.toHaveBeenCalled()
+  expect(document.fullscreenElement).toBe(stage)
+  const next = TestPeer.instances.at(-1)!
+  next.ontrack?.({ track: { stop: vi.fn() } as unknown as MediaStreamTrack })
+  next.changeState("connected")
+  await flushPromises()
+  expect(exit).not.toHaveBeenCalled()
+  expect(document.fullscreenElement).toBe(stage)
+
+  await button(wrapper, "Disconnect").trigger("click")
+  await flushPromises()
+  expect(exit).toHaveBeenCalled()
+  expect(document.fullscreenElement).toBeNull()
+})
+
+test("hiding Desktop during encoder fallback still exits fullscreen", async () => {
+  const { wrapper } = await connectDesktop()
+  const stage = wrapper.get("[data-desktop-stage]").element
+  const { exit } = mockFullscreen(stage)
+  await wrapper.get('[aria-label="Full screen"]').trigger("click")
+  await flushPromises()
+  const closed = deferred<void>()
+  mock.api.close.mockReturnValueOnce(closed.promise)
+  mock.emit({ sessionId: mock.api.offer.mock.calls[0]![0].sessionId, kind: "error", error: "encoder reset", reason: "encoder" })
+  await flushPromises()
+  expect(exit).not.toHaveBeenCalled()
+  await wrapper.setProps({ visible: false })
+  await flushPromises()
+  expect(exit).toHaveBeenCalled()
+  expect(document.fullscreenElement).toBeNull()
+  closed.resolve()
+})
+
 test("hiding Desktop exits its fullscreen stage while disconnecting the stream", async () => {
   const { wrapper, peer, track } = await connectDesktop()
   const { exit } = mockFullscreen(wrapper.get("[data-desktop-stage]").element)

@@ -160,6 +160,77 @@ test("generic ACP and unsupported platforms do not offer install or login, and p
   expect(view.find("[data-provider-set-path]").exists()).toBe(true)
 })
 
+test("disabling for a connection test keeps the discovered executable", async () => {
+  const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>().mockResolvedValue(found)
+  const { view } = render(probe)
+  await flushPromises()
+  expect(view.emitted("resolved")?.at(-1)).toEqual([found.binaryPath])
+  const calls = probe.mock.calls.length
+  await view.setProps({ disabled: true })
+  await view.setProps({ disabled: false })
+  await flushPromises()
+  expect(probe).toHaveBeenCalledTimes(calls)
+  expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
+  expect(view.emitted("resolved")?.at(-1)).toEqual([found.binaryPath])
+})
+
+test("disabling for a connection test cancels a pending probe instead of leaving the spinner", async () => {
+  vi.useFakeTimers()
+  const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>().mockResolvedValue(found)
+  const { view } = render(probe)
+  await flushPromises()
+  const calls = probe.mock.calls.length
+  await view.setProps({ provider: { ...provider, env: { PATH: "/tools" } } })
+  expect(view.get('[role="status"]').text()).toBe("Checking build-machine…")
+  await view.setProps({ disabled: true })
+  await vi.advanceTimersByTimeAsync(300)
+  await flushPromises()
+  expect(probe).toHaveBeenCalledTimes(calls)
+  expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
+  expect(view.emitted("resolved")?.at(-1)).toEqual([found.binaryPath])
+  await view.setProps({ disabled: false })
+  await vi.advanceTimersByTimeAsync(300)
+  await flushPromises()
+  expect(probe).toHaveBeenCalledTimes(calls)
+  expect(view.get("[data-provider-probe]").attributes("aria-disabled")).toBeUndefined()
+  expect(view.get("[data-provider-login]").attributes("disabled")).toBeUndefined()
+  expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
+})
+
+test("a temporarily missing provider keeps the probe and rediscovers when it returns", async () => {
+  vi.useFakeTimers()
+  const next = { ...found, binaryPath: "/tools/codex-env" }
+  const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>().mockResolvedValueOnce(found).mockResolvedValueOnce(next)
+  const { view } = render(probe)
+  await flushPromises()
+  await view.setProps({ provider: null })
+  expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
+  expect(view.emitted("resolved")?.at(-1)).toEqual([found.binaryPath])
+  await view.setProps({ provider: { ...provider, env: { API_KEY: "secret" } } })
+  expect(probe).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(300)
+  await flushPromises()
+  expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ env: { API_KEY: "secret" } }))
+  expect(view.emitted("resolved")?.at(-1)).toEqual([next.binaryPath])
+})
+
+test("launch setting edits keep the resolved path until the replacement probe settles", async () => {
+  vi.useFakeTimers()
+  let finish!: (value: ProviderProbeResult) => void
+  const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>()
+    .mockResolvedValueOnce(found)
+    .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const { view } = render(probe)
+  await flushPromises()
+  await view.setProps({ provider: { ...provider, env: { PATH: "/tools" } } })
+  expect(view.emitted("resolved")?.at(-1)).toEqual([found.binaryPath])
+  await vi.advanceTimersByTimeAsync(300)
+  expect(view.emitted("resolved")?.at(-1)).toEqual([found.binaryPath])
+  finish({ ...found, binaryPath: "/tools/codex" })
+  await flushPromises()
+  expect(view.emitted("resolved")?.at(-1)).toEqual(["/tools/codex"])
+})
+
 test("a detection failure is reported in the status and can be retried", async () => {
   const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>()
     .mockRejectedValueOnce(new Error("Provider detection timed out.")).mockResolvedValue(found)

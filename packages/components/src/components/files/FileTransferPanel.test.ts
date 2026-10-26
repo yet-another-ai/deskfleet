@@ -1,5 +1,7 @@
+import { client } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
+import type { CentralApi, CentralEvent } from "../../../../client/src/central.ts"
 import type { FileListing, FilesApi, FileTransfer } from "../../../../client/src/files.ts"
 import { i18n } from "../../i18n/index.ts"
 import FileTransferPanel from "./FileTransferPanel.vue"
@@ -97,4 +99,47 @@ test("keeps local access grants through navigation and both transfer directions"
   await view.get('button[aria-label="Download to this computer"]').trigger("click")
   await flushPromises()
   expect(api.enqueue).toHaveBeenLastCalledWith({ kind: "file", source: { target, path: remoteEntry.path }, destination: { target: { kind: "local", grantId: "chosen-folder" }, path: local.path } })
+})
+
+test("an account change clears folder listings, paths, selections, and grants", async () => {
+  let event!: (value: CentralEvent) => void
+  const unsubscribeAccount = vi.fn()
+  const original = client.central
+  client.central = { onEvent: (listener: (value: CentralEvent) => void) => { event = listener; return unsubscribeAccount } } as unknown as CentralApi
+  try {
+    const { view, api, unsubscribe } = setup()
+    await flushPromises()
+    const chosen = { ...local, grantId: "chosen-folder", path: "/chosen", parentPath: null }
+    vi.mocked(api.chooseLocalDirectory).mockResolvedValue(chosen)
+    await view.get('button[aria-label="Choose folder"]').trigger("click")
+    await flushPromises()
+    await view.get('input[aria-label="Select assets"]').setValue(true)
+    expect(view.get('button[aria-label="Send to remote"]').attributes("aria-disabled")).toBeUndefined()
+    let releaseLocal!: (listing: FileListing) => void
+    let releaseRemote!: (listing: FileListing) => void
+    vi.mocked(api.list).mockImplementation(value => value.kind === "local"
+      ? new Promise(resolve => { releaseLocal = resolve })
+      : new Promise(resolve => { releaseRemote = resolve }))
+    const listed = vi.mocked(api.list).mock.calls.length
+    event({ type: "accountChanged" })
+    await flushPromises()
+    expect(view.find("[data-current-path]").exists()).toBe(false)
+    expect(view.get('button[aria-label="Send to remote"]').attributes("aria-disabled")).toBe("true")
+    expect(view.get('button[aria-label="Download to this computer"]').attributes("aria-disabled")).toBe("true")
+    expect(vi.mocked(api.list).mock.calls.slice(listed)).toEqual([
+      [{ kind: "local" }, undefined],
+      [target, undefined],
+    ])
+    releaseLocal({ ...local, grantId: "next-grant" })
+    releaseRemote(remote)
+    await flushPromises()
+    expect(api.list).not.toHaveBeenCalledWith({ kind: "local", grantId: "chosen-folder" }, expect.anything())
+    expect((view.get('input[aria-label="Select assets"]').element as HTMLInputElement).checked).toBe(false)
+    view.unmount()
+    expect(unsubscribeAccount).toHaveBeenCalledOnce()
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  } finally {
+    client.central = original
+    wrapper = undefined
+  }
 })
