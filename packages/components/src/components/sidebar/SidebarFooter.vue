@@ -6,6 +6,7 @@ import { useRouter } from "vue-router"
 import IconButton from "../common/IconButton.vue"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import AccountFooter from "./AccountFooter.vue"
+import ArchivedSessionsButton from "./ArchivedSessionsButton.vue"
 
 const { t } = useI18n()
 const router = useRouter()
@@ -14,7 +15,9 @@ const initial = computed(() => t("catalog.local").charAt(0).toUpperCase())
 </script>
 
 <template>
-  <AccountFooter v-if="account" />
+  <AccountFooter v-if="account">
+    <ArchivedSessionsButton />
+  </AccountFooter>
   <footer v-else class="flex h-12 shrink-0 items-center gap-1 border-t border-ui-border px-2">
     <div class="flex min-w-0 flex-1 items-center gap-2 px-1">
       <span
@@ -25,6 +28,7 @@ const initial = computed(() => t("catalog.local").charAt(0).toUpperCase())
       </span>
       <span class="truncate">{{ t("catalog.local") }}</span>
     </div>
+    <ArchivedSessionsButton />
     <IconButton :icon="Settings" :label="t('nav.settings')" @click="router.push({ name: 'settings' })" />
   </footer>
 </template>

@@ -136,6 +136,15 @@
     "settings": "设置",
     "team": "切换团队"
   },
+  "archivedSessions": {
+    "title": "已归档会话",
+    "description": "恢复会话以继续工作，或打开查看其对话记录。",
+    "empty": "没有已归档的会话",
+    "emptyDescription": "归档会话可保留对话和工作环境，同时停止执行。",
+    "location": "{machine} / {workspace}",
+    "openLabel": "打开 {title}",
+    "restoreLabel": "恢复 {title}"
+  },
   "settings": {
     "preferences": "偏好设置",
     "notifications": "通知",
