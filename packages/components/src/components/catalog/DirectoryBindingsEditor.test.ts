@@ -4,6 +4,7 @@ import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
 import { i18n } from "../../i18n/index.ts"
 import FolderPickerDialog from "../common/FolderPickerDialog.vue"
 import DirectoryBindingsEditor from "./DirectoryBindingsEditor.vue"
+import WorkspaceForm from "./WorkspaceForm.vue"
 
 let wrapper: VueWrapper | undefined
 function render(directories: CatalogDirectory[]) {
@@ -72,4 +73,16 @@ test("fills the initial empty directory instead of adding an unselected row", as
   view.getComponent(FolderPickerDialog).vm.$emit("select", "/code/web")
   await view.vm.$nextTick()
   expect(view.props("modelValue")).toEqual([{ path: "/code/web" }])
+})
+
+test("fills the workspace name input with the selected folder name when creating a workspace", async () => {
+  const view = mount(WorkspaceForm, {
+    props: { submitLabel: "Create", browse: vi.fn(), machineName: "build-host", save: vi.fn() },
+    global: { plugins: [i18n], stubs: { FolderPickerDialog: true } },
+  })
+  wrapper = view
+  await view.get('[name="directory-path-0"]').trigger("click")
+  view.getComponent(FolderPickerDialog).vm.$emit("select", "/Users/lemonneko/Projects/deskfleet")
+  await view.vm.$nextTick()
+  expect((view.get('input[name="workspace-name"]').element as HTMLInputElement).value).toBe("deskfleet")
 })

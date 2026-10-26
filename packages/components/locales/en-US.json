@@ -379,7 +379,7 @@
     "defaultDirectory": "Default",
     "moveDirectoryUp": "Move directory {number} up",
     "moveDirectoryDown": "Move directory {number} down",
-    "newWorkspace": "New workspace",
+    "newWorkspace": "Create workspace on {machine}",
     "duplicateDirectory": "This directory is already included."
   },
   "workspace": {
@@ -405,7 +405,9 @@
     "openFolder": "Open {name}",
     "empty": "No folders in this location.",
     "showHidden": "Show hidden folders",
-    "select": "Select folder"
+    "select": "Select folder",
+    "editPath": "Edit path",
+    "applyPath": "Apply path"
   },
   "agent": {
     "conversation": "Conversation",

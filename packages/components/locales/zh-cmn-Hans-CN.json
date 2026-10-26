@@ -379,7 +379,7 @@
     "defaultDirectory": "默认目录",
     "moveDirectoryUp": "上移目录 {number}",
     "moveDirectoryDown": "下移目录 {number}",
-    "newWorkspace": "新建工作区",
+    "newWorkspace": "在 {machine} 上创建工作区",
     "duplicateDirectory": "此目录已添加。"
   },
   "workspace": {
@@ -405,7 +405,9 @@
     "openFolder": "打开 {name}",
     "empty": "此位置没有文件夹。",
     "showHidden": "显示隐藏文件夹",
-    "select": "选择此文件夹"
+    "select": "选择此文件夹",
+    "editPath": "编辑路径",
+    "applyPath": "确认路径"
   },
   "agent": {
     "conversation": "对话",

@@ -49,6 +49,29 @@ test("browses folders on the supplied machine and only selects the loaded direct
   expect(view.emitted("cancel")).toBeUndefined()
 })
 
+test("toggles the top location bar into an input when clicking the edit button and navigates on Enter or check button", async () => {
+  const browse = vi.fn().mockResolvedValueOnce(home).mockResolvedValueOnce(code).mockResolvedValueOnce(home)
+  const view = render(browse)
+  await flushPromises()
+  expect(view.find('input[name="folder-picker-path"]').exists()).toBe(false)
+  await view.get("[data-edit-path]").trigger("click")
+  const pathInput = view.get('input[name="folder-picker-path"]')
+  expect((pathInput.element as HTMLInputElement).value).toBe("/home/agent")
+  await pathInput.setValue("/home/agent/code")
+  await view.get("[data-apply-path]").trigger("click")
+  await flushPromises()
+  expect(browse).toHaveBeenLastCalledWith("/home/agent/code")
+  expect(view.find('input[name="folder-picker-path"]').exists()).toBe(false)
+  expect(view.get("[data-current-path]").attributes("data-current-path")).toBe("/home/agent/code")
+  await view.get("[data-edit-path]").trigger("click")
+  const secondInput = view.get('input[name="folder-picker-path"]')
+  await secondInput.setValue("/home/agent")
+  await secondInput.trigger("keydown.enter")
+  await flushPromises()
+  expect(browse).toHaveBeenLastCalledWith("/home/agent")
+  expect(view.get("[data-current-path]").attributes("data-current-path")).toBe("/home/agent")
+})
+
 test("uses server paths for roots and parent navigation across operating systems", async () => {
   const windows: DirectoryListing = {
     path: "Z:\\projects", parentPath: "Z:\\", homePath: "C:\\Users\\agent", roots: [{ name: "Z:\\", path: "Z:\\" }], directories: [],

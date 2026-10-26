@@ -30,7 +30,7 @@ function closed(): void {
 
 <template>
   <dialog ref="dialog" class="ui-dialog app-no-drag w-[28rem]" aria-labelledby="workspace-create-title" @close="closed">
-    <h2 id="workspace-create-title" class="ui-dialog-title mb-5">{{ t("catalog.newWorkspace") }}</h2>
+    <h2 id="workspace-create-title" class="ui-dialog-title mb-5">{{ t("catalog.newWorkspace", { machine: fleet.localDesktopTarget.name }) }}</h2>
     <WorkspaceForm :submit-label="t('catalog.create')" :disabled="!fleet.canManageCatalog" :browse="browseDirectories" :machine-name="fleet.localDesktopTarget.name" :save="create" @cancel="dialog?.close()" />
   </dialog>
 </template>

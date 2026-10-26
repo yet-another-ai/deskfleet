@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue"
+import { ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
 import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
@@ -19,6 +19,22 @@ const name = ref(props.initial?.name ?? "")
 const directories = ref<CatalogDirectory[]>(props.initial?.directories.map(({ path }) => ({ path })) ?? [{ path: "" }])
 const saving = ref(false)
 const error = ref<string | null>(null)
+let suggestedName = ""
+
+function folderName(path: string): string {
+  return path.replace(/[\\/]+$/u, "").split(/[\\/]/u).pop() ?? ""
+}
+
+watch(() => directories.value[0]?.path, (path) => {
+  if (!path) return
+  const candidate = folderName(path)
+  if (!candidate) return
+  if (!name.value.trim() || name.value === suggestedName) {
+    name.value = candidate
+    suggestedName = candidate
+  }
+})
+
 async function submit(): Promise<void> {
   if (saving.value || props.disabled) return
   error.value = null

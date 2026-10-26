@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ArrowUp, ChevronRight, Folder, Home } from "@lucide/vue"
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue"
+import { ArrowUp, Check, ChevronRight, Folder, Home, Pencil } from "@lucide/vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
+import IconButton from "./IconButton.vue"
 
 const props = defineProps<{
   browse(path?: string): Promise<DirectoryListing>
@@ -12,7 +13,10 @@ const props = defineProps<{
 const emit = defineEmits<{ select: [path: string]; cancel: [] }>()
 const { t } = useI18n()
 const dialog = useTemplateRef<HTMLDialogElement>("dialog")
+const pathInputRef = useTemplateRef<HTMLInputElement>("pathInputRef")
 const listing = ref<DirectoryListing | null>(null)
+const editingPath = ref(false)
+const pathInput = ref(props.initialPath ?? "")
 const loading = ref(false)
 const error = ref<string | null>(null)
 const showHidden = ref(false)
@@ -22,25 +26,54 @@ let requestedPath = props.initialPath
 let requestId = 0
 let finished = false
 
-async function navigate(path?: string, name?: string): Promise<void> {
+async function navigate(path?: string, name?: string): Promise<boolean> {
   const request = ++requestId
   requestedPath = path
+  editingPath.value = false
+  if (path !== undefined) pathInput.value = path
   loading.value = true
   error.value = null
   try {
     const next = await props.browse(path)
-    if (request !== requestId || finished) return
+    if (request !== requestId || finished) return false
     const previous = listing.value
     const known = trail.value.findIndex(item => item.path === next.path)
     if (known !== -1) trail.value = trail.value.slice(0, known + 1)
     else if (previous?.path === next.parentPath) trail.value.push({ name: name ?? next.path, path: next.path })
     else trail.value = [{ name: next.path, path: next.path }]
     listing.value = next
+    pathInput.value = next.path
+    return true
   } catch (reason) {
     if (request === requestId && !finished) error.value = reason instanceof Error ? reason.message : String(reason)
+    return false
   } finally {
     if (request === requestId) loading.value = false
   }
+}
+
+async function startEditingPath(): Promise<void> {
+  if (loading.value || finished) return
+  pathInput.value = listing.value?.path ?? requestedPath ?? ""
+  editingPath.value = true
+  await nextTick()
+  pathInputRef.value?.focus()
+  pathInputRef.value?.select()
+}
+
+function cancelEditingPath(): void {
+  editingPath.value = false
+  pathInput.value = listing.value?.path ?? requestedPath ?? ""
+}
+
+function submitPathInput(): void {
+  const trimmed = pathInput.value.trim()
+  if (!trimmed || loading.value || finished) return
+  if (listing.value?.path === trimmed && !error.value) {
+    editingPath.value = false
+    return
+  }
+  void navigate(trimmed)
 }
 
 function cancel(): void {
@@ -49,7 +82,17 @@ function cancel(): void {
   dialog.value?.close()
   emit("cancel")
 }
-function select(): void {
+async function select(): Promise<void> {
+  if (loading.value || finished) return
+  if (editingPath.value) {
+    const trimmed = pathInput.value.trim()
+    if (!trimmed) return
+    if (trimmed !== listing.value?.path || error.value) {
+      if (!await navigate(trimmed)) return
+    } else {
+      editingPath.value = false
+    }
+  }
   if (!listing.value || loading.value || error.value || finished) return
   finished = true
   dialog.value?.close()
@@ -75,12 +118,31 @@ onBeforeUnmount(() => { finished = true; requestId++; dialog.value?.close() })
         <button type="button" class="ui-button" :disabled="!listing?.parentPath" :aria-label="t('folderPicker.up')" @click="navigate(listing?.parentPath ?? undefined)"><ArrowUp :size="14" aria-hidden="true" />{{ t("folderPicker.up") }}</button>
         <button v-for="root in listing?.roots" :key="root.path" type="button" class="ui-button font-mono" :data-path="root.path" @click="navigate(root.path)">{{ root.name }}</button>
       </nav>
-      <nav v-if="listing" class="mb-3 flex flex-wrap items-center gap-1 text-sm" :aria-label="t('folderPicker.location')">
-        <template v-for="(item, index) in trail" :key="item.path">
-          <ChevronRight v-if="index > 0" :size="12" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-          <button type="button" class="max-w-full cursor-pointer break-all rounded-md px-1.5 py-1 text-left font-mono hover:bg-ui-hover [&[aria-current]]:font-semibold" :aria-current="index === trail.length - 1 ? 'location' : undefined" @click="navigate(item.path)">{{ item.name }}</button>
+      <div v-if="listing || editingPath" class="mb-3 flex items-center gap-1 text-sm" :data-current-path="listing?.path ?? undefined">
+        <template v-if="editingPath">
+          <input
+            ref="pathInputRef"
+            v-model="pathInput"
+            name="folder-picker-path"
+            class="ui-input min-w-0 flex-1 font-mono text-xs"
+            :aria-label="t('folderPicker.location')"
+            autocomplete="off"
+            :spellcheck="false"
+            @keydown.enter.prevent="submitPathInput"
+            @keydown.esc.stop.prevent="cancelEditingPath"
+          />
+          <IconButton :icon="Check" :label="t('folderPicker.applyPath')" :disabled="loading || !pathInput.trim()" data-apply-path @click="submitPathInput" />
         </template>
-      </nav>
+        <template v-else-if="listing">
+          <nav class="flex min-w-0 flex-1 flex-wrap items-center gap-1" :aria-label="t('folderPicker.location')">
+            <template v-for="(item, index) in trail" :key="item.path">
+              <ChevronRight v-if="index > 0" :size="12" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+              <button type="button" class="max-w-full cursor-pointer break-all rounded-md px-1.5 py-1 text-left font-mono hover:bg-ui-hover [&[aria-current]]:font-semibold" :aria-current="index === trail.length - 1 ? 'location' : undefined" @click="navigate(item.path)">{{ item.name }}</button>
+            </template>
+          </nav>
+          <IconButton :icon="Pencil" :label="t('folderPicker.editPath')" data-edit-path @click="startEditingPath" />
+        </template>
+      </div>
       <div class="h-64 overflow-y-auto rounded-xl border border-ui-border bg-ui-canvas" :aria-busy="loading">
         <p v-if="loading" role="status" class="m-0 p-4 text-sm text-ui-text-muted">{{ t("folderPicker.loading") }}</p>
         <div v-else-if="error" class="flex flex-col items-start gap-3 p-4">
@@ -101,10 +163,9 @@ onBeforeUnmount(() => { finished = true; requestId++; dialog.value?.close() })
       <label class="mt-3 flex items-center gap-2 text-sm text-ui-text-muted">
         <input v-model="showHidden" type="checkbox" />{{ t("folderPicker.showHidden") }}
       </label>
-      <p v-if="listing" class="mb-0 mt-3 break-all text-xs font-mono text-ui-text-muted" :data-current-path="listing.path">{{ listing.path }}</p>
       <div class="ui-dialog-actions">
         <button type="button" class="ui-button" @click="cancel">{{ t("catalog.cancel") }}</button>
-        <button type="button" class="ui-button-primary" :disabled="loading || !!error || !listing" @click="select">{{ t("folderPicker.select") }}</button>
+        <button type="button" class="ui-button-primary" :disabled="loading || (editingPath ? !pathInput.trim() : !!error || !listing)" @click="select">{{ t("folderPicker.select") }}</button>
       </div>
     </dialog>
   </Teleport>
