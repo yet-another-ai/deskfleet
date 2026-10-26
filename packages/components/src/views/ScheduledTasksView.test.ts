@@ -65,9 +65,12 @@ async function setup(initial: ScheduledTask[] = []) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const fleet = useFleetStore()
-  fleet.machines[0]!.online = true
-  fleet.machines[0]!.workspaces = [{ id: "10", name: "Deskfleet", directories: [{ path: "/code/deskfleet" }], sessions: [], terminals: [] }]
-  fleet.targetWorkspaceId = "10"
+  fleet.localDesktopTarget.online = true
+  vi.spyOn(platformClient.catalog, "list").mockResolvedValue({
+    teamId: "team-1", machineId: "machine-1", machineName: "Build machine",
+    workspaces: [{ id: "10", name: "Deskfleet", worktrees: [{ id: "11", workspaceId: "10", directories: [{ path: "/code/deskfleet" }] }] }],
+  })
+  await fleet.refreshLocalCatalog()
   const providers = useProvidersStore()
   providers.ready = true
   providers.loaded = true

@@ -5,6 +5,9 @@ import { defineComponent } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { afterEach, expect, test, vi } from "vitest"
 import { useFleetStore } from "../stores/fleet.ts"
+import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
+import { useTerminalsStore } from "../stores/terminals.ts"
+import { agentSnapshot } from "../test/agent.ts"
 import { catalogFixture, mainWorktreeId, sessionId, sessionWorktreeId, workspaceId } from "../test/catalog.ts"
 import { useRouteWorktree } from "./useRouteWorktree.ts"
 
@@ -19,12 +22,16 @@ async function setup() {
   const fleet = useFleetStore(pinia)
   vi.spyOn(platformClient.catalog, "list").mockResolvedValue(catalogFixture())
   await fleet.refreshLocalCatalog()
-  const workspace = fleet.findWorkspace(workspaceId)!.workspace
-  const worktree = fleet.findWorktree(sessionWorktreeId)!.worktree
-  worktree.terminals.push({ id: "session-terminal", title: "shell", cwd: "/worktrees/api/session" })
-  workspace.terminals.push({ id: "workspace-terminal", title: "shell", cwd: "/worktrees/api/session" })
-  fleet.machines[0]!.terminals.push({ id: "machine-terminal", title: "shell", cwd: "/worktrees/api/session" })
-  workspace.sessions.push({ id: "pending-session" })
+  useTerminalsStore(pinia).sessions = [
+    { id: "session-terminal", title: "shell", cwd: "/worktrees/api/session", cols: 80, rows: 24, status: "running", worktreeId: sessionWorktreeId },
+    { id: "machine-terminal", title: "shell", cwd: "/worktrees/api/session", cols: 80, rows: 24, status: "running" },
+  ]
+  useAgentSessionsStore(pinia).sessions["pending-session"] = { ...agentSnapshot().session, id: "pending-session", workspaceId, lifecycle: "provisioning" }
+  // The live terminal API has no workspace scope; keep this route-level fixture explicit.
+  const findTerminal = fleet.findTerminal
+  vi.spyOn(fleet, "findTerminal").mockImplementation(id => id === "workspace-terminal" ? {
+    ...fleet.findWorkspace(workspaceId)!, terminal: { id, title: "shell", cwd: "/worktrees/api/session" },
+  } : findTerminal(id))
   const page = defineComponent({ template: "<div />" })
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/", name: "new-session", component: page },
@@ -67,6 +74,7 @@ test("unowned, missing, and provisioning resources never inherit the previous Gi
     expect(wrapper.vm.worktree).toBeNull()
   }
   await router.push(`/sessions/${sessionId}`)
-  fleet.findWorkspace(workspaceId)!.workspace.sessions = []
+  const workspace = fleet.catalog!.workspaces[0]!
+  workspace.worktrees = workspace.worktrees.filter(worktree => worktree.sessionId === undefined)
   expect(wrapper.vm.worktree).toBeNull()
 })

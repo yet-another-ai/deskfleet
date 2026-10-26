@@ -41,7 +41,7 @@ async function refresh(): Promise<void> {
     if (request === revision) error.value = reason instanceof Error ? reason.message : String(reason)
   } finally { if (request === revision) loading.value = false }
 }
-watchImmediate(() => [machine.value?.id, available.value], () => { editor.value = null; openMenu.value = null; void refresh() })
+watchImmediate([() => machine.value?.id, available], () => { editor.value = null; openMenu.value = null; void refresh() })
 const unsubscribe = platformClient.providers.onChanged(() => { void refresh() })
 onBeforeUnmount(() => { revision++; unsubscribe() })
 const templateName = (provider: AgentProviderConfig) => snapshot.value?.templates.find(template => template.id === provider.template)?.name ?? provider.template

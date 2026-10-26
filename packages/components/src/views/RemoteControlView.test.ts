@@ -44,9 +44,11 @@ async function setup(options: { desktop?: boolean; machineId?: string; query?: L
   setActivePinia(pinia)
   const fleet = useFleetStore()
   const terminals = useTerminalsStore()
-  fleet.machines[0]!.desktop = options.desktop ?? false
-  fleet.machines[0]!.online = true
-  fleet.machines.push({ id: "other", name: "Other machine", local: false, online: true, desktop: false, terminals: [], workspaces: [] })
+  fleet.localDesktopTarget.desktop = options.desktop ?? false
+  fleet.localDesktopTarget.online = true
+  const other = { id: "other", name: "Other machine", local: false, online: true, desktop: false, terminals: [], workspaces: [] }
+  const findMachine = fleet.findMachine
+  vi.spyOn(fleet, "findMachine").mockImplementation(id => id === other.id ? other : findMachine(id))
   terminals.sessions = options.sessions ?? [shell]
   const create = vi.spyOn(terminals, "create")
   const router = createRouter({ history: createMemoryHistory(), routes: [{

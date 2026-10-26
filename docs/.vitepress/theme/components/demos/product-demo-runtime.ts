@@ -1,9 +1,9 @@
-import { createApp, ref } from "vue"
+import { computed, createApp, ref } from "vue"
 import { createPinia, disposePinia } from "pinia"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { createI18n } from "vue-i18n"
 import { useAgentSessionsStore } from "@deskfleet/components/stores/agent-sessions.ts"
-import { useFleetStore } from "@deskfleet/components/stores/fleet.ts"
+import { useFleetStore, type TerminalLocation } from "@deskfleet/components/stores/fleet.ts"
 import { useLayoutStore } from "@deskfleet/components/stores/layout.ts"
 import { useProvidersStore } from "@deskfleet/components/stores/providers.ts"
 import { useTerminalsStore } from "@deskfleet/components/stores/terminals.ts"
@@ -30,6 +30,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   const app = createApp(App)
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/", name: "new-session", component: () => import("@deskfleet/components/views/NewSessionView.vue") },
+    { path: "/schedules", name: "schedules", component: () => import("@deskfleet/components/views/ScheduledTasksView.vue"), meta: { hideDetails: true } },
     { path: "/sessions/:sessionId", name: "session", component: () => import("@deskfleet/components/views/SessionView.vue"), props: true },
     { path: "/workspaces/:workspaceId", name: "workspace", component: () => import("@deskfleet/components/views/WorkspaceView.vue"), props: true },
     { path: "/worktrees/:worktreeId", name: "worktree", component: () => import("@deskfleet/components/views/WorktreeView.vue"), props: true },
@@ -42,6 +43,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
       { path: "preferences", name: "settings-preferences", component: () => import("@deskfleet/components/components/settings/PreferencesSettings.vue") },
       { path: "notifications", name: "settings-notifications", component: () => import("@deskfleet/components/components/settings/NotificationsSettings.vue") },
       { path: "agents", name: "settings-agents", component: () => import("@deskfleet/components/components/settings/AgentsSettings.vue") },
+      { path: "mcp-servers", name: "settings-mcp-servers", component: () => import("@deskfleet/components/components/settings/McpServersSettings.vue") },
       { path: "team", name: "settings-team", component: () => import("@deskfleet/components/components/team/TeamSettings.vue") },
     ] },
     { path: "/:pathMatch(.*)*", redirect: "/" },
@@ -69,9 +71,25 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   const data = fixtures(!!options.chinese)
   const buildWorkspaces = data.machine.workspaces.filter(workspace => workspace.id === "202")
   data.machine.workspaces = data.machine.workspaces.filter(workspace => workspace.id !== "202")
-  fleet.machines = [data.machine, { id: "demo-build", name: "Build server", local: false, online: true, desktop: false, terminals: [], workspaces: buildWorkspaces }]
+  // The embedded demo owns its sample resource tree and the selectors that read it.
+  Reflect.set(fleet, "machines", ref([data.machine, { id: "demo-build", name: "Build server", local: false, online: true, desktop: false, terminals: [], workspaces: buildWorkspaces }]))
+  const workspaces = computed(() => fleet.machines.flatMap(machine => machine.workspaces.map(workspace => ({ machine, workspace }))))
+  const sessions = computed(() => workspaces.value.flatMap(location => location.workspace.sessions.map(session => ({ ...location, session, worktree: session.worktree }))))
+  const terminalLocations = computed<TerminalLocation[]>(() => [
+    ...fleet.machines.flatMap(machine => machine.terminals.map(terminal => ({ machine, terminal }))),
+    ...workspaces.value.flatMap(location => location.workspace.terminals.map(terminal => ({ ...location, terminal }))),
+    ...sessions.value.flatMap(location => location.worktree?.terminals.map(terminal => ({ ...location, terminal })) ?? []),
+  ])
+  fleet.findMachine = id => fleet.machines.find(machine => machine.id === id) ?? null
+  fleet.findWorkspace = id => workspaces.value.find(({ workspace }) => workspace.id === id) ?? null
+  fleet.findSession = id => sessions.value.find(({ session }) => session.id === id) ?? null
+  fleet.findWorktree = id => {
+    const location = sessions.value.find(({ worktree }) => worktree?.id === id)
+    return location?.worktree ? { ...location, worktree: location.worktree } : null
+  }
+  fleet.findTerminal = id => terminalLocations.value.find(({ terminal }) => terminal.id === id) ?? null
+  Reflect.set(fleet, "newSessionTarget", computed(() => fleet.targetWorkspaceId ? fleet.findWorkspace(fleet.targetWorkspaceId) : null))
   fleet.localDesktopTarget = { id: "demo-machine", name: "Studio Mac", online: true, desktop: true }
-  fleet.catalogIdentity = { teamId: "101", machineId: "demo-machine" }
   fleet.targetWorkspaceId = "201"
   Reflect.set(fleet, "canManageCatalog", ref(true))
   fleet.refreshLocal = fleet.refreshLocalCatalog = async () => {}
@@ -145,8 +163,12 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     append(id, "permission", permission)
   }
   agents.stop = async id => { const snapshot = snapshotFor(id); snapshot.runs.forEach(run => { run.state = "stopped" }); snapshot.turns.forEach(turn => { if (turn.state === "running") turn.state = "cancelled" }) }
-  agents.archive = async id => { snapshotFor(id).session.archiveState = "archived" }
-  agents.restore = async id => { snapshotFor(id).session.archiveState = "active" }
+  function archiveState(id: string, state: "active" | "archived"): void {
+    snapshotFor(id).session.archiveState = state
+    fleet.findSession(id)!.session.archiveState = state
+  }
+  agents.archive = async id => { archiveState(id, "archived") }
+  agents.restore = async id => { archiveState(id, "active") }
   agents.gitStatus = async id => ({ sessionId: id, repositories: [{ id: `repository-${id}`, root: `/workspace/.worktrees/${id}`, branch: `deskfleet/${id}`, head: "84b7f21", changes: [{ path: "src/WorkspacePicker.vue", kind: "unstaged", status: "modified", additions: 7, deletions: 2 }] }], directories: [{ path: `/workspace/.worktrees/${id}`, repositoryId: `repository-${id}` }] })
   agents.gitDiff = async request => ({ ...request, patch: demoPatch, binary: false, truncated: false })
   fleet.updateWorkspace = async (id, name, directories) => { const workspace = fleet.findWorkspace(id)!.workspace; workspace.name = name; workspace.directories = directories }

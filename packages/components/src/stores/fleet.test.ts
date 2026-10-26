@@ -6,6 +6,7 @@ import { catalogFixture, sessionId, sessionWorktreeId, mainWorktreeId, workspace
 import { useFleetStore } from "./fleet.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
 import { useProvidersStore } from "./providers.ts"
+import { useTerminalsStore } from "./terminals.ts"
 import { agentSnapshot } from "../test/agent.ts"
 
 const stores: ReturnType<typeof useFleetStore>[] = []
@@ -44,9 +45,39 @@ test("maps configured directories onto the workspace and exposes only Session-ow
   expect(session.worktree).not.toHaveProperty("sessions")
   expect(store.findSession(sessionId)?.session).toBe(session)
   expect(store.findWorktree(sessionWorktreeId)?.session).toBe(session)
-  session.worktree!.terminals.push({ id: "session-terminal", title: "shell", cwd: "/worktrees/api/session" })
-  expect(store.findTerminal("session-terminal")?.session).toBe(session)
+})
+
+test("terminal ownership follows live changes and survives catalog refreshes", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const terminals = useTerminalsStore()
+  terminals.sessions = [
+    { id: "machine-terminal", title: "shell", cwd: "/code/web", cols: 80, rows: 24, status: "running" },
+    { id: "session-terminal", title: "shell", cwd: "/worktrees/api/session", cols: 80, rows: 24, status: "running", worktreeId: sessionWorktreeId },
+  ]
+  expect(store.machines[0]!.terminals.map(terminal => terminal.id)).toEqual(["machine-terminal"])
+  expect(store.findTerminal("machine-terminal")?.worktree).toBeUndefined()
+  const session = store.findSession(sessionId)!
+  expect(store.findTerminal("session-terminal")?.session).toBe(session.session)
   expect(store.findTerminal("session-terminal")?.worktree).toBe(session.worktree)
+
+  terminals.sessions[1]!.title = "build"
+  expect(store.findTerminal("session-terminal")?.terminal.title).toBe("build")
+  vi.mocked(platformClient.catalog.list).mockResolvedValueOnce(catalogFixture())
+  await store.refreshLocalCatalog()
+  expect(store.findWorktree(sessionWorktreeId)?.worktree.terminals.map(terminal => terminal.id)).toEqual(["session-terminal"])
+
+  terminals.sessions[0]!.worktreeId = sessionWorktreeId
+  expect(store.machines[0]!.terminals).toEqual([])
+  expect(store.findTerminal("machine-terminal")?.worktree?.id).toBe(sessionWorktreeId)
+  delete terminals.sessions[1]!.worktreeId
+  expect(store.machines[0]!.terminals.map(terminal => terminal.id)).toEqual(["session-terminal"])
+  expect(store.findTerminal("session-terminal")?.session).toBeUndefined()
+
+  terminals.sessions = []
+  expect(store.findTerminal("machine-terminal")).toBeNull()
+  expect(store.findTerminal("session-terminal")).toBeNull()
+  expect(store.findWorktree(sessionWorktreeId)?.worktree.terminals).toEqual([])
 })
 
 test("workspace creation selects its configured directories without exposing an empty main worktree", async () => {
@@ -92,7 +123,7 @@ test("Session removal keeps the workspace selected and workspace deletion reconc
   await store.refreshLocalCatalog()
   const updated = catalogFixture()
   updated.workspaces[0]!.worktrees = [updated.workspaces[0]!.worktrees[0]!]
-  vi.mocked(platformClient.catalog.list).mockResolvedValue(updated)
+  vi.mocked(platformClient.catalog.list).mockImplementation(async () => structuredClone(updated))
   changed()
   await vi.waitFor(() => expect(store.findWorktree(sessionWorktreeId)).toBeNull())
   expect(store.findSession(sessionId)).toBeNull()
@@ -141,6 +172,21 @@ test("merges durable titles and keeps failed provisioning visible without fabric
   await vi.waitFor(() => expect(store.findSession("failed")).toBeNull())
 })
 
+test("Session titles, context and archive state follow agent metadata without a catalog refresh", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, title: "Initial title", context: "worktree", archiveState: "active" }
+  expect(store.findSession(sessionId)?.session).toMatchObject({ title: "Initial title", context: "worktree", archiveState: "active" })
+
+  Object.assign(agents.sessions[sessionId]!, { title: "Updated title", archiveState: "archived" })
+  expect(store.findSession(sessionId)?.session).toMatchObject({ title: "Updated title", context: "worktree", archiveState: "archived" })
+  expect(store.findSession(sessionId)?.worktree?.id).toBe(sessionWorktreeId)
+  agents.sessions[sessionId]!.archiveState = "active"
+  expect(store.findSession(sessionId)?.session.archiveState).toBe("active")
+  expect(platformClient.catalog.list).toHaveBeenCalledOnce()
+})
+
 test("resolves provider identity only from successful snapshots and keeps it through refresh failures", async () => {
   const store = setup()
   await store.refreshLocalCatalog()
@@ -155,10 +201,13 @@ test("resolves provider identity only from successful snapshots and keeps it thr
   await providers.refresh()
   await vi.waitFor(() => expect(store.findSession(sessionId)?.session.provider).toBe("Work Codex"))
   expect(store.findSession(sessionId)?.session).toMatchObject({ providerIcon: "deepseek", providerTemplate: "codex", providerUnavailable: false })
+  providers.providers[0]!.name = "Renamed Codex"
+  providers.providers[0]!.icon = "openai"
+  expect(store.findSession(sessionId)?.session).toMatchObject({ provider: "Renamed Codex", providerIcon: "openai" })
   list.mockRejectedValueOnce(new Error("Disconnected"))
   await providers.refresh()
   await store.refreshLocalCatalog()
-  expect(store.findSession(sessionId)?.session).toMatchObject({ provider: "Work Codex", providerIcon: "deepseek", providerTemplate: "codex", providerUnavailable: false })
+  expect(store.findSession(sessionId)?.session).toMatchObject({ provider: "Renamed Codex", providerIcon: "openai", providerTemplate: "codex", providerUnavailable: false })
   list.mockResolvedValue({ revision: "test-settings-removed", templates: [], providers: [] })
   await providers.refresh()
   await vi.waitFor(() => expect(store.findSession(sessionId)?.session.providerUnavailable).toBe(true))

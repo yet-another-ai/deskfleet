@@ -1,7 +1,6 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { defineStore } from "pinia"
-import { watchImmediate } from "@vueuse/core"
-import { computed, onScopeDispose, ref, watch } from "vue"
+import { computed, onScopeDispose, ref } from "vue"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspace } from "../../../client/src/catalog.ts"
 import type { LocalDesktopTarget } from "../../../client/src/desktop-media.ts"
 import type { AgentSessionSummary, MachineSummary, TerminalSessionSummary, WorkspaceSummary, WorktreeSummary } from "./fleet-types.ts"
@@ -60,10 +59,11 @@ function workspaceSummary(value: CatalogWorkspace): WorkspaceSummary {
 
 /** Local daemon resources; database IDs and connection targets have separate identities. */
 export const useFleetStore = defineStore("fleet", () => {
-  const targetId = platformClient.target?.id ?? "local-daemon"
+  const target = platformClient.target
+  const targetId = target?.id ?? "local-daemon"
   const localDesktopTarget = ref<LocalDesktopTarget>({ id: targetId, name: "localhost", online: false, desktop: false })
-  const machines = ref<MachineSummary[]>([{ ...localDesktopTarget.value, local: platformClient.target?.local ?? true, lastSeen: platformClient.target?.lastSeen, terminals: [], workspaces: [] }])
-  const catalogIdentity = ref<{ teamId: string; machineId: string } | null>(null)
+  const catalog = ref<CatalogSnapshot | null>(null)
+  const catalogIdentity = computed(() => catalog.value && { teamId: catalog.value.teamId, machineId: catalog.value.machineId })
   const catalogError = ref<string | null>(null)
   const catalogLoading = ref(false)
   const catalogReady = ref(false)
@@ -72,16 +72,32 @@ export const useFleetStore = defineStore("fleet", () => {
   const terminals = useTerminalsStore()
   const agents = useAgentSessionsStore()
   const providers = useProvidersStore()
-  const localMachine = () => machines.value.find(({ id }) => id === targetId)!
-  /** A terminal belongs to its owning Session Worktree, or to the machine. */
-  function applyTerminals(): void {
-    const machine = localMachine()
-    machine.terminals = terminals.sessions.filter(terminal => terminal.worktreeId === undefined)
-    for (const workspace of machine.workspaces) for (const session of workspace.sessions) {
+  // Build the resource tree from its owning stores instead of synchronizing copies.
+  const workspaces = computed(() => (catalog.value?.workspaces ?? []).map(value => {
+    const workspace = workspaceSummary(value)
+    const summaries = new Map(workspace.sessions.map(session => [session.id, session]))
+    for (const metadata of Object.values(agents.sessions)) {
+      if (metadata.workspaceId !== workspace.id) continue
+      const provider = providers.providers.find(provider => provider.id === metadata.provider)
+      summaries.set(metadata.id, {
+        ...summaries.get(metadata.id), id: metadata.id,
+        title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
+        providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
+        context: metadata.context, archiveState: metadata.archiveState,
+      })
+    }
+    workspace.sessions = [...summaries.values()]
+    for (const session of workspace.sessions) {
       if (session.worktree) session.worktree.terminals = terminals.sessions.filter(terminal => terminal.worktreeId === session.worktree!.id)
     }
-  }
-  watchImmediate(() => terminals.sessions, applyTerminals, { deep: true })
+    return workspace
+  }))
+  const machines = computed<MachineSummary[]>(() => [{
+    id: targetId, name: localDesktopTarget.value.name, online: localDesktopTarget.value.online,
+    desktop: localDesktopTarget.value.desktop, local: target?.local ?? true, lastSeen: target?.lastSeen,
+    terminals: terminals.sessions.filter(terminal => terminal.worktreeId === undefined),
+    workspaces: workspaces.value,
+  }])
   let refreshingTarget: Promise<LocalDesktopTarget> | null = null
   let refreshingCatalog: Promise<void> | null = null
   let refreshRequested = false
@@ -97,36 +113,12 @@ export const useFleetStore = defineStore("fleet", () => {
     return [...worktreeLocations(machines.value)].find(({ worktree }) => worktree.id === worktreeId) ?? null
   }
   function reconcileTarget(): void {
-    if (!targetWorkspaceId.value || !findWorkspace(targetWorkspaceId.value)) targetWorkspaceId.value = localMachine().workspaces[0]?.id ?? null
+    const values = catalog.value?.workspaces ?? []
+    if (!values.some(workspace => workspace.id === targetWorkspaceId.value)) targetWorkspaceId.value = values[0]?.id ?? null
   }
-  function applySessionMetadata(): void {
-    for (const machine of machines.value) for (const workspace of machine.workspaces) {
-      const summaries = new Map(workspace.sessions.filter(session => session.worktree || agents.sessions[session.id]).map(session => [session.id, session]))
-      for (const metadata of Object.values(agents.sessions)) {
-        if (metadata.workspaceId !== workspace.id) continue
-        const summary = summaries.get(metadata.id) ?? { id: metadata.id }
-        const provider = providers.providers.find(provider => provider.id === metadata.provider)
-        Object.assign(summary, {
-          title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
-          providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
-          context: metadata.context, archiveState: metadata.archiveState,
-        })
-        summaries.set(summary.id, summary)
-      }
-      workspace.sessions = [...summaries.values()]
-    }
-    // Every catalog rebuild passes through here; rebuilt Worktrees need their terminals again.
-    applyTerminals()
-  }
-  watch(() => agents.sessions, applySessionMetadata, { deep: true })
-  watch(() => [providers.providers, providers.loaded], applySessionMetadata, { deep: true })
   function applySnapshot(snapshot: CatalogSnapshot): void {
-    catalogIdentity.value = { teamId: snapshot.teamId, machineId: snapshot.machineId }
-    localMachine().workspaces = snapshot.workspaces.map(workspaceSummary)
-    applySessionMetadata()
-    localMachine().name = snapshot.machineName
-    if (!platformClient.target) localMachine().online = true
-    localDesktopTarget.value = { ...localDesktopTarget.value, name: snapshot.machineName, online: localMachine().online, error: undefined }
+    catalog.value = snapshot
+    localDesktopTarget.value = { ...localDesktopTarget.value, name: snapshot.machineName, online: target ? localDesktopTarget.value.online : true, error: undefined }
     catalogReady.value = true
     catalogError.value = null
     reconcileTarget()
@@ -136,7 +128,6 @@ export const useFleetStore = defineStore("fleet", () => {
       ...localDesktopTarget.value, online: false, error: error instanceof Error ? error.message : String(error),
     })).then(target => {
       localDesktopTarget.value = target
-      Object.assign(localMachine(), { name: target.name, online: target.online, desktop: target.desktop })
       if (!target.online) catalogReady.value = false
       return target
     }).finally(() => { refreshingTarget = null })
@@ -156,7 +147,6 @@ export const useFleetStore = defineStore("fleet", () => {
       } catch (error) {
         catalogError.value = error instanceof Error ? error.message : String(error)
         catalogReady.value = false
-        localMachine().online = false
         localDesktopTarget.value = { ...localDesktopTarget.value, online: false }
       } finally {
         catalogLoading.value = false
@@ -172,11 +162,11 @@ export const useFleetStore = defineStore("fleet", () => {
   const unsubscribe = platformClient.catalog.onChanged(() => {
     // A remote machine's presence and renames arrive as catalog changes. Its catalog,
     // applied after the target, carries the current Team name.
-    void (platformClient.target ? refreshLocal() : refreshLocalCatalog())
+    void (target ? refreshLocal() : refreshLocalCatalog())
     void agents.refresh(); void terminals.refresh()
   })
   onScopeDispose(unsubscribe)
-  const canManageCatalog = computed(() => localMachine().online && catalogReady.value)
+  const canManageCatalog = computed(() => localDesktopTarget.value.online && catalogReady.value)
   function requireLocalCatalog(): void {
     if (!canManageCatalog.value) throw new Error(catalogError.value ?? "The local daemon is unavailable")
   }
@@ -189,25 +179,24 @@ export const useFleetStore = defineStore("fleet", () => {
   async function createWorkspace(name: string, directories: CatalogDirectory[]): Promise<CatalogWorkspace> {
     requireLocalCatalog()
     const value = await platformClient.catalog.createWorkspace(name, directories)
-    const existing = findWorkspace(value.id)
-    if (existing) Object.assign(existing.workspace, workspaceSummary(value))
-    else localMachine().workspaces.push(workspaceSummary(value))
-    applySessionMetadata()
+    const workspaces = catalog.value!.workspaces
+    const index = workspaces.findIndex(workspace => workspace.id === value.id)
+    if (index === -1) workspaces.push(value)
+    else workspaces[index] = value
     targetWorkspaceId.value = value.id
     return value
   }
   async function updateWorkspace(id: string, name: string, directories: CatalogDirectory[]): Promise<void> {
     requireWorkspace(id)
     const value = await platformClient.catalog.updateWorkspace(id, name, directories)
-    const current = findWorkspace(id)
-    if (current) Object.assign(current.workspace, workspaceSummary(value))
-    applySessionMetadata()
+    const index = catalog.value!.workspaces.findIndex(workspace => workspace.id === id)
+    if (index !== -1) catalog.value!.workspaces[index] = value
     reconcileTarget()
   }
   async function deleteWorkspace(id: string): Promise<void> {
     requireWorkspace(id)
     await platformClient.catalog.deleteWorkspace(id)
-    localMachine().workspaces = localMachine().workspaces.filter(workspace => workspace.id !== id)
+    catalog.value!.workspaces = catalog.value!.workspaces.filter(workspace => workspace.id !== id)
     reconcileTarget()
   }
   function findSession(sessionId: string): SessionLocation | null {
@@ -227,10 +216,10 @@ export const useFleetStore = defineStore("fleet", () => {
   const newSessionTarget = computed(() => targetWorkspaceId.value ? findWorkspace(targetWorkspaceId.value) : null)
 
   return {
-    targetId, machines, catalogIdentity, catalogError, catalogLoading, canManageCatalog,
+    targetId, machines, catalog, catalogIdentity, catalogError, catalogLoading, catalogReady, canManageCatalog,
     localDesktopTarget, refreshLocalDesktop, refreshLocalCatalog, refreshLocal,
     createWorkspace, updateWorkspace, deleteWorkspace,
     newSessionTarget, findMachine, findWorkspace, findWorktree, findSession, findTerminal,
-    isCollapsed, toggleMachine, targetWorkspaceId, targetWorkspace,
+    collapsedMachineIds, isCollapsed, toggleMachine, targetWorkspaceId, targetWorkspace,
   }
 })

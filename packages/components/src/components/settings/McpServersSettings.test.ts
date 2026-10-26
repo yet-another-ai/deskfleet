@@ -49,7 +49,7 @@ async function setup(initial: McpServerConfig[] = []) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const fleet = useFleetStore()
-  fleet.machines[0]!.online = true
+  fleet.localDesktopTarget.online = true
   const wrapper = mount(McpServersSettings, { attachTo: document.body, global: { plugins: [pinia, i18n], provide: { [accountSessionKey as symbol]: account } } })
   cleanup.push(() => { wrapper.unmount(); disposePinia(pinia); account.dispose() })
   await flushPromises()

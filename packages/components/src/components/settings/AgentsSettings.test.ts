@@ -82,6 +82,21 @@ test("adds a provider and edits its settings without sending a template change",
   expect(view.get('[data-provider-id="codex"]').text()).toContain("Renamed")
 })
 
+test("keeps unsaved provider edits open when the same machine's resource tree refreshes", async () => {
+  const view = render()
+  await flushPromises()
+  await view.get('[data-provider-id="codex"] [data-provider-open]').trigger("click")
+  await view.get('[name="provider-name"]').setValue("Unsaved name")
+  const reads = vi.mocked(platformClient.providers.list).mock.calls.length
+  fleet.machines = [{ ...fleet.machines[0]!, terminals: [{ id: "new-shell", title: "shell", cwd: "/code" }] }]
+  await flushPromises()
+  expect((view.get('[name="provider-name"]').element as HTMLInputElement).value).toBe("Unsaved name")
+  expect(platformClient.providers.list).toHaveBeenCalledTimes(reads)
+  fleet.machines[0]!.online = false
+  await flushPromises()
+  expect(view.find("form").exists()).toBe(false)
+})
+
 test("removes a provider after confirmation and keeps errors available for retry", async () => {
   const remove = vi.spyOn(platformClient.providers, "remove").mockRejectedValueOnce(new Error("Could not save providers")).mockImplementation(async () => { snapshot.providers = [] })
   const view = render()
