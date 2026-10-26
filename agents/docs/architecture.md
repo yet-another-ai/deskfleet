@@ -461,7 +461,9 @@ closed, the window is hidden, the connection closes, or the Session is archived.
 The last subscriber releases the checkout's watchers and cache. Reopening or
 reconnecting establishes fresh observation and rereads Git; manual refresh can
 bypass cached status. Watch failures are reported to the viewer, which retains
-manual refresh and retries observation on request. Non-Git directories are
+manual refresh and retries observation on request. An unavailable directory
+binding keeps its error visible without disabling observation of healthy
+checkouts in the same Session. Non-Git directories are
 observed within their captured roots; creating a repository above such a root
 requires reopening the panel to discover the enclosing checkout. These
 observers track changes to explicit `core.excludesFile` paths; changes to Git's

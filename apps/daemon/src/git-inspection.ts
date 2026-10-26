@@ -191,12 +191,17 @@ export class GitInspection {
     if (this.#closed) throw new Error("Git inspection is stopping")
     const { directories, roots } = await resolveDirectories(paths)
     const watchedRoots = new Set(roots.values())
+    const unavailable: string[] = []
     for (const directory of directories) {
-      if (directory.repositoryId === null && !directory.error) watchedRoots.add(await realpath(directory.path))
-      else if (directory.error) throw new Error(directory.error)
+      if (directory.error) unavailable.push(`${directory.path}: ${directory.error}`)
+      else if (directory.repositoryId === null) {
+        try { watchedRoots.add(await realpath(directory.path)) }
+        catch (error) { unavailable.push(`${directory.path}: ${message(error)}`) }
+      }
     }
+    const directoryError = unavailable.length ? `Could not watch Git changes in ${unavailable.join("; ")}` : undefined
     const attached: WatchedCheckout[] = []
-    const subscriber = (error?: string) => listener(attached.find(entry => entry.watcher.error)?.watcher.error ?? error)
+    const subscriber = (error?: string) => listener(attached.find(entry => entry.watcher.error)?.watcher.error ?? error ?? directoryError)
     const release = () => {
       for (const entry of attached) {
         entry.listeners.delete(subscriber)
@@ -230,6 +235,9 @@ export class GitInspection {
         }
       }
       if (this.#closed) throw new Error("Git inspection is stopping")
+      // A missing binding must remain visible without disabling healthy checkouts.
+      // Reattaching (including manual refresh) retries unavailable directories.
+      if (directoryError) subscriber()
       return release
     } catch (error) { release(); throw error }
   }
