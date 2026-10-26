@@ -46,6 +46,7 @@ let cursorEffort = "high"
 let grokModel = "grok-4.5"
 let grokEffort: string | undefined
 const cursorMode = mode === "cursor" || mode === "cursor-test" || mode === "cursor-test-signed-out"
+const deepseekHarnessMode = mode === "deepseek-harness"
 const grokEffortMode = mode === "grok-effort"
 const grokMode = mode === "grok" || mode === "grok-cached" || mode === "grok-login"
 const grokReasoning = [
@@ -121,11 +122,19 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
     parameterizedModelPicker = params.clientCapabilities?._meta?.parameterizedModelPicker === true
     return {
       protocolVersion: acp.PROTOCOL_VERSION + (mode === "wrong-version" ? 1 : 0),
-      agentInfo: { name: cursorMode ? "cursor-agent" : grokMode ? "grok" : "deskfleet-test-agent", version: "1.0.0" },
+      agentInfo: {
+        name: cursorMode ? "cursor-agent" : grokMode ? "grok" : deepseekHarnessMode ? "deepseek-harness" : "deskfleet-test-agent",
+        version: "1.0.0",
+        ...(deepseekHarnessMode ? { title: "DeepSeek Harness" } : {}),
+      },
       agentCapabilities: cursorMode ? {
         loadSession: true,
         promptCapabilities: { image: true },
         sessionCapabilities: { list: {} },
+      } : deepseekHarnessMode ? {
+        promptCapabilities: { image: true },
+        mcpCapabilities: { http: true },
+        sessionCapabilities: { list: {}, resume: {}, close: {} },
       } : {
         promptCapabilities: { image: true },
         sessionCapabilities: { resume: {} },

@@ -61,6 +61,9 @@ test("templates resolve their own binary defaults and cannot change after creati
   const pi = await registry.create({ template: "pi", name: "Pi Coding Agent", env: { PI_CODING_AGENT_DIR: "/account/pi" } })
   assert.equal(registry.resolve(pi.id).provider.id, "pi")
   assert.deepEqual(registry.resolve(pi.id).config, { name: "Pi Coding Agent", binaryPath: "pi", env: { PI_CODING_AGENT_DIR: "/account/pi" } })
+  const deepseek = await registry.create({ template: "deepseek-harness", name: "DeepSeek Harness", env: { DEEPSEEK_API_KEY: "secret" } })
+  assert.equal(registry.resolve(deepseek.id).provider.id, "deepseek-harness")
+  assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: "dsh", env: { DEEPSEEK_API_KEY: "secret" } })
   assert.throws(() => registry.update(custom.id, { template: "codex", name: "Changed", env: {} } as AgentProviderSettings), /template is fixed/u)
   assert.equal(registry.get(custom.id).template, "acp")
   const copy = registry.get(custom.id)
@@ -208,6 +211,34 @@ test("Grok launches grok agent stdio and authenticates with xai.api_key", { time
   const created = await connection.newSession({ cwd: directory, mcpServers: [] })
   assert.equal(created._meta?.authMethod, "xai.api_key")
   assert.equal(created._meta?.headless, true)
+  await connection.close()
+})
+
+test("DeepSeek Harness launches dsh --profile acp without interactive authenticate", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-deepseek-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "dsh agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const configured = await registry.create({
+    template: "deepseek-harness", name: "DeepSeek Harness", binaryPath,
+    env: { DESKFLEET_TEST_AGENT_MODE: "deepseek-harness", DEEPSEEK_API_KEY: "present" },
+  })
+  const { provider, config } = registry.resolve(configured.id)
+  const connection = await provider.connect(config, { onUpdate() {} })
+  t.after(() => connection.close())
+  assert.equal(connection.initialization.agentInfo?.name, "deepseek-harness")
+  assert.equal(connection.initialization.agentInfo?.title, "DeepSeek Harness")
+  assert.equal(connection.initialization.authMethods, undefined)
+  assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, ["--profile", "acp"])
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.list !== undefined, true)
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.resume !== undefined, true)
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.close !== undefined, true)
+  const created = await connection.newSession({ cwd: directory, mcpServers: [] })
+  assert.ok(created.sessionId)
   await connection.close()
 })
 

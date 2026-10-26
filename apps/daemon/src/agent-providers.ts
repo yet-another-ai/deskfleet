@@ -7,6 +7,7 @@ import { connectAcpProcess, type AgentConfig, type AgentProvider } from "./agent
 import { claudeCodeProvider } from "./agents/claude-code.ts"
 import { codexProvider } from "./agents/codex.ts"
 import { cursorProvider } from "./agents/cursor.ts"
+import { deepseekHarnessProvider } from "./agents/deepseek-harness.ts"
 import { grokProvider } from "./agents/grok.ts"
 import { piProvider } from "./agents/pi.ts"
 import { launchProviderCommand } from "./provider-setup-process.ts"
@@ -129,7 +130,13 @@ export class AgentProviders {
   #launch(record: AgentProviderInput): { provider: AgentProvider; config: AgentConfig } {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
     return {
-      provider: record.template === "codex" ? this.#codex : record.template === "claude-code" ? claudeCodeProvider : record.template === "cursor" ? cursorProvider : record.template === "grok" ? grokProvider : record.template === "pi" ? piProvider : acpProvider,
+      provider: record.template === "codex" ? this.#codex
+        : record.template === "claude-code" ? claudeCodeProvider
+          : record.template === "cursor" ? cursorProvider
+            : record.template === "grok" ? grokProvider
+              : record.template === "pi" ? piProvider
+                : record.template === "deepseek-harness" ? deepseekHarnessProvider
+                  : acpProvider,
       config: { name: record.name, binaryPath: record.binaryPath ?? template.defaultBinaryPath, env: record.env },
     }
   }

@@ -211,6 +211,7 @@ mise exec -- node apps/daemon/src/main.ts agent claude-code --check
 mise exec -- node apps/daemon/src/main.ts agent cursor --check
 mise exec -- node apps/daemon/src/main.ts agent grok --check
 mise exec -- node apps/daemon/src/main.ts agent pi --check
+mise exec -- node apps/daemon/src/main.ts agent deepseek-harness --check
 ```
 
 `--check` initializes ACP and exits without creating a session or sending a
@@ -222,8 +223,8 @@ Agent configuration uses these common options:
 
 | Option | Meaning |
 | --- | --- |
-| `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, or `Pi Coding Agent`, separate from the provider ID |
-| `--binary-path <executable>` | CLI executable; omitted or empty uses `codex`, `claude`, `agent`, `grok`, or `pi` on PATH |
+| `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, `Pi Coding Agent`, or `DeepSeek Harness`, separate from the provider ID |
+| `--binary-path <executable>` | CLI executable; omitted or empty uses `codex`, `claude`, `agent`, `grok`, `pi`, or `dsh` on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` or
@@ -248,6 +249,12 @@ Settings installs Pi with the official `pi.dev` installer. For login, start `pi`
 enter `/login`, then `/quit` when setup is complete. Executable discovery leaves
 its credential status unknown; **Test Connection** opens a session using existing
 credentials.
+DeepSeek Harness is native ACP: the daemon runs `` `<binary> --profile acp` ``
+(`dsh acp` is the same launch). Credentials come from `DEEPSEEK_API_KEY` in the
+provider environment (optional `DEEPSEEK_BASE_URL`); the ACP server does not
+advertise interactive authenticate methods. Settings installs the CLI with
+`npm install -g @deepseek-ai/dsh`. Discovery reports ready when `DEEPSEEK_API_KEY`
+is set.
 `--cwd` sets an unmanaged ACP session's working directory and defaults to the
 current directory. This one-shot development helper does not create a team
 Session. Use the authenticated Web or Electron client for persistent Sessions;

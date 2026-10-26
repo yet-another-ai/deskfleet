@@ -122,6 +122,30 @@ test("Pi validates its bare version with help and leaves authentication unknown"
   assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
 })
 
+test("DeepSeek Harness validates its bare version with help and reports DEEPSEEK_API_KEY readiness", async () => {
+  const f = fixture({ files: ["/home/someone/.local/bin/dsh", "/tools/npm", "/bin/bash"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("0.2.1-rc.2") : result("dsh: boot a DeepSeek Harness profile") })
+  assert.deepEqual(await f.setup.probe(input("deepseek-harness")), {
+    status: "found", binaryPath: "/home/someone/.local/bin/dsh", version: "0.2.1-rc.2", auth: "unknown", installable: true, loginAvailable: false,
+  })
+  assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+  const ready = fixture({ files: ["/tools/dsh", "/tools/npm"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("0.2.1-rc.2") : result("Usage: dsh [--profile] <name>") })
+  assert.equal((await ready.setup.probe(input("deepseek-harness", { env: { DEEPSEEK_API_KEY: "secret" } }))).auth, "authenticated")
+})
+
+test("DeepSeek Harness discovers npm global prefixes", async () => {
+  for (const [platform, env, binary] of [
+    ["linux", { PATH: "", NPM_CONFIG_PREFIX: "/custom/npm" }, "/custom/npm/bin/dsh"],
+    ["win32", { PATH: "", APPDATA: "C:\\Roaming" }, "C:\\Roaming\\npm\\dsh.cmd"],
+    ["win32", { PATH: "", NPM_CONFIG_PREFIX: "C:\\npm-prefix" }, "C:\\npm-prefix\\dsh.cmd"],
+  ] as const) {
+    const f = fixture({ platform, env, files: [binary, ...(platform === "linux" ? ["/tools/npm"] : ["C:\\Roaming\\npm\\npm.cmd", "C:\\npm-prefix\\npm.cmd"])],
+      answer: async (_command, args) => args[0] === "--version" ? result("0.2.1-rc.2") : result("dsh: boot a DeepSeek Harness profile") })
+    assert.equal((await f.setup.probe(input("deepseek-harness"))).binaryPath, binary)
+  }
+})
+
 test("Pi rejects an unrelated executable with a bare version", async () => {
   const f = fixture({ files: ["/tools/pi"], answer: async (_command, args) =>
     args[0] === "--version" ? result("1.4.0") : result("pi - calculate digits of pi") })
@@ -169,6 +193,23 @@ test("official installers start dedicated terminals and do not start login or AC
     assert.ok(!f.runs[0]!.args?.join(" ").includes("sensitive-value"))
     assert.equal(f.runs[0]!.env?.TOKEN, "sensitive-value")
   }
+})
+
+test("DeepSeek Harness installs through npm and rejects interactive login", async () => {
+  const f = fixture({ files: ["/tools/npm", "/bin/bash"] })
+  const terminal = await f.setup.install(input("deepseek-harness", { env: { TOKEN: "sensitive-value" } }))
+  assert.equal(terminal.status, "running")
+  assert.equal(f.runs[0]!.command, "/tools/npm")
+  assert.deepEqual(f.runs[0]!.args, ["install", "-g", "@deepseek-ai/dsh"])
+  assert.equal(f.runs[0]!.env?.TOKEN, "sensitive-value")
+  await assert.rejects(f.setup.login(input("deepseek-harness")), /DEEPSEEK_API_KEY/u)
+  assert.equal(f.runs.length, 1)
+})
+
+test("DeepSeek Harness install requires npm", async () => {
+  const f = fixture({ files: ["/bin/bash"] })
+  await assert.rejects(f.setup.install(input("deepseek-harness")), /npm is required/u)
+  assert.equal(f.runs.length, 0)
 })
 
 test("login launches only the selected provider's dedicated login command", async () => {

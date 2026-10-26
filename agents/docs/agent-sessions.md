@@ -100,6 +100,13 @@ Pi executes its tools locally; the adapter does not delegate filesystem or
 terminal operations, forward client-provided MCP servers, or expose additional
 Workspace directories. Pi extension select/confirm requests use the permission
 UI; extension free-text input requests are unsupported.
+The DeepSeek Harness template runs the installed
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) CLI (`dsh`)
+directly as `dsh --profile acp`; its default binary is `dsh`. Set
+`DEEPSEEK_API_KEY` in the provider environment (optional `DEEPSEEK_BASE_URL`)
+before starting a session. The ACP automation profile does not advertise
+interactive authenticate methods. Settings installs the CLI with
+`npm install -g @deepseek-ai/dsh`.
 The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the

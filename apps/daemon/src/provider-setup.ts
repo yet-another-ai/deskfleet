@@ -61,6 +61,7 @@ function locations(template: AgentProviderTemplateId, ctx: Context): string[] {
   if (template === "grok") directories.push(path.join(home, ".grok", "bin"))
   if (template === "claude-code") directories.push(path.join(home, ".claude", "local"))
   if (template === "pi") directories.push(...npmLocations(ctx), path.join(env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent"), "bin"))
+  if (template === "deepseek-harness") directories.push(...npmLocations(ctx))
   if (platform === "win32") {
     const local = env.LOCALAPPDATA ?? path.join(home, "AppData", "Local")
     if (template === "codex") directories.push(path.join(local, "Programs", "OpenAI", "Codex", "bin"))
@@ -99,6 +100,11 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
   if (!["x64", "arm64"].includes(ctx.arch) || !["darwin", "linux", "win32"].includes(ctx.platform)) {
     return "Automatic installation is unavailable for this operating system or architecture."
   }
+  if (template === "deepseek-harness") {
+    const npm = await findCommand("npm", ctx, npmLocations(ctx))
+    if (!npm) return "npm is required to install DeepSeek Harness (`npm install -g @deepseek-ai/dsh`)."
+    return { command: npm, args: ["install", "-g", "@deepseek-ai/dsh"] }
+  }
   if (ctx.platform === "win32" && template !== "grok") {
     const shell = await findCommand("pwsh", ctx) ?? await findCommand("powershell", ctx, [
       win32.join(ctx.env.SYSTEMROOT ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0"),
@@ -135,9 +141,10 @@ async function identity(template: AgentProviderTemplateId, binary: string, ctx: 
   if (result.code !== 0) return undefined
   const version = text(`${result.stdout}\n${result.stderr}`)
   const pattern = template === "codex" ? /\bcodex\b/iu : template === "claude-code" ? /\bclaude\b/iu
-    : template === "cursor" ? /\bcursor\b/iu : template === "pi" ? /\bpi\s+-\s+AI coding assistant\b/iu : /\bgrok\b/iu
+    : template === "cursor" ? /\bcursor\b/iu : template === "pi" ? /\bpi\s+-\s+AI coding assistant\b/iu
+      : template === "deepseek-harness" ? /\bdsh\b|DeepSeek Harness/iu : /\bgrok\b/iu
   if (!pattern.test(version)) {
-    // Cursor and Pi print just a version; their help identifies the provider.
+    // Cursor, Pi, and DeepSeek Harness may print just a version; their help identifies the provider.
     const help = await ctx.run(binary, ["--help"], ctx.env, ctx.home)
     if (help.code !== 0 || !pattern.test(text(`${help.stdout}\n${help.stderr}`))) return undefined
   }
@@ -146,6 +153,8 @@ async function identity(template: AgentProviderTemplateId, binary: string, ctx: 
 
 async function authentication(template: AgentProviderTemplateId, binary: string, ctx: Context): Promise<ProviderProbeResult["auth"]> {
   if (template === "acp") return "unknown"
+  // DeepSeek Harness authenticates through DEEPSEEK_API_KEY (or a stored credential the CLI resolves).
+  if (template === "deepseek-harness") return ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown"
   // Grok has no noninteractive status command; Pi's check requires a selected model/provider.
   if (template === "grok" || template === "pi") return "unknown"
   try {
@@ -219,7 +228,9 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
       try {
         const version = await identity(provider.template, binary, ctx)
         if (version === undefined) { invalid = true; continue }
-        return { ...base, status: "found", binaryPath: binary, version, loginAvailable: true,
+        // DeepSeek Harness has no interactive CLI login; configure DEEPSEEK_API_KEY in environment variables.
+        const loginAvailable = provider.template !== "deepseek-harness"
+        return { ...base, status: "found", binaryPath: binary, version, loginAvailable,
           auth: await authentication(provider.template, binary, ctx) }
       } catch { invalid = true }
     }
@@ -251,6 +262,9 @@ export class ProviderSetup {
   async login(input: AgentProviderInput): Promise<TerminalSummary> {
     const provider = providerInput(input)
     if (provider.template === "acp") throw new Error("Configure authentication through your custom ACP provider.")
+    if (provider.template === "deepseek-harness") {
+      throw new Error("Set DEEPSEEK_API_KEY in the provider environment variables (optional DEEPSEEK_BASE_URL).")
+    }
     const result = await this.probe(provider)
     if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
     const ctx = context(provider, this.#dependencies)

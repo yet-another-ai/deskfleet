@@ -594,6 +594,7 @@
       "cursor": "Cursor's agent CLI.",
       "grok": "xAI's Grok CLI.",
       "pi": "Pi's coding agent CLI.",
+      "deepseek-harness": "DeepSeek's agent harness CLI (dsh).",
       "acp": "Any agent that speaks the Agent Client Protocol."
     },
     "iconDefault": "Template default",

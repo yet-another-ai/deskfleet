@@ -594,6 +594,7 @@
       "cursor": "Cursor 的 Agent CLI。",
       "grok": "xAI 的 Grok CLI。",
       "pi": "Pi 的编程 Agent CLI。",
+      "deepseek-harness": "DeepSeek 的 Agent Harness CLI（dsh）。",
       "acp": "任何支持 Agent Client Protocol 的 Agent。"
     },
     "iconDefault": "模板默认图标",
