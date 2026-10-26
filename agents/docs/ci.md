@@ -101,10 +101,13 @@ Local control and desktop permission behavior tests also inject in-memory
 catalogs, while discovery records and terminal files still exercise the
 filesystem. This keeps SQLite file creation and migrations out of their timeout
 budgets.
-Tests that close and reopen a catalog, restart a daemon, or verify machine
-registration persistence continue to use temporary database files. Select the
-in-memory catalog explicitly in each fixture rather than switching all CI
-databases through an environment variable.
+Tests that verify catalog or machine registration persistence across a daemon
+restart continue to use temporary database files. The provider control restart
+test uses a fresh in-memory catalog for each daemon because its persisted state
+is `agent-providers.json`; it still checks that file and reloads the providers
+through authenticated IPC after restart. Select the in-memory catalog explicitly
+in each fixture rather than switching all CI databases through an environment
+variable.
 
 Static and test jobs may restore the Cargo target cache. Build jobs use Cargo
 download caches without restoring compiled targets. The setup action fetches

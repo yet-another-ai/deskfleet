@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
+import { openInMemoryCatalog } from "@deskfleet/native"
 import { DaemonClient } from "../../desktop/src/main/daemon-client.ts"
 import { startDaemon } from "./daemon.ts"
 
@@ -20,7 +21,14 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
     if (t.signal.aborted) { client.close(); t.signal.throwIfAborted() }
     return client
   }
-  starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const options = {
+    allowLocalControlForTests: true, controlDirectory: directory,
+    // Provider settings persist in agent-providers.json, independently of SQLite.
+    // Each daemon still gets a new catalog; this test does not retain catalog state.
+    openCatalog: (_path: string, name: string) => openInMemoryCatalog(name),
+    requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null,
+  }
+  starting = startDaemon(0, options)
   let daemon = await starting
   t.signal.throwIfAborted()
   const client = own(await DaemonClient.connect(() => {}, () => {}, directory))
@@ -51,8 +59,9 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
   await client.call("providerRemove", { providerId: "codex" })
   clients.forEach(connection => connection.close())
   await daemon.close()
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "agent-providers.json"), "utf8")).providers, [updated])
   t.signal.throwIfAborted()
-  starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  starting = startDaemon(0, options)
   daemon = await starting
   t.signal.throwIfAborted()
   const reopened = own(await DaemonClient.connect(() => {}, () => {}, directory))

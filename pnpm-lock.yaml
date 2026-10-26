@@ -9,7 +9,7 @@ overrides:
 
 patchedDependencies:
   '@agentclientprotocol/codex-acp@2.2.2': f5323730c3149760f65cfda76fe250dcd268a75aa56be01c71dfd8de5b60252c
-  pi-acp@0.0.34: c5b770ffb7f99284e3f814f179b9f6d89168d0a1cf49db7ad6ec93f3d47b59ef
+  pi-acp@0.0.34: 36d9ab123339167dca1f08a507a15cd2e0d55d6bf92d164e13f7bcb0d01d09fb
 
 importers:
 
@@ -47,7 +47,7 @@ importers:
         version: link:../../crates/node
       pi-acp:
         specifier: 0.0.34
-        version: 0.0.34(patch_hash=c5b770ffb7f99284e3f814f179b9f6d89168d0a1cf49db7ad6ec93f3d47b59ef)
+        version: 0.0.34(patch_hash=36d9ab123339167dca1f08a507a15cd2e0d55d6bf92d164e13f7bcb0d01d09fb)
 
   apps/desktop:
     devDependencies:
@@ -7991,7 +7991,7 @@ snapshots:
 
   perfect-debounce@2.1.0: {}
 
-  pi-acp@0.0.34(patch_hash=c5b770ffb7f99284e3f814f179b9f6d89168d0a1cf49db7ad6ec93f3d47b59ef):
+  pi-acp@0.0.34(patch_hash=36d9ab123339167dca1f08a507a15cd2e0d55d6bf92d164e13f7bcb0d01d09fb):
     dependencies:
       '@agentclientprotocol/sdk': 0.26.0(zod@3.25.76)
       cross-spawn: 7.0.6

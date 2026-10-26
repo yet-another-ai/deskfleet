@@ -36,3 +36,14 @@ index 64758f027a38a7ecbe7d6e05e88edcc72ee9f193..5eea81248c0e116ecef54c41f72bcdc7
    } catch {
    }
    try {
+@@ -3094,9 +3094,4 @@ process.stdin.resume();
+ process.on("SIGINT", shutdown);
+ process.on("SIGTERM", shutdown);
+-process.stdout.on("error", () => {
+-  try {
+-    process.exit(0);
+-  } catch {
+-  }
+-});
++process.stdout.on("error", shutdown);
+ //# sourceMappingURL=index.js.map

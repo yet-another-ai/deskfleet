@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
+import { spawn } from "node:child_process"
+import { once } from "node:events"
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { createInterface } from "node:readline"
 import test, { type TestContext } from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
@@ -54,7 +57,7 @@ async function fixture(t: TestContext, auth = "configured") {
   const { provider, config } = registry.resolve(configured.id)
   assert.equal(provider.id, "pi")
   return {
-    cwd, binaryPath, agentDirectory,
+    cwd, binaryPath, agentDirectory, env: config.env,
     async connect(updates: acp.SessionNotification[] = []) {
       const connection = await provider.connect(config, { onUpdate(update) { updates.push(update) } })
       connections.push(connection)
@@ -123,6 +126,68 @@ test("Pi runs the bundled ACP bridge with its configured CLI and continues saved
   assert.ok(resumedUpdates.some(({ update }) => update.sessionUpdate === "agent_message_chunk" && update.content.type === "text" && update.content.text === "Pi fixture answer"), "new output is delivered after replay suppression ends")
   await resumed.close()
   await pi.exited(launches[1]!.pid as number)
+})
+
+test("Pi disposes its CLI when ACP output closes before input", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const pi = await fixture(t)
+  const child = spawn(process.execPath, [fileURLToPath(new URL("./main.ts", import.meta.url)), "--pi-acp"], {
+    env: { ...process.env, ...pi.env, PI_ACP_PI_COMMAND: pi.binaryPath },
+    stdio: ["pipe", "pipe", "inherit"],
+  })
+  const exited = once(child, "close")
+  const lines = createInterface({ input: child.stdout })
+  t.after(async () => {
+    lines.close()
+    child.kill("SIGKILL")
+    await exited
+  })
+  let nextId = 0
+  const request = async (method: string, params: unknown) => {
+    const id = ++nextId
+    const stopped = exited.then(() => { throw new Error("Pi adapter exited before replying") })
+    const response = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const received = (line: string) => {
+        const message = JSON.parse(line)
+        if (message.id !== id) return
+        lines.off("line", received)
+        if (message.error) reject(new Error(JSON.stringify(message.error)))
+        else resolve(message.result)
+      }
+      lines.on("line", received)
+    })
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`)
+    return Promise.race([response, stopped])
+  }
+  try {
+    await request("initialize", { protocolVersion: 1, clientCapabilities: {} })
+    const commandsUpdated = new Promise<void>(resolve => {
+      const received = (line: string) => {
+        const message = JSON.parse(line)
+        if (message.method !== "session/update" || message.params.update.sessionUpdate !== "available_commands_update") return
+        lines.off("line", received)
+        resolve()
+      }
+      lines.on("line", received)
+    })
+    await request("session/new", { cwd: pi.cwd, mcpServers: [] })
+    await commandsUpdated
+    const launched = (await pi.log()).find(entry => entry.type === "launch")!
+    // Reproduce the close ordering without a race: the response pipe has gone
+    // away, but EOF cannot trigger the adapter's stdin shutdown handler yet.
+    child.stdout.destroy()
+    await once(child.stdout, "close")
+    // An unknown method makes the adapter write an error response without
+    // making the CLI itself write into a pipe while it is being disposed.
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: ++nextId, method: "deskfleet/test_closed_output", params: {} })}\n`)
+    const [code, signal] = await exited
+    assert.equal(code, 0)
+    assert.equal(signal, null)
+    await pi.exited(launched.pid as number)
+  } finally {
+    lines.close()
+    child.kill("SIGKILL")
+    await exited
+  }
 })
 
 test("Pi reports authentication required when its CLI has no configured models", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
