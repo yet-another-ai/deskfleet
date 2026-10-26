@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { CalendarClock, MessagesSquare, SquarePen } from "@lucide/vue"
-import { computed, ref, watch } from "vue"
+import { storeToRefs } from "pinia"
+import { computed, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRoute } from "vue-router"
+import { useLayoutStore } from "../../stores/layout.ts"
 import UiTooltip from "../common/UiTooltip.vue"
 import SidebarLink from "./SidebarLink.vue"
 
 const { t } = useI18n()
 const route = useRoute()
-const conversationPath = ref("/")
+const { conversationPath } = storeToRefs(useLayoutStore())
 // Only the active section reveals its label, leaving room for more destinations.
 const sections = [
   { routeName: "new-session", label: "nav.conversations", icon: MessagesSquare },

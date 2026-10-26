@@ -1,14 +1,17 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { createPinia, disposePinia } from "pinia"
 import { afterEach, expect, test } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
 import SidebarNavigation from "./SidebarNavigation.vue"
 
 let wrapper: VueWrapper | undefined
+let pinia: ReturnType<typeof createPinia> | undefined
 const sectionLink = (label: string) => wrapper!.get<HTMLAnchorElement>(`a[aria-label="${label}"]`)
 const newSessionLink = () => wrapper!.findAll("a").find(link => link.text() === i18n.global.t("nav.newSession"))!
 
 async function setup(path = "/") {
+  pinia = createPinia()
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -20,7 +23,7 @@ async function setup(path = "/") {
     ],
   })
   await router.push(path)
-  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [router, i18n] } })
+  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [pinia, router, i18n] } })
   await flushPromises()
   return router
 }
@@ -28,6 +31,11 @@ async function setup(path = "/") {
 afterEach(async () => {
   wrapper?.unmount()
   wrapper = undefined
+  if (pinia) {
+    disposePinia(pinia)
+    pinia = undefined
+  }
+  window.localStorage.clear()
   await flushPromises()
   i18n.global.locale.value = "en-US"
 })
@@ -102,6 +110,26 @@ test("external navigation updates the active capsule and conversation return rou
   await sectionLink("Conversations").trigger("click")
   await flushPromises()
   expect(router.currentRoute.value.fullPath).toBe("/workspaces/project-7")
+})
+
+test("remounting while on Schedules keeps the last conversation path", async () => {
+  const conversation = "/sessions/session-42?tab=changes#reply-7"
+  const router = await setup(conversation)
+  await sectionLink("Schedules").trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.fullPath).toBe("/schedules")
+  expect(window.localStorage.getItem("deskfleet.conversation-path")).toBe(JSON.stringify(conversation))
+  wrapper!.unmount()
+  wrapper = undefined
+  disposePinia(pinia!)
+  pinia = createPinia()
+  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [pinia, router, i18n] } })
+  await flushPromises()
+  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
+  expect(sectionLink("Conversations").attributes("href")).toBe(conversation)
+  await sectionLink("Conversations").trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.fullPath).toBe(conversation)
 })
 
 test("localizes both section links and the New session action", async () => {

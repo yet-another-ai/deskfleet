@@ -6,6 +6,8 @@ export const useLayoutStore = defineStore("layout", () => {
   // Per-device preferences; they fall back to the defaults when storage is unavailable.
   const sidebarOpen = useLocalStorage("deskfleet.sidebar-open", true)
   const detailsOpen = useLocalStorage("deskfleet.details-open", true)
+  /** Last Conversations destination; survives sidebar remounts (hide/show, Settings). */
+  const conversationPath = useLocalStorage("deskfleet.conversation-path", "/")
   /** The execution context a new Session uses; the last choice is remembered. */
   const sessionContext = useLocalStorage<AgentSessionContext>("deskfleet.session-context", "worktree")
   /** The Session terminal panel below the conversation. */
@@ -20,5 +22,5 @@ export const useLayoutStore = defineStore("layout", () => {
     detailsOpen.value = !detailsOpen.value
   }
 
-  return { sidebarOpen, detailsOpen, sessionContext, terminalPanelOpen, terminalPanelHeight, toggleSidebar, toggleDetails }
+  return { sidebarOpen, detailsOpen, conversationPath, sessionContext, terminalPanelOpen, terminalPanelHeight, toggleSidebar, toggleDetails }
 })
