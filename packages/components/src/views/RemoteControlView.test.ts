@@ -7,7 +7,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import type { FilesApi } from "../../../client/src/files.ts"
 import type { TerminalSummary } from "../../../client/src/terminal.ts"
 import { i18n } from "../i18n/index.ts"
-import { useRouteResource } from "../composables/useRouteResource.ts"
+import { useRouteWorktree } from "../composables/useRouteWorktree.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 import { deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
@@ -53,7 +53,7 @@ async function setup(options: { desktop?: boolean; machineId?: string; query?: L
     path: "/machines/:machineId/control", name: "machine-control", component: RemoteControlView, props: true,
   }] })
   await router.push({ name: "machine-control", params: { machineId: options.machineId ?? fleet.targetId }, query: options.query })
-  const host = defineComponent({ setup: useRouteResource, template: "<RouterView />" })
+  const host = defineComponent({ setup: () => ({ worktree: useRouteWorktree() }), template: "<RouterView />" })
   const wrapper = mount(host, {
     attachTo: document.body,
     global: { plugins: [pinia, router, i18n], stubs: {
@@ -230,25 +230,21 @@ test("a hidden Terminal follows shell removal without switching away from Files"
   expect(router.currentRoute.value.query).toEqual({ tab: "files" })
 })
 
-test("details follow the visible tool and never expose Worktree changes for machine control", async () => {
+test("machine control never exposes Worktree changes when switching tools", async () => {
   const { wrapper } = await setup({ query: { tab: "terminal", terminal: shell.id } })
-  expect(wrapper.vm.resource).toMatchObject({ kind: "terminal", terminal: { id: shell.id } })
   expect(wrapper.vm.worktree).toBeNull()
   await select(wrapper, 2)
-  expect(wrapper.vm.resource).toMatchObject({ kind: "control", machine: { id: "local-daemon" } })
   expect(wrapper.vm.worktree).toBeNull()
   await select(wrapper, 1)
-  expect(wrapper.vm.resource).toMatchObject({ kind: "control", machine: { id: "local-daemon" } })
   expect(wrapper.vm.worktree).toBeNull()
 })
 
 test.each([
-  { desktop: false, selected: 0, kind: "terminal" },
-  { desktop: true, selected: 1, kind: "control" },
-])("an invalid tab uses the same default in the tool view and details (desktop=$desktop)", async ({ desktop, selected, kind }) => {
+  { desktop: false, selected: 0 },
+  { desktop: true, selected: 1 },
+])("an invalid tab selects the default tool without exposing Worktree changes (desktop=$desktop)", async ({ desktop, selected }) => {
   const { wrapper } = await setup({ desktop, query: { tab: "invalid", terminal: shell.id } })
   expect(tabs(wrapper)[selected]!.attributes("aria-selected")).toBe("true")
-  expect(wrapper.vm.resource?.kind).toBe(kind)
   expect(wrapper.vm.worktree).toBeNull()
 })
 

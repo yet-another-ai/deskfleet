@@ -102,8 +102,8 @@
     "hideSidebar": "Hide sidebar",
     "back": "Back",
     "forward": "Forward",
-    "showPanel": "Show details panel",
-    "hidePanel": "Hide details panel"
+    "showPanel": "Show changes panel",
+    "hidePanel": "Hide changes panel"
   },
   "nav": {
     "label": "Navigation",
@@ -291,26 +291,8 @@
     "play": "Play desktop video"
   },
   "panel": {
-    "label": "Details",
-    "details": "Details",
     "changes": "Changes",
-    "nothingSelected": "Select a worktree, session, terminal, or machine control page to see its details.",
     "noWorktree": "Git changes are available within a session.",
-    "machine": "Machine",
-    "workspace": "Workspace",
-    "worktree": "Worktree",
-    "provider": "Provider",
-    "cwd": "Working directory",
-    "status": "Status",
-    "online": "Online",
-    "scope": "Scope",
-    "scopeMachine": "Machine",
-    "scopeWorkspace": "Workspace",
-    "scopeWorktree": "Worktree",
-    "directories": "Directories",
-    "display": "Display",
-    "displayAvailable": "Available",
-    "displayNone": "Headless",
     "notGit": "Not a Git checkout",
     "clean": "No changes",
     "gitUnavailable": "Git inspection is available for sessions on an online local machine.",

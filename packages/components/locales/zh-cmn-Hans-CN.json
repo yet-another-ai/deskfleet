@@ -102,8 +102,8 @@
     "hideSidebar": "隐藏侧边栏",
     "back": "后退",
     "forward": "前进",
-    "showPanel": "显示详情面板",
-    "hidePanel": "隐藏详情面板"
+    "showPanel": "显示变更面板",
+    "hidePanel": "隐藏变更面板"
   },
   "nav": {
     "label": "导航",
@@ -291,26 +291,8 @@
     "play": "播放桌面视频"
   },
   "panel": {
-    "label": "详情",
-    "details": "详情",
     "changes": "变更",
-    "nothingSelected": "选择工作树、会话、终端或远程控制页面以查看详情。",
     "noWorktree": "Git 变更会显示在会话中。",
-    "machine": "机器",
-    "workspace": "工作区",
-    "worktree": "工作树",
-    "provider": "提供方",
-    "cwd": "工作目录",
-    "status": "状态",
-    "online": "在线",
-    "scope": "所属范围",
-    "scopeMachine": "机器",
-    "scopeWorkspace": "工作区",
-    "scopeWorktree": "工作树",
-    "directories": "目录",
-    "display": "显示器",
-    "displayAvailable": "可用",
-    "displayNone": "无界面",
     "notGit": "不是 Git 检出",
     "clean": "没有变更",
     "gitUnavailable": "可查看在线本机上会话的 Git 变更。",

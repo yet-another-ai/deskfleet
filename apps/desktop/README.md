@@ -88,9 +88,9 @@ alone does not close established DataChannels, while revocation and the grant's
 The window is frameless and has three columns. The sidebar holds the window
 toolbar (sidebar toggle, back, forward), the New session action, the resource
 tree, and the Team and machine selectors. The main pane shows the routed view under a header row
-that takes over the toolbar while the sidebar is hidden. The details panel on the
-right describes the current route's resource; its header toggle and its tab
-persist per device. The macOS traffic lights sit in the sidebar's toolbar row.
+that takes over the toolbar while the sidebar is hidden. The Changes panel on the
+right shows Git changes for the current Session; its visibility persists per
+device. The macOS traffic lights sit in the sidebar's toolbar row.
 The Windows and Linux controls overlay the window's top-right corner, which the
 rightmost header reserves with `.titlebar-overlay-inset`
 (`src/main/window-chrome.ts`).
@@ -118,30 +118,22 @@ machines start collapsed and report when they were last seen.
 A Workspace page's New session action makes that Workspace the composer's target.
 Worktree links and lookups only resolve Session-owned contexts.
 
-Settings routes (`meta.fullWindow`) replace the sidebar and details panel with
+Settings routes (`meta.fullWindow`) replace the sidebar and Changes panel with
 two panels: the sections on the left and the selected section on the right.
 Section links replace their history entry, so **Back to app** or Escape returns
 to the page Settings opened from. **Preferences → This computer** contains
 **Launch at startup**, **Keep Awake**, and **Worktree root directory** alongside
 the local Agent startup preference, run state, and retry.
 
-The details panel has two tabs:
-
-- **Details** lists the resource's owner and properties: a session's provider, a
-  terminal's scope and cwd, or a machine's display. Workspace details show its
-  configured directories; Session and Worktree details show the Session's paths
-  with each checkout's branch and HEAD when available.
-- **Changes** inspects the Session's actual directories on the local daemon,
-  grouping files by checkout and staged, unstaged, or untracked state, with
-  status letters and line counts. Select a file to open a diff preview. Both
-  the list and the open diff refresh automatically every 1.5 seconds after the
-  previous read, including changes made outside the agent. Closing the tab or
-  hiding the window pauses refreshes. Non-Git directories, binary files, large
-  truncated diffs, and read errors have explicit states. It is empty for
-  machine and workspace terminals and for desktops, which belong to no worktree.
-
-`useRouteResource` resolves the route to that resource. The new session page
-describes its target Workspace.
+The **Changes** panel inspects the Session's actual directories on the local
+daemon, grouping files by checkout and staged, unstaged, or untracked state,
+with status letters and line counts. Select a file to open a diff preview. Both
+the list and the open diff refresh automatically every 1.5 seconds after the
+previous read, including changes made outside the agent. Closing the panel or
+hiding the window pauses refreshes. Non-Git directories, binary files, large
+truncated diffs, and read errors have explicit states. It is empty for
+machine and workspace terminals and for desktops, which belong to no worktree.
+Workspace and Worktree pages retain their directory information.
 
 ## Agent sessions
 

@@ -57,9 +57,7 @@ async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promis
   }
 
   if (phase !== "live") {
-    const tab = document.querySelector<HTMLButtonElement>("#details-tab-changes")
-    if (!tab) throw new Error("Changes tab was missing")
-    tab.click()
+    if (!document.querySelector('aside[aria-label="Changes"]')) throw new Error("Changes panel was missing")
     if (phase === "initial") {
       await open("README.md", "staged", "+Smoke staged baseline")
       await close()
