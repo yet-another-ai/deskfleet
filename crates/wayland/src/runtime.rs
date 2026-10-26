@@ -138,6 +138,33 @@ fn observe(observed: &Mutex<Observed>, snapshot: PermissionSnapshot, sources: Ve
     *observed.lock().unwrap_or_else(|error| error.into_inner()) = Observed { snapshot, sources };
 }
 
+/// EIS failure drops remote control and leaves the granted capture sources in place.
+fn keep_capture(snapshot: PermissionSnapshot, sources: Vec<Source>) -> Observed {
+    Observed {
+        snapshot: PermissionSnapshot {
+            control: false,
+            ..snapshot
+        },
+        sources,
+    }
+}
+
+fn share_error(error: &Error) -> Error {
+    match error {
+        Error::Unavailable(message) => Error::Unavailable(message.clone()),
+        Error::Cancelled => Error::Cancelled,
+        Error::PermissionDenied => Error::PermissionDenied,
+        Error::Busy => Error::Busy,
+        Error::StaleSource => Error::StaleSource,
+        Error::InvalidInput(message) => Error::InvalidInput(message),
+        Error::Portal(error) => Error::Portal(error.clone()),
+        Error::Response(error) => Error::Response(error.clone()),
+        Error::Io(error) => Error::Unavailable(error.to_string()),
+        Error::Input(message) => Error::Input(message.clone()),
+        Error::Stopped => Error::Stopped,
+    }
+}
+
 fn clear(observed: &Mutex<Observed>, status: PermissionStatus) {
     observe(
         observed,
@@ -173,13 +200,18 @@ async fn run(
                     let result = match event {
                         Some(Ok(event)) => session.input.as_mut().ok_or(Error::Stopped).and_then(|input| input.event(event)),
                         Some(Err(error)) => Err(Error::Input(error.to_string())),
-                        None => Err(Error::Stopped),
+                        None => Err(Error::Input("the compositor disconnected remote input".into())),
                     };
-                    if result.is_ok() { continue; }
                     if let Err(error) = result {
-                        tracing::warn!(%error, "Wayland input connection ended");
+                        tracing::warn!(%error, "Wayland remote input ended; screen capture remains active");
+                        let retained = keep_capture(session.snapshot.clone(), session.sources.clone());
+                        if let Some(mut input) = session.input.take() {
+                            let _ = input.detach();
+                        }
+                        session.snapshot = retained.snapshot.clone();
+                        observe(&observed, retained.snapshot, retained.sources);
                     }
-                    None
+                    continue;
                 }
             }
         } else {
@@ -224,7 +256,11 @@ async fn run(
                 match outcome.result {
                     Ok(session) => {
                         observe(&observed, session.snapshot.clone(), session.sources.clone());
-                        let _ = reply.send(Ok(session.snapshot.clone()));
+                        let snapshot = session.snapshot.clone();
+                        let _ = reply.send(Ok(snapshot.clone()));
+                        for waiter in outcome.waiting {
+                            let _ = waiter.send(Ok(snapshot.clone()));
+                        }
                         live = Some(session);
                     }
                     Err(error) => {
@@ -236,6 +272,9 @@ async fn run(
                             PermissionStatus::Unavailable
                         };
                         clear(&observed, status);
+                        for waiter in outcome.waiting {
+                            let _ = waiter.send(Err(share_error(&error)));
+                        }
                         let _ = reply.send(Err(error));
                     }
                 }
@@ -320,6 +359,8 @@ async fn next_input(
 struct AuthorizationOutcome {
     result: Result<Live>,
     shutdown: Option<Reply<()>>,
+    /// Display discovery and other restores that arrived while consent was open.
+    waiting: Vec<Reply<PermissionSnapshot>>,
 }
 
 trait Authorizer {
@@ -362,6 +403,7 @@ async fn pending_authorization(
     receiver: &mut mpsc::UnboundedReceiver<Command>,
 ) -> AuthorizationOutcome {
     let mut shutdown = None;
+    let mut waiting = Vec::new();
     tokio::pin!(authorization);
     let result = {
         loop {
@@ -369,7 +411,9 @@ async fn pending_authorization(
                 result = &mut authorization => break result,
                 command = receiver.recv() => match command {
                     Some(Command::Shutdown(reply)) => { shutdown = Some(reply); break Err(Error::Cancelled); }
-                    Some(Command::Request(_, reply)) => { let _ = reply.send(Err(Error::Busy)); }
+                    // The startup dialog already owns this connection. Listing displays
+                    // waits for its result instead of failing the refresh as busy.
+                    Some(Command::Request(_, reply)) => waiting.push(reply),
                     Some(Command::Open(_, reply)) => { let _ = reply.send(Err(Error::PermissionDenied)); }
                     Some(Command::Attach(_, _, reply)) => { let _ = reply.send(Err(Error::PermissionDenied)); }
                     Some(Command::Input(_, action, reply)) => {
@@ -382,7 +426,11 @@ async fn pending_authorization(
             }
         }
     };
-    AuthorizationOutcome { result, shutdown }
+    AuthorizationOutcome {
+        result,
+        shutdown,
+        waiting,
+    }
 }
 
 #[cfg(test)]
@@ -410,6 +458,7 @@ mod tests {
                 AuthorizationOutcome {
                     result: Err(Error::PermissionDenied),
                     shutdown: None,
+                    waiting: Vec::new(),
                 }
             }
         }
@@ -464,5 +513,112 @@ mod tests {
     #[tokio::test]
     async fn shutdown_clears_previous_configuration_before_late_restore() {
         shutdown_prevents_late_restore(false).await;
+    }
+
+    #[tokio::test]
+    async fn display_listing_waits_for_the_open_consent_dialog() {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let observed = Arc::new(Mutex::new(Observed::default()));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (release, grant) = oneshot::channel();
+        let actor = run(
+            receiver,
+            observed.clone(),
+            DeferredAuthorizer {
+                calls: calls.clone(),
+                release: Some(grant),
+            },
+        );
+        let client = async {
+            let (reply, first) = oneshot::channel();
+            sender
+                .send(Command::Request(
+                    Some(PathBuf::from("/unused-test-directory")),
+                    reply,
+                ))
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+            while calls.load(Ordering::Relaxed) == 0 {
+                if std::time::Instant::now() > deadline {
+                    panic!("authorization did not start");
+                }
+                tokio::task::yield_now().await;
+            }
+            let (reply, mut listing) = oneshot::channel();
+            sender.send(Command::Request(None, reply)).unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            assert!(
+                matches!(listing.try_recv(), Err(oneshot::error::TryRecvError::Empty)),
+                "display listing must wait while consent is open"
+            );
+            release.send(()).unwrap();
+            assert!(matches!(first.await.unwrap(), Err(Error::PermissionDenied)));
+            assert!(matches!(
+                listing.await.unwrap(),
+                Err(Error::PermissionDenied)
+            ));
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
+            assert_eq!(
+                observed.lock().unwrap().snapshot.status,
+                PermissionStatus::Denied
+            );
+            drop(sender);
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            tokio::join!(actor, client);
+        })
+        .await
+        .unwrap();
+    }
+
+    #[test]
+    fn input_disconnect_keeps_capture_sources() {
+        let retained = keep_capture(
+            PermissionSnapshot {
+                screen_capture: true,
+                control: true,
+                status: PermissionStatus::Granted,
+                persistent: true,
+            },
+            vec![Source {
+                id: 4,
+                name: "Display 1".into(),
+                width: 1920,
+                height: 1080,
+                node_id: 7,
+                pipewire_serial: None,
+                mapping_id: None,
+            }],
+        );
+        assert!(retained.snapshot.screen_capture);
+        assert!(!retained.snapshot.control);
+        assert_eq!(retained.snapshot.status, PermissionStatus::Granted);
+        assert!(retained.snapshot.persistent);
+        assert_eq!(retained.sources.len(), 1);
+        assert_eq!(retained.sources[0].id, 4);
+        assert_eq!(retained.sources[0].node_id, 7);
+    }
+
+    struct DeferredAuthorizer {
+        calls: Arc<AtomicUsize>,
+        release: Option<oneshot::Receiver<()>>,
+    }
+
+    impl Authorizer for DeferredAuthorizer {
+        async fn authorize(
+            &mut self,
+            _: &std::path::Path,
+            _: bool,
+            _: &mut u32,
+            receiver: &mut mpsc::UnboundedReceiver<Command>,
+        ) -> AuthorizationOutcome {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            let release = self.release.take().unwrap();
+            let authorization = async move {
+                release.await.unwrap();
+                Err(Error::PermissionDenied)
+            };
+            pending_authorization(authorization, receiver).await
+        }
     }
 }

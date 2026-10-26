@@ -126,7 +126,9 @@ opaque restore token is atomically saved as `<daemon directory>/wayland-restore-
 with mode `0600`, and replaced by every successful Start response. The token
 never enters central storage or peer messages. Subsequent daemon starts restore
 it; explicit display discovery can also restore after the compositor closes a
-session. An active session reconnect needs no prompt. Across session recreation,
+session. Discovery issued while that consent dialog is still open waits for the
+grant already in progress and then lists the resulting monitors. An active
+session reconnect needs no prompt. Across session recreation,
 unattended restoration depends on the portal retaining the grant: a revoked or
 expired token may require local consent again. A saved token alone never reports
 granted permission. Permission refresh only reads current state.
@@ -143,7 +145,9 @@ portal generation and become invalid when it closes. Each viewer gets a new
 `OpenPipeWireRemote` connection. ScreenCast dimensions are logical; encoding uses
 the negotiated frame's pixel dimensions. EIS `mapping_id` associates a monitor
 with its absolute-pointer region, including scaling and monitor offsets.
-Without mapping IDs, input is accepted only for an unambiguous single region.
+Without mapping IDs, pointer input is accepted only for one unambiguous absolute
+region. Monitors that cannot be mapped stay capturable; a missing or failed
+input connection does not cancel the portal grant.
 
 `deskfleet-linux-media` loads GStreamer inside the native process on demand.
 PipeWire samples are copied into Rust-owned BGRA frames before returning buffers
@@ -157,8 +161,10 @@ checks the source generation so retained frames cannot outlive authorization.
 One EIS connection belongs to the portal session and is retained between
 controllers. The existing exclusive-controller rule, Team grants, input
 DataChannel, normalized coordinates, physical key codes, and held-key cleanup
-apply unchanged. Device removal releases that device's held state. An input
-controller never closes another viewer's portal session.
+apply unchanged. Device removal releases that device's held state. An EIS
+disconnect or stream error releases remote input and leaves the ScreenCast
+session running for current viewers. An input controller never closes another
+viewer's portal session. Portal closure still ends capture and input together.
 
 The authenticated `hello` response includes `fullDiskAccessPermission`,
 `screenCapturePermission`, and `accessibilityPermission`.

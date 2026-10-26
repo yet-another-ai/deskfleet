@@ -33,11 +33,10 @@ pub struct Eis {
     controller: Option<(u64, Source)>,
     held: Vec<Held>,
     sequence: u32,
-    source_count: usize,
 }
 
 impl Eis {
-    pub async fn connect(fd: OwnedFd, sources: &[Source]) -> Result<Self> {
+    pub async fn connect(fd: OwnedFd) -> Result<Self> {
         let setup = async {
             let context = ei::Context::new(UnixStream::from(fd)).map_err(input_error)?;
             let (connection, events) = context
@@ -51,9 +50,10 @@ impl Eis {
                 controller: None,
                 held: Vec::new(),
                 sequence: 0,
-                source_count: sources.len(),
             };
-            while !input.ready(sources) {
+            // Device capabilities complete the connection. Monitor mapping is
+            // decided later so an unmapped extra display cannot time this out.
+            while !input.ready() {
                 let event = input
                     .events
                     .next()
@@ -71,21 +71,16 @@ impl Eis {
             })?
     }
 
-    fn ready(&self, sources: &[Source]) -> bool {
-        [
-            DeviceCapability::Keyboard,
-            DeviceCapability::Button,
-            DeviceCapability::Scroll,
-        ]
-        .into_iter()
-        .all(|capability| {
+    fn ready(&self) -> bool {
+        input_devices_ready(|capability| {
             self.devices
                 .iter()
                 .any(|device| device.has_capability(capability))
-        }) && !sources.is_empty()
-            && sources
-                .iter()
-                .all(|source| self.pointer_region(source).is_ok())
+        })
+    }
+
+    pub(crate) fn controls(&self, source: &Source) -> bool {
+        self.pointer_region(source).is_ok()
     }
 
     pub fn event(&mut self, event: EiEvent) -> Result<()> {
@@ -272,26 +267,23 @@ impl Eis {
     }
 
     fn pointer_region(&self, source: &Source) -> Result<(&Device, &Region)> {
-        let mut matches = self
+        let pairs: Vec<(&Device, &Region)> = self
             .devices
             .iter()
             .filter(|device| device.has_capability(DeviceCapability::PointerAbsolute))
             .flat_map(|device| device.regions().iter().map(move |region| (device, region)))
-            .filter(|(_, region)| {
-                region.width > 0
-                    && region.height > 0
-                    && match source.mapping_id.as_deref() {
-                        Some(mapping) => region.mapping_id.as_deref() == Some(mapping),
-                        None => self.source_count == 1,
-                    }
-            });
-        let result = matches.next().ok_or_else(missing_device)?;
-        if matches.next().is_some() {
-            return Err(Error::Input(
-                "the compositor provided ambiguous monitor input mappings".into(),
-            ));
-        }
-        Ok(result)
+            .collect();
+        let index = pointer_index(
+            source.mapping_id.as_deref(),
+            pairs.iter().map(|(_, region)| *region),
+        )
+        .map_err(|error| match error {
+            SelectError::Missing => missing_device(),
+            SelectError::Ambiguous => {
+                Error::Input("the compositor provided ambiguous monitor input mappings".into())
+            }
+        })?;
+        Ok(pairs[index])
     }
 
     fn frame(&self, device: &Device) {
@@ -350,6 +342,59 @@ fn missing_device() -> Error {
     Error::Input("the compositor has no active input device for this monitor".into())
 }
 
+fn input_devices_ready(present: impl FnMut(DeviceCapability) -> bool) -> bool {
+    [
+        DeviceCapability::Keyboard,
+        DeviceCapability::Button,
+        DeviceCapability::Scroll,
+        DeviceCapability::PointerAbsolute,
+    ]
+    .into_iter()
+    .all(present)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SelectError {
+    Missing,
+    Ambiguous,
+}
+
+/// `mapping_id` selects one region. With no ids, pointer input stays available
+/// only for the single usable absolute region and never for an ambiguous set.
+fn pointer_index<'a>(
+    source_mapping: Option<&str>,
+    regions: impl Iterator<Item = &'a Region>,
+) -> std::result::Result<usize, SelectError> {
+    let usable = regions
+        .enumerate()
+        .filter(|(_, region)| region.width > 0 && region.height > 0);
+    match source_mapping {
+        None => {
+            let mut usable = usable;
+            let Some((index, _)) = usable.next() else {
+                return Err(SelectError::Missing);
+            };
+            if usable.next().is_some() {
+                Err(SelectError::Ambiguous)
+            } else {
+                Ok(index)
+            }
+        }
+        Some(mapping) => {
+            let mut matched =
+                usable.filter(|(_, region)| region.mapping_id.as_deref() == Some(mapping));
+            let Some((index, _)) = matched.next() else {
+                return Err(SelectError::Missing);
+            };
+            if matched.next().is_some() {
+                Err(SelectError::Ambiguous)
+            } else {
+                Ok(index)
+            }
+        }
+    }
+}
+
 fn input_error(error: impl std::fmt::Display) -> Error {
     Error::Input(error.to_string())
 }
@@ -372,5 +417,68 @@ mod tests {
         assert_eq!(coordinates(&region, 1.0, 1.0).unwrap(), (3199.0, 819.0));
         assert!(coordinates(&region, f64::NAN, 0.0).is_err());
         assert!(coordinates(&region, 1.1, 0.0).is_err());
+    }
+
+    fn region(mapping_id: Option<&str>, width: u32, height: u32) -> Region {
+        Region {
+            x: 0,
+            y: 0,
+            width,
+            height,
+            scale: 1.0,
+            mapping_id: mapping_id.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn device_readiness_does_not_wait_for_every_monitor_mapping() {
+        assert!(input_devices_ready(|capability| {
+            matches!(
+                capability,
+                DeviceCapability::Keyboard
+                    | DeviceCapability::Button
+                    | DeviceCapability::Scroll
+                    | DeviceCapability::PointerAbsolute
+            )
+        }));
+        let regions = [region(None, 1920, 1080), region(None, 1280, 720)];
+        assert_eq!(
+            pointer_index(None, regions.iter()),
+            Err(SelectError::Ambiguous)
+        );
+    }
+
+    #[test]
+    fn multiple_monitors_without_mapping_ids_use_only_one_region() {
+        let monitors = [region(None, 1920, 1080), region(None, 1280, 720)];
+        assert_eq!(
+            pointer_index(None, monitors.iter()),
+            Err(SelectError::Ambiguous)
+        );
+        // Every unmapped monitor shares that one region; a zero-size region does not count.
+        let sole = [region(None, 0, 0), region(None, 1920, 1080)];
+        assert_eq!(pointer_index(None, sole.iter()), Ok(1));
+    }
+
+    #[test]
+    fn mapping_id_limits_pointer_input_to_the_matching_monitor() {
+        let regions = [
+            region(Some("left"), 1920, 1080),
+            region(Some("right"), 1280, 720),
+        ];
+        assert_eq!(pointer_index(Some("right"), regions.iter()), Ok(1));
+        assert_eq!(
+            pointer_index(Some("missing"), regions.iter()),
+            Err(SelectError::Missing)
+        );
+        assert_eq!(
+            pointer_index(None, regions.iter()),
+            Err(SelectError::Ambiguous)
+        );
+        let duplicate = [region(Some("left"), 100, 100), region(Some("left"), 50, 50)];
+        assert_eq!(
+            pointer_index(Some("left"), duplicate.iter()),
+            Err(SelectError::Ambiguous)
+        );
     }
 }

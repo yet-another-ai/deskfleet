@@ -212,24 +212,16 @@ pub async fn authorize(
         .transpose()?
         .unwrap_or_default();
     let sources = parse_sources(raw_streams, next_id)?;
+    // Input setup must not discard streams the user already granted.
     let input = if grants & 3 == 3 && !sources.is_empty() {
-        let remote = desktop_proxy(&connection, REMOTE).await?;
-        let fd: zbus::zvariant::OwnedFd = remote
-            .call(
-                "ConnectToEIS",
-                &(&session, HashMap::<&str, Value<'_>>::new()),
-            )
-            .await?;
-        Some(Eis::connect(fd.into(), &sources).await?)
+        connect_input(&connection, &session).await
     } else {
         None
     };
-    let snapshot = PermissionSnapshot {
-        screen_capture: !sources.is_empty(),
-        control: input.is_some(),
-        status: PermissionStatus::Granted,
-        persistent: returned_token.is_some(),
-    };
+    let control = input
+        .as_ref()
+        .is_some_and(|input| sources.iter().any(|source| input.controls(source)));
+    let snapshot = granted_snapshot(!sources.is_empty(), control, returned_token.is_some());
     Ok(Live {
         connection,
         session,
@@ -239,6 +231,36 @@ pub async fn authorize(
         snapshot,
         input,
     })
+}
+
+async fn connect_input(connection: &Connection, session: &OwnedObjectPath) -> Option<Eis> {
+    let connected = async {
+        let remote = desktop_proxy(connection, REMOTE).await?;
+        let fd: zbus::zvariant::OwnedFd = remote
+            .call(
+                "ConnectToEIS",
+                &(session, HashMap::<&str, Value<'_>>::new()),
+            )
+            .await?;
+        Eis::connect(fd.into()).await
+    }
+    .await;
+    match connected {
+        Ok(input) => Some(input),
+        Err(error) => {
+            tracing::warn!(%error, "Wayland screen capture remains available without remote input");
+            None
+        }
+    }
+}
+
+fn granted_snapshot(screen_capture: bool, control: bool, persistent: bool) -> PermissionSnapshot {
+    PermissionSnapshot {
+        screen_capture,
+        control: screen_capture && control,
+        status: PermissionStatus::Granted,
+        persistent,
+    }
 }
 
 fn parse_sources(raw_streams: Vec<(u32, Properties)>, next_id: &mut u32) -> Result<Vec<Source>> {
@@ -376,5 +398,15 @@ mod tests {
         assert_eq!(sources[1].pipewire_serial, None);
         assert_eq!(sources[1].node_id, 43);
         assert_ne!(sources[0].id, sources[1].id);
+    }
+
+    #[test]
+    fn screen_capture_survives_when_pointer_regions_are_ambiguous() {
+        let snapshot = granted_snapshot(true, false, true);
+        assert!(snapshot.screen_capture);
+        assert!(!snapshot.control);
+        assert!(snapshot.persistent);
+        assert_eq!(snapshot.status, PermissionStatus::Granted);
+        assert!(!granted_snapshot(false, true, false).control);
     }
 }
