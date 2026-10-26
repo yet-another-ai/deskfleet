@@ -102,17 +102,16 @@ impl Pipeline {
     }
 
     /// Check a previously started stream without consuming its queued sample.
+    ///
+    /// EOS alone is not drained: with `wait-on-eos=false`, the appsink may still
+    /// hold its single queued buffer after `gst_app_sink_is_eos` becomes true.
+    /// Pacing must leave that last damage until the frame is due; `pull` reports
+    /// [`Error::Ended`] only after the queue is empty.
     pub fn check_active(&self) -> Result<()> {
         if self.stopped.get() {
             return Err(Error::Ended);
         }
-        self.check_error()?;
-        // SAFETY: sink is a retained appsink. EOS is false while samples remain
-        // queued, so a final frame can still be pulled after its pacing delay.
-        if unsafe { (self.element.api.sink_is_eos)(self.sink.ptr.as_ptr()) } != 0 {
-            return Err(Error::Ended);
-        }
-        Ok(())
+        self.check_error()
     }
 
     pub fn pull(&self, timeout: Duration) -> Result<Option<Sample>> {

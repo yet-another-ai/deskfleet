@@ -229,6 +229,12 @@ mod tests {
         // EOS is a barrier: both updates have reached the single-slot appsink,
         // and no future damage can rescue a frame accidentally consumed early.
         finish_input(&capture, &input);
+        // wait-on-eos=false can mark the appsink EOS while the last buffer remains.
+        // Pacing must not treat that as Ended or the final damage is dropped.
+        capture
+            .pipeline
+            .check_active()
+            .expect("EOS with a queued sample must stay active for pacing");
         capture.last_frame.set(Some(Instant::now()));
         let before = Instant::now();
         assert!(capture.next_frame(Duration::ZERO).unwrap().is_none());
@@ -242,6 +248,11 @@ mod tests {
             .unwrap()
             .expect("final damage was lost while pacing");
         assert_eq!(final_frame.pixels, [30; 4]);
+        // Ended comes from an empty pull after EOS, not from pacing's
+        // non-consuming active check while the frame interval is still open.
+        capture
+            .last_frame
+            .set(Some(Instant::now() - capture.frame_period));
         assert!(matches!(
             capture.next_frame(Duration::ZERO),
             Err(Error::Ended)
