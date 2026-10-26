@@ -1,7 +1,7 @@
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { CentralApi } from "../../../../packages/client/src/central.ts"
-import { ONBOARDING_PERMISSIONS, type OnboardingPermission, type OnboardingState, type OnboardingStep } from "../../../../packages/client/src/onboarding.ts"
+import { ONBOARDING_PERMISSIONS, onboardingPermissions, type OnboardingPermission, type OnboardingState, type OnboardingStep } from "../../../../packages/client/src/onboarding.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"
 
 interface OnboardingOptions {
@@ -63,7 +63,8 @@ export class OnboardingController {
       await this.#options.central.setServer(serverUrl)
       const local = await this.#options.localAgent.startIfEnabled()
       if (local.status === "error") throw new Error(local.error ?? "Local Agent could not start")
-      return this.#save(this.#options.platform === "darwin" && local.status === "running" ? "fullDiskAccess" : "account")
+      const firstPermission = onboardingPermissions(this.#options.platform)[0]
+      return this.#save(local.status === "running" ? firstPermission ?? "account" : "account")
     })
   }
 
@@ -83,8 +84,9 @@ export class OnboardingController {
   advancePermission(permission: OnboardingPermission): Promise<OnboardingState> {
     return this.#run(async () => {
       await this.#requireStep(permission)
-      const index = ONBOARDING_PERMISSIONS.indexOf(permission)
-      return this.#save(ONBOARDING_PERMISSIONS[index + 1] ?? "account")
+      const permissions = onboardingPermissions(this.#options.platform)
+      const index = permissions.indexOf(permission)
+      return this.#save(permissions[index + 1] ?? "account")
     })
   }
 

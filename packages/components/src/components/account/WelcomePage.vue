@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { DesktopPermissionsState } from "@deskfleet/client/local-agent"
-import { ONBOARDING_PERMISSIONS, type OnboardingPermission, type OnboardingState, type OnboardingStep } from "@deskfleet/client/onboarding"
+import { ONBOARDING_PERMISSIONS, onboardingPermissions, type OnboardingPermission, type OnboardingState, type OnboardingStep } from "@deskfleet/client/onboarding"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import BrandLogo from "../common/BrandLogo.vue"
 
@@ -23,14 +23,22 @@ const error = ref(session.notice.value)
 const permissions = ref<Partial<DesktopPermissionsState>>({})
 // Permission events can arrive before an older IPC snapshot resolves.
 let permissionRevision = 0
-const permission = computed(() => ONBOARDING_PERMISSIONS.find(value => value === step.value))
+const linux = computed(() => props.host.platform === "linux")
+const permissionSteps = computed(() => onboardingPermissions(props.host.platform))
+const permission = computed(() => permissionSteps.value.find(value => value === step.value))
 const currentPermission = computed(() => permission.value ? permissions.value[`${permission.value}Permission`] : undefined)
 const granted = computed(() => ["granted", "not-required"].includes(currentPermission.value?.status ?? ""))
-const steps = computed<OnboardingStep[]>(() => firstRun && props.host.platform === "darwin"
-  ? ["server", ...ONBOARDING_PERMISSIONS, "account"] : ["server", "account"])
+const requesting = computed(() => currentPermission.value?.status === "requesting" || linux.value
+  && permissionSteps.value.some(kind => permissions.value[`${kind}Permission`]?.status === "requesting"))
+const canRequest = computed(() => !granted.value && !requesting.value && (!linux.value
+  || !refreshing.value && currentPermission.value?.status !== "checking"))
+const permissionMessages = computed(() => `welcome.${linux.value ? "wayland" : "permissions"}.${permission.value}`)
+const steps = computed<OnboardingStep[]>(() => ["server", ...(firstRun ? permissionSteps.value : []), "account"])
 const icons = { server: Server, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, account: KeyRound, complete: Check }
 const currentIndex = computed(() => steps.value.indexOf(step.value))
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
+const stepLabel = (value: OnboardingStep) => t(linux.value && (value === "screenCapture" || value === "accessibility")
+  ? `welcome.wayland.${value}.title` : `welcome.steps.${value}`)
 
 function move(next: OnboardingState): void {
   step.value = next.step
@@ -78,6 +86,7 @@ async function refreshPermissions(): Promise<void> {
 }
 
 async function requestPermission(kind: OnboardingPermission): Promise<void> {
+  if (!canRequest.value) return
   await act(async () => {
     const revision = ++permissionRevision
     const value = await onboarding!.requestPermission(kind)
@@ -120,7 +129,7 @@ onBeforeUnmount(() => { unsubscribe?.() })
               <Check v-if="index < currentIndex" :size="15" aria-hidden="true" />
               <component :is="icons[item]" v-else :size="15" aria-hidden="true" />
             </span>
-            {{ t(`welcome.steps.${item}`) }}
+            {{ stepLabel(item) }}
           </li>
         </ol>
       </aside>
@@ -128,25 +137,25 @@ onBeforeUnmount(() => { unsubscribe?.() })
         <template v-if="permission">
           <ShieldCheck :size="30" :stroke-width="1.5" class="mb-5 text-ui-text-muted" aria-hidden="true" />
           <p class="m-0 mb-2 text-xs text-ui-text-muted">{{ t("welcome.stepCount", { current: currentIndex + 1, total: steps.length }) }}</p>
-          <h1 class="m-0 text-xl font-semibold">{{ t(`welcome.steps.${permission}`) }}</h1>
-          <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t(`welcome.permissions.${permission}.description`) }}</p>
+          <h1 class="m-0 text-xl font-semibold">{{ stepLabel(permission) }}</h1>
+          <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.description`) }}</p>
           <div class="my-6 rounded-lg border border-ui-border bg-ui-sidebar p-4">
-            <p class="m-0 text-xs font-medium">{{ t("welcome.systemSettings") }}</p>
-            <p class="m-0 mt-2 text-sm leading-relaxed text-ui-text-muted">{{ t(`welcome.permissions.${permission}.path`) }}</p>
-            <p class="m-0 mt-3 text-xs leading-relaxed text-ui-text-muted">{{ t("welcome.permissionRestart") }}</p>
+            <p class="m-0 text-xs font-medium">{{ t(linux ? "welcome.wayland.dialog" : "welcome.systemSettings") }}</p>
+            <p class="m-0 mt-2 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.${linux ? 'instructions' : 'path'}`) }}</p>
+            <p class="m-0 mt-3 text-xs leading-relaxed text-ui-text-muted">{{ t(linux ? "welcome.wayland.shared" : "welcome.permissionRestart") }}</p>
           </div>
           <p role="status" class="m-0 mb-4 text-sm" :class="granted ? 'text-ui-text' : 'text-ui-text-muted'">
-            {{ t(`welcome.permissionStatus.${currentPermission?.status ?? 'checking'}`) }}
+            {{ t(linux && requesting ? 'welcome.wayland.requesting' : `welcome.permissionStatus.${currentPermission?.status ?? 'checking'}`) }}
           </p>
           <p v-if="error || currentPermission?.error" role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ error || currentPermission?.error }}</p>
           <div class="flex flex-wrap gap-2">
-            <button v-if="!granted" type="button" class="ui-button-primary" :disabled="pending || currentPermission?.status === 'requesting'" @click="requestPermission(permission)">{{ t("welcome.openSettings") }}</button>
+            <button v-if="!granted" type="button" class="ui-button-primary" :disabled="pending || !canRequest" @click="requestPermission(permission)">{{ t(linux ? "welcome.wayland.retry" : "welcome.openSettings") }}</button>
             <button type="button" class="ui-button" :disabled="pending || refreshing" @click="refreshPermissions">{{ t(refreshing ? "welcome.checking" : "welcome.checkAgain") }}</button>
             <button v-if="granted" type="button" class="ui-button-primary ml-auto" :disabled="pending" @click="advancePermission(permission)">{{ t("welcome.continue") }}<ChevronRight :size="15" aria-hidden="true" /></button>
           </div>
           <template v-if="!granted">
-            <p class="m-0 mt-5 text-xs leading-relaxed text-ui-text-muted">{{ t(`welcome.permissions.${permission}.skip`) }}</p>
-            <button type="button" class="mt-3 w-fit cursor-pointer border-0 bg-transparent p-0 text-sm text-ui-text-muted underline underline-offset-4 disabled:cursor-default disabled:opacity-50" :disabled="pending || currentPermission?.status === 'requesting'" @click="advancePermission(permission)">{{ t("welcome.skip") }}</button>
+            <p class="m-0 mt-5 text-xs leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.skip`) }}</p>
+            <button type="button" class="mt-3 w-fit cursor-pointer border-0 bg-transparent p-0 text-sm text-ui-text-muted underline underline-offset-4 disabled:cursor-default disabled:opacity-50" :disabled="pending || requesting" @click="advancePermission(permission)">{{ t("welcome.skip") }}</button>
           </template>
         </template>
         <form v-else class="flex flex-col gap-5" @submit.prevent="submit">

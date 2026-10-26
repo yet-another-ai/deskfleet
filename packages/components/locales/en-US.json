@@ -740,6 +740,24 @@
       "denied": "Access is not enabled yet",
       "error": "Could not check access"
     },
+    "wayland": {
+      "dialog": "Desktop authorization",
+      "shared": "Screen sharing and mouse and keyboard control share one authorization. Once approved, continue through both steps.",
+      "requesting": "Waiting for desktop authorization…",
+      "retry": "Retry access",
+      "screenCapture": {
+        "title": "Screen sharing",
+        "description": "Allow deskfleet to share this computer’s screen during remote desktop sessions.",
+        "instructions": "Select the screens to share and approve access in your desktop’s authorization dialog.",
+        "skip": "Remote screen sharing will be unavailable until you authorize it. You can skip this step and enable access later."
+      },
+      "accessibility": {
+        "title": "Mouse and keyboard control",
+        "description": "Allow remote desktop sessions to control the mouse and keyboard on this computer.",
+        "instructions": "Allow mouse and keyboard control in your desktop’s authorization dialog. If you already approved it with screen sharing, no additional prompt is needed.",
+        "skip": "Remote mouse and keyboard control will be unavailable until you authorize it. Screen sharing can still work without control."
+      }
+    },
     "permissions": {
       "fullDiskAccess": {
         "description": "Allow the local agent to work with files in protected folders, including file previews and workspace files.",

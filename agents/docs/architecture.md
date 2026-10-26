@@ -265,15 +265,18 @@ app waits for its cleanup before exiting. The app never spawns a separate daemon
 process. The standalone Node.js SEA is the headless distribution of the same
 daemon and runs independently of any desktop app.
 
-Desktop first-run setup uses a welcome page: backend server, Full Disk Access,
-screen/system-audio recording, Accessibility, then account sign-in. The host saves
+Desktop first-run setup uses a welcome page: backend server, platform-specific
+permissions, then account sign-in. macOS guides Full Disk Access,
+screen/system-audio recording, and Accessibility. Linux guides screen sharing
+and keyboard/mouse control through its desktop authorization dialog, without
+Full Disk Access or macOS System Settings instructions. The host saves
 the current step in `onboarding.json` under its user-data directory and resumes
 it after restart. A fresh installation shows the server step before starting its
 daemon. A profile that already has an account or desktop settings, but no welcome
 file, is treated as finished so sign-in is not repeated and the local Agent still
 starts. After saving the server, it starts or reuses the local Agent according to
-the existing enabled preference. Non-macOS clients and clients with the local
-Agent disabled skip the OS permission steps. Users can defer an individual
+the existing enabled preference. Windows clients and clients without a running
+local Agent skip the OS permission steps. Users can defer an individual
 permission without blocking account setup or unrelated Agent work.
 
 After acquiring discovery and initializing local IPC, a macOS desktop-hosted
@@ -286,7 +289,10 @@ Full Disk Access requires enabling the host app or executable in System Settings
 and may require restarting that host. File previews have no separate consent
 button or per-Session dialog. On Linux Wayland, both hosted and standalone daemons
 request combined screen and input access at startup. A daemon-owned portal
-session and local restore token allow unattended viewer reconnects while the
+session supplies both Linux welcome permission steps; the guide shows pending
+authorization and existing grants, and offers an explicit retry after denial.
+Refreshing or advancing the guide does not request another grant. The session
+and local restore token allow unattended viewer reconnects while the
 user's desktop is logged in and unlocked. Viewer lifetimes do not own that grant;
 daemon shutdown closes it. See [native media](media.md) for restoration and
 runtime requirements. Settings displays OS permission status separately from

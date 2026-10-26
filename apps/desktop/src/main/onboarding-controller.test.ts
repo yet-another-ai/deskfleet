@@ -47,18 +47,63 @@ test("welcome saves the server before starting the daemon and resumes permission
   expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "complete" })
 })
 
-test.each(["linux", "win32"] as const)("%s skips macOS permission steps", async platform => {
-  const f = await fixture(platform)
+test("Linux guides screen and input access, reuses startup authorization, and resumes after restart", async () => {
+  const f = await fixture("linux")
+  f.localAgent.refreshPermissions.mockResolvedValue({
+    fullDiskAccessPermission: { status: "not-required" },
+    screenCapturePermission: { status: "requesting" },
+    accessibilityPermission: { status: "requesting" },
+  })
+  expect(await f.controller.saveServer("https://deskfleet.example")).toEqual({ step: "screenCapture" })
+  expect(f.localAgent.startIfEnabled).toHaveBeenCalledOnce()
+  expect(await f.controller.permissions()).toMatchObject({ screenCapturePermission: { status: "requesting" } })
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+  await expect(f.controller.requestPermission("fullDiskAccess")).rejects.toThrow("step has changed")
+  f.localAgent.refreshPermissions.mockResolvedValue({
+    fullDiskAccessPermission: { status: "not-required" },
+    screenCapturePermission: { status: "granted" },
+    accessibilityPermission: { status: "granted" },
+  })
+  expect(await f.controller.permissions()).toMatchObject({ accessibilityPermission: { status: "granted" } })
+  expect(await f.controller.advancePermission("screenCapture")).toEqual({ step: "accessibility" })
+  const resumed = f.restart()
+  expect(await resumed.get()).toEqual({ step: "accessibility" })
+  expect(await resumed.advancePermission("accessibility")).toEqual({ step: "account" })
+  expect(await resumed.complete()).toEqual({ step: "complete" })
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+})
+
+test("Linux welcome retries or defers desktop permissions without adding Full Disk Access", async () => {
+  const f = await fixture("linux")
+  await f.controller.saveServer("https://deskfleet.example")
+  await f.controller.requestPermission("screenCapture")
+  expect(f.localAgent.requestPermission).toHaveBeenCalledExactlyOnceWith("screenCapture")
+  expect(await f.controller.advancePermission("screenCapture")).toEqual({ step: "accessibility" })
+  await f.controller.requestPermission("accessibility")
+  expect(f.localAgent.requestPermission).toHaveBeenLastCalledWith("accessibility")
+  expect(await f.controller.advancePermission("accessibility")).toEqual({ step: "account" })
+})
+
+test("Windows skips OS permission steps", async () => {
+  const f = await fixture("win32")
   expect(await f.controller.saveServer("https://deskfleet.example")).toEqual({ step: "account" })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })
 
-test("disabled local Agent preference skips local permissions", async () => {
-  const f = await fixture()
+test.each(["darwin", "linux"] as const)("disabled local Agent preference skips %s local permissions", async platform => {
+  const f = await fixture(platform)
   f.localAgent.state.enabled = false
   f.localAgent.state.status = "stopped"
   expect(await f.controller.saveServer("https://deskfleet.example")).toEqual({ step: "account" })
   expect(f.localAgent.state.enabled).toBe(false)
+})
+
+test("Linux guides an attached running daemon when desktop auto-start is disabled", async () => {
+  const f = await fixture("linux")
+  f.localAgent.state.enabled = false
+  expect(await f.controller.saveServer("https://deskfleet.example")).toEqual({ step: "screenCapture" })
+  expect(f.localAgent.state.enabled).toBe(false)
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })
 
 test("server validation and daemon startup failures keep welcome on the server step", async () => {
