@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
+import UiSwitch from "../common/UiSwitch.vue"
 import { client } from "@deskfleet/client/platform"
 import { computed, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -47,22 +49,18 @@ onMounted(() => { if (client.platform !== "web") void load() })
     <div class="ui-card px-4">
       <SettingsRow v-for="option in options" :key="option.key" :label="t(option.label)" :label-id="`notifications-${option.key}-label`" :description-id="`notifications-${option.key}-description`">
         <template #description>{{ t(option.description) }}</template>
-        <button
-          type="button"
-          role="switch"
+        <UiSwitch
           :aria-labelledby="`notifications-${option.key}-label`"
           :aria-describedby="`notifications-${option.key}-description`"
-          :aria-checked="settings?.[option.key] ?? false"
+          :model-value="settings?.[option.key] ?? false"
           :disabled="busy || !settings || (option.key !== 'enabled' && !settings.enabled)"
-          class="ui-switch ml-2 disabled:cursor-default"
-          @click="toggle(option.key)"
-        >
-          <span class="ui-switch-thumb" :class="settings?.[option.key] && 'translate-x-4'" />
-        </button>
+          class="ml-2 disabled:cursor-default"
+          @update:model-value="toggle(option.key)"
+         />
       </SettingsRow>
     </div>
     <p v-if="busy" role="status" class="m-0 mt-2 text-[13px] text-ui-text-muted">{{ loading ? t("settings.loading") : t("catalog.saving") }}</p>
     <p v-if="requestError" role="alert" class="m-0 mt-2 break-words text-[13px] text-ui-danger">{{ requestError }}</p>
-    <button v-if="!settings && requestError" type="button" class="ui-button mt-2" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</button>
+    <UiButton v-if="!settings && requestError" type="button" class="mt-2" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</UiButton>
   </section>
 </template>

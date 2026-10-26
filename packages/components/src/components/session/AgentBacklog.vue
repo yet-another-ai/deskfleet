@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { CircleAlert, CornerDownRight, ListEnd, RotateCw, X } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
@@ -20,9 +21,9 @@ const preview = (input: AgentInput) => input.content.map(block => block.type ===
         <span class="min-w-0 flex-1 truncate select-text" :title="input.error ?? (input.state === 'uncertain' ? t('agent.uncertainInput') : preview(input))">{{ preview(input) }}</span>
         <span v-if="input.state !== 'pending'" class="shrink-0 text-xs" :class="input.state === 'failed' ? 'text-ui-danger' : 'text-ui-warning'">{{ t(`agent.inputState.${input.state}`) }}</span>
         <AgentActor v-if="input.author.userId" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
-        <button v-if="input.state === 'pending' && canSteer" type="button" class="ui-text-button shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('steer', input.id)"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</button>
-        <button v-if="input.state === 'failed'" type="button" class="ui-text-button shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('retry', input.id)"><RotateCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.retryInput') }}</button>
-        <button v-if="input.state === 'pending'" type="button" class="ui-text-button shrink-0 cursor-pointer px-1.5 hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" :title="t('agent.withdraw')" :aria-label="t('agent.withdraw')" @click="emit('withdraw', input.id)"><X :size="14" :stroke-width="1.75" aria-hidden="true" /></button>
+        <UiButton variant="ghost" size="sm" v-if="input.state === 'pending' && canSteer" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('steer', input.id)"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+        <UiButton variant="ghost" size="sm" v-if="input.state === 'failed'" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('retry', input.id)"><RotateCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.retryInput') }}</UiButton>
+        <UiButton variant="ghost" size="sm" v-if="input.state === 'pending'" type="button" class="shrink-0 cursor-pointer px-1.5 hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" :title="t('agent.withdraw')" :aria-label="t('agent.withdraw')" @click="emit('withdraw', input.id)"><X :size="14" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </li>
     </ol>
   </section>

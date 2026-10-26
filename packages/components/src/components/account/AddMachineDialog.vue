@@ -1,17 +1,19 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { ChevronRight, Laptop, Server } from "@lucide/vue"
 import { whenever } from "@vueuse/core"
-import { computed, nextTick, onMounted, ref, useId, useTemplateRef } from "vue"
+import { DialogDescription, DialogTitle } from "reka-ui"
+import { computed, nextTick, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import CopyField from "../common/CopyField.vue"
+import UiDialog from "../common/UiDialog.vue"
 import { parseDaemonStatus } from "./daemon-status.ts"
 
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const id = useId()
 const session = useAccountSession()!
-const dialog = useTemplateRef<HTMLDialogElement>("dialog")
 const statusInput = useTemplateRef<HTMLTextAreaElement>("statusInput")
 const localName = useTemplateRef<HTMLInputElement>("localName")
 const credentialField = useTemplateRef<InstanceType<typeof CopyField>>("credentialField")
@@ -77,13 +79,15 @@ const register = () => run(async () => {
   await nextTick()
   credentialField.value?.focus()
 })
-onMounted(() => { dialog.value?.showModal(); if (step.value === "headless") statusInput.value?.focus() })
+function focusInitial(event: Event): void {
+  if (step.value === "headless") { event.preventDefault(); statusInput.value?.focus() }
+}
 </script>
 
 <template>
-  <dialog ref="dialog" class="ui-dialog app-no-drag w-[34rem] max-h-[90vh] overflow-y-auto" :aria-labelledby="`${id}-title`" :aria-describedby="`${id}-description`" @cancel.prevent="close">
-    <h2 :id="`${id}-title`" class="ui-dialog-title">{{ t(step === "credentials" ? "addMachine.finishTitle" : "addMachine.title", { team: team?.name ?? "" }) }}</h2>
-    <p :id="`${id}-description`" class="ui-dialog-description mb-5">{{ t(step === "credentials" ? "addMachine.finishDescription" : "addMachine.description") }}</p>
+  <UiDialog class="w-[34rem]" described :prevent-close="pending" @close="close" @open-auto-focus="focusInitial">
+    <DialogTitle class="ui-dialog-title">{{ t(step === "credentials" ? "addMachine.finishTitle" : "addMachine.title", { team: team?.name ?? "" }) }}</DialogTitle>
+    <DialogDescription class="ui-dialog-description mb-5">{{ t(step === "credentials" ? "addMachine.finishDescription" : "addMachine.description") }}</DialogDescription>
 
     <div v-if="step === 'choose'" class="flex flex-col gap-2">
       <button type="button" class="ui-option-card" :disabled="pending || !session.canEnrollLocal.value" data-add-machine="local" @click="chooseLocal">
@@ -105,7 +109,7 @@ onMounted(() => { dialog.value?.showModal(); if (step.value === "headless") stat
         <ChevronRight :size="16" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
       </button>
       <p v-if="error" role="alert" class="m-0 mt-2 text-sm text-ui-danger">{{ error }}</p>
-      <div class="ui-dialog-actions mt-4"><button type="button" class="ui-button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</button></div>
+      <div class="ui-dialog-actions mt-4"><UiButton type="button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton></div>
     </div>
 
     <form v-else-if="step === 'local'" class="flex flex-col gap-5" @submit.prevent="connectThisComputer">
@@ -116,9 +120,9 @@ onMounted(() => { dialog.value?.showModal(); if (step.value === "headless") stat
       </label>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="flex justify-end gap-2">
-        <button type="button" class="ui-button mr-auto" :disabled="pending" @click="step = 'choose'; error = undefined">{{ t("addMachine.back") }}</button>
-        <button type="button" class="ui-button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</button>
-        <button type="submit" class="ui-button-primary" :disabled="pending || !name.trim()">{{ pending ? t("addMachine.connecting") : t("addMachine.connect") }}</button>
+        <UiButton type="button" class="mr-auto" :disabled="pending" @click="step = 'choose'; error = undefined">{{ t("addMachine.back") }}</UiButton>
+        <UiButton type="button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton variant="primary" type="submit" :loading="pending" :disabled="pending || !name.trim()">{{ pending ? t("addMachine.connecting") : t("addMachine.connect") }}</UiButton>
       </div>
     </form>
 
@@ -151,9 +155,9 @@ onMounted(() => { dialog.value?.showModal(); if (step.value === "headless") stat
       </ol>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="flex justify-end gap-2">
-        <button v-if="session.central.enrollLocal" type="button" class="ui-button mr-auto" :disabled="pending" @click="step = 'choose'; error = undefined">{{ t("addMachine.back") }}</button>
-        <button type="button" class="ui-button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</button>
-        <button type="submit" class="ui-button-primary" :disabled="pending || !identity || !name.trim()">{{ pending ? t("addMachine.adding") : t("account.addMachine") }}</button>
+        <UiButton v-if="session.central.enrollLocal" type="button" class="mr-auto" :disabled="pending" @click="step = 'choose'; error = undefined">{{ t("addMachine.back") }}</UiButton>
+        <UiButton type="button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton variant="primary" type="submit" :loading="pending" :disabled="pending || !identity || !name.trim()">{{ pending ? t("addMachine.adding") : t("account.addMachine") }}</UiButton>
       </div>
     </form>
 
@@ -169,8 +173,8 @@ onMounted(() => { dialog.value?.showModal(); if (step.value === "headless") stat
         </li>
       </ol>
       <p class="m-0 rounded-xl border border-ui-warning/30 bg-ui-warning/8 px-3 py-2 text-[13px] text-ui-warning">{{ t("addMachine.credentialsWarning") }}</p>
-      <div class="flex justify-end"><button type="button" class="ui-button-primary" @click="close">{{ t("account.done") }}</button></div>
+      <div class="flex justify-end"><UiButton variant="primary" type="button" @click="close">{{ t("account.done") }}</UiButton></div>
     </div>
-  </dialog>
+  </UiDialog>
 </template>
 

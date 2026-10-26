@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
+import UiSelect from "../common/UiSelect.vue"
+import { RadioGroupItem, RadioGroupRoot } from "reka-ui"
 import { Folder, GitBranch, MessagesSquare } from "@lucide/vue"
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -95,30 +98,21 @@ async function submit(): Promise<void> {
       <h2 id="schedule-run-in" class="ui-section-title">{{ t('schedules.runIn') }}</h2>
       <label class="flex flex-col gap-1.5 text-[13px] text-ui-text-muted">
         {{ t('schedules.workspace') }}
-        <select v-model="workspaceId" name="schedule-workspace" class="ui-input max-w-80 text-sm" required :disabled="blocked || !!initial">
-          <option value="" disabled>{{ t('schedules.chooseWorkspace') }}</option>
-          <option v-if="workspaceId && !workspace" :value="workspaceId" disabled>{{ t('schedules.unavailableWorkspace') }}</option>
-          <option v-for="value in workspaces" :key="value.id" :value="value.id">{{ value.name }}</option>
-        </select>
+        <UiSelect v-model="workspaceId" name="schedule-workspace" class="max-w-80" :aria-label="t('schedules.workspace')" :placeholder="t('schedules.chooseWorkspace')" :options="[...(workspaceId && !workspace ? [{ value: workspaceId, label: t('schedules.unavailableWorkspace'), disabled: true }] : []), ...workspaces.map(value => ({ value: value.id, label: value.name }))]" required :disabled="blocked || !!initial" />
       </label>
       <p v-if="!workspaces.length" role="status" class="m-0 text-[13px] text-ui-text-muted">{{ t('schedules.noWorkspace') }}</p>
-      <div role="radiogroup" :aria-label="t('schedules.runIn')" class="grid gap-2 sm:grid-cols-3">
-        <label v-for="option in DESTINATIONS" :key="option.value" class="relative flex cursor-pointer gap-2.5 rounded-xl border px-3 py-2.5 transition-colors focus-within:ring-2 focus-within:ring-ui-accent/40" :class="[destination === option.value ? 'border-ui-accent/60 bg-ui-accent/6' : 'border-ui-border bg-ui-surface hover:border-ui-border-strong', blocked && 'cursor-default op-60']">
-          <input v-model="destination" type="radio" name="schedule-target" :value="option.value" class="sr-only" :disabled="blocked" />
+      <RadioGroupRoot :model-value="destination" name="schedule-target" :disabled="blocked" :aria-label="t('schedules.runIn')" class="grid gap-2 sm:grid-cols-3" @update:model-value="destination = $event as Destination">
+        <RadioGroupItem v-for="option in DESTINATIONS" :key="option.value" :value="option.value" class="relative flex cursor-pointer gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors" :class="[destination === option.value ? 'border-ui-accent/60 bg-ui-accent/6' : 'border-ui-border bg-ui-surface hover:border-ui-border-strong', blocked && 'cursor-default op-60']">
           <component :is="option.icon" :size="16" :stroke-width="1.75" class="mt-0.5 shrink-0" :class="destination === option.value ? 'text-ui-accent' : 'text-ui-text-muted'" aria-hidden="true" />
           <span class="min-w-0">
             <span class="block text-sm font-medium">{{ t(`schedules.destination.${option.value}`) }}</span>
             <span class="mt-0.5 block text-xs leading-4.5 text-ui-text-muted">{{ t(`schedules.destinationHint.${option.value}`) }}</span>
           </span>
-        </label>
-      </div>
+        </RadioGroupItem>
+      </RadioGroupRoot>
       <label v-if="destination === 'existing'" class="flex flex-col gap-1.5 text-[13px] text-ui-text-muted">
         {{ t('schedules.session') }}
-        <select v-model="sessionId" name="schedule-session" class="ui-input max-w-80 text-sm" required :disabled="blocked">
-          <option value="" disabled>{{ t('schedules.chooseSession') }}</option>
-          <option v-if="sessionId && !selectedSession" :value="sessionId" disabled>{{ t('schedules.unavailableSession') }}</option>
-          <option v-for="session in sessions" :key="session.id" :value="session.id">{{ session.title }}</option>
-        </select>
+        <UiSelect v-model="sessionId" name="schedule-session" class="max-w-80" :aria-label="t('schedules.session')" :placeholder="t('schedules.chooseSession')" :options="[...(sessionId && !selectedSession ? [{ value: sessionId, label: t('schedules.unavailableSession'), disabled: true }] : []), ...sessions.map(session => ({ value: session.id, label: session.title }))]" required :disabled="blocked" />
       </label>
     </section>
 
@@ -132,8 +126,8 @@ async function submit(): Promise<void> {
       <div class="flex flex-wrap items-center justify-between gap-4">
         <p class="m-0 max-w-md text-xs leading-5 text-ui-text-muted">{{ t('schedules.executionHint') }}</p>
         <div class="ml-auto flex gap-2">
-          <button v-if="!initial" type="button" class="ui-button" :disabled="saving" @click="emit('cancel')">{{ t('schedules.cancel') }}</button>
-          <button type="submit" data-schedule-save class="ui-button-primary" :disabled="!canSave">{{ t(saving ? 'catalog.saving' : initial ? 'schedules.save' : 'schedules.createAction') }}</button>
+          <UiButton v-if="!initial" type="button" :disabled="saving" @click="emit('cancel')">{{ t('schedules.cancel') }}</UiButton>
+          <UiButton variant="primary" type="submit" :loading="saving" data-schedule-save  :disabled="!canSave">{{ t(saving ? 'catalog.saving' : initial ? 'schedules.save' : 'schedules.createAction') }}</UiButton>
         </div>
       </div>
     </div>

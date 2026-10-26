@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "./components/common/UiButton.vue"
 import { Bell, SlidersHorizontal, Users } from "@lucide/vue"
 import { defineAsyncComponent, onBeforeUnmount, provide, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -79,7 +80,7 @@ const section = (value: AccountSettingsSection) => [
       <BrandLogo :size="48" />
       <template v-if="onboardingError">
         <p role="alert" class="m-0 text-sm text-ui-danger">{{ onboardingError }}</p>
-        <button type="button" class="ui-button" @click="loadOnboarding">{{ t("welcome.retry") }}</button>
+        <UiButton type="button" @click="loadOnboarding">{{ t("welcome.retry") }}</UiButton>
       </template>
       <p v-else role="status" class="m-0 text-sm text-ui-text-muted">{{ t("welcome.loading") }}</p>
     </div>

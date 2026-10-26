@@ -84,8 +84,21 @@ textarea {
   outline-offset: -2px;
 }
 
-.ui-dialog::backdrop {
-  background: rgb(12 14 20 / 45%);
+/* All primitive overlays use the same restrained entry motion. */
+.ui-menu[data-state="open"],
+.ui-tooltip[data-state="delayed-open"],
+.ui-tooltip[data-state="instant-open"] {
+  animation: ui-overlay-in 120ms ease-out;
+  transform-origin: var(--reka-popper-transform-origin, center);
+}
+
+@keyframes ui-overlay-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-menu, .ui-tooltip { animation: none !important; }
 }
 
 /* Agent-authored Markdown in the conversation. */

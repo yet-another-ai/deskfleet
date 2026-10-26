@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { ArrowDown, ArrowUp, Folder, Plus, X } from "@lucide/vue"
 import { whenever } from "@vueuse/core"
 import { ref } from "vue"
@@ -50,16 +51,16 @@ function move(index: number, offset: number): void {
   <fieldset class="m-0 min-w-0 p-0" :disabled="disabled">
     <legend class="mb-1.5 p-0 text-sm">{{ t("worktree.directories") }}</legend>
     <div v-for="(directory, index) in bindings" :key="index" class="mb-2 flex items-center gap-1">
-      <button type="button" class="ui-button min-w-0 flex-1 font-normal" :name="`directory-path-${index}`" :aria-label="t('catalog.directoryPath', { number: index + 1 })" :title="directory.path || undefined" @click="pick(index)">
+      <UiButton type="button" class="min-w-0 flex-1 font-normal" :name="`directory-path-${index}`" :aria-label="t('catalog.directoryPath', { number: index + 1 })" :title="directory.path || undefined" @click="pick(index)">
         <Folder :size="14" class="shrink-0" aria-hidden="true" />
         <span class="min-w-0 flex-1 truncate text-left" :class="directory.path ? 'font-mono' : 'text-ui-text-muted'">{{ directory.path || t("folderPicker.title") }}</span>
         <span v-if="index === 0" class="ui-badge shrink-0">{{ t("catalog.defaultDirectory") }}</span>
-      </button>
-      <button type="button" class="ui-button shrink-0 self-stretch px-2" :disabled="index === 0" :aria-label="t('catalog.moveDirectoryUp', { number: index + 1 })" @click="move(index, -1)"><ArrowUp :size="13" aria-hidden="true" /></button>
-      <button type="button" class="ui-button shrink-0 self-stretch px-2" :disabled="index === bindings.length - 1" :aria-label="t('catalog.moveDirectoryDown', { number: index + 1 })" @click="move(index, 1)"><ArrowDown :size="13" aria-hidden="true" /></button>
-      <button type="button" class="ui-button shrink-0 self-stretch px-2" :disabled="bindings.length === 1" :aria-label="t('catalog.removeDirectory', { number: index + 1 })" @click="bindings.splice(index, 1)"><X :size="13" aria-hidden="true" /></button>
+      </UiButton>
+      <UiButton type="button" class="shrink-0 self-stretch px-2" :disabled="index === 0" :aria-label="t('catalog.moveDirectoryUp', { number: index + 1 })" @click="move(index, -1)"><ArrowUp :size="13" aria-hidden="true" /></UiButton>
+      <UiButton type="button" class="shrink-0 self-stretch px-2" :disabled="index === bindings.length - 1" :aria-label="t('catalog.moveDirectoryDown', { number: index + 1 })" @click="move(index, 1)"><ArrowDown :size="13" aria-hidden="true" /></UiButton>
+      <UiButton type="button" class="shrink-0 self-stretch px-2" :disabled="bindings.length === 1" :aria-label="t('catalog.removeDirectory', { number: index + 1 })" @click="bindings.splice(index, 1)"><X :size="13" aria-hidden="true" /></UiButton>
     </div>
-    <button type="button" class="ui-button" @click="add"><Plus :size="14" aria-hidden="true" />{{ t("catalog.addDirectory") }}</button>
+    <UiButton type="button" @click="add"><Plus :size="14" aria-hidden="true" />{{ t("catalog.addDirectory") }}</UiButton>
     <p v-if="error" role="alert" class="mb-0 mt-2 text-sm text-ui-danger">{{ error }}</p>
   </fieldset>
   <FolderPickerDialog v-if="picking && !disabled" :browse="browse" :machine-name="machineName" :initial-path="picking.initialPath" @select="selected" @cancel="picking = null" />

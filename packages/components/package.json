@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@deskfleet/client": "workspace:*",
+    "@internationalized/date": "3.12.4",
     "@lobehub/icons-static-svg": "1.99.0",
     "@lucide/vue": "1.61.0",
     "@vueuse/core": "15.0.0",
@@ -17,6 +18,7 @@
     "echarts": "6.1.0",
     "markdown-it": "15.0.3",
     "pinia": "4.1.0",
+    "reka-ui": "2.11.0",
     "vue": "3.6.0-rc.13",
     "vue-i18n": "11.4.16",
     "vue-router": "5.4.0"

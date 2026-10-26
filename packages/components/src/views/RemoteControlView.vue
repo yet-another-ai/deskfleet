@@ -2,7 +2,8 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { Activity, FolderSync, MonitorPlay, SquareTerminal } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
-import { computed, defineAsyncComponent, nextTick, ref, useId } from "vue"
+import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
+import { computed, defineAsyncComponent, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
@@ -38,23 +39,8 @@ watchImmediate(() => [machine.value?.id, active.value] as const, ([id, tool], pr
   if (id !== previous?.[0]) visited.value = new Set()
   if (id) visited.value.add(tool)
 })
-const id = useId()
-const tabId = (tool: Tool) => `${id}-${tool}-tab`
-const panelId = (tool: Tool) => `${id}-${tool}-panel`
-
-async function select(tool: Tool, focus = false): Promise<void> {
+async function select(tool: Tool): Promise<void> {
   await router.push({ name: "machine-control", params: { machineId: props.machineId }, query: { ...route.query, tab: tool } })
-  if (focus) { await nextTick(); document.getElementById(tabId(tool))?.focus() }
-}
-function keydown(event: KeyboardEvent, index: number): void {
-  let next: number
-  if (event.key === "ArrowRight") next = (index + 1) % tabs.length
-  else if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length
-  else if (event.key === "Home") next = 0
-  else if (event.key === "End") next = tabs.length - 1
-  else return
-  event.preventDefault()
-  void select(tabs[next]!.id, true)
 }
 
 const machineTerminals = computed(() => currentTarget.value ? terminals.sessions.filter(terminal => terminal.worktreeId === undefined) : [])
@@ -77,32 +63,30 @@ const activeTerminal = computed({
     {{ t('machine.remoteControl') }}
     <ResourcePath v-if="machine" :segments="[machine.name]" />
   </PaneHeader>
-  <div v-if="machine" :key="machineId" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
-    <div role="tablist" :aria-label="t('machine.remoteControl')" class="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-ui-border">
-      <button
-        v-for="(tab, index) in tabs" :id="tabId(tab.id)" :key="tab.id" type="button" role="tab"
-        :aria-selected="active === tab.id" :aria-controls="panelId(tab.id)" :tabindex="active === tab.id ? 0 : -1"
+  <TabsRoot v-if="machine" :key="machineId" :model-value="active" class="flex min-h-0 flex-1 flex-col px-4 pb-4" @update:model-value="select">
+    <TabsList :aria-label="t('machine.remoteControl')" class="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-ui-border" loop>
+      <TabsTrigger
+        v-for="tab in tabs" :key="tab.id" :value="tab.id"
         class="flex h-9 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap border-b-2 px-3 text-[13px]"
         :class="active === tab.id ? 'border-ui-accent text-ui-accent' : 'border-transparent text-ui-text-muted hover:text-ui-text'"
-        @click="select(tab.id)" @keydown="keydown($event, index)"
-      ><component :is="tab.icon" :size="15" aria-hidden="true" />{{ t(tab.label) }}</button>
-    </div>
+      ><component :is="tab.icon" :size="15" aria-hidden="true" />{{ t(tab.label) }}</TabsTrigger>
+    </TabsList>
     <!-- Retain visited tools and their state; desktop capture stops when its tab is hidden. -->
-    <div v-if="visited.has('terminal')" v-show="active === 'terminal'" :id="panelId('terminal')" role="tabpanel" :aria-labelledby="tabId('terminal')" class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-ui-border">
+    <TabsContent v-if="visited.has('terminal')" v-show="active === 'terminal'" value="terminal" force-mount class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-ui-border">
       <TerminalWorkspace v-if="currentTarget" v-model:active-id="activeTerminal" :terminals="machineTerminals" :create="() => terminals.create()" />
       <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('terminal.unavailable') }}</p>
-    </div>
-    <div v-if="visited.has('desktop')" v-show="active === 'desktop'" :id="panelId('desktop')" role="tabpanel" :aria-labelledby="tabId('desktop')" class="flex min-h-0 flex-1 flex-col">
+    </TabsContent>
+    <TabsContent v-if="visited.has('desktop')" v-show="active === 'desktop'" value="desktop" force-mount class="flex min-h-0 flex-1 flex-col">
       <DesktopView :machine-id="machineId" :visible="active === 'desktop'" />
-    </div>
-    <div v-if="visited.has('files')" v-show="active === 'files'" :id="panelId('files')" role="tabpanel" :aria-labelledby="tabId('files')" class="flex min-h-0 flex-1 flex-col overflow-auto">
+    </TabsContent>
+    <TabsContent v-if="visited.has('files')" v-show="active === 'files'" value="files" force-mount class="flex min-h-0 flex-1 flex-col overflow-auto">
       <FileTransferPanel v-if="files && target && currentTarget" :key="target.kind === 'machine' ? `${target.teamId}:${target.machineId}` : 'local'" :api="files" :target="target" :machine-name="machine.name" />
       <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('remoteControl.filesUnavailable') }}</p>
-    </div>
-    <div v-if="visited.has('system')" v-show="active === 'system'" :id="panelId('system')" role="tabpanel" :aria-labelledby="tabId('system')" class="flex min-h-0 flex-1 flex-col overflow-auto">
+    </TabsContent>
+    <TabsContent v-if="visited.has('system')" v-show="active === 'system'" value="system" force-mount class="flex min-h-0 flex-1 flex-col overflow-auto">
       <SystemStatusPanel v-if="currentTarget" :machine-id="machineId" :machine-name="machine.name" :online="machine.online" :active="active === 'system'" />
       <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('systemStatus.unavailable') }}</p>
-    </div>
-  </div>
+    </TabsContent>
+  </TabsRoot>
   <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('desktop.notFound') }}</p>
 </template>

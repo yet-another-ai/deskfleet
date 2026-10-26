@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { ShieldAlert } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
@@ -17,7 +18,7 @@ const pending = computed(() => props.permissions.filter(permission => permission
       <p class="m-0 mb-1 flex items-center gap-1.5 text-[13px] font-medium"><ShieldAlert :size="15" :stroke-width="1.75" class="text-ui-warning" aria-hidden="true" />{{ t('agent.permissionRequired') }}</p>
       <AgentToolCall :tool="permission.request.toolCall" live class="pl-2" />
       <div class="mt-2 flex flex-wrap justify-end gap-2">
-        <button v-for="option in permission.request.options" :key="option.optionId" type="button" class="py-1" :class="option.kind.startsWith('allow') ? 'ui-button-primary' : 'ui-button'" :disabled="disabled" @click="emit('respond', permission.id, option.optionId)">{{ option.name }}</button>
+        <UiButton v-for="option in permission.request.options" :key="option.optionId" :variant="option.kind.startsWith('allow') ? 'primary' : 'default'" :disabled="disabled" @click="emit('respond', permission.id, option.optionId)">{{ option.name }}</UiButton>
       </div>
     </div>
   </section>

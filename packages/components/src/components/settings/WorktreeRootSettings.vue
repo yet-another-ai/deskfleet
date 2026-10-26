@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { client as platformClient } from "@deskfleet/client/platform"
 import { computed, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -55,15 +56,14 @@ onMounted(load)
     </template>
     <div class="flex flex-col items-end gap-2">
       <span v-if="busy" role="status" class="text-[13px] text-ui-text-muted">{{ loading ? t("settings.loading") : saving ? t("catalog.saving") : t("settings.choosingFolder") }}</span>
-      <button v-if="!state && requestError" type="button" class="ui-button" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</button>
-      <button
+      <UiButton v-if="!state && requestError" type="button" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</UiButton>
+      <UiButton
         type="button"
-        class="ui-button"
         aria-describedby="worktree-root-label worktree-root-description"
         :disabled="busy || !state"
         @click="choose"
-      >{{ t("settings.chooseWorktreeRoot") }}</button>
-      <button v-if="state && state.root !== null" type="button" class="ui-button" :disabled="busy" @click="save(null)">{{ t("settings.useDefaultWorktreeRoot") }}</button>
+      >{{ t("settings.chooseWorktreeRoot") }}</UiButton>
+      <UiButton v-if="state && state.root !== null" type="button" :disabled="busy" @click="save(null)">{{ t("settings.useDefaultWorktreeRoot") }}</UiButton>
     </div>
   </SettingsRow>
   <p v-if="requestError" role="alert" class="m-0 -mt-1 break-words pb-3 text-[13px] text-ui-danger">{{ requestError }}</p>

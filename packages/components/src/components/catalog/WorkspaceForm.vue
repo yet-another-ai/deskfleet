@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
@@ -58,8 +59,8 @@ async function submit(): Promise<void> {
     <DirectoryBindingsEditor v-model="directories" :browse="browse" :machine-name="machineName" :disabled="saving || disabled" />
     <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
     <div class="mt-2 flex justify-end gap-2">
-      <button type="button" class="ui-button" :disabled="saving" @click="emit('cancel')">{{ t("catalog.cancel") }}</button>
-      <button type="submit" class="ui-button-primary" :disabled="saving || disabled">{{ saving ? t("catalog.saving") : submitLabel }}</button>
+      <UiButton type="button" :disabled="saving" @click="emit('cancel')">{{ t("catalog.cancel") }}</UiButton>
+      <UiButton variant="primary" type="submit" :loading="saving" :disabled="saving || disabled">{{ saving ? t("catalog.saving") : submitLabel }}</UiButton>
     </div>
   </form>
 </template>

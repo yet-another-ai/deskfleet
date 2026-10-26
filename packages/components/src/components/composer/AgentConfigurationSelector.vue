@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Check, ChevronDown, ChevronRight, LoaderCircle } from "@lucide/vue"
-import { onClickOutside, useEventListener } from "@vueuse/core"
-import { computed, nextTick, ref, useId, useTemplateRef, watch } from "vue"
+import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "reka-ui"
+import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentChoice } from "../../../../client/src/agent-configuration.ts"
 import { useAgentConfiguration } from "./useAgentConfiguration.ts"
@@ -27,13 +27,10 @@ const providerUnavailable = computed(() => !!(props.sessionId || props.providerI
 const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }), draftSelection)
 const providerPending = computed(() => !selectedProvider.value && !configuration.value && !providerUnavailable.value)
 watch(loading, value => emit("loading", value), { immediate: true })
-const controlsId = useId()
-const root = useTemplateRef<HTMLElement>("root")
-const trigger = useTemplateRef<HTMLButtonElement>("trigger")
+const root = useTemplateRef<{ $el: HTMLElement }>("root")
 type Control = "agent" | "model" | "reasoning" | "mode"
 interface ConfigurationControl { id: Control; label: string; value?: string; name?: string; options: AgentChoice[]; disabled: boolean }
 const active = ref<Control | null>(null)
-const submenuPosition = ref({ left: "0px", top: "0px" })
 
 function effortName(value: string, fallback?: string): string {
   return te(`composer.efforts.${value}`) ? t(`composer.efforts.${value}`) : fallback ?? value
@@ -48,45 +45,14 @@ const controls = computed<ConfigurationControl[]>(() => [
   { id: "mode" as const, label: t("composer.mode"), value: configuration.value?.modes?.currentValue, name: modeName.value, options: configuration.value?.modes?.options ?? [], disabled: props.disabled || loading.value || !configuration.value?.modes?.options.length },
 ])
 
-async function expand(): Promise<void> {
-  if (expanded.value) { await collapse(); return }
-  toggle()
-  await nextTick()
-  root.value?.querySelector<HTMLButtonElement>("[data-agent-control]:not(:disabled)")?.focus()
+function setOpen(open: boolean): void {
+  if (open !== expanded.value) toggle()
+  if (!open) active.value = null
 }
-async function collapse(restoreFocus = true): Promise<void> {
-  if (expanded.value) toggle()
-  active.value = null
-  if (restoreFocus) { await nextTick(); trigger.value?.focus() }
-}
-onClickOutside(root, () => { void collapse(false) })
-async function openOptions(control: Control, focus = false): Promise<void> {
-  if (controls.value.find(option => option.id === control)?.disabled) return
-  active.value = control
-  await nextTick()
-  const row = root.value?.querySelector<HTMLElement>(`[data-agent-control="${control}"]`)
-  const submenu = root.value?.querySelector<HTMLElement>("[data-agent-configuration-options]")
-  if (!row || !submenu) return
-  const bounds = row.getBoundingClientRect()
-  const width = submenu.offsetWidth
-  const right = bounds.right + 4
-  const left = right + width <= window.innerWidth - 8 ? right : bounds.left - width - 4
-  submenuPosition.value = {
-    left: `${Math.max(8, Math.min(left, window.innerWidth - width - 8))}px`,
-    top: `${Math.max(8, Math.min(bounds.top, window.innerHeight - submenu.offsetHeight - 8))}px`,
-  }
-  if (focus) (submenu.querySelector<HTMLButtonElement>('[aria-checked="true"]') ?? submenu.querySelector<HTMLButtonElement>("button"))?.focus()
-}
-useEventListener(window, "resize", () => { if (active.value) void openOptions(active.value) })
 async function closeOptions(control: Control): Promise<void> {
   active.value = null
   await nextTick()
-  root.value?.querySelector<HTMLButtonElement>(`[data-agent-control="${control}"]`)?.focus()
-}
-function move(event: KeyboardEvent, selector: string, direction: number): void {
-  const buttons = [...root.value!.querySelectorAll<HTMLButtonElement>(selector)].filter(button => !button.disabled)
-  const index = buttons.indexOf(event.target as HTMLButtonElement)
-  buttons[(index + direction + buttons.length) % buttons.length]?.focus()
+  root.value?.$el.querySelector<HTMLButtonElement>(`[data-agent-control="${control}"]`)?.focus()
 }
 function choose(control: Control, value: string): void {
   void closeOptions(control)
@@ -101,38 +67,46 @@ function choose(control: Control, value: string): void {
 </script>
 
 <template>
-  <div ref="root" data-agent-configuration class="relative flex min-w-0" @keydown.esc.stop.prevent="collapse()">
-    <button ref="trigger" data-agent-configuration-trigger data-composer-context type="button" class="ui-text-button min-w-0 max-w-full cursor-pointer leading-5 hover:bg-ui-hover hover:text-ui-text" :title="t('composer.provider')" :aria-label="t('composer.configureAgent', { selection: summary })" aria-haspopup="menu" :aria-expanded="expanded" :aria-controls="controlsId" @click="expand" @keydown.down.prevent="expand">
-      <span v-if="providerPending" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
-      <ProviderIcon v-else :icon="selectedProvider?.icon" :template="selectedProvider?.template" :size="15" />
-      <span class="truncate">{{ summary }}</span>
-      <LoaderCircle v-if="requestedModel" :size="13" class="shrink-0 animate-spin" aria-hidden="true" />
-      <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
-    </button>
-    <div v-if="expanded" :id="controlsId" data-agent-configuration-menu role="menu" :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu absolute bottom-full left-0 z-30 mb-2 w-64">
-      <div v-for="control in controls" :key="control.id" class="relative" @mouseenter="openOptions(control.id)">
-        <button type="button" role="menuitem" :data-agent-control="control.id" :data-value="control.value" :disabled="control.disabled" aria-haspopup="menu" :aria-expanded="active === control.id" :aria-controls="`${controlsId}-${control.id}`" class="ui-menu-item gap-3 focus:outline-none" :class="active === control.id && 'bg-ui-hover'" @click="openOptions(control.id, true)" @focus="active = null" @keydown.right.stop.prevent="openOptions(control.id, true)" @keydown.down.stop.prevent="move($event, '[data-agent-control]', 1)" @keydown.up.stop.prevent="move($event, '[data-agent-control]', -1)">
-          <span>{{ control.label }}</span>
-          <span class="ml-auto truncate text-ui-text-muted">{{ control.name ?? (loading ? t('composer.loading') : t('composer.unavailable')) }}</span>
-          <LoaderCircle v-if="control.id === 'model' && requestedModel" :size="13" class="shrink-0 animate-spin text-ui-text-muted" data-model-pending aria-hidden="true" />
-          <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
-        </button>
-        <div v-if="active === control.id" :id="`${controlsId}-${control.id}`" data-agent-configuration-options role="menu" :aria-label="control.label" :style="submenuPosition" class="ui-menu fixed z-40 max-h-[min(20rem,calc(100vh-16px))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] overflow-y-auto">
-          <button v-for="option in control.options" :key="option.id" type="button" role="menuitemradio" :data-value="option.id" :aria-checked="control.value === option.id" :disabled="control.disabled" class="ui-menu-item focus:outline-none" @click="choose(control.id, option.id)" @keydown.left.stop.prevent="closeOptions(control.id)" @keydown.down.stop.prevent="move($event, '[data-agent-configuration-options] button', 1)" @keydown.up.stop.prevent="move($event, '[data-agent-configuration-options] button', -1)">
-            <ProviderIcon v-if="control.id === 'agent'" :icon="providers.providers.find(provider => provider.id === option.id)?.icon" :template="providers.providers.find(provider => provider.id === option.id)?.template" :size="15" class="text-ui-text-muted" />
-            <span class="min-w-0 flex-1 text-left">
-              <span class="block" :class="option.description ? 'whitespace-normal' : 'truncate'">{{ option.name }}</span>
-              <span v-if="option.description" class="mt-0.5 block whitespace-normal text-xs text-ui-text-muted">{{ option.description }}</span>
-            </span>
-            <Check v-if="control.value === option.id" :size="15" class="shrink-0" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-      <p v-if="loading" class="m-0 flex items-center gap-1.5 border-t border-ui-border px-2.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
-      <div v-if="error" class="border-t border-ui-border px-2.5 py-2 text-xs">
-        <p role="alert" class="m-0 break-words text-ui-danger">{{ error }}</p>
-        <button type="button" role="menuitem" class="mt-2 cursor-pointer text-ui-text hover:underline" @click="reload">{{ t('composer.reloadConfiguration') }}</button>
-      </div>
-    </div>
+  <div data-agent-configuration class="flex min-w-0">
+    <DropdownMenuRoot :open="expanded" :modal="false" @update:open="setOpen">
+      <DropdownMenuTrigger data-agent-configuration-trigger data-composer-context class="ui-text-button min-w-0 max-w-full cursor-pointer leading-5 hover:bg-ui-hover hover:text-ui-text" :title="t('composer.provider')" :aria-label="t('composer.configureAgent', { selection: summary })">
+        <span v-if="providerPending" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+        <ProviderIcon v-else :icon="selectedProvider?.icon" :template="selectedProvider?.template" :size="15" />
+        <span class="truncate">{{ summary }}</span>
+        <LoaderCircle v-if="requestedModel" :size="13" class="shrink-0 animate-spin" aria-hidden="true" />
+        <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuPortal>
+        <DropdownMenuContent ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 w-64" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
+          <DropdownMenuSub v-for="control in controls" :key="control.id" :open="active === control.id" @update:open="active = $event ? control.id : active === control.id ? null : active">
+            <DropdownMenuSubTrigger as="button" type="button" :data-agent-control="control.id" :data-value="control.value" :disabled="control.disabled" class="ui-menu-item gap-3 focus:outline-none" :class="active === control.id && 'bg-ui-hover'">
+              <span>{{ control.label }}</span>
+              <span class="ml-auto truncate text-ui-text-muted">{{ control.name ?? (loading ? t('composer.loading') : t('composer.unavailable')) }}</span>
+              <LoaderCircle v-if="control.id === 'model' && requestedModel" :size="13" class="shrink-0 animate-spin text-ui-text-muted" data-model-pending aria-hidden="true" />
+              <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent data-agent-configuration-options :aria-label="control.label" :side-offset="4" :collision-padding="8" class="ui-menu z-50 max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] overflow-y-auto" loop>
+                <DropdownMenuRadioGroup :model-value="control.value">
+                  <DropdownMenuRadioItem v-for="option in control.options" :key="option.id" as="button" type="button" :value="option.id" :data-value="option.id" :disabled="control.disabled" class="ui-menu-item focus:outline-none" @select.prevent="choose(control.id, option.id)">
+                    <ProviderIcon v-if="control.id === 'agent'" :icon="providers.providers.find(provider => provider.id === option.id)?.icon" :template="providers.providers.find(provider => provider.id === option.id)?.template" :size="15" class="text-ui-text-muted" />
+                    <span class="min-w-0 flex-1 text-left">
+                      <span class="block" :class="option.description ? 'whitespace-normal' : 'truncate'">{{ option.name }}</span>
+                      <span v-if="option.description" class="mt-0.5 block whitespace-normal text-xs text-ui-text-muted">{{ option.description }}</span>
+                    </span>
+                    <Check v-if="control.value === option.id" :size="15" class="shrink-0" aria-hidden="true" />
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+          <p v-if="loading" class="m-0 flex items-center gap-1.5 border-t border-ui-border px-2.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
+          <div v-if="error" class="border-t border-ui-border px-2.5 py-2 text-xs">
+            <p role="alert" class="m-0 break-words text-ui-danger">{{ error }}</p>
+            <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-2" @select.prevent="reload">{{ t('composer.reloadConfiguration') }}</DropdownMenuItem>
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenuPortal>
+    </DropdownMenuRoot>
   </div>
 </template>

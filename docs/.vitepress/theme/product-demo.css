@@ -9,5 +9,5 @@
   isolation: isolate;
 }
 
-/* Restore native dialog centering after VitePress's global margin reset. */
-.ui-dialog { margin: auto; }
+/* Dialogs are centered by the shared Reka wrapper, including in product demos. */
+.ui-dialog { margin: 0; }

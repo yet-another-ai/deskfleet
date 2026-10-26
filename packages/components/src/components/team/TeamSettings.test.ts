@@ -5,6 +5,7 @@ import { accountSessionKey, createAccountSession, type AccountSession } from "..
 import { i18n } from "../../i18n/index.ts"
 import { fakeCentral, machineFixture } from "../../test/central.ts"
 import TeamSettings from "./TeamSettings.vue"
+import { selectOption } from "../../test/controls.ts"
 
 let view: VueWrapper | undefined
 let session: AccountSession | undefined
@@ -17,7 +18,7 @@ async function setup(role: Team["role"] = "admin") {
   })
   session = createAccountSession(fake.central)
   await flushPromises()
-  view = mount(TeamSettings, { global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: session } }, attachTo: document.body })
+  view = mount(TeamSettings, { global: { stubs: { teleport: { inheritAttrs: false, template: "<slot />" } }, plugins: [i18n], provide: { [accountSessionKey as symbol]: session } }, attachTo: document.body })
   await flushPromises()
   return fake
 }
@@ -38,15 +39,15 @@ test("roles change inline, and a rejected change restores the server's role", as
   const fake = await setup()
   expect(view!.get('[data-member-id="user-1"]').text()).toContain("Ada(you)")
   expect(view!.find('[data-member-id="user-1"] select').exists()).toBe(false)
-  const select = view!.get<HTMLSelectElement>('select[aria-label="Role for Bob"]')
-  await select.setValue("admin")
+  const select = view!.get('[role="combobox"][aria-label="Role for Bob"]')
+  await selectOption(view!, '[role="combobox"][aria-label="Role for Bob"]', "Admin")
   await flushPromises()
   expect(fake.central.setMemberRole).toHaveBeenCalledExactlyOnceWith("team-1", "user-2", "admin")
   fake.central.setMemberRole.mockRejectedValueOnce(new Error("At least one admin is required"))
-  await select.setValue("member")
+  await selectOption(view!, '[role="combobox"][aria-label="Role for Bob"]', "Member")
   await flushPromises()
   expect(view!.get('[role="alert"]').text()).toBe("At least one admin is required")
-  expect(select.element.value).toBe("admin")
+  expect(select.text()).toBe("Admin")
 })
 
 test("member removal confirms first and stays open with its error for retry", async () => {
@@ -54,16 +55,16 @@ test("member removal confirms first and stays open with its error for retry", as
   await view!.get('[aria-label="Remove Bob"]').trigger("click")
   await flushPromises()
   expect(fake.central.removeMember).not.toHaveBeenCalled()
-  expect(view!.get("dialog[open] h2").text()).toBe("Remove Bob?")
+  expect(view!.get("[role=dialog][data-state=open] h2").text()).toBe("Remove Bob?")
   fake.central.removeMember.mockRejectedValueOnce(new Error("Could not remove member"))
-  await view!.get("dialog[open]").findAll("button").find(value => value.text() === "Remove")!.trigger("click")
+  await view!.get("[role=dialog][data-state=open]").findAll("button").find(value => value.text() === "Remove")!.trigger("click")
   await flushPromises()
-  expect(view!.get('dialog[open] [role="alert"]').text()).toBe("Could not remove member")
-  await view!.get("dialog[open]").findAll("button").find(value => value.text() === "Remove")!.trigger("click")
+  expect(view!.get('[role=dialog][data-state=open] [role="alert"]').text()).toBe("Could not remove member")
+  await view!.get("[role=dialog][data-state=open]").findAll("button").find(value => value.text() === "Remove")!.trigger("click")
   await flushPromises()
   expect(fake.central.removeMember).toHaveBeenLastCalledWith("team-1", "user-2")
   expect(view!.find('[data-member-id="user-2"]').exists()).toBe(false)
-  expect(view!.find("dialog").exists()).toBe(false)
+  expect(view!.find("[role=dialog]").exists()).toBe(false)
 })
 
 test("invitations show a copyable one-time code", async () => {
@@ -72,17 +73,17 @@ test("invitations show a copyable one-time code", async () => {
   await flushPromises()
   expect(document.activeElement).toBe(view!.get('[name="invite-email"]').element)
   await view!.get('[name="invite-email"]').setValue("new@example.test")
-  await view!.get('dialog[open] input[value="admin"]').setValue(true)
-  await view!.get("dialog[open] form").trigger("submit")
+  await view!.get('[role=dialog] [role=radio][value="admin"]').trigger("click")
+  await view!.get("[role=dialog][data-state=open] form").trigger("submit")
   await flushPromises()
   expect(fake.central.invite).toHaveBeenCalledExactlyOnceWith("team-1", "new@example.test", "admin")
-  expect(view!.get("dialog[open] h2").text()).toBe("Invitation ready")
-  expect(view!.get("dialog[open]").text()).toContain("new@example.test")
-  const code = view!.get<HTMLInputElement>("dialog[open] input[readonly]")
+  expect(view!.get("[role=dialog][data-state=open] h2").text()).toBe("Invitation ready")
+  expect(view!.get("[role=dialog][data-state=open]").text()).toContain("new@example.test")
+  const code = view!.get<HTMLInputElement>("[role=dialog][data-state=open] input[readonly]")
   expect(code.element.value).toBe("invitation-token")
   expect(document.activeElement).toBe(code.element)
   await button("Done")!.trigger("click")
-  expect(view!.find("dialog").exists()).toBe(false)
+  expect(view!.find("[role=dialog]").exists()).toBe(false)
 })
 
 test("administrators remove machines after confirmation", async () => {
@@ -90,7 +91,7 @@ test("administrators remove machines after confirmation", async () => {
   expect(view!.get('[data-team-machine-id="m1"]').text()).toContain("Online")
   expect(view!.get('[data-team-machine-id="m2"]').text()).toContain("Last seen")
   await view!.get('[aria-label="Remove Laptop"]').trigger("click")
-  await view!.get("dialog[open]").findAll("button").find(value => value.text() === "Remove")!.trigger("click")
+  await view!.get("[role=dialog][data-state=open]").findAll("button").find(value => value.text() === "Remove")!.trigger("click")
   await flushPromises()
   expect(fake.central.removeMachine).toHaveBeenCalledExactlyOnceWith("m2")
   expect(view!.find('[data-team-machine-id="m2"]').exists()).toBe(false)

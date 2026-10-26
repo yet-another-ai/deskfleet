@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { LoaderCircle, RefreshCw, X } from "@lucide/vue"
-import { computed, onBeforeUnmount, onMounted, useTemplateRef } from "vue"
+import { DialogTitle } from "reka-ui"
+import { computed, onBeforeUnmount } from "vue"
 import { useI18n } from "vue-i18n"
 import type { GitDiffRequest, GitFileDiff } from "../../../../../apps/daemon/src/git-protocol.ts"
 import IconButton from "../common/IconButton.vue"
+import UiDialog from "../common/UiDialog.vue"
 
 const props = defineProps<{
   selection: GitDiffRequest
@@ -15,7 +17,6 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ close: []; refresh: [] }>()
 const { t } = useI18n()
-const dialog = useTemplateRef<HTMLDialogElement>("dialog")
 let closed = false
 
 interface DiffLine { text: string; kind: "meta" | "hunk" | "context" | "added" | "deleted"; before?: number; after?: number }
@@ -46,19 +47,16 @@ const lines = computed<DiffLine[]>(() => {
 function close(): void {
   if (closed) return
   closed = true
-  dialog.value?.close()
   emit("close")
 }
-onMounted(() => dialog.value?.showModal())
-onBeforeUnmount(() => { closed = true; dialog.value?.close() })
+onBeforeUnmount(() => { closed = true })
 </script>
 
 <template>
-  <Teleport to="body">
-    <dialog ref="dialog" class="ui-dialog git-diff-dialog app-no-drag" aria-labelledby="git-diff-title" :data-git-diff="selection.kind" :data-git-path="selection.path" @cancel.prevent.stop="close" @close.stop="close">
+    <UiDialog class="git-diff-dialog" :data-git-diff="selection.kind" :data-git-path="selection.path" @close="close">
       <header class="flex shrink-0 items-start justify-between gap-4 border-b border-ui-border p-4">
         <div class="min-w-0">
-          <h2 id="git-diff-title" class="m-0 break-all font-mono text-sm font-semibold select-text">{{ selection.path }}</h2>
+          <DialogTitle class="m-0 break-all font-mono text-sm font-semibold select-text">{{ selection.path }}</DialogTitle>
           <p class="m-0 mt-1 flex flex-wrap gap-x-2 text-xs text-ui-text-muted"><span>{{ t(`panel.changeKind.${selection.kind}`) }}</span><span v-if="repository" class="break-all select-text">{{ repository }}</span></p>
         </div>
         <div class="flex shrink-0 gap-1">
@@ -84,8 +82,7 @@ onBeforeUnmount(() => { closed = true; dialog.value?.close() })
         </div>
       </div>
       <p v-if="diff?.truncated" class="m-0 shrink-0 border-t border-ui-border px-4 py-3 text-[13px] text-ui-warning" role="status">{{ t('panel.truncatedDiff') }}</p>
-    </dialog>
-  </Teleport>
+    </UiDialog>
 </template>
 
 <style scoped>
@@ -94,7 +91,7 @@ onBeforeUnmount(() => { closed = true; dialog.value?.close() })
   max-height: calc(100vh - 2rem);
   padding: 0;
 }
-.git-diff-dialog[open] { display: flex; flex-direction: column; }
+.git-diff-dialog { display: flex; flex-direction: column; }
 .git-diff-content { overscroll-behavior: contain; }
 .git-diff-lines { width: max-content; min-width: 100%; padding: 0.5rem 0; line-height: 1.65; tab-size: 4; }
 .git-diff-line { display: grid; grid-template-columns: 3.75rem 3.75rem 1fr; }

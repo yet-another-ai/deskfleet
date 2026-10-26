@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { Pause, Play, Trash2 } from "@lucide/vue"
 import { useIntervalFn, useNow } from "@vueuse/core"
 import { computed } from "vue"
@@ -37,9 +38,9 @@ const summary = computed(() => {
         <p class="m-0 mt-1.5 text-[13px] text-ui-text-muted">{{ summary }}</p>
       </div>
       <div class="flex shrink-0 gap-2">
-        <button type="button" data-schedule-run class="ui-button" :disabled="disabled" @click="emit('run')"><Play :size="14" aria-hidden="true" />{{ t('schedules.run') }}</button>
-        <button v-if="!manual" type="button" data-schedule-toggle class="ui-button" :disabled="disabled" @click="emit('toggle')"><component :is="task.enabled ? Pause : Play" :size="14" aria-hidden="true" />{{ t(task.enabled ? 'schedules.pause' : 'schedules.resume') }}</button>
-        <button type="button" data-schedule-delete class="ui-button px-2" :aria-label="t('schedules.delete')" :title="t('schedules.delete')" :disabled="disabled" @click="emit('delete')"><Trash2 :size="14" aria-hidden="true" /></button>
+        <UiButton type="button" data-schedule-run  :disabled="disabled" @click="emit('run')"><Play :size="14" aria-hidden="true" />{{ t('schedules.run') }}</UiButton>
+        <UiButton v-if="!manual" type="button" data-schedule-toggle  :disabled="disabled" @click="emit('toggle')"><component :is="task.enabled ? Pause : Play" :size="14" aria-hidden="true" />{{ t(task.enabled ? 'schedules.pause' : 'schedules.resume') }}</UiButton>
+        <UiButton type="button" data-schedule-delete class="px-2" :aria-label="t('schedules.delete')" :title="t('schedules.delete')" :disabled="disabled" @click="emit('delete')"><Trash2 :size="14" aria-hidden="true" /></UiButton>
       </div>
     </header>
 

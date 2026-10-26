@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import UiButton from "../components/common/UiButton.vue"
+import UiSelect from "../components/common/UiSelect.vue"
+import UiCheckbox from "../components/common/UiCheckbox.vue"
 import { client as platformClient } from "@deskfleet/client/platform"
 
 import { GripVertical, LoaderCircle, Maximize, Minimize, MonitorPlay, Play, RefreshCw, SlidersHorizontal, Unplug } from "@lucide/vue"
-import { onClickOutside, watchImmediate, whenever } from "@vueuse/core"
-import { computed, onBeforeUnmount, ref, shallowRef, useId, useTemplateRef, watch } from "vue"
+import { watchImmediate, whenever } from "@vueuse/core"
+import { computed, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } from "vue"
+import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { DesktopCapabilities } from "../../../client/src/desktop-media.ts"
 import IconButton from "../components/common/IconButton.vue"
@@ -33,19 +37,10 @@ const playbackBlocked = ref(false)
 const fullscreenError = ref(false)
 const isFullscreen = ref(false)
 const settingsOpen = ref(false)
-const settingsId = useId()
-const settingsTrigger = useTemplateRef<{ $el: HTMLButtonElement }>("settingsTrigger")
 
 const stage = useTemplateRef<HTMLElement>("stage")
 const toolbar = useTemplateRef<HTMLElement>("toolbar")
 let discoveryGeneration = 0
-
-onClickOutside(toolbar, () => { settingsOpen.value = false })
-function closeSettings(): void {
-  if (!settingsOpen.value) return
-  settingsOpen.value = false
-  settingsTrigger.value?.$el.focus()
-}
 
 // The toolbar can cover any part of the remote screen, so the viewer can move it.
 const { position: toolbarPosition, startDrag, moveDrag, endDrag, nudge: nudgeToolbar, panelSide: settingsSide } = useFloatingToolbar(stage, toolbar)
@@ -207,25 +202,24 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
         <p class="m-0 text-sm font-medium" role="status">{{ status }}</p>
         <p v-if="detail" class="m-0 break-words text-[13px] text-ui-text-muted" role="alert">{{ detail }}</p>
         <div v-if="local" class="mt-2 flex flex-wrap items-center justify-center gap-2">
-          <button v-if="active" type="button" class="ui-button" @click="connection.disconnect()">{{ t("desktop.disconnect") }}</button>
-          <button v-else type="button" class="ui-button-primary" :disabled="!canConnect" @click="connect">{{ t("desktop.connect") }}</button>
-          <button type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:op-40" :disabled="loading || active" @click="refresh">
+          <UiButton v-if="active" type="button" @click="connection.disconnect()">{{ t("desktop.disconnect") }}</UiButton>
+          <UiButton variant="primary" v-else type="button" :disabled="!canConnect" @click="connect">{{ t("desktop.connect") }}</UiButton>
+          <UiButton variant="ghost" size="sm" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:op-40" :disabled="loading || active" @click="refresh">
             <RefreshCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("desktop.retry") }}
-          </button>
+          </UiButton>
         </div>
       </div>
 
-      <button v-if="playbackBlocked" type="button" class="ui-button-primary absolute" @click="play">
+      <UiButton variant="primary" v-if="playbackBlocked" type="button" class="absolute" @click="play">
         <Play :size="14" :stroke-width="2" aria-hidden="true" />{{ t("desktop.play") }}
-      </button>
+      </UiButton>
 
+      <PopoverRoot v-if="local" v-model:open="settingsOpen">
       <div
-        v-if="local"
         ref="toolbar"
         class="absolute z-10 flex items-center gap-1 rounded-xl border border-ui-border bg-ui-surface p-1 shadow-ui-popover"
         :class="!toolbarPosition && 'top-3 right-3'"
         :style="toolbarPosition && { left: `${toolbarPosition.x}px`, top: `${toolbarPosition.y}px` }"
-        @keydown.esc="closeSettings"
       >
         <button
           type="button"
@@ -243,37 +237,36 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
         <span v-if="stream" role="status" class="flex items-center gap-1.5 px-2 text-[13px] text-ui-text-muted">
           <span class="h-1.5 w-1.5 rounded-full" :class="state === 'connected' ? 'bg-ui-success' : 'bg-ui-text-faint'" aria-hidden="true" />{{ status }}
         </span>
-        <IconButton v-if="isFullscreen || (stream && state === 'connected')" :icon="isFullscreen ? Minimize : Maximize" :label="t(isFullscreen ? 'desktop.exitFullscreen' : 'desktop.fullscreen')" @click="fullscreen" />
-        <button v-if="stream && control && state === 'connected'" type="button" class="ui-button py-1" :disabled="!connection.inputReady.value" :aria-pressed="!controlPaused" @click="toggleControl">
+        <IconButton :portal-to="stage ?? undefined" v-if="isFullscreen || (stream && state === 'connected')" :icon="isFullscreen ? Minimize : Maximize" :label="t(isFullscreen ? 'desktop.exitFullscreen' : 'desktop.fullscreen')" @click="fullscreen" />
+        <UiButton v-if="stream && control && state === 'connected'" type="button" class="py-1" :disabled="!connection.inputReady.value" :aria-pressed="!controlPaused" @click="toggleControl">
           {{ controlPaused ? t("desktop.resumeControl") : t("desktop.pauseControl") }}
-        </button>
-        <IconButton ref="settingsTrigger" :icon="SlidersHorizontal" :label="t('desktop.settings')" :disabled="!capabilities" aria-haspopup="dialog" :aria-expanded="settingsOpen" :aria-controls="settingsId" @click="settingsOpen = !settingsOpen" />
-        <button v-if="stream && active" type="button" class="ui-button-danger py-1" @click="connection.disconnect()">
+        </UiButton>
+        <PopoverTrigger :as="IconButton" :portal-to="stage ?? undefined" :icon="SlidersHorizontal" :label="t('desktop.settings')" :disabled="!capabilities" />
+        <UiButton variant="danger" v-if="stream && active" type="button" class="py-1" @click="connection.disconnect()">
           <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("desktop.disconnect") }}
-        </button>
+        </UiButton>
 
-        <!-- Kept mounted so the chosen settings persist while the panel is closed. -->
-        <div v-show="settingsOpen" :id="settingsId" role="dialog" :aria-label="t('desktop.settings')" class="ui-menu absolute z-20 flex w-72 flex-col gap-3 p-3" :class="[settingsSide.above ? 'bottom-full mb-2' : 'top-full mt-2', settingsSide.alignStart ? 'left-0' : 'right-0']">
+        <!-- Stay inside the fullscreen stage, including nested select portals. -->
+        <PopoverPortal :to="stage ?? undefined">
+        <PopoverContent :side="settingsSide.above ? 'top' : 'bottom'" :align="settingsSide.alignStart ? 'start' : 'end'" :side-offset="8" :collision-boundary="stage" :collision-padding="12" :aria-label="t('desktop.settings')" class="ui-menu z-50 flex w-72 flex-col gap-3 p-3">
           <label v-if="capabilities?.displays.length" class="flex flex-col gap-1.5 text-[13px] text-ui-text-muted">
             {{ t("desktop.display") }}
-            <select v-model="displayId" class="ui-input text-ui-text" :disabled="active">
-              <option v-for="display in capabilities.displays" :key="display.id" :value="display.id">
-                {{ t("desktop.displayOption", { id: display.id, width: display.width, height: display.height }) }}
-              </option>
-            </select>
+            <UiSelect :model-value="String(displayId ?? '')" :options="capabilities.displays.map(display => ({ value: String(display.id), label: t('desktop.displayOption', { id: display.id, width: display.width, height: display.height }) }))" :portal-to="stage ?? undefined" :aria-label="t('desktop.display')" :disabled="active" @update:model-value="displayId = Number($event)" />
           </label>
           <p v-if="chosenCodec" class="m-0 text-[13px] text-ui-text-muted" data-desktop-codec>{{ t("desktop.codecStatus", { codec: codecLabel }) }}</p>
           <label v-if="capabilities?.audio" class="flex items-center gap-2 text-[13px]">
-            <input v-model="audio" type="checkbox" :disabled="active" />
+            <UiCheckbox v-model="audio" :disabled="active" />
             {{ t("desktop.audio") }}
           </label>
           <label class="flex items-center gap-2 text-[13px]">
-            <input v-model="control" data-desktop-control type="checkbox" :disabled="active" />
+            <UiCheckbox v-model="control" data-desktop-control :disabled="active" />
             {{ t("desktop.control") }}
           </label>
           <p v-if="active" class="m-0 text-xs text-ui-text-muted">{{ t("desktop.settingsLocked") }}</p>
-        </div>
+        </PopoverContent>
+        </PopoverPortal>
       </div>
+      </PopoverRoot>
 
       <p v-if="fullscreenError" role="alert" class="ui-notice absolute bottom-3 left-3 m-0 border-ui-danger/30 bg-ui-surface text-ui-danger">{{ t("desktop.fullscreenFailed") }}</p>
     </div>

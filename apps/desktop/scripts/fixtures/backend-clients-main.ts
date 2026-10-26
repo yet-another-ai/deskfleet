@@ -53,7 +53,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     button("Session actions").click()
     let action: HTMLButtonElement | undefined
     await until(() => {
-      const menu = findButton("Session actions")?.parentElement?.querySelector('[role="menu"]')
+      const menu = document.querySelector('[role="menu"]')
       action = menu ? findButton(label, menu) : undefined
       return !!action
     }, `${label} menu item`)
@@ -62,7 +62,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   async function confirmSessionAction(label: string): Promise<void> {
     let confirmation: HTMLButtonElement | undefined
     await until(() => {
-      const dialog = findButton("Session actions")?.parentElement?.querySelector("dialog[open]")
+      const dialog = document.querySelector("[role=dialog][data-state=open]")
       confirmation = dialog ? findButton(label, dialog) : undefined
       return !!confirmation
     }, `${label} confirmation`)
@@ -117,7 +117,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   const restore = await openSessionAction("Restore session")
   restore.click()
   await confirmSessionAction("Restore session")
-  await until(() => !document.querySelector("dialog[open]") && !document.querySelector("main")?.textContent?.includes("This session is archived"), "restore state")
+  await until(() => !document.querySelector("[role=dialog][data-state=open]") && !document.querySelector("main")?.textContent?.includes("This session is archived"), "restore state")
   // The prompt and archive/restore publish real central catalog updates. Keep
   // observing beyond their coalescing timer to catch a transient loading title.
   await new Promise(resolve => setTimeout(resolve, 2_000))
@@ -143,7 +143,13 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
       await new Promise(resolve => setTimeout(resolve, 25))
     }
   }
-  for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog[open]")) dialog.close()
+  while (document.querySelector('[role=dialog][data-state=open]')) {
+    const dialogs = [...document.querySelectorAll<HTMLElement>('[role=dialog][data-state=open]')]
+    const dialog = dialogs.at(-1)!
+    dialog.focus()
+    dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+    await until(() => !dialog.isConnected, "close dialog")
+  }
   for (const trigger of document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"][aria-expanded="true"]')) trigger.click()
   location.hash = `/sessions/${context.sessionId}`
   await until(() => !!document.querySelector('button[aria-label="Team"]') && !!document.querySelector("main")?.textContent?.includes("Machine 0 conversation"), "session")
@@ -163,7 +169,7 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
       const invite = [...document.querySelectorAll<HTMLButtonElement>("main button")].find(button => button.textContent?.trim() === "Invite")
       if (!invite) throw new Error("Invite button is missing")
       invite.click()
-      await until(() => !!document.querySelector('dialog[open] input[name="invite-email"]'), "invite dialog")
+      await until(() => !!document.querySelector('[role=dialog][data-state=open] input[name="invite-email"]'), "invite dialog")
     }
   } else if (view === "create-team") {
     document.querySelector<HTMLButtonElement>('button[aria-label="Team"]')!.click()
@@ -171,12 +177,12 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
     const create = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === "Create a team")
     if (!create) throw new Error("Create a team menu item is missing")
     create.click()
-    await until(() => !!document.querySelector("dialog[open]")?.textContent?.includes("Create a team"), "create team dialog")
+    await until(() => !!document.querySelector("[role=dialog][data-state=open]")?.textContent?.includes("Create a team"), "create team dialog")
   } else if (view === "add-machine") {
     const add = document.querySelector<HTMLButtonElement>('aside button[aria-label="Add machine"]')
     if (!add) throw new Error("Add machine button is missing")
     add.click()
-    await until(() => !!document.querySelector("dialog[open]")?.textContent?.includes("Add a machine"), "add machine dialog")
+    await until(() => !!document.querySelector("[role=dialog][data-state=open]")?.textContent?.includes("Add a machine"), "add machine dialog")
   } else if (view.endsWith("-menu")) {
     const label = view === "team-menu" ? "Team" : "Client smoke"
     const trigger = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
@@ -220,7 +226,7 @@ async function openTerminal(machineId: string): Promise<void> {
   document.querySelector<HTMLButtonElement>('button[aria-label="New shell"]')!.click()
   await until(() => !!document.querySelector('[data-connection="connected"]'))
   const terminalId = new URLSearchParams(location.hash.split("?", 2)[1]).get("terminal")
-  if (!terminalId || document.getElementById(`terminal-tab-${terminalId}`)?.getAttribute("aria-selected") !== "true") throw new Error("Control route did not select the new terminal")
+  if (!terminalId || document.querySelector(`[role="tab"][data-terminal-id="${terminalId}"]`)?.getAttribute("aria-selected") !== "true") throw new Error("Control route did not select the new terminal")
   await until(() => !!document.querySelector(".xterm-rows")?.textContent?.trim())
   // A login shell can finish its startup repaint after the peer's replay marker.
   await new Promise(resolve => setTimeout(resolve, 300))

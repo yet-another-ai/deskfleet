@@ -1,4 +1,4 @@
-import { mount, type VueWrapper } from "@vue/test-utils"
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { computed, ref, shallowRef } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { GitDiffRequest, GitFileChange, GitFileDiff, GitStatusSnapshot } from "../../../../../apps/daemon/src/git-protocol.ts"
@@ -14,7 +14,7 @@ const state = {
 }
 vi.mock("../../composables/useSessionGit.ts", () => ({ useSessionGit: () => state }))
 const wrappers: VueWrapper[] = []
-const global = { plugins: [i18n], stubs: { teleport: true } }
+const global = { plugins: [i18n], stubs: { teleport: { inheritAttrs: false, template: "<slot />" } } }
 const change = (options: Partial<GitFileChange> = {}): GitFileChange => ({ path: "src/app.ts", kind: "unstaged", status: "modified", additions: 2, deletions: 1, ...options })
 const selection: GitDiffRequest = { sessionId: "11", repositoryId: "repo", path: "src/app.ts", kind: "unstaged" }
 const patch = [
@@ -25,9 +25,9 @@ const fileDiff = (options: Partial<GitFileDiff> = {}): GitFileDiff => ({ ...sele
 function panel(enabled = true): VueWrapper {
   const view = mount(GitChanges, { props: { sessionId: "11", enabled }, global }); wrappers.push(view); return view
 }
-function dialog(options: Partial<InstanceType<typeof GitDiffDialog>["$props"]> = {}): VueWrapper {
-  const view = mount(GitDiffDialog, { props: { selection, repository: "/code/repo", diff: fileDiff(), loading: false, error: null, connected: true, ...options }, global })
-  wrappers.push(view); return view
+async function dialog(options: Partial<InstanceType<typeof GitDiffDialog>["$props"]> = {}): Promise<VueWrapper> {
+  const view = mount(GitDiffDialog, { attachTo: document.body, props: { selection, repository: "/code/repo", diff: fileDiff(), loading: false, error: null, connected: true, ...options }, global })
+  wrappers.push(view); await flushPromises(); return view
 }
 beforeEach(() => {
   connected.value = true
@@ -87,8 +87,8 @@ test("shows unavailable, initial load, per-directory failure and stale state wit
 })
 
 test("renders unified diff lines safely with old and new line numbers, and updates the open preview", async () => {
-  const view = dialog()
-  expect(view.get("dialog").attributes("open")).toBeDefined()
+  const view = await dialog()
+  expect(view.get("[role=dialog]").attributes("data-state")).toBe("open")
   expect(view.find("script").exists()).toBe(false)
   expect(view.get(".git-diff-content").text()).toContain("<script>alert('content')</script>")
   const removed = view.findAll('[data-line-kind="deleted"]')
@@ -101,12 +101,15 @@ test("renders unified diff lines safely with old and new line numbers, and updat
   expect(added[2]!.findAll(".git-diff-number").map(cell => cell.text())).toEqual(["", "11"])
   await view.setProps({ diff: fileDiff({ patch: patch.replace("previous", "updated previous") }) })
   expect(view.text()).toContain("updated previous")
-  await view.get("dialog").trigger("cancel")
+  // Read the diff before dismissing it; toolbar tooltips own Escape while focused.
+  view.get<HTMLElement>(".git-diff-content").element.focus()
+  await flushPromises()
+  await view.get("[role=dialog]").trigger("keydown", { key: "Escape" })
   expect(view.emitted("close")).toEqual([[]])
 })
 
 test("explains binary and truncated diffs and keeps stale content visible on failure", async () => {
-  const view = dialog({ diff: fileDiff({ binary: true, patch: "Binary files differ" }) })
+  const view = await dialog({ diff: fileDiff({ binary: true, patch: "Binary files differ" }) })
   expect(view.text()).toContain("Binary file changed")
   expect(view.find(".git-diff-content").exists()).toBe(false)
   await view.setProps({ diff: fileDiff({ truncated: true }), error: "Read failed", connected: false })

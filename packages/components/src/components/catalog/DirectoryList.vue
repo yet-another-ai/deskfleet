@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { SquareTerminal } from "@lucide/vue"
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -39,9 +40,9 @@ async function open(cwd?: string): Promise<void> {
 <template>
   <div class="flex flex-col gap-3">
     <div v-if="defaultAction">
-      <button type="button" class="ui-button" :disabled="disabled || launching || directories.length === 0" @click="open(directories[0]?.path)">
+      <UiButton type="button" :disabled="disabled || launching || directories.length === 0" @click="open(directories[0]?.path)">
         <SquareTerminal :size="15" aria-hidden="true" />{{ t("workspace.openDefaultTerminal") }}
-      </button>
+      </UiButton>
     </div>
     <ul class="ui-card">
       <li v-for="(directory, index) in directories" :key="index" class="ui-card-row gap-3">
@@ -51,9 +52,9 @@ async function open(cwd?: string): Promise<void> {
           <div v-if="directory.git" class="font-mono text-xs text-ui-text-faint">{{ directory.git.branch }}</div>
           <div v-else-if="directory.git === null" class="text-xs text-ui-text-faint">{{ t("panel.notGit") }}</div>
         </div>
-        <button type="button" class="ui-button shrink-0" :disabled="disabled || launching" :aria-label="t('worktree.openTerminalAt', { path: directory.path })" @click="open(directory.path)">
+        <UiButton type="button" class="shrink-0" :disabled="disabled || launching" :aria-label="t('worktree.openTerminalAt', { path: directory.path })" @click="open(directory.path)">
           <SquareTerminal :size="15" aria-hidden="true" />{{ t("worktree.openTerminal") }}
-        </button>
+        </UiButton>
       </li>
     </ul>
     <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>

@@ -1,4 +1,4 @@
-import { mount, type VueWrapper } from "@vue/test-utils"
+import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import type { AgentEvent } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test } from "vitest"
@@ -97,9 +97,10 @@ test("a finished turn folds its work behind a duration and keeps the final answe
 test("only a new Session offers its context, and an existing directory Session is labelled as such", async () => {
   const machine = { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], terminals: [] }
   const workspace = { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] }
-  const fresh = mount(SessionComposer, { props: { location: { machine, workspace }, showTarget: true, context: "worktree" }, global: { plugins: [i18n] } }); wrappers.push(fresh)
+  const fresh = mount(SessionComposer, { attachTo: document.body, props: { location: { machine, workspace }, showTarget: true, context: "worktree" }, global: { plugins: [i18n] } }); wrappers.push(fresh)
   await button(fresh, "Session context: New worktree").trigger("click")
-  const options = fresh.findAll('[role="menuitemradio"]')
+  await flushPromises()
+  const options = new DOMWrapper(document.body).findAll('[role="menuitemradio"]')
   expect(options.map(option => option.attributes("aria-checked"))).toEqual(["true", "false"])
   await options[1]!.trigger("click")
   expect(fresh.emitted("update:context")).toEqual([["directory"]])

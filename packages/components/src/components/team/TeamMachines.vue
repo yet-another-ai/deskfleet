@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { Monitor, Pencil, Plus, Trash2 } from "@lucide/vue"
 import { computed, nextTick, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
@@ -67,9 +68,9 @@ async function rename(machine: Machine): Promise<void> {
       <h2 :id="`${id}-title`" class="ui-section-title">
         {{ t("team.machines") }}<span class="ml-1.5 text-ui-text-faint">{{ session.machines.value.length }}</span>
       </h2>
-      <button type="button" class="ui-button shrink-0" @click="session.dialog.value = 'add-machine'">
+      <UiButton type="button" class="shrink-0" @click="session.dialog.value = 'add-machine'">
         <Plus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.addMachine") }}
-      </button>
+      </UiButton>
     </div>
     <ul v-if="session.machines.value.length" class="ui-card m-0 list-none p-0 shadow-ui-card">
       <li v-for="(machine, index) in session.machines.value" :key="machine.id" class="flex items-center gap-3 px-4 py-3" :class="index > 0 && 'border-t border-ui-border'" :data-team-machine-id="machine.id">
@@ -90,8 +91,8 @@ async function rename(machine: Machine): Promise<void> {
             autocomplete="off"
             :disabled="saving"
           />
-          <button type="submit" class="ui-button shrink-0" :disabled="saving || !name.trim()">{{ saving ? t("catalog.saving") : t("catalog.save") }}</button>
-          <button type="button" class="ui-button shrink-0" :disabled="saving" @click="cancelRename">{{ t("catalog.cancel") }}</button>
+          <UiButton type="submit" class="shrink-0" :disabled="saving || !name.trim()">{{ saving ? t("catalog.saving") : t("catalog.save") }}</UiButton>
+          <UiButton type="button" class="shrink-0" :disabled="saving" @click="cancelRename">{{ t("catalog.cancel") }}</UiButton>
         </form>
         <template v-else>
           <div class="min-w-0 flex-1">

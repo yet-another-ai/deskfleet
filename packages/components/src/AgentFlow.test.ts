@@ -1,5 +1,5 @@
 import { client as platformClient } from "@deskfleet/client/platform"
-import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
@@ -19,6 +19,7 @@ vi.mock("./services/agent-client.ts", () => ({ AgentClient: class {
   call = transport.call
   close = () => {}
 } }))
+const page = () => new DOMWrapper(document.body)
 let wrapper: VueWrapper
 let pinia: ReturnType<typeof createPinia>
 let snapshot: AgentSnapshot
@@ -59,7 +60,7 @@ beforeEach(async () => {
   })
   await router.push("/")
   pinia = createPinia()
-  wrapper = mount(App, { global: { plugins: [pinia, router, i18n], stubs: { Teleport: true, LiveTerminal: true } } })
+  wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia, router, i18n], stubs: { LiveTerminal: true } } })
   await flushPromises()
 })
 afterEach(() => { wrapper?.unmount(); disposePinia(pinia); vi.restoreAllMocks() })
@@ -145,8 +146,8 @@ test("returning to unchanged conversation history scrolls after loading, while l
 
 test("the new-session composer remembers a working-directory choice and creates that Session", async () => {
   await wrapper.get('[aria-label="Session context: New worktree"]').trigger("click")
-  await wrapper.findAll('[role="menuitemradio"]').find(item => item.text().startsWith("Working directory"))!.trigger("click")
-  expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+  await page().findAll('[role="menuitemradio"]').find(item => item.text().startsWith("Working directory"))!.trigger("click"); await flushPromises()
+  expect(page().find('[role="menu"]').exists()).toBe(false)
   expect(window.localStorage.getItem("deskfleet.session-context")).toBe("directory")
   await wrapper.get("textarea").setValue("Fix it in place")
   await wrapper.get('[aria-label="Send"]').trigger("click")
@@ -167,8 +168,8 @@ test("new sessions use the selected configured provider and show its name", asyn
   await flushPromises()
   await wrapper.get('[data-agent-configuration-trigger]').trigger("click")
   await flushPromises()
-  await wrapper.get('[data-agent-control="agent"]').trigger("click")
-  await wrapper.get('[role="menuitemradio"][data-value="work-codex"]').trigger("click")
+  await page().get('[data-agent-control="agent"]').trigger("click")
+  await page().get('[role="menuitemradio"][data-value="work-codex"]').trigger("click")
   await flushPromises()
   expect(wrapper.findAll('[data-agent-configuration-trigger]')).toHaveLength(1)
   expect(wrapper.find('[aria-label="Choose provider"]').exists()).toBe(false)
@@ -200,7 +201,7 @@ test("restored sessions show pending provider identity until its configuration l
     ? Promise.resolve([structuredClone(snapshot.session)]) : call(method, params))
   await router.push({ name: "session", params: { sessionId: "30" } })
   pinia = createPinia()
-  wrapper = mount(App, { global: { plugins: [pinia, router, i18n], stubs: { Teleport: true, LiveTerminal: true } } })
+  wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia, router, i18n], stubs: { LiveTerminal: true } } })
   await flushPromises()
   expect(wrapper.get('[data-agent-configuration-trigger]').text()).toBe("Agent")
   expect(wrapper.find('[data-agent-configuration-trigger] [data-provider-pending]').exists()).toBe(true)
@@ -305,14 +306,14 @@ test("the selected model, effort and native mode reach a newly created Session t
   })
   await wrapper.get('[aria-label="Configure agent: Codex"]').trigger("click")
   await flushPromises()
-  await wrapper.get('[data-agent-control="model"]').trigger("click")
-  await wrapper.get('[role="menuitemradio"][data-value="orbit"]').trigger("click")
+  await page().get('[data-agent-control="model"]').trigger("click")
+  await page().get('[role="menuitemradio"][data-value="orbit"]').trigger("click")
   await flushPromises()
-  await wrapper.get('[data-agent-control="reasoning"]').trigger("click")
-  await wrapper.get('[role="menuitemradio"][data-value="high"]').trigger("click")
+  await page().get('[data-agent-control="reasoning"]').trigger("click")
+  await page().get('[role="menuitemradio"][data-value="high"]').trigger("click")
   await flushPromises()
-  await wrapper.get('[data-agent-control="mode"]').trigger("click")
-  await wrapper.get('[role="menuitemradio"][data-value="agent"]').trigger("click")
+  await page().get('[data-agent-control="mode"]').trigger("click")
+  await page().get('[role="menuitemradio"][data-value="agent"]').trigger("click")
   await flushPromises()
   await wrapper.get("textarea").setValue("Use the selected reasoning model")
   await wrapper.get('[aria-label="Send"]').trigger("click")

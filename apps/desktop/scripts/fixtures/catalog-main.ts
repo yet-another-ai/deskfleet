@@ -60,11 +60,11 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
     input.dispatchEvent(new Event("input", { bubbles: true }))
     return input
   }
-  function picker(): HTMLDialogElement | null {
-    return document.querySelector("[data-current-path]")?.closest("dialog") ?? null
+  function picker(): HTMLElement | null {
+    return document.querySelector("[data-current-path]")?.closest("[role=dialog]") ?? null
   }
   async function chooseFolder(paths: string[]): Promise<void> {
-    await until(() => !!picker()?.open, "Folder picker")
+    await until(() => picker()?.getAttribute("data-state") === "open", "Folder picker")
     require(picker()!.textContent?.includes("Choose a folder"), "Directory selection must use the custom folder dialog")
     for (const path of paths) {
       const currentPath = () => picker()?.querySelector("[data-current-path]")?.getAttribute("data-current-path")
@@ -79,7 +79,7 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
     await until(() => !picker(), "Folder selection")
   }
   async function cancelFolder(): Promise<void> {
-    await until(() => !!picker()?.open, "Folder picker")
+    await until(() => picker()?.getAttribute("data-state") === "open", "Folder picker")
     const cancel = [...picker()!.querySelectorAll("button")].find(element => element.textContent?.trim() === "Cancel")
     require(cancel, "Folder picker must support cancellation")
     cancel.click()
@@ -165,7 +165,7 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   const query = new URLSearchParams(location.hash.split("?", 2)[1])
   require(query.get("tab") === "terminal" && query.get("terminal") === terminalId, "Default terminal route must select its control tab and terminal ID")
   await until(() => document.querySelector('[role="tablist"][aria-label="Remote control"] [aria-selected="true"]')?.textContent?.trim() === "Terminal", "Selected Terminal control tab")
-  await until(() => document.getElementById(`terminal-tab-${terminalId}`)?.getAttribute("aria-selected") === "true", "Selected default shell")
+  await until(() => document.querySelector(`[role="tab"][data-terminal-id="${terminalId}"]`)?.getAttribute("aria-selected") === "true", "Selected default shell")
   return { workspaceId: workspace.id, worktreeId: main.id, terminalId }
 
 }

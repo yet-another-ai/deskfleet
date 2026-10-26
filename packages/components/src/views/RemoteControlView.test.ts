@@ -7,6 +7,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import type { FilesApi } from "../../../client/src/files.ts"
 import type { TerminalSummary } from "../../../client/src/terminal.ts"
 import { i18n } from "../i18n/index.ts"
+import { selectOption } from "../test/controls.ts"
 import { useRouteWorktree } from "../composables/useRouteWorktree.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
@@ -71,7 +72,7 @@ async function setup(options: { desktop?: boolean; machineId?: string; query?: L
 
 const tabs = (wrapper: VueWrapper) => wrapper.findAll('[role="tab"]')
 async function select(wrapper: VueWrapper, index: number) {
-  await tabs(wrapper)[index]!.trigger("click")
+  await tabs(wrapper)[index]!.trigger("mousedown", { button: 0 })
   await flushPromises()
 }
 
@@ -136,9 +137,11 @@ test.each([{ tab: 0, name: "Terminal" }, { tab: 2, name: "Files" }, { tab: 3, na
     const { wrapper } = await setup({ desktop: true, realDesktop: true })
     await vi.waitFor(() => expect(wrapper.find("[data-desktop-stage]").exists()).toBe(true))
     await flushPromises()
-    await wrapper.get("select").setValue("2")
-    await wrapper.get('input[type="checkbox"]').setValue(true)
-    await wrapper.get("[data-desktop-control]").setValue(true)
+    await wrapper.get('[aria-label="Stream settings"]').trigger("click"); await flushPromises()
+    await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
+    await wrapper.get('[role="checkbox"]').trigger("click")
+    await wrapper.get("[data-desktop-control]").trigger("click")
+    await wrapper.get('[aria-label="Stream settings"]').trigger("click"); await flushPromises()
     await connectButton(wrapper).trigger("click")
     await flushPromises()
     const peer = TestPeer.instances[0]!
@@ -165,9 +168,11 @@ test.each([{ tab: 0, name: "Terminal" }, { tab: 2, name: "Files" }, { tab: 3, na
 
     await select(wrapper, 1)
     expect(wrapper.get("video").element).toBe(element)
-    expect((wrapper.get("select").element as HTMLSelectElement).value).toBe("2")
-    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(true)
-    expect((wrapper.get("[data-desktop-control]").element as HTMLInputElement).checked).toBe(true)
+    await wrapper.get('[aria-label="Stream settings"]').trigger("click"); await flushPromises()
+    expect(wrapper.get('[role="combobox"][aria-label="Display"]').text()).toContain("Display 2")
+    expect(wrapper.get('[role="checkbox"]').attributes("aria-checked")).toBe("true")
+    expect(wrapper.get("[data-desktop-control]").attributes("aria-checked")).toBe("true")
+    await wrapper.get('[aria-label="Stream settings"]').trigger("click"); await flushPromises()
     expect(connectButton(wrapper).attributes("disabled")).toBeUndefined()
     expect(api.offer).toHaveBeenCalledOnce()
     expect(api.start).toHaveBeenCalledOnce()

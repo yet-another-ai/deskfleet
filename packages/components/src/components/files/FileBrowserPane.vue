@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
+import UiCheckbox from "../common/UiCheckbox.vue"
 import { ArrowUp, File, Folder, FolderOpen, Home, RefreshCw } from "@lucide/vue"
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -72,12 +74,12 @@ onBeforeUnmount(() => { disposed = true; ++generation })
       <p v-if="loading" class="m-0 p-3 text-sm text-ui-text-muted" role="status">{{ t('folderPicker.loading') }}</p>
       <div v-else-if="error" class="flex flex-col items-start gap-2 p-3">
         <p class="m-0 break-all text-xs text-ui-danger" role="alert">{{ error }}</p>
-        <button v-if="target.kind === 'local'" type="button" class="ui-button" @click="choose">{{ t('files.chooseFolder') }}</button>
-        <button v-else type="button" class="ui-button" @click="navigate(requestedPath)">{{ t('folderPicker.retry') }}</button>
+        <UiButton v-if="target.kind === 'local'" type="button" @click="choose">{{ t('files.chooseFolder') }}</UiButton>
+        <UiButton v-else type="button" @click="navigate(requestedPath)">{{ t('folderPicker.retry') }}</UiButton>
       </div>
       <ul v-else-if="entries.length" class="m-0 list-none p-0">
         <li v-for="entry in entries" :key="entry.path" class="flex min-w-0 items-center gap-2 px-3 py-2 text-[13px]" :class="selected.has(entry.path) && 'bg-ui-hover'">
-          <input type="checkbox" :checked="selected.has(entry.path)" :aria-label="t('files.select', { name: entry.name })" @change="select(entry)" />
+          <UiCheckbox :model-value="selected.has(entry.path)" :aria-label="t('files.select', { name: entry.name })" @update:model-value="select(entry)" />
           <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left" :aria-label="entry.kind === 'directory' ? t('folderPicker.openFolder', { name: entry.name }) : t('files.select', { name: entry.name })" @click="entry.kind === 'directory' ? navigate(entry.path) : select(entry)">
             <component :is="entry.kind === 'directory' ? Folder : File" :size="15" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate" :title="entry.name">{{ entry.name }}</span>
           </button>
@@ -88,7 +90,7 @@ onBeforeUnmount(() => { disposed = true; ++generation })
     </div>
     <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-ui-border px-3 py-1.5 text-xs text-ui-text-muted">
       <button v-for="root in listing?.roots" :key="root.path" type="button" class="cursor-pointer rounded px-1 hover:bg-ui-hover" :title="root.path" @click="navigate(root.path)">{{ root.name }}</button>
-      <label class="ml-auto flex items-center gap-1.5"><input v-model="hidden" type="checkbox" />{{ t('files.showHidden') }}</label>
+      <label class="ml-auto flex items-center gap-1.5"><UiCheckbox v-model="hidden" />{{ t('files.showHidden') }}</label>
     </div>
   </section>
 </template>

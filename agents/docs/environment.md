@@ -60,7 +60,24 @@ the application controls and explanatory text remain reachable.
 `packages/components/src/theme-tokens.css` owns the product palette. Both the
 application and website consume it; `color-scheme` selects the website's explicit
 light/dark theme. `product-demo.css` only restores application typography and
-dialog centering within VitePress. Fonts and brand assets are bundled locally.
+dialog layout within VitePress. Fonts and brand assets are bundled locally.
+Shared UI controls live in `packages/components/src/components/common/`:
+`UiButton` and `IconButton` own action sizes and states; `UiSelect`, `UiCheckbox`,
+`UiSwitch`, `UiNumberField`, `UiTimeField`, and `UiDialog` adapt Reka UI primitives
+to application models and UnoCSS tokens. Menus, tabs, popovers, and disclosures
+use Reka primitives with the same tokens. Keep native text inputs and textareas;
+schema-driven numeric answers retain native validation for arbitrary decimal
+constraints. Schedule times cross the component boundary as minute-precision
+`HH:mm` strings, with the IANA time zone selected separately. Popups inside the
+remote desktop fullscreen surface must portal into that surface. Tests should
+exercise visible controls and query portaled content through the document;
+primitive behavior tests use real portals and cover focus and form validation.
+`UiButton`, `IconButton`, and `UiTooltip` deliberately use normal Vue scripts:
+Reka's `useForwardExpose` and `as-child` composition require a VDOM component
+instance and VNode slots. Vapor callers should use `:as="IconButton"` for menu
+and popover triggers instead of `as-child`. The rest of the application retains
+Vapor compilation. The Electron agent smoke test covers the compiled trigger
+attributes, keyboard behavior, and tooltip to catch interop regressions.
 The desktop example uses the production `DesktopView` and a browser-local WebRTC
 peer streaming recorded product screens (`demo-desktop-light.png` and
 `demo-desktop-dark.png`). These screenshots are media fixtures, not a separate

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
+import UiSwitch from "../common/UiSwitch.vue"
 import { CalendarClock, Play } from "@lucide/vue"
 import { useIntervalFn, useNow } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
@@ -45,10 +47,8 @@ function next(task: ScheduledTask): string {
         </div>
         <div v-else class="mt-0.5 text-ui-text-faint">{{ t('schedules.noRunsShort') }}</div>
       </div>
-      <button type="button" data-schedule-run class="ui-button shrink-0 px-2" :aria-label="t('schedules.runNamed', { title: task.title })" :title="t('schedules.run')" :disabled="disabled" @click.stop="emit('run', task)"><Play :size="14" aria-hidden="true" /></button>
-      <button v-if="task.trigger.kind !== 'manual'" type="button" role="switch" data-schedule-toggle class="ui-switch" :aria-checked="task.enabled" :aria-label="t('schedules.automaticNamed', { title: task.title })" :disabled="disabled" @click.stop="emit('toggle', task)">
-        <span class="ui-switch-thumb" :class="task.enabled && 'translate-x-4'" />
-      </button>
+      <UiButton type="button" data-schedule-run class="shrink-0 px-2" :aria-label="t('schedules.runNamed', { title: task.title })" :title="t('schedules.run')" :disabled="disabled" @click.stop="emit('run', task)"><Play :size="14" aria-hidden="true" /></UiButton>
+      <UiSwitch v-if="task.trigger.kind !== 'manual'" data-schedule-toggle :model-value="task.enabled" :aria-label="t('schedules.automaticNamed', { title: task.title })" :disabled="disabled" @click.stop @update:model-value="emit('toggle', task)" />
       <span v-else class="w-9 shrink-0" aria-hidden="true" />
     </li>
   </ul>

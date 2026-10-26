@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref, useId, useTemplateRef } from "vue"
+import UiButton from "../common/UiButton.vue"
+import { DialogTitle } from "reka-ui"
+import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import UiDialog from "../common/UiDialog.vue"
 
 const props = defineProps<{ mode: "create" | "join" }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
-const id = useId()
 const session = useAccountSession()!
-const dialog = useTemplateRef<HTMLDialogElement>("dialog")
-const input = useTemplateRef<HTMLInputElement>("input")
 const value = ref("")
 const pending = ref(false)
 const error = ref<string>()
@@ -25,25 +25,24 @@ async function submit(): Promise<void> {
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { pending.value = false }
 }
-onMounted(() => { dialog.value?.showModal(); input.value?.focus() })
 </script>
 
 <template>
-  <dialog ref="dialog" class="ui-dialog app-no-drag w-[26rem]" :aria-labelledby="`${id}-title`" @cancel.prevent="close">
+  <UiDialog class="w-[26rem]" :prevent-close="pending" @close="close">
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <div>
-        <h2 :id="`${id}-title`" class="ui-dialog-title">{{ t(mode === "create" ? "team.create" : "team.join") }}</h2>
+        <DialogTitle class="ui-dialog-title">{{ t(mode === "create" ? "team.create" : "team.join") }}</DialogTitle>
         <p class="ui-dialog-description">{{ t(mode === "create" ? "team.createDescription" : "team.joinDescription") }}</p>
       </div>
       <label class="flex flex-col gap-1.5 text-sm">
         {{ t(mode === "create" ? "team.name" : "team.inviteCode") }}
-        <input ref="input" v-model="value" class="ui-input" :class="mode === 'join' && 'font-mono text-[13px]'" :name="mode === 'create' ? 'team-name' : 'invite-code'" required maxlength="256" autocomplete="off" :spellcheck="mode === 'create'" :disabled="pending" />
+        <input v-model="value" class="ui-input" :class="mode === 'join' && 'font-mono text-[13px]'" :name="mode === 'create' ? 'team-name' : 'invite-code'" required maxlength="256" autocomplete="off" :spellcheck="mode === 'create'" :disabled="pending" />
       </label>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="mt-2 flex justify-end gap-2">
-        <button type="button" class="ui-button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</button>
-        <button type="submit" class="ui-button-primary" :disabled="pending || !value.trim()">{{ t(mode === "create" ? (pending ? "team.creating" : "team.createAction") : (pending ? "team.joining" : "team.joinAction")) }}</button>
+        <UiButton type="button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton variant="primary" type="submit" :loading="pending" :disabled="pending || !value.trim()">{{ t(mode === "create" ? (pending ? "team.creating" : "team.createAction") : (pending ? "team.joining" : "team.joinAction")) }}</UiButton>
       </div>
     </form>
-  </dialog>
+  </UiDialog>
 </template>

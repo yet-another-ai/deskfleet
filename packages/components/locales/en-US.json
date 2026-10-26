@@ -113,6 +113,9 @@
     "busy": "Wait for the current schedule operation to finish."
   },
   "common": {
+    "increase": "Increase",
+    "decrease": "Decrease",
+    "noResults": "No results found.",
     "notAvailable": "Not available yet",
     "placeholderControl": "{label} (not available yet)",
     "copy": "Copy",

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { client } from "@deskfleet/client/platform"
 import { ArrowLeft, ArrowRight, File, Folder, RotateCcw, X } from "@lucide/vue"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
@@ -90,9 +91,9 @@ onBeforeUnmount(() => { disposed = true; unsubscribe(); unsubscribeAccount?.() }
               <IconButton v-else-if="task.state !== 'completed'" :icon="X" :label="t('files.cancel')" :disabled="busy" @click="operation(() => api.cancel(task.id))" />
             </div>
             <div v-if="task.state === 'conflict'" class="flex flex-wrap items-center gap-2 pb-3 pl-6">
-              <button type="button" class="ui-button" :disabled="busy" @click="retry(task, 'rename')">{{ t('files.keepBoth') }}</button>
-              <button type="button" class="ui-button" :disabled="busy" @click="retry(task, 'skip')">{{ t('files.skip') }}</button>
-              <button type="button" class="ui-button-danger" :disabled="busy" @click="retry(task, 'replace')">{{ t('files.replace') }}</button>
+              <UiButton type="button" :disabled="busy" @click="retry(task, 'rename')">{{ t('files.keepBoth') }}</UiButton>
+              <UiButton type="button" :disabled="busy" @click="retry(task, 'skip')">{{ t('files.skip') }}</UiButton>
+              <UiButton variant="danger" type="button" :disabled="busy" @click="retry(task, 'replace')">{{ t('files.replace') }}</UiButton>
             </div>
             <p v-if="['failed', 'conflict', 'cancelled'].includes(task.state) && task.error" class="mt-0 mb-2 break-words pl-6 text-xs text-ui-danger" role="alert">{{ task.error }}</p>
           </div>

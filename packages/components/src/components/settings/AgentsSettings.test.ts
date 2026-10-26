@@ -17,7 +17,7 @@ const unsubscribe = vi.fn()
 const provider: AgentProviderConfig = { id: "codex", template: "codex", name: "Work Codex", env: { TEAM: "work" } }
 const button = (view: VueWrapper, text: string) => view.findAll("button").find(value => value.text() === text)!
 function render() {
-  wrapper = mount(AgentsSettings, { global: { plugins: [createPinia(), i18n] } })
+  wrapper = mount(AgentsSettings, { attachTo: document.body, global: { stubs: { teleport: { inheritAttrs: false, template: "<slot />" } }, plugins: [createPinia(), i18n] } })
   return wrapper
 }
 beforeEach(() => {
@@ -104,13 +104,13 @@ test("removes a provider after confirmation and keeps errors available for retry
   await view.get('[aria-label="Actions for Work Codex"]').trigger("click")
   await view.findAll('[role="menuitem"]')[1]!.trigger("click")
   expect(remove).not.toHaveBeenCalled()
-  expect(view.get("dialog").text()).toContain("Remove Work Codex?")
-  expect(view.get("dialog").text()).toContain("Running sessions will continue")
-  await button(view, "Remove provider").trigger("click")
+  expect(view.get("[role=dialog]").text()).toContain("Remove Work Codex?")
+  expect(view.get("[role=dialog]").text()).toContain("Running sessions will continue")
+  await view.get('[role=dialog] .ui-button-danger').trigger("click")
   await flushPromises()
   expect(view.get('[role="alert"]').text()).toBe("Could not save providers")
   expect(view.find('[data-provider-id="codex"]').exists()).toBe(true)
-  await button(view, "Remove provider").trigger("click")
+  await view.get('[role=dialog] .ui-button-danger').trigger("click")
   await flushPromises()
   expect(remove).toHaveBeenCalledTimes(2)
   expect(remove).toHaveBeenLastCalledWith("codex")

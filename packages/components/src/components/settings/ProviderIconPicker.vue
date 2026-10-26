@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Check, ChevronDown, Search } from "@lucide/vue"
-import { onClickOutside } from "@vueuse/core"
-import { computed, nextTick, ref, shallowRef, useId, useTemplateRef } from "vue"
+import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
+import { computed, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { loadProviderIcons, matchProviderIcon, type ProviderIcon as ProviderIconMark } from "../../services/provider-icons.ts"
 import ProviderIcon from "../common/ProviderIcon.vue"
@@ -9,13 +9,9 @@ import ProviderIcon from "../common/ProviderIcon.vue"
 const props = defineProps<{ template: string; disabled?: boolean }>()
 const icon = defineModel<string | undefined>()
 const { t } = useI18n()
-const id = useId()
 const open = ref(false)
 const ready = ref(false)
 const query = ref("")
-const search = useTemplateRef<HTMLInputElement>("search")
-const trigger = useTemplateRef<HTMLButtonElement>("trigger")
-const root = useTemplateRef<HTMLElement>("root")
 const catalog = shallowRef<readonly ProviderIconMark[]>([])
 const iconsById = shallowRef<ReadonlyMap<string, ProviderIconMark>>(new Map())
 let loading: Promise<void> | undefined
@@ -34,53 +30,37 @@ const icons = computed(() => {
   const term = query.value.trim().toLocaleLowerCase()
   return catalog.value.filter(item => `${item.name} ${item.id}`.toLocaleLowerCase().includes(term))
 })
-onClickOutside(root, () => { open.value = false })
 let toggling = false
-async function toggle(): Promise<void> {
+async function setOpen(next: boolean): Promise<void> {
   if (props.disabled || toggling) return
   toggling = true
   try {
-    const next = !open.value
     if (next) await ensureIcons()
     open.value = next
-    if (open.value) {
-      query.value = ""
-      await nextTick()
-      search.value?.focus()
-    }
+    if (next) query.value = ""
   } finally {
     toggling = false
   }
 }
-async function close(): Promise<void> {
-  open.value = false
-  await nextTick()
-  trigger.value?.focus()
-}
-function escape(event: KeyboardEvent): void {
-  if (!open.value) return
-  event.preventDefault()
-  event.stopPropagation()
-  void close()
-}
 function select(value?: string): void {
   if (props.disabled) return
   icon.value = value
-  void close()
+  open.value = false
 }
 </script>
 
 <template>
   <!-- A compact trigger that sits beside the name; the chooser opens as a popover. -->
-  <div ref="root" class="relative shrink-0" @keydown.esc="escape">
-    <button :id="`${id}-trigger`" ref="trigger" type="button" class="ui-input flex h-full cursor-pointer items-center gap-1 px-2" :disabled="disabled" :aria-expanded="open" :aria-controls="`${id}-choices`" :aria-label="t('providers.iconLabel', { name: label })" :title="t('providers.iconLabel', { name: label })" @click="toggle">
+  <PopoverRoot :open="open" @update:open="setOpen">
+    <PopoverTrigger type="button" class="ui-input flex h-full w-auto shrink-0 cursor-pointer items-center gap-1 px-2" :disabled="disabled" :aria-label="t('providers.iconLabel', { name: label })">
       <ProviderIcon :icon="icon" :template="template" :size="20" />
       <ChevronDown :size="13" :stroke-width="1.75" class="text-ui-text-muted" :class="open && 'rotate-180'" aria-hidden="true" />
-    </button>
-    <div v-if="open" :id="`${id}-choices`" class="ui-menu absolute left-0 top-full z-30 mt-1.5 w-[22rem] max-w-[calc(100vw-4rem)] p-2">
+    </PopoverTrigger>
+    <PopoverPortal>
+    <PopoverContent align="start" :side-offset="6" :collision-padding="12" :aria-label="t('providers.iconChoices')" class="ui-menu z-60 w-[22rem] max-w-[calc(100vw-4rem)] p-2">
       <div class="relative mb-2">
         <Search :size="15" :stroke-width="1.75" class="pointer-events-none absolute left-2.5 top-2.5 text-ui-text-muted" aria-hidden="true" />
-        <input ref="search" v-model="query" type="search" name="provider-icon-search" class="ui-input pl-8 text-[13px]" :aria-label="t('providers.iconSearch')" :placeholder="t('providers.iconSearch')" :disabled="disabled" autocomplete="off" :spellcheck="false" @keydown.enter.prevent />
+        <input v-model="query" type="search" name="provider-icon-search" class="ui-input pl-8 text-[13px]" :aria-label="t('providers.iconSearch')" :placeholder="t('providers.iconSearch')" :disabled="disabled" autocomplete="off" :spellcheck="false" @keydown.enter.prevent />
       </div>
       <button type="button" class="mb-1 flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] hover:bg-ui-hover disabled:cursor-default" :aria-pressed="!icon" :disabled="disabled" data-default-icon @click="select()">
         <ProviderIcon :template="template" :size="18" />
@@ -94,6 +74,7 @@ function select(value?: string): void {
         </button>
       </div>
       <p v-if="ready && !icons.length" role="status" class="m-0 px-2 py-4 text-center text-[13px] text-ui-text-muted">{{ t("providers.iconNoResults") }}</p>
-    </div>
-  </div>
+    </PopoverContent>
+    </PopoverPortal>
+  </PopoverRoot>
 </template>

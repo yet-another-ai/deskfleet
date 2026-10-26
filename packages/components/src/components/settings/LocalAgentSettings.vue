@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
+import UiSwitch from "../common/UiSwitch.vue"
 import { client as platformClient } from "@deskfleet/client/platform"
 
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
@@ -87,20 +89,16 @@ onBeforeUnmount(unsubscribe)
       <span class="h-1.5 w-1.5 rounded-full" :class="statusColor" aria-hidden="true" />
       <span role="status">{{ statusLabel }}</span>
     </span>
-    <button v-if="state?.status === 'error'" type="button" class="ui-button" :disabled="busy" @click="setEnabled(state.enabled)">{{ state.enabled ? t("settings.retryStart") : t("settings.retryStop") }}</button>
-    <button v-else-if="!state && requestError" type="button" class="ui-button" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</button>
-    <button
-      type="button"
-      role="switch"
+    <UiButton v-if="state?.status === 'error'" type="button" :disabled="busy" @click="setEnabled(state.enabled)">{{ state.enabled ? t("settings.retryStart") : t("settings.retryStop") }}</UiButton>
+    <UiButton v-else-if="!state && requestError" type="button" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</UiButton>
+    <UiSwitch
       aria-labelledby="local-agent-label"
       aria-describedby="local-agent-description"
-      :aria-checked="state?.enabled ?? false"
+      :model-value="state?.enabled ?? false"
       :disabled="busy || !state"
-      class="ui-switch ml-2 disabled:cursor-wait"
-      @click="setEnabled(!state?.enabled)"
-    >
-      <span class="ui-switch-thumb" :class="state?.enabled && 'translate-x-4'" />
-    </button>
+      class="ml-2 disabled:cursor-wait"
+      @update:model-value="setEnabled"
+     />
   </SettingsRow>
   <div v-if="permissions.length" data-desktop-permissions role="group" :aria-label="t('settings.desktopPermissions')" class="-mt-1 flex flex-col gap-2 pb-3 text-[13px]">
     <div

@@ -13,11 +13,12 @@ const home: DirectoryListing = {
   ],
 }
 const code: DirectoryListing = { ...home, path: "/home/agent/code", parentPath: "/home/agent", directories: [] }
-function render(browse: (path?: string) => Promise<DirectoryListing>, initialPath?: string) {
-  wrapper = mount(FolderPickerDialog, {
+async function render(browse: (path?: string) => Promise<DirectoryListing>, initialPath?: string) {
+  wrapper = mount(FolderPickerDialog, { attachTo: document.body,
     props: { browse, initialPath, machineName: "remote-builder" },
-    global: { plugins: [i18n], stubs: { teleport: true } },
+    global: { stubs: { teleport: { inheritAttrs: false, template: "<slot />" } }, plugins: [i18n] },
   })
+  await wrapper.vm.$nextTick()
   return wrapper
 }
 function button(view: VueWrapper, text: string) {
@@ -26,15 +27,17 @@ function button(view: VueWrapper, text: string) {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
 test("browses folders on the supplied machine and only selects the loaded directory", async () => {
-  const browse = vi.fn().mockResolvedValueOnce(home).mockResolvedValueOnce(code).mockResolvedValueOnce(home)
-  const view = render(browse)
+  let loaded!: (value: DirectoryListing) => void
+  const browse = vi.fn().mockReturnValueOnce(new Promise<DirectoryListing>(resolve => { loaded = resolve })).mockResolvedValueOnce(code).mockResolvedValueOnce(home)
+  const view = await render(browse)
   expect(button(view, "Select folder").attributes("disabled")).toBeDefined()
+  loaded(home)
   await flushPromises()
   expect(browse).toHaveBeenCalledExactlyOnceWith(undefined)
   expect(view.text()).toContain("remote-builder")
   expect(view.find("input:not([type=checkbox])").exists()).toBe(false)
   expect(view.find('[aria-label="Open .config"]').exists()).toBe(false)
-  await view.get('input[type="checkbox"]').setValue(true)
+  await view.get('[role="checkbox"]').trigger("click")
   expect(view.find('[aria-label="Open .config"]').exists()).toBe(true)
   await view.get('[aria-label="Open code"]').trigger("click")
   await flushPromises()
@@ -51,7 +54,7 @@ test("browses folders on the supplied machine and only selects the loaded direct
 
 test("toggles the top location bar into an input when clicking the edit button and navigates on Enter or check button", async () => {
   const browse = vi.fn().mockResolvedValueOnce(home).mockResolvedValueOnce(code).mockResolvedValueOnce(home)
-  const view = render(browse)
+  const view = await render(browse)
   await flushPromises()
   expect(view.find('input[name="folder-picker-path"]').exists()).toBe(false)
   await view.get("[data-edit-path]").trigger("click")
@@ -78,7 +81,7 @@ test("uses server paths for roots and parent navigation across operating systems
   }
   const root = { ...windows, path: "Z:\\", parentPath: null }
   const browse = vi.fn().mockResolvedValueOnce(windows).mockResolvedValue(root)
-  const view = render(browse, "Z:\\projects")
+  const view = await render(browse, "Z:\\projects")
   await flushPromises()
   expect(browse).toHaveBeenCalledWith("Z:\\projects")
   await view.get('[aria-label="Up"]').trigger("click")
@@ -93,9 +96,44 @@ test("uses server paths for roots and parent navigation across operating systems
   expect(browse).toHaveBeenLastCalledWith("Z:\\")
 })
 
+test("Escape leaves inline path editing before dismissing the picker", async () => {
+  const view = await render(vi.fn().mockResolvedValue(home))
+  await flushPromises()
+  await view.get("[data-edit-path]").trigger("click")
+  const input = view.get<HTMLInputElement>('[name="folder-picker-path"]')
+  expect(document.activeElement).toBe(input.element)
+  await input.setValue("/not-applied")
+  await input.trigger("keydown", { key: "Escape" })
+  expect(view.find('[name="folder-picker-path"]').exists()).toBe(false)
+  expect(view.get("[data-current-path]").attributes("data-current-path")).toBe(home.path)
+  expect(view.emitted("cancel")).toBeUndefined()
+  await flushPromises()
+  await view.get('[role="dialog"]').trigger("keydown", { key: "Escape" })
+  expect(view.emitted("cancel")).toEqual([[]])
+})
+
+test("selecting an edited path validates it and never selects the previous folder on failure", async () => {
+  const browse = vi.fn().mockResolvedValueOnce(home).mockRejectedValueOnce(new Error("Directory not found")).mockResolvedValueOnce(code)
+  const view = await render(browse)
+  await flushPromises()
+  await view.get("[data-edit-path]").trigger("click")
+  await view.get('[name="folder-picker-path"]').setValue("/missing")
+  await button(view, "Select folder").trigger("click")
+  await flushPromises()
+  expect(browse).toHaveBeenLastCalledWith("/missing")
+  expect(view.get('[role="alert"]').text()).toBe("Directory not found")
+  expect(view.emitted("select")).toBeUndefined()
+  await view.get("[data-edit-path]").trigger("click")
+  await view.get('[name="folder-picker-path"]').setValue("  /home/agent/code  ")
+  await button(view, "Select folder").trigger("click")
+  await flushPromises()
+  expect(browse).toHaveBeenLastCalledWith(code.path)
+  expect(view.emitted("select")).toEqual([[code.path]])
+})
+
 test("failed navigation cannot select the previous folder and retries the failed path", async () => {
   const browse = vi.fn().mockResolvedValueOnce(home).mockRejectedValueOnce(new Error("Permission denied")).mockResolvedValueOnce(code)
-  const view = render(browse)
+  const view = await render(browse)
   await flushPromises()
   await view.get('[aria-label="Open code"]').trigger("click")
   await flushPromises()
@@ -113,7 +151,7 @@ test("ignores outdated directory responses when a newer navigation finishes firs
   const browse = vi.fn().mockResolvedValueOnce(home)
     .mockReturnValueOnce(new Promise<DirectoryListing>(resolve => { resolveCode = resolve }))
     .mockResolvedValueOnce(home)
-  const view = render(browse)
+  const view = await render(browse)
   await flushPromises()
   await view.get('[aria-label="Open code"]').trigger("click")
   await view.get('[aria-label="Home"]').trigger("click")
@@ -126,9 +164,9 @@ test("ignores outdated directory responses when a newer navigation finishes firs
 })
 
 test("Escape cancels only the picker without choosing a folder", async () => {
-  const view = render(vi.fn().mockResolvedValue(home))
+  const view = await render(vi.fn().mockResolvedValue(home))
   await flushPromises()
-  await view.get("dialog").trigger("cancel")
+  await view.get("[role=dialog]").trigger("keydown", { key: "Escape" })
   expect(view.emitted("cancel")).toEqual([[]])
   expect(view.emitted("select")).toBeUndefined()
 })

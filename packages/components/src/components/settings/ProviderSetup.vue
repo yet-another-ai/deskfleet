@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { LoaderCircle, RotateCw } from "@lucide/vue"
 import { useTimeoutFn, watchImmediate } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, watch } from "vue"
@@ -202,9 +203,9 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
       <!-- The running operation owns the card's only action, Stop, until it finishes. -->
       <div v-if="!running" class="flex shrink-0 items-center gap-1.5">
         <IconButton :icon="RotateCw" :label="t('providers.setup.refresh')" :disabled="actionsDisabled || !provider" data-provider-probe @click="probe()" />
-        <button v-if="canSetPath" type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover" :disabled="busy || disabled" data-provider-set-path @click="emit('editPath')">{{ t("providers.setup.setPath") }}</button>
-        <button v-if="canInstall" type="button" class="ui-button" :disabled="actionsDisabled" data-provider-install @click="start('install')">{{ t("providers.setup.install") }}</button>
-        <button v-if="canLogin" type="button" :class="result?.auth === 'authenticated' ? 'ui-text-button cursor-pointer hover:bg-ui-hover' : 'ui-button'" :disabled="actionsDisabled" data-provider-login @click="start('login')">{{ t("providers.setup.login") }}</button>
+        <UiButton variant="ghost" size="sm" v-if="canSetPath" type="button" class="cursor-pointer hover:bg-ui-hover" :disabled="busy || disabled" data-provider-set-path @click="emit('editPath')">{{ t("providers.setup.setPath") }}</UiButton>
+        <UiButton v-if="canInstall" type="button" :disabled="actionsDisabled" data-provider-install @click="start('install')">{{ t("providers.setup.install") }}</UiButton>
+        <UiButton v-if="canLogin" :variant="result?.auth === 'authenticated' ? 'ghost' : 'default'" :size="result?.auth === 'authenticated' ? 'sm' : 'default'" :disabled="actionsDisabled" data-provider-login @click="start('login')">{{ t("providers.setup.login") }}</UiButton>
       </div>
     </div>
     <p v-if="error" role="alert" class="m-0 border-t border-ui-border px-3.5 py-2.5 whitespace-pre-wrap break-words text-[13px] text-ui-danger">{{ error }}</p>
@@ -214,7 +215,7 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
         <p role="status" class="m-0 min-w-0 flex-1 text-[13px] text-ui-text-muted">
           {{ starting ? t("providers.setup.starting") : running ? t(operation?.kind === "install" ? "providers.setup.installing" : "providers.setup.loggingIn") : t("providers.setup.output") }}
         </p>
-        <button v-if="operation && !operation.completed" type="button" class="ui-button" :disabled="stopping" data-provider-stop @click="stop">{{ t("providers.setup.stop") }}</button>
+        <UiButton v-if="operation && !operation.completed" type="button" :disabled="stopping" data-provider-stop @click="stop">{{ t("providers.setup.stop") }}</UiButton>
       </div>
       <p v-if="provider?.template === 'pi' && operation?.kind === 'login' && !operation.completed" class="m-0 text-xs text-ui-text-muted" data-provider-login-hint>{{ t("providers.setup.piLoginHint") }}</p>
       <p v-if="terminalConnection" role="alert" class="m-0 text-xs text-ui-danger">{{ terminalConnection }}</p>

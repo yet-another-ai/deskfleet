@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { Monitor, Plus } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
@@ -13,8 +14,8 @@ const session = useAccountSession()!
     <span class="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-ui-accent/10 text-ui-accent" aria-hidden="true"><Monitor :size="28" :stroke-width="1.5" /></span>
     <h1 class="m-0 text-lg font-semibold">{{ t("addMachine.emptyTitle", { team: session.team.value?.name ?? "" }) }}</h1>
     <p class="m-0 text-sm leading-relaxed text-ui-text-muted">{{ t("addMachine.emptyDescription") }}</p>
-    <button type="button" class="ui-button-primary mt-2" @click="session.dialog.value = 'add-machine'">
+    <UiButton variant="primary" type="button" class="mt-2" @click="session.dialog.value = 'add-machine'">
       <Plus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.addMachine") }}
-    </button>
+    </UiButton>
   </div>
 </template>

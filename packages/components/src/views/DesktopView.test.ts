@@ -6,6 +6,7 @@ import { i18n } from "../i18n/index.ts"
 import { router } from "../router/index.ts"
 import { deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
 import DesktopView from "./DesktopView.vue"
+import { selectOption } from "../test/controls.ts"
 
 const originalApi = platformClient.desktop
 let mock: ReturnType<typeof mockDesktopApi>
@@ -14,6 +15,7 @@ const fullscreenCleanups: (() => void)[] = []
 async function mountDesktop(machineId = "local-daemon") {
   const wrapper = mount(DesktopView, {
     props: { machineId },
+    attachTo: document.body,
     global: { plugins: [createPinia(), router, i18n] },
   })
   wrappers.push(wrapper)
@@ -78,15 +80,17 @@ afterEach(() => {
 test("discovers displays without capturing, then connects with the automatic codec", async () => {
   const wrapper = await mountDesktop()
   expect(wrapper.get('[role="status"]').text()).toBe("Choose a display and connect to start sharing.")
-  expect(wrapper.findAll("select")).toHaveLength(1)
-  const display = wrapper.get("select")
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.findAll('[role="combobox"]')).toHaveLength(1)
+  const display = wrapper.get('[role="combobox"][aria-label="Display"]')
   expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: AV1")
-  expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
+  expect(wrapper.get('[role="checkbox"]').attributes("aria-checked")).toBe("false")
   expect(mock.api.offer).not.toHaveBeenCalled()
   expect(mock.api.start).not.toHaveBeenCalled()
 
-  await display.setValue("2")
-  await wrapper.get('input[type="checkbox"]').setValue(true)
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
+  await wrapper.get('[role="checkbox"]').trigger("click")
   await button(wrapper, "Connect").trigger("click")
   await flushPromises()
   expect(mock.api.offer).toHaveBeenCalledWith(expect.objectContaining({ codec: "av1", audio: true }))
@@ -115,6 +119,8 @@ test("selects HEVC ahead of H264 when the display has no AV1 encoder", async () 
     audio: false,
   })
   const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await flushPromises()
   expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: HEVC")
   await button(wrapper, "Connect").trigger("click")
   await flushPromises()
@@ -287,18 +293,19 @@ test("switching displays selects a codec supported by that display's GPU", async
     audio: false,
   })
   const wrapper = await mountDesktop()
-  const display = wrapper.get("select")
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await flushPromises()
   expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: AV1")
-  await display.setValue("2")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
   expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: H.264")
   expect(wrapper.get('[role="status"]').text()).toBe("Choose a display and connect to start sharing.")
 
-  await display.setValue("3")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 3 · 1280 × 720")
   expect(wrapper.find("[data-desktop-codec]").exists()).toBe(false)
   expect(button(wrapper, "Connect").attributes("disabled")).toBeDefined()
   expect(wrapper.get('[role="status"]').text()).toBe("No compatible video codec is available in Electron.")
 
-  await display.setValue("2")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
   await button(wrapper, "Connect").trigger("click")
   await flushPromises()
   expect(mock.api.offer).toHaveBeenCalledWith(expect.objectContaining({ codec: "h264" }))
@@ -381,13 +388,14 @@ test("changing machine routes cancels an in-flight offer", async () => {
 test("stream settings open from the floating toolbar and close with Escape", async () => {
   const wrapper = await mountDesktop()
   const trigger = wrapper.get('[aria-label="Stream settings"]')
-  const panel = wrapper.get('[role="dialog"]')
-  expect((panel.element as HTMLElement).style.display).toBe("none")
+  expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   await trigger.trigger("click")
-  expect((panel.element as HTMLElement).style.display).toBe("")
+  await flushPromises()
+  const panel = wrapper.get('[role="dialog"]')
   expect(trigger.attributes("aria-expanded")).toBe("true")
   await panel.trigger("keydown", { key: "Escape" })
-  expect((panel.element as HTMLElement).style.display).toBe("none")
+  await flushPromises()
+  expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   expect(trigger.attributes("aria-expanded")).toBe("false")
 })
 
@@ -412,14 +420,18 @@ test("the floating toolbar moves by keyboard and drag, stays inside the stage, a
   await handle.trigger("pointermove", { pointerId: 1, clientX: 300, clientY: 300 })
   expect(toolbar.style.left).toBe("12px")
 
-  expect(wrapper.get('[role="dialog"]').classes()).toEqual(expect.arrayContaining(["bottom-full", "left-0"]))
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.get('[role="dialog"]').attributes("data-align")).toBe("start")
 })
 
 test("control is opt-in and can pause with held keys released while video stays connected", async () => {
   const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await flushPromises()
   const checkbox = wrapper.get("[data-desktop-control]")
-  expect((checkbox.element as HTMLInputElement).checked).toBe(false)
-  await checkbox.setValue(true)
+  expect(checkbox.attributes("aria-checked")).toBe("false")
+  await checkbox.trigger("click")
   await button(wrapper, "Connect").trigger("click")
   await flushPromises()
   const peer = TestPeer.instances[0]!

@@ -16,7 +16,7 @@ async function setup(enrollment?: LocalEnrollment) {
   const fake = fakeCentral({ enrollment, machines: enrollment?.machineId ? [machineFixture(enrollment.machineId, enrollment.teamId!, "This Mac")] : [] })
   session = createAccountSession(fake.central)
   await flushPromises()
-  view = mount(AddMachineDialog, { global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: session } }, attachTo: document.body })
+  view = mount(AddMachineDialog, { global: { stubs: { teleport: { inheritAttrs: false, template: "<slot />" } }, plugins: [i18n], provide: { [accountSessionKey as symbol]: session } }, attachTo: document.body })
   await flushPromises()
   return fake
 }

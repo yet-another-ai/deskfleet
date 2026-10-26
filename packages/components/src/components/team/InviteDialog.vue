@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, useId, useTemplateRef } from "vue"
+import UiButton from "../common/UiButton.vue"
+import { DialogTitle, RadioGroupRoot, RadioGroupItem, RadioGroupIndicator } from "reka-ui"
+import { computed, nextTick, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { Team, TeamMember } from "@deskfleet/client/central"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import CopyField from "../common/CopyField.vue"
+import UiDialog from "../common/UiDialog.vue"
 
 const props = defineProps<{ team: Team }>()
 const emit = defineEmits<{ close: [] }>()
 const { t, locale } = useI18n()
-const id = useId()
 const central = useAccountSession()!.central
-const dialog = useTemplateRef<HTMLDialogElement>("dialog")
-const emailInput = useTemplateRef<HTMLInputElement>("emailInput")
 const code = useTemplateRef<InstanceType<typeof CopyField>>("code")
 const email = ref("")
 const role = ref<TeamMember["role"]>("member")
@@ -35,38 +35,39 @@ async function submit(): Promise<void> {
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { pending.value = false }
 }
-onMounted(() => { dialog.value?.showModal(); emailInput.value?.focus() })
 </script>
 
 <template>
-  <dialog ref="dialog" class="ui-dialog app-no-drag w-[28rem]" :aria-labelledby="`${id}-title`" @cancel.prevent="close">
-    <h2 :id="`${id}-title`" class="ui-dialog-title">{{ t(invite ? "team.inviteReady" : "team.inviteTitle", { team: team.name }) }}</h2>
+  <UiDialog class="w-[28rem]" :prevent-close="pending" @close="close">
+    <DialogTitle class="ui-dialog-title">{{ t(invite ? "team.inviteReady" : "team.inviteTitle", { team: team.name }) }}</DialogTitle>
     <template v-if="invite">
       <p class="ui-dialog-description mb-5">{{ t("team.inviteInstructions", { email: email.trim(), expires }) }}</p>
       <CopyField ref="code" :label="t('team.inviteCode')" :value="invite.token" />
-      <div class="ui-dialog-actions"><button type="button" class="ui-button-primary" @click="close">{{ t("account.done") }}</button></div>
+      <div class="ui-dialog-actions"><UiButton variant="primary" type="button" @click="close">{{ t("account.done") }}</UiButton></div>
     </template>
     <form v-else class="flex flex-col gap-4" @submit.prevent="submit">
       <p class="ui-dialog-description">{{ t("team.inviteDescription") }}</p>
       <label class="flex flex-col gap-1.5 text-sm">
         {{ t("team.email") }}
-        <input ref="emailInput" v-model="email" class="ui-input" name="invite-email" type="email" autocomplete="off" required :disabled="pending" />
+        <input v-model="email" class="ui-input" name="invite-email" type="email" autocomplete="off" required :disabled="pending" />
       </label>
-      <fieldset class="m-0 flex flex-col gap-2 border-0 p-0" :disabled="pending">
-        <legend class="mb-1.5 p-0 text-sm">{{ t("team.role") }}</legend>
-        <label v-for="value in (['member', 'admin'] as const)" :key="value" class="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5" :class="role === value ? 'border-ui-accent bg-ui-accent/6' : 'border-ui-border hover:border-ui-border-strong'">
-          <input v-model="role" type="radio" name="invite-role" :value="value" class="mt-0.5" />
+      <div class="flex flex-col gap-2">
+        <span class="mb-1.5 text-sm">{{ t("team.role") }}</span>
+        <RadioGroupRoot v-model="role" name="invite-role" :aria-label="t('team.role')" :disabled="pending" class="flex flex-col gap-2">
+        <RadioGroupItem v-for="value in (['member', 'admin'] as const)" :key="value" :value="value" class="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left disabled:cursor-default disabled:op-50" :class="role === value ? 'border-ui-accent bg-ui-accent/6' : 'border-ui-border hover:border-ui-border-strong'">
+          <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-ui-border-strong"><RadioGroupIndicator class="h-2 w-2 rounded-full bg-ui-accent" /></span>
           <span class="flex flex-col gap-0.5">
             <span class="text-sm">{{ t(value === "admin" ? "team.admin" : "team.member") }}</span>
             <span class="text-xs text-ui-text-muted">{{ t(value === "admin" ? "team.adminDescription" : "team.memberDescription") }}</span>
           </span>
-        </label>
-      </fieldset>
+        </RadioGroupItem>
+        </RadioGroupRoot>
+      </div>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="mt-2 flex justify-end gap-2">
-        <button type="button" class="ui-button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</button>
-        <button type="submit" class="ui-button-primary" :disabled="pending || !email.trim()">{{ pending ? t("team.creatingInvite") : t("team.createInvite") }}</button>
+        <UiButton type="button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton variant="primary" type="submit" :loading="pending" :disabled="pending || !email.trim()">{{ pending ? t("team.creatingInvite") : t("team.createInvite") }}</UiButton>
       </div>
     </form>
-  </dialog>
+  </UiDialog>
 </template>

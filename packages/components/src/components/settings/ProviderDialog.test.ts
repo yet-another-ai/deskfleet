@@ -7,18 +7,19 @@ import { i18n } from "../../i18n/index.ts"
 import ProviderDialog from "./ProviderDialog.vue"
 
 let wrapper: VueWrapper | undefined
-function render(save = vi.fn().mockResolvedValue(undefined), initial?: AgentProviderConfig, test = vi.fn().mockResolvedValue({ agentName: "Claude Agent" })) {
+async function render(save = vi.fn().mockResolvedValue(undefined), initial?: AgentProviderConfig, test = vi.fn().mockResolvedValue({ agentName: "Claude Agent" })) {
   const pinia = createPinia()
-  wrapper = mount(ProviderDialog, { props: { save, test, initial, templates: [...AGENT_PROVIDER_TEMPLATES], machineName: "my-machine", probe: vi.fn().mockResolvedValue({ status: "missing", auth: "unknown", installable: true, loginAvailable: false }), install: vi.fn(), login: vi.fn() }, global: { plugins: [pinia, i18n], stubs: { LiveTerminal: true } } })
+  wrapper = mount(ProviderDialog, { attachTo: document.body, props: { save, test, initial, templates: [...AGENT_PROVIDER_TEMPLATES], machineName: "my-machine", probe: vi.fn().mockResolvedValue({ status: "missing", auth: "unknown", installable: true, loginAvailable: false }), install: vi.fn(), login: vi.fn() }, global: { plugins: [pinia, i18n], stubs: { LiveTerminal: true, teleport: { inheritAttrs: false, template: "<slot />" } } } })
+  await wrapper.vm.$nextTick()
   return { view: wrapper, save, test, terminals: useTerminalsStore(pinia) }
 }
 const button = (view: VueWrapper, text: string) => view.findAll("button").find(value => value.text() === text)!
 const pick = (view: VueWrapper, template: AgentProviderTemplateId) => view.get(`[data-provider-template-choice="${template}"]`).trigger("click")
-const advancedOpen = (view: VueWrapper) => (view.get("[data-provider-advanced]").element as HTMLDetailsElement).open
+const advancedOpen = (view: VueWrapper) => view.get("[data-provider-advanced] > button").attributes("aria-expanded") === "true"
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers(); i18n.global.locale.value = "en-US" })
 
 test("chooses a template, leaves the binary default implicit, and preserves environment values", async () => {
-  const { view, save } = render()
+  const { view, save } = await render()
   expect(view.findAll("[data-provider-template-choice]").map(choice => choice.attributes("data-provider-template-choice"))).toEqual(AGENT_PROVIDER_TEMPLATES.map(template => template.id))
   expect(view.find("form").exists()).toBe(false)
   await pick(view, "codex")
@@ -50,7 +51,7 @@ test.each([
   ["grok", "Grok", "grok", "grok"],
   ["pi", "Pi Coding Agent", "pi", "pi"],
 ] as const)("the %s template defaults to its installed CLI and mark", async (template, name, binary, mark) => {
-  const { view, save } = render()
+  const { view, save } = await render()
   await pick(view, template)
   expect((view.get('[name="provider-name"]').element as HTMLInputElement).value).toBe(name)
   expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe(binary)
@@ -62,7 +63,7 @@ test.each([
 
 test("tests the unsaved settings without saving and clears a result once launch settings change", async () => {
   let finish: (result: { agentName: string }) => void = () => {}
-  const { view, save, test } = render(undefined, undefined, vi.fn(() => new Promise(resolve => { finish = resolve })))
+  const { view, save, test } = await render(undefined, undefined, vi.fn(() => new Promise(resolve => { finish = resolve })))
   await pick(view, "claude-code")
   await view.get('[name="provider-binary"]').setValue(" /opt/claude ")
   await button(view, "Test connection").trigger("click")
@@ -85,7 +86,7 @@ test("shows the daemon's failure and ignores a result from settings edited durin
   const test = vi.fn()
     .mockRejectedValueOnce(new Error("Claude Code native binary not found at /missing"))
     .mockImplementationOnce(() => new Promise((_, reject) => { finish = reject }))
-  const { view } = render(undefined, undefined, test)
+  const { view } = await render(undefined, undefined, test)
   await pick(view, "codex")
   await button(view, "Test connection").trigger("click")
   await flushPromises()
@@ -103,7 +104,7 @@ test("shows the daemon's failure and ignores a result from settings edited durin
 
 test("summarizes a multi-line failure and reveals the full output on request", async () => {
   const output = "ACP initialize failed: Authentication required\n    at initialize (acp.js:212:11)\nstderr: not logged in"
-  const { view } = render(undefined, undefined, vi.fn().mockRejectedValue(new Error(output)))
+  const { view } = await render(undefined, undefined, vi.fn().mockRejectedValue(new Error(output)))
   await pick(view, "codex")
   await button(view, "Test connection").trigger("click")
   await flushPromises()
@@ -115,7 +116,7 @@ test("summarizes a multi-line failure and reveals the full output on request", a
 })
 
 test("an edit made in the same tick as Test is part of the tested settings", async () => {
-  const { view, test } = render()
+  const { view, test } = await render()
   await pick(view, "codex")
   const binary = view.get('[name="provider-binary"]').element as HTMLInputElement
   binary.value = "/opt/codex"
@@ -127,7 +128,7 @@ test("an edit made in the same tick as Test is part of the tested settings", asy
 })
 
 test("validates the form before testing", async () => {
-  const { view, test } = render()
+  const { view, test } = await render()
   await pick(view, "codex")
   await view.get('[name="provider-name"]').setValue(" ")
   await button(view, "Test connection").trigger("click")
@@ -136,7 +137,7 @@ test("validates the form before testing", async () => {
 })
 
 test("keeps the template immutable when editing and supports removing variables", async () => {
-  const { view, save } = render(undefined, { id: "codex", template: "codex", name: "Personal", icon: "claude", binaryPath: "/old/codex", env: { TOKEN: "secret" } })
+  const { view, save } = await render(undefined, { id: "codex", template: "codex", name: "Personal", icon: "claude", binaryPath: "/old/codex", env: { TOKEN: "secret" } })
   expect(view.find("[data-provider-template-choice]").exists()).toBe(false)
   expect(view.find("[data-provider-back]").exists()).toBe(false)
   expect(view.get("[data-provider-template]").text()).toBe("Codex on my-machine")
@@ -149,7 +150,7 @@ test("keeps the template immutable when editing and supports removing variables"
 })
 
 test("rejects missing and duplicate environment names before saving and reveals them", async () => {
-  const { view, save } = render()
+  const { view, save } = await render()
   await pick(view, "codex")
   await button(view, "Add variable").trigger("click")
   expect(advancedOpen(view)).toBe(false)
@@ -171,7 +172,7 @@ test("rejects missing and duplicate environment names before saving and reveals 
 test("prevents duplicate saves and dismissal while saving, and retains an unsuccessful draft", async () => {
   let reject!: (error: Error) => void
   const save = vi.fn().mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail })).mockResolvedValue(undefined)
-  const { view } = render(save)
+  const { view } = await render(save)
   await pick(view, "codex")
   await view.get('[name="provider-name"]').setValue("Work")
   await view.get("form").trigger("submit")
@@ -179,7 +180,7 @@ test("prevents duplicate saves and dismissal while saving, and retains an unsucc
   expect(button(view, "Cancel").attributes("disabled")).toBeDefined()
   expect(view.get("[data-provider-back]").attributes("aria-disabled")).toBe("true")
   await view.get("form").trigger("submit")
-  await view.get("dialog").trigger("cancel")
+  await view.get("[role=dialog]").trigger("keydown", { key: "Escape" })
   expect(save).toHaveBeenCalledTimes(1)
   expect(view.emitted("cancel")).toBeUndefined()
   reject(new Error("Disk is full"))
@@ -193,17 +194,17 @@ test("prevents duplicate saves and dismissal while saving, and retains an unsucc
 
 test("localizes the form and cancels without changing settings", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
-  const { view, save } = render()
+  const { view, save } = await render()
   expect(view.text()).toContain("Anthropic 的编程 Agent")
   await pick(view, "codex")
   expect(view.text()).toContain("环境变量")
-  await view.get("dialog").trigger("cancel")
+  await view.get("[role=dialog]").trigger("keydown", { key: "Escape" })
   expect(view.emitted("cancel")).toEqual([[]])
   expect(save).not.toHaveBeenCalled()
 })
 
 test("offers login separately, blocks Test during login, and saves the discovered executable", async () => {
-  const { view, save, test: testConnection, terminals } = render()
+  const { view, save, test: testConnection, terminals } = await render()
   const login = vi.fn().mockResolvedValue({ id: "login-1", title: "Login", cwd: "/home/user", cols: 80, rows: 24, status: "running" })
   await view.setProps({ login, probe: vi.fn().mockResolvedValue({ status: "found", binaryPath: "/tools/cursor-agent", auth: "unauthenticated", installable: true, loginAvailable: true }) })
   await pick(view, "cursor")
@@ -223,7 +224,7 @@ test("offers login separately, blocks Test during login, and saves the discovere
 })
 
 test("a completed installation fills the binary field and retains the refreshed login state", async () => {
-  const { view, terminals } = render()
+  const { view, terminals } = await render()
   const probe = vi.fn().mockResolvedValueOnce({ status: "missing", auth: "unknown", installable: true, loginAvailable: false })
     .mockResolvedValue({ status: "found", binaryPath: "/installed/codex", auth: "unauthenticated", installable: true, loginAvailable: true })
   const install = vi.fn().mockResolvedValue({ id: "install-1", title: "Install", cwd: "/home/user", cols: 80, rows: 24, status: "running" })
@@ -242,7 +243,7 @@ test("a completed installation fills the binary field and retains the refreshed 
 
 test("testing the connection keeps a discovered executable", async () => {
   let finish!: (result: { agentName: string }) => void
-  const { view, save, test: testConnection } = render(undefined, undefined, vi.fn(() => new Promise(resolve => { finish = resolve })))
+  const { view, save, test: testConnection } = await render(undefined, undefined, vi.fn(() => new Promise(resolve => { finish = resolve })))
   const found = { status: "found" as const, binaryPath: "/tools/cursor-agent", version: "1.0", auth: "unauthenticated" as const, installable: true, loginAvailable: true }
   const probe = vi.fn().mockResolvedValue(found)
   await view.setProps({ probe })
@@ -268,7 +269,7 @@ test("environment edits keep a discovered executable and rediscover after an inv
   const found = { status: "found" as const, binaryPath: "/tools/cursor-agent", version: "1.0", auth: "authenticated" as const, installable: true, loginAvailable: true }
   let finish!: (result: typeof found) => void
   const probe = vi.fn().mockResolvedValueOnce(found).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
-  const { view, save } = render()
+  const { view, save } = await render()
   await view.setProps({ probe })
   await pick(view, "cursor")
   await flushPromises()
@@ -290,7 +291,7 @@ test("environment edits keep a discovered executable and rediscover after an inv
 
 test("choosing a different template drops the previous executable and environment", async () => {
   const found = { status: "found" as const, binaryPath: "/tools/codex", version: "1.0", auth: "unauthenticated" as const, installable: true, loginAvailable: true }
-  const { view, save } = render()
+  const { view, save } = await render()
   const probe = vi.fn().mockImplementation(async (provider: { template: string }) => provider.template === "cursor" ? new Promise(() => {}) : found)
   await view.setProps({ probe })
   await pick(view, "codex")
@@ -310,7 +311,7 @@ test("choosing a different template drops the previous executable and environmen
 })
 
 test("Set path opens Advanced when the CLI cannot be installed automatically", async () => {
-  const { view } = render()
+  const { view } = await render()
   await view.setProps({ probe: vi.fn().mockResolvedValue({ status: "missing", auth: "unknown", installable: false, loginAvailable: false, installMessage: "No installer for this platform." }) })
   await pick(view, "codex")
   await flushPromises()

@@ -34,7 +34,7 @@ const tokenColor = (name: string) => `color-mix(in srgb, var(--ui-color-${name})
 
 // Buttons share a shape; each variant sets its colors. Utilities on the element still override the shortcut.
 const button =
-  "app-no-drag inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium leading-5 cursor-pointer transition-colors disabled:cursor-default"
+  "app-no-drag inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-3 py-1.5 text-[13px] font-medium leading-5 cursor-pointer transition-colors disabled:cursor-default [&[aria-disabled=true]]:cursor-default"
 
 export default defineConfig({
   presets: [presetMini()],
@@ -55,11 +55,12 @@ export default defineConfig({
     "ui-badge": "rounded-md bg-ui-badge px-1.5 text-xs leading-5 text-ui-text-muted",
 
     // Controls
-    "ui-button": `${button} border-ui-border-strong bg-ui-control text-ui-text enabled:hover:bg-ui-control-hover disabled:op-50`,
-    "ui-button-primary": `${button} border-transparent bg-ui-action text-ui-action-text enabled:hover:bg-ui-action-hover disabled:bg-ui-action-disabled disabled:text-ui-text-faint`,
-    "ui-button-danger": `${button} border-ui-danger/30 bg-ui-danger/8 text-ui-danger enabled:hover:bg-ui-danger/14 disabled:op-50`,
+    "ui-button": `${button} border-ui-border-strong bg-ui-control text-ui-text enabled:hover:bg-ui-control-hover enabled:active:bg-ui-active disabled:op-50`,
+    "ui-button-primary": `${button} border-transparent bg-ui-action text-ui-action-text enabled:hover:bg-ui-action-hover enabled:active:op-90 disabled:bg-ui-action-disabled disabled:text-ui-text-faint`,
+    "ui-button-danger": `${button} border-ui-danger/30 bg-ui-danger/8 text-ui-danger enabled:hover:bg-ui-danger/14 enabled:active:bg-ui-danger/20 disabled:op-50`,
+    "ui-button-ghost": `${button} border-transparent bg-transparent text-ui-text-muted enabled:hover:bg-ui-hover enabled:hover:text-ui-text enabled:active:bg-ui-active disabled:op-40`,
     "ui-text-button":
-      "app-no-drag inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] text-ui-text-muted",
+      `${button} h-7 border-transparent bg-transparent px-2 text-ui-text-muted enabled:hover:bg-ui-hover enabled:hover:text-ui-text disabled:op-40`,
     "ui-input":
       "w-full min-w-0 rounded-lg border border-ui-border-strong bg-ui-control px-2.5 py-1.5 leading-5 text-ui-text select-text transition-colors hover:border-ui-text-faint focus-visible:border-ui-accent focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ui-accent/20 disabled:cursor-default disabled:op-50 disabled:hover:border-ui-border-strong",
     "ui-switch":
@@ -81,7 +82,7 @@ export default defineConfig({
     "ui-dialog-actions": "mt-6 flex justify-end gap-2",
     "ui-menu": "rounded-xl border border-ui-border bg-ui-surface p-1 shadow-ui-popover",
     "ui-menu-item":
-      "flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-ui-text hover:bg-ui-hover focus:bg-ui-hover disabled:cursor-default disabled:op-50",
+      "flex min-h-8 w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-ui-text outline-none hover:bg-ui-hover focus:bg-ui-hover data-[highlighted]:bg-ui-hover disabled:cursor-default disabled:op-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:op-50",
     "ui-notice": "flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px]",
 
     // Navigation

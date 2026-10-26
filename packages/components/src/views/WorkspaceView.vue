@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../components/common/UiButton.vue"
 import { client as platformClient } from "@deskfleet/client/platform"
 
 import { SquarePen } from "@lucide/vue"
@@ -55,7 +56,7 @@ async function remove(): Promise<void> {
       <section>
         <div class="ui-section-header">
           <h2 class="ui-section-title">{{ t("worktree.directories") }}</h2>
-          <button type="button" class="ui-button" :disabled="!editable || editing" @click="editing = true">{{ t("workspace.edit") }}</button>
+          <UiButton type="button" :disabled="!editable || editing" @click="editing = true">{{ t("workspace.edit") }}</UiButton>
         </div>
         <WorkspaceForm v-if="editing" :key="workspaceId" class="ui-card p-4" :initial="{ name: location.workspace.name, directories }" :browse="browseDirectories" :machine-name="location.machine.name" :submit-label="t('catalog.save')" :disabled="!editable" :save="save" @cancel="editing = false" />
         <DirectoryList v-else :directories="directories" :disabled="!editable" default-action />
@@ -63,9 +64,9 @@ async function remove(): Promise<void> {
       <section>
         <div class="ui-section-header">
           <h2 class="ui-section-title">{{ t("workspace.sessions") }}</h2>
-          <button type="button" class="ui-text-button cursor-pointer hover:bg-ui-hover" @click="startSession">
+          <UiButton variant="ghost" size="sm" type="button" class="cursor-pointer hover:bg-ui-hover" @click="startSession">
             <SquarePen :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("workspace.newSession") }}
-          </button>
+          </UiButton>
         </div>
         <ul v-if="location.workspace.sessions.length" class="ui-card">
           <li v-for="session in location.workspace.sessions" :key="session.id">

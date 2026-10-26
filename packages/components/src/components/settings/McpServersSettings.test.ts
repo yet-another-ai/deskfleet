@@ -9,6 +9,7 @@ import { i18n } from "../../i18n/index.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { fakeCentral, machineFixture } from "../../test/central.ts"
 import McpServersSettings from "./McpServersSettings.vue"
+import { selectOption } from "../../test/controls.ts"
 
 const originalTarget = platformClient.target
 const cleanup: (() => void)[] = []
@@ -50,7 +51,7 @@ async function setup(initial: McpServerConfig[] = []) {
   setActivePinia(pinia)
   const fleet = useFleetStore()
   fleet.localDesktopTarget.online = true
-  const wrapper = mount(McpServersSettings, { attachTo: document.body, global: { plugins: [pinia, i18n], provide: { [accountSessionKey as symbol]: account } } })
+  const wrapper = mount(McpServersSettings, { attachTo: document.body, global: { stubs: { teleport: { inheritAttrs: false, template: "<slot />" } }, plugins: [pinia, i18n], provide: { [accountSessionKey as symbol]: account } } })
   cleanup.push(() => { wrapper.unmount(); disposePinia(pinia); account.dispose() })
   await flushPromises()
   return { wrapper, rpc, account }
@@ -80,12 +81,12 @@ test("creates a stdio server with ordered arguments, empty arguments, and exact 
   await wrapper.get("[data-mcp-add-pair]").trigger("click")
   await wrapper.get('[name="mcp-key-0"]').setValue("ACCESS_TOKEN")
   await wrapper.get('[name="mcp-value-0"]').setValue("token=with=equals")
-  await wrapper.get("dialog form").trigger("submit")
+  await wrapper.get("[role=dialog] form").trigger("submit")
   await flushPromises()
   expect(rpc).toHaveBeenCalledWith("machine-1", "mcpServerCreate", { server: {
     name: "Repository tools", enabled: true, transport: "stdio", command: "C:\\tools\\mcp.exe", args: ["--root=C:\\My Code", ""], env: { ACCESS_TOKEN: "token=with=equals" },
   } })
-  expect(wrapper.find("dialog").exists()).toBe(false)
+  expect(wrapper.find("[role=dialog]").exists()).toBe(false)
   expect(wrapper.get('[data-mcp-server="server-new"]').text()).toContain("Repository tools")
   expect(wrapper.text()).not.toContain("token=with=equals")
 })
@@ -93,15 +94,15 @@ test("creates a stdio server with ordered arguments, empty arguments, and exact 
 test("edits HTTP settings, preserving headers when switching to SSE and rejecting duplicate header names", async () => {
   const { wrapper, rpc } = await setup([{ id: "remote", name: "Remote tools", enabled: true, transport: "http", url: "https://mcp.example.test/tools", headers: { Authorization: "Bearer test-token" } }])
   await wrapper.get("[data-mcp-edit]").trigger("click")
-  await wrapper.get('[name="mcp-transport"]').setValue("sse")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Transport"]', "SSE")
   await wrapper.get("[data-mcp-add-pair]").trigger("click")
   await wrapper.get('[name="mcp-key-1"]').setValue("authorization")
   await wrapper.get('[name="mcp-value-1"]').setValue("duplicate")
-  await wrapper.get("dialog form").trigger("submit")
+  await wrapper.get("[role=dialog] form").trigger("submit")
   expect(wrapper.get('[role="alert"]').text()).toContain("must be unique")
   expect(rpc.mock.calls.filter(([, method]) => method === "mcpServerUpdate")).toHaveLength(0)
   await wrapper.get('button[aria-label="Remove entry 2"]').trigger("click")
-  await wrapper.get("dialog form").trigger("submit")
+  await wrapper.get("[role=dialog] form").trigger("submit")
   await flushPromises()
   expect(rpc).toHaveBeenCalledWith("machine-1", "mcpServerUpdate", { serverId: "remote", changes: {
     name: "Remote tools", enabled: true, transport: "sse", url: "https://mcp.example.test/tools", headers: { Authorization: "Bearer test-token" },
@@ -121,13 +122,13 @@ test("removal failures stay in the confirmation dialog and a successful retry re
   const { wrapper, rpc } = await setup([server])
   await wrapper.get("[data-mcp-remove]").trigger("click")
   rpc.mockRejectedValueOnce(new Error("Machine disconnected"))
-  await wrapper.get("dialog .ui-button-danger").trigger("click")
+  await wrapper.get("[role=dialog] .ui-button-danger").trigger("click")
   await flushPromises()
-  expect(wrapper.get("dialog [role=alert]").text()).toContain("Machine disconnected")
+  expect(wrapper.get("[role=dialog] [role=alert]").text()).toContain("Machine disconnected")
   expect(wrapper.find('[data-mcp-server="server-1"]').exists()).toBe(true)
-  await wrapper.get("dialog .ui-button-danger").trigger("click")
+  await wrapper.get("[role=dialog] .ui-button-danger").trigger("click")
   await flushPromises()
-  expect(wrapper.find("dialog").exists()).toBe(false)
+  expect(wrapper.find("[role=dialog]").exists()).toBe(false)
   expect(wrapper.find('[data-mcp-server="server-1"]').exists()).toBe(false)
   expect(wrapper.findAll("[data-mcp-server]")).toHaveLength(0)
 })
@@ -139,6 +140,6 @@ test("losing the machine connection disables editing and saving an open form", a
   await flushPromises()
   expect(wrapper.get("[data-mcp-save]").attributes("disabled")).toBeDefined()
   expect(wrapper.get("[data-mcp-toggle]").attributes("disabled")).toBeDefined()
-  await wrapper.get("dialog form").trigger("submit")
+  await wrapper.get("[role=dialog] form").trigger("submit")
   expect(rpc.mock.calls.filter(([, method]) => method === "mcpServerUpdate")).toHaveLength(0)
 })

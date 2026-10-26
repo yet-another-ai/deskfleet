@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { computed, ref, useId, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
@@ -38,7 +39,7 @@ async function rename(): Promise<void> {
       <form class="ui-card px-4" @submit.prevent="rename">
         <SettingsRow :label="t('team.name')" :label-id="`${id}-name`">
           <input v-model="name" class="ui-input w-56" :aria-labelledby="`${id}-name`" name="team-name" required maxlength="256" autocomplete="off" :disabled="saving" />
-          <button type="submit" class="ui-button shrink-0" :disabled="saving || !changed">{{ saving ? t("catalog.saving") : t("catalog.save") }}</button>
+          <UiButton type="submit" class="shrink-0" :disabled="saving || !changed">{{ saving ? t("catalog.saving") : t("catalog.save") }}</UiButton>
         </SettingsRow>
       </form>
       <p v-if="error" role="alert" class="m-0 mt-2 text-sm text-ui-danger">{{ error }}</p>

@@ -113,6 +113,9 @@
     "busy": "请等待当前计划任务操作完成。"
   },
   "common": {
+    "increase": "增加",
+    "decrease": "减少",
+    "noResults": "未找到匹配的结果。",
     "notAvailable": "尚不可用",
     "placeholderControl": "{label}（尚不可用）",
     "copy": "复制",

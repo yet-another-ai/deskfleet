@@ -9,6 +9,7 @@ import {
   SquareTerminal,
 } from "@lucide/vue"
 import { computed, ref } from "vue"
+import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
@@ -50,7 +51,6 @@ async function workspaceCreated(id: string): Promise<void> {
 }
 
 const collapsed = computed(() => fleet.isCollapsed(props.machine.id))
-const listId = computed(() => `machine-${props.machine.id}-resources`)
 const lastSeen = computed(() => {
   if (!props.machine.lastSeen) return undefined
   const time = new Intl.DateTimeFormat(intlLocale(locale.value as AppLocale), {
@@ -63,14 +63,11 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
 </script>
 
 <template>
-  <section class="mt-4 first:mt-0">
+  <CollapsibleRoot as="section" :open="!collapsed" class="mt-4 first:mt-0" @update:open="fleet.toggleMachine(machine.id)">
     <div class="group flex h-8 items-center gap-1 pl-2.5 pr-1">
-      <button
+      <CollapsibleTrigger
         type="button"
         class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[13px] font-medium text-ui-text-muted hover:text-ui-text"
-        :aria-expanded="!collapsed"
-        :aria-controls="listId"
-        @click="fleet.toggleMachine(machine.id)"
       >
         <span class="truncate">{{ machine.name }}</span>
         <span
@@ -81,14 +78,14 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
           {{ t("machine.offline") }}
         </span>
         <ChevronRight v-if="collapsed" :size="14" class="shrink-0" aria-hidden="true" />
-      </button>
+      </CollapsibleTrigger>
       <div v-if="machine.online" class="flex op-0 group-hover:op-100 group-focus-within:op-100">
         <IconButton :icon="FolderPlus" :label="t('machine.addWorkspace')" :placeholder="false" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = true" />
       </div>
     </div>
     <WorkspaceCreateDialog v-if="addingWorkspace" @created="workspaceCreated" @cancel="addingWorkspace = false" />
 
-    <ul v-if="!collapsed" :id="listId">
+    <CollapsibleContent as="ul">
       <li>
         <TreeLink
           :to="{ name: 'machine-control', params: { machineId: machine.id } }"
@@ -134,6 +131,6 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
           </li>
         </ul>
       </li>
-    </ul>
-  </section>
+    </CollapsibleContent>
+  </CollapsibleRoot>
 </template>

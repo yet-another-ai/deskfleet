@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 
@@ -19,13 +20,13 @@ async function submit(): Promise<void> {
 
 <template>
   <div class="flex flex-col items-start gap-2">
-    <button v-if="!confirming" type="button" class="ui-button-danger" :disabled="disabled" @click="confirming = true">{{ label }}</button>
+    <UiButton variant="danger" v-if="!confirming" type="button" :disabled="disabled" @click="confirming = true">{{ label }}</UiButton>
     <div v-else class="flex flex-col gap-3 rounded-xl border border-ui-danger/30 bg-ui-danger/6 p-3">
       <p class="m-0 text-sm">{{ question }}</p>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="flex gap-2">
-        <button type="button" class="ui-button-danger" :disabled="deleting || disabled" @click="submit">{{ t("catalog.confirmDelete") }}</button>
-        <button type="button" class="ui-button" :disabled="deleting" @click="confirming = false">{{ t("catalog.cancel") }}</button>
+        <UiButton variant="danger" type="button" :disabled="deleting || disabled" @click="submit">{{ t("catalog.confirmDelete") }}</UiButton>
+        <UiButton type="button" :disabled="deleting" @click="confirming = false">{{ t("catalog.cancel") }}</UiButton>
       </div>
     </div>
   </div>

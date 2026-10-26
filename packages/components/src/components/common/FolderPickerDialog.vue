@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import UiButton from "./UiButton.vue"
 import { ArrowUp, Check, ChevronRight, Folder, Home, Pencil } from "@lucide/vue"
+import { DialogTitle } from "reka-ui"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
 import IconButton from "./IconButton.vue"
+import UiDialog from "./UiDialog.vue"
+import UiCheckbox from "./UiCheckbox.vue"
 
 const props = defineProps<{
   browse(path?: string): Promise<DirectoryListing>
@@ -12,7 +16,6 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ select: [path: string]; cancel: [] }>()
 const { t } = useI18n()
-const dialog = useTemplateRef<HTMLDialogElement>("dialog")
 const pathInputRef = useTemplateRef<HTMLInputElement>("pathInputRef")
 const listing = ref<DirectoryListing | null>(null)
 const editingPath = ref(false)
@@ -79,7 +82,6 @@ function submitPathInput(): void {
 function cancel(): void {
   if (finished) return
   finished = true
-  dialog.value?.close()
   emit("cancel")
 }
 async function select(): Promise<void> {
@@ -95,28 +97,23 @@ async function select(): Promise<void> {
   }
   if (!listing.value || loading.value || error.value || finished) return
   finished = true
-  dialog.value?.close()
   emit("select", listing.value.path)
 }
 
-onMounted(() => {
-  dialog.value?.showModal()
-  void navigate(props.initialPath)
-})
-onBeforeUnmount(() => { finished = true; requestId++; dialog.value?.close() })
+onMounted(() => { void navigate(props.initialPath) })
+onBeforeUnmount(() => { finished = true; requestId++ })
 </script>
 
 <template>
-  <Teleport to="body">
-    <dialog ref="dialog" class="ui-dialog app-no-drag w-[36rem]" aria-labelledby="folder-picker-title" @cancel.prevent.stop="cancel" @close.stop="cancel">
+    <UiDialog class="w-[36rem]" @close="cancel">
       <div class="mb-4 flex items-baseline justify-between gap-3">
-        <h2 id="folder-picker-title" class="ui-dialog-title">{{ t("folderPicker.title") }}</h2>
+        <DialogTitle class="ui-dialog-title">{{ t("folderPicker.title") }}</DialogTitle>
         <span class="min-w-0 truncate text-sm text-ui-text-muted" :title="machineName">{{ machineName }}</span>
       </div>
       <nav class="mb-3 flex flex-wrap items-center gap-2" :aria-label="t('folderPicker.locations')">
-        <button type="button" class="ui-button" :aria-label="t('folderPicker.home')" @click="navigate(listing?.homePath)"><Home :size="14" aria-hidden="true" />{{ t("folderPicker.home") }}</button>
-        <button type="button" class="ui-button" :disabled="!listing?.parentPath" :aria-label="t('folderPicker.up')" @click="navigate(listing?.parentPath ?? undefined)"><ArrowUp :size="14" aria-hidden="true" />{{ t("folderPicker.up") }}</button>
-        <button v-for="root in listing?.roots" :key="root.path" type="button" class="ui-button font-mono" :data-path="root.path" @click="navigate(root.path)">{{ root.name }}</button>
+        <UiButton type="button" :aria-label="t('folderPicker.home')" @click="navigate(listing?.homePath)"><Home :size="14" aria-hidden="true" />{{ t("folderPicker.home") }}</UiButton>
+        <UiButton type="button" :disabled="!listing?.parentPath" :aria-label="t('folderPicker.up')" @click="navigate(listing?.parentPath ?? undefined)"><ArrowUp :size="14" aria-hidden="true" />{{ t("folderPicker.up") }}</UiButton>
+        <UiButton v-for="root in listing?.roots" :key="root.path" type="button" class="font-mono" :data-path="root.path" @click="navigate(root.path)">{{ root.name }}</UiButton>
       </nav>
       <div v-if="listing || editingPath" class="mb-3 flex items-center gap-1 text-sm" :data-current-path="listing?.path ?? undefined">
         <template v-if="editingPath">
@@ -147,7 +144,7 @@ onBeforeUnmount(() => { finished = true; requestId++; dialog.value?.close() })
         <p v-if="loading" role="status" class="m-0 p-4 text-sm text-ui-text-muted">{{ t("folderPicker.loading") }}</p>
         <div v-else-if="error" class="flex flex-col items-start gap-3 p-4">
           <p role="alert" class="m-0 break-all text-sm text-ui-danger">{{ error }}</p>
-          <button type="button" class="ui-button" @click="navigate(requestedPath)">{{ t("folderPicker.retry") }}</button>
+          <UiButton type="button" @click="navigate(requestedPath)">{{ t("folderPicker.retry") }}</UiButton>
         </div>
         <ul v-else-if="visibleDirectories.length" :aria-label="t('folderPicker.folders')">
           <li v-for="directory in visibleDirectories" :key="directory.path">
@@ -161,12 +158,11 @@ onBeforeUnmount(() => { finished = true; requestId++; dialog.value?.close() })
         <p v-else role="status" class="m-0 p-4 text-sm text-ui-text-muted">{{ t("folderPicker.empty") }}</p>
       </div>
       <label class="mt-3 flex items-center gap-2 text-sm text-ui-text-muted">
-        <input v-model="showHidden" type="checkbox" />{{ t("folderPicker.showHidden") }}
+        <UiCheckbox v-model="showHidden" />{{ t("folderPicker.showHidden") }}
       </label>
       <div class="ui-dialog-actions">
-        <button type="button" class="ui-button" @click="cancel">{{ t("catalog.cancel") }}</button>
-        <button type="button" class="ui-button-primary" :disabled="loading || (editingPath ? !pathInput.trim() : !!error || !listing)" @click="select">{{ t("folderPicker.select") }}</button>
+        <UiButton type="button" @click="cancel">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton variant="primary" type="button" :disabled="loading || (editingPath ? !pathInput.trim() : !!error || !listing)" @click="select">{{ t("folderPicker.select") }}</UiButton>
       </div>
-    </dialog>
-  </Teleport>
+    </UiDialog>
 </template>

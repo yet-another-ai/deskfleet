@@ -118,106 +118,115 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
     link.click()
     await until(() => [...document.querySelectorAll("button")].some(button => button.textContent?.trim() === "Add provider" && !button.disabled), "Provider settings")
   }
-  async function addProvider(): Promise<HTMLDialogElement> {
+  async function addProvider(template = "codex"): Promise<HTMLElement> {
     button("Add provider").click()
-    await until(() => !!document.querySelector('dialog[open] input[name="provider-name"]'), "Add provider dialog")
-    return document.querySelector<HTMLDialogElement>("dialog[open]")!
+    await until(() => !!document.querySelector(`[data-provider-template-choice="${template}"]`), "Provider templates")
+    document.querySelector<HTMLButtonElement>(`[data-provider-template-choice="${template}"]`)!.click()
+    await until(() => !!document.querySelector('[role=dialog][data-state=open] input[name="provider-name"]'), "Add provider dialog")
+    return document.querySelector<HTMLElement>("[role=dialog][data-state=open]")!
   }
-  async function saveProvider(dialog: HTMLDialogElement): Promise<void> {
+  async function saveProvider(dialog: HTMLElement): Promise<void> {
     dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
-    await until(() => !document.querySelector("dialog[open]"), "Saved provider")
+    await until(() => !document.querySelector("[role=dialog][data-state=open]"), "Saved provider")
   }
-  async function chooseProviderIcon(dialog: HTMLDialogElement, icon: string): Promise<void> {
+  async function settledBinaryPath(dialog: HTMLElement, fallback: string): Promise<string | undefined> {
+    // Let the last input update start its probe before inspecting the rendered status.
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    await until(() => !!dialog.querySelector("[data-provider-status]")
+      && !dialog.querySelector<HTMLButtonElement>("[data-provider-probe]")?.disabled, "Provider executable discovery")
+    const field = dialog.querySelector<HTMLInputElement>('[name="provider-binary"]')!
+    require(field.value === "", "New provider paths must remain implicit until edited")
+    const status = dialog.querySelector<HTMLElement>("[data-provider-status]")!
+    require(status.dataset.providerStatus !== "error", "Provider executable discovery failed")
+    const discovered = status.dataset.providerStatus === "found" ? status.querySelector("[title]")?.getAttribute("title") : undefined
+    require(field.placeholder === (discovered || fallback), "Provider placeholder must match its discovered executable or default")
+    return field.placeholder === fallback ? undefined : field.placeholder
+  }
+  async function chooseProviderIcon(dialog: HTMLElement, icon: string): Promise<void> {
     const trigger = dialog.querySelector<HTMLButtonElement>("button[aria-expanded]")
-    require(trigger && dialog.querySelector(`label[for="${trigger.id}"]`)?.textContent?.trim() === "Icon", "Missing provider icon picker")
+    require(trigger?.getAttribute("aria-label")?.startsWith("Icon:"), "Missing provider icon picker")
+    require(trigger, "Missing provider icon picker trigger")
     trigger.click()
-    await until(() => trigger.getAttribute("aria-expanded") === "true" && !!dialog.querySelector('[name="provider-icon-search"]'), "Provider icon choices")
+    await until(() => trigger.getAttribute("aria-expanded") === "true" && !!document.querySelector('[name="provider-icon-search"]'), "Provider icon choices")
     input('[name="provider-icon-search"]', icon)
-    await until(() => !!dialog.querySelector(`[data-provider-icon-choice="${icon}"]`) && [...dialog.querySelectorAll("[data-provider-icon-choice]")].every(choice => choice.getAttribute("data-provider-icon-choice")!.includes(icon)), "Filtered provider icon")
-    dialog.querySelector<HTMLButtonElement>(`[data-provider-icon-choice="${icon}"]`)!.click()
+    await until(() => !!document.querySelector(`[data-provider-icon-choice="${icon}"]`) && [...document.querySelectorAll("[data-provider-icon-choice]")].every(choice => choice.getAttribute("data-provider-icon-choice")!.includes(icon)), "Filtered provider icon")
+    document.querySelector<HTMLButtonElement>(`[data-provider-icon-choice="${icon}"]`)!.click()
     await until(() => trigger.getAttribute("aria-expanded") === "false" && !!trigger.querySelector(`[data-provider-icon="${icon}"]`), "Selected provider icon")
   }
   async function providerAction(id: string, action: string): Promise<void> {
     const row = document.querySelector(`[data-provider-id="${id}"]`)
     require(row, "Provider was not rendered")
-    row.querySelector<HTMLButtonElement>("button")!.click()
-    await until(() => !!row.querySelector('[role="menu"]'), "Provider actions")
-    button(action, row).click()
-    await until(() => !!document.querySelector("dialog[open]"), `${action} dialog`)
+    row.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click()
+    await until(() => !!document.querySelector('[role="menu"]'), "Provider actions")
+    button(action, document.querySelector('[role="menu"]')!).click()
+    await until(() => !!document.querySelector("[role=dialog][data-state=open]"), `${action} dialog`)
   }
   async function removeProvider(id: string): Promise<void> {
     await providerAction(id, "Remove provider")
-    button("Remove provider", document.querySelector("dialog[open]")!).click()
-    await until(() => !document.querySelector("dialog[open]") && !document.querySelector(`[data-provider-id="${id}"]`), "Removed provider")
+    button("Remove provider", document.querySelector("[role=dialog][data-state=open]")!).click()
+    await until(() => !document.querySelector("[role=dialog][data-state=open]") && !document.querySelector(`[data-provider-id="${id}"]`), "Removed provider")
     require(!(await api.providers.list()).providers.some(provider => provider.id === id), "Provider removal was not persisted")
   }
   async function exerciseProviders(): Promise<string> {
     await openProviders()
     let dialog = await addProvider()
-    const template = dialog.querySelector<HTMLSelectElement>("#provider-template")!
-    require(template.value === "codex", "New providers must offer the Codex template")
-    require(dialog.querySelector<HTMLInputElement>('[name="provider-binary"]')?.placeholder === "codex", "Blank Codex paths must show the default executable")
+    require(dialog.querySelector("[data-provider-template]")?.textContent?.includes("Codex"), "New providers must offer the Codex template")
     input('[name="provider-name"]', "Work Codex")
     await chooseProviderIcon(dialog, "deepseek")
+    dialog.querySelector<HTMLElement>("[data-provider-advanced] > button")!.click()
     button("Add variable", dialog).click()
     await until(() => !!dialog.querySelector("[data-environment-row]"), "Environment row")
     input('[data-environment-row] input:first-child', "DESKFLEET_SMOKE_PROFILE")
     input('[data-environment-row] input:nth-child(2)', "work")
+    const codexBinaryPath = await settledBinaryPath(dialog, "codex")
     await saveProvider(dialog)
     const created = (await api.providers.list()).providers.find(provider => provider.name === "Work Codex")
-    require(created?.template === "codex" && created.icon === "deepseek" && created.binaryPath === undefined && created.env.DESKFLEET_SMOKE_PROFILE === "work", "Provider creation did not retain its template, icon, default path, and environment")
+    require(created?.template === "codex" && created.icon === "deepseek" && created.binaryPath === codexBinaryPath && created.env.DESKFLEET_SMOKE_PROFILE === "work", "Provider creation did not retain its template, icon, resolved path, and environment")
     require(document.querySelector(`[data-provider-id="${created.id}"] [data-provider-icon="deepseek"]`), "Created provider did not display its selected icon")
     await providerAction(created.id, "Edit provider")
-    dialog = document.querySelector<HTMLDialogElement>("dialog[open]")!
-    const fixedTemplate = dialog.querySelector<HTMLInputElement>("#provider-template")
-    require(fixedTemplate?.readOnly && fixedTemplate.value === "Codex" && !dialog.querySelector("select#provider-template"), "Existing provider templates must not be editable")
+    dialog = document.querySelector<HTMLElement>("[role=dialog][data-state=open]")!
+    require(dialog.querySelector("[data-provider-template]")?.textContent?.includes("Codex") && !dialog.querySelector("[data-provider-template-choice]"), "Existing provider templates must not be editable")
     await chooseProviderIcon(dialog, "claude")
     input('[name="provider-name"]', "Work Codex updated")
     input('[name="provider-binary"]', `${context.checkoutPath}/custom-codex`)
     // The bundled Codex adapter starts in Electron's Node mode and reports the missing CLI.
-    button("Test", dialog).click()
+    dialog.querySelector<HTMLButtonElement>("[data-provider-test]")!.click()
+    await until(() => !!dialog.querySelector('[data-provider-test-result][role="alert"]'), "Failed provider test")
+    // The short summary can describe process exit; the missing path remains in its details.
+    dialog.querySelector<HTMLButtonElement>("[data-provider-test-details-toggle]")?.click()
     await until(() => dialog.querySelector('[data-provider-test-result][role="alert"]')?.textContent?.includes("custom-codex") ?? false, "Failed provider test")
-    require((await api.providers.list()).providers.find(provider => provider.id === created.id)?.binaryPath === undefined, "Testing a provider must not save its settings")
+    require((await api.providers.list()).providers.find(provider => provider.id === created.id)?.binaryPath === codexBinaryPath, "Testing a provider must not save its settings")
     input('[data-environment-row] input:nth-child(2)', "updated")
     await saveProvider(dialog)
     const edited = (await api.providers.list()).providers.find(provider => provider.id === created.id)
     require(edited?.template === "codex" && edited.icon === "claude" && edited.name === "Work Codex updated" && edited.binaryPath === `${context.checkoutPath}/custom-codex` && edited.env.DESKFLEET_SMOKE_PROFILE === "updated", "Provider edits were not persisted")
     require(document.querySelector(`[data-provider-id="${created.id}"] [data-provider-icon="claude"]`), "Edited provider did not display its updated icon")
-    dialog = await addProvider()
-    const cursor = dialog.querySelector<HTMLSelectElement>("#provider-template")!
-    cursor.value = "cursor"
-    cursor.dispatchEvent(new Event("change", { bubbles: true }))
-    await until(() => dialog.querySelector<HTMLInputElement>('[name="provider-binary"]')?.placeholder === "agent"
-      && dialog.querySelector("[data-provider-icon]")?.getAttribute("data-provider-icon") === "cursor"
-      && (dialog.textContent?.includes("agent acp") ?? false), "Cursor template defaults")
+    dialog = await addProvider("cursor")
+    await until(() => dialog.querySelector("[data-provider-icon]")?.getAttribute("data-provider-icon") === "cursor"
+      && (dialog.textContent?.includes("Cursor") ?? false), "Cursor template defaults")
     input('[name="provider-name"]', "Temporary Cursor")
+    const cursorBinaryPath = await settledBinaryPath(dialog, "agent")
     await saveProvider(dialog)
     const cursorProvider = (await api.providers.list()).providers.find(provider => provider.name === "Temporary Cursor")
-    require(cursorProvider?.template === "cursor" && cursorProvider.binaryPath === undefined, "Cursor provider template was not saved")
+    require(cursorProvider?.template === "cursor" && cursorProvider.binaryPath === cursorBinaryPath, "Cursor provider template and resolved path were not saved")
     require(document.querySelector(`[data-provider-id="${cursorProvider.id}"] [data-provider-icon="cursor"]`), "Cursor provider did not display its template icon")
     await removeProvider(cursorProvider.id)
-    dialog = await addProvider()
-    const grok = dialog.querySelector<HTMLSelectElement>("#provider-template")!
-    grok.value = "grok"
-    grok.dispatchEvent(new Event("change", { bubbles: true }))
-    await until(() => dialog.querySelector<HTMLInputElement>('[name="provider-binary"]')?.placeholder === "grok"
-      && dialog.querySelector("[data-provider-icon]")?.getAttribute("data-provider-icon") === "grok"
-      && (dialog.textContent?.includes("grok agent stdio") ?? false), "Grok template defaults")
+    dialog = await addProvider("grok")
+    await until(() => dialog.querySelector("[data-provider-icon]")?.getAttribute("data-provider-icon") === "grok"
+      && (dialog.textContent?.includes("Grok") ?? false), "Grok template defaults")
     input('[name="provider-name"]', "Temporary Grok")
+    const grokBinaryPath = await settledBinaryPath(dialog, "grok")
     await saveProvider(dialog)
     const grokProvider = (await api.providers.list()).providers.find(provider => provider.name === "Temporary Grok")
-    require(grokProvider?.template === "grok" && grokProvider.binaryPath === undefined, "Grok provider template was not saved")
+    require(grokProvider?.template === "grok" && grokProvider.binaryPath === grokBinaryPath, "Grok provider template and resolved path were not saved")
     require(document.querySelector(`[data-provider-id="${grokProvider.id}"] [data-provider-icon="grok"]`), "Grok provider did not display its template icon")
     await removeProvider(grokProvider.id)
-    dialog = await addProvider()
-    const acp = dialog.querySelector<HTMLSelectElement>("#provider-template")!
-    acp.value = "acp"
-    acp.dispatchEvent(new Event("change", { bubbles: true }))
-    await until(() => dialog.querySelector<HTMLInputElement>('[name="provider-binary"]')?.placeholder === "acp-agent", "ACP template defaults")
+    dialog = await addProvider("acp")
     input('[name="provider-name"]', "Temporary ACP")
+    const acpBinaryPath = await settledBinaryPath(dialog, "acp-agent")
     await saveProvider(dialog)
     const temporary = (await api.providers.list()).providers.find(provider => provider.name === "Temporary ACP")
-    require(temporary?.template === "acp", "ACP provider template was not saved")
+    require(temporary?.template === "acp" && temporary.binaryPath === acpBinaryPath, "ACP provider template and resolved path were not saved")
     await removeProvider(temporary.id)
     return created.id
   }

@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { ChevronLeft, ChevronRight, CircleCheck, CircleX, LoaderCircle, Plus, Trash2 } from "@lucide/vue"
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from "vue"
+import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger, DialogTitle, DialogDescription } from "reka-ui"
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentProviderConfig, AgentProviderInput, AgentProviderTemplate, AgentProviderTemplateId, ProviderProbeResult, ProviderTestResult } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
@@ -8,6 +10,7 @@ import IconButton from "../common/IconButton.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import ProviderIconPicker from "./ProviderIconPicker.vue"
 import ProviderSetup from "./ProviderSetup.vue"
+import UiDialog from "../common/UiDialog.vue"
 
 const props = defineProps<{
   initial?: AgentProviderConfig
@@ -22,7 +25,6 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ saved: []; cancel: [] }>()
 const { t } = useI18n()
-const dialog = useTemplateRef<HTMLDialogElement>("dialog")
 const pathInput = useTemplateRef<HTMLInputElement>("pathInput")
 // A new provider starts by choosing its agent; the template is fixed once created.
 const step = ref<"template" | "details">(props.initial ? "details" : "template")
@@ -139,7 +141,6 @@ async function runTest(): Promise<void> {
 function cancel(): void {
   if (saving.value || setupBusy.value || finished) return
   finished = true
-  dialog.value?.close()
   emit("cancel")
 }
 async function submit(): Promise<void> {
@@ -151,24 +152,22 @@ async function submit(): Promise<void> {
   try {
     await props.save(provider)
     finished = true
-    dialog.value?.close()
     emit("saved")
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { saving.value = false }
 }
-onMounted(() => dialog.value?.showModal())
-onBeforeUnmount(() => { finished = true; dialog.value?.close() })
+onBeforeUnmount(() => { finished = true })
 </script>
 
 <template>
-  <dialog ref="dialog" class="ui-dialog app-no-drag w-[32rem] max-h-[85vh] overflow-y-auto" aria-labelledby="provider-dialog-title" aria-describedby="provider-dialog-description" @cancel.prevent="cancel" @close="cancel">
+  <UiDialog class="w-[32rem]" described :prevent-close="saving || setupBusy" @close="cancel">
     <div class="mb-5 flex items-start gap-2">
       <IconButton v-if="step === 'details' && !initial" :icon="ChevronLeft" :label="t('providers.back')" :disabled="formDisabled" class="-ml-1.5 mt-[-2px]" data-provider-back @click="back" />
       <div class="min-w-0">
-        <h2 id="provider-dialog-title" class="ui-dialog-title">{{ t(initial ? "providers.edit" : "providers.add") }}</h2>
-        <p id="provider-dialog-description" class="ui-dialog-description" data-provider-template>
+        <DialogTitle class="ui-dialog-title">{{ t(initial ? "providers.edit" : "providers.add") }}</DialogTitle>
+        <DialogDescription class="ui-dialog-description" data-provider-template>
           {{ step === "template" ? t("providers.chooseTemplate", { machine: machineName }) : t("providers.runsOn", { template: selectedTemplate.name, machine: machineName }) }}
-        </p>
+        </DialogDescription>
       </div>
     </div>
 
@@ -184,7 +183,7 @@ onBeforeUnmount(() => { finished = true; dialog.value?.close() })
         </button>
       </div>
       <div class="ui-dialog-actions mt-4">
-        <button type="button" class="ui-button" @click="cancel">{{ t("catalog.cancel") }}</button>
+        <UiButton type="button" @click="cancel">{{ t("catalog.cancel") }}</UiButton>
       </div>
     </div>
 
@@ -203,13 +202,13 @@ onBeforeUnmount(() => { finished = true; dialog.value?.close() })
         @busy="setupBusy = $event" @resolved="resolvedBinaryPath = $event" @binary-path="binaryPath = $event" @edit-path="editPath"
       />
 
-      <details :open="advanced" class="text-sm" data-provider-advanced @toggle="advanced = ($event.target as HTMLDetailsElement).open">
-        <summary class="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md text-[13px] text-ui-text-muted hover:text-ui-text [&::-webkit-details-marker]:hidden">
+      <CollapsibleRoot v-model:open="advanced" :unmount-on-hide="false" class="text-sm" data-provider-advanced>
+        <CollapsibleTrigger class="flex w-fit cursor-pointer items-center gap-1.5 rounded-md text-[13px] text-ui-text-muted hover:text-ui-text">
           <ChevronRight :size="14" :stroke-width="1.75" class="transition-transform" :class="advanced && 'rotate-90'" aria-hidden="true" />
           {{ t("providers.advanced") }}
           <span v-if="!advanced && advancedSummary" class="text-ui-text-faint">· {{ advancedSummary }}</span>
-        </summary>
-        <div class="mt-4 flex flex-col gap-5">
+        </CollapsibleTrigger>
+        <CollapsibleContent class="mt-4 flex flex-col gap-5">
           <label class="flex flex-col gap-1.5">
             {{ t("providers.binaryPath") }}
             <input ref="pathInput" v-model="binaryPath" name="provider-binary" class="ui-input font-mono text-[13px]" :placeholder="resolvedBinaryPath ?? selectedTemplate.defaultBinaryPath" :disabled="formDisabled" autocomplete="off" :spellcheck="false" />
@@ -224,13 +223,13 @@ onBeforeUnmount(() => { finished = true; dialog.value?.close() })
                 <input v-model="row.value" class="ui-input min-w-0 flex-[1.4] font-mono text-xs" :aria-label="t('providers.environmentValue', { n: index + 1 })" :placeholder="t('providers.value')" autocomplete="off" :spellcheck="false" />
                 <IconButton :icon="Trash2" :label="t('providers.removeEnvironment', { n: index + 1 })" :disabled="formDisabled" @click="environment.splice(index, 1)" />
               </div>
-              <button type="button" class="ui-text-button -ml-2 w-fit cursor-pointer hover:bg-ui-hover" @click="environment.push({ id: nextRowId++, key: '', value: '' })">
+              <UiButton variant="ghost" size="sm" type="button" class="-ml-2 w-fit cursor-pointer hover:bg-ui-hover" @click="environment.push({ id: nextRowId++, key: '', value: '' })">
                 <Plus :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.addEnvironment") }}
-              </button>
+              </UiButton>
             </div>
           </fieldset>
-        </div>
-      </details>
+        </CollapsibleContent>
+      </CollapsibleRoot>
 
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <p v-if="testing" role="status" class="ui-notice m-0 border-ui-border text-ui-text-muted" data-provider-test-result>
@@ -243,16 +242,16 @@ onBeforeUnmount(() => { finished = true; dialog.value?.close() })
         <div class="flex min-h-6 items-center gap-2">
           <CircleX :size="15" :stroke-width="2" class="shrink-0 text-ui-danger" aria-hidden="true" />
           <span class="min-w-0 flex-1 break-words" data-provider-test-summary>{{ t("providers.testFailed", { error: testSummary }) }}</span>
-          <button v-if="testHasDetails" type="button" class="ui-text-button shrink-0 cursor-pointer hover:bg-ui-hover" :aria-expanded="testDetails" data-provider-test-details-toggle @click="testDetails = !testDetails">{{ t(testDetails ? "providers.hideDetails" : "providers.showDetails") }}</button>
+          <UiButton variant="ghost" size="sm" v-if="testHasDetails" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover" :aria-expanded="testDetails" data-provider-test-details-toggle @click="testDetails = !testDetails">{{ t(testDetails ? "providers.hideDetails" : "providers.showDetails") }}</UiButton>
         </div>
         <pre v-if="testDetails" class="m-0 max-h-48 overflow-auto rounded-lg bg-ui-canvas/60 p-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words text-ui-text-muted select-text" data-provider-test-details>{{ testResult.error.trim() }}</pre>
       </div>
 
       <div class="flex justify-end gap-2">
-        <button type="button" class="ui-button mr-auto" :title="t('providers.testDescription')" :disabled="testing || formDisabled" data-provider-test @click="runTest">{{ testing ? t("providers.testing") : t("providers.test") }}</button>
-        <button type="button" class="ui-button" :disabled="saving || setupBusy" @click="cancel">{{ t("catalog.cancel") }}</button>
-        <button type="submit" class="ui-button-primary" :disabled="formDisabled">{{ saving ? t("catalog.saving") : t(initial ? "catalog.save" : "providers.add") }}</button>
+        <UiButton type="button" class="mr-auto" :title="t('providers.testDescription')" :disabled="testing || formDisabled" data-provider-test @click="runTest">{{ testing ? t("providers.testing") : t("providers.test") }}</UiButton>
+        <UiButton type="button" :disabled="saving || setupBusy" @click="cancel">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton variant="primary" type="submit" :loading="saving" :disabled="formDisabled">{{ saving ? t("catalog.saving") : t(initial ? "catalog.save" : "providers.add") }}</UiButton>
       </div>
     </form>
-  </dialog>
+  </UiDialog>
 </template>

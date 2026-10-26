@@ -26,6 +26,7 @@ function setup(activeId?: string) {
   })
   let wrapper: ReturnType<typeof mount<typeof TerminalWorkspace>> | undefined
   wrapper = mount(TerminalWorkspace, {
+    attachTo: document.body,
     props: {
       terminals: terminals.sessions, create, activeId,
       // Mirror v-model so the component sees its own selections; the first fires while mounting.
@@ -45,9 +46,11 @@ function setup(activeId?: string) {
 test("tabs select independent shells without hanging up either and new tab dials another", async () => {
   const { wrapper, create, hangup, sync } = setup("first")
   expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(["Shell 1", "Shell 2"])
-  await wrapper.findAll('[role="tab"]')[1]!.trigger("click")
+  await wrapper.findAll('[role="tab"]')[1]!.trigger("mousedown", { button: 0 })
   expect(wrapper.emitted("update:activeId")).toEqual([["second"]])
   expect(wrapper.get("[data-shell]").attributes("data-id")).toBe("second")
+  expect(wrapper.findAll('[role="tab"]')[1]!.attributes("aria-controls")).toBe(wrapper.get('[role="tabpanel"]').attributes("id"))
+  expect(wrapper.findAll('[role="tab"]')[0]!.attributes("aria-controls")).toBeUndefined()
   expect(hangup).not.toHaveBeenCalled()
   await wrapper.get('[aria-label="New shell"]').trigger("click")
   await flushPromises()
@@ -78,7 +81,8 @@ test("hangup removes only that tab and selects its neighbor; final hangup leaves
 
 test("a hangup from another client removes the active tab and keyboard arrows select remaining tabs", async () => {
   const { wrapper, terminals, hangup, sync } = setup("first")
-  await wrapper.findAll('[role="tab"]')[0]!.trigger("keydown", { key: "ArrowRight" })
+  ;(wrapper.findAll('[role="tab"]')[0]!.element as HTMLElement).focus(); await flushPromises()
+  await wrapper.findAll('[role="tab"]')[0]!.trigger("keydown", { key: "ArrowRight" }); await flushPromises()
   expect(wrapper.emitted("update:activeId")?.at(-1)).toEqual(["second"])
   terminals.sessions = [first]
   await sync()
@@ -99,7 +103,7 @@ test("archived shells can be selected and replayed but cannot create or hang up"
   await wrapper.get('[aria-label="New shell"]').trigger("click")
   await wrapper.get('[aria-label="Hang up Shell 1"]').trigger("click")
   await wrapper.findAll('[role="tab"]')[0]!.trigger("keydown", { key: "Delete" })
-  await wrapper.findAll('[role="tab"]')[1]!.trigger("click")
+  await wrapper.findAll('[role="tab"]')[1]!.trigger("mousedown", { button: 0 })
   expect(wrapper.get("[data-shell]").attributes("data-id")).toBe("second")
   expect(create).not.toHaveBeenCalled()
   expect(hangup).not.toHaveBeenCalled()
@@ -109,7 +113,8 @@ test("archived shells can be selected and replayed but cannot create or hang up"
 test("an empty archived context never creates a terminal on mount", async () => {
   const pinia = createPinia()
   const ensure = vi.fn(async () => ({ id: "new" }))
-  const wrapper = mount(TerminalWorkspace, { props: { terminals: [], readOnly: true, create: ensure, ensureTerminal: ensure }, global: { plugins: [pinia, i18n] } })
+  const wrapper = mount(TerminalWorkspace, {
+    attachTo: document.body, props: { terminals: [], readOnly: true, create: ensure, ensureTerminal: ensure }, global: { plugins: [pinia, i18n] } })
   await flushPromises()
   expect(ensure).not.toHaveBeenCalled()
   wrapper.unmount()

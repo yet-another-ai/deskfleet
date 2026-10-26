@@ -2,6 +2,7 @@
 import { ChevronRight, CircleAlert, CircleX, LoaderCircle } from "@lucide/vue"
 import { useIntervalFn, useNow, watchImmediate } from "@vueuse/core"
 import { computed, reactive, ref, watch } from "vue"
+import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { ConversationResponse } from "../../services/agent-conversation.ts"
 import { summarizeTools } from "../../services/agent-conversation.ts"
@@ -34,32 +35,32 @@ const toggleThought = (id: string) => thoughts.has(id) ? thoughts.delete(id) : t
 </script>
 
 <template>
-  <div class="flex flex-col gap-3">
+  <CollapsibleRoot :open="open" class="flex flex-col gap-3" @update:open="toggled = $event">
     <template v-if="response.turn">
       <div v-if="response.live" class="flex items-center gap-2 text-ui-text-muted" role="status">
         <LoaderCircle :size="15" :stroke-width="2" class="animate-spin" aria-hidden="true" />
         <span>{{ duration ? t('agent.workingFor', { duration }) : t('agent.working') }}</span>
       </div>
-      <button v-else-if="steps.length" type="button" data-turn-work class="group/worked inline-flex cursor-pointer items-center gap-1 self-start text-ui-text-muted hover:text-ui-text" :aria-expanded="open" @click="toggled = !open">
+      <CollapsibleTrigger v-else-if="steps.length" type="button" data-turn-work class="group/worked inline-flex cursor-pointer items-center gap-1 self-start text-ui-text-muted hover:text-ui-text">
         <span>{{ duration ? t('agent.workedFor', { duration }) : t('agent.worked') }}</span>
         <ChevronRight :size="15" :stroke-width="2" class="opacity-0 transition-transform group-hover/worked:opacity-100" :class="open && 'rotate-90 opacity-100'" aria-hidden="true" />
-      </button>
+      </CollapsibleTrigger>
       <p v-else-if="duration" class="m-0 text-ui-text-muted">{{ t('agent.workedFor', { duration }) }}</p>
     </template>
-    <div v-if="open && steps.length" class="flex flex-col gap-2" :class="response.turn && !response.live && 'border-l border-ui-border pl-4'">
+    <CollapsibleContent v-if="steps.length" class="flex flex-col gap-2" :class="response.turn && !response.live && 'border-l border-ui-border pl-4'">
       <div v-for="step in steps" :key="step.id" :data-conversation-entry="step.id">
         <AgentToolCall v-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="response.live" />
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
         <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
-        <div v-else-if="step.role === 'thought'" class="text-sm text-ui-text-muted">
-          <button type="button" class="group/thought inline-flex cursor-pointer items-center gap-1 hover:text-ui-text" :aria-expanded="thoughts.has(step.id)" @click="toggleThought(step.id)">
+        <CollapsibleRoot v-else-if="step.role === 'thought'" :open="thoughts.has(step.id)" class="text-sm text-ui-text-muted" @update:open="toggleThought(step.id)">
+          <CollapsibleTrigger type="button" class="group/thought inline-flex cursor-pointer items-center gap-1 hover:text-ui-text">
             {{ t('agent.thinking') }}<ChevronRight :size="14" :stroke-width="2" class="opacity-0 transition-transform group-hover/thought:opacity-100" :class="thoughts.has(step.id) && 'rotate-90 opacity-100'" aria-hidden="true" />
-          </button>
-          <AgentContent v-if="thoughts.has(step.id)" :content="step.content" markdown class="mt-1" />
-        </div>
+          </CollapsibleTrigger>
+          <CollapsibleContent><AgentContent :content="step.content" markdown class="mt-1" /></CollapsibleContent>
+        </CollapsibleRoot>
         <AgentContent v-else :content="step.content" markdown class="py-1" />
       </div>
-    </div>
+    </CollapsibleContent>
     <AgentContent v-if="answer" :content="answer.content" markdown :data-conversation-entry="answer.id" />
     <p v-if="summary.length" class="m-0 text-ui-text-muted">{{ summary.join(' · ') }}</p>
     <div v-if="outcome" class="flex items-start gap-1.5 text-sm" :class="outcome.state === 'failed' ? 'text-ui-danger' : 'text-ui-text-muted'">
@@ -67,5 +68,5 @@ const toggleThought = (id: string) => thoughts.has(id) ? thoughts.delete(id) : t
       <CircleAlert v-else :size="15" :stroke-width="2" class="mt-0.5 shrink-0" aria-hidden="true" />
       <span class="min-w-0 break-words">{{ t(`agent.turnState.${outcome.state}`) }}<template v-if="outcome.error">: {{ outcome.error }}</template></span>
     </div>
-  </div>
+  </CollapsibleRoot>
 </template>

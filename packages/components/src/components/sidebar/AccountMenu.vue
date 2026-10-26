@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ChevronUp, LogOut } from "@lucide/vue"
+import { DropdownMenuItem } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import MenuPopover from "../common/MenuPopover.vue"
@@ -20,13 +21,13 @@ function signOut(): void {
       <span class="min-w-0 flex-1 truncate">{{ session.account.value.user.name }}</span>
       <ChevronUp :size="13" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
     </template>
-    <template #default="{ close }">
+    <template #default>
       <div class="border-b border-ui-border px-2.5 py-2.5">
         <div class="truncate text-[13px] font-medium">{{ session.account.value.user.name }}</div>
         <div v-if="session.account.value.user.email" class="mt-0.5 truncate text-xs text-ui-text-muted">{{ session.account.value.user.email }}</div>
         <div class="mt-0.5 truncate text-xs text-ui-text-faint">{{ session.account.value.serverUrl }}</div>
       </div>
-      <button type="button" role="menuitem" tabindex="-1" class="ui-menu-item mt-1" @click="close(); signOut()"><LogOut :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.signOut") }}</button>
+      <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-1" @select="signOut"><LogOut :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.signOut") }}</DropdownMenuItem>
     </template>
   </MenuPopover>
 </template>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { Circle, CircleAlert, CircleStop, LoaderCircle, Plus, Unplug, X } from "@lucide/vue"
-import { nextTick, onMounted, ref, watch, type Component } from "vue"
+import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
+import { onMounted, ref, watch, type Component } from "vue"
 import { useI18n } from "vue-i18n"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
@@ -36,20 +38,14 @@ const broken = () => connection.value.state === "disconnected" || connection.val
 function reconnect(): void {
   if (broken()) attempt.value++
 }
-const tabId = (id: string) => `terminal-tab-${id}`
-const panelId = (id: string) => `terminal-panel-${id}`
 
 function failed(reason: unknown): void {
   error.value = reason instanceof Error ? reason.message : String(reason)
 }
 
-async function select(id: string, focus = false): Promise<void> {
+function select(id: string): void {
   if (activeId.value !== id) connection.value = { state: "connecting", label: "" }
   activeId.value = id
-  if (focus) {
-    await nextTick()
-    document.getElementById(tabId(id))?.focus()
-  }
 }
 
 async function create(start = props.create): Promise<void> {
@@ -68,22 +64,6 @@ async function hangup(id: string): Promise<void> {
   try { await store.hangup(id) }
   catch (reason) { failed(reason) }
   finally { closing.value.delete(id) }
-}
-
-function keydown(event: KeyboardEvent, index: number): void {
-  const count = props.terminals.length
-  let next: number
-  if (event.key === "ArrowRight") next = (index + 1) % count
-  else if (event.key === "ArrowLeft") next = (index + count - 1) % count
-  else if (event.key === "Home") next = 0
-  else if (event.key === "End") next = count - 1
-  else if (event.key === "Delete") {
-    event.preventDefault()
-    void hangup(props.terminals[index]!.id)
-    return
-  } else return
-  event.preventDefault()
-  void select(props.terminals[next]!.id, true)
 }
 
 // A hung-up tab hands focus to its neighbour; with no active tab, the first is shown.
@@ -105,9 +85,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <TabsRoot :model-value="activeId" class="flex min-h-0 flex-1 flex-col" @update:model-value="select">
     <div class="flex h-8 min-w-0 shrink-0 items-center border-b border-ui-border">
-      <div role="tablist" :aria-label="t('terminal.tabs')" class="flex h-full min-w-0 flex-1 overflow-x-auto">
+      <TabsList :aria-label="t('terminal.tabs')" class="flex h-full min-w-0 flex-1 overflow-x-auto" loop>
         <div
           v-for="(terminal, index) in terminals"
           :key="terminal.id"
@@ -126,19 +106,14 @@ onMounted(() => {
             :data-connection="connection.state"
             @click="reconnect"
           ><component :is="icons[connection.state].icon" :size="connection.state === 'connected' ? 8 : 13" :stroke-width="2" :class="icons[connection.state].class" aria-hidden="true" /></button>
-          <button
-            :id="tabId(terminal.id)"
-            role="tab"
-            type="button"
-            :aria-selected="activeId === terminal.id"
-            :aria-controls="panelId(terminal.id)"
-            :tabindex="activeId === terminal.id ? 0 : -1"
+          <TabsTrigger
+            :value="terminal.id"
+            :data-terminal-id="terminal.id"
             :title="`${tabName(terminal.id, index)} — ${terminal.cwd}`"
             class="h-full min-w-0 cursor-pointer truncate pr-1 text-[13px]"
             :class="activeId === terminal.id ? 'pl-1.5' : 'pl-3'"
-            @click="select(terminal.id)"
-            @keydown="keydown($event, index)"
-          >{{ tabName(terminal.id, index) }}</button>
+            @keydown.delete.prevent="hangup(terminal.id)"
+          >{{ tabName(terminal.id, index) }}</TabsTrigger>
           <button
             type="button"
             :aria-label="t('terminal.hangupTab', { name: tabName(terminal.id, index) })"
@@ -149,7 +124,7 @@ onMounted(() => {
             @click="hangup(terminal.id)"
           ><X :size="13" aria-hidden="true" /></button>
         </div>
-      </div>
+      </TabsList>
       <button
         type="button"
         :aria-label="t('terminal.newTab')"
@@ -161,11 +136,10 @@ onMounted(() => {
       <slot name="actions" />
     </div>
     <p v-if="error" role="alert" class="m-0 truncate px-2 py-1 text-xs text-ui-danger" :title="error">{{ error }}</p>
-    <div
+    <TabsContent
       v-if="activeId && terminals.some(({ id }) => id === activeId)"
-      :id="panelId(activeId)"
-      role="tabpanel"
-      :aria-labelledby="tabId(activeId)"
+      :key="activeId"
+      :value="activeId"
       class="flex min-h-0 flex-1 flex-col"
     ><LiveTerminal
       :key="`${activeId}:${attempt}`"
@@ -173,15 +147,14 @@ onMounted(() => {
       :read-only="readOnly"
       @connection="(state, label) => { connection = { state, label } }"
       @title="title => { store.titles[activeId!] = title }"
-    /></div>
+    /></TabsContent>
     <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-ui-text-muted">
       <p class="m-0">{{ t("terminal.empty") }}</p>
-      <button
+      <UiButton
         type="button"
         :disabled="readOnly || creating"
-        class="ui-button"
         @click="create()"
-      >{{ t("terminal.newTab") }}</button>
+      >{{ t("terminal.newTab") }}</UiButton>
     </div>
-  </div>
+  </TabsRoot>
 </template>

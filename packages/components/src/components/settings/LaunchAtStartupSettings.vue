@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
+import UiSwitch from "../common/UiSwitch.vue"
 import { client as platformClient } from "@deskfleet/client/platform"
 
 import { computed, onMounted, ref } from "vue"
@@ -40,19 +42,15 @@ onMounted(load)
   <SettingsRow :label="t('settings.launchAtStartup')" label-id="launch-at-startup-label" description-id="launch-at-startup-description">
     <template #description>{{ state?.available === false ? t("settings.launchAtStartupUnavailable") : t("settings.launchAtStartupDescription") }}</template>
     <span v-if="busy" role="status" class="text-[13px] text-ui-text-muted">{{ loading ? t("settings.loading") : t("catalog.saving") }}</span>
-    <button v-if="!state && requestError" type="button" class="ui-button" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</button>
-    <button
-      type="button"
-      role="switch"
+    <UiButton v-if="!state && requestError" type="button" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</UiButton>
+    <UiSwitch
       aria-labelledby="launch-at-startup-label"
       aria-describedby="launch-at-startup-description"
-      :aria-checked="state?.enabled ?? false"
+      :model-value="state?.enabled ?? false"
       :disabled="busy || !state?.available"
-      class="ui-switch ml-2 disabled:cursor-default"
-      @click="setEnabled(!state?.enabled)"
-    >
-      <span class="ui-switch-thumb" :class="state?.enabled && 'translate-x-4'" />
-    </button>
+      class="ml-2 disabled:cursor-default"
+      @update:model-value="setEnabled"
+     />
   </SettingsRow>
   <p v-if="requestError" role="alert" class="m-0 -mt-1 break-words pb-3 text-[13px] text-ui-danger">{{ requestError }}</p>
 </template>

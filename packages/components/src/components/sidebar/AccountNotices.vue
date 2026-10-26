@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { X } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
@@ -14,7 +15,7 @@ const session = useAccountSession()
     <p v-if="!session.connected.value" role="status" class="m-0 rounded-lg border border-ui-warning/30 bg-ui-warning/8 px-2.5 py-2 text-xs text-ui-warning">{{ t("account.signalingOffline") }}</p>
     <div v-if="session.enrollment.value?.revoked" role="status" class="rounded-lg border border-ui-border bg-ui-surface px-2.5 py-2 text-xs text-ui-text-muted">
       <p class="m-0">{{ t("account.enrollmentRevoked") }}</p>
-      <button v-if="session.canEnrollLocal.value && session.team.value" type="button" class="ui-text-button -ml-2 mt-1 cursor-pointer text-ui-text hover:bg-ui-hover" @click="session.dialog.value = 'add-machine'">{{ t("account.reconnectThisComputer") }}</button>
+      <UiButton variant="ghost" size="sm" v-if="session.canEnrollLocal.value && session.team.value" type="button" class="-ml-2 mt-1 cursor-pointer text-ui-text hover:bg-ui-hover" @click="session.dialog.value = 'add-machine'">{{ t("account.reconnectThisComputer") }}</UiButton>
     </div>
     <div v-if="session.notice.value" role="alert" class="flex items-start gap-1 rounded-lg border border-ui-danger/30 bg-ui-danger/8 py-1 pr-1 pl-2.5 text-xs text-ui-danger">
       <p class="m-0 min-w-0 flex-1 break-words py-1">{{ session.notice.value }}</p>

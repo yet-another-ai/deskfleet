@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiButton from "../components/common/UiButton.vue"
+import UiSelect from "../components/common/UiSelect.vue"
 import { CalendarClock, Plus, RefreshCw } from "@lucide/vue"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -57,10 +59,8 @@ async function remove(): Promise<void> {
             <p class="m-0 mt-1 text-sm text-ui-text-muted">{{ t('schedules.description', { machine: machineName }) }}</p>
           </div>
           <div class="flex items-center gap-2">
-            <select v-if="account && account.machines.value.length > 1" class="ui-input w-auto max-w-48 text-[13px]" name="schedule-machine" :aria-label="t('schedules.machine')" :value="fleet.targetId" :disabled="pending" @change="account.selectMachine(($event.target as HTMLSelectElement).value)">
-              <option v-for="machine in account.machines.value" :key="machine.id" :value="machine.id">{{ machine.name }}</option>
-            </select>
-            <button type="button" class="ui-button px-2" :aria-label="t('catalog.refresh')" :title="t('catalog.refresh')" :disabled="!online || loading || pending" @click="schedules.refresh"><RefreshCw :size="14" aria-hidden="true" /></button>
+            <UiSelect v-if="account && account.machines.value.length > 1" class="w-auto max-w-48" name="schedule-machine" :aria-label="t('schedules.machine')" :model-value="fleet.targetId" :options="account.machines.value.map(machine => ({ value: machine.id, label: machine.name }))" :disabled="pending" @update:model-value="account.selectMachine($event)" />
+            <UiButton type="button" class="px-2" :aria-label="t('catalog.refresh')" :title="t('catalog.refresh')" :disabled="!online || loading || pending" @click="schedules.refresh"><RefreshCw :size="14" aria-hidden="true" /></UiButton>
             <RouterLink v-if="online && loaded" :to="{ name: 'schedules', params: { scheduleId: 'new' } }" data-schedule-new class="ui-button-primary no-underline"><Plus :size="15" aria-hidden="true" />{{ t('schedules.create') }}</RouterLink>
           </div>
         </div>
@@ -69,7 +69,7 @@ async function remove(): Promise<void> {
       <p v-if="!online" role="status" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t(schedules.available ? 'schedules.offline' : 'schedules.signIn') }}</p>
       <div v-if="error" class="ui-notice m-0 justify-between border-ui-danger/30 bg-ui-danger/8">
         <p role="alert" class="m-0 text-ui-danger">{{ error }}</p>
-        <button v-if="!loaded" type="button" class="ui-button" :disabled="!online || loading" @click="schedules.refresh">{{ t('folderPicker.retry') }}</button>
+        <UiButton v-if="!loaded" type="button" :disabled="!online || loading" @click="schedules.refresh">{{ t('folderPicker.retry') }}</UiButton>
       </div>
       <p v-if="loading && !loaded" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t('schedules.loading') }}</p>
 

@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { ArrowUp, Check, ChevronDown, CornerDownRight, Folder, FolderOpen, GitBranch, Monitor, Square } from "@lucide/vue"
-import { onClickOutside, useTextareaAutosize } from "@vueuse/core"
+import { useTextareaAutosize } from "@vueuse/core"
+import { DropdownMenuContent, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
@@ -35,13 +37,6 @@ const contexts = [
   { id: "directory", icon: FolderOpen },
 ] as const satisfies readonly { id: AgentSessionContext; icon: unknown }[]
 const selected = computed(() => contexts.find(option => option.id === context.value) ?? contexts[0])
-const picker = useTemplateRef<HTMLElement>("picker")
-const choosing = ref(false)
-onClickOutside(picker, () => { choosing.value = false })
-function choose(value: AgentSessionContext): void {
-  context.value = value
-  choosing.value = false
-}
 function submit(delivery: "backlog" | "steer"): void {
   if (props.disabled || props.submitting || configurationLoading.value || !props.location || empty.value) return
   emit("submit", delivery)
@@ -59,18 +54,22 @@ function keydown(event: KeyboardEvent): void {
       <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
       <template v-if="showTarget">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
-        <div ref="picker" class="relative min-w-0">
-          <button type="button" class="inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :aria-label="t('composer.contextChoice', { context: t(`composer.contextOption.${selected.id}`) })" aria-haspopup="menu" :aria-expanded="choosing" data-composer-context @click="choosing = !choosing">
+        <DropdownMenuRoot :modal="false">
+          <DropdownMenuTrigger class="inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :aria-label="t('composer.contextChoice', { context: t(`composer.contextOption.${selected.id}`) })" data-composer-context>
             <component :is="selected.icon" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ t(`composer.contextOption.${selected.id}`) }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-          </button>
-          <div v-if="choosing" role="menu" class="ui-menu absolute bottom-full left-0 z-20 mb-1 flex w-72 flex-col">
-            <button v-for="option in contexts" :key="option.id" type="button" role="menuitemradio" :aria-checked="option.id === context" class="ui-menu-item items-start" @click="choose(option.id)">
+          </DropdownMenuTrigger>
+          <DropdownMenuPortal>
+          <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.context')" class="ui-menu z-50 flex w-72 flex-col" loop>
+            <DropdownMenuRadioGroup v-model="context">
+            <DropdownMenuRadioItem v-for="option in contexts" :key="option.id" as="button" type="button" :value="option.id" class="ui-menu-item items-start">
               <component :is="option.icon" :size="15" :stroke-width="1.75" class="mt-0.5 shrink-0 text-ui-text-muted" aria-hidden="true" />
               <span class="min-w-0 flex-1"><span class="block text-[13px] text-ui-text">{{ t(`composer.contextOption.${option.id}`) }}</span><span class="block text-xs text-ui-text-muted">{{ t(`composer.contextHint.${option.id}`) }}</span></span>
               <Check v-if="option.id === context" :size="15" :stroke-width="2" class="mt-0.5 shrink-0" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
+            </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+          </DropdownMenuPortal>
+        </DropdownMenuRoot>
       </template>
       <template v-else-if="location.worktree">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
@@ -87,9 +86,9 @@ function keydown(event: KeyboardEvent): void {
       <textarea ref="textarea" v-model="draft" rows="2" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @keydown="keydown" />
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <AgentConfigurationSelector v-if="location" :workspace-id="location.workspace.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" />
-        <button v-if="canSteer && !empty" type="button" class="ui-text-button ml-auto cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</button>
-        <button v-if="canCancel && empty" type="button" class="ml-auto inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-ui-action text-ui-action-text hover:bg-ui-action-hover" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></button>
-        <button v-else type="button" class="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-ui-action text-ui-action-text enabled:hover:bg-ui-action-hover disabled:cursor-default disabled:bg-ui-action-disabled disabled:text-ui-text-faint" :class="!(canSteer && !empty) && 'ml-auto'" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></button>
+        <UiButton variant="ghost" size="sm" v-if="canSteer && !empty" type="button" class="ml-auto cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+        <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="ml-auto h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
+        <UiButton v-else variant="primary" size="icon" class="h-8 w-8 rounded-full" :class="!(canSteer && !empty) && 'ml-auto'" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></UiButton>
       </div>
     </div>
   </div>

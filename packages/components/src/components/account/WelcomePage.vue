@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from "../common/UiButton.vue"
 import { Check, ChevronRight, FolderOpen, KeyRound, Monitor, MousePointer2, Server, ShieldCheck } from "@lucide/vue"
 import { useEventListener, whenever } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref } from "vue"
@@ -149,9 +150,9 @@ onBeforeUnmount(() => { unsubscribe?.() })
           </p>
           <p v-if="error || currentPermission?.error" role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ error || currentPermission?.error }}</p>
           <div class="flex flex-wrap gap-2">
-            <button v-if="!granted" type="button" class="ui-button-primary" :disabled="pending || !canRequest" @click="requestPermission(permission)">{{ t(linux ? "welcome.wayland.retry" : "welcome.openSettings") }}</button>
-            <button type="button" class="ui-button" :disabled="pending || refreshing" @click="refreshPermissions">{{ t(refreshing ? "welcome.checking" : "welcome.checkAgain") }}</button>
-            <button v-if="granted" type="button" class="ui-button-primary ml-auto" :disabled="pending" @click="advancePermission(permission)">{{ t("welcome.continue") }}<ChevronRight :size="15" aria-hidden="true" /></button>
+            <UiButton variant="primary" v-if="!granted" type="button" :disabled="pending || !canRequest" @click="requestPermission(permission)">{{ t(linux ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
+            <UiButton type="button" :disabled="pending || refreshing" @click="refreshPermissions">{{ t(refreshing ? "welcome.checking" : "welcome.checkAgain") }}</UiButton>
+            <UiButton variant="primary" v-if="granted" type="button" class="ml-auto" :disabled="pending" @click="advancePermission(permission)">{{ t("welcome.continue") }}<ChevronRight :size="15" aria-hidden="true" /></UiButton>
           </div>
           <template v-if="!granted">
             <p class="m-0 mt-5 text-xs leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.skip`) }}</p>
@@ -169,9 +170,9 @@ onBeforeUnmount(() => { unsubscribe?.() })
           </label>
           <p v-else class="m-0 break-words text-sm text-ui-text-muted">{{ session.account.value.serverUrl }}</p>
           <p v-if="error" role="alert" class="m-0 break-words text-sm text-ui-danger">{{ error }}</p>
-          <button class="ui-button-primary min-h-9 text-sm" type="submit" :disabled="pending">
+          <UiButton variant="primary" class="min-h-9 text-sm" type="submit" :disabled="pending">
             {{ step === "server" ? t(pending ? "welcome.savingServer" : "welcome.continue") : session.account.value.user ? t("welcome.continueAs", { name: session.account.value.user.name }) : t(pending ? "account.signingIn" : "account.continueOidc") }}
-          </button>
+          </UiButton>
         </form>
       </section>
     </div>
