@@ -6,15 +6,18 @@ import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentElicitation } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { validateElicitationResponse } from "../../../../../apps/daemon/src/agent-elicitation-protocol.ts"
+import { cursorPlanApproval } from "../../../../../apps/daemon/src/agents/plans.ts"
 import { elicitationContent, elicitationDefaults, elicitationForm, elicitationInputType, type ElicitationField, type ElicitationValue } from "../../services/agent-elicitation.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import AgentActor from "./AgentActor.vue"
+import AgentPlanApproval from "./AgentPlanApproval.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
 import { RadioGroupIndicator, RadioGroupItem, RadioGroupRoot } from "reka-ui"
 
 const props = defineProps<{ elicitation: AgentElicitation; disabled?: boolean }>()
 const { t } = useI18n()
 const agents = useAgentSessionsStore()
+const plan = computed(() => cursorPlanApproval(props.elicitation.request))
 const form = computed(() => elicitationForm(props.elicitation.request))
 const pending = computed(() => props.elicitation.state === "pending")
 const operation = computed(() => Object.values(agents.operations).find(operation => operation.sessionId === props.elicitation.sessionId && operation.method === "_deskfleet/elicitation/respond" && operation.params.elicitationId === props.elicitation.id))
@@ -27,6 +30,7 @@ const failed = ref(false)
 watchImmediate(() => [props.elicitation.id, props.elicitation.state], () => {
   invalid.value = false
   failed.value = false
+  if (plan.value) return
   if (pending.value) agents.elicitationDrafts[props.elicitation.id] ??= elicitationDefaults(form.value?.fields ?? [])
   else delete agents.elicitationDrafts[props.elicitation.id]
 })
@@ -80,7 +84,8 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
 </script>
 
 <template>
-  <section class="rounded-xl border border-ui-border bg-ui-surface p-4 text-sm shadow-ui-card" data-testid="agent-elicitation" :data-elicitation-id="elicitation.id" :aria-label="t('agent.questions.title')">
+  <AgentPlanApproval v-if="plan" :elicitation="elicitation" :plan="plan" :disabled="disabled" />
+  <section v-else class="rounded-xl border border-ui-border bg-ui-surface p-4 text-sm shadow-ui-card" data-testid="agent-elicitation" :data-elicitation-id="elicitation.id" :aria-label="t('agent.questions.title')">
     <p class="m-0 mb-2 flex items-center gap-2 font-medium"><CircleHelp :size="16" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span>{{ t(pending ? 'agent.questions.title' : `agent.questions.${status}`) }}<template v-if="!pending && elicitation.actor"> · <AgentActor :actor="elicitation.actor" /></template></span></p>
     <p class="m-0 whitespace-pre-wrap break-words">{{ elicitation.request.message }}</p>
     <form v-if="pending" ref="formElement" class="mt-4 flex flex-col gap-4" @submit.prevent="respond('accept')">

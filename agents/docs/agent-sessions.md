@@ -84,8 +84,11 @@ its default binary is `claude`. The Cursor template runs the installed
 binary is `agent`. Sign in with `agent login`, or set `CURSOR_API_KEY` or
 `CURSOR_AUTH_TOKEN`, before starting a session. When a session can ask the user
 a question, `cursor/ask_question` is answered through that form.
-`cursor/create_plan` and Cursor's notification methods are not implemented;
-unrecognized requests receive JSON-RPC method not found. The Grok template runs
+`cursor/create_plan` becomes the same shared approval surface with Accept,
+Reject, and Cancel mapped to Cursor's nested `accepted` / `rejected` /
+`cancelled` outcomes. Cursor's notification methods (`cursor/update_todos`,
+`cursor/task`, `cursor/generate_image`) are not implemented; unrecognized
+requests receive JSON-RPC method not found. The Grok template runs
 the installed [Grok CLI](https://docs.x.ai/build/cli/headless-scripting) directly
 as `grok agent stdio`; its default binary is `grok`. After initialization it
 calls `authenticate` with `xai.api_key` when `XAI_API_KEY` is set and that method
@@ -364,7 +367,13 @@ answered form becomes Cursor's nested `{ outcome: { outcome: "answered", answers
 result, using option ids, or Grok's `{ outcome: "accepted", answers }` map of
 question text to selected labels. Decline is Cursor `skipped` and Grok
 `cancelled`; cancel is `cancelled` for both. Grok's plan-mode outcomes
-`chat_about_this` and `skip_interview` are not separate actions. A request that
+`chat_about_this` and `skip_interview` are not separate actions.
+
+Cursor's `cursor/create_plan` uses the same elicitation persistence and
+`_deskfleet/elicitation/respond` path. The request carries the plan markdown and
+todos in `_meta.deskfleet.cursorPlan` so the desktop can render an approval card
+instead of a question form. Accept maps to `{ outcome: { outcome: "accepted" } }`,
+decline to `rejected`, and cancel to `cancelled`. A request that
 cannot be shown is cancelled rather than left unanswered.
 
 Each request is persisted with a durable elicitation ID, its provider run and

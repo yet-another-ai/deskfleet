@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk"
+import { answerCursorCreatePlan, VENDOR_PLAN_METHODS } from "./plans.ts"
 import { answerVendorQuestion, VENDOR_QUESTION_METHODS } from "./questions.ts"
 import { AcpModelReasoning } from "./reasoning-effort.ts"
 import { AcpSessionModes } from "./session-modes.ts"
@@ -143,6 +144,16 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       clientApp = clientApp.onRequest(method, (params: unknown) => params, async ({ params, signal }) => {
         try {
           return await answerVendorQuestion(method, params, providerSessionId, requestElicitation, signal)
+        } catch (error) {
+          connection.close(error)
+          throw error
+        }
+      })
+    }
+    for (const method of VENDOR_PLAN_METHODS) {
+      clientApp = clientApp.onRequest(method, (params: unknown) => params, async ({ params, signal }) => {
+        try {
+          return await answerCursorCreatePlan(params, providerSessionId, requestElicitation, signal)
         } catch (error) {
           connection.close(error)
           throw error

@@ -475,6 +475,16 @@
       "invalid": "Complete the required fields and check your answers.",
       "unsupported": "This question uses a field that cannot be displayed."
     },
+    "planApproval": {
+      "title": "Plan approval required",
+      "accept": "Approve plan",
+      "reject": "Reject plan",
+      "cancel": "Cancel",
+      "sending": "Sending decision…",
+      "accepted": "Plan approved",
+      "rejected": "Plan rejected",
+      "cancelled": "Plan approval cancelled"
+    },
     "backlogHint": "Messages you send now are queued.",
     "addToBacklog": "Add to backlog",
     "cancelTurn": "Cancel turn",

@@ -475,6 +475,16 @@
       "invalid": "请填写必填项并检查回答。",
       "unsupported": "此问题包含无法显示的字段。"
     },
+    "planApproval": {
+      "title": "需要批准计划",
+      "accept": "批准计划",
+      "reject": "拒绝计划",
+      "cancel": "取消",
+      "sending": "正在提交决定…",
+      "accepted": "计划已批准",
+      "rejected": "计划已拒绝",
+      "cancelled": "计划批准已取消"
+    },
     "backlogHint": "现在发送的消息会进入队列。",
     "addToBacklog": "加入积压列表",
     "cancelTurn": "取消当前轮次",
