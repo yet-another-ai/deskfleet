@@ -20,7 +20,8 @@ type Section = typeof sections[number]
 const activeSection = computed(() => sections.find(section => section.routeName === route.name) ?? sections[0])
 
 watch(() => route.fullPath, () => {
-  if (activeSection.value.routeName === "new-session") conversationPath.value = route.fullPath
+  // Skip transient unmatched routes during remount (name is briefly undefined at "/").
+  if (route.name != null && activeSection.value.routeName === "new-session") conversationPath.value = route.fullPath
 }, { immediate: true })
 
 function destination(section: Section) {
