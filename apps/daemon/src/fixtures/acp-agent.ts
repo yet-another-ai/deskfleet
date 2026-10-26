@@ -15,6 +15,18 @@ const cursorQuestion = {
     { id: "q2", prompt: "Which checks?", allowMultiple: true, options: [{ id: "lint", label: "Lint" }, { id: "test", label: "Test" }] },
   ],
 }
+const cursorPlan = {
+  toolCallId: "call_124",
+  name: "Refactor tabs layout",
+  overview: "Tighten layout behavior and preserve existing UX.",
+  plan: "1. Inspect current tab sizing logic.\n2. Update layout calculations.\n3. Verify editor behavior.",
+  todos: [
+    { id: "todo-1", content: "Inspect current tab sizing logic", status: "completed" },
+    { id: "todo-2", content: "Update layout calculations", status: "in_progress" },
+    { id: "todo-3", content: "Verify editor behavior", status: "pending" },
+  ],
+  isProject: false,
+}
 const grokQuestion = {
   toolCallId: "tc-1",
   mode: "plan",
@@ -236,6 +248,9 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
     }
     if (mode === "cursor-question" || mode === "cursor-question-invalid") {
       return askVendor(client, "cursor/ask_question", mode === "cursor-question" ? cursorQuestion : { toolCallId: "call_123", questions: [] })
+    }
+    if (mode === "cursor-plan" || mode === "cursor-plan-invalid") {
+      return askVendor(client, "cursor/create_plan", mode === "cursor-plan" ? cursorPlan : { toolCallId: "call_124", plan: "", todos: [] })
     }
     if (mode === "grok-question" || mode === "grok-question-alias") {
       return askVendor(client, mode === "grok-question" ? "x.ai/ask_user_question" : "_x.ai/ask_user_question", {

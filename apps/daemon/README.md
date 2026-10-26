@@ -240,7 +240,9 @@ and otherwise with `cached_token`. `grok login` caches that token. Interactive
 methods are left unused, and `--always-approve` is not added, so permission
 requests reach the client. When the caller accepts questions, `cursor/ask_question`,
 `x.ai/ask_user_question`, and `_x.ai/ask_user_question` are answered through that
-form. `cursor/create_plan` and Cursor's notification methods stay unrecognized.
+form. `cursor/create_plan` uses the same form path as a plan-approval card
+(Accept / Reject / Cancel → nested Cursor outcomes). Cursor's notification
+methods stay unrecognized.
 Pi uses the bundled `pi-acp` bridge to run `` `<binary> --mode rpc` ``; the
 selected path overrides `PI_ACP_PI_COMMAND`. It supports saved-session loading
 and model/thinking configuration. Pi executes tools locally, and the bridge does

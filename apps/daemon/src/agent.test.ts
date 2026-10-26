@@ -435,6 +435,50 @@ test("Cursor and Grok questions use the session form", { timeout: 30_000 }, asyn
     assert.deepEqual(result._meta?.question, { outcome: { outcome: "cancelled" } })
   })
 
+  await context.test("cursor create_plan", async () => {
+    const requests: acp.CreateElicitationRequest[] = []
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-plan" } }, {
+      onUpdate() {},
+      async requestElicitation(request) {
+        requests.push(request)
+        return { action: "accept", content: {} }
+      },
+    })
+    context.after(() => connection.close())
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    const request = requests[0]
+    assert.ok(request && "sessionId" in request && "toolCallId" in request)
+    assert.equal(request.sessionId, created.sessionId)
+    assert.equal(request.toolCallId, "call_124")
+    assert.equal(request.message, "Tighten layout behavior and preserve existing UX.")
+    assert.ok(request._meta?.deskfleet && typeof request._meta.deskfleet === "object" && "cursorPlan" in request._meta.deskfleet)
+    assert.deepEqual(result._meta?.question, { outcome: { outcome: "accepted" } })
+  })
+
+  await context.test("cursor create_plan without a handler", async () => {
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-plan" } }, { onUpdate() {} })
+    context.after(() => connection.close())
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    const questionError = result._meta?.questionError
+    assert.ok(questionError && typeof questionError === "object" && "code" in questionError)
+    assert.equal(questionError.code, -32601)
+  })
+
+  await context.test("malformed cursor create_plan", async () => {
+    let asked = false
+    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-plan-invalid" } }, {
+      onUpdate() {},
+      async requestElicitation() { asked = true; return { action: "cancel" } },
+    })
+    context.after(() => connection.close())
+    const created = await connection.newSession(session)
+    const result = await connection.prompt({ sessionId: created.sessionId, prompt })
+    assert.equal(asked, false)
+    assert.deepEqual(result._meta?.question, { outcome: { outcome: "cancelled" } })
+  })
+
   await context.test("grok ask_user_question", async () => {
     for (const mode of ["grok-question", "grok-question-alias"]) {
       const requests: acp.CreateElicitationRequest[] = []

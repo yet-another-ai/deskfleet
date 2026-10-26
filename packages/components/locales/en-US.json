@@ -136,6 +136,15 @@
     "settings": "Settings",
     "team": "Switch team"
   },
+  "archivedSessions": {
+    "title": "Archived sessions",
+    "description": "Restore a session to continue working, or open it to review its conversation.",
+    "empty": "No archived sessions",
+    "emptyDescription": "Archive a session to keep its conversation and working context without active execution.",
+    "location": "{machine} / {workspace}",
+    "openLabel": "Open {title}",
+    "restoreLabel": "Restore {title}"
+  },
   "settings": {
     "preferences": "Preferences",
     "notifications": "Notifications",
@@ -480,6 +489,16 @@
       "cancelled": "Question cancelled",
       "invalid": "Complete the required fields and check your answers.",
       "unsupported": "This question uses a field that cannot be displayed."
+    },
+    "planApproval": {
+      "title": "Plan approval required",
+      "accept": "Approve plan",
+      "reject": "Reject plan",
+      "cancel": "Cancel",
+      "sending": "Sending decision…",
+      "accepted": "Plan approved",
+      "rejected": "Plan rejected",
+      "cancelled": "Plan approval cancelled"
     },
     "backlogHint": "Messages you send now are queued.",
     "addToBacklog": "Add to backlog",
