@@ -22,7 +22,8 @@ a stable `Gate` result for branch protection.
   actual login, remote execution, archive/restore, and offline history flows.
   It installs Electron's Linux sandbox helper with root ownership and mode 4755
   before launching the clients.
-- `.github/workflows/build.yml` builds release artifacts using `mise run build`.
+- `.github/workflows/build.yml` builds release artifacts using
+  `mise run build ::: desktop:release-build`, then packages Electron installers.
   Pull requests use a Linux x64 smoke build; main and manual runs use the full
   platform matrix. Packaging keeps Cargo's parallel release codegen: 16 units,
   LTO off, no debug info, and stripped symbols. Each target packages and verifies
