@@ -269,13 +269,16 @@ Desktop first-run setup uses a welcome page: backend server, Full Disk Access,
 screen/system-audio recording, Accessibility, then account sign-in. The host saves
 the current step in `onboarding.json` under its user-data directory and resumes
 it after restart. A fresh installation shows the server step before starting its
-daemon. After saving the server, it starts or reuses the local Agent according to
+daemon. A profile that already has an account or desktop settings, but no welcome
+file, is treated as finished so sign-in is not repeated and the local Agent still
+starts. After saving the server, it starts or reuses the local Agent according to
 the existing enabled preference. Non-macOS clients and clients with the local
 Agent disabled skip the OS permission steps. Users can defer an individual
 permission without blocking account setup or unrelated Agent work.
 
 After acquiring discovery and initializing local IPC, a desktop-hosted daemon
-checks permissions without prompting. The welcome page requests each permission
+checks permissions without prompting and reports that silent check as checking,
+not as an open authorization request. The welcome page requests each permission
 through authenticated local IPC; native checks and requests run in the owning
 daemon process. Returning from System Settings refreshes checks without opening
 another prompt. Standalone startup requests its permissions automatically.

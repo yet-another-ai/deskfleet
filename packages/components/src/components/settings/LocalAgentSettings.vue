@@ -43,7 +43,7 @@ const permissions = computed(() => {
     { kind: "accessibility", permission: state.value.accessibilityPermission },
   ] as const
   return values.flatMap(({ kind, permission }) => {
-    if (!permission || permission.status === "not-required" || permission.status === "granted") return []
+    if (!permission || permission.status === "not-required" || permission.status === "granted" || permission.status === "checking") return []
     const label = permission.status === "requesting" ? t(`settings.${kind}Requesting`)
       : permission.status === "denied" ? t(`settings.${kind}Denied`) : t(`settings.${kind}Error`)
     return [{ kind, permission, label, needsAction: permission.status === "denied" || permission.status === "error" }]

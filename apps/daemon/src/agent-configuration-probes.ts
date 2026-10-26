@@ -37,7 +37,7 @@ export class AgentConfigurationProbes {
   readonly #maxProbes: number
   readonly #timeoutMs: number
   readonly #probes = new Map<string, Probe>()
-  // Retiring processes still occupy capacity until their close promise settles.
+  // Retiring processes occupy capacity until close settles. A failed close still leaves.
   readonly #live = new Set<Probe>()
   readonly #requests = new Set<Promise<AgentConfiguration>>()
   readonly #waitingKeys = new Map<string, number>()
@@ -191,10 +191,13 @@ export class AgentConfigurationProbes {
   async #makeRoom(): Promise<void> {
     while (this.#live.size >= this.#maxProbes) {
       const closing = [...this.#live].find(probe => probe.retired)
-      if (closing) { await closing.closing; continue }
+      if (closing) {
+        await closing.closing?.catch(() => {})
+        continue
+      }
       const oldest = [...this.#live].filter(probe => probe.pending === 0).sort((left, right) => left.lastUsed - right.lastUsed)[0]
       if (!oldest) throw new Error("Too many active Agent configuration probes")
-      await this.#retire(oldest, new Error("Agent configuration probe was evicted"))
+      await this.#retire(oldest, new Error("Agent configuration probe was evicted")).catch(() => {})
     }
   }
 
@@ -204,9 +207,12 @@ export class AgentConfigurationProbes {
     if (this.#probes.get(probe.key) === probe) this.#probes.delete(probe.key)
     clearTimeout(probe.idleTimer)
     probe.closing = Promise.resolve().then(async () => {
-      const connection = probe.connection ?? await probe.connecting?.catch(() => undefined)
-      await connection?.close()
-      this.#live.delete(probe)
+      try {
+        const connection = probe.connection ?? await probe.connecting?.catch(() => undefined)
+        await connection?.close()
+      } finally {
+        this.#live.delete(probe)
+      }
     })
     probe.controller.abort(reason)
     return probe.closing

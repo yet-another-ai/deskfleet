@@ -79,7 +79,7 @@ export async function startDaemon(port = 0, options: {
   }
   // Request OS access when creating the owning daemon, before clients use its files or desktop.
   const stopReportingFileAccess = permissions.onChange(({ fullDiskAccessPermission }) => {
-    if (fullDiskAccessPermission.status === "requesting") return
+    if (fullDiskAccessPermission.status === "checking" || fullDiskAccessPermission.status === "requesting") return
     stopReportingFileAccess()
     if (fullDiskAccessPermission.status === "denied" || fullDiskAccessPermission.status === "error") {
       console.error("Local Agent file access: enable Full Disk Access for the app or executable hosting the daemon in macOS System Settings > Privacy & Security, then restart it.",

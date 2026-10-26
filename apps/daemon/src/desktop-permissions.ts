@@ -4,10 +4,11 @@ export type PermissionAccess = Record<DesktopPermissionKind, () => Promise<boole
 
 /** OS permissions belong to the daemon process that accesses files and controls the desktop. */
 export class DesktopPermissions {
+  // "checking" is a silent read. "requesting" means a system prompt is open.
   #state: DesktopPermissionsState = {
-    screenCapturePermission: { status: "requesting" },
-    accessibilityPermission: { status: "requesting" },
-    fullDiskAccessPermission: { status: "requesting" },
+    screenCapturePermission: { status: "checking" },
+    accessibilityPermission: { status: "checking" },
+    fullDiskAccessPermission: { status: "checking" },
   }
   #requests?: PermissionAccess
   #checks?: PermissionAccess

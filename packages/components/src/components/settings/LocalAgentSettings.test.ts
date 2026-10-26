@@ -186,7 +186,7 @@ test.each(["response", "error"])("preserves a newer permission event when the pe
   expect(view.find('[role="alert"]').exists()).toBe(false)
 })
 
-test.each(["granted", "not-required"] as const)("hides normal desktop permission status %s and notices when the Agent stops", async status => {
+test.each(["granted", "not-required", "checking"] as const)("hides normal desktop permission status %s and notices when the Agent stops", async status => {
   vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, fullDiskAccessPermission: { status }, screenCapturePermission: { status }, accessibilityPermission: { status } })
   const view = render()
   await flushPromises()

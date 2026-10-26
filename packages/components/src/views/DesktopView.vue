@@ -93,8 +93,10 @@ watchImmediate(() => props.machineId, () => {
   if (local.value) void refresh()
 })
 whenever(() => !props.visible, () => { void connection.disconnect() })
-watch([() => props.visible, stream, isFullscreen], ([visible, media]) => {
-  if (!visible || !media) void exitFullscreen()
+// Encoder fallback clears the stream while the next peer connects. Stay in fullscreen through that gap.
+watch([() => props.visible, stream, isFullscreen, state], ([visible, media, , connectionState]) => {
+  const recovering = !media && (connectionState === "connecting" || connectionState === "starting")
+  if (!visible || (!media && !recovering)) void exitFullscreen()
 })
 onBeforeUnmount(() => {
   ++discoveryGeneration

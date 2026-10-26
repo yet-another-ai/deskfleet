@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import type { LocalAgentState, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
-import { OnboardingController } from "./onboarding-controller.ts"
+import { establishedDesktopProfile, OnboardingController } from "./onboarding-controller.ts"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -103,6 +103,26 @@ test("concurrent transitions cannot skip welcome steps", async () => {
   resolve()
   await saving
   expect(await f.controller.get()).toEqual({ step: "fullDiskAccess" })
+})
+
+test("an existing account or desktop settings profile does not restart welcome", async () => {
+  const f = await fixture()
+  const directory = join(f.path, "..")
+  expect(await establishedDesktopProfile(directory)).toBe(false)
+  await writeFile(join(directory, "account.json"), JSON.stringify({ serverUrl: "https://deskfleet.example", encryptedToken: "cipher" }))
+  expect(await establishedDesktopProfile(directory)).toBe(true)
+  const migrated = new OnboardingController({ ...f, established: () => establishedDesktopProfile(directory) })
+  expect(await migrated.get()).toEqual({ step: "complete" })
+  expect(f.localAgent.startIfEnabled).not.toHaveBeenCalled()
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "complete" })
+  expect(await f.restart().get()).toEqual({ step: "complete" })
+
+  const settingsOnly = await fixture()
+  const settingsDirectory = join(settingsOnly.path, "..")
+  await writeFile(join(settingsDirectory, "settings.json"), JSON.stringify({ localAgentEnabled: true }))
+  const resumed = new OnboardingController({ ...settingsOnly, established: () => establishedDesktopProfile(settingsDirectory) })
+  expect(await resumed.get()).toEqual({ step: "complete" })
+  expect(settingsOnly.localAgent.startIfEnabled).not.toHaveBeenCalled()
 })
 
 test("invalid persisted progress is reported", async () => {

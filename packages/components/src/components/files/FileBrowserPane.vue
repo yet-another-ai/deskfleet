@@ -5,7 +5,7 @@ import { useI18n } from "vue-i18n"
 import type { FileEntry, FileListing, FileLocation, FilesApi, FileTarget } from "../../../../client/src/files.ts"
 import { fileSize } from "../../services/file-format.ts"
 import IconButton from "../common/IconButton.vue"
-const props = defineProps<{ api: FilesApi; target: FileTarget; name: string; revision: number; selection: FileEntry[] }>()
+const props = defineProps<{ api: FilesApi; target: FileTarget; name: string; revision: number; resetKey: number; selection: FileEntry[] }>()
 const emit = defineEmits<{ selection: [entries: FileEntry[]]; location: [location: FileLocation | undefined] }>()
 const { t } = useI18n()
 const listing = ref<FileListing>()
@@ -46,6 +46,14 @@ async function choose(): Promise<void> {
   } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
 }
 watch(() => props.revision, () => { void navigate(listing.value?.path) })
+watch(() => props.resetKey, () => {
+  listing.value = undefined
+  requestedPath = undefined
+  error.value = undefined
+  emit("location", undefined)
+  clearSelection()
+  void navigate()
+})
 onMounted(() => { void navigate() })
 watch(hidden, clearSelection)
 onBeforeUnmount(() => { disposed = true; ++generation })
