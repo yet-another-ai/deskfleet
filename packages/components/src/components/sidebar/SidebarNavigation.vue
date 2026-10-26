@@ -17,11 +17,13 @@ const sections = [
   { routeName: "schedules", label: "schedules.title", icon: CalendarClock },
 ] as const
 type Section = typeof sections[number]
+/** Named routes that belong under Conversations; Settings and Schedules are excluded. */
+const conversationRouteNames = new Set(["new-session", "session", "workspace", "worktree", "machine-control", "terminal"])
 const activeSection = computed(() => sections.find(section => section.routeName === route.name) ?? sections[0])
 
 watch(() => route.fullPath, () => {
   // Skip transient unmatched routes during remount (name is briefly undefined at "/").
-  if (route.name != null && activeSection.value.routeName === "new-session") conversationPath.value = route.fullPath
+  if (typeof route.name === "string" && conversationRouteNames.has(route.name)) conversationPath.value = route.fullPath
 }, { immediate: true })
 
 function destination(section: Section) {

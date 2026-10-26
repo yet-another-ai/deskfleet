@@ -19,7 +19,16 @@ async function setup(path = "/") {
       { path: "/schedules/:scheduleId?", name: "schedules", component: {} },
       { path: "/sessions/:sessionId", name: "session", component: {} },
       { path: "/workspaces/:workspaceId", name: "workspace", component: {} },
+      { path: "/worktrees/:worktreeId", name: "worktree", component: {} },
       { path: "/machines/:machineId/control", name: "machine-control", component: {} },
+      {
+        path: "/settings",
+        meta: { fullWindow: true },
+        children: [
+          { path: "", name: "settings", redirect: { name: "settings-preferences" } },
+          { path: "preferences", name: "settings-preferences", component: {} },
+        ],
+      },
     ],
   })
   await router.push(path)
@@ -129,6 +138,26 @@ test("remounting while on Schedules keeps the last conversation path", async () 
   await sectionLink("Conversations").trigger("click")
   await flushPromises()
   expect(router.currentRoute.value.fullPath).toBe(conversation)
+})
+
+test("Settings does not overwrite the Conversations return path", async () => {
+  const conversation = "/workspaces/project-7"
+  const router = await setup(conversation)
+  await router.push("/settings/preferences")
+  await flushPromises()
+  expect(router.currentRoute.value.name).toBe("settings-preferences")
+  expect(window.localStorage.getItem("deskfleet.conversation-path")).toBe(conversation)
+  // fullWindow unmounts the sidebar; returning to Schedules remounts it.
+  wrapper!.unmount()
+  await router.push("/schedules")
+  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [pinia!, router, i18n] } })
+  await flushPromises()
+  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
+  expect(sectionLink("Conversations").attributes("href")).toBe(conversation)
+  await sectionLink("Conversations").trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.fullPath).toBe(conversation)
+  expect(router.currentRoute.value.name).not.toBe("settings-preferences")
 })
 
 test("localizes both section links and the New session action", async () => {
