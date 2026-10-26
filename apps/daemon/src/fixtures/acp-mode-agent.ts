@@ -1,5 +1,5 @@
 import { Readable, Writable } from "node:stream"
-import * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk/unstable"
 
 const nativeMode = process.env.DESKFLEET_TEST_NATIVE_MODE === "true"
 const loadSession = process.env.DESKFLEET_TEST_LOAD_SESSION === "true"

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import type * as acp from "@agentclientprotocol/sdk"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { agentConfiguration } from "../agent-configuration-protocol.ts"
 import { AcpModelReasoning, projectModelReasoning } from "./reasoning-effort.ts"
 

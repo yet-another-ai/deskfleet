@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
-import type { McpServer } from "@agentclientprotocol/sdk"
+import type { McpServer } from "@agentclientprotocol/sdk/unstable"
 import { DESKFLEET_TOOLS } from "@deskfleet/mcp/tools"
 import { adapterProcess, DESKFLEET_MCP_ARGUMENT } from "./agents/adapter-host.ts"
 import type { AgentActor } from "./agent-protocol.ts"

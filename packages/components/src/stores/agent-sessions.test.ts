@@ -26,6 +26,48 @@ beforeEach(() => {
 afterEach(() => disposePinia(pinia))
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
 
+test("fork retries preserve the original context and operation ID while installing a separate Session", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  store.drafts["30"] = "Keep the source draft"
+  const forked = agentSnapshot(); forked.session.id = "31"; forked.session.context = "directory"
+  mock.call.mockRejectedValueOnce(new Error("Lost fork response"))
+  await expect(store.fork("30", "directory")).rejects.toThrow("Lost fork response")
+  const original = mock.call.mock.calls.at(-1)!
+  expect(original).toEqual(["_deskfleet/session/fork", { sessionId: "30", context: "directory", operationId: expect.any(String) }])
+  mock.call.mockResolvedValueOnce(null).mockResolvedValueOnce(forked)
+  await expect(store.fork("30", "worktree")).resolves.toEqual(forked)
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/fork")).toEqual([original, original])
+  expect(store.views["31"]?.snapshot).toEqual(forked)
+  expect(store.views["30"]?.snapshot?.session.id).toBe("30")
+  expect(store.drafts["30"]).toBe("Keep the source draft")
+  expect(store.operations).toEqual({})
+})
+
+test.each([false, true])("a completed fork event survives a lost response without creating another Session (event first: %s)", async eventFirst => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const response = deferred<ReturnType<typeof agentSnapshot>>()
+  const forked = agentSnapshot(); forked.session.id = "31"
+  mock.call.mockReturnValueOnce(response.promise)
+  const forking = store.fork("30", "worktree")
+  await flushPromises()
+  const operation = Object.values(store.operations)[0]!
+  const complete = () => receive(agentEvent(1, "command", {
+    id: "50", operationId: operation.operationId, actor, sessionId: "30", method: operation.method,
+    params: operation.params, isCanonical: true, status: "completed", result: forked, receivedAt: "now",
+  }))
+  if (eventFirst) complete()
+  response.reject(new Error("Lost fork response"))
+  if (eventFirst) await expect(forking).resolves.toEqual(forked)
+  else {
+    await expect(forking).rejects.toThrow("Lost fork response")
+    complete()
+    await expect(store.checkOperation(operation.operationId)).resolves.toEqual(forked)
+  }
+  expect(store.views["31"]?.snapshot).toEqual(forked)
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/fork")).toHaveLength(1)
+  expect(store.operations).toEqual({})
+})
+
 test("a live peer continues prompts during signaling loss and only disconnected views use central history", async () => {
   const previous = platformClient.agent.history
   const history = { available: () => false, list: vi.fn(async () => [agentSnapshot().session]), snapshot: vi.fn(async () => agentSnapshot()), events: vi.fn(async () => []) }
@@ -94,6 +136,21 @@ test("a question decision from another viewer closes the form and clears transie
   expect(store.operations).toEqual({})
   await store.respondToElicitation("30", "80", { action: "accept", content: { target: "production" } })
   expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/elicitation/respond")).toHaveLength(1)
+})
+
+test("a URL completion event outranks an earlier elicitation acceptance response", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const question = agentElicitation({ request: { sessionId: "provider-session", mode: "url", elicitationId: "login", url: "https://example.com/authorize", message: "Connect your account" } })
+  receive(agentEvent(1, "elicitation", question))
+  const response = deferred<ReturnType<typeof agentElicitation>>()
+  mock.call.mockReturnValueOnce(response.promise)
+  const responding = store.respondToElicitation("30", "80", { action: "accept" })
+  await flushPromises()
+  const accepted = { ...question, state: "resolved" as const, response: { action: "accept" as const } }
+  receive(agentEvent(2, "elicitation", { ...accepted, completedAt: "later" }))
+  response.resolve(accepted)
+  await responding
+  expect(store.views["30"]?.snapshot?.elicitations[0]?.completedAt).toBe("later")
 })
 
 test("lost question replies block a second answer and retry the original command identity", async () => {

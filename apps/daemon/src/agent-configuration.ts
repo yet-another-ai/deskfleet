@@ -1,4 +1,4 @@
-import type * as acp from "@agentclientprotocol/sdk"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { agentConfiguration, selectAgentOption, selectReasoningEffort, type AgentConfiguration, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { codexProvider } from "./agents/codex.ts"

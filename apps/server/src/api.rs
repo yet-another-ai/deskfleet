@@ -244,6 +244,7 @@ const MANAGEMENT: &[&str] = &[
     "terminalDial",
     "terminalHangup",
     "_deskfleet/session/create",
+    "_deskfleet/session/fork",
     "_deskfleet/session/archive",
     "_deskfleet/session/restore",
     "_deskfleet/session/configuration",

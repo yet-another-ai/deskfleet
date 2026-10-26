@@ -5,6 +5,8 @@ import { storeToRefs } from "pinia"
 import { watchImmediate } from "@vueuse/core"
 import { computed, defineAsyncComponent, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
+import { useRouter } from "vue-router"
+import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
@@ -13,6 +15,7 @@ import AgentConversation from "../components/session/AgentConversation.vue"
 import AgentNotice from "../components/session/AgentNotice.vue"
 import AgentPermissions from "../components/session/AgentPermissions.vue"
 import AgentSessionMenu from "../components/session/AgentSessionMenu.vue"
+import ForkSessionDialog from "../components/session/ForkSessionDialog.vue"
 import IconButton from "../components/common/IconButton.vue"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useLayoutStore } from "../stores/layout.ts"
@@ -25,6 +28,7 @@ import { useSessionLabel } from "../composables/useSessionLabel.ts"
 const SessionTerminalPanel = defineAsyncComponent(() => import("../components/terminal/SessionTerminalPanel.vue"))
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
+const router = useRouter()
 const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
@@ -41,6 +45,10 @@ const connected = computed(() => agents.state === "connected")
 const canResume = computed(() => !snapshot.value?.session.providerSessionId || !!snapshot.value.session.capabilities?.resume)
 const canSteer = computed(() => !!snapshot.value?.session.capabilities?.steering && activeTurn.value?.state === "running")
 const runActive = computed(() => !!run.value && ["starting", "running"].includes(run.value.state))
+const canFork = computed(() => active.value && snapshot.value?.session.lifecycle === "ready" && !!snapshot.value.session.capabilities?.fork && !activeTurn.value)
+const pendingFork = computed(() => Object.values(agents.operations).find(operation => operation.sessionId === props.sessionId && operation.method === "_deskfleet/session/fork"))
+const forkContext = computed(() => pendingFork.value?.params.context as AgentSessionContext | undefined ?? snapshot.value?.session.context ?? "worktree")
+const forkDisabled = computed(() => !connected.value || !!view.value?.loading || !!view.value?.error)
 // A stopped or interrupted agent resumes on the next message; only a dead end is shown.
 const resumeUnavailable = computed(() => snapshot.value?.session.lifecycle === "ready" && run.value?.state !== "running" && !canResume.value)
 const draft = computed({ get: () => agents.drafts[props.sessionId] ?? "", set: value => { agents.drafts[props.sessionId] = value } })
@@ -50,11 +58,12 @@ const pending = computed(() => Object.values(agents.operations).filter(operation
 const terminalWorktree = computed(() => (location.value?.machine.online || terminals.state === "connected") && snapshot.value?.session.lifecycle === "ready" ? location.value?.worktree : undefined)
 const empty = computed(() => !view.value?.loading && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
 const busy = ref(false)
+const forkOpen = ref(false)
 const actionError = ref<string | null>(null)
 const scroller = ref<HTMLElement | null>(null)
 const followBottom = ref(true)
 const scroll = () => { const el = scroller.value; if (el) followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 100 }
-watchImmediate(() => props.sessionId, id => { busy.value = false; actionError.value = null; followBottom.value = true; void agents.open(id) })
+watchImmediate(() => props.sessionId, id => { busy.value = false; forkOpen.value = false; actionError.value = null; followBottom.value = true; void agents.open(id) })
 watch(() => [view.value?.events.length, view.value?.loading], () => {
   if (!view.value?.loading && followBottom.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
 }, { flush: "post" })
@@ -69,12 +78,25 @@ async function action(operation: () => Promise<unknown>): Promise<void> {
 function submit(delivery: "backlog" | "steer"): void {
   void action(() => agents.submit(props.sessionId, draft.value, delivery, delivery === "steer" ? activeTurn.value?.id : undefined))
 }
+async function showFork(snapshot: AgentSnapshot, sourceId: string): Promise<void> {
+  await fleet.refreshLocalCatalog()
+  if (router.currentRoute.value.name === "session" && props.sessionId === sourceId) await router.push({ name: "session", params: { sessionId: snapshot.session.id } })
+}
+async function fork(context: AgentSessionContext): Promise<void> {
+  const sourceId = props.sessionId
+  await showFork(await agents.fork(sourceId, context), sourceId)
+}
+async function checkOperation(operationId: string): Promise<void> {
+  const operation = agents.operations[operationId]
+  const result = await agents.checkOperation(operationId)
+  if (operation?.method === "_deskfleet/session/fork" && result) await showFork(result as AgentSnapshot, operation.sessionId!)
+}
 </script>
 
 <template>
   <PaneHeader>
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, location.workspace.name]" /></template>
-    <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :disabled="!location?.machine.online || busy" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" /></template>
+    <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" /></template>
   </PaneHeader>
   <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @scroll="scroll">
     <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
@@ -90,7 +112,7 @@ function submit(delivery: "backlog" | "steer"): void {
       <UiButton type="button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</UiButton>
     </AgentNotice>
     <AgentNotice v-for="operation in pending" :key="operation.operationId" tone="warning" :text="t('agent.operationPending')" :detail="operation.error">
-      <UiButton type="button" :disabled="busy" @click="action(() => agents.checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</UiButton>
+      <UiButton type="button" :disabled="busy" @click="action(() => checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</UiButton>
     </AgentNotice>
     <AgentNotice v-if="actionError && !pending.some(operation => operation.error === actionError)" tone="danger" :text="actionError" />
     <template v-if="snapshot">
@@ -105,4 +127,5 @@ function submit(delivery: "backlog" | "steer"): void {
   </div>
   <SessionComposer v-if="location" v-model="draft" :location="location" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
   <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
+  <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :retrying="!!pendingFork" :disabled="!canFork || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
 </template>

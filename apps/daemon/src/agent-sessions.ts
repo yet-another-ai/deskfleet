@@ -3,12 +3,14 @@ import { createHash } from "node:crypto"
 import { readAgentConfiguration } from "./agent-configuration.ts"
 import { AgentConfigurationProbes } from "./agent-configuration-probes.ts"
 import { validateAgentConfigurationParams, validateAgentConfigurationSelection, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
-import type { ContentBlock } from "@agentclientprotocol/sdk"
+import type { ContentBlock } from "@agentclientprotocol/sdk/unstable"
 import { codexProvider } from "./agents/codex.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp, type AgentPersistence } from "./agent-store.ts"
 import { AgentRuntime, type ResolveAgentProvider } from "./agent-runtime.ts"
+import { copyForkHistory } from "./agent-fork-history.ts"
+import { savedAgentConfiguration } from "./agent-session-configuration.ts"
 import type { AgentProviders } from "./agent-providers.ts"
 import type { AgentMcp } from "./agent-mcp.ts"
 import { GitInspection } from "./git-inspection.ts"
@@ -89,7 +91,7 @@ export class AgentSessions {
         const permissions = snapshot.permissions.filter(permission => permission.state === "pending")
           .map(permission => ({ ...permission, state: "cancelled" as const, resolvedAt: timestamp() }))
         const elicitations = snapshot.elicitations.filter(row => row.state === "pending")
-          .map(row => ({ ...row, state: "cancelled" as const, response: { action: "cancel" as const }, resolvedAt: timestamp() }))
+          .map(({ completedAt: _completedAt, ...row }) => ({ ...row, state: "cancelled" as const, response: { action: "cancel" as const }, resolvedAt: timestamp() }))
         const recovered = session.lifecycle === "provisioning"
           ? { ...session, lifecycle: "provision_failed" as const, error: "Session creation was interrupted", updatedAt: timestamp() } : undefined
         const events = [
@@ -270,7 +272,8 @@ export class AgentSessions {
         throw new Error("Operation ID was reused with different parameters or identity")
       }
       if (existing.status === "completed") return existing.result
-      if (method === "_deskfleet/session/create" && existing.sessionId) return this.journal.read(existing.sessionId)
+      if (existing.sessionId && (method === "_deskfleet/session/create"
+        || method === "_deskfleet/session/fork" && existing.sessionId !== existing.params.sessionId)) return this.journal.read(existing.sessionId)
       if ((method === "_deskfleet/session/archive" || method === "_deskfleet/session/restore") && existing.status === "accepted" && existing.sessionId) return this.#transition(existing)
       if (method === "_deskfleet/session/delete" && existing.status === "accepted" && existing.sessionId) {
         if ((await this.journal.list()).some(session => session.id === existing.sessionId)) return this.#delete(existing)
@@ -287,6 +290,7 @@ export class AgentSessions {
     }
     try {
       if (method === "_deskfleet/session/create") return await this.#create(command)
+      if (method === "_deskfleet/session/fork") return await this.#fork(command)
       await this.journal.saveCommand(command)
       const sessionId = command.sessionId!
       const session = (await this.journal.read(sessionId)).session
@@ -366,6 +370,42 @@ export class AgentSessions {
     await this.#complete(command, snapshot)
     this.#catalog.changed()
     return snapshot
+  }
+
+  async #fork(command: AgentCommand): Promise<AgentSnapshot> {
+    const context = command.params.context
+    if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
+    const sourceId = command.sessionId!
+    return this.#runtime(sourceId).withFork(async source => {
+      this.#resolveProvider(source.session.provider)
+      const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : source.session.title
+      const creation = { ...command, sessionId: undefined, workspaceId: source.session.workspaceId }
+      const child = await this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider)
+      command.sessionId = child.id
+      command.workspaceId = child.workspaceId
+      try {
+        await this.#catalog.provisionSession(child.id, child.workspaceId, context)
+        await copyForkHistory(this.journal, source, child.id)
+        await this.journal.serial(child.id, async () => {
+          const snapshot = await this.journal.read(child.id)
+          await this.journal.commit(snapshot, { events: [this.journal.event(child.id, "command", command)] })
+        })
+        if (this.#closed) throw new Error("Agent service is stopping")
+        const saved = await savedAgentConfiguration(this.journal, sourceId)
+        await this.#runtime(child.id).start(saved.selection, source.session.providerSessionId!)
+      } catch (error) {
+        await this.#runtimes.get(child.id)?.stop().catch(() => {})
+        await this.journal.serial(child.id, async () => {
+          const snapshot = await this.journal.read(child.id)
+          const failed = { ...snapshot.session, lifecycle: "provision_failed" as const, error: errorMessage(error), updatedAt: timestamp() }
+          await this.journal.commit(snapshot, { session: failed, events: [this.journal.event(child.id, "session", failed)] })
+        })
+      }
+      const snapshot = await this.journal.read(child.id)
+      await this.#complete(command, snapshot)
+      this.#catalog.changed()
+      return snapshot
+    })
   }
 
   async #submit(command: AgentCommand): Promise<AgentReceipt> {

@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs"
 import { Readable, Writable } from "node:stream"
-import * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk/unstable"
 
 const mode = process.env.DESKFLEET_TEST_AGENT_MODE
 const exitFile = process.env.DESKFLEET_TEST_EXIT_FILE

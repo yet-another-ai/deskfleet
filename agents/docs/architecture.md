@@ -350,7 +350,9 @@ The shared
 `AgentProvider` interface accepts a user-facing name, an optional binary path,
 and environment overrides. Provider-specific code selects the process; the
 [ACP TypeScript SDK](https://agentclientprotocol.com/libraries/typescript) handles
-initialization, session creation, prompts, cancellation, and session updates.
+initialization, session creation and forking, prompts, cancellation, and session updates.
+The SDK's unstable profile supplies `session/fork`; the negotiated ACP protocol
+version remains `1`, and forking requires the provider's advertised capability.
 Each bundled adapter uses the installed CLI and its credentials. Adapters run as
 child processes; the SEA executable reuses its bundled Node runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
@@ -368,8 +370,9 @@ initialization failure. Direct `--cwd` invocations remain outside the managed
 Workspace lifecycle. Provider session IDs remain separate from database Session
 IDs. The CLI forwards ACP updates without converting them into a history schema.
 Permission requests require a client callback; without one they are cancelled.
-The CLI cancels them explicitly. The client advertises no filesystem or terminal
-capabilities.
+The CLI cancels them explicitly. The ACP client advertises UTF-8 text-file reads
+and writes on the executing machine, scoped to its open provider Session. It does
+not advertise terminal capabilities.
 
 ACP capability negotiation determines which operations an adapter supports.
 Pi is a further integration candidate. Managed

@@ -33,6 +33,35 @@ Session's disposable checkouts before deleting the catalog resource; a directory
 Session's files are never removed. The new-session composer offers both contexts
 and remembers the last choice on that device.
 
+### Forking a conversation
+
+The Session menu offers Fork when the provider advertises `session/fork`. Forking
+requires an active, ready Session between turns, with no pending approvals or
+questions. Its dialog chooses either worktree or directory context; the new
+Session initially inherits the source title.
+The daemon creates a new Session under the same Workspace and provider, provisions
+its own execution context, and opens a fresh provider connection to fork the
+source provider Session. Model, reasoning, and mode selections carry over.
+
+Forking copies the conversation, not the source Session's files. Execution paths
+follow ordinary Session creation: worktree context uses new checkouts from the
+Workspace repositories' committed HEADs; directory context uses the Workspace's
+current directories. Source worktree changes and uncommitted files are not copied.
+The dialog explains this before creation. Each Session retains its own provider
+lifecycle and owned resources.
+
+The new transcript inherits delivered messages, tool activity, and resolved
+questions and approvals through the captured source journal watermark. It does
+not inherit queued inputs, live turns, pending requests, or accepted URL flows
+still awaiting completion. Inherited history is display-only and cannot reenter
+the execution backlog. Provider run generations remain separate from subsequent
+child activity, including when providers reuse tool IDs.
+
+An operation ID identifies one fork; retrying cannot allocate another Session.
+A provider or provisioning failure remains a failed child Session and cannot
+fall back to a blank conversation. A rejection before allocation remains an
+error on retry. The UI refreshes the catalog and opens the resulting Session.
+
 ## Archive and restore in the backend release
 
 Archive is the normal user action for ending active use of a Session. It is
@@ -356,12 +385,12 @@ pending until an approver responds, the turn ends, or the provider cancels it.
 
 ## User questions
 
-Managed providers receive the ACP `elicitation.form` capability and send
+Managed providers receive the ACP `elicitation.form` and `elicitation.url` capabilities and send
 `elicitation/create` requests for structured user input. Codex maps its
 `request_user_input` tool to this interface. The daemon accepts session-scoped
-forms; it does not advertise URL elicitation. Direct CLI invocations without an
-input callback do not advertise form support and do not register vendor question
-methods.
+forms and URL requests; request-scoped elicitation is not supported. Direct CLI
+invocations without an input callback do not advertise elicitation support and do
+not register vendor question methods.
 
 Cursor's `cursor/ask_question` and Grok's `x.ai/ask_user_question` and
 `_x.ai/ask_user_question` are translated into that form when the callback is
@@ -389,6 +418,30 @@ responses return the recorded outcome. Reconnecting or navigating away leaves
 the question pending. A provider cancellation or timeout, turn completion, or
 provider loss closes unanswered forms; daemon restart cancels requests whose
 provider callbacks no longer exist.
+
+URL requests display the provider's message and destination host, with an explicit
+HTTP(S) link that opens the system browser in the desktop app. Opening the link
+records consent (`accept` without content); it does not imply that the external
+flow finished. The UI shows a waiting state until the provider sends
+`elicitation/complete`. A separate durable `completedAt` timestamp preserves that
+distinction across viewers and reconnects. Completion can race with consent or
+turn completion; it is matched to the same live provider generation and URL
+elicitation ID. Unknown, duplicate, or stale completions have no effect.
+Decline and cancel close the request without completing the external flow.
+
+## Provider filesystem callbacks
+
+The ACP client advertises and implements `fs/read_text_file` and
+`fs/write_text_file` using the executing machine's filesystem. Paths must be
+absolute, and requests must name the Session active on that provider connection.
+Callbacks during new, fork, and resume setup are bound to the Session being
+opened; unrelated Session IDs and closed connections cannot use those callbacks.
+These checks establish Session ownership, not a filesystem sandbox for the agent.
+
+Reads return UTF-8 text and support ACP's one-based `line` and optional `limit`,
+preserving line endings. Writes replace UTF-8 content and create missing parent
+directories. Filesystem failures return request errors without terminating the
+provider connection. These callbacks do not allocate TerminalSessions.
 
 ## ACP over DataChannel
 
@@ -418,6 +471,7 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | `_deskfleet/session/list` | Read persisted Session summaries |
 | `_deskfleet/agent/configuration` | Discover provider model, reasoning, and mode choices for a draft in a Workspace's default directory |
 | `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning/mode selections, and start it; return snapshot |
+| `_deskfleet/session/fork` | Idempotently fork an idle Session's conversation into a new worktree or directory Session under the same Workspace and provider; return the child snapshot |
 | `_deskfleet/session/configuration` | Read the Session's confirmed provider configuration |
 | `_deskfleet/session/configure` | Audit and apply model/reasoning/mode changes to a Session without changing its provider |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |

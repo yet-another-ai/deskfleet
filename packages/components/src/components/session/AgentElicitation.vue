@@ -5,7 +5,7 @@ import { watchImmediate } from "@vueuse/core"
 import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentElicitation } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import { validateElicitationResponse } from "../../../../../apps/daemon/src/agent-elicitation-protocol.ts"
+import { elicitationUrl, validateElicitationResponse } from "../../../../../apps/daemon/src/agent-elicitation-protocol.ts"
 import { elicitationContent, elicitationDefaults, elicitationForm, elicitationInputType, type ElicitationField, type ElicitationValue } from "../../services/agent-elicitation.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import AgentActor from "./AgentActor.vue"
@@ -16,10 +16,11 @@ const props = defineProps<{ elicitation: AgentElicitation; disabled?: boolean }>
 const { t } = useI18n()
 const agents = useAgentSessionsStore()
 const form = computed(() => elicitationForm(props.elicitation.request))
+const url = computed(() => elicitationUrl(props.elicitation.request))
 const pending = computed(() => props.elicitation.state === "pending")
 const operation = computed(() => Object.values(agents.operations).find(operation => operation.sessionId === props.elicitation.sessionId && operation.method === "_deskfleet/elicitation/respond" && operation.params.elicitationId === props.elicitation.id))
 const disabled = computed(() => props.disabled || !pending.value || !!operation.value)
-const supported = computed(() => !!form.value && form.value.fields.every(field => ["string", "boolean", "number", "integer", "array"].includes(field.type)))
+const supported = computed(() => !!url.value || !!form.value && form.value.fields.every(field => ["string", "boolean", "number", "integer", "array"].includes(field.type)))
 const draft = computed(() => agents.elicitationDrafts[props.elicitation.id] ?? {})
 const formElement = ref<HTMLFormElement | null>(null)
 const invalid = ref(false)
@@ -55,7 +56,7 @@ async function respond(action: "accept" | "decline" | "cancel"): Promise<void> {
   if (action === "accept") {
     if (!supported.value) return
     try {
-      response = validateElicitationResponse(props.elicitation.request, { action, content: elicitationContent(form.value!.fields, draft.value) })
+      response = validateElicitationResponse(props.elicitation.request, url.value ? { action } : { action, content: elicitationContent(form.value!.fields, draft.value) })
     } catch {
       invalid.value = true
       formElement.value?.reportValidity()
@@ -65,7 +66,14 @@ async function respond(action: "accept" | "decline" | "cancel"): Promise<void> {
   try { await agents.respondToElicitation(props.elicitation.sessionId, props.elicitation.id, response) }
   catch { failed.value = true }
 }
-const status = computed(() => props.elicitation.state === "cancelled" || props.elicitation.response?.action === "cancel" ? "cancelled" : props.elicitation.response?.action === "decline" ? "declined" : "answered")
+function openUrl(event: MouseEvent): void {
+  if (disabled.value || !url.value) { event.preventDefault(); return }
+  // The anchor opens only on this consent click, never on receipt or completion.
+  void respond("accept")
+}
+const status = computed(() => props.elicitation.state === "cancelled" || props.elicitation.response?.action === "cancel" ? "cancelled"
+  : props.elicitation.response?.action === "decline" ? "declined"
+  : url.value ? props.elicitation.completedAt ? "completed" : "awaitingCompletion" : "answered")
 const answers = computed(() => {
   const response = props.elicitation.response
   if (response?.action !== "accept" || !response.content || typeof response.content !== "object") return []
@@ -81,9 +89,13 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
 
 <template>
   <section class="rounded-xl border border-ui-border bg-ui-surface p-4 text-sm shadow-ui-card" data-testid="agent-elicitation" :data-elicitation-id="elicitation.id" :aria-label="t('agent.questions.title')">
-    <p class="m-0 mb-2 flex items-center gap-2 font-medium"><CircleHelp :size="16" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span>{{ t(pending ? 'agent.questions.title' : `agent.questions.${status}`) }}<template v-if="!pending && elicitation.actor"> · <AgentActor :actor="elicitation.actor" /></template></span></p>
+    <p class="m-0 mb-2 flex items-center gap-2 font-medium"><CircleHelp :size="16" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span>{{ t(pending ? url ? 'agent.questions.urlTitle' : 'agent.questions.title' : `agent.questions.${status}`) }}<template v-if="!pending && elicitation.actor"> · <AgentActor :actor="elicitation.actor" /></template></span></p>
     <p class="m-0 whitespace-pre-wrap break-words">{{ elicitation.request.message }}</p>
     <form v-if="pending" ref="formElement" class="mt-4 flex flex-col gap-4" @submit.prevent="respond('accept')">
+      <div v-if="url" class="flex flex-col gap-2">
+        <p class="m-0 font-medium break-all" data-testid="elicitation-host">{{ url.host }}</p>
+        <p class="m-0 text-ui-text-muted">{{ t('agent.questions.urlConsent', { host: url.host }) }}</p>
+      </div>
       <template v-if="form">
         <p v-if="form.title" class="m-0 font-medium">{{ form.title }}</p>
         <p v-if="form.description" class="m-0 text-ui-text-muted">{{ form.description }}</p>
@@ -112,15 +124,17 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
           <button v-if="!field.required && draft[field.id] !== undefined" type="button" class="mt-1 cursor-pointer text-xs text-ui-text-muted hover:text-ui-text disabled:cursor-default" @click="clearValue(field.id)">{{ t('agent.questions.clear') }}</button>
         </fieldset>
       </template>
-      <p v-if="!supported" class="m-0 text-ui-text-muted">{{ t('agent.questions.unsupported') }}</p>
+      <p v-if="!supported" class="m-0 text-ui-text-muted">{{ t(elicitation.request.mode === 'url' ? 'agent.questions.unsupportedUrl' : 'agent.questions.unsupported') }}</p>
       <p v-if="invalid" role="alert" class="m-0 text-ui-danger">{{ t('agent.questions.invalid') }}</p>
       <p v-if="failed || operation?.error" role="alert" class="m-0 text-ui-warning">{{ t('agent.operationPending') }}</p>
       <div class="flex flex-wrap justify-end gap-2">
-        <UiButton type="button" data-testid="elicitation-cancel"  :disabled="disabled" @click="respond('cancel')">{{ t('agent.questions.cancel') }}</UiButton>
-        <UiButton type="button" data-testid="elicitation-decline"  :disabled="disabled" @click="respond('decline')">{{ t('agent.questions.decline') }}</UiButton>
-        <UiButton variant="primary" type="submit" data-testid="elicitation-submit"  :disabled="disabled || !supported">{{ t(operation ? 'agent.questions.sending' : 'agent.questions.submit') }}</UiButton>
+        <UiButton type="button" data-testid="elicitation-cancel" :disabled="disabled" @click="respond('cancel')">{{ t('agent.questions.cancel') }}</UiButton>
+        <UiButton type="button" data-testid="elicitation-decline" :disabled="disabled" @click="respond('decline')">{{ t('agent.questions.decline') }}</UiButton>
+        <a v-if="url" :href="disabled ? undefined : url.href" target="_blank" rel="noopener noreferrer" data-testid="elicitation-open-url" class="ui-button-primary" :aria-disabled="disabled" :tabindex="disabled ? -1 : undefined" @click="openUrl">{{ t('agent.questions.openUrl', { host: url.host }) }}</a>
+        <UiButton v-else variant="primary" type="submit" data-testid="elicitation-submit" :disabled="disabled || !supported">{{ t(operation ? 'agent.questions.sending' : 'agent.questions.submit') }}</UiButton>
       </div>
     </form>
+    <a v-else-if="url && elicitation.response?.action === 'accept' && !elicitation.completedAt" :href="url.href" target="_blank" rel="noopener noreferrer" class="ui-button mt-3" data-testid="elicitation-reopen-url">{{ t('agent.questions.openUrl', { host: url.host }) }}</a>
     <dl v-else-if="answers.length" class="m-0 mt-3 flex flex-col gap-2">
       <div v-for="answer in answers" :key="answer.id"><dt class="text-xs text-ui-text-muted">{{ answer.title }}</dt><dd class="m-0 whitespace-pre-wrap break-words">{{ answer.text }}</dd></div>
     </dl>

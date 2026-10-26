@@ -28,6 +28,7 @@ export interface PendingAgentOperation {
   workspaceId?: string
   params: Record<string, unknown>
   error?: string
+  result?: unknown
 }
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
 const sequenceCompare = (left: string, right: string) => BigInt(left) < BigInt(right) ? -1 : BigInt(left) > BigInt(right) ? 1 : 0
@@ -109,6 +110,9 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       pending.error = command.error ?? command.status
       return
     }
+    // Keep a fork's result until its caller consumes it: a completion event can
+    // precede a lost response, and the next attempt must find the same Session.
+    if (pending.method === "_deskfleet/session/fork") { pending.result = command.result; return }
     completeOperation(command.operationId)
   }
   function apply(event: AgentEvent, snapshot: AgentSnapshot): void {
@@ -294,6 +298,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       return result
     } catch (reason) {
       const pending = operations.value[operationId]
+      if (pending?.method === "_deskfleet/session/fork" && pending.result) {
+        completeOperation(operationId)
+        return pending.result as AgentMethods[M]["result"]
+      }
       if (pending) pending.error = messageOf(reason)
       throw reason
     }
@@ -301,7 +309,13 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   async function checkOperation(operationId: string): Promise<unknown> {
     const pending = operations.value[operationId]
     if (!pending) return
+    const received = (result: unknown): unknown => {
+      if (pending.method === "_deskfleet/session/fork") snapshotReceived(result as AgentSnapshot)
+      completeOperation(operationId)
+      return result
+    }
     try {
+      if (pending.result) return received(pending.result)
       const command = await call("_deskfleet/command/get", { operationId })
       if (command && ["failed", "rejected", "uncertain"].includes(command.status)) {
         delete operations.value[operationId]
@@ -309,13 +323,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       }
       if (command?.status === "completed") {
         commandReceived(command)
-        return command.result
+        return received(command.result)
       }
       // Reuse the exact request identity when the first response was lost. The
       // daemon serializes duplicates, including a request still being accepted.
       const result = await call(pending.method, pending.params as AgentMethods[typeof pending.method]["params"])
-      completeOperation(operationId)
-      return result
+      return received(result)
     } finally {
       if (pending.sessionId && state.value === "connected") await open(pending.sessionId)
     }
@@ -353,6 +366,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     snapshotReceived(snapshot)
     return snapshot
   }
+  async function fork(sessionId: string, context: AgentSessionContext): Promise<AgentSnapshot> {
+    const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/fork" && operation.sessionId === sessionId)
+    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/fork", { sessionId, context })
+    snapshotReceived(snapshot)
+    return snapshot
+  }
   const submit = (sessionId: string, text: string, delivery: "backlog" | "steer", turnId?: string) => mutation("_deskfleet/input/submit", {
     sessionId, content: [{ type: "text", text }], delivery, ...(turnId ? { turnId } : {}),
   }, text)
@@ -372,6 +391,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const elicitation = await mutation("_deskfleet/elicitation/respond", { sessionId, elicitationId, response })
     const snapshot = view(sessionId).snapshot
     if (snapshot) {
+      const current = snapshot.elicitations.find(item => item.id === elicitation.id && item.runGeneration === elicitation.runGeneration)
+      if (current?.completedAt && !elicitation.completedAt) elicitation.completedAt = current.completedAt
       replace(snapshot.elicitations, elicitation, value => value.id)
       resolveElicitations(snapshot)
     }
@@ -407,5 +428,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); client.close() })
-  return { sessions, views, drafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, archive, restore, gitStatus, gitDiff, watchGit }
+  return { sessions, views, drafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, archive, restore, gitStatus, gitDiff, watchGit }
 })

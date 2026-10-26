@@ -2,12 +2,12 @@ import { client as platformClient } from "@deskfleet/client/platform"
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentCommand, AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { ProviderSnapshot } from "../../../apps/daemon/src/provider-protocol.ts"
 import App from "./App.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
-import { agentElicitation, agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
+import { actor, agentElicitation, agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
 import { catalogFixture, workspaceId } from "./test/catalog.ts"
 import { useProvidersStore } from "./stores/providers.ts"
 import { deferred } from "./test/desktop-media.ts"
@@ -321,4 +321,102 @@ test("the selected model, effort and native mode reach a newly created Session t
   expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ model: "orbit", reasoningEffort: "high", mode: "agent" })
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/input/submit")).toBe(true)
   window.localStorage.removeItem("deskfleet.agent-configuration")
+})
+
+test("a supported idle Session forks in the chosen workspace context and navigates to the independent conversation", async () => {
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('[aria-label="Session actions"]').trigger("click"); await flushPromises()
+  expect(page().findAll('[role="menuitem"]').some(item => item.text() === "Fork session")).toBe(false)
+  snapshot.session = { ...snapshot.session, capabilities: { steering: true, resume: true, fork: true } }
+  emit("session", snapshot.session)
+  await flushPromises()
+  await page().findAll('[role="menuitem"]').find(item => item.text() === "Fork session")!.trigger("click"); await flushPromises()
+  let dialog = page().get('[role="dialog"]')
+  expect(dialog.get('[role="radio"][value="worktree"]').attributes("aria-checked")).toBe("true")
+  await vi.waitFor(() => expect(dialog.element.contains(document.activeElement)).toBe(true))
+  await dialog.trigger("keydown", { key: "Escape" }); await flushPromises()
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(document.activeElement).toBe(wrapper.get('[aria-label="Session actions"]').element))
+  await wrapper.get('[aria-label="Session actions"]').trigger("keydown", { key: "ArrowDown" }); await flushPromises()
+  await page().findAll('[role="menuitem"]').find(item => item.text() === "Fork session")!.trigger("keydown", { key: "Enter" }); await flushPromises()
+  dialog = page().get('[role="dialog"]')
+  await dialog.get('[role="radio"][value="directory"]').trigger("click")
+  const forked = agentSnapshot()
+  forked.session = { ...snapshot.session, id: "32", context: "directory", title: "Forked conversation", lastEventSeq: "0" }
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+    if (method === "_deskfleet/session/fork" || (method === "_deskfleet/session/subscribe" && params.sessionId === "32")) return structuredClone(forked)
+    if (method === "_deskfleet/session/history" && params.sessionId === "32") return []
+    return normal(method, params)
+  })
+  const submittedBefore = transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit").length
+  await dialog.get(".ui-button-primary").trigger("click")
+  await flushPromises()
+  expect(transport.call).toHaveBeenCalledWith("_deskfleet/session/fork", { sessionId: "30", context: "directory", operationId: expect.any(String) })
+  expect(router.currentRoute.value.params.sessionId).toBe("32")
+  expect(wrapper.get("main").text()).toContain("Forked conversation")
+  expect(wrapper.find('aside a[href="#/sessions/30"]').exists()).toBe(true)
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit")).toHaveLength(submittedBefore)
+})
+
+test("checking a lost fork response opens the recorded child without creating another conversation", async () => {
+  snapshot.session.capabilities = { steering: true, resume: true, fork: true }
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  const forked = agentSnapshot()
+  forked.session = { ...snapshot.session, id: "32", title: "Recovered fork", lastEventSeq: "0" }
+  let command: AgentCommand
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+    if (method === "_deskfleet/session/fork") {
+      command = {
+        id: "51", operationId: String(params.operationId), actor, sessionId: "32", method,
+        params, isCanonical: true, status: "completed", result: structuredClone(forked), receivedAt: "now",
+      }
+      throw new Error("Fork response lost")
+    }
+    if (method === "_deskfleet/command/get") return command
+    if (method === "_deskfleet/session/subscribe" && params.sessionId === "32") return structuredClone(forked)
+    if (method === "_deskfleet/session/history" && params.sessionId === "32") return []
+    return normal(method, params)
+  })
+  await wrapper.get('[aria-label="Session actions"]').trigger("click"); await flushPromises()
+  await page().findAll('[role="menuitem"]').find(item => item.text() === "Fork session")!.trigger("click"); await flushPromises()
+  const dialog = page().get('[role="dialog"]')
+  await dialog.get(".ui-button-primary").trigger("click")
+  await flushPromises()
+  expect(dialog.get('[role="alert"]').text()).toBe("Fork response lost")
+  expect(dialog.findAll('[role="radio"]').every(radio => radio.attributes("disabled") !== undefined)).toBe(true)
+  expect(dialog.get(".ui-button-primary").text()).toBe("Check result")
+  expect(router.currentRoute.value.params.sessionId).toBe("30")
+  await dialog.get(".ui-button").trigger("click")
+  await button("Check result").trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.params.sessionId).toBe("32")
+  expect(wrapper.get("main").text()).toContain("Recovered fork")
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/session/fork")).toHaveLength(1)
+  expect(transport.call).toHaveBeenCalledWith("_deskfleet/command/get", { operationId: command!.operationId })
+})
+
+test("fork is unavailable while a Session is running a turn or archived", async () => {
+  snapshot.session.capabilities = { steering: true, resume: true, fork: true }
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('[aria-label="Session actions"]').trigger("click"); await flushPromises()
+  expect(page().findAll('[role="menuitem"]').some(item => item.text() === "Fork session")).toBe(true)
+  transport.state("error")
+  await flushPromises()
+  expect(page().findAll('[role="menuitem"]').find(item => item.text() === "Fork session")!.attributes("data-disabled")).toBeDefined()
+  transport.state("connected")
+  emit("turn", { id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" })
+  await flushPromises()
+  expect(page().findAll('[role="menuitem"]').some(item => item.text() === "Fork session")).toBe(false)
+  emit("turn", { id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "completed", startedAt: "now", endedAt: "now" })
+  emit("session", { ...snapshot.session, archiveState: "archived" })
+  await flushPromises()
+  expect(page().findAll('[role="menuitem"]').some(item => item.text() === "Fork session")).toBe(false)
 })

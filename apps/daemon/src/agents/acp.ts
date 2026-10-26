@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process"
 import { Readable, Writable } from "node:stream"
-import * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk/unstable"
 import { answerVendorQuestion, VENDOR_QUESTION_METHODS } from "./questions.ts"
 import { AcpModelReasoning } from "./reasoning-effort.ts"
 import { AcpSessionModes } from "./session-modes.ts"
+import { createAcpFilesystem } from "./filesystem.ts"
+import { AcpSessionScope } from "./session-scope.ts"
 
 export interface AgentConfig {
   name: string
@@ -36,11 +38,13 @@ export interface AgentClient {
     params: acp.CreateElicitationRequest,
     signal: AbortSignal,
   ): Promise<acp.CreateElicitationResponse>
+  completeElicitation?(params: acp.CompleteElicitationNotification): void | Promise<void>
 }
 
 export interface AgentConnection {
   readonly initialization: acp.InitializeResponse
   newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse>
+  forkSession?(params: acp.ForkSessionRequest): Promise<acp.ForkSessionResponse>
   /** knownOptions restores setter identity after resume; it is never sent over ACP. */
   setConfigOption(params: acp.SetSessionConfigOptionRequest, knownOptions?: acp.SessionConfigOption[]): Promise<acp.SetSessionConfigOptionResponse>
   resume(params: acp.ResumeSessionRequest): Promise<acp.ResumeSessionResponse>
@@ -97,6 +101,8 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   })
   const exited = new Promise<void>(resolve => child.once("close", () => resolve()))
   let providerSessionId: string | undefined
+  const sessionScope = new AcpSessionScope()
+  const filesystem = createAcpFilesystem(id => sessionScope.require(id))
   const rememberSession = (sessionId: string | undefined) => { if (sessionId) providerSessionId = sessionId }
   let clientApp = acp.client({ name: "deskfleet" })
     .onNotification(acp.methods.client.session.update, async ({ params }) => {
@@ -119,6 +125,11 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         connection.close(error)
       }
     })
+    .onRequest(acp.methods.client.fs.readTextFile, ({ params, signal }) => filesystem.readTextFile(params, signal))
+    .onRequest(acp.methods.client.fs.writeTextFile, ({ params, signal }) => filesystem.writeTextFile(params, signal))
+    .onNotification(acp.methods.client.elicitation.complete, async ({ params }) => {
+      await client.completeElicitation?.(params)
+    })
     .onRequest(acp.methods.client.session.requestPermission, async ({ params, signal }) => {
       if (!client.requestPermission) return { outcome: { outcome: "cancelled" } }
       try {
@@ -129,7 +140,8 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       }
     })
     .onRequest(acp.methods.client.elicitation.create, async ({ params, signal }) => {
-      if (!client.requestElicitation || !acp.CreateElicitationRequest.isForm(params) || !("sessionId" in params)) return { action: "cancel" }
+      if (!client.requestElicitation || !("sessionId" in params)
+        || (acp.CreateElicitationRequest.isUrl(params) && !client.completeElicitation)) return { action: "cancel" }
       try {
         return await client.requestElicitation(params, signal)
       } catch (error) {
@@ -172,12 +184,14 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000)
     timeout.unref()
     closing = exited.finally(() => clearTimeout(timeout))
+    sessionScope.clear()
     return closing
   }
   const abort = () => { connection.close(client.signal?.reason); void close() }
   client.signal?.addEventListener("abort", abort, { once: true })
   if (client.signal?.aborted) abort()
   void connection.closed.then(() => {
+    sessionScope.clear()
     const reason: unknown = connection.signal.reason
     try {
       client.onClose?.(reason instanceof Error ? reason : new Error("ACP connection closed", { cause: reason }))
@@ -196,7 +210,8 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       clientInfo: { name: "deskfleet", version: "0.1.0" },
       clientCapabilities: {
         ...options.clientCapabilities,
-        ...(client.requestElicitation ? { elicitation: { form: {} } } : {}),
+        fs: { readTextFile: true, writeTextFile: true },
+        ...(client.requestElicitation ? { elicitation: { form: {}, ...(client.completeElicitation ? { url: {} } : {}) } } : {}),
       },
     })
     if (initialization.protocolVersion !== acp.PROTOCOL_VERSION) {
@@ -212,9 +227,24 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     return {
       initialization,
       async newSession(params) {
-        const created = await connection.agent.request(acp.methods.agent.session.new, params)
-        rememberSession(created.sessionId)
-        return present(created.sessionId, created)
+        sessionScope.begin()
+        try {
+          const created = await connection.agent.request(acp.methods.agent.session.new, params)
+          sessionScope.complete(created.sessionId)
+          rememberSession(created.sessionId)
+          return present(created.sessionId, created)
+        } catch (error) { sessionScope.fail(); throw error }
+      },
+      async forkSession(params) {
+        if (!initialization.agentCapabilities?.sessionCapabilities?.fork) throw new Error("The agent does not support session fork")
+        sessionScope.begin()
+        try {
+          const forked = await connection.agent.request(acp.methods.agent.session.fork, params)
+          if (forked.sessionId === params.sessionId) throw new Error("The agent returned the source session instead of a fork")
+          sessionScope.complete(forked.sessionId)
+          rememberSession(forked.sessionId)
+          return present(forked.sessionId, forked)
+        } catch (error) { sessionScope.fail(); throw error }
       },
       async setConfigOption(params, knownOptions) {
         const current = reasoning.listed(knownOptions) ?? []
@@ -249,24 +279,30 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         return reasoning.project(updated)
       },
       async resume(params) {
-        rememberSession(params.sessionId)
-        const capabilities = initialization.agentCapabilities
-        if (capabilities?.sessionCapabilities?.resume) {
-          return present(params.sessionId, await connection.agent.request(acp.methods.agent.session.resume, params))
-        }
-        if (!capabilities?.loadSession) throw new Error("The agent does not support session resume")
-        replayingHistory = true
+        sessionScope.begin(params.sessionId)
         try {
-          const loaded = await connection.agent.request(acp.methods.agent.session.load, {
-            sessionId: params.sessionId,
-            cwd: params.cwd,
-            mcpServers: params.mcpServers ?? [],
-            ...(params.additionalDirectories?.length ? { additionalDirectories: params.additionalDirectories } : {}),
-          })
-          return present(params.sessionId, loaded)
-        } finally {
-          replayingHistory = false
-        }
+          rememberSession(params.sessionId)
+          const capabilities = initialization.agentCapabilities
+          if (capabilities?.sessionCapabilities?.resume) {
+            const resumed = await connection.agent.request(acp.methods.agent.session.resume, params)
+            sessionScope.complete(params.sessionId)
+            return present(params.sessionId, resumed)
+          }
+          if (!capabilities?.loadSession) throw new Error("The agent does not support session resume")
+          replayingHistory = true
+          try {
+            const loaded = await connection.agent.request(acp.methods.agent.session.load, {
+              sessionId: params.sessionId,
+              cwd: params.cwd,
+              mcpServers: params.mcpServers ?? [],
+              ...(params.additionalDirectories?.length ? { additionalDirectories: params.additionalDirectories } : {}),
+            })
+            sessionScope.complete(params.sessionId)
+            return present(params.sessionId, loaded)
+          } finally {
+            replayingHistory = false
+          }
+        } catch (error) { sessionScope.fail(); throw error }
       },
       async prompt(params) {
         rememberSession(params.sessionId)

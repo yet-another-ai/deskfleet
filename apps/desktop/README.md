@@ -413,7 +413,9 @@ loopback Vite URL. Each build injects its Content Security Policy into
 `index.html`. Production builds forbid renderer HTTP/WebSocket connections;
 WebRTC carries peer media and a narrow preload API carries authorized central signaling. The
 media policy permits local streams.
-The window denies new windows and navigation. Chromium permissions allow only
+The window denies renderer navigation and new Electron windows. Explicit HTTP(S)
+links requesting a new window open in the system browser; other schemes remain
+blocked. Chromium permissions allow only
 clipboard writes and fullscreen from the main renderer document; clipboard reads
 and all other permission requests remain denied.
 Routing uses hash history so every route stays on the single bundled document.

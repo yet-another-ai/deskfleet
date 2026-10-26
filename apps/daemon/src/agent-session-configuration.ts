@@ -1,4 +1,4 @@
-import type { SessionConfigOption, SessionNotification } from "@agentclientprotocol/sdk"
+import type { SessionConfigOption, SessionNotification } from "@agentclientprotocol/sdk/unstable"
 import { agentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentCommand } from "./agent-protocol.ts"
 import type { AgentJournal } from "./agent-store.ts"

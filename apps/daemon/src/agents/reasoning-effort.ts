@@ -1,4 +1,4 @@
-import type * as acp from "@agentclientprotocol/sdk"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { REASONING_CONFIG_IDS, selectReasoningEffort } from "../agent-configuration-protocol.ts"
 
 const MODEL_REASONING = "deskfleet/modelReasoningEffort"

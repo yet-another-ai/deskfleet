@@ -1,4 +1,4 @@
-import type { ContentBlock, CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest, SessionNotification } from "@agentclientprotocol/sdk"
+import type { ContentBlock, CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest, SessionNotification } from "@agentclientprotocol/sdk/unstable"
 import type { GitDiffRequest, GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 
 import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
@@ -31,7 +31,7 @@ export interface AgentSessionRecord {
   lastEventSeq: string
   createdAt: string
   updatedAt: string
-  capabilities?: { steering: boolean; resume: boolean }
+  capabilities?: { steering: boolean; resume: boolean; fork?: boolean }
   error?: string
 }
 
@@ -129,6 +129,8 @@ export interface AgentElicitation {
   actor?: AgentActor
   createdAt: string
   resolvedAt?: string
+  /** URL interaction completion is independent of the user's consent. */
+  completedAt?: string
 }
 
 export interface AgentEvent {
@@ -167,6 +169,7 @@ export interface AgentMethods {
   "_deskfleet/session/configure": { params: AgentMutation & AgentConfigurationSelection; result: AgentConfiguration }
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
   "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider: string; context: AgentSessionContext } & AgentConfigurationSelection; result: AgentSnapshot }
+  "_deskfleet/session/fork": { params: AgentMutation & { context: AgentSessionContext; title?: string }; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
   "_deskfleet/git/status": { params: { sessionId: string; force?: boolean }; result: GitStatusSnapshot }

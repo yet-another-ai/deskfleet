@@ -230,3 +230,82 @@ async fn question_request_is_immutable_and_invalid_links_roll_back_the_transacti
     assert_eq!(snapshot.session, current);
     local.close().await.unwrap();
 }
+
+#[tokio::test]
+async fn url_completion_is_durable_before_or_after_consent_and_cannot_rewrite_the_answer() {
+    for complete_first in [false, true] {
+        let file = File::new();
+        let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+        let session = create(&local).await.session;
+        let mut question = question(&local, session.id).await;
+        question.request = json!({"mode": "url", "sessionId": "provider-session", "elicitationId": "url-flow", "message": "Continue", "url": "https://example.invalid/"});
+        let mut changes = transaction(&session);
+        changes.runs = vec![run(session.id, 1)];
+        changes.elicitations = vec![question.clone()];
+        changes.events = vec![event(session.id, EventKind::Elicitation, &question)];
+        let mut current = local.agent_commit(changes).await.unwrap().session.unwrap();
+        for completion in [complete_first, !complete_first] {
+            if completion {
+                question.completed_at = Some(TIME.into());
+            } else {
+                question.state = ElicitationState::Resolved;
+                question.response = Some(json!({"action": "accept"}));
+                question.resolved_at = Some(TIME.into());
+            }
+            let mut changes = transaction(&current);
+            changes.elicitations = vec![question.clone()];
+            changes.events = vec![event(session.id, EventKind::Elicitation, &question)];
+            current = local.agent_commit(changes).await.unwrap().session.unwrap();
+        }
+        local.close().await.unwrap();
+        let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+        let saved = local.agent_snapshot(session.id).await.unwrap().unwrap();
+        assert_eq!(saved.elicitations, [question.clone()]);
+        for response in [
+            json!({"action": "decline"}),
+            json!({"action": "accept", "content": {"unexpected": true}}),
+        ] {
+            let changed = AgentElicitation {
+                response: Some(response),
+                ..question.clone()
+            };
+            let mut changes = transaction(&current);
+            changes.elicitations = vec![changed.clone()];
+            changes.events = vec![event(session.id, EventKind::Elicitation, &changed)];
+            assert!(local.agent_commit(changes).await.is_err());
+        }
+        let changed = AgentElicitation {
+            completed_at: Some("later".into()),
+            ..question
+        };
+        let mut changes = transaction(&current);
+        changes.elicitations = vec![changed.clone()];
+        changes.events = vec![event(session.id, EventKind::Elicitation, &changed)];
+        assert!(local.agent_commit(changes).await.is_err());
+        local.close().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn completion_cannot_be_attached_to_forms_or_declined_urls() {
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
+    let session = create(&local).await.session;
+    let form = question(&local, session.id).await;
+    let mut declined = form.clone();
+    declined.id = local.agent_allocate_id().await.unwrap().into();
+    declined.request = json!({"mode": "url", "sessionId": "provider-session", "elicitationId": "url-flow", "message": "Continue", "url": "https://example.invalid/"});
+    declined.state = ElicitationState::Resolved;
+    declined.response = Some(json!({"action": "decline"}));
+    for mut invalid in [form, declined] {
+        invalid.completed_at = Some(TIME.into());
+        let mut changes = transaction(&session);
+        changes.runs = vec![run(session.id, 1)];
+        changes.elicitations = vec![invalid.clone()];
+        changes.events = vec![event(session.id, EventKind::Elicitation, &invalid)];
+        assert!(matches!(
+            local.agent_commit(changes).await,
+            Err(StoreError::InvalidAgent("only URL questions can complete"))
+        ));
+    }
+    local.close().await.unwrap();
+}

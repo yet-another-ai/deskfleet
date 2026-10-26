@@ -1,4 +1,13 @@
-import * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk/unstable"
+
+/** Browser flows are opened only by the user, and only for web URLs. */
+export function elicitationUrl(request: acp.CreateElicitationRequest): URL | undefined {
+  if (!acp.CreateElicitationRequest.isUrl(request)) return undefined
+  try {
+    const url = new URL(request.url)
+    return ["https:", "http:"].includes(url.protocol) ? url : undefined
+  } catch { return undefined }
+}
 
 export function isSecretElicitationField(property: acp.ElicitationPropertySchema): boolean {
   const meta = property._meta
@@ -49,7 +58,12 @@ function validProperty(property: acp.ElicitationPropertySchema, value: unknown):
 export function validateElicitationResponse(request: acp.CreateElicitationRequest, value: unknown): acp.CreateElicitationResponse {
   if (!value || typeof value !== "object" || !("action" in value)) throw new Error("Invalid question response")
   if (value.action === "decline" || value.action === "cancel") return { action: value.action }
-  if (value.action !== "accept" || !acp.CreateElicitationRequest.isForm(request)) throw new Error("Invalid question response")
+  if (value.action !== "accept") throw new Error("Invalid question response")
+  if (acp.CreateElicitationRequest.isUrl(request)) {
+    if (!elicitationUrl(request) || "content" in value && value.content != null) throw new Error("Invalid URL question response")
+    return { action: "accept" }
+  }
+  if (!acp.CreateElicitationRequest.isForm(request)) throw new Error("Invalid question response")
   const content = "content" in value ? value.content ?? {} : {}
   if (!content || typeof content !== "object" || Array.isArray(content)) throw new Error("Question answers must be an object")
   const properties = request.requestedSchema.properties ?? {}

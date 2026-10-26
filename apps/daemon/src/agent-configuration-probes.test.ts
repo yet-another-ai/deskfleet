@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import type * as acp from "@agentclientprotocol/sdk"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { AgentConfigurationProbes } from "./agent-configuration-probes.ts"
 import { setImmediate as nextTurn } from "node:timers/promises"
 import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"

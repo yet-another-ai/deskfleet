@@ -6,6 +6,27 @@ import AgentSessionMenu from "./AgentSessionMenu.vue"
 let wrapper: VueWrapper | undefined
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
+test("fork is offered only when supported and closes the action menu without a second confirmation", async () => {
+  wrapper = mount(AgentSessionMenu, {
+    attachTo: document.body,
+    props: { canStop: false, canFork: false, disabled: false, archiveState: "active" },
+    global: { plugins: [i18n] },
+  })
+  const page = new DOMWrapper(document.body)
+  await wrapper.get('[aria-label="Session actions"]').trigger("click"); await flushPromises()
+  expect(page.findAll('[role="menuitem"]').some(item => item.text() === "Fork session")).toBe(false)
+  await wrapper.setProps({ canFork: true, forkDisabled: true })
+  const fork = page.findAll('[role="menuitem"]').find(item => item.text() === "Fork session")!
+  expect(fork.attributes("data-disabled")).toBeDefined()
+  await fork.trigger("click")
+  expect(wrapper.emitted("fork")).toBeUndefined()
+  await wrapper.setProps({ forkDisabled: false })
+  await fork.trigger("click"); await flushPromises()
+  expect(wrapper.emitted("fork")).toEqual([[]])
+  expect(page.find('[role="menu"]').exists()).toBe(false)
+  expect(page.find('[role="dialog"]').exists()).toBe(false)
+})
+
 test("archive and restore confirmations follow the latest session state and return focus to its menu", async () => {
   wrapper = mount(AgentSessionMenu, {
     attachTo: document.body,

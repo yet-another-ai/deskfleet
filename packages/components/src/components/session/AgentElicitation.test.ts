@@ -21,6 +21,48 @@ function question(properties: Record<string, unknown>, required: string[] = []):
   return agentElicitation({ request: { sessionId: "provider-session", mode: "form", message: "Please answer.", requestedSchema: { type: "object", properties, required } } as Elicitation["request"] })
 }
 
+function urlQuestion(url = "https://accounts.example.invalid/continue"): Elicitation {
+  return agentElicitation({ request: { mode: "url", sessionId: "provider-session", elicitationId: "browser-flow", message: "Continue on the account page.", url } })
+}
+
+test("URL requests disclose the destination and require an explicit consent click before opening", async () => {
+  const open = vi.spyOn(window, "open").mockReturnValue(null)
+  const store = useAgentSessionsStore()
+  const respond = vi.spyOn(store, "respondToElicitation").mockResolvedValue()
+  const view = render(urlQuestion("https://trusted-looking-name@accounts.example.invalid:8443/continue"))
+  expect(view.get('[data-testid="elicitation-host"]').text()).toBe("accounts.example.invalid:8443")
+  const link = view.get('[data-testid="elicitation-open-url"]')
+  expect(link.attributes("target")).toBe("_blank")
+  expect(link.attributes("rel")).toBe("noopener noreferrer")
+  expect(respond).not.toHaveBeenCalled()
+  expect(open).not.toHaveBeenCalled()
+  link.element.addEventListener("click", event => event.preventDefault(), { once: true })
+  await link.trigger("click")
+  expect(respond).toHaveBeenCalledExactlyOnceWith("30", "80", { action: "accept" })
+  await view.setProps({ elicitation: { ...urlQuestion(), state: "resolved", response: { action: "accept" }, actor } })
+  expect(view.text()).toContain("Waiting for completion")
+  expect(view.find('[data-testid="elicitation-reopen-url"]').exists()).toBe(true)
+  await view.setProps({ elicitation: { ...urlQuestion(), state: "resolved", response: { action: "accept" }, completedAt: "2026-10-27T00:00:00Z", actor } })
+  expect(view.text()).toContain("Completed")
+  expect(view.find("a").exists()).toBe(false)
+  expect(respond).toHaveBeenCalledTimes(1)
+})
+
+test("unsupported URL schemes, disabled questions, and declined flows cannot open a URL", async () => {
+  const store = useAgentSessionsStore()
+  const respond = vi.spyOn(store, "respondToElicitation").mockResolvedValue()
+  const view = render(urlQuestion("javascript:alert(1)"))
+  expect(view.find("a").exists()).toBe(false)
+  expect(view.text()).toContain("This link cannot be opened")
+  await view.setProps({ elicitation: urlQuestion(), disabled: true })
+  expect(view.get('[data-testid="elicitation-open-url"]').attributes("href")).toBeUndefined()
+  await view.get('[data-testid="elicitation-open-url"]').trigger("click")
+  expect(respond).not.toHaveBeenCalled()
+  await view.setProps({ elicitation: { ...urlQuestion(), state: "resolved", response: { action: "decline" } }, disabled: false })
+  expect(view.find("a").exists()).toBe(false)
+  expect(view.text()).toContain("Declined")
+})
+
 test("renders choice descriptions, validates required answers and submits one structured response", async () => {
   const store = useAgentSessionsStore()
   const respond = vi.spyOn(store, "respondToElicitation").mockResolvedValue()

@@ -1,4 +1,4 @@
-import * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk/unstable"
 
 /** Cursor's blocking multiple-choice request. Its documented params omit a session id. */
 export const CURSOR_ASK_QUESTION_METHOD = "cursor/ask_question"

@@ -6,7 +6,7 @@ import { createRequire } from "node:module"
 import { runInNewContext } from "node:vm"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
-import type * as acp from "@agentclientprotocol/sdk"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { agentConfiguration } from "./agent-configuration-protocol.ts"
 import { canContinueSession, connectAcpProcess, supportsSteering, type AgentProcess } from "./agents/acp.ts"
 import { authenticateCursor } from "./agents/cursor.ts"
@@ -34,8 +34,8 @@ test("ACP forwards session context, updates, and permission decisions", { timeou
   context.after(() => connection.close())
   assert.equal(connection.initialization.agentInfo?.name, "deskfleet-test-agent")
   const capabilities = connection.initialization._meta?.clientCapabilities as acp.ClientCapabilities
-  assert.notEqual(capabilities.fs?.readTextFile, true)
-  assert.notEqual(capabilities.fs?.writeTextFile, true)
+  assert.equal(capabilities.fs?.readTextFile, true)
+  assert.equal(capabilities.fs?.writeTextFile, true)
   assert.notEqual(capabilities.terminal, true)
   assert.deepEqual(connection.initialization._meta?.environment, {
     PATH: process.env.PATH, LANG: "deskfleet-test", extra: "added",

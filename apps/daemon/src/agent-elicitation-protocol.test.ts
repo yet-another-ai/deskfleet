@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import type * as acp from "@agentclientprotocol/sdk"
-import { validateElicitationResponse } from "./agent-elicitation-protocol.ts"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
+import { elicitationUrl, validateElicitationResponse } from "./agent-elicitation-protocol.ts"
 
 const request: acp.CreateElicitationRequest = {
   mode: "form", sessionId: "provider", message: "Answer the questions", requestedSchema: {
@@ -22,6 +22,19 @@ const request: acp.CreateElicitationRequest = {
   },
 }
 const content = { choice: "Other", note: "custom", confirmed: false, count: 0, ratio: 0.5, formats: ["json"], days: ["Monday"], color: "blue", code: "OK", date: "2026-10-25", url: "https://example.invalid", email: "person@example.invalid" }
+
+test("URL elicitation accepts consent without form content and permits only HTTP(S) links", () => {
+  const url: acp.CreateElicitationRequest = { mode: "url", sessionId: "provider", elicitationId: "login", message: "Sign in", url: "https://example.invalid/login" }
+  assert.equal(elicitationUrl(url)?.host, "example.invalid")
+  assert.deepEqual(validateElicitationResponse(url, { action: "accept" }), { action: "accept" })
+  assert.throws(() => validateElicitationResponse(url, { action: "accept", content: { token: "secret" } }))
+  for (const target of ["javascript:alert(1)", "file:///tmp/private", "data:text/html,hello", "custom://login", "/relative"]) {
+    const unsafe: acp.CreateElicitationRequest = { ...url, url: target }
+    assert.equal(elicitationUrl(unsafe), undefined)
+    assert.throws(() => validateElicitationResponse(unsafe, { action: "accept" }))
+    assert.deepEqual(validateElicitationResponse(unsafe, { action: "decline" }), { action: "decline" })
+  }
+})
 
 test("form answers preserve typed values, free text notes, required false, and zero", () => {
   const response = { action: "accept", content }

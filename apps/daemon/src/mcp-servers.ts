@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import type { McpServer } from "@agentclientprotocol/sdk"
+import type { McpServer } from "@agentclientprotocol/sdk/unstable"
 import { mcpServerInput, validateMcpServerId, type McpServerConfig, type McpServerInput, type McpServerSnapshot } from "./mcp-server-protocol.ts"
 
 /** Additional MCP settings are machine-local; credentials never enter catalog or conversation replication. */

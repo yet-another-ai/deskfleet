@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { setTimeout as delay } from "node:timers/promises"
 import { test } from "node:test"
-import type * as acp from "@agentclientprotocol/sdk"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { openInMemoryCatalog } from "@deskfleet/native"
 import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { AgentProviders } from "./agent-providers.ts"
@@ -442,6 +442,25 @@ test("service restart cancels recorded questions and stale provider generations 
   t.after(() => restored.close())
   assert.equal((await restored.journal.read(f.sessionId)).elicitations[0]!.state, "cancelled")
   await restored.close()
+})
+
+test("restart cancels a URL completed before consent without retaining its completion", async t => {
+  const f = await setup(t)
+  await f.service.close()
+  const snapshot = await f.read()
+  const orphan: AgentElicitation = {
+    id: await f.service.journal.id(), sessionId: f.sessionId, runGeneration: snapshot.runs.at(-1)!.generation,
+    request: { mode: "url", sessionId: "provider-conversation", elicitationId: "early-completion", message: "Continue in browser", url: "https://example.invalid/" },
+    state: "pending", createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
+  }
+  await f.service.journal.commit(snapshot, { elicitations: [orphan], events: [f.service.journal.event(f.sessionId, "elicitation", orphan)] })
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  t.after(() => restored.close())
+  await restored.init()
+  const recovered = (await restored.journal.read(f.sessionId)).elicitations[0]!
+  assert.equal(recovered.state, "cancelled")
+  assert.deepEqual(recovered.response, { action: "cancel" })
+  assert.equal(Object.hasOwn(recovered, "completedAt"), false)
 })
 
 test("fresh viewers replay history, stop retains backlog, and resume reuses the provider conversation", async t => {

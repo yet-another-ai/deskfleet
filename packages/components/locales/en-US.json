@@ -460,6 +460,12 @@
     "permissionRequired": "Permission required",
     "questions": {
       "title": "Your input is needed",
+      "urlTitle": "Continue in your browser",
+      "urlConsent": "Open {host} to continue. Completing the steps there is separate from accepting this request.",
+      "openUrl": "Open {host}",
+      "awaitingCompletion": "Waiting for completion",
+      "completed": "Completed",
+      "unsupportedUrl": "This link cannot be opened.",
       "required": "Required",
       "optional": "Optional",
       "yes": "Yes",
@@ -535,6 +541,9 @@
       "other": "Used {n} tool | Used {n} tools"
     },
     "sessionActions": "Session actions",
+    "fork": "Fork session",
+    "forkDescription": "Continue this conversation in a new session with the same agent. The conversation is copied; files follow the selected workspace context.",
+    "forking": "Forking session…",
     "deleteDirectoryQuestion": "Delete this session and its conversation? Its working directory and files are left unchanged.",
     "archive": "Archive session",
     "restore": "Restore session",

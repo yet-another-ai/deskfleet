@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type * as acp from "@agentclientprotocol/sdk"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { canContinueSession, supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp } from "./agent-store.ts"
@@ -35,6 +35,7 @@ export class AgentRuntime {
   #openingConfiguration = false
   #configurationEpoch = 0
   #configuring = false
+  #forking = false
   #connection?: AgentConnection
   #run?: AgentRun
   #active?: { turn: AgentTurn; completion: Promise<void> }
@@ -58,10 +59,29 @@ export class AgentRuntime {
     this.elicitations = new AgentElicitations(journal, sessionId, () => ({
       generation: this.#run?.generation, turnId: this.#active?.turn.id,
       running: this.running && (!this.#active || this.#endingTurn !== this.#active.turn.id),
+      connected: this.running,
     }))
   }
 
   get running(): boolean { return !!this.#connection && !this.#stopping && this.#run?.state === "running" }
+
+  /** Capture a quiet conversation while new inputs remain in the backlog. */
+  async withFork<T>(action: (snapshot: AgentSnapshot) => Promise<T>): Promise<T> {
+    if (this.#forking || this.#configuring || this.#active || this.#dispatching) throw new Error("Wait for the current Agent operation before forking")
+    this.#forking = true
+    try {
+      await this.#starting
+      const snapshot = await this.journal.read(this.sessionId)
+      requireActiveSession(snapshot.session)
+      if (snapshot.session.lifecycle !== "ready" || !snapshot.session.providerSessionId) throw new Error("This Session has no conversation to fork")
+      if (!snapshot.session.capabilities?.fork) throw new Error("The agent does not support session fork")
+      if (snapshot.turns.some(liveTurn) || snapshot.permissions.some(row => row.state === "pending") || snapshot.elicitations.some(row => row.state === "pending")) throw new Error("Wait for the current turn and questions before forking")
+      return await action(snapshot)
+    } finally {
+      this.#forking = false
+      void this.pump()
+    }
+  }
 
   async configuration(signal?: AbortSignal): Promise<AgentConfiguration> {
     await this.#starting?.catch(() => {})
@@ -111,7 +131,7 @@ export class AgentRuntime {
 
   async configure(selection: AgentConfigurationSelection): Promise<AgentConfiguration> {
     requireActiveSession((await this.journal.read(this.sessionId)).session)
-    if (this.#configuring || this.#active || this.#dispatching) throw new Error("Wait for the current turn before changing the Agent configuration")
+    if (this.#forking || this.#configuring || this.#active || this.#dispatching) throw new Error("Wait for the current turn before changing the Agent configuration")
     // Pause backlog dispatch through startup and every provider configuration call.
     this.#configuring = true
     this.#configurationEpoch++
@@ -143,7 +163,7 @@ export class AgentRuntime {
     })
   }
 
-  async start(selection?: AgentConfigurationSelection): Promise<void> {
+  async start(selection?: AgentConfigurationSelection, forkSource?: string): Promise<void> {
     requireActiveSession((await this.journal.read(this.sessionId)).session)
     if (this.#stopping && this.#stop) {
       const stopping = this.#stop
@@ -152,23 +172,23 @@ export class AgentRuntime {
           this.#stop = undefined
           this.#stopping = false
         }
-        return this.start(selection)
+        return this.start(selection, forkSource)
       })
     }
-    if (this.#recovering) return this.#recovering.then(() => this.start(selection))
+    if (this.#recovering) return this.#recovering.then(() => this.start(selection, forkSource))
     if (this.running) return Promise.resolve()
     if (this.#starting) return this.#starting
-    this.#starting = this.#start(selection).finally(() => { this.#starting = undefined })
+    this.#starting = this.#start(selection, forkSource).finally(() => { this.#starting = undefined })
     return this.#starting
   }
 
-  async #start(selection?: AgentConfigurationSelection): Promise<void> {
+  async #start(selection?: AgentConfigurationSelection, forkSource?: string): Promise<void> {
     this.#stopping = false
     this.#stop = undefined
     this.#configurationEpoch++
     const snapshot = await this.journal.read(this.sessionId)
     requireActiveSession(snapshot.session)
-    if (snapshot.session.lifecycle !== "ready") throw new Error("Session is not available for execution")
+    if (snapshot.session.lifecycle !== "ready" && !(forkSource && snapshot.session.lifecycle === "provisioning")) throw new Error("Session is not available for execution")
     await this.#active?.completion
     const savedConfiguration = await savedAgentConfiguration(this.journal, this.sessionId)
     // Changing models accepts the new model's default effort while preserving
@@ -200,6 +220,7 @@ export class AgentRuntime {
         onUpdate: params => this.#update(params, run.generation),
         requestPermission: (params, signal) => this.#permission(params, signal, run.generation),
         requestElicitation: (params, signal) => this.elicitations.request(params, signal, run.generation),
+        completeElicitation: params => this.elicitations.complete(params, run.generation),
         onClose: error => this.#connectionLost(error, run.generation),
       })
       this.#connection = connection
@@ -210,7 +231,7 @@ export class AgentRuntime {
         throw new Error("This agent cannot use all of this Session's directories")
       }
       if (this.#mcp) {
-        const creation = (await this.journal.commands(this.sessionId)).find(command => command.isCanonical && command.method === "_deskfleet/session/create")
+        const creation = (await this.journal.commands(this.sessionId)).find(command => command.isCanonical && (command.method === "_deskfleet/session/create" || command.method === "_deskfleet/session/fork"))
         if (!creation) throw new Error("This Session has no initiating command for MCP delegation")
         this.#mcpLease = this.#mcp.lease(this.sessionId, snapshot.session.workspaceId, creation.actor)
         for (const server of this.#mcpLease.servers) {
@@ -224,7 +245,13 @@ export class AgentRuntime {
       let responseOptions: acp.SessionConfigOption[] | undefined
       this.#openingConfiguration = true
       try {
-        if (providerSessionId) {
+        if (forkSource) {
+          if (!capabilities?.sessionCapabilities?.fork || !connection.forkSession) throw new Error("The agent does not support session fork")
+          const forked = await connection.forkSession({ ...params, sessionId: forkSource })
+          if (!forked.sessionId || forked.sessionId === forkSource) throw new Error("The agent did not create an independent fork")
+          providerSessionId = forked.sessionId
+          responseOptions = forked.configOptions ?? undefined
+        } else if (providerSessionId) {
           if (!canContinueSession(connection.initialization)) throw new Error("This agent cannot resume the saved conversation")
           responseOptions = (await connection.resume({ ...params, sessionId: providerSessionId })).configOptions ?? undefined
         } else {
@@ -252,7 +279,7 @@ export class AgentRuntime {
         requireActiveSession(current.session)
         const session = {
           ...current.session, providerSessionId, lifecycle: "ready" as const, error: undefined, updatedAt: timestamp(),
-          capabilities: { steering: supportsSteering(connection.initialization), resume: canContinueSession(connection.initialization) },
+          capabilities: { steering: supportsSteering(connection.initialization), resume: canContinueSession(connection.initialization), fork: !!capabilities?.sessionCapabilities?.fork && !!connection.forkSession },
         }
         await this.journal.commit(current, { session, runs: [run], events: [
           this.journal.event(this.sessionId, "session", session), this.journal.event(this.sessionId, "run", run),
@@ -349,7 +376,7 @@ export class AgentRuntime {
   }
 
   pump(): Promise<void> {
-    if (!this.running || this.#active || this.#configuring) return Promise.resolve()
+    if (!this.running || this.#active || this.#configuring || this.#forking) return Promise.resolve()
     if (this.#dispatching) {
       this.#pumpAgain = true
       return Promise.resolve()
@@ -380,7 +407,7 @@ export class AgentRuntime {
   /** Returns on delivery, not when the active prompt finishes. */
   steer(inputId: string, command: AgentCommand, requestedTurnId?: string): Promise<void> {
     if (!this.running || !this.#connection) return Promise.reject(new Error("Resume the Agent before steering"))
-    if (this.#configuring) return Promise.reject(new Error("Wait for the Agent configuration change before steering"))
+    if (this.#configuring || this.#forking) return Promise.reject(new Error("Wait for the current Agent operation before steering"))
     if (this.#dispatching) return Promise.reject(new Error("Another input is being delivered; retry after it is accepted"))
     this.#dispatching = true
     const delivery = this.#steer(inputId, command, requestedTurnId).finally(() => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk/unstable"
 import { answerVendorQuestion, CURSOR_ASK_QUESTION_METHOD, GROK_ASK_USER_QUESTION_ALIAS, GROK_ASK_USER_QUESTION_METHOD } from "./agents/questions.ts"
 
 const signal = new AbortController().signal

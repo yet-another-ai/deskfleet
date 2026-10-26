@@ -148,6 +148,18 @@ pub(super) async fn elicitation(
     value: &AgentElicitation,
 ) -> Result<(), StoreError> {
     positive(value.id.as_i64())?;
+    let accepted = value.state == ElicitationState::Resolved
+        && value
+            .response
+            .as_ref()
+            .and_then(|response| response["action"].as_str())
+            == Some("accept");
+    if value.completed_at.is_some()
+        && (value.request["mode"] != "url"
+            || !(value.state == ElicitationState::Pending || accepted))
+    {
+        return Err(StoreError::InvalidAgent("only URL questions can complete"));
+    }
     if let Some(old) = record::<AgentElicitation>(
         db,
         "SELECT record_json FROM agent_elicitations WHERE id = ?",
@@ -165,8 +177,24 @@ pub(super) async fn elicitation(
                 "elicitation identity and request are immutable",
             ));
         }
-        if old.state != ElicitationState::Pending && old != *value {
+        let completion_only = accepted
+            && old.completed_at.is_none()
+            && value.completed_at.is_some()
+            && old.state == value.state
+            && old.response == value.response
+            && old.decision_command_id == value.decision_command_id
+            && old.actor == value.actor
+            && old.resolved_at == value.resolved_at;
+        if old.state != ElicitationState::Pending && old != *value && !completion_only {
             return Err(StoreError::InvalidAgent("elicitation was already resolved"));
+        }
+        if old.completed_at.is_some()
+            && old.completed_at != value.completed_at
+            && (value.state == ElicitationState::Pending || accepted)
+        {
+            return Err(StoreError::InvalidAgent(
+                "elicitation completion is immutable",
+            ));
         }
     }
     if let Some(command) = value.decision_command_id {

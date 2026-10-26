@@ -139,6 +139,8 @@ pub struct AgentActor {
 pub struct AgentCapabilities {
     pub steering: bool,
     pub resume: bool,
+    #[serde(default)]
+    pub fork: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -295,6 +297,9 @@ pub struct AgentElicitation {
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved_at: Option<String>,
+    /// The agent completed a URL flow; accepting its link alone does not complete it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -21,7 +21,7 @@ interface GitSubscription { stop?: () => void }
 
 const METHODS = new Set<AgentMethod>([
   "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure",
-  "_deskfleet/session/list", "_deskfleet/session/create", "_deskfleet/session/subscribe", "_deskfleet/session/history",
+  "_deskfleet/session/list", "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/subscribe", "_deskfleet/session/history",
   "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
   "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
   "_deskfleet/elicitation/respond",

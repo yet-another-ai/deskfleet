@@ -1,4 +1,4 @@
-import * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk/unstable"
 import { connectAcpProcess, type AgentConfig, type AgentProcess, type AgentProvider } from "./acp.ts"
 import { launchProviderCommand } from "../provider-setup-process.ts"
 

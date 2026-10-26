@@ -4,6 +4,7 @@ import { LOCALE_ARGUMENT_PREFIX } from "../../../../packages/client/src/i18n.ts"
 import { resolveRendererEntrypoint } from "../shared/renderer-security.ts"
 import { attachDesktopMedia } from "./desktop-media.ts"
 import { attachSettings } from "./settings.ts"
+import { attachExternalLinks } from "./external-links.ts"
 import { getMainLocale } from "./i18n.ts"
 import type { BackgroundLifecycle } from "./lifecycle.ts"
 import { buildResourcePath } from "./paths.ts"
@@ -66,7 +67,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
 
   // The renderer is a single hash-routed document; it never opens or navigates
   // to other pages itself.
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
+  attachExternalLinks(window.webContents)
   window.webContents.on("will-navigate", (event) => event.preventDefault())
   window.webContents.on("render-process-gone", (_event, details) => {
     console.error("deskfleet renderer process exited", details)
