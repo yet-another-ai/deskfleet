@@ -80,6 +80,9 @@ pub async fn supported() -> Result<bool> {
 }
 
 /// Requests combined screen and input permission, restoring a saved grant when possible.
+///
+/// A live capture session whose remote input is disconnected connects again.
+/// Display listing uses [`restore_access`] and does not open another input connection.
 pub async fn request_access(directory: PathBuf) -> Result<PermissionSnapshot> {
     runtime::request(Some(directory)).await
 }
@@ -99,6 +102,14 @@ pub fn check_access() -> PermissionSnapshot {
 
 pub async fn shutdown() -> Result<()> {
     runtime::shutdown().await
+}
+
+/// Waits until the observed grant changes.
+///
+/// `seen` is the generation returned by the previous call, or zero to wait for
+/// the next change. Resolves with `None` after [`shutdown`].
+pub async fn wait_for_access_change(seen: u32) -> Option<u32> {
+    runtime::wait_for_access_change(seen).await
 }
 
 pub fn sources() -> Result<Vec<Source>> {

@@ -8,9 +8,10 @@ OS/architecture, `createPeer()` for WebRTC, and explicit
 `desktopSupported()` probes runtime support without a consent dialog. On Linux,
 the daemon calls `requestWaylandDesktopAccess(directory)` at startup to establish
 one shared portal grant, `checkWaylandDesktopAccess()` to read current consent,
-and `closeWaylandDesktopAccess()` at shutdown. Viewer peer cleanup does not own
-that shared session. The directory stores only the local opaque restore token;
-it is never sent to viewers.
+and `closeWaylandDesktopAccess()` at shutdown. `waitWaylandDesktopAccessChange()`
+wakes that daemon when the grant changes, including when remote input disconnects.
+Viewer peer cleanup does not own that shared session. The directory stores only
+the local opaque restore token; it is never sent to viewers.
 
 `createTerminal({ cwd, cols, rows })` starts the OS user's default shell in a
 native PTY. Terminals provide async byte `write()`, `resize()`, `nextEvent()`, and

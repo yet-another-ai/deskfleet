@@ -147,7 +147,9 @@ the negotiated frame's pixel dimensions. EIS `mapping_id` associates a monitor
 with its absolute-pointer region, including scaling and monitor offsets.
 Without mapping IDs, pointer input is accepted only for one unambiguous absolute
 region. Monitors that cannot be mapped stay capturable; a missing or failed
-input connection does not cancel the portal grant.
+input connection does not cancel the portal grant. An explicit access request
+retries that input connection while screen capture remains granted and remote
+input is disconnected. Display listing reuses the session without retrying it.
 
 `deskfleet-linux-media` loads GStreamer inside the native process on demand.
 PipeWire samples are copied into Rust-owned BGRA frames before returning buffers
@@ -163,7 +165,9 @@ controllers. The existing exclusive-controller rule, Team grants, input
 DataChannel, normalized coordinates, physical key codes, and held-key cleanup
 apply unchanged. Device removal releases that device's held state. An EIS
 disconnect or stream error releases remote input and leaves the ScreenCast
-session running for current viewers. An input controller never closes another
+session running for current viewers. The daemon publishes that change to
+connected clients, so accessibility follows the live input connection while
+screen capture stays granted. An input controller never closes another
 viewer's portal session. Portal closure still ends capture and input together.
 
 The authenticated `hello` response includes `fullDiskAccessPermission`,

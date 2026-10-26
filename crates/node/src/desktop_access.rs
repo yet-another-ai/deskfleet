@@ -42,6 +42,12 @@ pub async fn check_wayland_desktop_access() -> WaylandDesktopAccess {
     desktop_access::check_wayland().into()
 }
 
+/// Wait until the shared Wayland grant changes. `None` means the runtime stopped.
+#[napi]
+pub async fn wait_wayland_desktop_access_change(seen: u32) -> Option<u32> {
+    desktop_access::wait_wayland(seen).await
+}
+
 /// Cancel pending authorization and close shared Wayland resources on daemon shutdown.
 #[napi]
 pub async fn close_wayland_desktop_access() -> Result<()> {

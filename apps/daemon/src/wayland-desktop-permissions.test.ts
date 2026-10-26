@@ -83,6 +83,43 @@ test("closing cancels a pending Portal dialog and prevents another request", asy
   assert.equal(closes, 1)
 })
 
+test("access changes refresh permissions until the portal closes", async () => {
+  let notify = () => {}
+  let updates = 0
+  let access = { screenCapture: true, control: true }
+  const native = new WaylandDesktopPermissions("/daemon", {
+    request: async () => access,
+    check: async () => access,
+    close: async () => {},
+    subscribe: listener => {
+      notify = listener
+      return () => { notify = () => {} }
+    },
+  })
+  const permissions = new DesktopPermissions()
+  const changed = deferred<void>()
+  permissions.onChange(state => {
+    if (state.screenCapturePermission.status === "granted" && state.accessibilityPermission.status === "denied") changed.resolve()
+  })
+  permissions.initialize(native.requests, native.checks, "guided", {
+    linked: [["screenCapture", "accessibility"]],
+  })
+  native.onAccessChanged(() => { updates++; void permissions.refresh() })
+  assert.equal((await permissions.refresh()).accessibilityPermission.status, "granted")
+  access = { screenCapture: true, control: false }
+  notify()
+  await changed.promise
+  assert.equal(permissions.state.screenCapturePermission.status, "granted")
+  assert.equal(permissions.state.accessibilityPermission.status, "denied")
+  const published = updates
+  await native.close()
+  access = { screenCapture: false, control: false }
+  notify()
+  await Promise.resolve()
+  assert.equal(updates, published)
+  assert.equal(permissions.state.screenCapturePermission.status, "granted")
+})
+
 test("closing before the request microtask runs cannot reopen the Portal", async () => {
   let requests = 0
   const native = new WaylandDesktopPermissions("/daemon", {

@@ -246,6 +246,48 @@ test("hosted Wayland startup authorizes screen and input once while IPC remains 
   assert.equal(closes, 1)
 })
 
+test("connected clients learn when Wayland input ends while capture remains", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-daemon-wayland-input-"))
+  const consent = deferred<{ screenCapture: boolean; control: boolean }>()
+  const requested: string[] = []
+  let checks = 0
+  let notify = () => {}
+  let access = { screenCapture: true, control: true }
+  const daemon = await startDaemon(0, {
+    permissionPlatform: "linux", controlDirectory: directory,
+    allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name),
+    waylandDesktopAccess: {
+      request: path => { requested.push(path); return consent.promise },
+      check: async () => { checks++; return access },
+      close: async () => {},
+      subscribe: listener => {
+        notify = listener
+        return () => { notify = () => {} }
+      },
+    },
+  })
+  context.after(async () => { consent.resolve({ screenCapture: false, control: false }); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
+  const granted = deferred<void>()
+  const lost = deferred<void>()
+  const client = await DaemonClient.connect(event => {
+    if (event.kind !== "desktopPermissionsChanged") return
+    const { screenCapturePermission, accessibilityPermission } = event.permissions
+    if (screenCapturePermission.status === "granted" && accessibilityPermission.status === "granted") granted.resolve()
+    if (screenCapturePermission.status === "granted" && accessibilityPermission.status === "denied") lost.resolve()
+  }, () => {}, directory)
+  context.after(() => client.close())
+  consent.resolve({ screenCapture: true, control: true })
+  await granted.promise
+  assert.equal((await client.call("permissionsRefresh", {})).accessibilityPermission.status, "granted")
+  assert.deepEqual(requested, [directory])
+  const checksAfterGrant = checks
+  access = { screenCapture: true, control: false }
+  notify()
+  await lost.promise
+  assert.equal(checks, checksAfterGrant + 1)
+  assert.deepEqual(requested, [directory])
+})
+
 test("Wayland shutdown cancels the owning Portal request before awaiting peer cleanup", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-wayland-close-"))
   const consent = deferred<{ screenCapture: boolean; control: boolean }>()

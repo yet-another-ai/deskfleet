@@ -112,6 +112,11 @@ export function checkWaylandDesktopAccess(): Promise<WaylandDesktopAccess> {
   return (bindings ??= loadBindings()).checkWaylandDesktopAccess()
 }
 
+/** Wait until the shared Portal grant changes, or until desktop shutdown. */
+export function waitWaylandDesktopAccessChange(seen: number): Promise<number | null> {
+  return (bindings ??= loadBindings()).waitWaylandDesktopAccessChange(seen)
+}
+
 /** Cancel pending Portal requests and close the daemon's shared desktop session. */
 export function closeWaylandDesktopAccess(): Promise<void> {
   return (bindings ??= loadBindings()).closeWaylandDesktopAccess()

@@ -225,6 +225,9 @@ export interface TerminalEvent {
 
 export type VideoCodec = 'h264' | 'h265' | 'av1'
 
+/** Wait until the shared Wayland grant changes. `None` means the runtime stopped. */
+export declare function waitWaylandDesktopAccessChange(seen: number): Promise<number | null>
+
 export interface WaylandDesktopAccess {
   screenCapture: boolean
   control: boolean

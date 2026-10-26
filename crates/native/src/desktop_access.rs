@@ -69,6 +69,19 @@ pub fn check_wayland() -> DesktopAccess {
     }
 }
 
+/// Wait until the shared Wayland grant changes. `None` means the runtime stopped.
+pub async fn wait_wayland(seen: u32) -> Option<u32> {
+    #[cfg(target_os = "linux")]
+    {
+        deskfleet_wayland::wait_for_access_change(seen).await
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = seen;
+        std::future::pending().await
+    }
+}
+
 /// Cancel pending authorization and release the daemon's live portal resources.
 pub async fn close_wayland() -> Result<(), String> {
     #[cfg(target_os = "linux")]

@@ -9,6 +9,8 @@ export interface WaylandDesktopPermissionApi {
   request(directory: string): Promise<WaylandDesktopAccess>
   check(): Promise<WaylandDesktopAccess>
   close(): Promise<void>
+  /** Fires when the shared grant changes without a new request. */
+  subscribe?(listener: () => void): () => void
 }
 
 /** One Portal session supplies both permission fields without duplicate dialogs. */
@@ -19,6 +21,7 @@ export class WaylandDesktopPermissions {
   #request?: Promise<WaylandDesktopAccess>
   #check?: Promise<WaylandDesktopAccess>
   #closing?: Promise<void>
+  #stopWatch?: () => void
 
   constructor(directory: string, native: WaylandDesktopPermissionApi) {
     this.#native = native
@@ -47,8 +50,18 @@ export class WaylandDesktopPermissions {
     }
   }
 
+  /** Refreshes daemon permissions when capture stays up and remote input drops. */
+  onAccessChanged(listener: () => void): void {
+    this.#stopWatch?.()
+    this.#stopWatch = this.#native.subscribe?.(listener)
+  }
+
   /** Cancels a pending dialog without awaiting its response. */
   close(): Promise<void> {
-    return this.#closing ??= this.#native.close()
+    return this.#closing ??= (async () => {
+      this.#stopWatch?.()
+      this.#stopWatch = undefined
+      await this.#native.close()
+    })()
   }
 }

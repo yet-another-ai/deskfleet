@@ -233,7 +233,10 @@ pub async fn authorize(
     })
 }
 
-async fn connect_input(connection: &Connection, session: &OwnedObjectPath) -> Option<Eis> {
+pub(crate) async fn connect_input(
+    connection: &Connection,
+    session: &OwnedObjectPath,
+) -> Option<Eis> {
     let connected = async {
         let remote = desktop_proxy(connection, REMOTE).await?;
         let fd: zbus::zvariant::OwnedFd = remote

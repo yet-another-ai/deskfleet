@@ -15,7 +15,7 @@ pub use catalog::{
 };
 pub use desktop_access::{
     WaylandDesktopAccess, check_wayland_desktop_access, close_wayland_desktop_access,
-    desktop_supported, request_wayland_desktop_access,
+    desktop_supported, request_wayland_desktop_access, wait_wayland_desktop_access_change,
 };
 pub use media::{DesktopConfig, DisplayInfo, capture_displays, supported_video_codecs};
 pub use permissions::{

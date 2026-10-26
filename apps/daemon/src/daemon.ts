@@ -1,7 +1,7 @@
 import { once } from "node:events"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { checkAccessibilityAccess, checkFullDiskAccess, checkScreenCaptureAccess, checkWaylandDesktopAccess, closeWaylandDesktopAccess, nativeInfo, requestAccessibilityAccess, requestFullDiskAccess, requestScreenCaptureAccess, requestWaylandDesktopAccess } from "@deskfleet/native"
+import { checkAccessibilityAccess, checkFullDiskAccess, checkScreenCaptureAccess, checkWaylandDesktopAccess, closeWaylandDesktopAccess, nativeInfo, requestAccessibilityAccess, requestFullDiskAccess, requestScreenCaptureAccess, requestWaylandDesktopAccess, waitWaylandDesktopAccessChange } from "@deskfleet/native"
 import { PeerSessions } from "./peers.ts"
 import { startControlServer } from "./control-server.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
@@ -35,6 +35,7 @@ export async function startDaemon(port = 0, options: {
   const wayland = (options.permissionPlatform ?? process.platform) === "linux"
     ? new WaylandDesktopPermissions(controlDirectory, options.waylandDesktopAccess ?? {
       request: requestWaylandDesktopAccess, check: checkWaylandDesktopAccess, close: closeWaylandDesktopAccess,
+      subscribe: watchWaylandDesktopAccess,
     }) : undefined
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/healthz") {
@@ -107,6 +108,7 @@ export async function startDaemon(port = 0, options: {
   }, wayland ? "automatic" : options.permissionMode, wayland ? {
     linked: [["screenCapture", "accessibility"]], refreshOnRead: true,
   } : {})
+  wayland?.onAccessChanged(() => { void permissions.refresh() })
   return {
     address: `http://127.0.0.1:${address.port}`,
     peers,
@@ -116,4 +118,22 @@ export async function startDaemon(port = 0, options: {
     closed,
     close,
   }
+}
+
+function watchWaylandDesktopAccess(listener: () => void): () => void {
+  let stopped = false
+  let seen = 0
+  const run = async () => {
+    while (!stopped) {
+      const generation = await waitWaylandDesktopAccessChange(seen)
+      if (stopped || generation === null) return
+      seen = generation
+      listener()
+    }
+  }
+  void run().catch(error => {
+    if (stopped) return
+    console.error("Wayland desktop permission watch failed:", error instanceof Error ? error.message : error)
+  })
+  return () => { stopped = true }
 }

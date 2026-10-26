@@ -3,12 +3,12 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex, OnceLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
 };
 
 use futures_util::StreamExt;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Notify, mpsc, oneshot};
 
 use crate::{
     Error, PermissionSnapshot, PermissionStatus, Result, Source,
@@ -39,6 +39,9 @@ struct Handle {
 }
 
 static RUNTIME: OnceLock<std::result::Result<Handle, String>> = OnceLock::new();
+static ACCESS_GENERATION: AtomicU32 = AtomicU32::new(0);
+static ACCESS_CLOSED: AtomicBool = AtomicBool::new(false);
+static ACCESS_CHANGED: Notify = Notify::const_new();
 
 fn handle() -> Result<&'static Handle> {
     RUNTIME
@@ -97,12 +100,23 @@ pub fn sources() -> Result<Vec<Source>> {
 }
 
 pub async fn shutdown() -> Result<()> {
-    if RUNTIME.get().is_none() {
-        return Ok(());
+    let result = async {
+        if RUNTIME.get().is_none() {
+            return Ok(());
+        }
+        let (reply, response) = oneshot::channel();
+        send(Command::Shutdown(reply))?;
+        response.await.map_err(|_| Error::Stopped)?
     }
-    let (reply, response) = oneshot::channel();
-    send(Command::Shutdown(reply))?;
-    response.await.map_err(|_| Error::Stopped)?
+    .await;
+    // Wake permission watchers even when the snapshot was already cleared.
+    ACCESS_CLOSED.store(true, Ordering::Release);
+    ACCESS_CHANGED.notify_waiters();
+    result
+}
+
+pub async fn wait_for_access_change(seen: u32) -> Option<u32> {
+    wait_for_generation(seen, &ACCESS_GENERATION, &ACCESS_CLOSED, &ACCESS_CHANGED).await
 }
 
 pub fn open_pipewire(id: u32) -> Result<(OwnedFd, Source)> {
@@ -135,7 +149,65 @@ pub fn detach(id: u64) {
 }
 
 fn observe(observed: &Mutex<Observed>, snapshot: PermissionSnapshot, sources: Vec<Source>) {
-    *observed.lock().unwrap_or_else(|error| error.into_inner()) = Observed { snapshot, sources };
+    let changed = {
+        let mut state = observed.lock().unwrap_or_else(|error| error.into_inner());
+        let changed = access_changed(&state, &snapshot, &sources);
+        *state = Observed { snapshot, sources };
+        changed
+    };
+    if changed {
+        publish_generation(&ACCESS_GENERATION, &ACCESS_CHANGED);
+    }
+}
+
+fn access_changed(current: &Observed, snapshot: &PermissionSnapshot, sources: &[Source]) -> bool {
+    current.snapshot != *snapshot || current.sources != sources
+}
+
+fn publish_generation(generation: &AtomicU32, notify: &Notify) {
+    generation.fetch_add(1, Ordering::Release);
+    notify.notify_waiters();
+}
+
+async fn wait_for_generation(
+    seen: u32,
+    generation: &AtomicU32,
+    closed: &AtomicBool,
+    notify: &Notify,
+) -> Option<u32> {
+    loop {
+        let notified = notify.notified();
+        tokio::pin!(notified);
+        if closed.load(Ordering::Acquire) {
+            return None;
+        }
+        let current = generation.load(Ordering::Acquire);
+        if current != seen {
+            return Some(current);
+        }
+        notified.as_mut().enable();
+        if closed.load(Ordering::Acquire) {
+            return None;
+        }
+        let current = generation.load(Ordering::Acquire);
+        if current != seen {
+            return Some(current);
+        }
+        notified.await;
+    }
+}
+
+/// An explicit request retries EIS only while capture is up and input is down.
+fn should_retry_remote_input(
+    explicit_request: bool,
+    input_connected: bool,
+    screen_capture: bool,
+) -> bool {
+    explicit_request && !input_connected && screen_capture
+}
+
+fn apply_remote_input(snapshot: &mut PermissionSnapshot, controllable: bool) {
+    snapshot.control = snapshot.screen_capture && controllable;
 }
 
 /// EIS failure drops remote control and leaves the granted capture sources in place.
@@ -229,7 +301,23 @@ async fn run(
         };
         match command {
             Command::Request(requested_directory, reply) => {
-                if let Some(session) = live.as_ref() {
+                if let Some(session) = live.as_mut() {
+                    // A dropped handshake stays on this session. Retry it only for an
+                    // explicit request so display listing does not wait on EIS.
+                    if should_retry_remote_input(
+                        requested_directory.is_some(),
+                        session.input.is_some(),
+                        session.snapshot.screen_capture,
+                    ) {
+                        let input =
+                            portal::connect_input(&session.connection, &session.session).await;
+                        let controllable = input.as_ref().is_some_and(|input| {
+                            session.sources.iter().any(|source| input.controls(source))
+                        });
+                        apply_remote_input(&mut session.snapshot, controllable);
+                        session.input = input;
+                        observe(&observed, session.snapshot.clone(), session.sources.clone());
+                    }
                     let _ = reply.send(Ok(session.snapshot.clone()));
                     continue;
                 }
@@ -597,6 +685,85 @@ mod tests {
         assert_eq!(retained.sources.len(), 1);
         assert_eq!(retained.sources[0].id, 4);
         assert_eq!(retained.sources[0].node_id, 7);
+    }
+
+    #[test]
+    fn explicit_access_retries_remote_input_only_while_capture_lacks_it() {
+        assert!(should_retry_remote_input(true, false, true));
+        assert!(!should_retry_remote_input(false, false, true));
+        assert!(!should_retry_remote_input(true, true, true));
+        assert!(!should_retry_remote_input(true, false, false));
+    }
+
+    #[test]
+    fn resumed_input_restores_control_only_when_a_source_is_controllable() {
+        let mut snapshot = PermissionSnapshot {
+            screen_capture: true,
+            control: false,
+            status: PermissionStatus::Granted,
+            persistent: true,
+        };
+        apply_remote_input(&mut snapshot, false);
+        assert!(snapshot.screen_capture);
+        assert!(!snapshot.control);
+        assert_eq!(snapshot.status, PermissionStatus::Granted);
+        apply_remote_input(&mut snapshot, true);
+        assert!(snapshot.control);
+        snapshot.screen_capture = false;
+        apply_remote_input(&mut snapshot, true);
+        assert!(!snapshot.control);
+    }
+
+    #[test]
+    fn permission_publication_tracks_input_loss_without_repeating() {
+        let source = Source {
+            id: 4,
+            name: "Display 1".into(),
+            width: 1920,
+            height: 1080,
+            node_id: 7,
+            pipewire_serial: None,
+            mapping_id: None,
+        };
+        let granted = Observed {
+            snapshot: PermissionSnapshot {
+                screen_capture: true,
+                control: true,
+                status: PermissionStatus::Granted,
+                persistent: true,
+            },
+            sources: vec![source],
+        };
+        let lost = keep_capture(granted.snapshot.clone(), granted.sources.clone());
+        assert!(access_changed(&granted, &lost.snapshot, &lost.sources));
+        assert!(!lost.snapshot.control);
+        assert!(lost.snapshot.screen_capture);
+        assert!(!access_changed(&lost, &lost.snapshot, &lost.sources));
+    }
+
+    #[tokio::test]
+    async fn published_access_change_wakes_a_waiter_and_close_ends_the_watch() {
+        let generation = AtomicU32::new(0);
+        let closed = AtomicBool::new(false);
+        let notify = Notify::new();
+        let waiting = wait_for_generation(0, &generation, &closed, &notify);
+        tokio::pin!(waiting);
+        tokio::select! {
+            _ = &mut waiting => panic!("access watch resolved before a change"),
+            _ = tokio::task::yield_now() => {}
+        }
+        publish_generation(&generation, &notify);
+        assert_eq!(waiting.await, Some(1));
+
+        let waiting = wait_for_generation(1, &generation, &closed, &notify);
+        tokio::pin!(waiting);
+        tokio::select! {
+            _ = &mut waiting => panic!("access watch resolved before shutdown"),
+            _ = tokio::task::yield_now() => {}
+        }
+        closed.store(true, Ordering::Release);
+        notify.notify_waiters();
+        assert_eq!(waiting.await, None);
     }
 
     struct DeferredAuthorizer {
