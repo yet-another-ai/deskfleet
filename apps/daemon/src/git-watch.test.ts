@@ -50,7 +50,11 @@ async function repository(root: string): Promise<void> {
 async function fixture(context: TestContext, initialize = true) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-git-watch-")))
   const inspection = new GitInspection()
-  context.after(async () => { inspection.close(); await rm(root, { recursive: true, force: true }) })
+  context.after(async () => {
+    inspection.close()
+    // Windows can retain directory handles briefly while an in-flight Git scan exits.
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  })
   if (initialize) await repository(root)
   let events = 0
   const errors: string[] = []
