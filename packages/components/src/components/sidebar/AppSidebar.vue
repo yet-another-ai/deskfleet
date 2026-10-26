@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { client as platformClient } from "@deskfleet/client/platform"
 
-import { CalendarClock, Plus, SquarePen } from "@lucide/vue"
+import { Plus } from "@lucide/vue"
 import { storeToRefs } from "pinia"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
@@ -11,7 +11,7 @@ import IconButton from "../common/IconButton.vue"
 import AccountNotices from "./AccountNotices.vue"
 import MachineSection from "./MachineSection.vue"
 import SidebarFooter from "./SidebarFooter.vue"
-import SidebarLink from "./SidebarLink.vue"
+import SidebarNavigation from "./SidebarNavigation.vue"
 import TeamMachineRow from "./TeamMachineRow.vue"
 import TeamSwitcher from "./TeamSwitcher.vue"
 
@@ -41,10 +41,7 @@ function refresh(): void {
 
     <TeamSwitcher />
 
-    <nav :aria-label="t('nav.label')" class="flex shrink-0 flex-col gap-0.5 px-2">
-      <SidebarLink :to="{ name: 'new-session' }" :icon="SquarePen" :label="t('nav.newSession')" />
-      <SidebarLink :to="{ name: 'schedules' }" :icon="CalendarClock" :label="t('schedules.title')" section />
-    </nav>
+    <SidebarNavigation />
 
     <div class="mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
       <div class="mb-2 flex items-center justify-between gap-2 px-2.5 text-xs text-ui-text-faint">

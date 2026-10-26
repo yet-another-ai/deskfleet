@@ -216,7 +216,9 @@ test("the internal main worktree has no directly accessible page", async () => {
   const wrapper = await mountApp(`/worktrees/${mainWorktreeId}`)
   expect(wrapper.get("main").text()).toContain("This worktree does not exist.")
   expect(wrapper.get("main").text()).not.toContain("/code/web")
-  expect(wrapper.find(`a[href="#/worktrees/${mainWorktreeId}"]`).exists()).toBe(false)
+  // The current section links to the requested URL; no resource advertises this worktree.
+  const links = wrapper.findAll(`a[href="#/worktrees/${mainWorktreeId}"]`)
+  expect(links.map(link => link.attributes("aria-label"))).toEqual(["Conversations"])
 })
 
 test("the localized composer and local footer do not expose an internal main worktree", async () => {

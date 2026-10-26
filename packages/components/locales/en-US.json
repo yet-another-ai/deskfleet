@@ -132,6 +132,7 @@
   },
   "nav": {
     "label": "Navigation",
+    "conversations": "Conversations",
     "newSession": "New session",
     "settings": "Settings",
     "team": "Switch team"
