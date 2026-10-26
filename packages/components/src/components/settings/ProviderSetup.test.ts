@@ -174,6 +174,29 @@ test("disabling for a connection test keeps the discovered executable", async ()
   expect(view.emitted("resolved")?.at(-1)).toEqual([found.binaryPath])
 })
 
+test("disabling for a connection test cancels a pending probe instead of leaving the spinner", async () => {
+  vi.useFakeTimers()
+  const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>().mockResolvedValue(found)
+  const { view } = render(probe)
+  await flushPromises()
+  const calls = probe.mock.calls.length
+  await view.setProps({ provider: { ...provider, env: { PATH: "/tools" } } })
+  expect(view.get('[role="status"]').text()).toBe("Checking build-machine…")
+  await view.setProps({ disabled: true })
+  await vi.advanceTimersByTimeAsync(300)
+  await flushPromises()
+  expect(probe).toHaveBeenCalledTimes(calls)
+  expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
+  expect(view.emitted("resolved")?.at(-1)).toEqual([found.binaryPath])
+  await view.setProps({ disabled: false })
+  await vi.advanceTimersByTimeAsync(300)
+  await flushPromises()
+  expect(probe).toHaveBeenCalledTimes(calls)
+  expect(view.get("[data-provider-probe]").attributes("aria-disabled")).toBeUndefined()
+  expect(view.get("[data-provider-login]").attributes("disabled")).toBeUndefined()
+  expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
+})
+
 test("a temporarily missing provider keeps the probe and rediscovers when it returns", async () => {
   vi.useFakeTimers()
   const next = { ...found, binaryPath: "/tools/codex-env" }

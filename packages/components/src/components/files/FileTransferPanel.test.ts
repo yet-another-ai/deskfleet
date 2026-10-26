@@ -105,7 +105,7 @@ test("an account change clears folder listings, paths, selections, and grants", 
   let event!: (value: CentralEvent) => void
   const unsubscribeAccount = vi.fn()
   const original = client.central
-  client.central = { onEvent: listener => { event = listener; return unsubscribeAccount } } as CentralApi
+  client.central = { onEvent: (listener: (value: CentralEvent) => void) => { event = listener; return unsubscribeAccount } } as unknown as CentralApi
   try {
     const { view, api, unsubscribe } = setup()
     await flushPromises()

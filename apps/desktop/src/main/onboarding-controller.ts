@@ -49,7 +49,7 @@ export class OnboardingController {
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
         if (await this.#options.established?.()) {
-          try { await this.#save("complete") }
+          try { this.#state = await this.#save("complete") }
           catch { this.#state = { step: "complete" } }
         } else this.#state = { step: "server" }
       }

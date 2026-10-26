@@ -244,19 +244,20 @@ test("testing the connection keeps a discovered executable", async () => {
   let finish!: (result: { agentName: string }) => void
   const { view, save, test: testConnection } = render(undefined, undefined, vi.fn(() => new Promise(resolve => { finish = resolve })))
   const found = { status: "found" as const, binaryPath: "/tools/cursor-agent", version: "1.0", auth: "unauthenticated" as const, installable: true, loginAvailable: true }
-  await view.setProps({ probe: vi.fn().mockResolvedValue(found) })
+  const probe = vi.fn().mockResolvedValue(found)
+  await view.setProps({ probe })
   await pick(view, "cursor")
   await flushPromises()
   expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe(found.binaryPath)
-  const probeCalls = vi.mocked(view.props("probe")).mock.calls.length
+  const probeCalls = probe.mock.calls.length
   await button(view, "Test connection").trigger("click")
   expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe(found.binaryPath)
   expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
-  expect(vi.mocked(view.props("probe"))).toHaveBeenCalledTimes(probeCalls)
+  expect(probe).toHaveBeenCalledTimes(probeCalls)
   finish({ agentName: "Cursor" })
   await flushPromises()
   expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe(found.binaryPath)
-  expect(vi.mocked(view.props("probe"))).toHaveBeenCalledTimes(probeCalls)
+  expect(probe).toHaveBeenCalledTimes(probeCalls)
   await view.get("form").trigger("submit")
   expect(testConnection).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ binaryPath: found.binaryPath }))
   expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ template: "cursor", binaryPath: found.binaryPath, env: {} }))

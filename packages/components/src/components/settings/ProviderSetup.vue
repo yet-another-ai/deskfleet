@@ -68,7 +68,11 @@ watchImmediate(busy, value => emit("busy", value), { flush: "sync" })
 async function probe(installed = false): Promise<void> {
   cancelProbe()
   const provider = props.provider
-  if (!provider || props.disabled || disposed) return
+  // A disabled or missing provider never starts the request, so a debounced call must not leave the spinner up.
+  if (!provider || props.disabled || disposed) {
+    probing.value = false
+    return
+  }
   const request = ++revision
   probing.value = true
   result.value = null
@@ -98,7 +102,12 @@ watchImmediate(() => [props.provider?.template, props.provider?.binaryPath, JSON
     return
   }
   // Test connection disables this card without changing the launch settings it is checking.
-  if (previous && value[0] === previous[0] && value[1] === previous[1] && value[2] === previous[2] && value[4] === previous[4] && value[3] !== previous[3]) return
+  // Cancel the debounce too: the timer would otherwise call probe while disabled and leave probing set.
+  if (previous && value[0] === previous[0] && value[1] === previous[1] && value[2] === previous[2] && value[4] === previous[4] && value[3] !== previous[3]) {
+    cancelProbe()
+    probing.value = false
+    return
+  }
   revision++
   cancelProbe()
   const resumed = resumeProbe
