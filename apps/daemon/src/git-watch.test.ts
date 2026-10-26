@@ -50,11 +50,19 @@ async function repository(root: string): Promise<void> {
 async function fixture(context: TestContext, initialize = true) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-git-watch-")))
   const inspection = new GitInspection()
-  context.after(async () => { inspection.close(); await rm(root, { recursive: true, force: true }) })
+  const releases: Array<() => void> = []
+  context.after(async () => {
+    for (const release of releases.splice(0)) release()
+    inspection.close()
+    // Windows keeps fs.watch handles briefly after close (especially submodule
+    // trees). Retry the same way smoke scripts clear temp directories.
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  })
   if (initialize) await repository(root)
   let events = 0
   const errors: string[] = []
   const stop = await inspection.watch([root], error => { events++; if (error) errors.push(error) })
+  releases.push(stop)
   async function changed(action: () => Promise<unknown>) {
     const before = events
     await action()
@@ -63,7 +71,12 @@ async function fixture(context: TestContext, initialize = true) {
     assert.ok(events > before, "OS notification did not arrive")
     assert.deepEqual(errors, [])
   }
-  return { root, inspection, stop, changed, errors, events: () => events }
+  async function watch(paths: string[], listener: (error?: string) => void) {
+    const release = await inspection.watch(paths, listener)
+    releases.push(release)
+    return release
+  }
+  return { root, inspection, stop, watch, changed, errors, events: () => events }
 }
 
 test("OS events refresh tracked edits, atomic saves, new directories, staging and deletion", async context => {
@@ -99,7 +112,7 @@ test("watched checkouts share cached and concurrent reads until invalidated, for
   const forced = await f.inspection.status("1", [f.root], true)
   assert.notEqual(forced.repositories[0], first.repositories[0])
   let otherEvents = 0
-  const stopOther = await f.inspection.watch([f.root], () => { otherEvents++ })
+  const stopOther = await f.watch([f.root], () => { otherEvents++ })
   f.stop()
   const before = f.events()
   await writeFile(join(f.root, "source.txt"), "still observed\n")
@@ -138,7 +151,7 @@ test("ignored events preserve the cached snapshot and ignored trees have no subs
   await writeFile(join(f.root, ".gitignore"), "generated/\nmixed/\n*.log\n")
   let events = 0
   const errors: string[] = []
-  await f.inspection.watch([f.root], error => { events++; if (error) errors.push(error) })
+  await f.watch([f.root], error => { events++; if (error) errors.push(error) })
   const before = await f.inspection.status("1", [f.root])
   assert.equal(callbacks.has(join(f.root, "generated")), false)
   assert.equal(callbacks.has(join(f.root, "generated", "deep")), false)
@@ -179,7 +192,7 @@ test("OS events refresh tracked ignored paths and directories exposed by changed
   await writeFile(join(f.root, ".gitignore"), "generated/\nmixed/\n*.log\n")
   await writeFile(join(f.root, "generated", "deep", "build.txt"), "ignored\n")
   const errors: string[] = []
-  await f.inspection.watch([f.root], error => { if (error) errors.push(error) })
+  await f.watch([f.root], error => { if (error) errors.push(error) })
   const changes = async () => (await f.inspection.status("1", [f.root])).repositories[0]!.changes
   assert.equal((await changes()).some(change => change.path === "generated/deep/build.txt"), false)
   await writeFile(join(f.root, "mixed", "tracked.txt"), "tracked change despite ignore\n")
@@ -200,7 +213,7 @@ test("linked worktrees observe their separate index and HEAD plus common refs", 
   const worktree = join(f.root, "linked")
   await git(f.root, "worktree", "add", "--detach", worktree, "HEAD")
   const errors: string[] = []
-  await f.inspection.watch([worktree], error => { if (error) errors.push(error) })
+  await f.watch([worktree], error => { if (error) errors.push(error) })
   // Git may print forward-slash absolute paths on Windows; fs.watch keys use
   // the platform form returned by realpath, matching GitWatch's subscriptions.
   const [gitDir, commonDir] = await Promise.all(
@@ -286,8 +299,8 @@ test("watcher failures stay visible through surviving events and another viewer 
   await repository(other)
   const first: (string | undefined)[] = []
   const second: (string | undefined)[] = []
-  const stop = await f.inspection.watch([f.root, other], error => { first.push(error) })
-  await f.inspection.watch([f.root, other], error => { second.push(error) })
+  const stop = await f.watch([f.root, other], error => { first.push(error) })
+  await f.watch([f.root, other], error => { second.push(error) })
   const failed = watchers.get(f.root)!
   failed.emit("error", new Error("injected lost subtree"))
   await writeFile(join(f.root, "nested", "tracked.txt"), "surviving watcher\n")
@@ -298,7 +311,7 @@ test("watcher failures stay visible through surviving events and another viewer 
   await delay(100)
   assert.match(second.at(-1)!, /injected lost subtree/u)
   stop()
-  await f.inspection.watch([f.root, other], error => { first.push(error) })
+  await f.watch([f.root, other], error => { first.push(error) })
   assert.notEqual(watchers.get(f.root), failed)
   assert.equal(second.at(-1), undefined)
   const before = second.length
