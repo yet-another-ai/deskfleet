@@ -127,6 +127,13 @@ export class AuthorizedPeers {
           onEvent: listener => this.#agents.onEvent(event => {
             try { this.#live(params.peerId, "agent:read"); listener(event) } catch { /* expiry closes subscriptions */ }
           }),
+          watchGit: async (sessionId, _actor, listener) => {
+            this.#live(params.peerId, "git:read")
+            if (!this.#agents.watchGit) throw new Error("Git observation is unavailable")
+            return this.#agents.watchGit(sessionId, owned.authorization.actor, error => {
+              try { this.#live(params.peerId, "git:read"); listener(error) } catch { /* expiry closes subscriptions */ }
+            })
+          },
           handle: (method, value) => {
             const scope = AGENT_READ.has(method) ? "agent:read" : AGENT_EXECUTE.has(method) ? "agent:execute" : method.startsWith("_deskfleet/git/") ? "git:read" : undefined
             if (!scope) return Promise.reject(new Error("Manage Sessions through the backend API"))

@@ -189,12 +189,13 @@ test("refresh failure preserves directories and disables workspace mutations unt
 
 test("a session links to its own read-only worktree", async () => {
   const pinia = createPinia()
+  vi.spyOn(useAgentSessionsStore(pinia), "watchGit").mockResolvedValue(() => {})
   const status = vi.spyOn(useAgentSessionsStore(pinia), "gitStatus").mockResolvedValue({
     sessionId, directories: [{ path: "/worktrees/api/session", repositoryId: "checkout" }],
     repositories: [{ id: "checkout", root: "/worktrees/api/session", branch: "session-branch", head: "abc123", changes: [] }],
   })
   const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
-  expect(status).toHaveBeenCalledWith(sessionId)
+  expect(status).toHaveBeenCalledWith(sessionId, false)
   expect(panel(wrapper).text()).toContain("session-branch")
   expect(wrapper.get("main header").text()).toContain(`Session ${sessionId}`)
   const worktreeLink = wrapper.get(`main a[href="#/worktrees/${sessionWorktreeId}"]`)
@@ -312,6 +313,7 @@ test("sidebar and Changes panel controls retain their layout behavior and ignore
 
 test("repeated navigation and browser history retain Changes without reviving Details", async () => {
   const pinia = createPinia()
+  vi.spyOn(useAgentSessionsStore(pinia), "watchGit").mockResolvedValue(() => {})
   const status = vi.spyOn(useAgentSessionsStore(pinia), "gitStatus").mockResolvedValue({
     sessionId, directories: [{ path: "/worktrees/api/session", repositoryId: "checkout" }],
     repositories: [{ id: "checkout", root: "/worktrees/api/session", branch: "session-branch", head: "abc123", changes: [] }],
@@ -333,7 +335,7 @@ test("repeated navigation and browser history retain Changes without reviving De
     await link(wrapper, "storefront").trigger("click")
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
   }
-  expect(status).toHaveBeenCalledWith(sessionId)
+  expect(status).toHaveBeenCalledWith(sessionId, false)
   expect(wrapper.find('aside[aria-label="Details"]').exists()).toBe(false)
   expect(panel(wrapper).find('[role="tab"]').exists()).toBe(false)
 })

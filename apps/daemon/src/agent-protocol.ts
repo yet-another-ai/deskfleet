@@ -169,8 +169,11 @@ export interface AgentMethods {
   "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider: string; context: AgentSessionContext } & AgentConfigurationSelection; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
-  "_deskfleet/git/status": { params: { sessionId: string }; result: GitStatusSnapshot }
+  "_deskfleet/git/status": { params: { sessionId: string; force?: boolean }; result: GitStatusSnapshot }
   "_deskfleet/git/diff": { params: GitDiffRequest; result: GitFileDiff }
+  /** Viewer-owned, transient subscriptions; never written to the Session journal. */
+  "_deskfleet/git/subscribe": { params: { sessionId: string; subscriptionId: string }; result: null }
+  "_deskfleet/git/unsubscribe": { params: { subscriptionId: string }; result: null }
   "_deskfleet/input/submit": { params: AgentMutation & { content: ContentBlock[]; delivery: "backlog" | "steer"; turnId?: string }; result: AgentReceipt }
   "_deskfleet/input/steer": { params: AgentMutation & { inputId: string; turnId: string }; result: AgentReceipt }
   "_deskfleet/input/withdraw": { params: AgentMutation & { inputId: string }; result: AgentReceipt }

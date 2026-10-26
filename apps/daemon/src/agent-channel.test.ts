@@ -135,6 +135,74 @@ test("AgentChannel forwards Git reads through the authenticated viewer without r
   assert.deepEqual(h.failures, [])
 })
 
+test("Git subscriptions are transient, viewer-owned, and released independently", async t => {
+  const listeners = new Set<(error?: string) => void>()
+  const identities: AgentActor[] = []
+  const sessions = Object.assign(new Sessions(), {
+    async watchGit(sessionId: string, identity: AgentActor, listener: (error?: string) => void) {
+      assert.equal(sessionId, "1")
+      identities.push(identity)
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+  })
+  const first = attach(sessions), second = attach(sessions, { ...actor, deviceId: "second" })
+  t.after(() => { first.channel.close(); second.channel.close() })
+  await first.initialize(); await second.initialize()
+  first.request("watch", "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "first" })
+  second.request("watch", "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "second" })
+  await first.waitFor(message => message.id === "watch"); await second.waitFor(message => message.id === "watch")
+  assert.equal(listeners.size, 2)
+  assert.deepEqual(identities.map(value => value.deviceId), ["first", "second"])
+  for (const listener of listeners) listener()
+  assert.deepEqual((await first.waitFor(message => message.method === "_deskfleet/git/changed")).params, { sessionId: "1", subscriptionId: "first" })
+  assert.deepEqual((await second.waitFor(message => message.method === "_deskfleet/git/changed")).params, { sessionId: "1", subscriptionId: "second" })
+  assert.deepEqual(sessions.calls, [], "Git observation must not enter durable Session commands")
+  first.request("unwatch", "_deskfleet/git/unsubscribe", { subscriptionId: "first" })
+  await first.waitFor(message => message.id === "unwatch")
+  assert.equal(listeners.size, 1)
+  second.channel.close()
+  assert.equal(listeners.size, 0)
+})
+
+for (const cancellation of ["unsubscribe", "disconnect"] as const) {
+  test(`Git watcher attachment cleans up after a pending ${cancellation}`, async t => {
+    const pending = deferred<() => void>()
+    let stopped = 0
+    let changed!: (error?: string) => void
+    const sessions = Object.assign(new Sessions(), {
+      watchGit: (_sessionId: string, _actor: AgentActor, listener: (error?: string) => void) => { changed = listener; return pending.promise },
+    })
+    const h = attach(sessions)
+    t.after(() => h.channel.close())
+    await h.initialize()
+    h.request("watch", "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "pending" })
+    if (cancellation === "disconnect") h.channel.close()
+    else {
+      h.request("unwatch", "_deskfleet/git/unsubscribe", { subscriptionId: "pending" })
+      await h.waitFor(message => message.id === "unwatch")
+    }
+    pending.resolve(() => { stopped++ })
+    await delay(0)
+    changed("late change")
+    assert.equal(stopped, 1)
+    assert.equal(h.messages.filter(message => message.method === "_deskfleet/git/changed").length, 0)
+  })
+}
+
+test("failed Git watcher setup can be retried without retaining its token", async t => {
+  const sessions = Object.assign(new Sessions(), {
+    watchGit: async () => { throw new Error("Session unavailable") },
+  })
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  for (const requestId of ["first", "retry"]) {
+    h.request(requestId, "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "same" })
+    assert.equal((await h.waitFor(message => message.id === requestId)).error?.message, "Session unavailable")
+  }
+})
+
 test("AgentChannel shares user questions through snapshots and events and authenticates answers", async t => {
   const sessions = new Sessions()
   const first = attach(sessions)

@@ -180,6 +180,62 @@ test("Git reads initialize the shared connection without creating mutation recei
   expect(store.drafts["30"]).toBe("Keep my draft")
 })
 
+test("Git subscriptions route transient notifications by token and release independently", async () => {
+  const store = useAgentSessionsStore()
+  const first = vi.fn()
+  const second = vi.fn()
+  mock.state("connected")
+  const normal = mock.call.getMockImplementation()!
+  mock.call.mockImplementation(async (method: string, params: { sessionId: string; subscriptionId: string }) => {
+    if (method === "_deskfleet/git/subscribe") mock.notification({ method: "_deskfleet/git/changed", params })
+    return normal(method, params)
+  })
+  const stopFirst = await store.watchGit("30", first)
+  const stopSecond = await store.watchGit("30", second)
+  const tokens = mock.call.mock.calls.filter(([method]) => method === "_deskfleet/git/subscribe").map(([, params]) => params.subscriptionId)
+  expect(tokens[0]).not.toBe(tokens[1])
+  expect(first).toHaveBeenCalledOnce()
+  expect(second).toHaveBeenCalledOnce()
+  mock.notification({ method: "_deskfleet/git/changed", params: { sessionId: "31", subscriptionId: tokens[0] } })
+  expect(first).toHaveBeenCalledOnce()
+  stopFirst()
+  stopFirst()
+  mock.notification({ method: "_deskfleet/git/changed", params: { sessionId: "30", subscriptionId: tokens[0] } })
+  mock.notification({ method: "_deskfleet/git/changed", params: { sessionId: "30", subscriptionId: tokens[1], error: "Watcher stopped" } })
+  expect(first).toHaveBeenCalledOnce()
+  expect(second).toHaveBeenLastCalledWith("Watcher stopped")
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/git/unsubscribe")).toEqual([["_deskfleet/git/unsubscribe", { subscriptionId: tokens[0] }]])
+  stopSecond()
+  expect(store.views).toEqual({})
+  expect(store.operations).toEqual({})
+})
+
+test("late Git subscription cleanup cannot reconnect or affect a replacement connection", async () => {
+  const store = useAgentSessionsStore()
+  const subscribing = deferred<null>()
+  const listener = vi.fn()
+  mock.state("connected")
+  const normal = mock.call.getMockImplementation()!
+  mock.call.mockImplementation(async (method: string, params: unknown) => method === "_deskfleet/git/subscribe" ? subscribing.promise : normal(method, params))
+  const pending = store.watchGit("30", listener)
+  await flushPromises()
+  const params = mock.call.mock.calls.find(([method]) => method === "_deskfleet/git/subscribe")![1]
+  mock.state("error")
+  mock.state("connected")
+  subscribing.resolve(null)
+  const stop = await pending
+  mock.notification({ method: "_deskfleet/git/changed", params })
+  stop()
+  expect(listener).not.toHaveBeenCalled()
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/git/unsubscribe")).toEqual([])
+})
+
+test("manual Git reads can bypass the daemon snapshot cache", async () => {
+  const store = useAgentSessionsStore()
+  await store.gitStatus("30", true)
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/git/status", { sessionId: "30", force: true })
+})
+
 
 test.each([false, true])("the rendered restoring indicator clears without further live events (history: %s)", async hasHistory => {
   const snapshot = agentSnapshot()

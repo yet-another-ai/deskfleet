@@ -446,11 +446,29 @@ Session-scoped queries resolve the captured directories to their checkouts and
 retrieve branch, HEAD, staged/unstaged/untracked status, and file diffs. Several
 bindings in one checkout share its result; non-Git directories remain usable and
 are identified separately. Queries use the existing ACP DataChannel and do not
-write history or change the index. The visible Changes panel refreshes status
-and its open diff every 1.5 seconds after each completed read, including edits
-from terminals and external editors. Closing the panel or hiding the window
-stops polling. Git results remain transient; Session provisioning still owns
-creation and deletion of managed worktrees.
+write history or change the index. The visible Changes panel subscribes to
+transient Git invalidations over that channel. The daemon shares filesystem
+observation and status reads by canonical checkout root, including the working
+files and the checkout's resolved Git metadata directories. Git-ignored,
+untracked directory trees are excluded from observation. Changes from terminals
+and external editors invalidate the cached snapshot; the client uses VueUse's
+300 ms debounce with a 2 second maximum wait to refresh status and its open diff.
+Invalidations arriving during a read cause a subsequent read, even when the file
+status and line counts are unchanged. There is no periodic Git polling.
+
+Subscriptions attach before the initial read and are released when the panel is
+closed, the window is hidden, the connection closes, or the Session is archived.
+The last subscriber releases the checkout's watchers and cache. Reopening or
+reconnecting establishes fresh observation and rereads Git; manual refresh can
+bypass cached status. Watch failures are reported to the viewer, which retains
+manual refresh and retries observation on request. Non-Git directories are
+observed within their captured roots; creating a repository above such a root
+requires reopening the panel to discover the enclosing checkout. These
+observers track changes to explicit `core.excludesFile` paths; changes to Git's
+implicit global ignore file also require reopening. Notifications require
+`git:read` and are not Agent journal events. Git results remain transient;
+Session provisioning still owns creation
+and deletion of managed worktrees.
 
 The machine's Remote control page groups Terminal, Desktop, and File transfer.
 Tools mount when first visited and retain their connections while switching tabs.

@@ -32,6 +32,7 @@ function fixture(closeGate?: Promise<void>, closeError?: Error) {
   const sent: string[] = [], events: PeerEvent[] = [], calls: { method: string; actor: AgentActor }[] = []
   const packets: Buffer[] = []
   const input: string[] = [], starts: unknown[] = [], signals: unknown[] = []
+  const gitListeners = new Set<(error?: string) => void>()
   let waiting: ((event: PeerEvent | null) => void) | undefined
   const push = (event: PeerEvent) => { if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) } else events.push(event) }
   const native = {
@@ -44,6 +45,11 @@ function fixture(closeGate?: Promise<void>, closeError?: Error) {
   const agents: AgentChannelSessions = {
     journal: { identity }, onEvent: () => () => {},
     handle: async (method, _params, actor) => { calls.push({ method, actor }); return null },
+    watchGit: async (_sessionId, actor, listener) => {
+      calls.push({ method: "_deskfleet/git/subscribe", actor })
+      gitListeners.add(listener)
+      return () => { gitListeners.delete(listener) }
+    },
   }
   const peers = new AuthorizedPeers({
     peers: {
@@ -60,7 +66,7 @@ function fixture(closeGate?: Promise<void>, closeError?: Error) {
     push({ kind: "data", label: "deskfleet-acp", data: Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n") })
     for (let tries = 0; tries < 100 && !sent.some(value => value.includes(`"id":${id},`)); tries++) await delay(1)
   }
-  return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, closeStarted, closeCalls: () => closeCalls, expired: () => { now += 86_400_001 }, closed: () => closed }
+  return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, gitListeners, closeStarted, closeCalls: () => closeCalls, expired: () => { now += 86_400_001 }, closed: () => closed }
 }
 
 test("repeated close and shutdown await the same native input cleanup", async () => {
@@ -247,6 +253,32 @@ test("expiry closes access without a signaling connection and ignores queued inp
   assert.equal(f.closed(), true)
   assert.equal(f.calls.length, 0)
   assert.equal(f.sent.length, 1)
+})
+
+test("Git observation requires git:read and rechecks authorization before notifications", async context => {
+  const denied = fixture(), allowed = fixture()
+  context.after(async () => { await denied.peers.closeAll(); await allowed.peers.closeAll() })
+  await denied.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: ["agent:read"] }, iceServers: [] })
+  await denied.rpc(1, "initialize", { protocolVersion: 1 })
+  await denied.rpc(2, "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "denied" })
+  assert.match(denied.sent.join(""), /does not allow this operation/)
+  assert.equal(denied.gitListeners.size, 0)
+
+  await allowed.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })
+  await allowed.rpc(1, "initialize", { protocolVersion: 1 })
+  await allowed.rpc(2, "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "allowed", actor: { userId: "spoof" } })
+  assert.equal(allowed.calls[0]?.actor.userId, "alice")
+  assert.equal(allowed.gitListeners.size, 1)
+  for (const listener of allowed.gitListeners) listener()
+  await delay(0)
+  assert.match(allowed.sent.join(""), /_deskfleet\/git\/changed/)
+  const count = allowed.sent.length
+  allowed.expired()
+  for (const listener of allowed.gitListeners) listener()
+  await delay(0)
+  assert.equal(allowed.sent.length, count)
+  await allowed.peers.closeAll()
+  assert.equal(allowed.gitListeners.size, 0)
 })
 
 test("reconciliation never extends an existing peer grant", async () => {

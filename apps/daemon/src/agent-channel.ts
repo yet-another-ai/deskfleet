@@ -10,12 +10,14 @@ export interface AgentChannelSessions {
   sessionDirectory?(sessionId: string): Promise<string>
   handle(method: AgentMethod, params: unknown, actor: AgentActor): Promise<unknown>
   onEvent(listener: (event: AgentEvent) => void): () => void
+  watchGit?(sessionId: string, actor: AgentActor, listener: (error?: string) => void): Promise<() => void>
 }
 
 type RpcId = string | number | null
 type JsonObject = Record<string, unknown>
 interface Subscription { ready: boolean; events: { event: AgentEvent; bytes: number }[] }
 interface PermissionCall { sessionId: string; permissionId: string; resolved: boolean }
+interface GitSubscription { stop?: () => void }
 
 const METHODS = new Set<AgentMethod>([
   "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure",
@@ -24,7 +26,7 @@ const METHODS = new Set<AgentMethod>([
   "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
   "_deskfleet/elicitation/respond",
   "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/command/get",
-  "_deskfleet/git/status", "_deskfleet/git/diff",
+  "_deskfleet/git/status", "_deskfleet/git/diff", "_deskfleet/git/subscribe", "_deskfleet/git/unsubscribe",
 ])
 const MAX_PENDING_REQUESTS = 128
 const MAX_QUEUED_BYTES = AGENT_MESSAGE_BYTES * 2
@@ -46,6 +48,7 @@ export class AgentChannel {
   readonly #onFailure: (error: unknown) => void
   readonly #unsubscribe: () => void
   readonly #subscriptions = new Map<string, Subscription>()
+  readonly #gitSubscriptions = new Map<string, GitSubscription>()
   readonly #permissionCalls = new Map<string, PermissionCall>()
   readonly #requests = new Set<RpcId>()
   readonly #decoder = new TextDecoder("utf-8", { fatal: true })
@@ -96,6 +99,8 @@ export class AgentChannel {
     this.#closed = true
     this.#closing.abort()
     this.#unsubscribe()
+    for (const subscription of this.#gitSubscriptions.values()) subscription.stop?.()
+    this.#gitSubscriptions.clear()
     this.#subscriptions.clear()
     this.#permissionCalls.clear()
     this.#requests.clear()
@@ -169,6 +174,11 @@ export class AgentChannel {
       }
       if (!this.#initialized) { this.#error(id, -32002, "Initialize ACP before using Sessions"); return }
       if (!METHODS.has(method as AgentMethod)) { this.#error(id, -32601, "Method not found"); return }
+      if (method === "_deskfleet/git/subscribe" || method === "_deskfleet/git/unsubscribe") {
+        await this.#gitSubscription(method, params)
+        this.#queue({ jsonrpc: "2.0", id, result: null })
+        return
+      }
       if (method === "_deskfleet/session/subscribe" && object(params) && typeof params.sessionId === "string") {
         const existing = this.#subscriptions.get(params.sessionId)
         if (existing && !existing.ready) throw new Error("Session subscription is already pending")
@@ -209,6 +219,37 @@ export class AgentChannel {
         for (const item of subscribing.subscription.events) this.#queuedBytes -= item.bytes
       }
       this.#error(id, -32000, errorMessage(error))
+    }
+  }
+
+  async #gitSubscription(method: string, params: unknown): Promise<void> {
+    if (!object(params) || typeof params.subscriptionId !== "string" || !params.subscriptionId || params.subscriptionId.length > 128) {
+      throw new Error("Invalid Git subscription ID")
+    }
+    const subscriptionId = params.subscriptionId
+    if (method === "_deskfleet/git/unsubscribe") {
+      this.#gitSubscriptions.get(subscriptionId)?.stop?.()
+      this.#gitSubscriptions.delete(subscriptionId)
+      return
+    }
+    if (typeof params.sessionId !== "string" || !params.sessionId) throw new Error("Missing Session ID")
+    if (!this.#sessions.watchGit) throw new Error("Git observation is unavailable")
+    if (this.#gitSubscriptions.has(subscriptionId)) throw new Error("Git subscription ID is already in use")
+    if (this.#gitSubscriptions.size >= MAX_PENDING_REQUESTS) throw new Error("Too many Git subscriptions")
+    const sessionId = params.sessionId
+    const subscription: GitSubscription = {}
+    this.#gitSubscriptions.set(subscriptionId, subscription)
+    try {
+      const stop = await this.#sessions.watchGit(sessionId, this.#actor, error => {
+        if (this.#closed || this.#gitSubscriptions.get(subscriptionId) !== subscription) return
+        this.#queue({ jsonrpc: "2.0", method: "_deskfleet/git/changed", params: { sessionId, subscriptionId, ...(error ? { error } : {}) } })
+      })
+      // The viewer can hide the panel or disconnect while directory watches attach.
+      if (this.#closed || this.#gitSubscriptions.get(subscriptionId) !== subscription) stop()
+      else subscription.stop = stop
+    } catch (error) {
+      if (this.#gitSubscriptions.get(subscriptionId) === subscription) this.#gitSubscriptions.delete(subscriptionId)
+      throw error
     }
   }
 

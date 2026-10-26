@@ -4,6 +4,7 @@ import { lstat, open, readlink, realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
 import type { GitDiffRequest, GitFileChange, GitFileDiff, GitFileStatus, GitRepositoryStatus, GitStatusSnapshot } from "./git-protocol.ts"
+import { GitWatch } from "./git-watch.ts"
 
 const execute = promisify(execFile)
 const STATUS_BYTES = 2 * 1024 * 1024
@@ -172,12 +173,96 @@ function newFilePatch(path: string, content: { data: Buffer; truncated: boolean;
   return { patch: bytes.subarray(0, PATCH_BYTES).toString("utf8"), binary: false, truncated: content.truncated || bytes.length > PATCH_BYTES }
 }
 
-/** Read-only Git queries use the Session's captured paths; no checkout state is cached. */
+interface WatchedCheckout {
+  watcher: GitWatch
+  ready: Promise<void>
+  listeners: Set<(error?: string) => void>
+  version: number
+  cached?: GitRepositoryStatus
+  pending?: { version: number; result: Promise<GitRepositoryStatus> }
+}
+
+/** A watched checkout shares its transient status until an OS notification invalidates it. */
 export class GitInspection {
-  async status(sessionId: string, paths: string[]): Promise<GitStatusSnapshot> {
+  readonly #watched = new Map<string, WatchedCheckout>()
+  #closed = false
+
+  async watch(paths: string[], listener: (error?: string) => void): Promise<() => void> {
+    if (this.#closed) throw new Error("Git inspection is stopping")
+    const { directories, roots } = await resolveDirectories(paths)
+    const watchedRoots = new Set(roots.values())
+    for (const directory of directories) {
+      if (directory.repositoryId === null && !directory.error) watchedRoots.add(await realpath(directory.path))
+      else if (directory.error) throw new Error(directory.error)
+    }
+    const attached: WatchedCheckout[] = []
+    const subscriber = (error?: string) => listener(attached.find(entry => entry.watcher.error)?.watcher.error ?? error)
+    const release = () => {
+      for (const entry of attached) {
+        entry.listeners.delete(subscriber)
+        if (!entry.listeners.size) {
+          entry.watcher.close()
+          if (this.#watched.get(entry.watcher.root) === entry) this.#watched.delete(entry.watcher.root)
+        }
+      }
+    }
+    try {
+      for (const root of watchedRoots) {
+        if (this.#closed) throw new Error("Git inspection is stopping")
+        let entry = this.#watched.get(root)
+        const existing = !!entry
+        if (!entry) {
+          const watcher = new GitWatch(root, error => {
+            entry!.version++
+            entry!.cached = undefined
+            for (const changed of entry!.listeners) changed(error)
+          })
+          entry = { watcher, ready: Promise.resolve(), listeners: new Set([subscriber]), version: 0 }
+          this.#watched.set(root, entry)
+          entry.ready = watcher.start()
+        }
+        entry.listeners.add(subscriber)
+        attached.push(entry)
+        await entry.ready
+        if (existing && !entry.watcher.healthy) {
+          entry.ready = entry.watcher.start()
+          await entry.ready
+        }
+      }
+      if (this.#closed) throw new Error("Git inspection is stopping")
+      return release
+    } catch (error) { release(); throw error }
+  }
+
+  close(): void {
+    this.#closed = true
+    for (const entry of this.#watched.values()) entry.watcher.close()
+    this.#watched.clear()
+  }
+
+  async #status(root: string, force: boolean): Promise<GitRepositoryStatus> {
+    const entry = this.#watched.get(root)
+    if (!entry || !entry.watcher.healthy) return inspect(root)
+    if (force) { entry.version++; entry.cached = undefined }
+    if (entry.cached) return entry.cached
+    if (entry.pending) {
+      if (entry.pending.version === entry.version) return entry.pending.result
+      await entry.pending.result
+      return this.#status(root, false)
+    }
+    const version = entry.version
+    const result = inspect(root).then(snapshot => {
+      if (entry.version === version && entry.watcher.healthy && this.#watched.get(root) === entry && !snapshot.error) entry.cached = snapshot
+      return snapshot
+    })
+    entry.pending = { version, result }
+    try { return await result } finally { if (entry.pending?.result === result) entry.pending = undefined }
+  }
+
+  async status(sessionId: string, paths: string[], force = false): Promise<GitStatusSnapshot> {
     const { directories, roots } = await resolveDirectories(paths)
     const repositories: GitRepositoryStatus[] = []
-    for (const root of roots.values()) repositories.push(await inspect(root))
+    for (const root of roots.values()) repositories.push(await this.#status(root, force))
     return { sessionId, repositories, directories }
   }
 

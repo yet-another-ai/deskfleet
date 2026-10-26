@@ -7,9 +7,12 @@ import { useSessionGit } from "./useSessionGit.ts"
 
 const service = reactive({
   state: "connected",
-  gitStatus: vi.fn<(sessionId: string) => Promise<GitStatusSnapshot>>(),
+  gitStatus: vi.fn<(sessionId: string, force?: boolean) => Promise<GitStatusSnapshot>>(),
   gitDiff: vi.fn<(request: GitDiffRequest) => Promise<GitFileDiff>>(),
+  watchGit: vi.fn<(sessionId: string, notify: (error?: string) => void) => Promise<() => void>>(),
 })
+const observations: { sessionId: string; notify(error?: string): void; stop: ReturnType<typeof vi.fn> }[] = []
+const changed = (error?: string) => observations.at(-1)!.notify(error)
 vi.mock("../stores/agent-sessions.ts", () => ({ useAgentSessionsStore: () => service }))
 const change: GitFileChange = { path: "file.txt", kind: "unstaged", status: "modified", additions: 1, deletions: 1 }
 const status = (sessionId = "30", changes = [change]): GitStatusSnapshot => ({
@@ -30,6 +33,12 @@ beforeEach(() => {
   service.state = "connected"
   service.gitStatus.mockReset().mockImplementation(async id => status(id))
   service.gitDiff.mockReset().mockImplementation(async request => ({ ...request, patch: "+first", binary: false, truncated: false }))
+  observations.length = 0
+  service.watchGit.mockReset().mockImplementation(async (sessionId, notify) => {
+    const stop = vi.fn()
+    observations.push({ sessionId, notify, stop })
+    return stop
+  })
 })
 afterEach(() => {
   for (const scope of scopes.splice(0)) scope.stop()
@@ -44,41 +53,47 @@ test("refreshes status and the open diff even when file status and line counts s
   await flushPromises()
   expect(git.diff.value?.patch).toBe("+first")
   service.gitDiff.mockImplementation(async request => ({ ...request, patch: "+later", binary: false, truncated: false }))
-  await vi.advanceTimersByTimeAsync(1_500)
+  changed()
+  await vi.advanceTimersByTimeAsync(300)
   expect(service.gitStatus).toHaveBeenCalledTimes(2)
   expect(git.diff.value?.patch).toBe("+later")
   service.gitStatus.mockResolvedValue(status("30", []))
-  await vi.advanceTimersByTimeAsync(1_500)
+  changed()
+  await vi.advanceTimersByTimeAsync(300)
   expect(git.selection.value).toBeNull()
   expect(git.diff.value).toBeNull()
 })
 
-test("serializes refreshes and stops polling when its scope is disposed", async () => {
+test("serializes invalidations and stops reads when its scope is disposed", async () => {
   const result = deferred<GitStatusSnapshot>()
   service.gitStatus.mockReturnValue(result.promise)
   const { scope, git } = setup()
-  const refresh = git.refresh()
+  await flushPromises()
+  changed()
   await vi.advanceTimersByTimeAsync(5_000)
   expect(service.gitStatus).toHaveBeenCalledTimes(1)
   scope.stop()
   result.resolve(status())
-  await refresh
+  await flushPromises()
   await vi.advanceTimersByTimeAsync(5_000)
   expect(service.gitStatus).toHaveBeenCalledTimes(1)
   expect(git.snapshot.value).toBeNull()
+  expect(observations[0]!.stop).toHaveBeenCalledOnce()
 })
 
 test("late status responses cannot replace the newly selected Session", async () => {
   const old = deferred<GitStatusSnapshot>()
   service.gitStatus.mockReturnValueOnce(old.promise)
   const { sessionId, git } = setup()
+  await flushPromises()
   sessionId.value = "31"
   await flushPromises()
   expect(git.snapshot.value?.sessionId).toBe("31")
   old.resolve(status("30"))
   await flushPromises()
   expect(git.snapshot.value?.sessionId).toBe("31")
-  await vi.advanceTimersByTimeAsync(1_500)
+  changed()
+  await vi.advanceTimersByTimeAsync(300)
   expect(service.gitStatus.mock.calls.map(([id]) => id)).toEqual(["30", "31", "31"])
 })
 
@@ -108,12 +123,14 @@ test("retains the last snapshot with an error and recovers on the next refresh",
   const { git } = setup()
   await flushPromises()
   service.gitStatus.mockRejectedValueOnce(new Error("Git unavailable"))
-  await vi.advanceTimersByTimeAsync(1_500)
+  changed()
+  await vi.advanceTimersByTimeAsync(300)
   expect(git.error.value).toBe("Git unavailable")
   expect(git.snapshot.value?.repositories).toHaveLength(1)
-  await vi.advanceTimersByTimeAsync(1_500)
+  await git.refresh()
   expect(git.error.value).toBeNull()
   expect(git.loading.value).toBe(false)
+  expect(service.gitStatus).toHaveBeenLastCalledWith("30", true)
 })
 
 test("disabling a target stops reads and reconnecting refreshes the active target immediately", async () => {
@@ -124,6 +141,7 @@ test("disabling a target stops reads and reconnecting refreshes the active targe
   await vi.advanceTimersByTimeAsync(5_000)
   expect(service.gitStatus).toHaveBeenCalledTimes(1)
   expect(git.snapshot.value).toBeNull()
+  expect(observations[0]!.stop).toHaveBeenCalledOnce()
   enabled.value = true
   await flushPromises()
   expect(service.gitStatus).toHaveBeenCalledTimes(2)
@@ -132,9 +150,10 @@ test("disabling a target stops reads and reconnecting refreshes the active targe
   service.state = "connected"
   await flushPromises()
   expect(service.gitStatus).toHaveBeenCalledTimes(3)
+  expect(service.watchGit).toHaveBeenCalledTimes(3)
 })
 
-test("hidden windows suspend polling and refresh as soon as they become visible", async () => {
+test("hidden windows release subscriptions and refresh as soon as they become visible", async () => {
   const { git } = setup()
   await flushPromises()
   const visibility = vi.spyOn(document, "visibilityState", "get")
@@ -142,9 +161,114 @@ test("hidden windows suspend polling and refresh as soon as they become visible"
   document.dispatchEvent(new Event("visibilitychange"))
   await vi.advanceTimersByTimeAsync(5_000)
   expect(service.gitStatus).toHaveBeenCalledTimes(1)
+  expect(observations[0]!.stop).toHaveBeenCalledOnce()
   visibility.mockReturnValue("visible")
   document.dispatchEvent(new Event("visibilitychange"))
   await flushPromises()
   expect(service.gitStatus).toHaveBeenCalledTimes(2)
   expect(git.snapshot.value?.sessionId).toBe("30")
+  expect(service.watchGit).toHaveBeenCalledTimes(2)
+})
+
+test("idle panels do not poll, bursts debounce, and sustained changes have a bounded wait", async () => {
+  setup()
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(service.gitStatus).toHaveBeenCalledTimes(1)
+  for (let index = 0; index < 5; index++) {
+    changed()
+    await vi.advanceTimersByTimeAsync(100)
+  }
+  expect(service.gitStatus).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(200)
+  expect(service.gitStatus).toHaveBeenCalledTimes(2)
+  for (let index = 0; index < 10; index++) {
+    changed()
+    await vi.advanceTimersByTimeAsync(200)
+  }
+  expect(service.gitStatus).toHaveBeenCalledTimes(3)
+})
+
+test("changes during an in-flight status read cause one subsequent refresh", async () => {
+  const result = deferred<GitStatusSnapshot>()
+  service.gitStatus.mockReturnValueOnce(result.promise)
+  const { git } = setup()
+  await flushPromises()
+  changed()
+  changed()
+  await vi.advanceTimersByTimeAsync(300)
+  expect(service.gitStatus).toHaveBeenCalledTimes(1)
+  service.gitStatus.mockResolvedValue(status("30", []))
+  result.resolve(status())
+  await flushPromises()
+  expect(service.gitStatus).toHaveBeenCalledTimes(2)
+  expect(git.snapshot.value?.repositories[0]?.changes).toEqual([])
+})
+
+test("context switches cancel debounced refreshes and release late subscriptions", async () => {
+  const subscription = deferred<() => void>()
+  const stop = vi.fn()
+  service.watchGit.mockReturnValueOnce(subscription.promise)
+  const { sessionId, git } = setup()
+  await flushPromises()
+  expect(service.gitStatus).not.toHaveBeenCalled()
+  sessionId.value = "31"
+  await flushPromises()
+  subscription.resolve(stop)
+  await flushPromises()
+  expect(stop).toHaveBeenCalledOnce()
+  expect(service.gitStatus.mock.calls.map(([id]) => id)).toEqual(["31"])
+  changed()
+  sessionId.value = "32"
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(2_000)
+  expect(service.gitStatus.mock.calls.map(([id]) => id)).toEqual(["31", "32"])
+  expect(git.snapshot.value?.sessionId).toBe("32")
+})
+
+test("watch errors remain visible with a usable snapshot and manual refresh can reattach", async () => {
+  service.watchGit.mockRejectedValueOnce(new Error("Watch limit reached"))
+  const { git } = setup()
+  await flushPromises()
+  expect(git.error.value).toBe("Watch limit reached")
+  expect(git.snapshot.value?.sessionId).toBe("30")
+  await git.refresh()
+  expect(git.error.value).toBeNull()
+  changed("Watcher stopped")
+  await vi.advanceTimersByTimeAsync(300)
+  expect(git.error.value).toBe("Watcher stopped")
+  expect(git.snapshot.value?.sessionId).toBe("30")
+  await git.refresh()
+  expect(observations[0]!.stop).toHaveBeenCalledOnce()
+  expect(service.watchGit).toHaveBeenCalledTimes(3)
+  expect(git.error.value).toBeNull()
+})
+
+test("initial connection completion does not open a second subscription", async () => {
+  service.state = "idle"
+  const subscription = deferred<() => void>()
+  service.watchGit.mockReturnValueOnce(subscription.promise)
+  setup()
+  service.state = "connected"
+  await nextTick()
+  subscription.resolve(vi.fn())
+  await flushPromises()
+  expect(service.watchGit).toHaveBeenCalledOnce()
+  expect(service.gitStatus).toHaveBeenCalledOnce()
+})
+
+test("an invalidation rereads a selected diff that was already in flight", async () => {
+  const { git } = setup()
+  await flushPromises()
+  const old = deferred<GitFileDiff>()
+  service.gitDiff.mockReturnValueOnce(old.promise)
+  git.select("repo", change)
+  const request = service.gitDiff.mock.calls[0]![0]
+  changed()
+  await vi.advanceTimersByTimeAsync(300)
+  service.gitDiff.mockResolvedValue({ ...request, patch: "+latest", binary: false, truncated: false })
+  old.resolve({ ...request, patch: "+old", binary: false, truncated: false })
+  await flushPromises()
+  expect(service.gitDiff).toHaveBeenCalledTimes(2)
+  expect(git.diff.value?.patch).toBe("+latest")
 })

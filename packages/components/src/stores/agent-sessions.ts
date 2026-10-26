@@ -6,7 +6,7 @@ import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMetho
 import type { ElicitationDraft } from "../services/agent-elicitation.ts"
 import { agentConfiguration as normalizeAgentConfiguration } from "../../../../apps/daemon/src/agent-configuration-protocol.ts"
 import type { AgentConfiguration } from "../../../client/src/agent-configuration.ts"
-import type { GitDiffRequest } from "../../../../apps/daemon/src/git-protocol.ts"
+import type { GitChangedNotification, GitDiffRequest } from "../../../../apps/daemon/src/git-protocol.ts"
 import { useProvidersStore } from "./providers.ts"
 import { AgentClient, type AgentConnectionState, type AgentNotification } from "../services/agent-client.ts"
 
@@ -56,6 +56,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const loads = new Map<string, Promise<void>>()
   const reads = new Map<string, Promise<void>>()
   const permissionRequests = new Map<string, { sessionId: string; permissionId: string; resolve(value: unknown): void }>()
+  const gitSubscriptions = new Map<string, { sessionId: string; listener(error?: string): void }>()
+  let connectionGeneration = 0
   let initialized: Promise<void> | null = null
   let refreshing: Promise<void> | null = null
   let disposed = false
@@ -173,6 +175,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     error.value = detail ?? null
     if (next === "error" || next === "idle") {
       initialized = null
+      connectionGeneration++
+      gitSubscriptions.clear()
       for (const pending of permissionRequests.values()) pending.resolve({ outcome: { outcome: "cancelled" } })
       permissionRequests.clear()
     }
@@ -182,6 +186,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       remember([event])
       const current = views.value[event.sessionId]
       if (current?.snapshot && sequenceCompare(current.historySeq, event.seq) < 0 && !current.loading) void readHistory(event.sessionId).catch(() => {})
+    } else if (notification.method === "_deskfleet/git/changed") {
+      const change = notification.params as GitChangedNotification
+      const subscription = gitSubscriptions.get(change.subscriptionId)
+      if (subscription?.sessionId === change.sessionId) subscription.listener(change.error)
     } else if (notification.method === "$/cancel_request") {
       const id = String((notification.params as { requestId: string | number }).requestId)
       permissionRequests.get(id)?.resolve({ outcome: { outcome: "cancelled" } })
@@ -274,7 +282,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (command) commandReceived(command)
     }
   }
-  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/status" | "_deskfleet/git/diff">>(
+  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe">>(
     method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string,
   ): Promise<AgentMethods[M]["result"]> {
     const operationId = crypto.randomUUID()
@@ -375,8 +383,29 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   async function restore(sessionId: string): Promise<void> {
     snapshotReceived(await mutation("_deskfleet/session/restore", { sessionId }))
   }
-  const gitStatus = (sessionId: string) => call("_deskfleet/git/status", { sessionId })
+  const gitStatus = (sessionId: string, force = false) => call("_deskfleet/git/status", { sessionId, ...(force ? { force } : {}) })
   const gitDiff = (request: GitDiffRequest) => call("_deskfleet/git/diff", request)
-  onScopeDispose(() => { disposed = true; client.close() })
-  return { sessions, views, drafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, archive, restore, gitStatus, gitDiff }
+  async function watchGit(sessionId: string, listener: (error?: string) => void): Promise<() => void> {
+    const subscriptionId = crypto.randomUUID()
+    const generation = connectionGeneration
+    const subscription = { sessionId, listener }
+    gitSubscriptions.set(subscriptionId, subscription)
+    const stop = () => {
+      if (gitSubscriptions.get(subscriptionId) !== subscription) return
+      gitSubscriptions.delete(subscriptionId)
+      // A released view must never reconnect merely to remove an old subscription.
+      if (!disposed && generation === connectionGeneration && state.value === "connected") {
+        void client.call("_deskfleet/git/unsubscribe", { subscriptionId }).catch(() => {})
+      }
+    }
+    try {
+      await call("_deskfleet/git/subscribe", { sessionId, subscriptionId })
+      return stop
+    } catch (reason) {
+      stop()
+      throw reason
+    }
+  }
+  onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); client.close() })
+  return { sessions, views, drafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, archive, restore, gitStatus, gitDiff, watchGit }
 })

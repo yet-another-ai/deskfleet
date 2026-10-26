@@ -107,6 +107,44 @@ export class AgentSessions {
 
   onEvent(listener: (event: AgentEvent) => void): () => void { return this.journal.onEvent(listener) }
 
+  async #gitDirectories(sessionId: string): Promise<string[]> {
+    const { session } = await this.journal.read(id(sessionId, "Session ID"))
+    if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
+    const worktree = await this.#catalog.sessionWorktree(sessionId)
+    if (!worktree?.directories.length) throw new Error("Session worktree is unavailable")
+    return worktree.directories.map(directory => directory.path)
+  }
+
+  async watchGit(sessionId: string, _actor: AgentActor, listener: (error?: string) => void): Promise<() => void> {
+    if (this.#closed) throw new Error("Agent service is stopping")
+    id(sessionId, "Session ID")
+    let stopped = false
+    let stopWatch: (() => void) | undefined
+    const stop = () => {
+      if (stopped) return
+      stopped = true
+      stopWatch?.()
+      unsubscribe()
+      this.#closing.signal.removeEventListener("abort", stop)
+    }
+    const unsubscribe = this.onEvent(event => {
+      if (event.sessionId !== sessionId || event.kind !== "session") return
+      const session = event.payload as AgentSnapshot["session"]
+      if (session.lifecycle === "ready" && session.archiveState === "active") return
+      listener("This Session has no active Git observation")
+      stop()
+    })
+    this.#closing.signal.addEventListener("abort", stop, { once: true })
+    try {
+      const directories = await this.#gitDirectories(sessionId)
+      const { session } = await this.journal.read(sessionId)
+      if (session.archiveState !== "active") throw new Error("This Session has no active Git observation")
+      stopWatch = await this.#git.watch(directories, error => { if (!stopped) listener(error) })
+      if (stopped) { stopWatch(); throw new Error("Git observation was cancelled") }
+      return stop
+    } catch (error) { stop(); throw error }
+  }
+
   async sessionDirectory(sessionId: string): Promise<string> {
     const { session } = await this.journal.read(id(sessionId, "Session ID"))
     if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
@@ -190,12 +228,11 @@ export class AgentSessions {
     }
     if (method === "_deskfleet/git/status" || method === "_deskfleet/git/diff") {
       const sessionId = id(params.sessionId, "Session ID")
-      const { session } = await this.journal.read(sessionId)
-      if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
-      const worktree = await this.#catalog.sessionWorktree(sessionId)
-      if (!worktree?.directories.length) throw new Error("Session worktree is unavailable")
-      const directories = worktree.directories.map(directory => directory.path)
-      if (method === "_deskfleet/git/status") return this.#git.status(sessionId, directories)
+      const directories = await this.#gitDirectories(sessionId)
+      if (method === "_deskfleet/git/status") {
+        if (params.force !== undefined && typeof params.force !== "boolean") throw new Error("Invalid Git refresh flag")
+        return this.#git.status(sessionId, directories, params.force === true)
+      }
       const kind = params.kind
       if (kind !== "staged" && kind !== "unstaged" && kind !== "untracked") throw new Error("Invalid Git diff kind")
       return this.#git.diff({
@@ -520,6 +557,7 @@ export class AgentSessions {
     this.#closed = true
     this.#unsubscribeProviders?.()
     this.#closing.abort(new Error("Agent service is stopping"))
+    this.#git.close()
     const stopping = Promise.allSettled([this.#configurationProbes.close(), ...[...this.#runtimes.values()].map(runtime => runtime.stop())])
     await Promise.allSettled(this.#discovery)
     await Promise.allSettled(this.#operations.values())

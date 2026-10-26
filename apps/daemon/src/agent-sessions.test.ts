@@ -646,6 +646,26 @@ test("Git reads use the captured Session checkout after Workspace edits and do n
   assert.deepEqual(await f.service.journal.history(f.sessionId, before.session.lastEventSeq), [])
 })
 
+test("Git observation uses the captured checkout without history and ends when the Session is archived", async t => {
+  const f = await setup(t)
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  const worktree = await f.catalog.sessionWorktree(f.sessionId)
+  assert.ok(worktree)
+  const notifications: (string | undefined)[] = []
+  const stop = await f.service.watchGit(f.sessionId, f.actor, error => notifications.push(error))
+  t.after(stop)
+  const before = await f.read()
+  await writeFile(join(worktree.directories[0]!.path, "README.md"), "watched edit\n")
+  await until(async () => notifications.length, count => count > 0)
+  assert.equal(notifications[0], undefined)
+  const status = await f.service.handle("_deskfleet/git/status", { sessionId: f.sessionId }, f.actor) as GitStatusSnapshot
+  assert.ok(status.repositories[0]?.changes.some(change => change.path === "README.md"))
+  assert.deepEqual(await f.service.journal.history(f.sessionId, before.session.lastEventSeq), [])
+  await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  assert.ok(notifications.some(error => error?.includes("no active Git observation")))
+  await assert.rejects(f.service.watchGit(f.sessionId, f.actor, () => {}), /no active Git observation/)
+})
+
 test("a worktree Session still requires a committed Git checkout", async t => {
   const f = await setup(t)
   const plain = join(f.directory, "plain")
