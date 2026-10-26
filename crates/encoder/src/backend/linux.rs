@@ -1,7 +1,22 @@
 use deskfleet_capture::Frame;
-use deskfleet_linux_media::{EncodedFrame, EncoderSettings};
+use deskfleet_linux_media::{Codec as MediaCodec, EncodedFrame, EncoderSettings};
 
-use crate::{Codec, EncodedPacket, EncoderConfig, EncoderError, H264Profile};
+use crate::{Codec, EncodedPacket, EncoderConfig, EncoderError, H264Profile, H265Profile};
+
+pub(crate) fn supported_codecs() -> Vec<Codec> {
+    Codec::ALL
+        .into_iter()
+        .filter(|codec| deskfleet_linux_media::has_encoder(media_codec(*codec)))
+        .collect()
+}
+
+fn media_codec(codec: Codec) -> MediaCodec {
+    match codec {
+        Codec::H264 => MediaCodec::H264,
+        Codec::H265 => MediaCodec::H265,
+        Codec::AV1 => MediaCodec::Av1,
+    }
+}
 
 pub(crate) struct PlatformEncoder {
     settings: EncoderSettings,
@@ -11,22 +26,26 @@ pub(crate) struct PlatformEncoder {
 
 impl PlatformEncoder {
     pub(crate) fn new(config: &EncoderConfig) -> Result<Self, EncoderError> {
-        if config.codec != Codec::H264 {
+        if config.codec == Codec::H265 && config.h265_profile != H265Profile::Main {
             return Err(EncoderError::Unsupported(
-                "Linux currently supports hardware H.264",
+                "Linux H.265 encoding requires the 8-bit Main profile",
             ));
         }
         Ok(Self {
             settings: EncoderSettings {
+                codec: media_codec(config.codec),
                 width: config.width,
                 height: config.height,
                 fps: config.fps,
                 bitrate_bps: config.bitrate_bps,
                 max_bitrate_bps: config.max_bitrate_bps,
-                profile: match config.h264_profile {
-                    H264Profile::ConstrainedBaseline => "constrained-baseline",
-                    H264Profile::Main => "main",
-                    H264Profile::High => "high",
+                profile: match config.codec {
+                    Codec::H264 => match config.h264_profile {
+                        H264Profile::ConstrainedBaseline => "constrained-baseline",
+                        H264Profile::Main => "main",
+                        H264Profile::High => "high",
+                    },
+                    Codec::H265 | Codec::AV1 => "main",
                 },
             },
             active: None,
@@ -48,7 +67,7 @@ impl PlatformEncoder {
                 deskfleet_linux_media::Encoder::start(&self.settings, pixels, frame.timestamp_ns)
                     .map_err(map_error)?;
             self.active = Some(active);
-            self.keyframe = false; // The initial hardware output is already an IDR.
+            self.keyframe = false; // The initial hardware output is already a keyframe.
             packets
         };
         Ok(convert(packets))

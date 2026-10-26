@@ -49,7 +49,7 @@ stack owns receive-side decoding and playback.
 | --- | --- | --- | --- |
 | macOS | ScreenCaptureKit / IOSurface | VideoToolbox H.264/H.265/AV1, subject to runtime support | ScreenCaptureKit → Opus |
 | Windows | DXGI Desktop Duplication / D3D11 | NVENC H.264/H.265/AV1; Media Foundation hardware H.264 fallback, subject to GPU/driver support | Unsupported |
-| Linux Wayland | RemoteDesktop + ScreenCast portal / PipeWire | GStreamer VA-API or NVENC hardware H.264 | Unsupported |
+| Linux Wayland | RemoteDesktop + ScreenCast portal / PipeWire | GStreamer VA-API or NVENC H.264/H.265/AV1, subject to GPU/driver support | Unsupported |
 
 WebRTC DataChannels and Opus encoding work without a display. Loading the addon,
 creating a peer does not enumerate displays or probe video encoders. On Linux,
@@ -154,10 +154,18 @@ input is disconnected. Display listing reuses the session without retrying it.
 `deskfleet-linux-media` loads GStreamer inside the native process on demand.
 PipeWire samples are copied into Rust-owned BGRA frames before returning buffers
 to the pool. GStreamer converts and uploads these frames to VA-API or NVENC;
-there is no software encoder fallback. Linux currently advertises H.264 only.
+there is no software encoder fallback. Linux probes H.264, H.265, and AV1
+independently, requiring each codec's parser and a registered hardware encoder.
+The viewer uses the existing AV1 → HEVC → H.264 preference among the codecs both
+ends support. An encoder failure retains the existing fallback to a new peer
+with the next common codec.
+
 This path uses CPU copies, not DMA-BUF zero-copy. Hardware candidates are checked
-with the first real frame, and keyframes can use a retained frame on an idle
-desktop. Portal closure invalidates capture and input; every bounded capture poll
+with the first real frame. H.264 constrained baseline and H.265 Main produce
+Annex B access units with parameter sets on keyframes; AV1 Main produces OBU
+temporal units. Codec-specific settings disable frame reordering/lookahead so
+an idle desktop can emit a frame immediately. Requested keyframes use the latest
+retained frame. Portal closure invalidates capture and input; every bounded capture poll
 checks the source generation so retained frames cannot outlive authorization.
 
 One EIS connection belongs to the portal session and is retained between
@@ -224,8 +232,8 @@ from the codecs that display and the browser share, and shows the choice as
 status text. On macOS, the daemon process
 needs Screen Recording permission; system audio can be enabled explicitly.
 Windows supports NVENC video and the hardware H.264 fallback described above.
-Linux Wayland supports H.264 video and optional mouse/keyboard control after the
-local portal grant described above.
+Linux Wayland supports the negotiated AV1, HEVC, or H.264 video and optional
+mouse/keyboard control after the local portal grant described above.
 
 The Electron main process reads discovery/authentication data and proxies a narrow
 preload API. Calls are accepted only from the registered main renderer frame.
@@ -332,10 +340,20 @@ CI sets `LIBCLANG_PATH` to the hosted runner's LLVM installation. No NVIDIA SDK
 binary is redistributed.
 
 Linux media libraries are optional at runtime: GStreamer 1.x core, app and video
-libraries, GLib, `pipewiresrc`, `videoconvert`, `appsrc`, `appsink`, `h264parse`,
-and a working `vah264enc`, `vah264lpenc`, `nvh264enc`, or `nvautogpuh264enc`
-plugin with its GPU driver. These generally come from the distribution's
-GStreamer base/bad and PipeWire packages. The addon has no ELF dependency on
+libraries, GLib, `pipewiresrc`, `videoconvert`, `appsrc`, and `appsink`, plus at
+least one available hardware codec and its parser:
+
+| Codec | VA-API factories | NVENC factories | Parser |
+| --- | --- | --- | --- |
+| H.264 | `vah264enc`, `vah264lpenc` | `nvh264enc`, `nvautogpuh264enc` | `h264parse` |
+| H.265 | `vah265enc`, `vah265lpenc` | `nvh265enc`, `nvautogpuh265enc` | `h265parse` |
+| AV1 | `vaav1enc`, `vaav1lpenc` | `nvav1enc`, `nvautogpuav1enc` | `av1parse` |
+
+Factory availability depends on the installed GPU and driver; one codec's missing
+plugin does not disable other codecs. The [VA-API](https://gstreamer.freedesktop.org/documentation/va/index.html)
+and [NVENC](https://gstreamer.freedesktop.org/documentation/nvcodec/index.html)
+plugins generally come from the distribution's GStreamer bad package, alongside
+the base and PipeWire packages. The addon has no ELF dependency on
 GStreamer, PipeWire, or libei; EIS uses the Rust `reis` implementation. Machines
 without the desktop runtime still load the addon and run data-only services.
 
@@ -380,8 +398,24 @@ On a Linux graphical host with the runtime and GPU drivers installed, run:
 mise exec -- cargo test -p deskfleet-linux-media --locked -- --ignored --nocapture
 ```
 
-These tests copy a generated GStreamer frame and hardware-encode a generated
-frame followed by an idle keyframe, without requesting desktop authorization.
+These tests copy a generated GStreamer frame, then encode a generated frame and
+an idle keyframe for every advertised codec. Both keyframes must decode in fresh
+decoder pipelines, with increasing timestamps and correct dimensions/pixels.
+No desktop authorization is requested.
+
+To send generated hardware-encoded video through WebRTC to Chromium, run each
+codec explicitly:
+
+```sh
+DESKFLEET_SMOKE_HARDWARE=1 DESKFLEET_SMOKE_CODEC=av1 mise run desktop:smoke-media
+DESKFLEET_SMOKE_HARDWARE=1 DESKFLEET_SMOKE_CODEC=h265 mise run desktop:smoke-media
+DESKFLEET_SMOKE_HARDWARE=1 DESKFLEET_SMOKE_CODEC=h264 mise run desktop:smoke-media
+```
+
+This mode uses synthetic frames and opens no Portal dialog. A codec absent from
+Chromium's receive capabilities is reported as skipped; advertised codecs that
+fail hardware initialization or decoding fail the smoke test.
+
 On the actual Wayland desktop, verify portal consent, EIS controller reuse, and
 real screen decoding with:
 

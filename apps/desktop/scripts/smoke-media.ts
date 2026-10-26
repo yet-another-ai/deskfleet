@@ -10,12 +10,21 @@ import { rendererContentSecurityPolicy } from "../src/shared/renderer-csp.ts"
 
 // The default fixture needs no capture permission. DESKFLEET_SMOKE_CAPTURE=1
 // streams a real display into the hidden test window without saving a recording.
+// DESKFLEET_SMOKE_HARDWARE=1 encodes generated red pixels using Linux hardware;
+// DESKFLEET_SMOKE_CODEC selects h264 (default), h265 or av1 for that mode.
 // Recreate the 663-byte red-frame fixture with FFmpeg if changing its dimensions or profile:
 // ffmpeg -f lavfi -i color=c=red:s=64x64:r=10 -frames:v 1 -c:v libx264 \
 //   -profile:v baseline -level 3.1 -pix_fmt yuv420p \
 //   -x264-params keyint=1:min-keyint=1:scenecut=0 -f h264 red-64x64.h264
 const root = resolve(import.meta.dirname, "../../..")
 const capture = process.env.DESKFLEET_SMOKE_CAPTURE === "1"
+const hardware = process.env.DESKFLEET_SMOKE_HARDWARE === "1"
+const codec = process.env.DESKFLEET_SMOKE_CODEC ?? "h264"
+assert.ok(["h264", "h265", "av1"].includes(codec), "DESKFLEET_SMOKE_CODEC must be h264, h265 or av1")
+assert.ok(!hardware || process.platform === "linux", "generated hardware smoke requires Linux")
+assert.ok(!(capture && hardware), "select either capture or generated hardware smoke")
+assert.ok(hardware || codec === "h264", "codec selection requires generated hardware smoke")
+const source = capture ? "desktop" : hardware ? "hardware" : "fixture"
 const waylandCapture = capture && process.platform === "linux"
 const executable = createRequire(import.meta.url)("electron") as string
 const nativeExecutable = join(root, "target/debug/examples", process.platform === "win32" ? "media_smoke.exe" : "media_smoke")
@@ -45,7 +54,7 @@ try {
       compilerOptions: { target: ts.ScriptTarget.ES2023, module },
     }).outputText)
   }
-  await writeFile(join(directory, "index.html"), `<!doctype html><html data-capture="${capture ? "1" : "0"}" data-consent-timeout="${waylandCapture ? "120000" : "20000"}">
+  await writeFile(join(directory, "index.html"), `<!doctype html><html data-source="${source}" data-codec="${codec}" data-consent-timeout="${waylandCapture ? "120000" : "20000"}">
 <meta http-equiv="Content-Security-Policy" content="${rendererContentSecurityPolicy(true)}">
 <video autoplay muted playsinline></video><script type="module" src="/renderer.js"></script></html>`)
   const native = spawn(nativeExecutable, [], {
@@ -85,18 +94,29 @@ try {
       } catch (error) { fail(error) }
     })
   }).finally(() => lines.close())
-  assert.equal(result.connection, "connected")
-  assert.equal(result.dataChannel, true)
-  assert.equal(result.source, capture ? "desktop" : "fixture")
-  if (capture) {
-    assert.ok(typeof result.framesDecoded === "number" && result.framesDecoded >= 1)
-    assert.ok(typeof result.width === "number" && result.width > 0)
-    assert.ok(typeof result.height === "number" && result.height > 0)
-    console.log("Electron/native WebRTC: real desktop H.264 decode, video srcObject, trickle ICE, and DataChannel echo passed", result)
+  assert.equal(result.source, source)
+  assert.equal(result.codec, codec)
+  if (result.skipped) {
+    assert.ok(hardware && typeof result.reason === "string", "only unsupported hardware-smoke browser codecs may skip")
+    console.log(`SKIP Electron/native hardware ${codec}: ${result.reason}`)
   } else {
-    assert.equal(result.width, 64)
-    assert.equal(result.height, 64)
-    console.log("Electron/native WebRTC: H.264 decode, Opus reception, video srcObject, trickle ICE, and DataChannel echo passed", result)
+    assert.equal(result.connection, "connected")
+    assert.equal(result.dataChannel, true)
+    if (capture) {
+      assert.ok(typeof result.framesDecoded === "number" && result.framesDecoded >= 1)
+      assert.ok(typeof result.width === "number" && result.width > 0)
+      assert.ok(typeof result.height === "number" && result.height > 0)
+      console.log("Electron/native WebRTC: real desktop H.264 decode, video srcObject, trickle ICE, and DataChannel echo passed", result)
+    } else if (hardware) {
+      assert.equal(result.width, 320)
+      assert.equal(result.height, 240)
+      assert.ok(typeof result.framesDecoded === "number" && result.framesDecoded >= 3)
+      console.log(`Electron/native WebRTC: generated hardware ${codec} encode/decode, red pixel validation, video srcObject, trickle ICE, and DataChannel echo passed`, result)
+    } else {
+      assert.equal(result.width, 64)
+      assert.equal(result.height, 64)
+      console.log("Electron/native WebRTC: H.264 decode, Opus reception, video srcObject, trickle ICE, and DataChannel echo passed", result)
+    }
   }
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
@@ -106,7 +126,7 @@ try {
     if (child.exitCode !== null || child.signalCode !== null) continue
     if (child.connected) child.send({ kind: "close" })
     else child.stdin?.end(`${JSON.stringify({ kind: "close" })}\n`)
-    const timer = setTimeout(() => child.kill("SIGKILL"), capture ? 8_000 : 3_000)
+    const timer = setTimeout(() => child.kill("SIGKILL"), capture || hardware ? 8_000 : 3_000)
     await exits.get(child)
     clearTimeout(timer)
   }

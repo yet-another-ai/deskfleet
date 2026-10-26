@@ -30,13 +30,11 @@ pub(crate) fn platform_supported_codecs(display_id: u32) -> Result<Vec<Codec>, E
         .map_err(|error| EncoderError::Platform(error.to_string()))?
         .iter()
         .any(|display| display.id == display_id);
-    Ok(
-        if source_exists && deskfleet_linux_media::has_h264_encoder() {
-            vec![Codec::H264]
-        } else {
-            Vec::new()
-        },
-    )
+    Ok(if source_exists {
+        linux::supported_codecs()
+    } else {
+        Vec::new()
+    })
 }
 
 #[cfg(target_os = "macos")]

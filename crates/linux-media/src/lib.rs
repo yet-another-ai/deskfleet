@@ -8,11 +8,13 @@
 #![cfg(target_os = "linux")]
 
 mod capture;
+mod codec;
 mod encoder;
 mod ffi;
 mod pipeline;
 
 pub use capture::{Capture, VideoFrame};
+pub use codec::Codec;
 pub use encoder::{EncodedFrame, Encoder, EncoderSettings};
 
 /// Failure to load the optional runtime or operate a media pipeline.
@@ -32,22 +34,18 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[must_use]
 pub fn is_available() -> bool {
     ffi::api().is_ok_and(|api| {
-        [
-            "pipewiresrc",
-            "videoconvert",
-            "appsink",
-            "appsrc",
-            "h264parse",
-        ]
-        .iter()
-        .all(|name| api.has_factory(name))
-            && encoder::has_encoder(api)
+        ["pipewiresrc", "videoconvert", "appsink", "appsrc"]
+            .iter()
+            .all(|name| api.has_factory(name))
+            && Codec::ALL
+                .into_iter()
+                .any(|codec| codec::has_encoder(codec, |name| api.has_factory(name)))
     })
 }
 
-/// Whether an installed hardware H.264 encoder is a candidate for streaming.
+/// Whether an installed hardware encoder and parser are candidates for this codec.
 /// Actual device/format initialization is verified on the first input frame.
 #[must_use]
-pub fn has_h264_encoder() -> bool {
-    ffi::api().is_ok_and(encoder::has_encoder)
+pub fn has_encoder(codec: Codec) -> bool {
+    ffi::api().is_ok_and(|api| codec::has_encoder(codec, |name| api.has_factory(name)))
 }

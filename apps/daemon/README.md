@@ -144,8 +144,10 @@ opaque restoration token in `<daemon directory>/wayland-restore-token` with mode
 `0600`. Subsequent starts use the token while the compositor retains the grant.
 Shutdown cancels pending consent and releases the session. The first backend
 supports logged-in, unlocked GNOME/KDE desktops, with PipeWire capture, EIS input,
-and hardware H.264 through optional GStreamer VA-API/NVENC plugins. It does not
-provide remote login or unlock. See [Linux runtime requirements](../../agents/docs/media.md#wayland-authorization-and-media).
+and hardware AV1, H.265, or H.264 through optional GStreamer VA-API/NVENC plugins.
+The viewer negotiates AV1 → H.265 → H.264 from the host's runtime capabilities
+and its own decoder support. It does not provide remote login or unlock.
+See [Linux runtime requirements](../../agents/docs/media.md#wayland-authorization-and-media).
 
 The library exports `startDaemon()`, `close()`, and a `closed` promise. Importing
 it does not launch the CLI. Electron hosts the daemon in its main process and

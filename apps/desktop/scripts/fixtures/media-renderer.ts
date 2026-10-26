@@ -4,7 +4,11 @@ interface MediaSmokeBridge {
 }
 
 const bridge = (window as unknown as { mediaSmoke: MediaSmokeBridge }).mediaSmoke
-const capture = document.documentElement.dataset.capture === "1"
+const source = document.documentElement.dataset.source ?? "fixture"
+const capture = source === "desktop"
+const hardware = source === "hardware"
+const codec = document.documentElement.dataset.codec ?? "h264"
+const audio = !capture && !hardware
 const peer = new RTCPeerConnection({ iceServers: [] })
 const video = document.querySelector("video")!
 const stream = new MediaStream()
@@ -48,8 +52,8 @@ channel.onmessage = ({ data }) => {
 bridge.onMessage(message => {
   void (async () => {
     if (message.kind === "answer") {
-      if (!message.sdp?.includes("H264/90000") || (!capture && !message.sdp.includes("opus/48000"))) {
-        throw new Error(capture ? "native answer must negotiate H.264" : "native answer must negotiate H.264 and Opus")
+      if (!message.sdp?.toLowerCase().includes(`${codec}/90000`) || (audio && !message.sdp.includes("opus/48000"))) {
+        throw new Error(`native answer must negotiate ${codec}${audio ? " and Opus" : ""}`)
       }
       await peer.setRemoteDescription({ type: "answer", sdp: message.sdp })
       answerApplied = true
@@ -63,15 +67,29 @@ bridge.onMessage(message => {
 
 async function run(): Promise<void> {
   const receiverCodecs = RTCRtpReceiver.getCapabilities("video")?.codecs ?? []
-  const h264 = receiverCodecs.filter(codec =>
-    codec.mimeType.toLowerCase() === "video/h264" &&
-    /(?:^|;)profile-level-id=42e0[0-9a-f]{2}(?:;|$)/i.test(codec.sdpFmtpLine ?? "") &&
-    /(?:^|;)packetization-mode=1(?:;|$)/.test(codec.sdpFmtpLine ?? ""),
-  )
-  if (!h264.length) throw new Error("Chromium has no constrained baseline H.264 receiver")
+  const selected = receiverCodecs.filter(candidate => {
+    if (candidate.mimeType.toLowerCase() !== `video/${codec}`) return false
+    if (codec === "h264") return (
+      /(?:^|;)profile-level-id=42e0[0-9a-f]{2}(?:;|$)/i.test(candidate.sdpFmtpLine ?? "") &&
+      /(?:^|;)packetization-mode=1(?:;|$)/.test(candidate.sdpFmtpLine ?? "")
+    )
+    const parameters = new Map((candidate.sdpFmtpLine ?? "").split(";").map(parameter => {
+      const [key, value] = parameter.trim().split("=", 2)
+      return [key, value] as const
+    }))
+    return codec === "h265" ? (parameters.get("profile-id") ?? "1") === "1" : (parameters.get("profile") ?? "0") === "0"
+  })
+  if (!selected.length) {
+    const reason = `Chromium has no compatible ${codec} receiver (advertised: ${[...new Set(receiverCodecs.map(candidate => candidate.mimeType))].join(", ")})`
+    if (!hardware) throw new Error(reason)
+    finished = true
+    peer.close()
+    bridge.send({ kind: "complete", result: { source, codec, skipped: true, reason } })
+    return
+  }
   const transceiver = peer.addTransceiver("video", { direction: "recvonly" })
-  transceiver.setCodecPreferences(h264)
-  if (!capture) peer.addTransceiver("audio", { direction: "recvonly" })
+  transceiver.setCodecPreferences(selected)
+  if (audio) peer.addTransceiver("audio", { direction: "recvonly" })
   await peer.setLocalDescription(await peer.createOffer())
   bridge.send({ kind: "offer", sdp: peer.localDescription!.sdp })
   offerSent = true
@@ -91,22 +109,26 @@ async function run(): Promise<void> {
     ) continue
     let pixel: number[] | undefined
     if (!capture) {
-      if (!receivedAudio?.packetsReceived || video.videoWidth !== 64 || video.videoHeight !== 64) continue
+      const width = hardware ? 320 : 64
+      const height = hardware ? 240 : 64
+      if ((audio && !receivedAudio?.packetsReceived) || video.videoWidth !== width || video.videoHeight !== height) continue
       const canvas = document.createElement("canvas")
-      canvas.width = 64
-      canvas.height = 64
+      canvas.width = width
+      canvas.height = height
       const context = canvas.getContext("2d")!
       context.drawImage(video, 0, 0)
-      pixel = Array.from(context.getImageData(32, 32, 1, 1).data)
+      pixel = Array.from(context.getImageData(width / 2, height / 2, 1, 1).data)
       if (pixel[0]! < 200 || pixel[1]! > 40 || pixel[2]! > 40) {
         throw new Error(`decoded frame is not red: ${pixel}`)
       }
     }
     bridge.send({ kind: "complete", result: {
-      source: capture ? "desktop" : "fixture",
+      source,
+      codec,
       connection: peer.connectionState,
       framesDecoded: receivedVideo.framesDecoded,
-      ...(capture ? {} : { audioPackets: receivedAudio?.packetsReceived, pixel }),
+      ...(audio ? { audioPackets: receivedAudio?.packetsReceived } : {}),
+      ...(capture ? {} : { pixel }),
       width: video.videoWidth,
       height: video.videoHeight,
       dataChannel: echoReceived,
@@ -117,7 +139,7 @@ async function run(): Promise<void> {
   }
   throw new Error(capture
     ? "Chromium did not decode a desktop frame before timeout"
-    : "Chromium did not decode native H.264/Opus media before timeout")
+    : `Chromium did not decode native ${codec}${audio ? "/Opus" : ""} media before timeout`)
 }
 
 void run().catch(fail)

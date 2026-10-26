@@ -1,5 +1,9 @@
 //! Test-only peer for `mise run desktop:smoke-media`.
 //! Set DESKFLEET_SMOKE_CAPTURE=1 to stream the first display instead of the fixture.
+//! Set DESKFLEET_SMOKE_HARDWARE=1 and DESKFLEET_SMOKE_CODEC to encode generated pixels.
+
+#[path = "media_smoke/hardware.rs"]
+mod hardware;
 
 use std::io::{self, BufRead};
 use std::sync::Arc;
@@ -33,10 +37,26 @@ struct Candidate {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let capture = std::env::var("DESKFLEET_SMOKE_CAPTURE").as_deref() == Ok("1");
+    let hardware = std::env::var("DESKFLEET_SMOKE_HARDWARE").as_deref() == Ok("1");
+    let codec = match std::env::var("DESKFLEET_SMOKE_CODEC")
+        .as_deref()
+        .unwrap_or("h264")
+    {
+        "h264" => VideoCodec::H264,
+        "h265" => VideoCodec::H265,
+        "av1" => VideoCodec::Av1,
+        _ => return Err("DESKFLEET_SMOKE_CODEC must be h264, h265 or av1".into()),
+    };
+    if (capture && hardware) || (!hardware && codec != VideoCodec::H264) {
+        return Err(
+            "select either capture or hardware smoke; codec selection requires hardware smoke"
+                .into(),
+        );
+    }
     let peer = Arc::new(
         Peer::new(PeerConfig {
-            video: Some(VideoCodec::H264),
-            audio: !capture,
+            video: Some(codec),
+            audio: !capture && !hardware,
             ..Default::default()
         })
         .await?,
@@ -58,6 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut connected = false;
     let mut desktop = None;
     let mut starting = None;
+    let mut hardware_stream: Option<hardware::HardwareStream> = None;
     // The normal fixture never opens a desktop permission dialog. On Linux a
     // real capture smoke deliberately follows daemon startup authorization,
     // while continuing to consume close/signaling commands during consent.
@@ -108,6 +129,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     Some(PeerEvent::Error { message, .. }) => return Err(message.into()),
+                    Some(PeerEvent::KeyframeRequested) => {
+                        if let Some(stream) = hardware_stream.as_ref() { stream.request_keyframe(); }
+                    }
                     None => break,
                     _ => {},
                 },
@@ -120,13 +144,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     granted??;
                     authorized = true;
                 },
-                _ = ticks.tick(), if connected && !capture => {
+                packet = async { hardware_stream.as_mut().expect("guarded hardware stream").next_packet().await }, if hardware_stream.is_some() => {
+                    let packet = packet?;
+                    peer.write_video(packet.data.into(), packet.duration).await?;
+                },
+                _ = ticks.tick(), if connected && !capture && !hardware => {
                     peer.write_video(frame.clone(), Duration::from_millis(100)).await?;
                     // One valid 20 ms Opus silence packet, repeated five times per tick.
                     for _ in 0..5 {
                         peer.write_audio(Bytes::from_static(&[0xf8, 0xff, 0xfe]), Duration::from_millis(20)).await?;
                     }
                 },
+            }
+            if hardware && connected && hardware_stream.is_none() {
+                hardware_stream = Some(hardware::HardwareStream::start(codec)?);
             }
             if capture && authorized && connected && desktop.is_none() && starting.is_none() {
                 let peer = Arc::clone(&peer);
@@ -155,6 +186,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }.await;
     // A pending startup also owns a worker, so join it before closing the peer.
     let stopped: Result<(), Box<dyn std::error::Error>> = async {
+        if let Some(stream) = hardware_stream {
+            stream.stop().await?;
+        }
         if let Some(authorizing) = authorizing {
             authorizing.abort();
             let _ = authorizing.await;

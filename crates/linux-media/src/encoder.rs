@@ -2,17 +2,15 @@
 
 use std::time::{Duration, Instant};
 
-use crate::ffi::{self, Api};
+use crate::ffi;
 use crate::pipeline::{Object, Pipeline, set_property};
-use crate::{Error, Result};
+use crate::{Codec, Error, Result};
 
-// Explicit hardware factories only: never decodebin/encodebin or a software
-// fallback. Registration may depend on available devices and installed drivers.
-const FACTORIES: [&str; 4] = ["nvh264enc", "nvautogpuh264enc", "vah264enc", "vah264lpenc"];
 const MAX_IN_FLIGHT: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct EncoderSettings {
+    pub codec: Codec,
     pub width: u32,
     pub height: u32,
     pub fps: f64,
@@ -29,7 +27,7 @@ pub struct EncodedFrame {
     pub is_keyframe: bool,
 }
 
-/// H.264 hardware encoder, owned and polled on the native capture worker.
+/// Hardware video encoder, owned and polled on the native capture worker.
 pub struct Encoder {
     pipeline: Pipeline,
     input: Object,
@@ -41,16 +39,9 @@ pub struct Encoder {
     draining: bool,
 }
 
-pub(crate) fn has_encoder(api: &Api) -> bool {
-    ["appsrc", "appsink", "videoconvert", "h264parse"]
-        .iter()
-        .all(|name| api.has_factory(name))
-        && FACTORIES.iter().any(|name| api.has_factory(name))
-}
-
 impl Encoder {
     /// Verify a hardware candidate with the real first frame before accepting it.
-    /// If one candidate fails, another hardware implementation of H.264 is tried.
+    /// If one candidate fails, another hardware implementation of this codec is tried.
     pub fn start(
         settings: &EncoderSettings,
         pixels: &[u8],
@@ -59,7 +50,12 @@ impl Encoder {
         validate(settings, pixels)?;
         let api = ffi::api()?;
         let mut errors = Vec::new();
-        for factory in FACTORIES.into_iter().filter(|name| api.has_factory(name)) {
+        for &factory in settings
+            .codec
+            .factories()
+            .iter()
+            .filter(|name| api.has_factory(name))
+        {
             let attempt = (|| {
                 let pipeline = Pipeline::new(&description(settings, factory))?;
                 let input = pipeline.child(c"input")?;
@@ -88,16 +84,17 @@ impl Encoder {
             })();
             match attempt {
                 Ok(value) => {
-                    tracing::info!(factory, "Linux hardware encoder started");
+                    tracing::info!(factory, codec = ?settings.codec, "Linux hardware encoder started");
                     return Ok(value);
                 }
                 Err(error) => errors.push(format!("{factory}: {error}")),
             }
         }
         if errors.is_empty() {
-            Err(Error::Unavailable(
-                "no VA-API or NVENC H.264 encoder is installed".into(),
-            ))
+            Err(Error::Unavailable(format!(
+                "no VA-API or NVENC {:?} encoder is installed",
+                settings.codec
+            )))
         } else {
             Err(Error::Pipeline(errors.join("; ")))
         }
@@ -258,7 +255,7 @@ fn validate(settings: &EncoderSettings, pixels: &[u8]) -> Result<()> {
         || !(0.001..=1000.0).contains(&settings.fps)
         || settings.bitrate_bps == 0
         || (settings.max_bitrate_bps != 0 && settings.max_bitrate_bps < settings.bitrate_bps)
-        || !matches!(settings.profile, "constrained-baseline" | "main" | "high")
+        || !settings.codec.accepts_profile(settings.profile)
     {
         return Err(Error::Pipeline("invalid hardware encoder input".into()));
     }
@@ -269,26 +266,41 @@ fn description(settings: &EncoderSettings, factory: &str) -> String {
     let bitrate = settings.bitrate_bps.div_ceil(1000);
     let baseline = settings.profile == "constrained-baseline";
     let hardware = if factory.starts_with("nv") {
+        let codec_options = match settings.codec {
+            Codec::H264 => format!("bframes=0 cabac={}", !baseline),
+            Codec::H265 | Codec::Av1 => "bframes=0".into(),
+        };
         format!(
             "{factory} name=hardware bitrate={bitrate} max-bitrate={} rc-mode=cbr \
-            bframes=0 rc-lookahead=0 zerolatency=true cabac={}",
+            rc-lookahead=0 zerolatency=true {codec_options}",
             settings.max_bitrate_bps.div_ceil(1000),
-            !baseline
         )
     } else {
-        format!(
-            "{factory} name=hardware bitrate={bitrate} rate-control=cbr \
-            b-frames=0 cabac={} dct8x8={}",
-            !baseline,
-            settings.profile == "high"
-        )
+        let codec_options = match settings.codec {
+            Codec::H264 => format!(
+                "b-frames=0 cabac={} dct8x8={}",
+                !baseline,
+                settings.profile == "high"
+            ),
+            Codec::H265 => "b-frames=0".into(),
+            // Unlike H26x, VA AV1 uses hierarchical golden-frame groups. Level
+            // one disables future references so an idle desktop emits promptly.
+            Codec::Av1 => "hierarchical-level=1".into(),
+        };
+        format!("{factory} name=hardware bitrate={bitrate} rate-control=cbr {codec_options}")
     };
+    let media_type = settings.codec.media_type();
+    let parser = settings.codec.parser();
+    let parser_options = match settings.codec {
+        Codec::H264 | Codec::H265 => " config-interval=-1",
+        Codec::Av1 => "",
+    };
+    let output_caps = settings.codec.output_caps();
     format!(
         "appsrc name=input is-live=true format=time block=false max-buffers=4 \
          caps=video/x-raw,format=BGRA,width={},height={},framerate={}/1000 ! \
          videoconvert ! video/x-raw,format=NV12 ! {hardware} ! \
-         video/x-h264,profile={} ! h264parse config-interval=-1 ! \
-         video/x-h264,stream-format=byte-stream,alignment=au ! \
+         {media_type},profile={} ! {parser}{parser_options} ! {output_caps} ! \
          appsink name=frames sync=false max-buffers=4 drop=false \
          enable-last-sample=false wait-on-eos=false",
         settings.width,
@@ -302,33 +314,58 @@ fn description(settings: &EncoderSettings, factory: &str) -> String {
 mod tests {
     use super::*;
 
-    fn settings() -> EncoderSettings {
+    fn settings(codec: Codec) -> EncoderSettings {
         EncoderSettings {
+            codec,
             width: 320,
             height: 240,
             fps: 30.0,
             bitrate_bps: 1_000_000,
             max_bitrate_bps: 2_000_000,
-            profile: "constrained-baseline",
+            profile: if codec == Codec::H264 {
+                "constrained-baseline"
+            } else {
+                "main"
+            },
         }
     }
 
     #[test]
     fn malformed_frame_fails_without_loading_runtime() {
-        assert!(Encoder::start(&settings(), &[0; 12], 0).is_err());
-        let mut options = settings();
+        assert!(Encoder::start(&settings(Codec::H264), &[0; 12], 0).is_err());
+        let mut options = settings(Codec::H264);
         options.fps = f64::NAN;
+        assert!(validate(&options, &vec![0; 320 * 240 * 4]).is_err());
+        options = settings(Codec::Av1);
+        options.profile = "high";
         assert!(validate(&options, &vec![0; 320 * 240 * 4]).is_err());
     }
 
     #[test]
     #[ignore = "requires GStreamer and a working VA-API or NVENC hardware encoder"]
-    fn hardware_encodes_one_frame_and_idle_keyframe() {
+    fn advertised_hardware_encodes_and_decodes_idle_keyframes() {
+        let codecs: Vec<_> = Codec::ALL
+            .into_iter()
+            .filter(|codec| crate::has_encoder(*codec))
+            .collect();
+        assert!(
+            !codecs.is_empty(),
+            "hardware smoke requires at least one advertised codec"
+        );
+        for codec in codecs {
+            hardware_encodes_one_frame_and_idle_keyframe(codec);
+        }
+    }
+
+    fn hardware_encodes_one_frame_and_idle_keyframe(codec: Codec) {
         let pixels = vec![100; 320 * 240 * 4];
-        let (mut encoder, first) = Encoder::start(&settings(), &pixels, 0).unwrap();
+        let (mut encoder, first) = Encoder::start(&settings(codec), &pixels, 0)
+            .unwrap_or_else(|error| panic!("{codec:?}: {error}"));
         assert!(first[0].is_keyframe);
-        assert!(first[0].data.starts_with(&[0, 0, 0, 1]));
-        decode_first_frame(&first[0]);
+        if codec != Codec::Av1 {
+            assert!(first[0].data.starts_with(&[0, 0, 0, 1]));
+        }
+        decode_frame(codec, &first[0]);
         encoder.request_keyframe();
         let mut packets = encoder.encode(&pixels, 1_000_000_000).unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -341,20 +378,35 @@ mod tests {
         );
         assert!(packets[0].is_keyframe);
         assert!(packets[0].timestamp_ns > first[0].timestamp_ns);
+        // A fresh decoder verifies that requested keyframes include the headers
+        // needed for a viewer to recover after packet loss or join an idle stream.
+        decode_frame(codec, &packets[0]);
         encoder.flush().unwrap();
+        println!(
+            "{codec:?}: {} encoded/decoded initial and requested idle keyframes",
+            encoder.factory
+        );
     }
 
-    fn decode_first_frame(packet: &EncodedFrame) {
+    fn decode_frame(codec: Codec, packet: &EncodedFrame) {
         let api = ffi::api().unwrap();
-        let decoder = ["vah264dec", "nvh264dec", "avdec_h264"]
-            .into_iter()
+        let candidates: &[&str] = match codec {
+            Codec::H264 => &["vah264dec", "nvh264dec", "avdec_h264"],
+            Codec::H265 => &["vah265dec", "nvh265dec", "avdec_h265"],
+            Codec::Av1 => &["vaav1dec", "nvav1dec", "dav1ddec", "av1dec"],
+        };
+        let decoder = candidates
+            .iter()
             .find(|name| api.has_factory(name))
-            .expect("hardware smoke also requires an H.264 decoder plugin");
+            .expect("hardware smoke also requires a matching decoder plugin");
         let pipeline = Pipeline::new(&format!(
-            "appsrc name=input format=time caps=video/x-h264,stream-format=byte-stream,alignment=au ! \
-             h264parse ! {decoder} ! videoconvert ! video/x-raw,format=BGRA ! \
-             appsink name=frames sync=false"
-        )).unwrap();
+            "appsrc name=input format=time caps={} ! \
+             {} ! {decoder} ! videoconvert ! video/x-raw,format=BGRA ! \
+             appsink name=frames sync=false",
+            codec.output_caps(),
+            codec.parser()
+        ))
+        .unwrap();
         let input = pipeline.child(c"input").unwrap();
         // SAFETY: This test allocates an owned buffer and initializes it before
         // transferring it to appsrc, using the same public ABI as the encoder.
