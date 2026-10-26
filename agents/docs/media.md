@@ -153,7 +153,9 @@ input is disconnected. Display listing reuses the session without retrying it.
 
 `deskfleet-linux-media` loads GStreamer inside the native process on demand.
 PipeWire samples are copied into Rust-owned BGRA frames before returning buffers
-to the pool. GStreamer converts and uploads these frames to VA-API or NVENC;
+to the pool. Capture pacing leaves the newest sample in the bounded appsink queue
+until the next frame is due, so the final update is delivered even when the
+desktop becomes idle. GStreamer converts and uploads these frames to VA-API or NVENC;
 there is no software encoder fallback. Linux probes H.264, H.265, and AV1
 independently, requiring each codec's parser and a registered hardware encoder.
 The viewer uses the existing AV1 → HEVC → H.264 preference among the codecs both
@@ -175,7 +177,9 @@ apply unchanged. Device removal releases that device's held state. An EIS
 disconnect or stream error releases remote input and leaves the ScreenCast
 session running for current viewers. The daemon publishes that change to
 connected clients, so accessibility follows the live input connection while
-screen capture stays granted. Daemon shutdown ends that watch; a later daemon
+screen capture stays granted. Changes received during consent or an older check
+queue a fresh permission check after it settles, without requesting consent again.
+Daemon shutdown ends that watch; a later daemon
 in the same process watches again. An input controller never closes another
 viewer's portal session. Portal closure still ends capture and input together.
 
@@ -399,9 +403,11 @@ On a Linux graphical host with the runtime and GPU drivers installed, run:
 mise exec -- cargo test -p deskfleet-linux-media --locked -- --ignored --nocapture
 ```
 
-These tests copy a generated GStreamer frame, then encode a generated frame and
-an idle keyframe for every advertised codec. Both keyframes must decode in fresh
-decoder pipelines, with increasing timestamps and correct dimensions/pixels.
+These tests copy a generated GStreamer frame, retain the last update of a burst
+across paced reads, and check capture timeouts and stop handling. They also encode
+a generated frame and an idle keyframe for every advertised codec. Both keyframes
+must decode in fresh decoder pipelines, with increasing timestamps and correct
+dimensions/pixels.
 No desktop authorization is requested.
 
 To send generated hardware-encoded video through WebRTC to Chromium, run each

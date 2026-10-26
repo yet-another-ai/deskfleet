@@ -104,7 +104,7 @@ test("access changes refresh permissions until the portal closes", async () => {
   permissions.initialize(native.requests, native.checks, "guided", {
     linked: [["screenCapture", "accessibility"]],
   })
-  native.onAccessChanged(() => { updates++; void permissions.refresh() })
+  native.onAccessChanged(() => { updates++; void permissions.refreshAfterChange() })
   assert.equal((await permissions.refresh()).accessibilityPermission.status, "granted")
   access = { screenCapture: true, control: false }
   notify()
@@ -118,6 +118,31 @@ test("access changes refresh permissions until the portal closes", async () => {
   await Promise.resolve()
   assert.equal(updates, published)
   assert.equal(permissions.state.screenCapturePermission.status, "granted")
+})
+
+test("closing during a queued access refresh cancels consent without checking or requesting again", async () => {
+  const consent = deferred<WaylandDesktopAccess>()
+  const started = deferred<void>()
+  let requests = 0
+  let checks = 0
+  const native = new WaylandDesktopPermissions("/daemon", {
+    request: () => { requests++; started.resolve(); return consent.promise },
+    check: async () => { checks++; return { screenCapture: true, control: true } },
+    close: async () => { consent.reject(new Error("Portal request cancelled")) },
+  })
+  const permissions = new DesktopPermissions()
+  permissions.initialize(native.requests, native.checks, "automatic", {
+    linked: [["screenCapture", "accessibility"]], refreshOnRead: true,
+  })
+  await started.promise
+  const refreshing = permissions.refreshAfterChange()
+  assert.equal((await permissions.readState()).accessibilityPermission.status, "requesting")
+  await native.close()
+  await refreshing
+  assert.equal(requests, 1)
+  assert.equal(checks, 0)
+  assert.equal(permissions.state.screenCapturePermission.status, "denied")
+  assert.equal(permissions.state.accessibilityPermission.status, "denied")
 })
 
 test("closing before the request microtask runs cannot reopen the Portal", async () => {

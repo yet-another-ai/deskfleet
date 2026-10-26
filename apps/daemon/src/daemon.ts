@@ -108,7 +108,7 @@ export async function startDaemon(port = 0, options: {
   }, wayland ? "automatic" : options.permissionMode, wayland ? {
     linked: [["screenCapture", "accessibility"]], refreshOnRead: true,
   } : {})
-  wayland?.onAccessChanged(() => { void permissions.refresh() })
+  wayland?.onAccessChanged(() => { void permissions.refreshAfterChange() })
   return {
     address: `http://127.0.0.1:${address.port}`,
     peers,

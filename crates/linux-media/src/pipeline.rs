@@ -101,6 +101,20 @@ impl Pipeline {
         Err(Error::Pipeline(text))
     }
 
+    /// Check a previously started stream without consuming its queued sample.
+    pub fn check_active(&self) -> Result<()> {
+        if self.stopped.get() {
+            return Err(Error::Ended);
+        }
+        self.check_error()?;
+        // SAFETY: sink is a retained appsink. EOS is false while samples remain
+        // queued, so a final frame can still be pulled after its pacing delay.
+        if unsafe { (self.element.api.sink_is_eos)(self.sink.ptr.as_ptr()) } != 0 {
+            return Err(Error::Ended);
+        }
+        Ok(())
+    }
+
     pub fn pull(&self, timeout: Duration) -> Result<Option<Sample>> {
         if self.stopped.get() {
             return Err(Error::Ended);

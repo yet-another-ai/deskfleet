@@ -246,7 +246,7 @@ test("hosted Wayland startup authorizes screen and input once while IPC remains 
   assert.equal(closes, 1)
 })
 
-test("connected clients learn when Wayland input ends while capture remains", { timeout: 15_000 }, async context => {
+for (const beforeConsentSettles of [false, true]) test(`connected clients learn when Wayland input ends ${beforeConsentSettles ? "before consent settles" : "after consent"} while capture remains`, { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-wayland-input-"))
   const consent = deferred<{ screenCapture: boolean; control: boolean }>()
   const requested: string[] = []
@@ -277,8 +277,10 @@ test("connected clients learn when Wayland input ends while capture remains", { 
   }, () => {}, directory)
   context.after(() => client.close())
   consent.resolve({ screenCapture: true, control: true })
-  await granted.promise
-  assert.equal((await client.call("permissionsRefresh", {})).accessibilityPermission.status, "granted")
+  if (!beforeConsentSettles) {
+    await granted.promise
+    assert.equal((await client.call("permissionsRefresh", {})).accessibilityPermission.status, "granted")
+  }
   assert.deepEqual(requested, [directory])
   const checksAfterGrant = checks
   access = { screenCapture: true, control: false }

@@ -13,6 +13,8 @@ export class DesktopPermissions {
   #requests?: PermissionAccess
   #checks?: PermissionAccess
   #refresh?: Promise<DesktopPermissionsState>
+  #changePending = false
+  #handlingChanges = false
   #linked: readonly (readonly DesktopPermissionKind[])[] = []
   #refreshOnRead = false
   readonly #pending = new Map<DesktopPermissionKind, Promise<void>>()
@@ -80,6 +82,22 @@ export class DesktopPermissions {
       if (revision === this.#revisions[kind]) this.#update(kind, permission)
     })).then(() => this.state).finally(() => { this.#refresh = undefined })
     return this.#refresh
+  }
+
+  /** Native changes need a fresh check after consent or an older check settles. */
+  async refreshAfterChange(): Promise<void> {
+    this.#changePending = true
+    if (this.#handlingChanges) return
+    this.#handlingChanges = true
+    try {
+      while (this.#changePending) {
+        await Promise.all(this.#pending.values())
+        await this.#refresh
+        if (this.#pending.size || this.#refresh) continue
+        this.#changePending = false
+        await this.refresh()
+      }
+    } finally { this.#handlingChanges = false }
   }
 
   async #read(access: () => Promise<boolean | null>): Promise<DesktopPermission> {

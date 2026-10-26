@@ -111,3 +111,59 @@ test("a stale permission check cannot overwrite a request completed after that c
   stale.resolve(false)
   assert.equal((await refreshing).fullDiskAccessPermission.status, "granted")
 })
+
+test("native changes wait for older checks and coalesce changes during the next check", async () => {
+  const permissions = new DesktopPermissions()
+  const initial = deferred<boolean>()
+  const next = deferred<boolean>()
+  const nextStarted = deferred<void>()
+  let checks = 0
+  const access = { fullDiskAccess: async () => null, screenCapture: async () => true, accessibility: async () => true }
+  permissions.initialize(access, {
+    ...access,
+    accessibility: async () => {
+      checks++
+      if (checks === 1) return initial.promise
+      if (checks === 2) { nextStarted.resolve(); return next.promise }
+      return false
+    },
+  }, "guided")
+  const refreshing = permissions.refreshAfterChange()
+  void permissions.refreshAfterChange()
+  initial.resolve(true)
+  await nextStarted.promise
+  void permissions.refreshAfterChange()
+  void permissions.refreshAfterChange()
+  next.resolve(true)
+  await refreshing
+  assert.equal(checks, 3)
+  assert.equal(permissions.state.screenCapturePermission.status, "granted")
+  assert.equal(permissions.state.accessibilityPermission.status, "denied")
+})
+
+test("an event-triggered check cannot overwrite a newer explicit request", async () => {
+  const permissions = new DesktopPermissions()
+  const checking = deferred<void>()
+  const stale = deferred<boolean>()
+  const granted = deferred<void>()
+  let checkPending = false
+  const access = { fullDiskAccess: async () => null, screenCapture: async () => true, accessibility: async () => true }
+  permissions.initialize(access, {
+    ...access,
+    accessibility: async () => {
+      if (!checkPending) return false
+      checking.resolve()
+      return stale.promise
+    },
+  }, "guided")
+  await permissions.refresh()
+  checkPending = true
+  const refreshing = permissions.refreshAfterChange()
+  await checking.promise
+  permissions.onChange(state => { if (state.accessibilityPermission.status === "granted") granted.resolve() })
+  permissions.requestPermission("accessibility")
+  await granted.promise
+  stale.resolve(false)
+  await refreshing
+  assert.equal(permissions.state.accessibilityPermission.status, "granted")
+})
