@@ -192,22 +192,36 @@ test("OS events refresh tracked ignored paths and directories exposed by changed
 })
 
 test("linked worktrees observe their separate index and HEAD plus common refs", async context => {
+  // Drive metadata invalidation through the same controlled watches as the
+  // ignore tests. Linked-worktree HEAD/index/refs updates are easy for macOS
+  // FSEvents to deliver after the short eventually window used elsewhere.
+  const callbacks = controlledWatches(context)
   const f = await fixture(context)
   const worktree = join(f.root, "linked")
   await git(f.root, "worktree", "add", "--detach", worktree, "HEAD")
   const errors: string[] = []
   await f.inspection.watch([worktree], error => { if (error) errors.push(error) })
+  const [gitDir, commonDir] = (await git(worktree, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")).split("\n")
+  const notify = (directory: string, event: "change" | "rename", filename: string) => {
+    const callback = callbacks.get(directory)
+    assert.ok(callback, `missing watch for ${directory}`)
+    callback(event, filename)
+  }
   const status = async () => (await f.inspection.status("2", [worktree])).repositories[0]!
   const initial = await status()
   assert.equal(initial.branch, null)
   await git(worktree, "switch", "-c", "watched")
+  notify(gitDir!, "change", "HEAD")
   await eventually(async () => (await status()).branch === "watched", "worktree HEAD change did not invalidate its detached snapshot")
   await writeFile(join(worktree, "source.txt"), "linked\n")
+  notify(worktree, "change", "source.txt")
   await eventually(async () => (await status()).changes.some(change => change.path === "source.txt" && change.kind === "unstaged"), "worktree edit did not invalidate its clean snapshot")
   await git(worktree, "add", "source.txt")
+  notify(gitDir!, "change", "index")
   await eventually(async () => (await status()).changes.some(change => change.path === "source.txt" && change.kind === "staged"), "separate worktree index did not invalidate its unstaged snapshot")
   const next = await git(f.root, "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "advance common ref")
   await git(f.root, "update-ref", "refs/heads/watched", next)
+  notify(join(commonDir!, "refs", "heads"), "change", "watched")
   await eventually(async () => (await status()).head === next, "common ref change did not invalidate the worktree HEAD snapshot")
   assert.deepEqual(errors, [])
 })
