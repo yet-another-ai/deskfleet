@@ -44,6 +44,9 @@ async function open(wrapper: Awaited<ReturnType<typeof setup>>["wrapper"], id = 
 const choose = (wrapper: Awaited<ReturnType<typeof setup>>["wrapper"], _name: string, value: string) => wrapper.get(`[role="radio"][value="${value}"]`).trigger("click")
 
 async function setup(initial: ScheduledTask[] = []) {
+  // Exercise real timezone choices without mounting the entire host Intl catalog.
+  const supportedValuesOf = Intl.supportedValuesOf
+  vi.spyOn(Intl, "supportedValuesOf").mockImplementation(key => key === "timeZone" ? ["Asia/Singapore", "Europe/London"] : supportedValuesOf(key))
   platformClient.target = { id: "machine-1", local: false }
   const fake = fakeCentral({ machines: [machineFixture("machine-1", "team-1", "Build machine"), machineFixture("machine-2", "team-1", "Other machine")] })
   let schedules = clone(initial)
