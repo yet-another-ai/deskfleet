@@ -53,7 +53,7 @@ onBeforeUnmount(() => { closed = true })
 </script>
 
 <template>
-    <UiDialog class="git-diff-dialog" :data-git-diff="selection.kind" :data-git-path="selection.path" @close="close">
+    <UiDialog class="flex w-[min(70rem,calc(100vw-2rem))] flex-col p-0" :data-git-diff="selection.kind" :data-git-path="selection.path" @close="close">
       <header class="flex shrink-0 items-start justify-between gap-4 border-b border-ui-border p-4">
         <div class="min-w-0">
           <DialogTitle class="m-0 break-all font-mono text-sm font-semibold select-text">{{ selection.path }}</DialogTitle>
@@ -86,12 +86,6 @@ onBeforeUnmount(() => { closed = true })
 </template>
 
 <style scoped>
-.git-diff-dialog {
-  width: min(70rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
-  padding: 0;
-}
-.git-diff-dialog { display: flex; flex-direction: column; }
 .git-diff-content { overscroll-behavior: contain; }
 .git-diff-lines { width: max-content; min-width: 100%; padding: 0.5rem 0; line-height: 1.65; tab-size: 4; }
 .git-diff-line { display: grid; grid-template-columns: 3.75rem 3.75rem 1fr; }

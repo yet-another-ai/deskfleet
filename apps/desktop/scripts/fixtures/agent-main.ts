@@ -48,6 +48,13 @@ async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promis
     await until(() => !!row() && !row()!.disabled, `Git ${kind} ${path}`)
     row()!.click()
     await until(() => !!diff()?.innerText.includes(expected), `Git ${kind} preview`)
+    const dialog = diff()!
+    const style = getComputedStyle(dialog)
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+    const width = Math.min(70 * rem, innerWidth - 2 * rem)
+    if (Math.abs(dialog.getBoundingClientRect().width - width) > 1 || style.padding !== "0px" || style.display !== "flex" || style.flexDirection !== "column") {
+      throw new Error(`Git diff layout must be wide, unpadded, and column flex; got ${style.width}, padding ${style.padding}, ${style.display}/${style.flexDirection}`)
+    }
   }
   async function close(): Promise<void> {
     const dialog = document.querySelector<HTMLElement>("[role=dialog][data-state=open]")
@@ -70,6 +77,15 @@ async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promis
   } else {
     await until(() => !!diff()?.innerText.includes("+Smoke diff live version") && !diff()!.innerText.includes("+Smoke diff first version"), "Live Git diff refresh without agent events")
   }
+  const dialog = diff()!
+  const content = dialog.querySelector<HTMLElement>(".git-diff-content")!
+  const header = dialog.querySelector("header")!
+  const headerTop = header.getBoundingClientRect().top
+  content.scrollTop = 100
+  if (content.scrollTop !== 100 || dialog.scrollHeight > dialog.clientHeight + 1 || Math.abs(header.getBoundingClientRect().top - headerTop) > 1 || dialog.getBoundingClientRect().height > innerHeight - 32 + 1) {
+    throw new Error("Long Git diffs must scroll inside the patch while the header stays visible within the viewport")
+  }
+  content.scrollTop = 0
 }
 
 // Evaluate in the production renderer with its production sandboxed preload.
@@ -347,13 +363,14 @@ void app.whenReady().then(async () => {
     const worktreeDirectory = await window.webContents.executeJavaScript(`window.deskfleet.catalog.list().then(snapshot => snapshot.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.id === ${JSON.stringify(result.worktreeId)})?.directories[0]?.path)`) as string | undefined
     if (!worktreeDirectory) throw new Error("Session checkout directory was missing")
     if (context.phase === "create") {
+      const longPatch = Array.from({ length: 100 }, (_, index) => `Smoke diff line ${index + 1}\n`).join("")
       await writeFile(join(worktreeDirectory, "README.md"), "Smoke staged baseline\n")
       await execute("git", ["-C", worktreeDirectory, "add", "--", "README.md"])
-      await writeFile(join(worktreeDirectory, "README.md"), "Smoke diff first version\n")
+      await writeFile(join(worktreeDirectory, "README.md"), `Smoke diff first version\n${longPatch}`)
       await writeFile(join(worktreeDirectory, "new-file.txt"), "Smoke untracked file\n")
       await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("initial")`)
       // Preserve both the status letter and line counts: polling must fetch content, too.
-      await writeFile(join(worktreeDirectory, "README.md"), "Smoke diff live version\n")
+      await writeFile(join(worktreeDirectory, "README.md"), `Smoke diff live version\n${longPatch}`)
       await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("live")`)
     } else {
       await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("restore")`)
