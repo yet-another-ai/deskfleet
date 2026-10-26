@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { execFile } from "node:child_process"
+import childProcess, { execFile } from "node:child_process"
 import fs, { type FSWatcher } from "node:fs"
 import { mkdir, mkdtemp, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -12,6 +12,29 @@ import { GitInspection } from "./git-inspection.ts"
 
 const execute = promisify(execFile)
 const git = async (root: string, ...args: string[]) => (await execute("git", ["-C", root, ...args], { encoding: "utf8" })).stdout.trimEnd()
+
+async function eventually(condition: () => boolean | Promise<boolean>, message: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    if (await condition()) return
+    await delay(20)
+  }
+  assert.fail(message)
+}
+
+function controlledWatches(context: TestContext): Map<string, fs.WatchListener<string>> {
+  const callbacks = new Map<string, fs.WatchListener<string>>()
+  const original = fs.watch
+  const mock = context.mock.method(fs, "watch", (path: fs.PathLike, options: fs.WatchOptions, callback: fs.WatchListener<string>) => {
+    callbacks.set(String(path), callback)
+    // FSEvents can deliver setup writes made before fs.watch was attached.
+    // Supply only the event under test while retaining real watcher resources.
+    return original(path, options, () => {})
+  })
+  syncBuiltinESMExports()
+  context.after(() => { mock.mock.restore(); syncBuiltinESMExports() })
+  return callbacks
+}
 
 async function repository(root: string): Promise<void> {
   await mkdir(root, { recursive: true })
@@ -68,6 +91,7 @@ test("OS events refresh tracked edits, atomic saves, new directories, staging an
 })
 
 test("watched checkouts share cached and concurrent reads until invalidated, forced, or released", async context => {
+  const callbacks = controlledWatches(context)
   const f = await fixture(context)
   const [first, second] = await Promise.all([f.inspection.status("1", [f.root]), f.inspection.status("2", [f.root])])
   assert.equal(first.repositories[0], second.repositories[0])
@@ -79,20 +103,32 @@ test("watched checkouts share cached and concurrent reads until invalidated, for
   f.stop()
   const before = f.events()
   await writeFile(join(f.root, "source.txt"), "still observed\n")
-  const until = Date.now() + 5_000
-  while (!otherEvents && Date.now() < until) await delay(20)
-  assert.ok(otherEvents > 0)
+  callbacks.get(f.root)!("change", "source.txt")
+  assert.equal(otherEvents, 1)
   assert.equal(f.events(), before)
+  const invalidated = await f.inspection.status("1", [f.root])
+  assert.notEqual(invalidated.repositories[0], forced.repositories[0])
+  assert.equal(invalidated.repositories[0]!.changes[0]!.kind, "unstaged")
   stopOther()
   const stopped = otherEvents
   await writeFile(join(f.root, "source.txt"), "no observers\n")
-  await delay(150)
+  callbacks.get(f.root)!("change", "source.txt")
   assert.equal(otherEvents, stopped)
   const uncached = await f.inspection.status("1", [f.root])
   assert.notEqual((await f.inspection.status("1", [f.root])).repositories[0], uncached.repositories[0])
 })
 
-test("ignored trees and new ignored files stay quiet while tracked ignored paths and ignore rules remain live", async context => {
+test("ignored events preserve the cached snapshot and ignored trees have no subscriptions", async context => {
+  const callbacks = controlledWatches(context)
+  let classified = 0
+  const originalExecFile = childProcess.execFile
+  const execMock = context.mock.method(childProcess, "execFile", (...args: Parameters<typeof childProcess.execFile>) => {
+    const child = originalExecFile(...args)
+    if (args[1]?.includes("check-ignore")) child.once("close", () => { classified++ })
+    return child
+  })
+  syncBuiltinESMExports()
+  context.after(() => { execMock.mock.restore(); syncBuiltinESMExports() })
   const f = await fixture(context)
   f.stop()
   await mkdir(join(f.root, "generated", "deep"), { recursive: true })
@@ -103,24 +139,55 @@ test("ignored trees and new ignored files stay quiet while tracked ignored paths
   let events = 0
   const errors: string[] = []
   await f.inspection.watch([f.root], error => { events++; if (error) errors.push(error) })
-  await f.inspection.status("1", [f.root])
+  const before = await f.inspection.status("1", [f.root])
+  assert.equal(callbacks.has(join(f.root, "generated")), false)
+  assert.equal(callbacks.has(join(f.root, "generated", "deep")), false)
+  assert.equal(callbacks.has(join(f.root, ".git", "objects")), false)
+  assert.equal(callbacks.has(join(f.root, ".git", "logs")), false)
+  assert.ok(callbacks.has(join(f.root, "mixed")), "tracked files keep their ignored parent watched")
   await writeFile(join(f.root, "generated", "deep", "build.txt"), "ignored\n")
   await writeFile(join(f.root, "new.log"), "ignored new file\n")
   await writeFile(join(f.root, ".git", "objects", "info", "watcher-test"), "unrelated object metadata\n")
   await writeFile(join(f.root, ".git", "logs", "watcher-test"), "unrelated reflog\n")
-  await delay(250)
+  const previous = classified
+  callbacks.get(f.root)!("change", "generated")
+  callbacks.get(f.root)!("rename", "new.log")
+  callbacks.get(f.root)!("change", ".git/objects/info/watcher-test")
+  callbacks.get(join(f.root, ".git"))!("change", "objects/info/watcher-test")
+  callbacks.get(join(f.root, ".git"))!("change", "logs/watcher-test")
+  callbacks.get(join(f.root, ".git"))!("rename", "index.lock")
+  await eventually(() => classified > previous, "new ignored file was not classified by Git")
+  // The child close callback resolves check-ignore; let its awaiting classifier finish.
+  await new Promise<void>(resolve => setImmediate(resolve))
+  callbacks.get(f.root)!("change", "new.log")
   assert.equal(events, 0)
+  assert.equal((await f.inspection.status("1", [f.root])).repositories[0], before.repositories[0])
   await writeFile(join(f.root, "mixed", "tracked.txt"), "tracked change despite ignore\n")
-  const until = Date.now() + 5_000
-  while (!events && Date.now() < until) await delay(20)
-  assert.ok(events > 0)
+  callbacks.get(join(f.root, "mixed"))!("change", "tracked.txt")
+  assert.equal(events, 1)
+  assert.notEqual((await f.inspection.status("1", [f.root])).repositories[0], before.repositories[0])
+  assert.deepEqual(errors, [])
+})
+
+test("OS events refresh tracked ignored paths and directories exposed by changed ignore rules", async context => {
+  const f = await fixture(context)
+  f.stop()
+  await mkdir(join(f.root, "generated", "deep"), { recursive: true })
+  await mkdir(join(f.root, "mixed"))
+  await writeFile(join(f.root, "mixed", "tracked.txt"), "tracked\n")
+  await git(f.root, "add", "mixed/tracked.txt")
+  await writeFile(join(f.root, ".gitignore"), "generated/\nmixed/\n*.log\n")
+  await writeFile(join(f.root, "generated", "deep", "build.txt"), "ignored\n")
+  const errors: string[] = []
+  await f.inspection.watch([f.root], error => { if (error) errors.push(error) })
+  const changes = async () => (await f.inspection.status("1", [f.root])).repositories[0]!.changes
+  assert.equal((await changes()).some(change => change.path === "generated/deep/build.txt"), false)
+  await writeFile(join(f.root, "mixed", "tracked.txt"), "tracked change despite ignore\n")
+  await eventually(async () => (await changes()).some(change => change.path === "mixed/tracked.txt" && change.kind === "unstaged"), "tracked ignored file did not invalidate its snapshot")
   await writeFile(join(f.root, ".gitignore"), "*.log\n")
-  await delay(350)
-  const before = events
-  await writeFile(join(f.root, "generated", "deep", "build.txt"), "now visible\n")
-  const deadline = Date.now() + 5_000
-  while (events === before && Date.now() < deadline) await delay(20)
-  assert.ok(events > before)
+  await eventually(async () => (await changes()).some(change => change.path === "generated/deep/build.txt" && change.additions === 1), "changed ignore rules did not expose the directory")
+  await writeFile(join(f.root, "generated", "deep", "build.txt"), "now visible\nand watched\n")
+  await eventually(async () => (await changes()).some(change => change.path === "generated/deep/build.txt" && change.additions === 2), "newly exposed directory did not refresh its cached contents")
   assert.deepEqual(errors, [])
 })
 
@@ -128,26 +195,20 @@ test("linked worktrees observe their separate index and HEAD plus common refs", 
   const f = await fixture(context)
   const worktree = join(f.root, "linked")
   await git(f.root, "worktree", "add", "--detach", worktree, "HEAD")
-  let events = 0
   const errors: string[] = []
-  await f.inspection.watch([worktree], error => { events++; if (error) errors.push(error) })
-  await f.inspection.status("2", [worktree])
+  await f.inspection.watch([worktree], error => { if (error) errors.push(error) })
+  const status = async () => (await f.inspection.status("2", [worktree])).repositories[0]!
+  const initial = await status()
+  assert.equal(initial.branch, null)
   await git(worktree, "switch", "-c", "watched")
-  await delay(150)
-  assert.ok(events > 0)
-  assert.equal((await f.inspection.status("2", [worktree])).repositories[0]!.branch, "watched")
+  await eventually(async () => (await status()).branch === "watched", "worktree HEAD change did not invalidate its detached snapshot")
   await writeFile(join(worktree, "source.txt"), "linked\n")
-  await delay(100)
-  await f.inspection.status("2", [worktree])
-  const before = events
+  await eventually(async () => (await status()).changes.some(change => change.path === "source.txt" && change.kind === "unstaged"), "worktree edit did not invalidate its clean snapshot")
   await git(worktree, "add", "source.txt")
-  await delay(150)
-  assert.ok(events > before)
-  assert.equal((await f.inspection.status("2", [worktree])).repositories[0]!.changes[0]!.kind, "staged")
-  const previous = events
-  await git(f.root, "update-ref", "refs/heads/another", "HEAD")
-  await delay(150)
-  assert.ok(events > previous)
+  await eventually(async () => (await status()).changes.some(change => change.path === "source.txt" && change.kind === "staged"), "separate worktree index did not invalidate its unstaged snapshot")
+  const next = await git(f.root, "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "advance common ref")
+  await git(f.root, "update-ref", "refs/heads/watched", next)
+  await eventually(async () => (await status()).head === next, "common ref change did not invalidate the worktree HEAD snapshot")
   assert.deepEqual(errors, [])
 })
 
