@@ -175,7 +175,8 @@ apply unchanged. Device removal releases that device's held state. An EIS
 disconnect or stream error releases remote input and leaves the ScreenCast
 session running for current viewers. The daemon publishes that change to
 connected clients, so accessibility follows the live input connection while
-screen capture stays granted. An input controller never closes another
+screen capture stays granted. Daemon shutdown ends that watch; a later daemon
+in the same process watches again. An input controller never closes another
 viewer's portal session. Portal closure still ends capture and input together.
 
 The authenticated `hello` response includes `fullDiskAccessPermission`,

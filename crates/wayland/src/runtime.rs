@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex, OnceLock,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
     },
 };
 
@@ -40,7 +40,8 @@ struct Handle {
 
 static RUNTIME: OnceLock<std::result::Result<Handle, String>> = OnceLock::new();
 static ACCESS_GENERATION: AtomicU32 = AtomicU32::new(0);
-static ACCESS_CLOSED: AtomicBool = AtomicBool::new(false);
+/// Bumped by shutdown. A watch ends only when this changes after it starts.
+static ACCESS_EPOCH: AtomicU32 = AtomicU32::new(0);
 static ACCESS_CHANGED: Notify = Notify::const_new();
 
 fn handle() -> Result<&'static Handle> {
@@ -109,14 +110,22 @@ pub async fn shutdown() -> Result<()> {
         response.await.map_err(|_| Error::Stopped)?
     }
     .await;
-    // Wake permission watchers even when the snapshot was already cleared.
-    ACCESS_CLOSED.store(true, Ordering::Release);
+    // End watches that are already waiting. A later watch reads the new epoch.
+    ACCESS_EPOCH.fetch_add(1, Ordering::Release);
     ACCESS_CHANGED.notify_waiters();
     result
 }
 
 pub async fn wait_for_access_change(seen: u32) -> Option<u32> {
-    wait_for_generation(seen, &ACCESS_GENERATION, &ACCESS_CLOSED, &ACCESS_CHANGED).await
+    let started = ACCESS_EPOCH.load(Ordering::Acquire);
+    wait_for_generation(
+        seen,
+        &ACCESS_GENERATION,
+        &ACCESS_EPOCH,
+        started,
+        &ACCESS_CHANGED,
+    )
+    .await
 }
 
 pub fn open_pipewire(id: u32) -> Result<(OwnedFd, Source)> {
@@ -172,13 +181,14 @@ fn publish_generation(generation: &AtomicU32, notify: &Notify) {
 async fn wait_for_generation(
     seen: u32,
     generation: &AtomicU32,
-    closed: &AtomicBool,
+    epoch: &AtomicU32,
+    started: u32,
     notify: &Notify,
 ) -> Option<u32> {
     loop {
         let notified = notify.notified();
         tokio::pin!(notified);
-        if closed.load(Ordering::Acquire) {
+        if epoch.load(Ordering::Acquire) != started {
             return None;
         }
         let current = generation.load(Ordering::Acquire);
@@ -186,7 +196,7 @@ async fn wait_for_generation(
             return Some(current);
         }
         notified.as_mut().enable();
-        if closed.load(Ordering::Acquire) {
+        if epoch.load(Ordering::Acquire) != started {
             return None;
         }
         let current = generation.load(Ordering::Acquire);
@@ -742,11 +752,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn published_access_change_wakes_a_waiter_and_close_ends_the_watch() {
+    async fn published_access_change_wakes_a_waiter_and_close_ends_only_that_watch() {
         let generation = AtomicU32::new(0);
-        let closed = AtomicBool::new(false);
+        let epoch = AtomicU32::new(0);
         let notify = Notify::new();
-        let waiting = wait_for_generation(0, &generation, &closed, &notify);
+        let waiting = wait_for_generation(0, &generation, &epoch, 0, &notify);
         tokio::pin!(waiting);
         tokio::select! {
             _ = &mut waiting => panic!("access watch resolved before a change"),
@@ -755,15 +765,25 @@ mod tests {
         publish_generation(&generation, &notify);
         assert_eq!(waiting.await, Some(1));
 
-        let waiting = wait_for_generation(1, &generation, &closed, &notify);
+        let waiting = wait_for_generation(1, &generation, &epoch, 0, &notify);
         tokio::pin!(waiting);
         tokio::select! {
             _ = &mut waiting => panic!("access watch resolved before shutdown"),
             _ = tokio::task::yield_now() => {}
         }
-        closed.store(true, Ordering::Release);
+        epoch.fetch_add(1, Ordering::Release);
         notify.notify_waiters();
         assert_eq!(waiting.await, None);
+
+        let started = epoch.load(Ordering::Acquire);
+        let waiting = wait_for_generation(1, &generation, &epoch, started, &notify);
+        tokio::pin!(waiting);
+        tokio::select! {
+            _ = &mut waiting => panic!("a watch started after shutdown resolved immediately"),
+            _ = tokio::task::yield_now() => {}
+        }
+        publish_generation(&generation, &notify);
+        assert_eq!(waiting.await, Some(2));
     }
 
     struct DeferredAuthorizer {

@@ -107,7 +107,8 @@ pub async fn shutdown() -> Result<()> {
 /// Waits until the observed grant changes.
 ///
 /// `seen` is the generation returned by the previous call, or zero to wait for
-/// the next change. Resolves with `None` after [`shutdown`].
+/// the next change. Resolves with `None` when [`shutdown`] ends this watch.
+/// A call started after that shutdown waits for a later change.
 pub async fn wait_for_access_change(seen: u32) -> Option<u32> {
     runtime::wait_for_access_change(seen).await
 }
