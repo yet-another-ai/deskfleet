@@ -2,7 +2,7 @@
 
 ## 继续使用熟悉的 Agent
 
-deskfleet 支持 Codex CLI、Claude Code、Cursor CLI、Grok CLI 以及其他 ACP 可执行程序。可在 **设置 → Agent** 中为实际执行任务的机器配置它们。
+deskfleet 支持 Codex CLI、Claude Code、Cursor CLI、Grok CLI、DeepSeek Harness 以及其他 ACP 可执行程序。可在 **设置 → Agent** 中为实际执行任务的机器配置它们。
 
 添加 Agent 时，先选择对应的 CLI，deskfleet 会在所选机器上检查它。状态会显示 Agent **已就绪**、**尚未登录**或**未安装**。内置 CLI 缺失时，可点击 **安装** 运行官方安装程序；对话框会在安装过程中显示输出，并在完成后填入可执行文件。能否自动安装取决于目标机器的操作系统。如需指定可执行文件或添加环境变量，请展开 **高级**。
 

@@ -2,7 +2,7 @@
 
 ## Keep your preferred agent
 
-deskfleet connects to Codex CLI, Claude Code, Cursor CLI, Grok CLI, and other ACP-compatible executables. Configure them on the machine that will execute the work in **Settings → Agents**.
+deskfleet connects to Codex CLI, Claude Code, Cursor CLI, Grok CLI, DeepSeek Harness, and other ACP-compatible executables. Configure them on the machine that will execute the work in **Settings → Agents**.
 
 When you add an agent, choose its CLI and deskfleet checks the selected machine for it. The status shows whether the agent is **Ready**, **Not signed in**, or **Not installed**. If a built-in CLI is missing, use **Install** to run its official installer. The dialog shows the installer's output while it runs and fills in the executable when it finishes. Installation availability depends on the target machine's operating system. To use a specific executable or add environment variables, open **Advanced**.
 

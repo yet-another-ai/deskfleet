@@ -8,7 +8,7 @@ The [interactive homepage demos](/#explore) let you switch machines and agents, 
 
 ## Bring your own agents
 
-Connect an installed and authenticated Codex CLI, Claude Code, Cursor CLI, Grok CLI, or another ACP agent. Your agent runs on the selected machine, using its tools and environment.
+Connect an installed and authenticated Codex CLI, Claude Code, Cursor CLI, Grok CLI, DeepSeek Harness, or another ACP agent. Your agent runs on the selected machine, using its tools and environment.
 
 ## Work together
 

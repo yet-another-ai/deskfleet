@@ -8,7 +8,7 @@ deskfleet 把运行在团队不同电脑上的 Agent 带到一个共同的工作
 
 ## 带上你喜欢的 Agent
 
-连接已经安装并登录的 Codex CLI、Claude Code、Cursor CLI、Grok CLI 或其他 ACP Agent。Agent 使用所选机器上的工具和开发环境执行任务。
+连接已经安装并登录的 Codex CLI、Claude Code、Cursor CLI、Grok CLI、DeepSeek Harness 或其他 ACP Agent。Agent 使用所选机器上的工具和开发环境执行任务。
 
 ## 与同事一起操作
 
