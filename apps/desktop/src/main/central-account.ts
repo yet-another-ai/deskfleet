@@ -19,11 +19,13 @@ async function readAccount(path: string): Promise<SavedAccount> {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return { serverUrl: "http://127.0.0.1:8080" }
     throw error
   }
-  const token = value.encryptedToken && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(value.encryptedToken, "base64")) : undefined
+  const token = value.encryptedToken && await safeStorage.isAsyncEncryptionAvailable()
+    ? (await safeStorage.decryptStringAsync(Buffer.from(value.encryptedToken, "base64"))).result : undefined
   return { serverUrl: value.serverUrl, token, user: token ? value.user : undefined }
 }
 async function saveAccount(path: string, account: SavedAccount): Promise<void> {
-  const encryptedToken = account.token && safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(account.token).toString("base64") : undefined
+  const encryptedToken = account.token && await safeStorage.isAsyncEncryptionAvailable()
+    ? (await safeStorage.encryptStringAsync(account.token)).toString("base64") : undefined
   await mkdir(app.getPath("userData"), { recursive: true })
   await writeFile(path, JSON.stringify({ serverUrl: account.serverUrl, encryptedToken, user: encryptedToken ? account.user : undefined } satisfies StoredAccount), { mode: 0o600 })
 }
