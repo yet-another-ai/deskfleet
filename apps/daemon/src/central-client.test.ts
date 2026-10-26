@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { once } from "node:events"
+import { EventEmitter, once } from "node:events"
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -16,11 +16,11 @@ import { centralUrl } from "./central-protocol.ts"
 
 test("local discovery grants only host setup and never imports development resources", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-central-auth-"))
-  const development = await startDaemon(0, { controlDirectory: directory, allowLocalControlForTests: true, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const development = await startDaemon(0, { controlDirectory: directory, allowLocalControlForTests: true, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const old = await DaemonClient.connect(() => {}, () => {}, directory)
   await old.call("workspaceCreate", { name: "Development data", directories: [{ path: directory }] })
   old.close(); await development.close()
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const client = await DaemonClient.connect(() => {}, () => {}, directory)
   context.after(async () => {
     client.close()
@@ -37,7 +37,7 @@ test("local discovery grants only host setup and never imports development resou
 
 test("enrollment verifies local machine identity and saves only a private daemon credential", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-enroll-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const identity = daemon.central.status().identity
   let originId = "wrong"
   const server = createServer((request, response) => {
@@ -72,7 +72,7 @@ test("remote enrollment requires TLS and accepts HTTP only on loopback", () => {
 
 test("delegation rechecks membership without treating a removed user as a revoked machine", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-delegation-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const identity = daemon.central.status().identity
   let status = 200
   const users: string[] = []
@@ -106,7 +106,7 @@ test("delegation rechecks membership without treating a removed user as a revoke
   assert.deepEqual(users, ["creator", "creator", "creator"])
 })
 
-test("read and signaling RPCs do not republish catalogs; resource events still synchronize", async context => {
+test("read and signaling RPCs do not republish catalogs; resource events still synchronize", { timeout: 10_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-sync-events-"))
   context.after(() => rm(directory, { recursive: true, force: true }))
   await writeFile(join(directory, "central.json"), JSON.stringify({
@@ -125,8 +125,10 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
   context.mock.property(globalThis, "WebSocket", Socket as unknown as typeof WebSocket)
   context.mock.timers.enable({ apis: ["setTimeout", "setInterval"] })
   const posts: string[] = []
+  const published = new EventEmitter()
   context.mock.method(globalThis, "fetch", async (url: string | URL | Request) => {
     posts.push(String(url))
+    published.emit(new URL(String(url)).pathname)
     return Response.json({ lastEventSeq: "1" })
   })
   let catalogChanged = () => {}, providersChanged = () => {}, terminalsChanged = () => {}
@@ -151,10 +153,17 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
   const central = new CentralClient(directory, operations, {} as ControlPeers)
   context.after(() => central.close())
   await central.init()
-  const flush = async () => { context.mock.timers.tick(250); await setImmediate() }
+  const flush = async (path?: string) => {
+    // The native capability probe can finish after an event-loop turn. Await the
+    // actual publication when one is expected, while still controlling batching.
+    const publication = path ? once(published, path) : undefined
+    context.mock.timers.tick(250)
+    await publication
+    await setImmediate()
+  }
   const catalogs = () => posts.filter(url => url.endsWith("/catalog")).length
   socket.receive({ type: "ready", serverId: "server", machineId: "machine", teamId: "team" })
-  await flush()
+  await flush("/api/daemon/catalog")
   assert.equal(catalogs(), 1)
   for (const method of ["terminalList", "peer.close"]) {
     socket.receive({ type: "request", id: method, method, params: { peerId: "closed-peer" } })
@@ -165,11 +174,11 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
   assert.equal(catalogs(), 1, "Refreshing terminal lists must not start a catalogChanged feedback loop")
   for (const changed of [catalogChanged, providersChanged, terminalsChanged]) {
     const before = catalogs()
-    changed(); await flush()
+    changed(); await flush("/api/daemon/catalog")
     assert.equal(catalogs(), before + 1)
   }
   hasSession = true
-  agentChanged({ sessionId: "session" }); await flush()
+  agentChanged({ sessionId: "session" }); await flush("/api/daemon/history")
   assert.equal(posts.filter(url => url.endsWith("/history")).length, 1)
   assert.equal(catalogs(), 4)
 })

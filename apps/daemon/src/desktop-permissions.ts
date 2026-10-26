@@ -12,6 +12,8 @@ export class DesktopPermissions {
   #requests?: PermissionAccess
   #checks?: PermissionAccess
   #refresh?: Promise<DesktopPermissionsState>
+  #linked: readonly (readonly DesktopPermissionKind[])[] = []
+  #refreshOnRead = false
   readonly #pending = new Map<DesktopPermissionKind, Promise<void>>()
   readonly #revisions = { fullDiskAccess: 0, screenCapture: 0, accessibility: 0 }
   readonly #listeners = new Set<(permissions: DesktopPermissionsState) => void>()
@@ -29,27 +31,42 @@ export class DesktopPermissions {
     return () => { this.#listeners.delete(listener) }
   }
 
-  initialize(requests: PermissionAccess, checks: PermissionAccess, mode: "automatic" | "guided" = "automatic"): void {
+  initialize(requests: PermissionAccess, checks: PermissionAccess, mode: "automatic" | "guided" = "automatic", options: {
+    linked?: readonly (readonly DesktopPermissionKind[])[]
+    refreshOnRead?: boolean
+  } = {}): void {
     if (this.#requests) return
     this.#requests = requests
     this.#checks = checks
-    // A hosted daemon checks silently. Its welcome flow requests each permission
-    // explicitly; standalone startup retains automatic requests without blocking IPC.
+    this.#linked = options.linked ?? []
+    this.#refreshOnRead = options.refreshOnRead ?? false
+    // Guided setup checks silently; automatic startup requests without blocking IPC.
     if (mode === "guided") void this.refresh()
     else for (const kind of DESKTOP_PERMISSION_KINDS) this.requestPermission(kind)
   }
 
+  readState(): Promise<DesktopPermissionsState> {
+    // A Portal can revoke its session after startup. Reading its current native
+    // snapshot checks access without restoring a session or opening another dialog.
+    return this.#refreshOnRead ? this.refresh() : Promise.resolve(this.state)
+  }
+
   requestPermission(kind: DesktopPermissionKind): DesktopPermissionsState {
     if (!this.#requests) throw new Error("Daemon permissions are not initialized")
-    if (this.#pending.has(kind)) return this.state
+    // Wayland grants screen and input access together in one Portal session.
+    for (const permission of this.#linked.find(group => group.includes(kind)) ?? [kind]) this.#request(permission)
+    // A system dialog must not hold up IPC, welcome navigation, or daemon shutdown.
+    return this.state
+  }
+
+  #request(kind: DesktopPermissionKind): void {
+    if (this.#pending.has(kind)) return
     ++this.#revisions[kind]
     if (this.#state[`${kind}Permission`].status !== "requesting") this.#update(kind, { status: "requesting" })
-    const request = this.#requests[kind]
+    const request = this.#requests![kind]
     const pending = this.#read(request).then(permission => this.#update(kind, permission))
       .finally(() => { this.#pending.delete(kind) })
     this.#pending.set(kind, pending)
-    // A system dialog must not hold up IPC, welcome navigation, or daemon shutdown.
-    return this.state
   }
 
   refresh(): Promise<DesktopPermissionsState> {

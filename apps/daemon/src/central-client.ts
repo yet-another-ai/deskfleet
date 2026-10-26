@@ -66,6 +66,8 @@ export class CentralClient {
     }
   }
 
+  desktopCapabilitiesChanged(): void { this.#sync.changed() }
+
   /** Schedules and session tools retain user intent, never a reusable user login token. */
   async authorizeDelegation(actor: AgentActor): Promise<AgentActor> {
     const credentials = this.#credentials

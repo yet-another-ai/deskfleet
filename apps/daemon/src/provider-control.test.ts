@@ -26,7 +26,7 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
     // Provider settings persist in agent-providers.json, independently of SQLite.
     // Each daemon still gets a new catalog; this test does not retain catalog state.
     openCatalog: (_path: string, name: string) => openInMemoryCatalog(name),
-    requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null,
+    permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null,
   }
   starting = startDaemon(0, options)
   let daemon = await starting

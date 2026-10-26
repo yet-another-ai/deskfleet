@@ -1,11 +1,12 @@
 import { once } from "node:events"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { checkAccessibilityAccess, checkFullDiskAccess, checkScreenCaptureAccess, nativeInfo, requestAccessibilityAccess, requestFullDiskAccess, requestScreenCaptureAccess } from "@deskfleet/native"
+import { checkAccessibilityAccess, checkFullDiskAccess, checkScreenCaptureAccess, checkWaylandDesktopAccess, closeWaylandDesktopAccess, nativeInfo, requestAccessibilityAccess, requestFullDiskAccess, requestScreenCaptureAccess, requestWaylandDesktopAccess } from "@deskfleet/native"
 import { PeerSessions } from "./peers.ts"
 import { startControlServer } from "./control-server.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
 import { DesktopPermissions } from "./desktop-permissions.ts"
+import { WaylandDesktopPermissions, type WaylandDesktopPermissionApi } from "./wayland-desktop-permissions.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 
@@ -17,8 +18,11 @@ export async function startDaemon(port = 0, options: {
   checkScreenCaptureAccess?: () => Promise<boolean | null>
   checkAccessibilityAccess?: () => Promise<boolean | null>
   checkFullDiskAccess?: () => Promise<boolean | null>
-  /** Desktop welcome setup checks silently, then guides each request over local IPC. */
+  /** macOS welcome setup guides requests over IPC; Wayland always authorizes at startup. */
   permissionMode?: "automatic" | "guided"
+  /** In-process permission fixtures; production uses the current platform. */
+  permissionPlatform?: NodeJS.Platform
+  waylandDesktopAccess?: WaylandDesktopPermissionApi
   agentProvider?: AgentProvider
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
   /** In-process fixtures only. Never enabled by configuration, IPC, or the CLI. */
@@ -28,6 +32,10 @@ export async function startDaemon(port = 0, options: {
   const permissions = new DesktopPermissions()
   const peers = new PeerSessions()
   const controlDirectory = options.controlDirectory ?? daemonControlDirectory()
+  const wayland = (options.permissionPlatform ?? process.platform) === "linux"
+    ? new WaylandDesktopPermissions(controlDirectory, options.waylandDesktopAccess ?? {
+      request: requestWaylandDesktopAccess, check: checkWaylandDesktopAccess, close: closeWaylandDesktopAccess,
+    }) : undefined
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/healthz") {
       response.writeHead(200, { "content-type": "application/json" })
@@ -55,6 +63,7 @@ export async function startDaemon(port = 0, options: {
       void (async () => {
         const failures: unknown[] = []
         for (const cleanup of [
+          () => wayland?.close(),
           () => control?.stop(),
           () => peers.closeAll(),
           () => server[Symbol.asyncDispose](),
@@ -78,6 +87,7 @@ export async function startDaemon(port = 0, options: {
     throw error
   }
   // Request OS access when creating the owning daemon, before clients use its files or desktop.
+  permissions.onChange(() => control?.central.desktopCapabilitiesChanged())
   const stopReportingFileAccess = permissions.onChange(({ fullDiskAccessPermission }) => {
     if (fullDiskAccessPermission.status === "requesting") return
     stopReportingFileAccess()
@@ -86,15 +96,17 @@ export async function startDaemon(port = 0, options: {
         fullDiskAccessPermission.error ?? "")
     }
   })
-  permissions.initialize({
+  permissions.initialize(wayland?.requests ?? {
     screenCapture: options.requestScreenCaptureAccess ?? requestScreenCaptureAccess,
     accessibility: options.requestAccessibilityAccess ?? requestAccessibilityAccess,
     fullDiskAccess: options.requestFullDiskAccess ?? requestFullDiskAccess,
-  }, {
+  }, wayland?.checks ?? {
     screenCapture: options.checkScreenCaptureAccess ?? checkScreenCaptureAccess,
     accessibility: options.checkAccessibilityAccess ?? checkAccessibilityAccess,
     fullDiskAccess: options.checkFullDiskAccess ?? checkFullDiskAccess,
-  }, options.permissionMode)
+  }, wayland ? "automatic" : options.permissionMode, wayland ? {
+    linked: [["screenCapture", "accessibility"]], refreshOnRead: true,
+  } : {})
   return {
     address: `http://127.0.0.1:${address.port}`,
     peers,

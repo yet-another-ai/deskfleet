@@ -5,6 +5,24 @@ import type { AgentProviders } from "./agent-providers.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { CentralSync } from "./central-sync.ts"
 
+test("catalog publication reports runtime desktop support and updates after authorization changes", async t => {
+  let desktop = false
+  const agents = { onEvent: () => () => {}, journal: { list: async () => [] } } as unknown as AgentSessions
+  const catalog = { native: { snapshot: async () => ({}) }, onChange: () => () => {} } as unknown as DaemonCatalog
+  const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
+  const published: boolean[] = []
+  const sync = new CentralSync(agents, catalog, providers, async (_path, body) => {
+    published.push((body as { capabilities: { desktop: boolean } }).capabilities.desktop)
+  }, async () => desktop)
+  t.after(() => sync.close())
+  sync.enable()
+  await sync.flush()
+  desktop = true
+  sync.changed()
+  await sync.flush()
+  assert.deepEqual(published, [false, true])
+})
+
 test("history retries replay durable events while snapshot and audit may lead the contiguous ACK", async context => {
   let lastEventSeq = "251", acknowledged = 0, failNext = true
   const snapshot = () => ({ session: { id: "session", lastEventSeq } })
@@ -34,7 +52,7 @@ test("history retries replay durable events while snapshot and audit may lead th
     if (failNext) { failNext = false; throw new Error("response lost") }
     return { lastEventSeq: String(acknowledged) }
   }
-  const sync = new CentralSync(agents, catalog, providers, post)
+  const sync = new CentralSync(agents, catalog, providers, post, async () => false)
   context.after(() => sync.close())
   sync.enable()
   await assert.rejects(sync.flush(), /response lost/)
@@ -51,7 +69,7 @@ test("history retries replay durable events while snapshot and audit may lead th
   await sync.flush()
   assert.equal(batches.length, count, "Catalog-only changes do not repeatedly upload unchanged history")
   await sync.close()
-  const restarted = new CentralSync(agents, catalog, providers, post)
+  const restarted = new CentralSync(agents, catalog, providers, post, async () => false)
   context.after(() => restarted.close())
   restarted.enable(); await restarted.flush()
   assert.equal(acknowledged, 252, "A fresh synchronization process accepts the backend's durable ACK")
@@ -78,7 +96,7 @@ test("shutdown flush reads final producer state even after live synchronization 
     const value = body as typeof sent[number]
     sent.push(value)
     return { lastEventSeq: value.snapshot.session.lastEventSeq }
-  })
+  }, async () => false)
   sync.enable(); await sync.flush()
   sync.disable()
   state = "cancelled"; seq = 2; sync.changed("session")

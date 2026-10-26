@@ -1,5 +1,6 @@
 //! Native platform capabilities, independent of Node.js and the HTTP server.
 
+pub mod desktop_access;
 pub mod filesystem_permissions;
 pub mod input;
 pub mod media;

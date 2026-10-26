@@ -4,8 +4,12 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { nativeInfo, openInMemoryCatalog } from "@deskfleet/native"
-import { DaemonClient, readDaemonDiscovery, startDaemon } from "./index.ts"
+import { DaemonClient, readDaemonDiscovery, startDaemon as startNativeDaemon } from "./index.ts"
 import type { DesktopPermission } from "./control-protocol.ts"
+
+function startDaemon(port = 0, options: Parameters<typeof startNativeDaemon>[1] = {}) {
+  return startNativeDaemon(port, { permissionPlatform: "darwin", ...options })
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -188,6 +192,82 @@ test("daemon shutdown does not wait for file or desktop permission responses", {
 })
 
 const permissionKeys = ["screenCapturePermission", "accessibilityPermission", "fullDiskAccessPermission"] as const
+
+test("hosted Wayland startup authorizes screen and input once while IPC remains available", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-daemon-wayland-"))
+  const consent = deferred<{ screenCapture: boolean; control: boolean }>()
+  const requested: string[] = []
+  let checks = 0
+  let closes = 0
+  let access = { screenCapture: true, control: true }
+  const daemon = await startDaemon(0, {
+    permissionPlatform: "linux", permissionMode: "guided", controlDirectory: directory,
+    allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name),
+    waylandDesktopAccess: {
+      request: path => { requested.push(path); return consent.promise },
+      check: async () => { checks++; return access },
+      close: async () => { closes++ },
+    },
+  })
+  context.after(async () => { consent.resolve({ screenCapture: false, control: false }); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
+  const granted = deferred<void>()
+  const client = await DaemonClient.connect(event => {
+    if (event.kind === "desktopPermissionsChanged" && event.permissions.screenCapturePermission.status === "granted"
+      && event.permissions.accessibilityPermission.status === "granted") granted.resolve()
+  }, () => {}, directory)
+  context.after(() => client.close())
+  assert.deepEqual(requested, [directory])
+  assert.equal(client.info?.screenCapturePermission.status, "requesting")
+  assert.equal(client.info?.accessibilityPermission.status, "requesting")
+  assert.equal(client.info?.fullDiskAccessPermission.status, "not-required")
+  await client.call("permissionRequest", { permission: "accessibility" })
+  await client.call("permissionsRefresh", {})
+  assert.deepEqual(requested, [directory])
+  assert.equal(checks, 0)
+  assert.deepEqual((await client.call("catalogList", {})).workspaces, [])
+  assert.equal((await fetch(`${daemon.address}/healthz`)).status, 200)
+  consent.resolve({ screenCapture: true, control: true })
+  await granted.promise
+  assert.equal((await client.call("permissionsRefresh", {})).screenCapturePermission.status, "granted")
+  assert.equal(checks, 1)
+  const observer = await DaemonClient.connect(() => {}, () => {}, directory)
+  context.after(() => observer.close())
+  assert.equal(observer.info?.accessibilityPermission.status, "granted")
+  assert.equal(checks, 2)
+  access = { screenCapture: false, control: false }
+  const afterRevocation = await DaemonClient.connect(() => {}, () => {}, directory)
+  context.after(() => afterRevocation.close())
+  assert.equal(afterRevocation.info?.screenCapturePermission.status, "denied")
+  assert.equal(afterRevocation.info?.accessibilityPermission.status, "denied")
+  assert.equal(afterRevocation.info?.fullDiskAccessPermission.status, "not-required")
+  assert.equal(checks, 3)
+  assert.deepEqual(requested, [directory])
+  await daemon.close()
+  assert.equal(closes, 1)
+})
+
+test("Wayland shutdown cancels the owning Portal request before awaiting peer cleanup", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-daemon-wayland-close-"))
+  const consent = deferred<{ screenCapture: boolean; control: boolean }>()
+  const requested = deferred<void>()
+  const cleanup: string[] = []
+  const daemon = await startDaemon(0, {
+    permissionPlatform: "linux", controlDirectory: directory,
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
+    waylandDesktopAccess: {
+      request: () => { requested.resolve(); return consent.promise },
+      check: async () => ({ screenCapture: false, control: false }),
+      close: async () => { cleanup.push("portal"); consent.reject(new Error("Portal request cancelled")) },
+    },
+  })
+  context.after(async () => { await daemon.close(); await rm(directory, { recursive: true, force: true }) })
+  const closePeers = daemon.peers.closeAll.bind(daemon.peers)
+  daemon.peers.closeAll = async () => { cleanup.push("peers"); await closePeers() }
+  await requested.promise
+  await daemon.close()
+  assert.deepEqual(cleanup, ["portal", "peers"])
+  await assert.rejects(readDaemonDiscovery(directory), { code: "ENOENT" })
+})
 
 test("guided daemon setup exposes checks and individual requests through authenticated local IPC", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-guided-"))

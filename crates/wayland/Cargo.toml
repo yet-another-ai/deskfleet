@@ -1,0 +1,19 @@
+[package]
+name = "deskfleet-wayland"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+futures-util = "0.3"
+reis = { version = "0.7.1", features = ["tokio"] }
+rustix = { version = "1", features = ["time"] }
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+zbus = { version = "5.13", default-features = false, features = ["tokio"] }
+
+[lints]
+workspace = true

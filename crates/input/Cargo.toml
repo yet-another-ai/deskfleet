@@ -20,6 +20,9 @@ windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse", "Wi
 objc2-core-graphics.workspace = true
 objc2-core-foundation.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+deskfleet-wayland.workspace = true
+
 [dev-dependencies]
 serde_json.workspace = true
 

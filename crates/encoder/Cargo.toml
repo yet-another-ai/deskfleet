@@ -17,6 +17,9 @@ tracing = { workspace = true }
 # opus 0.4 bundles and statically links libopus through opusic-sys.
 opus = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+deskfleet-linux-media.workspace = true
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-core-foundation = { workspace = true, features = [
     "CFNumber",

@@ -1,6 +1,7 @@
 {
   "name": "@deskfleet/desktop",
   "productName": "deskfleet",
+  "desktopName": "io.github.yet_another_ai.deskfleet.desktop",
   "version": "0.1.0",
   "description": "Manage a team's AI agents and working environments across machines.",
   "private": true,

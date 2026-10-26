@@ -77,7 +77,7 @@ async function run(): Promise<void> {
   offerSent = true
   for (const candidate of pendingLocal.splice(0)) bridge.send({ kind: "candidate", candidate })
 
-  const deadline = Date.now() + 20_000
+  const deadline = Date.now() + Number(document.documentElement.dataset.consentTimeout ?? "20000")
   while (Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 100))
     if (finished) return

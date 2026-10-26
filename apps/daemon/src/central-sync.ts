@@ -1,6 +1,7 @@
 import type { AgentSessions } from "./agent-sessions.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import type { AgentProviders } from "./agent-providers.ts"
+import { supportsDesktop } from "./desktop-capabilities.ts"
 
 type Post = (path: string, value: unknown) => Promise<unknown>
 
@@ -10,6 +11,7 @@ export class CentralSync {
   readonly #catalog: DaemonCatalog
   readonly #post: Post
   readonly #providers: AgentProviders
+  readonly #desktopSupported: () => Promise<boolean>
   readonly #cursors = new Map<string, string>()
   readonly #unsubscribe: (() => void)[]
   #running: Promise<void> | undefined
@@ -20,9 +22,10 @@ export class CentralSync {
   #closing = false
   #timer: ReturnType<typeof setTimeout> | undefined
 
-  constructor(agents: AgentSessions, catalog: DaemonCatalog, providers: AgentProviders, post: Post) {
+  constructor(agents: AgentSessions, catalog: DaemonCatalog, providers: AgentProviders, post: Post, desktopSupported: () => Promise<boolean> = supportsDesktop) {
     this.#agents = agents; this.#catalog = catalog; this.#post = post
     this.#providers = providers
+    this.#desktopSupported = desktopSupported
     this.#unsubscribe = [agents.onEvent(event => this.changed(event.sessionId)), catalog.onChange(() => this.changed()), providers.onChanged(() => this.changed())]
   }
 
@@ -55,7 +58,7 @@ export class CentralSync {
         this.#catalogDirty = false
         try { await this.#post("/api/daemon/catalog", {
           snapshot: await this.#catalog.native.snapshot(), providers: this.#providers.metadata(),
-          capabilities: { platform: process.platform, desktop: process.platform === "darwin" || process.platform === "win32", agent: true, terminal: true, git: true },
+          capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), agent: true, terminal: true, git: true },
         }) }
         catch (error) { this.#catalogDirty = true; throw error }
       }

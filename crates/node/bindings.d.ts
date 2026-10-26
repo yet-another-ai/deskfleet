@@ -100,6 +100,12 @@ export declare function checkFullDiskAccess(): Promise<boolean | null>
  */
 export declare function checkScreenCaptureAccess(): Promise<boolean | null>
 
+/** Read the current Wayland authorization without prompting. */
+export declare function checkWaylandDesktopAccess(): Promise<WaylandDesktopAccess>
+
+/** Cancel pending authorization and close shared Wayland resources on daemon shutdown. */
+export declare function closeWaylandDesktopAccess(): Promise<void>
+
 /** Create a transport without accessing a display or initializing an encoder. */
 export declare function createPeer(config: PeerConfig): Promise<NativePeer>
 
@@ -113,6 +119,9 @@ export interface DesktopConfig {
   bitrateBps?: number
   maxBitrateBps?: number
 }
+
+/** Probe native desktop support without opening an authorization dialog. */
+export declare function desktopSupported(): Promise<boolean>
 
 export interface DisplayInfo {
   id: number
@@ -192,6 +201,9 @@ export declare function requestFullDiskAccess(): Promise<boolean | null>
  */
 export declare function requestScreenCaptureAccess(): Promise<boolean | null>
 
+/** Authorize screen and input together, persisting restoration under the daemon directory. */
+export declare function requestWaylandDesktopAccess(directory: string): Promise<WaylandDesktopAccess>
+
 /** Probe the selected display's encoders on a worker thread. */
 export declare function supportedVideoCodecs(displayId: number): Promise<Array<string>>
 
@@ -212,3 +224,8 @@ export interface TerminalEvent {
 }
 
 export type VideoCodec = 'h264' | 'h265' | 'av1'
+
+export interface WaylandDesktopAccess {
+  screenCapture: boolean
+  control: boolean
+}

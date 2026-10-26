@@ -7,6 +7,8 @@ mod audio;
 mod backend;
 mod error;
 mod frame;
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod surface;

@@ -76,6 +76,10 @@ pub async fn supported_video_codecs(display_id: u32) -> Result<Vec<String>, Medi
 
 /// Enumerating displays can require a graphical session and capture permission.
 pub async fn displays() -> Result<Vec<Display>, MediaError> {
+    #[cfg(target_os = "linux")]
+    deskfleet_wayland::restore_access()
+        .await
+        .map_err(|error| CaptureError::Platform(error.to_string()))?;
     Ok(tokio::task::spawn_blocking(deskfleet_capture::displays).await??)
 }
 

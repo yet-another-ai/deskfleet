@@ -1,0 +1,17 @@
+[package]
+name = "deskfleet-linux-media"
+description = "Optional Linux capture and hardware video encoding runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libloading.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

@@ -1,6 +1,14 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { desktopCapabilities } from "./desktop-capabilities.ts"
+import { desktopCapabilities, supportsDesktop } from "./desktop-capabilities.ts"
+
+test("desktop support comes from the native runtime and a failed probe leaves headless access available", async t => {
+  assert.equal(await supportsDesktop(async () => true), true)
+  assert.equal(await supportsDesktop(async () => false), false)
+  const diagnostics = t.mock.method(console, "error", () => {})
+  assert.equal(await supportsDesktop(async () => { throw new Error("No session bus") }), false)
+  assert.equal(diagnostics.mock.callCount(), 1)
+})
 
 test("desktop capabilities keep codecs attached to each display's GPU", async () => {
   const probed: number[] = []

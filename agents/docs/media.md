@@ -49,11 +49,12 @@ stack owns receive-side decoding and playback.
 | --- | --- | --- | --- |
 | macOS | ScreenCaptureKit / IOSurface | VideoToolbox H.264/H.265/AV1, subject to runtime support | ScreenCaptureKit → Opus |
 | Windows | DXGI Desktop Duplication / D3D11 | NVENC H.264/H.265/AV1; Media Foundation hardware H.264 fallback, subject to GPU/driver support | Unsupported |
-| Linux | Unsupported | Unsupported | Unsupported |
+| Linux Wayland | RemoteDesktop + ScreenCast portal / PipeWire | GStreamer VA-API or NVENC hardware H.264 | Unsupported |
 
 WebRTC DataChannels and Opus encoding work without a display. Loading the addon,
-creating a peer, or starting the daemon does not enumerate displays or probe
-video encoders. `captureDisplays()`, `supportedVideoCodecs(displayId)`, and
+creating a peer does not enumerate displays or probe video encoders. On Linux,
+daemon capability discovery checks the optional media runtime and portal
+interfaces without requesting consent. `captureDisplays()`, `supportedVideoCodecs(displayId)`, and
 `startDesktop()` are explicit operations. Capture requires an interactive
 graphical session and any platform recording permission.
 
@@ -101,8 +102,63 @@ permissions independently once startup owns discovery and local IPC is ready.
 The native checks and requests run on Rust workers, without starting capture or
 initializing input. Screen Recording also covers the current ScreenCaptureKit
 system-audio stream. Pending or denied permission does not block agents,
-terminals, catalog operations, or daemon cleanup. Windows and Linux return
-`not-required` without prompting.
+terminals, catalog operations, or daemon cleanup. Windows returns `not-required`
+without prompting. Linux uses the combined authorization described below and
+does not require Full Disk Access.
+
+### Wayland authorization and media
+
+Linux supports the current user's logged-in, unlocked Wayland desktop through
+RemoteDesktop portal v2, ScreenCast, PipeWire, and EIS. The portal backend must
+support keyboard and pointer access and monitor capture; a ScreenCast-only
+backend is insufficient. GNOME and KDE provide these interfaces. Login-screen
+access, remote unlock, X11, clipboard, and system audio are outside this backend.
+
+After discovery and local IPC are ready, both standalone and Electron-hosted
+daemons request screen and input access together. This runs asynchronously so a
+pending dialog does not block other daemon work. The user selects the monitors
+and grants access locally. `deskfleet-wayland` owns one shared portal session on
+a dedicated runtime thread. Viewer disconnect and controller release keep that
+session alive; daemon shutdown cancels pending consent and closes it.
+
+The request uses `persist_mode=2` on `RemoteDesktop.SelectDevices`. A returned
+opaque restore token is atomically saved as `<daemon directory>/wayland-restore-token`
+with mode `0600`, and replaced by every successful Start response. The token
+never enters central storage or peer messages. Subsequent daemon starts restore
+it; explicit display discovery can also restore after the compositor closes a
+session. An active session reconnect needs no prompt. Across session recreation,
+unattended restoration depends on the portal retaining the grant: a revoked or
+expired token may require local consent again. A saved token alone never reports
+granted permission. Permission refresh only reads current state.
+
+The D-Bus connection registers `io.github.yet_another_ai.deskfleet` before portal
+calls. Linux desktop packaging uses the matching `.desktop` basename; standalone
+launches create a hidden user desktop entry only when no installed entry exists.
+Run the daemon as the logged-in user with the session bus and Wayland environment,
+not as a root system service.
+
+ScreenCast v6's `pipewire-serial` selects the PipeWire object when available;
+older backends use the returned node ID. Public display IDs identify this live
+portal generation and become invalid when it closes. Each viewer gets a new
+`OpenPipeWireRemote` connection. ScreenCast dimensions are logical; encoding uses
+the negotiated frame's pixel dimensions. EIS `mapping_id` associates a monitor
+with its absolute-pointer region, including scaling and monitor offsets.
+Without mapping IDs, input is accepted only for an unambiguous single region.
+
+`deskfleet-linux-media` loads GStreamer inside the native process on demand.
+PipeWire samples are copied into Rust-owned BGRA frames before returning buffers
+to the pool. GStreamer converts and uploads these frames to VA-API or NVENC;
+there is no software encoder fallback. Linux currently advertises H.264 only.
+This path uses CPU copies, not DMA-BUF zero-copy. Hardware candidates are checked
+with the first real frame, and keyframes can use a retained frame on an idle
+desktop. Portal closure invalidates capture and input; every bounded capture poll
+checks the source generation so retained frames cannot outlive authorization.
+
+One EIS connection belongs to the portal session and is retained between
+controllers. The existing exclusive-controller rule, Team grants, input
+DataChannel, normalized coordinates, physical key codes, and held-key cleanup
+apply unchanged. Device removal releases that device's held state. An input
+controller never closes another viewer's portal session.
 
 The authenticated `hello` response includes `fullDiskAccessPermission`,
 `screenCapturePermission`, and `accessibilityPermission`.
@@ -158,7 +214,8 @@ from the codecs that display and the browser share, and shows the choice as
 status text. On macOS, the daemon process
 needs Screen Recording permission; system audio can be enabled explicitly.
 Windows supports NVENC video and the hardware H.264 fallback described above.
-Linux capture is unavailable.
+Linux Wayland supports H.264 video and optional mouse/keyboard control after the
+local portal grant described above.
 
 The Electron main process reads discovery/authentication data and proxies a narrow
 preload API. Calls are accepted only from the registered main renderer frame.
@@ -233,7 +290,8 @@ request it during startup. Remote input
 startup still checks current permission and reports denial without opening a consent dialog.
 Screen Recording permission is separate. Windows injection follows SendInput's
 integrity restrictions: it cannot control elevated applications from a lower
-integrity process or operate the secure desktop. Linux input is unsupported.
+integrity process or operate the secure desktop. Wayland input uses the
+authorized EIS devices and follows compositor restrictions.
 
 The native package can also be used directly:
 
@@ -262,6 +320,14 @@ on a separately installed libopus. Windows NVENC loads the NVIDIA driver at runt
 building its bundled header bindings requires LLVM/libclang and the Windows SDK.
 CI sets `LIBCLANG_PATH` to the hosted runner's LLVM installation. No NVIDIA SDK
 binary is redistributed.
+
+Linux media libraries are optional at runtime: GStreamer 1.x core, app and video
+libraries, GLib, `pipewiresrc`, `videoconvert`, `appsrc`, `appsink`, `h264parse`,
+and a working `vah264enc`, `vah264lpenc`, `nvh264enc`, or `nvautogpuh264enc`
+plugin with its GPU driver. These generally come from the distribution's
+GStreamer base/bad and PipeWire packages. The addon has no ELF dependency on
+GStreamer, PipeWire, or libei; EIS uses the Rust `reis` implementation. Machines
+without the desktop runtime still load the addon and run data-only services.
 
 `mise run check` covers Rust/TypeScript checks and tests, including two real
 local WebRTC peers, binary/text DataChannel delivery, SDP profile and H.265
@@ -297,3 +363,24 @@ smoke mode validates real H.264 decoding without saving screen pixels to disk;
 the default smoke remains the generated fixture. Run again with `nvenc` to
 check the existing path. Intel/AMD and non-default-adapter displays require
 corresponding hardware; success on one GPU does not validate other drivers.
+
+On a Linux graphical host with the runtime and GPU drivers installed, run:
+
+```sh
+mise exec -- cargo test -p deskfleet-linux-media --locked -- --ignored --nocapture
+```
+
+These tests copy a generated GStreamer frame and hardware-encode a generated
+frame followed by an idle keyframe, without requesting desktop authorization.
+On the actual Wayland desktop, verify portal consent, EIS controller reuse, and
+real screen decoding with:
+
+```sh
+DESKFLEET_SMOKE_CAPTURE=1 mise run desktop:smoke-media
+```
+
+This allows two minutes for local consent, uses temporary token storage, and
+streams to a hidden Chromium window without saving screen pixels. It opens and
+releases the input controller twice without injecting keys or pointer events.
+Persistent restoration across daemon restarts, monitor coordinate mapping, and
+compositor revocation still require acceptance checks on the target desktop.

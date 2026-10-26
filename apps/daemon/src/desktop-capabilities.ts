@@ -1,5 +1,11 @@
-import { captureDisplays, supportedVideoCodecs } from "@deskfleet/native"
+import { captureDisplays, desktopSupported, supportedVideoCodecs } from "@deskfleet/native"
 import type { DesktopCapabilities, VideoCodec } from "./control-protocol.ts"
+
+/** Graphical capability discovery must not prevent headless machine access. */
+export async function supportsDesktop(probe: () => Promise<boolean> = desktopSupported): Promise<boolean> {
+  try { return await probe() }
+  catch (error) { console.error("Desktop capability probe failed", error); return false }
+}
 
 export async function desktopCapabilities(
   native = { captureDisplays, supportedVideoCodecs },

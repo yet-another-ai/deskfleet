@@ -83,7 +83,7 @@ function hosted() {
   return { closed, close: vi.fn(async () => { resolve(); await closed }), resolve }
 }
 
-test("desktop startup uses guided permission checks without automatic prompts", async () => {
+test("desktop startup delegates the macOS guided permission policy to the daemon", async () => {
   const daemon = hosted()
   mocks.startDaemon.mockResolvedValueOnce(daemon)
   const runtime = createLocalAgentRuntime({ directory: "/daemon" })

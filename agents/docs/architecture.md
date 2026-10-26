@@ -274,15 +274,20 @@ the existing enabled preference. Non-macOS clients and clients with the local
 Agent disabled skip the OS permission steps. Users can defer an individual
 permission without blocking account setup or unrelated Agent work.
 
-After acquiring discovery and initializing local IPC, a desktop-hosted daemon
+After acquiring discovery and initializing local IPC, a macOS desktop-hosted daemon
 checks permissions without prompting. The welcome page requests each permission
 through authenticated local IPC; native checks and requests run in the owning
 daemon process. Returning from System Settings refreshes checks without opening
 another prompt. Standalone startup requests its permissions automatically.
 Full Disk Access requires enabling the host app or executable in System Settings
 and may require restarting that host. File previews have no separate consent
-button or per-Session dialog. Settings displays OS permission status separately
-from daemon availability; capture and encoding start only on explicit use.
+button or per-Session dialog. On Linux Wayland, both hosted and standalone daemons
+request combined screen and input access at startup. A daemon-owned portal
+session and local restore token allow unattended viewer reconnects while the
+user's desktop is logged in and unlocked. Viewer lifetimes do not own that grant;
+daemon shutdown closes it. See [native media](media.md) for restoration and
+runtime requirements. Settings displays OS permission status separately from
+daemon availability; capture and encoding start only on explicit use.
 
 Startup reuses an authenticated daemon already owning the discovery directory,
 such as a standalone SEA, instead of hosting another. Explicitly disabling the

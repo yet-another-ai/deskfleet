@@ -20,6 +20,8 @@ export interface LocalAgentRuntimeOptions {
 
 /** Hosts the daemon library in the app process: it outlives windows, not the app. */
 export function createLocalAgentRuntime(options: LocalAgentRuntimeOptions): LocalAgentRuntime {
+  // The daemon preserves startup Portal authorization on Wayland; guided mode
+  // applies to the macOS welcome flow.
   const start = options.start ?? (directory => startDaemon(0, { controlDirectory: directory, permissionMode: "guided" }))
   let hosted: HostedDaemon | undefined
   return {

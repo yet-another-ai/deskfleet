@@ -46,5 +46,7 @@ win:
 
 linux:
   category: Development
+  # Match the stable Portal identity used by Electron and standalone daemons.
+  syncDesktopName: true
   target:
     - AppImage

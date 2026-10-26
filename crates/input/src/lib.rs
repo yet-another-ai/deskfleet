@@ -17,9 +17,15 @@ mod windows;
 mod windows_keys;
 #[cfg(target_os = "windows")]
 use windows::PlatformInput;
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(any(target_os = "linux", test))]
+mod linux_keys;
+#[cfg(target_os = "linux")]
+use linux::PlatformInput;
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 mod unsupported;
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 use unsupported::PlatformInput;
 
 mod session;

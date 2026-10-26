@@ -8,7 +8,7 @@ pub enum PixelFormat {
     Bgra8,
 }
 
-/// A single captured frame backed by a platform-native GPU surface.
+/// A captured frame backed by an owned platform surface or pixel buffer.
 #[derive(Debug)]
 pub struct Frame {
     /// Frame width in pixels.
@@ -26,7 +26,7 @@ pub struct Frame {
 }
 
 impl Frame {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     pub(crate) fn new(
         width: u32,
         height: u32,
@@ -51,7 +51,7 @@ impl Frame {
         &self.surface
     }
 
-    /// Copy pixel data from the GPU surface into CPU memory.
+    /// Copy pixel data from the owned surface into a new CPU buffer.
     pub fn copy_pixels(&self) -> Result<Vec<u8>, CaptureError> {
         self.surface.copy_pixels()
     }

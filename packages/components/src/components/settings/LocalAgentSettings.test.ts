@@ -10,6 +10,7 @@ let changed: (state: LocalAgentState) => void
 const unsubscribe = vi.fn()
 const running: LocalAgentState = { enabled: true, status: "running" }
 const stopped: LocalAgentState = { enabled: false, status: "stopped" }
+const originalPlatform = platformClient.platform
 
 const switchLabel = (view: VueWrapper) => view.get(`#${view.get('[role="switch"]').attributes("aria-labelledby")}`).text()
 
@@ -19,6 +20,7 @@ function render() {
 }
 
 beforeEach(() => {
+  platformClient.platform = "darwin"
   unsubscribe.mockClear()
   vi.spyOn(platformClient.settings, "get").mockResolvedValue(running)
   vi.spyOn(platformClient.settings, "onChanged").mockImplementation(listener => {
@@ -27,6 +29,7 @@ beforeEach(() => {
   })
 })
 afterEach(() => {
+  platformClient.platform = originalPlatform
   wrapper?.unmount()
   wrapper = undefined
   vi.restoreAllMocks()
@@ -144,6 +147,21 @@ test("groups independent screen and input permission changes without changing Ag
   await flushPromises()
   expect(view.find("[data-desktop-permissions]").exists()).toBe(false)
   expect(view.find('[role="alert"]').exists()).toBe(false)
+})
+
+test("Linux permission notices describe desktop consent without macOS settings or system audio", async () => {
+  platformClient.platform = "linux"
+  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })
+  const view = render()
+  await flushPromises()
+  expect(view.get('[data-screen-capture-permission="requesting"]').text()).toBe("Waiting for permission to share the desktop…")
+  expect(view.get('[data-accessibility-permission="requesting"]').text()).toBe("Waiting for permission to control the mouse and keyboard…")
+  changed({ ...running, screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "denied" } })
+  await flushPromises()
+  expect(view.get('[data-screen-capture-permission="denied"]').text()).toContain("approve the desktop sharing dialog")
+  expect(view.get('[data-accessibility-permission="denied"]').text()).toContain("approve remote control")
+  expect(view.text()).not.toContain("macOS")
+  expect(view.get('span[role="status"]').text()).toBe("Running")
 })
 
 test.each(["en-US", "zh-cmn-Hans-CN"] as const)("shows automatic Full Disk Access status and system settings instructions in %s", async locale => {

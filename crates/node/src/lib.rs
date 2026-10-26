@@ -3,6 +3,7 @@
 use napi_derive::napi;
 
 mod catalog;
+mod desktop_access;
 mod media;
 mod permissions;
 mod rtc;
@@ -11,6 +12,10 @@ mod terminal;
 pub use catalog::{
     CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree,
     NativeCatalog, open_catalog, open_in_memory_catalog,
+};
+pub use desktop_access::{
+    WaylandDesktopAccess, check_wayland_desktop_access, close_wayland_desktop_access,
+    desktop_supported, request_wayland_desktop_access,
 };
 pub use media::{DesktopConfig, DisplayInfo, capture_displays, supported_video_codecs};
 pub use permissions::{

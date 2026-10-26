@@ -128,7 +128,7 @@ Capture initializes on demand; see [media permissions](../../agents/docs/media.m
 Data-only Agent and terminal
 peers do not require capture permission.
 
-Electron passes `permissionMode: "guided"` when creating the daemon. This checks
+On macOS, Electron passes `permissionMode: "guided"` when creating the daemon. This checks
 all three permissions without showing OS dialogs. Its welcome page invokes the
 authenticated local `permissionRequest` operation for one permission at a time;
 `permissionsRefresh` rechecks status after the user returns from System Settings.
@@ -136,6 +136,16 @@ Pending requests do not block IPC or shutdown, and repeated requests for a
 pending permission share that request. The native checks and dialogs always run
 in the daemon's hosting process, including when Electron reuses a standalone
 daemon. These operations grant no Team or machine-resource authority.
+
+On Linux Wayland, startup requests screen and keyboard/pointer access together,
+including when hosted by Electron. The logged-in user approves the portal dialog
+once; the daemon keeps that session alive across viewer disconnects and saves an
+opaque restoration token in `<daemon directory>/wayland-restore-token` with mode
+`0600`. Subsequent starts use the token while the compositor retains the grant.
+Shutdown cancels pending consent and releases the session. The first backend
+supports logged-in, unlocked GNOME/KDE desktops, with PipeWire capture, EIS input,
+and hardware H.264 through optional GStreamer VA-API/NVENC plugins. It does not
+provide remote login or unlock. See [Linux runtime requirements](../../agents/docs/media.md#wayland-authorization-and-media).
 
 The library exports `startDaemon()`, `close()`, and a `closed` promise. Importing
 it does not launch the CLI. Electron hosts the daemon in its main process and

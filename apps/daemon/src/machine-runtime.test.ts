@@ -128,7 +128,7 @@ test("registration preparation retains host IPC and resolves getters to the new 
   }
   await seed(directory)
   context.signal.throwIfAborted()
-  starting = startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  starting = startDaemon(0, { controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const daemon = await starting
   context.signal.throwIfAborted()
   const first = own(await DaemonClient.connect(() => {}, () => {}, directory))
@@ -224,7 +224,7 @@ test("a committed registration reset succeeds when retired machine cleanup fails
 test("host shutdown waits for an accepted reset and closes its replacement context", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-shutdown-"))
   await seed(directory)
-  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const client = await DaemonClient.connect(() => {}, () => {}, directory)
   let release = () => {}
   context.after(async () => { release(); client.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })

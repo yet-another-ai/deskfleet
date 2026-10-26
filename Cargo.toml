@@ -5,6 +5,7 @@ members = [
     "crates/capture",
     "crates/encoder",
     "crates/input",
+    "crates/linux-media",
     "crates/model",
     "crates/migration",
     "crates/native",
@@ -13,6 +14,7 @@ members = [
     "crates/node",
     "crates/protocol",
     "crates/store",
+    "crates/wayland",
 ]
 exclude = [".agents/skills/rust-skills/checks"]
 resolver = "3"
@@ -29,6 +31,8 @@ publish = false
 deskfleet-capture = { path = "crates/capture" }
 deskfleet-encoder = { path = "crates/encoder" }
 deskfleet-input = { path = "crates/input" }
+deskfleet-linux-media = { path = "crates/linux-media" }
+deskfleet-wayland = { path = "crates/wayland" }
 deskfleet-nvenc = { path = "crates/nvenc" }
 deskfleet-nvenc-sys = { path = "crates/nvenc-sys" }
 deskfleet-model = { path = "crates/model" }

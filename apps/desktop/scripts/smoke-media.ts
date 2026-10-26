@@ -16,6 +16,7 @@ import { rendererContentSecurityPolicy } from "../src/shared/renderer-csp.ts"
 //   -x264-params keyint=1:min-keyint=1:scenecut=0 -f h264 red-64x64.h264
 const root = resolve(import.meta.dirname, "../../..")
 const capture = process.env.DESKFLEET_SMOKE_CAPTURE === "1"
+const waylandCapture = capture && process.platform === "linux"
 const executable = createRequire(import.meta.url)("electron") as string
 const nativeExecutable = join(root, "target/debug/examples", process.platform === "win32" ? "media_smoke.exe" : "media_smoke")
 const directory = await mkdtemp(join(tmpdir(), "deskfleet-media-smoke-"))
@@ -44,10 +45,16 @@ try {
       compilerOptions: { target: ts.ScriptTarget.ES2023, module },
     }).outputText)
   }
-  await writeFile(join(directory, "index.html"), `<!doctype html><html data-capture="${capture ? "1" : "0"}">
+  await writeFile(join(directory, "index.html"), `<!doctype html><html data-capture="${capture ? "1" : "0"}" data-consent-timeout="${waylandCapture ? "120000" : "20000"}">
 <meta http-equiv="Content-Security-Policy" content="${rendererContentSecurityPolicy(true)}">
 <video autoplay muted playsinline></video><script type="module" src="/renderer.js"></script></html>`)
-  const native = spawn(nativeExecutable, [], { stdio: ["pipe", "pipe", "pipe"] })
+  const native = spawn(nativeExecutable, [], {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      ...(waylandCapture ? { DESKFLEET_SMOKE_PORTAL_DIRECTORY: join(directory, "portal") } : {}),
+    },
+  })
   track(native)
   const electron = spawn(executable, [join(directory, "main.cjs"), `--user-data-dir=${join(directory, "profile")}`], {
     stdio: ["ignore", "pipe", "pipe", "ipc"],
@@ -55,7 +62,7 @@ try {
   track(electron)
   const lines = createInterface({ input: native.stdout })
   const result = await new Promise<Record<string, unknown>>((resolveResult, rejectResult) => {
-    const timer = setTimeout(() => rejectResult(new Error("Electron media smoke timed out")), 30_000)
+    const timer = setTimeout(() => rejectResult(new Error("Electron media smoke timed out")), waylandCapture ? 120_000 : 30_000)
     const fail = (error: unknown) => { clearTimeout(timer); rejectResult(error) }
     for (const child of children) {
       child.once("error", fail)

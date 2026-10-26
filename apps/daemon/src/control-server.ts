@@ -5,7 +5,7 @@ import { connect, createServer, type Socket } from "node:net"
 import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import type { NativePeer, PeerConfig } from "@deskfleet/native"
-import { desktopCapabilities } from "./desktop-capabilities.ts"
+import { desktopCapabilities, supportsDesktop } from "./desktop-capabilities.ts"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
 import { MAX_CONTROL_MESSAGE_BYTES, desktopErrorEvent, desktopStartupCleanupFailure, encoderFailure, isEncoderFailure, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
 import { parseControlRequest, readControlRequestId } from "./control-request.ts"
@@ -172,8 +172,8 @@ class ControlConnection {
       this.#authenticated = true
       return {
         name: hostname(),
-        desktop: process.platform === "darwin" || process.platform === "win32",
-        ...this.#permissions.state,
+        desktop: await supportsDesktop(),
+        ...await this.#permissions.readState(),
       }
     }
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")

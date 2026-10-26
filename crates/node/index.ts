@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
-import type { DisplayInfo, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, TerminalConfig } from "./bindings.d.ts"
+import type { DisplayInfo, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, TerminalConfig, WaylandDesktopAccess } from "./bindings.d.ts"
 
-export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec } from "./bindings.d.ts"
+export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, WaylandDesktopAccess } from "./bindings.d.ts"
 export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
 
 type Bindings = typeof import("./bindings.d.ts")
@@ -100,4 +100,24 @@ export function requestScreenCaptureAccess(): Promise<boolean | null> {
 /** Request Accessibility in the daemon's process without opening an input controller. */
 export function requestAccessibilityAccess(): Promise<boolean | null> {
   return (bindings ??= loadBindings()).requestAccessibilityAccess()
+}
+
+/** Authorize or restore one shared screen/input Portal session during startup. */
+export function requestWaylandDesktopAccess(directory: string): Promise<WaylandDesktopAccess> {
+  return (bindings ??= loadBindings()).requestWaylandDesktopAccess(directory)
+}
+
+/** Check the existing Portal session without opening a consent dialog. */
+export function checkWaylandDesktopAccess(): Promise<WaylandDesktopAccess> {
+  return (bindings ??= loadBindings()).checkWaylandDesktopAccess()
+}
+
+/** Cancel pending Portal requests and close the daemon's shared desktop session. */
+export function closeWaylandDesktopAccess(): Promise<void> {
+  return (bindings ??= loadBindings()).closeWaylandDesktopAccess()
+}
+
+/** Discover platform desktop support without opening a consent dialog. */
+export function desktopSupported(): Promise<boolean> {
+  return (bindings ??= loadBindings()).desktopSupported()
 }

@@ -58,6 +58,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut connected = false;
     let mut desktop = None;
     let mut starting = None;
+    // The normal fixture never opens a desktop permission dialog. On Linux a
+    // real capture smoke deliberately follows daemon startup authorization,
+    // while continuing to consume close/signaling commands during consent.
+    let mut authorizing =
+        (capture && cfg!(target_os = "linux")).then(|| tokio::spawn(authorize_wayland_capture()));
+    let mut authorized = authorizing.is_none();
     println!("{}", json!({ "kind": "ready" }));
     let result: Result<(), Box<dyn std::error::Error>> = async {
         loop {
@@ -90,21 +96,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Some(PeerEvent::StateChanged(state)) => {
                         connected = state == PeerState::Connected;
-                        if capture && connected && desktop.is_none() && starting.is_none() {
-                            let peer = Arc::clone(&peer);
-                            // Keep consuming ICE, DataChannel, and error events while the
-                            // capture worker waits for its first encoded packet.
-                            starting = Some(tokio::spawn(async move {
-                                let display = media::displays().await?.into_iter().next()
-                                    .ok_or(MediaError::InvalidConfig("no display available for media smoke"))?;
-                                DesktopStream::start(peer, DesktopConfig {
-                                    display_id: display.id,
-                                    fps: 30.0,
-                                    bitrate_bps: 8_000_000,
-                                    max_bitrate_bps: 0,
-                                }).await
-                            }));
-                        }
                         if state == PeerState::Failed {
                             return Err("native peer connection failed".into());
                         }
@@ -124,6 +115,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     starting.take();
                     desktop = Some(started??);
                 },
+                granted = async { authorizing.as_mut().expect("guarded authorization").await }, if authorizing.is_some() => {
+                    authorizing.take();
+                    granted??;
+                    authorized = true;
+                },
                 _ = ticks.tick(), if connected && !capture => {
                     peer.write_video(frame.clone(), Duration::from_millis(100)).await?;
                     // One valid 20 ms Opus silence packet, repeated five times per tick.
@@ -132,11 +128,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 },
             }
+            if capture && authorized && connected && desktop.is_none() && starting.is_none() {
+                let peer = Arc::clone(&peer);
+                // Keep consuming commands/events until the first encoded packet.
+                starting = Some(tokio::spawn(async move {
+                    let display = media::displays().await?.into_iter().next()
+                        .ok_or(MediaError::InvalidConfig("no display available for media smoke"))?;
+                    #[cfg(target_os = "linux")]
+                    for _ in 0..2 {
+                        // Exercise controller reuse without injecting desktop input.
+                        let controller = deskfleet_native::input::InputWorker::start(display.id).await
+                            .map_err(|error| deskfleet_capture::CaptureError::Platform(format!("EIS smoke attach failed: {error}")))?;
+                        controller.stop().await
+                            .map_err(|error| deskfleet_capture::CaptureError::Platform(format!("EIS smoke detach failed: {error}")))?;
+                    }
+                    DesktopStream::start(peer, DesktopConfig {
+                        display_id: display.id,
+                        fps: 30.0,
+                        bitrate_bps: 8_000_000,
+                        max_bitrate_bps: 0,
+                    }).await
+                }));
+            }
         }
         Ok(())
     }.await;
     // A pending startup also owns a worker, so join it before closing the peer.
     let stopped: Result<(), Box<dyn std::error::Error>> = async {
+        if let Some(authorizing) = authorizing {
+            authorizing.abort();
+            let _ = authorizing.await;
+        }
         if let Some(starting) = starting {
             desktop = Some(starting.await??);
         }
@@ -146,9 +168,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
     .await;
+    // Also cancels a portal request whose awaiting task was aborted above. Do
+    // this even when capture startup/cleanup failed so no consent dialog remains.
+    let access_closed = if capture {
+        deskfleet_native::desktop_access::close_wayland().await
+    } else {
+        Ok(())
+    };
     let closed = peer.close().await;
     result?;
     stopped?;
+    access_closed?;
     closed?;
+    Ok(())
+}
+
+async fn authorize_wayland_capture() -> Result<(), MediaError> {
+    #[cfg(target_os = "linux")]
+    {
+        let directory = std::env::var_os("DESKFLEET_SMOKE_PORTAL_DIRECTORY").ok_or(
+            MediaError::InvalidConfig("media smoke needs a private temporary portal directory"),
+        )?;
+        let access = deskfleet_wayland::request_access(directory.into())
+            .await
+            .map_err(|error| deskfleet_capture::CaptureError::Platform(error.to_string()))?;
+        if !access.screen_capture {
+            return Err(deskfleet_capture::CaptureError::PermissionDenied.into());
+        }
+    }
     Ok(())
 }
