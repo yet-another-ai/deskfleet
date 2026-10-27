@@ -7,23 +7,23 @@ import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-p
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   context: AgentSessionContext
   disabled: boolean
   retrying: boolean
   /** Machine-scoped Sessions can only fork into directory context. */
   allowWorktree?: boolean
   confirm(context: AgentSessionContext): Promise<void>
-}>()
+}>(), { allowWorktree: true })
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const id = useId()
-const context = ref(props.allowWorktree === false ? "directory" as const : props.context)
+const context = ref(props.allowWorktree ? props.context : "directory" as const)
 const pending = ref(false)
 const error = ref<string>()
 const contexts = computed(() => {
   const options = [{ id: "worktree" as const, icon: GitBranch }, { id: "directory" as const, icon: FolderOpen }]
-  return props.allowWorktree === false ? options.filter(option => option.id === "directory") : options
+  return props.allowWorktree ? options : options.filter(option => option.id === "directory")
 })
 
 function cancel(): void { if (!pending.value) emit("close") }

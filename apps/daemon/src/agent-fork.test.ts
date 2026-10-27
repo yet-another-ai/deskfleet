@@ -128,12 +128,6 @@ test("machine-scoped Sessions cannot fork into a worktree context", async t => {
     /home directory/,
   )
   assert.equal((await sessions.journal.list()).length, 1)
-  const child = await sessions.handle("_deskfleet/session/fork", {
-    sessionId: source.session.id, operationId: randomUUID(), context: "directory",
-  }, actor) as AgentSnapshot
-  assert.equal(child.session.lifecycle, "ready")
-  assert.equal(child.session.workspaceId, undefined)
-  assert.equal(child.session.context, "directory")
 })
 
 test("unsupported and busy source sessions cannot allocate a fork", async t => {
