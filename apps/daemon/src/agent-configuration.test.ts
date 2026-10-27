@@ -5,6 +5,7 @@ import { join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
+import { openInMemoryCatalog } from "@deskfleet/native"
 import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
 import { connectAcpProcess, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import { DaemonCatalog } from "./catalog.ts"
@@ -271,7 +272,7 @@ test("configuration discovery uses the target workspace without allocating a Ses
   const directory = await mkdtemp(join(tmpdir(), "df-agent-config-"))
   const fake = fakeProvider()
   const catalog = new DaemonCatalog(directory)
-  await catalog.init()
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
   const service = new AgentSessions(catalog, catalog.native, fake.provider)
   await service.init()
   context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
@@ -304,7 +305,7 @@ test("draft probes reuse startup, isolate callers, and invalidate changed launch
   const directory = await mkdtemp(join(tmpdir(), "df-agent-config-probes-"))
   const fake = fakeProvider()
   const catalog = new DaemonCatalog(directory)
-  await catalog.init()
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
   const providers = new AgentProviders(directory, fake.provider)
   await providers.init()
   const service = new AgentSessions(catalog, catalog.native, fake.provider, providers)
@@ -349,7 +350,7 @@ test("closing Agent service closes a pending discovery process", async context =
   const started = new Promise<void>(resolve => { ready = resolve })
   const fake = fakeProvider({ async newSession() { ready(); return new Promise(() => {}) } })
   const catalog = new DaemonCatalog(directory)
-  await catalog.init()
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
   const service = new AgentSessions(catalog, catalog.native, fake.provider)
   await service.init()
   context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
@@ -365,7 +366,7 @@ test("draft configuration resolves the selected provider's current launch settin
   const directory = await mkdtemp(join(tmpdir(), "df-agent-config-provider-"))
   const fake = fakeProvider()
   const catalog = new DaemonCatalog(directory)
-  await catalog.init()
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
   const providers = new AgentProviders(directory, fake.provider)
   await providers.init()
   const configured = await providers.create({ template: "codex", name: "Work agent", binaryPath: "/tools/codex", env: { CODEX_HOME: "/work/agent" } })

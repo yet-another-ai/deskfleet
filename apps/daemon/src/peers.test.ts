@@ -3,7 +3,7 @@ import test from "node:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createPeer, type NativePeer, type PeerEvent } from "@deskfleet/native"
+import { createPeer, openInMemoryCatalog, type NativePeer, type PeerEvent } from "@deskfleet/native"
 import { startDaemon } from "./daemon.ts"
 import { PeerSessions } from "./peers.ts"
 
@@ -69,7 +69,7 @@ test("native peers exchange binary and text DataChannel messages through the dae
   }
   try {
     const controlDirectory = await waitFor("creating test directory", directory)
-    starting = startDaemon(0, { controlDirectory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+    starting = startDaemon(0, { controlDirectory, openCatalog: (_path, name) => openInMemoryCatalog(name), permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
     const daemon = await waitFor("starting daemon", starting)
     const left = await waitFor("creating left peer", daemon.peers.create("left"))
     const right = await waitFor("creating right peer", daemon.peers.create("right"))

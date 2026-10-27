@@ -156,27 +156,35 @@ Both create many SQLite catalogs; separating them avoids overlapping storage
 workloads while daemon IPC deadlines are active. Running only `check:daemon`
 does not add the Rust test suite.
 
-Catalog behavior tests use independent in-memory SQLite databases with the same
-migrations, foreign keys, and transaction logic as file catalogs. Agent Session
-and runtime configuration tests keep that database open when rebuilding the
-service; their Git repositories and worktrees still use temporary directories.
-Local control and desktop permission behavior tests also inject in-memory
-catalogs, while discovery records and terminal files still exercise the
-filesystem. This keeps SQLite file creation and migrations out of their timeout
-budgets.
-Tests that verify catalog or machine registration persistence across a daemon
-restart continue to use temporary database files. The provider control restart
-test uses a fresh in-memory catalog for each daemon because its persisted state
-is `agent-providers.json`; it still checks that file and reloads the providers
-through authenticated IPC after restart. Select the in-memory catalog explicitly
-in each fixture rather than switching all CI databases through an environment
-variable.
+Choose each test's SQLite storage from the behavior it asserts:
 
-The registration-reset IPC test also opens a fresh in-memory catalog for each
-machine context. It verifies concurrent reset requests, identity replacement,
-and discovery continuity without filesystem-backed SQLite migrations consuming
-the IPC request deadline on Windows runners. The separate durable-reset test
-still uses file catalogs and checks preserved records and identity after restart.
+| Test boundary | SQLite storage |
+| --- | --- |
+| Catalog operations, Agent configuration, authorization, enrollment validation, IPC, peer negotiation, machine-reset coordination, live worktree preferences, and schedule/workspace races | Independent in-memory catalog per test and machine context |
+| Schema upgrades, rollback, constraints, and transactions | In-memory database with the real migrations |
+| Catalog identity, journal/history, archive, or pending-work recovery after closing and reopening the database | Temporary database file |
+| Ownership checks through separate connections to the same catalog | Temporary database file |
+| Production startup, packaged daemon, and end-to-end application smoke tests | Default file catalogs |
+
+In-memory catalogs run the same migrations, foreign keys, and transaction logic
+as file catalogs. Inject `openInMemoryCatalog` explicitly at `DaemonCatalog.init`
+or through the daemon/runtime's `openCatalog` option; Rust behavior tests use
+`LocalCatalog::open_in_memory`. Do not switch all CI databases through an
+environment variable. Each replacement machine context gets a fresh catalog;
+tests rebuilding only an Agent service keep their existing catalog open.
+
+Git repositories and worktrees, discovery records, credential/settings JSON, and
+terminal transcripts still use real temporary files. A restart test needs a file
+catalog only if its asserted persisted state lives in SQLite: the provider-control
+restart test uses a fresh in-memory catalog per daemon while checking and reloading
+`agent-providers.json` through authenticated IPC.
+
+The daemon catalog, shutdown, development-data isolation, durable registration
+reset, and scheduled-session recovery tests retain file catalogs across restart.
+Rust store tests retain file catalogs for identity, journal replay, archive, and
+pending-question recovery, plus the independent-connection ownership test. These
+cover persistence while behavior-only fixtures keep file creation and migration
+I/O out of IPC and lifecycle timeout budgets.
 
 Static and test jobs may restore the Cargo target cache. Build jobs use Cargo
 download caches without restoring compiled targets. The setup action fetches

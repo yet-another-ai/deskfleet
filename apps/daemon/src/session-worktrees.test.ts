@@ -6,7 +6,7 @@ import { dirname, join } from "node:path"
 import test, { type TestContext } from "node:test"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import type { CatalogDirectory, CatalogWorktree, CatalogWorkspaceSession } from "@deskfleet/native"
+import { openInMemoryCatalog, type CatalogDirectory, type CatalogWorktree, type CatalogWorkspaceSession } from "@deskfleet/native"
 import { connectAcpProcess, type AgentProvider } from "./agents/acp.ts"
 import { runAgent } from "./agent-cli.ts"
 import { ManagedSessionWorktrees, type ManagedSessionCatalog, type ManagedWorkspaceSession } from "./session-worktrees.ts"
@@ -157,7 +157,10 @@ test("real catalogs read host preferences live and keep separate origins in the 
     await rm(directory, { recursive: true, force: true })
   })
   await Promise.all([mkdir(firstMachine, { recursive: true }), mkdir(secondMachine, { recursive: true })])
-  await Promise.all([firstCatalog.init(), secondCatalog.init()])
+  await Promise.all([
+    firstCatalog.init((_path, name) => openInMemoryCatalog(name)),
+    secondCatalog.init((_path, name) => openInMemoryCatalog(name)),
+  ])
   const firstOrigin = JSON.parse(await firstCatalog.native.agentIdentity()).originId as string
   const secondOrigin = JSON.parse(await secondCatalog.native.agentIdentity()).originId as string
   assert.notEqual(firstOrigin, secondOrigin)

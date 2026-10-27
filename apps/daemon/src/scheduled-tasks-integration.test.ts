@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import test from "node:test"
+import { openInMemoryCatalog } from "@deskfleet/native"
 import { BackendAgent } from "../../../scripts/fixtures/backend-agent.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import type { CatalogWorkspace } from "./catalog-protocol.ts"
@@ -85,6 +86,7 @@ test("Workspace deletion and scheduled task creation cannot leave a dangling tar
   await mkdir(working)
   const runtime = new MachineRuntime(directory, {
     agentProvider: new BackendAgent(), peers: { create: async () => { throw new Error("Unexpected peer creation") }, close: async () => {} },
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
     capabilities: async () => ({ displays: [], audio: false }),
   })
   let releaseDeletion = () => {}

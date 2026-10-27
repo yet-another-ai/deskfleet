@@ -7,6 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 import { setImmediate } from "node:timers/promises"
+import { openInMemoryCatalog } from "@deskfleet/native"
 import { startDaemon } from "./daemon.ts"
 import { DaemonClient } from "./control-client.ts"
 import { CentralClient } from "./central-client.ts"
@@ -37,7 +38,7 @@ test("local discovery grants only host setup and never imports development resou
 
 test("enrollment verifies local machine identity and saves only a private daemon credential", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-enroll-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { controlDirectory: directory, openCatalog: (_path, name) => openInMemoryCatalog(name), permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const identity = daemon.central.status().identity
   let originId = "wrong"
   const server = createServer((request, response) => {
@@ -72,7 +73,7 @@ test("remote enrollment requires TLS and accepts HTTP only on loopback", () => {
 
 test("delegation rechecks membership without treating a removed user as a revoked machine", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-delegation-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { controlDirectory: directory, openCatalog: (_path, name) => openInMemoryCatalog(name), permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const identity = daemon.central.status().identity
   let status = 200
   const users: string[] = []

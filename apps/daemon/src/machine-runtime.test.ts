@@ -159,7 +159,7 @@ test("registration preparation retains host IPC and resolves getters to the new 
 test("an enrolled machine cannot prepare another registration just because it is offline", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-denied-"))
   await seed(directory, false)
-  const runtime = new MachineRuntime(directory, options)
+  const runtime = new MachineRuntime(directory, { ...options, openCatalog: (_path, name) => openInMemoryCatalog(name) })
   context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
   await runtime.init()
   const identity = runtime.current.central.status().identity
@@ -172,7 +172,7 @@ test("failed registration preparation keeps the retired catalog usable and can b
   for (const failure of ["directory", "startup", "activation"] as const) await context.test(failure, async context => {
     const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-retry-"))
     await seed(directory)
-    const runtime = new MachineRuntime(directory, options)
+    const runtime = new MachineRuntime(directory, { ...options, openCatalog: (_path, name) => openInMemoryCatalog(name) })
     context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
     await runtime.init()
     const previous = runtime.current
@@ -209,7 +209,7 @@ test("failed registration preparation keeps the retired catalog usable and can b
 test("a committed registration reset succeeds when retired machine cleanup fails", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-cleanup-"))
   await seed(directory)
-  const runtime = new MachineRuntime(directory, options)
+  const runtime = new MachineRuntime(directory, { ...options, openCatalog: (_path, name) => openInMemoryCatalog(name) })
   context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
   await runtime.init()
   const previous = runtime.current
@@ -232,7 +232,7 @@ test("a committed registration reset succeeds when retired machine cleanup fails
 test("host shutdown waits for an accepted reset and closes its replacement context", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-shutdown-"))
   await seed(directory)
-  const daemon = await startDaemon(0, { controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { controlDirectory: directory, openCatalog: (_path, name) => openInMemoryCatalog(name), permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const client = await DaemonClient.connect(() => {}, () => {}, directory)
   let release = () => {}
   context.after(async () => { release(); client.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })

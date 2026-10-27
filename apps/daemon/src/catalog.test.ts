@@ -7,6 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 import { promisify } from "node:util"
+import { openInMemoryCatalog } from "@deskfleet/native"
 import { DaemonClient } from "../../desktop/src/main/daemon-client.ts"
 import { readDaemonDiscovery } from "./control-discovery.ts"
 import { parseControlRequest, validateControlParams } from "./control-request.ts"
@@ -106,7 +107,7 @@ test("session lifecycle creates isolated Git worktrees and removes them without 
 
 test("catalog operations require local authentication and exclusive daemon ownership", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-catalog-auth-"))
-  const daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name), controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const clients: DaemonClient[] = []
   context.after(async () => {
     clients.forEach(client => client.close())
@@ -125,7 +126,7 @@ test("catalog operations require local authentication and exclusive daemon owner
   const client = await DaemonClient.connect(() => {}, () => {}, directory)
   clients.push(client)
   const workspace = await client.call("workspaceCreate", { name: "retained", directories: [{ path: directory }] })
-  await assert.rejects(startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null }), /already running/u)
+  await assert.rejects(startDaemon(0, { allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name), controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null }), /already running/u)
   assert.deepEqual((await client.call("catalogList", {})).workspaces, [workspace])
 })
 
@@ -144,7 +145,7 @@ test("catalog IPC requires paths and bigint IDs, and exposes no manual Worktree 
 
 test("catalog snapshots can grow beyond individual IPC request and queue limits", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-catalog-size-"))
-  const daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name), controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const client = await DaemonClient.connect(() => {}, () => {}, directory)
   context.after(async () => { client.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
   const directories = Array.from({ length: 700 }, (_, index) => ({ path: join(directory, String(index).padEnd(230, "x")) }))
@@ -167,7 +168,7 @@ test("a Session Worktree terminal starts in the Worktree and ends when its Sessi
   await writeFile(join(repository, "README.md"), "fixture\n")
   await exec("git", ["-C", repository, "add", "."])
   await exec("git", ["-C", repository, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
-  const daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const daemon = await startDaemon(0, { allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name), controlDirectory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const client = await DaemonClient.connect(() => {}, () => {}, controlDirectory)
   context.after(async () => {
     client.close()
