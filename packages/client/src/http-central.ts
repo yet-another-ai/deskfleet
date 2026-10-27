@@ -108,7 +108,7 @@ export class HttpCentralClient implements CentralApi {
   session(machineId: string, sessionId: string) { return this.request<{ snapshot: AgentSnapshot; lastEventSeq: string; lastObservedAt: string }>("GET", `/api/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId)}`) }
   events(machineId: string, sessionId: string, after: string, limit: number) { return this.request<{ events: AgentEvent[]; lastEventSeq: string }>("GET", `/api/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId)}/events?after=${encodeURIComponent(after)}&limit=${limit}`) }
   rpc<T>(machineId: string, method: string, params: unknown) { return this.request<T>("POST", `/api/machines/${encodeURIComponent(machineId)}/rpc`, { method, params }) }
-  createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files") { return this.request<PeerGrant>("POST", "/api/peers", { teamId, machineId, purpose }) }
+  createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files" | "ports") { return this.request<PeerGrant>("POST", "/api/peers", { teamId, machineId, purpose }) }
   offerPeer(peerId: string, sdp: string, options?: unknown) { return this.request<{ sdp: string }>("POST", `/api/peers/${encodeURIComponent(peerId)}/offer`, { sdp, options }) }
   async startPeer(peerId: string, options: { displayId: number; control?: boolean }) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/start`, options) }
   async candidatePeer(peerId: string, candidate: IceCandidate) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/candidate`, { candidate }) }

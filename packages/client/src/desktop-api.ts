@@ -3,6 +3,7 @@ import type { DesktopMediaApi } from "./desktop-media.ts"
 import type { CatalogApi } from "./catalog.ts"
 import type { FilesystemApi } from "./filesystem.ts"
 import type { FilesApi } from "./files.ts"
+import type { PortsApi } from "./ports.ts"
 import type { AppLocale } from "./i18n.ts"
 import type { SettingsApi } from "./settings.ts"
 import type { TerminalSignalingApi } from "./terminal.ts"
@@ -25,6 +26,7 @@ export interface DeskfleetDesktopApi {
   catalog: CatalogApi
   filesystem: FilesystemApi
   files?: FilesApi
+  ports?: PortsApi
   desktop: DesktopMediaApi
   terminal: TerminalSignalingApi
   agent: AgentSignalingApi

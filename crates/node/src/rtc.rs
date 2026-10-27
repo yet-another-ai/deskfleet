@@ -221,6 +221,44 @@ impl NativePeer {
             .map_err(native_error)
     }
 
+    /// Enable loopback TCP forwarding only after checking the peer's grant.
+    #[napi]
+    pub async fn enable_port_forwarding(&self, expires_at_ms: f64) -> Result<()> {
+        if !expires_at_ms.is_finite()
+            || expires_at_ms.fract() != 0.0
+            || !(1.0..=9_007_199_254_740_991.0).contains(&expires_at_ms)
+        {
+            return Err(native_error("invalid port forwarding authorization expiry"));
+        }
+        self.peer
+            .enable_port_forwarding(expires_at_ms as u64)
+            .await
+            .map_err(native_error)
+    }
+
+    /// Bind a loopback TCP listener and prepare its channel before creating an offer.
+    #[napi]
+    pub async fn listen_port_forward(
+        &self,
+        local_port: f64,
+        target_host: String,
+        target_port: f64,
+    ) -> Result<u16> {
+        if !local_port.is_finite()
+            || local_port.fract() != 0.0
+            || !(0.0..=65535.0).contains(&local_port)
+            || !target_port.is_finite()
+            || target_port.fract() != 0.0
+            || !(1.0..=65535.0).contains(&target_port)
+        {
+            return Err(native_error("invalid TCP port"));
+        }
+        self.peer
+            .listen_port_forward(local_port as u16, &target_host, target_port as u16)
+            .await
+            .map_err(native_error)
+    }
+
     #[napi]
     pub async fn send_data(&self, label: String, data: Buffer) -> Result<()> {
         self.peer

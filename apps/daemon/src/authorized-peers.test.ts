@@ -32,11 +32,13 @@ function fixture(closeGate?: Promise<void>, closeError?: Error) {
   const sent: string[] = [], events: PeerEvent[] = [], calls: { method: string; actor: AgentActor }[] = []
   const packets: Buffer[] = []
   const input: string[] = [], starts: unknown[] = [], signals: unknown[] = []
+  const negotiation: string[] = [], forwardingDeadlines: number[] = []
   const gitListeners = new Set<(error?: string) => void>()
   let waiting: ((event: PeerEvent | null) => void) | undefined
   const push = (event: PeerEvent) => { if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) } else events.push(event) }
   const native = {
-    answerOffer: async () => sdp, addIceCandidate: async () => {}, startDesktop: async (options: unknown) => { starts.push(options) },
+    answerOffer: async () => { negotiation.push("answer"); return sdp }, addIceCandidate: async () => {}, startDesktop: async (options: unknown) => { starts.push(options) },
+    enablePortForwarding: async (expiresAt: number) => { negotiation.push("ports"); forwardingDeadlines.push(expiresAt) },
     sendDesktopInput: async (text: string) => { input.push(text) },
     sendText: async (_label: string, text: string) => { sent.push(text) },
     sendData: async (_label: string, data: Buffer) => { sent.push(data.toString()); packets.push(data) },
@@ -53,7 +55,7 @@ function fixture(closeGate?: Promise<void>, closeError?: Error) {
   }
   const peers = new AuthorizedPeers({
     peers: {
-      create: async () => native,
+      create: async () => { negotiation.push("create"); return native },
       close: async () => {
         closeCalls++; closing(); await closeGate; closed = true; waiting?.(null)
         if (closeError) throw closeError
@@ -66,7 +68,67 @@ function fixture(closeGate?: Promise<void>, closeError?: Error) {
     push({ kind: "data", label: "deskfleet-acp", data: Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n") })
     for (let tries = 0; tries < 100 && !sent.some(value => value.includes(`"id":${id},`)); tries++) await delay(1)
   }
-  return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, gitListeners, closeStarted, closeCalls: () => closeCalls, expired: () => { now += 86_400_001 }, closed: () => closed }
+  return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, negotiation, forwardingDeadlines, gitListeners, closeStarted, closeCalls: () => closeCalls, expired: () => { now += 86_400_001 }, closed: () => closed }
+}
+
+test("ports require their own action and enable native forwarding before negotiation", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const authorization: PeerAuthorization = { ...grant(), purpose: "ports", actions: ["ports:forward"] }
+  await assert.rejects(f.peers.offer({ peerId: "peer", sdp, authorization: { ...authorization, actions: ["agent:execute"] }, iceServers: [] }), /does not allow port forwarding/)
+  assert.deepEqual(f.negotiation, [])
+  await f.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] })
+  assert.deepEqual(f.negotiation, ["create", "ports", "answer"])
+  assert.deepEqual(f.forwardingDeadlines, [Date.parse(authorization.expiresAt)])
+})
+
+test("another peer purpose cannot enable forwarding through a channel label or action", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: [...grant().actions, "ports:forward"] }, iceServers: [] })
+  f.push({ kind: "dataChannelOpen", label: "deskfleet-ports" })
+  f.push({ kind: "data", label: "deskfleet-ports", data: Buffer.from("open") })
+  await delay(0)
+  assert.deepEqual(f.negotiation, ["create", "answer"])
+  assert.deepEqual(f.forwardingDeadlines, [])
+})
+
+for (const failure of ["native startup", "expired during startup"] as const) {
+  test(`port negotiation closes native resources after ${failure}`, async context => {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    f.native.enablePortForwarding = async () => {
+      if (failure === "native startup") throw new Error("Port forwarding could not start")
+      f.expired()
+    }
+    await assert.rejects(f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "ports", actions: ["ports:forward"] }, iceServers: [] }), failure === "native startup" ? /could not start/ : /authorization has expired/)
+    assert.deepEqual(f.negotiation, ["create"])
+    assert.equal(f.closeCalls(), 1)
+    assert.equal(f.closed(), true)
+  })
+}
+
+for (const ending of ["expiry", "revocation", "channel close"] as const) {
+  test(`port ${ending} closes its native peer and waits for resource cleanup`, { timeout: 5_000 }, async context => {
+    let release!: () => void
+    const f = fixture(new Promise<void>(resolve => { release = resolve }))
+    context.after(async () => { release(); await f.peers.closeAll() })
+    const authorization: PeerAuthorization = {
+      ...grant(), purpose: "ports", actions: ["ports:forward"],
+      ...(ending === "expiry" ? { expiresAt: new Date(epoch + 10).toISOString() } : {}),
+    }
+    await f.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] })
+    const revocation = ending === "revocation" ? f.peers.reconcile([]) : undefined
+    if (ending === "channel close") f.push({ kind: "dataChannelClosed", label: "deskfleet-ports" })
+    await f.closeStarted
+    let settled = false
+    const closing = f.peers.close("peer").then(() => { settled = true })
+    await delay(0)
+    assert.equal(settled, false)
+    assert.equal(f.closed(), false)
+    release()
+    await Promise.all([closing, revocation])
+    assert.equal(f.closed(), true)
+    assert.equal(f.closeCalls(), 1)
+    await assert.rejects(f.peers.candidate("peer", { candidate: "candidate:1" }), /Unknown authorized peer/)
+  })
 }
 
 test("repeated close and shutdown await the same native input cleanup", async () => {

@@ -321,6 +321,40 @@ async fn postgres_http_permissions_replication_and_signaling() {
         }
     });
     let grant: Value = test::read_body_json(call!(post, "/api/peers", token, &create)).await;
+    let ports = json!({"teamId":team_id,"machineId":machine_id,"purpose":"ports"});
+    assert_eq!(
+        call!(post, "/api/peers", outside_token, &ports).status(),
+        StatusCode::FORBIDDEN
+    );
+    let response = call!(post, "/api/peers", token, &ports);
+    assert_eq!(response.status(), StatusCode::OK);
+    let ports_grant: Value = test::read_body_json(response).await;
+    assert_eq!(ports_grant["authorization"]["purpose"], "ports");
+    assert_eq!(
+        ports_grant["authorization"]["actions"],
+        json!(["ports:forward"])
+    );
+    let ports_id = ports_grant["peerId"].as_str().unwrap();
+    assert_eq!(
+        call!(
+            post,
+            &format!("/api/peers/{ports_id}/offer"),
+            token,
+            &json!({"sdp":crate::peers::tests::sdp()})
+        )
+        .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        call!(
+            post,
+            &format!("/api/peers/{ports_id}/start"),
+            token,
+            &json!({"displayId":"1"})
+        )
+        .status(),
+        StatusCode::FORBIDDEN
+    );
     let peer_id = grant["peerId"].as_str().unwrap();
     assert!(uuid::Uuid::parse_str(peer_id).is_ok());
     for side in [TurnUsageSide::Client, TurnUsageSide::Peer] {

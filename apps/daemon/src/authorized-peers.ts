@@ -82,7 +82,8 @@ export class AuthorizedPeers {
     if (!Number.isFinite(issued) || !Number.isFinite(expires) || issued > this.#now() + 60_000 || expires <= this.#now() || expires <= issued || expires - issued > DAY_MS) {
       throw new Error("Peer authorization is expired or exceeds 24 hours")
     }
-    if (!["agent", "terminal", "desktop", "files"].includes(grant.purpose)) throw new Error("Unsupported peer purpose")
+    if (!["agent", "terminal", "desktop", "files", "ports"].includes(grant.purpose)) throw new Error("Unsupported peer purpose")
+    if (grant.purpose === "ports" && !grant.actions.includes("ports:forward")) throw new Error("Peer grant does not allow port forwarding")
   }
 
   #live(id: string, action?: string): AuthorizedPeer {
@@ -164,6 +165,11 @@ export class AuthorizedPeers {
         )
       }
       if (purpose === "desktop") owned.input = new DesktopInputChannel(peer, () => { this.#live(params.peerId, "desktop:control") })
+      if (purpose === "ports") {
+        this.#live(params.peerId, "ports:forward")
+        await peer.enablePortForwarding(Date.parse(owned.authorization.expiresAt))
+        this.#live(params.peerId, "ports:forward")
+      }
       // Candidate events can race answerOffer. Hold them until the answer SDP is bound.
       const answer = await peer.answerOffer(params.sdp)
       this.#live(params.peerId)

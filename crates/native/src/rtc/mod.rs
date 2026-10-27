@@ -9,6 +9,7 @@ mod codecs;
 mod events;
 mod feedback;
 mod h265_payloader;
+mod ports;
 mod sample_track;
 mod types;
 
@@ -49,6 +50,7 @@ pub struct Peer {
     audio: Option<Arc<SampleTrack>>,
     video_codec: Option<VideoCodec>,
     channels: channels::Channels,
+    ports: ports::Forwarding,
     events: broadcast::Sender<PeerEvent>,
     receiver: Mutex<broadcast::Receiver<PeerEvent>>,
     keyframe_requested: Arc<AtomicBool>,
@@ -96,6 +98,7 @@ impl Peer {
         let (closed, _) = watch::channel(false);
         let keyframe_requested = Arc::new(AtomicBool::new(config.video.is_some()));
         let channels = Arc::new(Mutex::new(HashMap::new()));
+        let ports = ports::Forwarding::default();
         let pc = Arc::new(
             PeerConnectionBuilder::new()
                 .with_configuration(rtc_config)
@@ -106,6 +109,7 @@ impl Peer {
                     events: events.clone(),
                     keyframe: Arc::clone(&keyframe_requested),
                     has_video: config.video.is_some(),
+                    ports: ports.clone(),
                 }))
                 .with_data_channel_send_buffer_limit(channels::MAX_BUFFERED_AMOUNT)
                 .with_udp_addrs(vec!["0.0.0.0:0", "[::]:0"])
@@ -118,6 +122,7 @@ impl Peer {
             audio: None,
             video_codec: config.video,
             channels,
+            ports,
             events,
             receiver: Mutex::new(receiver),
             keyframe_requested,
@@ -256,6 +261,11 @@ impl Peer {
     /// Create an ordered, reliable DataChannel before making the initial offer.
     pub async fn create_data_channel(&self, label: String) -> Result<()> {
         self.ensure_open()?;
+        if label == ports::CHANNEL {
+            return Err(PeerError::PortForwarding(
+                "use the dedicated forwarding API",
+            ));
+        }
         if label.is_empty() || label.len() > 65_535 {
             return Err(PeerError::InvalidDataChannelLabel);
         }
@@ -267,6 +277,40 @@ impl Peer {
             return Err(error);
         }
         Ok(())
+    }
+
+    /// Authorize the responder before applying its offer. The daemon supplies
+    /// the immutable grant's absolute expiry, in Unix milliseconds.
+    pub async fn enable_port_forwarding(&self, expires_at_ms: u64) -> Result<()> {
+        let _close = self.close_lock.lock().await;
+        self.ensure_open()?;
+        self.ports.enable(expires_at_ms).await
+    }
+
+    /// Listen on IPv4 loopback and create the forwarding channel before making
+    /// an offer. Zero selects an available local port. Targets are loopback only.
+    pub async fn listen_port_forward(
+        &self,
+        local_port: u16,
+        target_host: &str,
+        target_port: u16,
+    ) -> Result<u16> {
+        let _close = self.close_lock.lock().await;
+        self.ensure_open()?;
+        let port = self
+            .ports
+            .listen(local_port, target_host, target_port)
+            .await?;
+        let result = async {
+            let channel = self.pc.create_data_channel(ports::CHANNEL, None).await?;
+            self.ports.attach(channel, self.events.clone()).await
+        }
+        .await;
+        if let Err(error) = result {
+            self.ports.close().await;
+            return Err(error);
+        }
+        Ok(port)
     }
 
     /// Reject messages above 64 KiB or writes that exceed the 1 MiB send budget.
@@ -350,6 +394,7 @@ impl Peer {
             return Ok(());
         }
         self.closing.store(true, Ordering::Release);
+        self.ports.close().await;
         let result = self.pc.close().await;
         let readers = std::mem::take(&mut *self.readers.lock().await);
         for task in readers {
@@ -369,7 +414,9 @@ impl Drop for Peer {
         }
         if !*self.closed.borrow() {
             let pc = Arc::clone(&self.pc);
+            let ports = self.ports.clone();
             self.runtime.spawn(async move {
+                ports.close().await;
                 if let Err(error) = pc.close().await {
                     tracing::warn!(%error, "closing dropped WebRTC peer failed");
                 }

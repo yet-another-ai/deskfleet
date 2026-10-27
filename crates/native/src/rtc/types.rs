@@ -86,6 +86,10 @@ impl PeerEvent {
 pub enum PeerError {
     #[error(transparent)]
     WebRtc(#[from] webrtc::error::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("port forwarding: {0}")]
+    PortForwarding(&'static str),
     #[error("peer is closed")]
     Closed,
     #[error("data channel is not open: {0}")]

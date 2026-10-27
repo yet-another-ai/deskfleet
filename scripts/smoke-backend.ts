@@ -15,6 +15,7 @@ import { BackendAgent } from "./fixtures/backend-agent.ts"
 import { connectBackendPeer, until, type BackendRequest } from "./fixtures/backend-peer.ts"
 import type { FixtureLogin } from "./fixtures/backend-oidc.ts"
 import { startBackendFixture } from "./fixtures/backend-server.ts"
+import { smokePortForwarding } from "./fixtures/backend-ports.ts"
 
 const fixture = await startBackendFixture()
 const { backend, oidc } = fixture
@@ -101,6 +102,8 @@ try {
   await rpc(machines[0]!, "catalogList", {}, member)
   await assert.rejects(member(`/machines/${machines[0]}`, undefined, "DELETE"), /403/u)
   console.log("Two daemon registrations, control RPC, Provider settings, team authorization, and equal local IDs passed")
+
+  await smokePortForwarding(backend, bob, teamId, machines[0]!)
 
   const sessionId = sessions[0]!.session.id
   const sessionPath = `/machines/${machines[0]}/sessions/${sessionId}`

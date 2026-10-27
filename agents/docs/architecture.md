@@ -442,6 +442,7 @@ created on demand.
 | Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel |
 | Agent prompts, steering, permissions, and live Session events | ACP and deskfleet extensions over WebRTC DataChannel |
 | File browsing, transfer, and Agent file references | Independently authorized files WebRTC DataChannel |
+| Desktop loopback TCP port forwarding | Independently authorized ports WebRTC DataChannel; byte transport stays in Rust |
 | Desktop video/audio | WebRTC media tracks |
 | Desktop input | WebRTC DataChannel |
 | Local discovery, catalog operations, and signaling | Authenticated IPC; Agent and terminal streams use DataChannels |
@@ -450,6 +451,12 @@ Deploy STUN and TURN alongside signaling. TURN provides relay access when peers
 cannot connect directly. Desktop streaming, terminal traffic, and bulk results
 need flow control appropriate to their latency and throughput; validate this
 with the selected WebRTC implementation.
+
+Desktop's programmatic [TCP forwarding](ports.md) API owns local loopback
+listeners in its main process, independently of windows and the local Agent.
+The target daemon enables native forwarding only for a `ports:forward` grant.
+Forwards are ephemeral Machine connections, without UI controls or a new
+catalog resource; closing them does not stop the target service.
 
 The central backend optionally collects coturn Redis Pub/Sub counters by Team
 and stores them in PostgreSQL. See

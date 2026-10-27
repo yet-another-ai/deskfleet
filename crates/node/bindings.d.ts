@@ -27,6 +27,10 @@ export declare class NativePeer {
   acceptAnswer(sdp: string): Promise<void>
   addIceCandidate(candidate: IceCandidate): Promise<void>
   createDataChannel(label: string): Promise<void>
+  /** Enable loopback TCP forwarding only after checking the peer's grant. */
+  enablePortForwarding(expiresAtMs: number): Promise<void>
+  /** Bind a loopback TCP listener and prepare its channel before creating an offer. */
+  listenPortForward(localPort: number, targetHost: string, targetPort: number): Promise<number>
   sendData(label: string, data: Buffer): Promise<void>
   sendText(label: string, text: string): Promise<void>
   /** Consume events from one daemon loop. Resolves with null after close. */

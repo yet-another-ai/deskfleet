@@ -15,7 +15,7 @@ deskfleet-input.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }
 tracing.workspace = true
 webrtc.workspace = true
 rtc.workspace = true

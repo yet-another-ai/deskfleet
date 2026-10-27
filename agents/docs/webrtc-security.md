@@ -160,6 +160,15 @@ controllers detach, provider execution and daemon history continue, and pending
 approvals are not implicitly granted. Archive still has its own explicit
 resource-closing semantics.
 
+Ports peers separately require `ports:forward` before the daemon enables the
+native TCP responder. Forwarding accepts only literal `127.0.0.1` or `::1`
+destinations with a nonzero port. A connected peer or a `deskfleet-ports` channel
+label alone never enables that responder. The native byte path checks the
+grant's absolute expiry independently of the JavaScript event loop; revocation
+closes the peer and all its sockets. Desktop listeners bind only `127.0.0.1`.
+This grants access to Machine loopback services, not a Workspace network sandbox.
+See [TCP forwarding](ports.md) for ownership and flow control.
+
 Files peers separately require `files:read` or `files:write` on each operation and
 outgoing response. Closing a files peer aborts its unfinished destination staging;
 committed files remain. The application owns the transfer queue independently of

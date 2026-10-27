@@ -8,13 +8,14 @@ use webrtc::peer_connection::{
     RTCPeerConnectionState,
 };
 
-use super::{IceCandidate, PeerEvent, PeerState, channels};
+use super::{IceCandidate, PeerEvent, PeerState, channels, ports};
 
 pub(super) struct Handler {
     pub(super) channels: channels::Channels,
     pub(super) events: broadcast::Sender<PeerEvent>,
     pub(super) keyframe: Arc<AtomicBool>,
     pub(super) has_video: bool,
+    pub(super) ports: ports::Forwarding,
 }
 
 #[async_trait::async_trait]
@@ -56,9 +57,16 @@ impl PeerConnectionEventHandler for Handler {
     }
 
     async fn on_data_channel(&self, channel: Arc<dyn DataChannel>) {
-        if let Err(error) =
-            channels::register(Arc::clone(&channel), &self.channels, &self.events).await
-        {
+        let result = match channel.label().await {
+            Ok(label) if label == ports::CHANNEL => {
+                self.ports
+                    .attach(Arc::clone(&channel), self.events.clone())
+                    .await
+            }
+            Ok(_) => channels::register(Arc::clone(&channel), &self.channels, &self.events).await,
+            Err(error) => Err(error.into()),
+        };
+        if let Err(error) = result {
             let _ = self.events.send(PeerEvent::error(error.to_string()));
             if let Err(error) = channel.close().await {
                 let _ = self.events.send(PeerEvent::error(error.to_string()));

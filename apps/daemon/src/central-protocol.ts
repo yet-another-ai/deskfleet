@@ -5,7 +5,7 @@ import type { IceCandidate } from "./control-protocol.ts"
 /** Wire names are owned by crates/protocol/src/control.rs (protocol version 1). */
 export interface PeerAuthorization extends Omit<WirePeerAuthorization, "actor" | "purpose"> {
   actor: AgentActor & { kind: "user"; userId: string; deviceId: string }
-  purpose: "agent" | "terminal" | "desktop" | "files"
+  purpose: "agent" | "terminal" | "desktop" | "files" | "ports"
 }
 
 export interface MachineCredentials {
