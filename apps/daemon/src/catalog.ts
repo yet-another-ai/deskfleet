@@ -55,8 +55,12 @@ export class DaemonCatalog {
     if (!workspaceId) {
       if (context !== "directory") throw new Error("Sessions without a workspace use the home directory")
       await this.native.attachSessionWorktree(id, [{ path: homedir() }])
-    } else if (context === "directory") await this.#sessions.useDirectories({ id, workspaceId })
-    else await this.#sessions.create(workspaceId, { id, workspaceId })
+    } else {
+      const machineId = (await this.native.snapshot()).machineId
+      const allocated = { id, machineId, workspaceId }
+      if (context === "directory") await this.#sessions.useDirectories(allocated)
+      else await this.#sessions.create(workspaceId, allocated)
+    }
     this.changed()
   }
 

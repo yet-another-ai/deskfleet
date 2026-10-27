@@ -48,7 +48,7 @@ function catalogFixture(directories: CatalogDirectory[]) {
       }] }
     },
     async createWorkspaceSession(workspaceId) {
-      const value = { id: String(++nextId), workspaceId }
+      const value = { id: String(++nextId), machineId: "1", workspaceId }
       sessions.set(value.id, value)
       return value
     },
@@ -417,7 +417,7 @@ test("interruptions during checkout or provider initialization still clean up th
       const continueStartup = new Promise<void>(resolve => { resumeStartup = resolve })
       const events: string[] = []
       const session: ManagedWorkspaceSession = {
-        id: "7", workspaceId: "1",
+        id: "7", machineId: "1", workspaceId: "1",
         worktree: { id: "8", workspaceId: "1", sessionId: "7", directories: [{ path: process.cwd() }] },
       }
       const signal = phase === "checkout" ? "SIGINT" : "SIGTERM"

@@ -2,7 +2,7 @@ import type { AgentActor } from "./agent-protocol.ts"
 import type { MachineOperations } from "./machine-operations.ts"
 import type { ScheduledTask } from "./schedule-protocol.ts"
 
-export interface McpScope { sessionId: string; workspaceId: string }
+export interface McpScope { sessionId: string; workspaceId?: string }
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected tool arguments")
@@ -36,11 +36,13 @@ export async function dispatchMcp(
     return tasks.filter(task => task.workspaceId === scope.workspaceId)
   }
   if (method === "scheduleCreate") {
+    if (scope.workspaceId === undefined) throw new Error("Schedules require a Workspace")
     const schedule = object(params.schedule)
     if (schedule.workspaceId !== undefined && schedule.workspaceId !== scope.workspaceId) throw new Error("Schedule is outside this MCP delegation")
     return operations.handle(method, { schedule: { ...schedule, workspaceId: scope.workspaceId } }, actor)
   }
   if (["scheduleUpdate", "scheduleDelete", "scheduleRun"].includes(method)) {
+    if (scope.workspaceId === undefined) throw new Error("Schedules require a Workspace")
     const tasks = await operations.handle("scheduleList", {}, actor) as ScheduledTask[]
     const task = tasks.find(task => task.id === params.scheduleId)
     if (!task || task.workspaceId !== scope.workspaceId) throw new Error("Schedule is outside this MCP delegation")

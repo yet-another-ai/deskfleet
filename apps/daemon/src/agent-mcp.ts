@@ -6,7 +6,7 @@ import { DESKFLEET_TOOLS } from "@deskfleet/mcp/tools"
 import { adapterProcess, DESKFLEET_MCP_ARGUMENT } from "./agents/adapter-host.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 
-export interface AgentMcpScope { sessionId: string; workspaceId: string }
+export interface AgentMcpScope { sessionId: string; workspaceId?: string }
 export interface AgentMcpLease { servers: McpServer[]; close(): void }
 export interface AgentMcpOptions {
   servers?(): McpServer[]
@@ -44,12 +44,12 @@ export class AgentMcp {
     this.#endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`
   }
 
-  lease(sessionId: string, workspaceId: string, actor: AgentActor): AgentMcpLease {
+  lease(sessionId: string, workspaceId: string | undefined, actor: AgentActor): AgentMcpLease {
     // Local development fixtures have no centrally authenticated user to delegate.
     if (actor.kind !== "user" || !actor.userId || !actor.deviceId) return { servers: [], close() {} }
     if (!this.#endpoint) throw new Error("Agent MCP is unavailable")
     const token = randomBytes(32).toString("hex")
-    this.#grants.set(token, { actor: structuredClone(actor), scope: { sessionId, workspaceId } })
+    this.#grants.set(token, { actor: structuredClone(actor), scope: { sessionId, ...(workspaceId ? { workspaceId } : {}) } })
     const launch = adapterProcess(DESKFLEET_MCP_ARGUMENT)
     const env = Object.entries(launch.env ?? {}).flatMap(([name, value]) => value === undefined ? [] : [{ name, value }])
     return {
