@@ -9,6 +9,8 @@ dependencies:
     - leonardomso/rust-skills#fd2a861ab0406a4ac536a55274d14ea6fd1ca9c9
     - lennney/stop-that-shit/skills/stop-that-shit#694bbd59e26b522cd63801a01590ccaa77c7fe84
     - lennney/stop-that-shit/skills/stss#694bbd59e26b522cd63801a01590ccaa77c7fe84
+    - ayghri/i-have-adhd/skills/i-have-adhd#1ecea1993b7fce257ffbd686c070948b5e07eda6
+    - luoling8192/create-pr-with-evidence-skill#ae59b8b557e1df061d9c5ee6c4d56d672f1f2aa6
     - git: vueuse/skills
       ref: 004812b4aa0815f5745ac30a6a7dc4927aec7b3d
       skills:

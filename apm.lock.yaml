@@ -1,6 +1,25 @@
 lockfile_version: '1'
-apm_version: 0.34.0
+apm_version: 0.35.0
 dependencies:
+- repo_url: ayghri/i-have-adhd
+  name: i-have-adhd
+  host: github.com
+  resolved_commit: 1ecea1993b7fce257ffbd686c070948b5e07eda6
+  resolved_ref: 1ecea1993b7fce257ffbd686c070948b5e07eda6
+  version: unknown
+  virtual_path: skills/i-have-adhd
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/i-have-adhd
+  - .agents/skills/i-have-adhd/SKILL.md
+  - .agents/skills/i-have-adhd/agents/gemini.toml
+  - .agents/skills/i-have-adhd/agents/openai.yaml
+  deployed_file_hashes:
+    .agents/skills/i-have-adhd/SKILL.md: sha256:88955c019bbb1419ff4b49dbb1f80a867467de6233d7865af2e06a7d7b76c7d3
+    .agents/skills/i-have-adhd/agents/gemini.toml: sha256:5108a6123beb9df24846e0dd3f902c652d18522dfbc56e5762032ea383041c62
+    .agents/skills/i-have-adhd/agents/openai.yaml: sha256:2c51291283dcefdca43ca6b0c08172f225c7c26a9783ec444d6bdfa51ca96f8f
+  content_hash: sha256:9eabae642eff3104ecd1be7a1f28881bb84548ffe28159481e684bf2e69c1d71
 - repo_url: lennney/stop-that-shit
   name: stop-that-shit
   host: github.com
@@ -618,6 +637,27 @@ dependencies:
     .agents/skills/rust-skills/rules/unsafe-safety-comment.md: sha256:4892500c59f446eb8031fcf2cc98bf64f3323276abee0355409f4af53cbdcaab
     .agents/skills/rust-skills/rules/unsafe-send-sync-manual.md: sha256:106ca8ba1843ec8dfe9658c5db41fd99d106bcf2b8b4ece41e8db1dd347372f2
   content_hash: sha256:b0a055da7be8a53d7e9a15fa84ea7371d8564a7498f0a531aecf16b75213ee72
+- repo_url: luoling8192/create-pr-with-evidence-skill
+  name: create-pr-with-evidence
+  host: github.com
+  resolved_commit: ae59b8b557e1df061d9c5ee6c4d56d672f1f2aa6
+  resolved_ref: ae59b8b557e1df061d9c5ee6c4d56d672f1f2aa6
+  version: unknown
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/create-pr-with-evidence-skill
+  - .agents/skills/create-pr-with-evidence-skill/LICENSE
+  - .agents/skills/create-pr-with-evidence-skill/README.md
+  - .agents/skills/create-pr-with-evidence-skill/SKILL.md
+  - .agents/skills/create-pr-with-evidence-skill/agents/openai.yaml
+  - .agents/skills/create-pr-with-evidence-skill/references/pr-body.md
+  deployed_file_hashes:
+    .agents/skills/create-pr-with-evidence-skill/LICENSE: sha256:a075e1a135cb05d250bba7292bc713192a494b90347eb41b9d63e7c1a9724d5f
+    .agents/skills/create-pr-with-evidence-skill/README.md: sha256:4c705ec6f9a19a5502a061fbba7a837c6792cf49a06cdaadfc91b8d42435038f
+    .agents/skills/create-pr-with-evidence-skill/SKILL.md: sha256:6def1b815322fb4b4cb0c3df2dfa2c6425e1fe6cc8c5e7341fbd5d0a04a6e7e0
+    .agents/skills/create-pr-with-evidence-skill/agents/openai.yaml: sha256:7bfe8e22a250cc7881a5ea34988dcee0947ffa793b99b16b5fa577e43816250d
+    .agents/skills/create-pr-with-evidence-skill/references/pr-body.md: sha256:7836e9abe91bdca10ca5625c825003200a5cdd08052d4fd470ce0c55cc7a7e8d
+  content_hash: sha256:1e41687d4ccb56066f12548ddcc942cf03ad6f9345cee3ebb2d8c00d1c34acab
 - repo_url: vueuse/skills
   name: d016d5f8f4816002
   host: github.com
@@ -1174,6 +1214,96 @@ dependencies:
   skill_subset:
   - vueuse-functions
 deployments:
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/create-pr-with-evidence-skill
+  runtime: null
+  scope: project
+  owners:
+  - luoling8192/create-pr-with-evidence-skill
+  active_owner: luoling8192/create-pr-with-evidence-skill
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/create-pr-with-evidence-skill/LICENSE
+  runtime: null
+  scope: project
+  owners:
+  - luoling8192/create-pr-with-evidence-skill
+  active_owner: luoling8192/create-pr-with-evidence-skill
+  content_hash: sha256:a075e1a135cb05d250bba7292bc713192a494b90347eb41b9d63e7c1a9724d5f
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/create-pr-with-evidence-skill/README.md
+  runtime: null
+  scope: project
+  owners:
+  - luoling8192/create-pr-with-evidence-skill
+  active_owner: luoling8192/create-pr-with-evidence-skill
+  content_hash: sha256:4c705ec6f9a19a5502a061fbba7a837c6792cf49a06cdaadfc91b8d42435038f
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/create-pr-with-evidence-skill/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - luoling8192/create-pr-with-evidence-skill
+  active_owner: luoling8192/create-pr-with-evidence-skill
+  content_hash: sha256:6def1b815322fb4b4cb0c3df2dfa2c6425e1fe6cc8c5e7341fbd5d0a04a6e7e0
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/create-pr-with-evidence-skill/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - luoling8192/create-pr-with-evidence-skill
+  active_owner: luoling8192/create-pr-with-evidence-skill
+  content_hash: sha256:7bfe8e22a250cc7881a5ea34988dcee0947ffa793b99b16b5fa577e43816250d
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/create-pr-with-evidence-skill/references/pr-body.md
+  runtime: null
+  scope: project
+  owners:
+  - luoling8192/create-pr-with-evidence-skill
+  active_owner: luoling8192/create-pr-with-evidence-skill
+  content_hash: sha256:7836e9abe91bdca10ca5625c825003200a5cdd08052d4fd470ce0c55cc7a7e8d
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/i-have-adhd
+  runtime: null
+  scope: project
+  owners:
+  - ayghri/i-have-adhd/skills/i-have-adhd
+  active_owner: ayghri/i-have-adhd/skills/i-have-adhd
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/i-have-adhd/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - ayghri/i-have-adhd/skills/i-have-adhd
+  active_owner: ayghri/i-have-adhd/skills/i-have-adhd
+  content_hash: sha256:88955c019bbb1419ff4b49dbb1f80a867467de6233d7865af2e06a7d7b76c7d3
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/i-have-adhd/agents/gemini.toml
+  runtime: null
+  scope: project
+  owners:
+  - ayghri/i-have-adhd/skills/i-have-adhd
+  active_owner: ayghri/i-have-adhd/skills/i-have-adhd
+  content_hash: sha256:5108a6123beb9df24846e0dd3f902c652d18522dfbc56e5762032ea383041c62
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/i-have-adhd/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - ayghri/i-have-adhd/skills/i-have-adhd
+  active_owner: ayghri/i-have-adhd/skills/i-have-adhd
+  content_hash: sha256:2c51291283dcefdca43ca6b0c08172f225c7c26a9783ec444d6bdfa51ca96f8f
 - kind: project-relative
   target: agent-skills
   value: .agents/skills/rust-skills

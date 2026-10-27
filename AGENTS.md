@@ -80,3 +80,12 @@ deskfleet Cargo workspace; it is not part of the product or its build.
 it fits), `EXTERNAL` (only when its extra dependency is already installed), or
 `EXPLICIT_ONLY` (only when asked). Instructions in this file override those
 defaults.
+
+`i-have-adhd` shapes output for an ADHD reader: lead with the next action,
+number multi-step work, and restate state across turns. Invoke it as
+`/i-have-adhd`; it stays on until the reader says "stop adhd mode".
+
+`create-pr-with-evidence` prepares pull requests with verifiable change context,
+architecture evidence, and before/after visual evidence when UI changes. Invoke
+it as `/create-pr-with-evidence` when opening or preparing a PR. The installed
+directory is `.agents/skills/create-pr-with-evidence-skill/`.

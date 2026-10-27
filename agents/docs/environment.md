@@ -317,15 +317,22 @@ or install [Renovate](https://github.com/apps/renovate) for that repository.
 
 ## Agent skills
 
-APM installs `rust-skills`, `stop-that-shit`, `stss`, and `vueuse-functions` from
-the commit references in `apm.yml`. `apm.lock.yaml` records their resolved sources
-and deployed files. Both manifests and the installed `.agents/skills/` tree belong
-in source control. Only the local download cache, `apm_modules/`, is ignored.
+APM installs `rust-skills`, `stop-that-shit`, `stss`, `i-have-adhd`,
+`create-pr-with-evidence`, and `vueuse-functions` from the commit references in
+`apm.yml`. `apm.lock.yaml` records their resolved sources and deployed files.
+Both manifests and the installed `.agents/skills/` tree belong in source control.
+Only the local download cache, `apm_modules/`, is ignored.
 
 `vueuse-functions` is the official VueUse agent skill from `vueuse/skills`, pinned
 to that single skill. Cursor loads `.agents/skills/`, and the skill can be invoked
 as `/vueuse-functions`. `AGENTS.md` states when to apply it. To update it, change
 the `vueuse/skills` `ref` and keep `skills` limited to `vueuse-functions`.
+
+`i-have-adhd` comes from `ayghri/i-have-adhd` (`skills/i-have-adhd`) and deploys
+to `.agents/skills/i-have-adhd/`. Invoke it as `/i-have-adhd`.
+`create-pr-with-evidence` comes from `luoling8192/create-pr-with-evidence-skill`
+and deploys to `.agents/skills/create-pr-with-evidence-skill/`. Invoke it as
+`/create-pr-with-evidence`. `AGENTS.md` states when to apply each skill.
 
 A fresh checkout already contains the skills. To restore the exact installation:
 
