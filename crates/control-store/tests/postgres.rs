@@ -4,6 +4,10 @@ use deskfleet_control_store::{ControlStore, Error, now_ms, timestamp};
 use deskfleet_protocol::control::{PeerActor, PeerAuthorization, PeerTarget};
 use serde_json::{Value, json};
 
+fn usage_counts(value: Value) -> Value {
+    json!({"relayedBytes":value["relayedBytes"],"activeSessionCount":value["activeSessionCount"],"memberCount":value["memberCount"]})
+}
+
 fn snapshot(id: &str, seq: &str) -> Value {
     json!({"session":{"id":id,"workspaceId":"1","lastEventSeq":seq,"archiveState":"active"},"runs":[],"inputs":[],"turns":[],"permissions":[],"elicitations":[]})
 }
@@ -19,21 +23,21 @@ async fn postgres_roles_tokens_replication_and_revocation() {
     assert!(ControlStore::connect("sqlite::memory:").await.is_err());
     let issuer = format!("https://fixture/{}", uuid::Uuid::new_v4());
     let admin = store
-        .oidc_user(&issuer, "owner", "Owner", Some("owner@example.test"), true)
+        .verified_user("owner@example.test", "Owner")
         .await
         .unwrap();
     let member = store
-        .oidc_user(
-            &issuer,
-            "member",
-            "Member",
-            Some("member@example.test"),
-            true,
-        )
+        .verified_user("member@example.test", "Member")
         .await
         .unwrap();
     let outsider = store
-        .oidc_user(&issuer, "outsider", "Outsider", None, false)
+        .verified_user(
+            &format!(
+                "outsider-{}@fixture.test",
+                issuer.rsplit('/').next().unwrap()
+            ),
+            "Outsider",
+        )
         .await
         .unwrap();
     let team = store.create_team(&admin.id, "First team").await.unwrap();
@@ -292,28 +296,25 @@ async fn postgres_roles_tokens_replication_and_revocation() {
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
-async fn postgres_team_usage_counts_current_members_and_latest_unarchived_sessions() {
+async fn postgres_team_usage_counts_current_members_and_durable_session_admissions() {
     let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL to PostgreSQL");
     let store = ControlStore::connect(&url).await.unwrap();
     let issuer = format!("https://usage-fixture/{}", uuid::Uuid::new_v4());
     let admin = store
-        .oidc_user(&issuer, "admin", "Admin", None, false)
+        .verified_user(
+            &format!("admin-{}@fixture.test", issuer.rsplit('/').next().unwrap()),
+            "Admin",
+        )
         .await
         .unwrap();
     let member = store
-        .oidc_user(
-            &issuer,
-            "member",
-            "Member",
-            Some("member@test.example"),
-            true,
-        )
+        .verified_user("member@test.example", "Member")
         .await
         .unwrap();
     let team = store.create_team(&admin.id, "Usage team").await.unwrap();
     let other = store.create_team(&admin.id, "Other team").await.unwrap();
     assert_eq!(
-        store.team_usage(&admin.id, &team.id).await.unwrap(),
+        usage_counts(store.team_usage(&admin.id, &team.id).await.unwrap()),
         json!({"relayedBytes":"0", "activeSessionCount":0, "memberCount":1})
     );
     let invite = store
@@ -355,6 +356,7 @@ async fn postgres_team_usage_counts_current_members_and_latest_unarchived_sessio
         assert!(machine.last_seen_at.is_none());
         machines.push(machine);
     }
+    let mut generations = std::collections::HashMap::new();
     for (machine, session_id, archive_state) in [
         (&machines[0], "1", "active"),
         (&machines[0], "2", "archived"),
@@ -362,6 +364,18 @@ async fn postgres_team_usage_counts_current_members_and_latest_unarchived_sessio
         (&machines[1], "1", "active"),
         (&machines[2], "1", "active"),
     ] {
+        if archive_state != "archived" {
+            let generation = uuid::Uuid::new_v4().to_string();
+            store
+                .reserve_session(&machine.id, &generation, "create", None)
+                .await
+                .unwrap();
+            store
+                .confirm_session_admission(&machine.id, &generation, &generation, session_id)
+                .await
+                .unwrap();
+            generations.insert((machine.id.clone(), session_id.to_owned()), generation);
+        }
         let mut state = snapshot(session_id, "0");
         state["session"]["archiveState"] = json!(archive_state);
         store
@@ -370,11 +384,11 @@ async fn postgres_team_usage_counts_current_members_and_latest_unarchived_sessio
             .unwrap();
     }
     assert_eq!(
-        store.team_usage(&member.id, &team.id).await.unwrap(),
+        usage_counts(store.team_usage(&member.id, &team.id).await.unwrap()),
         json!({"relayedBytes":"0", "activeSessionCount":3, "memberCount":2})
     );
     assert_eq!(
-        store.team_usage(&admin.id, &other.id).await.unwrap(),
+        usage_counts(store.team_usage(&admin.id, &other.id).await.unwrap()),
         json!({"relayedBytes":"0", "activeSessionCount":1, "memberCount":1})
     );
     // Archive, reject an older active snapshot, then restore the same Session.
@@ -387,6 +401,26 @@ async fn postgres_team_usage_counts_current_members_and_latest_unarchived_sessio
             .sync_history(&machines[0].id, "1", state, vec![], vec![])
             .await
             .unwrap();
+        if archive_state == "archived" {
+            store
+                .release_session_admission(
+                    &machines[0].id,
+                    "1",
+                    &generations[&(machines[0].id.clone(), "1".into())],
+                )
+                .await
+                .unwrap();
+        } else if seq == "2" {
+            let generation = uuid::Uuid::new_v4().to_string();
+            store
+                .reserve_session(&machines[0].id, &generation, "restore", Some("1"))
+                .await
+                .unwrap();
+            store
+                .confirm_session_admission(&machines[0].id, &generation, &generation, "1")
+                .await
+                .unwrap();
+        }
         assert_eq!(
             store.team_usage(&admin.id, &team.id).await.unwrap()["activeSessionCount"],
             expected
@@ -405,7 +439,7 @@ async fn postgres_team_usage_counts_current_members_and_latest_unarchived_sessio
         .await
         .unwrap();
     assert_eq!(
-        store.team_usage(&admin.id, &team.id).await.unwrap(),
+        usage_counts(store.team_usage(&admin.id, &team.id).await.unwrap()),
         json!({"relayedBytes":"0", "activeSessionCount":2, "memberCount":1})
     );
     assert!(matches!(

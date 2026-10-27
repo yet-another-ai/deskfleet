@@ -15,22 +15,38 @@ mise install --locked
 ```
 
 With Docker Engine or Docker Desktop running Linux containers and Docker Compose
-v2.20 or newer installed, start the local dependencies and backend:
+v2.20 or newer installed, start the local dependencies, API, and Web client:
 
 ```sh
 mise run infra:up
+mise run dev:seed
 mise -E development run dev
 ```
 
-In another terminal, run `mise run web:dev` and open `http://127.0.0.1:5174/`, or
-run `mise run desktop:dev`. Both clients use `http://127.0.0.1:8080` and the same
-OIDC login. Sign in as `alice@example.test` with password `password`, then create
-a team. `bob@example.test` has the same password and can join with an invitation
-from Alice's team to exercise the ordinary member role. OIDC accounts have no
-preassigned team roles. The backend creates its PostgreSQL schema on startup.
+The `dev` task starts the API and Web client together. Open `http://localhost:5174/`,
+or run `mise run desktop:dev` in another terminal. Electron also needs the Web
+service for its browser login, so keep `dev` running. Both clients use
+`http://localhost:8080` and the same
+owned account service. Choose Register, enter an email, and open the verification
+link in `.local/mail/` to set your name and password. Register a second account
+and invite its verified email to exercise the member role. Ordinary registration
+does not assign a Team or Site Admin role. The backend creates its schema on startup.
 
-For an existing PostgreSQL/OIDC deployment during development, use the
-[server guide](../../apps/server/README.md) and `mise run dev` without the
+`mise run dev:seed` is an optional shortcut that targets the local Compose
+development database and creates a verified Site Admin:
+
+- Email: `admin@deskfleet.test`
+- Password: `deskfleet-dev-password`
+
+Sign in directly with those credentials; no verification email or separate
+administrator grant is needed. Create a Team from onboarding when needed.
+The command applies the schema, runs without starting HTTP or sending mail, and
+is only available in debug builds. Repeated runs leave an existing account's
+password, profile, disablement, and permissions unchanged. It never runs
+automatically with `dev` and never resets existing data.
+
+For an existing PostgreSQL deployment during development, use the
+[server guide](../../apps/server/README.md) and `mise run backend:dev` without the
 `development` environment. Running that API outside the local Compose stack is
 the [self-hosted backend guide](self-hosted.md).
 
@@ -106,30 +122,27 @@ instance carries TURN usage notifications.
 | `postgres` | `127.0.0.1:55432`, database/user `deskfleet`, password `deskfleet-dev` | Named volume `postgres-18-data` |
 | `postgres-test` | `127.0.0.1:55433`, database/user `deskfleet_test`, password `deskfleet-test` | Temporary memory filesystem, cleared on stop |
 | `redis` | `127.0.0.1:56379`, no password | Temporary memory filesystem, persistence disabled |
-| `oidc` (Dex) | `http://127.0.0.1:5556/dex` | Named volume for signing keys and login state |
 | `turn` (coturn) | `127.0.0.1:3478` TCP/UDP, relay ports `49160–49180` UDP | Temporary |
 
-`infra:up` waits for all five health checks. `mise.development.toml` opts into
+`infra:up` waits for all four health checks. `mise.development.toml` opts into
 their connection settings with `-E development`; it leaves the base environment
-and CI settings alone. The development `DATABASE_URL` is scoped to the `dev`
+and CI settings alone. The development `DATABASE_URL` is scoped to the `backend:dev`
 task, so `db:migrate` continues to target the daemon's SQLite catalog. No Vite
-production URL is set by the development environment. The `dev` task also enables
+production URL is set by the development environment. The backend task also enables
 [Team TURN usage collection](self-hosted.md#team-turn-usage-collection) through
 the local Redis instance.
 
-Dex uses authorization code flow with PKCE and signed ID tokens, through the
-same backend authentication path as a hosted OIDC provider. Its registered
-redirect URI is `http://127.0.0.1:8080/api/auth/callback`. The backend then returns
-to the Web root (`http://127.0.0.1:5174/`) or Electron's temporary loopback callback.
-Use `127.0.0.1` consistently; `localhost` is a different allowed origin/issuer.
-See [Dex's configuration example](https://github.com/dexidp/dex/blob/v2.46.1/config.yaml.dist)
-for the upstream configuration format.
+The backend owns registration, password recovery and Passkeys. Local mail is
+written as restricted `.eml` files to `.local/mail/`; use their one-use links in
+the trusted Web application. These messages are ignored by Git. No production
+mail relay is contacted by the local fixture. Use `localhost` consistently for Web and API origins: Passkeys require a DNS
+hostname. Services remain bound to loopback; Vite uses `localhost`.
 
 These are public development credentials, with HTTP and a loopback-only coturn
 instance advertised as both STUN (`DESKFLEET_STUN_URLS`) and TURN
 (`DESKFLEET_TURN_URLS`). All published ports bind to `127.0.0.1`; this setup
 supports clients and daemons on the same host, not LAN or hosted deployments.
-The API, Dex, and Web URLs must change together when choosing different host
+The API and Web URLs must change together when choosing different host
 ports, and both the backend and coturn must use the same TURN secret.
 
 Run the database and full remote workflow checks using the isolated test service:
@@ -141,7 +154,7 @@ mise -E development run backend:smoke-clients
 mise -E development run backend:smoke-relay
 ```
 
-The smoke tests start their own API and OIDC fixtures on temporary ports and
+The smoke tests start their own API and local mail fixtures on temporary ports and
 build their dependencies automatically. They can run while the development API
 is running and never reset its database. `backend:smoke-relay` repeats the native,
 Web, and Electron flows with TURN forced, verifying actual relay traffic. On
@@ -158,11 +171,17 @@ docker compose logs --tail=100
 mise run infra:down
 ```
 
-Stopping preserves the development PostgreSQL and Dex volumes. To clear only
+Stopping preserves the development PostgreSQL volume. To clear only
 test data, stop `postgres-test`, then bring that service up again with `--wait`.
 The daemon's host data directory is separate and is never changed by Compose.
 
 ### Fresh development database and reset
+
+The owned-account change replaces the provisional OIDC schema in place. Rebuild
+any development database created before this change using the reset below; there
+is no migration of old accounts, memberships, tokens, or billing state. Register
+again and enroll machines into the new Team. The reset does not delete local
+machine directories or working files.
 
 The PostgreSQL 18 upgrade uses a new `postgres-18-data` volume. On the first
 `mise run infra:up`, it initializes an empty database; the next
@@ -183,8 +202,7 @@ docker compose up -d --wait postgres
 mise -E development run dev
 ```
 
-This deletes only that development database's rows; Dex login state and other
-volumes remain intact. If using a custom Compose project name, use its matching
+This deletes only that development database's rows; other volumes remain intact. If using a custom Compose project name, use its matching
 PostgreSQL volume name instead. Managed production databases follow their own
 upgrade process; these commands apply only to the local development stack.
 
@@ -220,10 +238,12 @@ then include the configuration and lockfile changes together.
 | --- | --- |
 | `mise run install` | Install the pnpm workspace from the frozen lockfile |
 | `mise run infra:up` / `infra:down` | Start or stop the local Compose dependencies |
-| `mise run dev` | Run the Actix Web server |
-| `mise -E development run dev` | Run the API with the local Compose database, OIDC, and TURN settings |
+| `mise run dev` | Run the API and Web client, including Electron's browser login pages |
+| `mise -E development run dev` | Run both services with the local Compose database, local mail, and TURN settings |
+| `mise run dev:seed` | Create the default verified Site Admin in the local Compose development database; preserve existing accounts |
+| `mise run backend:dev` | Run only the Actix Web API; add `-E development` for local Compose settings |
 | `mise run backend:test` | Run real PostgreSQL and Redis integration tests using `TEST_DATABASE_URL` and `TEST_REDIS_URL` |
-| `mise run backend:smoke` | Exercise OIDC, two enrolled daemons, native WebRTC, and synchronized history |
+| `mise run backend:smoke` | Exercise owned authentication, two enrolled daemons, native WebRTC, and synchronized history |
 | `mise run backend:smoke-clients` | Drive the built Web and Electron clients through login and remote execution; use `xvfb-run -a` on headless Linux |
 | `mise run backend:smoke-relay` | Force both backend smoke suites through the configured TURN relay |
 | `mise run db:migrate` | Apply catalog migrations; append `-- status` or `-- down` for migration management |

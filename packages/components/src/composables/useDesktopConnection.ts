@@ -129,6 +129,10 @@ export function useDesktopConnection(api: DesktopMediaApi) {
 
   function fail(session: Session, reason: DesktopFailure): void {
     if (current !== session || session.replaced) return
+    if (reason.kind === "connection" || reason.kind === "timeout") {
+      const detail = api.connectionFailure?.(session.id)
+      if (detail) reason = { kind: "connection", detail }
+    }
     session.replaced = true
     stopChain()
     release(session)

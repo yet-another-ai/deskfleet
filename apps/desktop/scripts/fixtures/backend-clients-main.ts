@@ -19,6 +19,7 @@ export interface BackendClientsContext {
   mode: "web" | "electron"
   backend: string
   webUrl: string
+  credentials: { email: string; password: string }
   rendererDirectory: string
   preloadPath: string
   daemonDirectory: string
@@ -239,6 +240,24 @@ async function openTerminal(machineId: string, local: boolean): Promise<void> {
   document.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")!.focus()
 }
 
+/** Enter fixture credentials through the real account form, then approve native login. */
+async function authenticateWindow(window: BrowserWindow, context: BackendClientsContext, approve: boolean): Promise<void> {
+  const deadline = Date.now() + 30_000
+  let submitted = false
+  while (Date.now() < deadline) {
+    const page = await window.webContents.executeJavaScript(`({email:!!document.querySelector('input[type="email"]'),form:!!document.querySelector('form'),app:!!document.querySelector('button[aria-label="Team"]')})`).catch(() => undefined) as { email: boolean; form: boolean; app: boolean } | undefined
+    if (page?.email && !submitted) {
+      await window.webContents.executeJavaScript(`(()=>{const values=${JSON.stringify(context.credentials)};for(const type of ["email","password"]){const value=values[type];const input=document.querySelector('input[type="'+type+'"]');input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('form').requestSubmit();})()`)
+      submitted = true
+    } else if (page && !page.email && page.form && approve) {
+      await window.webContents.executeJavaScript("document.querySelector('form').requestSubmit()")
+      return
+    } else if (page?.app || (submitted && page && !page.email && !approve)) return
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+  throw new Error(`Account sign-in timed out: ${await window.webContents.executeJavaScript("document.body.innerText")}`)
+}
+
 const argument = process.argv.find(value => value.startsWith("--backend-client-context="))
 if (!argument) throw new Error("Missing backend client context")
 const context = JSON.parse(argument.slice("--backend-client-context=".length)) as BackendClientsContext
@@ -265,6 +284,7 @@ void app.whenReady().then(async () => {
       authorizations.push(browser)
       browser.webContents.on("console-message", (event) => { if (event.level === "error") process.stderr.write(`${event.message}\n`) })
       await browser.loadURL(url)
+      await authenticateWindow(browser, context, true)
     } })
     // This fixture exercises signed-in clients; smoke-startup covers first-run setup.
     const onboardingPath = join(context.profileDirectory, "onboarding.json")
@@ -288,12 +308,13 @@ void app.whenReady().then(async () => {
   window.webContents.debugger.attach("1.3")
   await window.webContents.debugger.sendCommand("Page.addScriptToEvaluateOnNewDocument", { source: `Object.defineProperty(navigator,'languages',{get:()=>['en-US']});${context.forceRelay ? "const NativePeer=window.RTCPeerConnection;window.RTCPeerConnection=class extends NativePeer{constructor(config){super({...config,iceTransportPolicy:'relay'})}};" : ""}` })
   await window.loadURL(context.mode === "web" ? context.webUrl : BUNDLED_RENDERER_URL)
-  await window.webContents.executeJavaScript(`(async () => { const end=Date.now()+15000; while(!document.querySelector('form button[type="submit"]:not(:disabled)')) { if(Date.now()>end)throw new Error('Login form unavailable: '+document.body.innerText);await new Promise(r=>setTimeout(r,25)); } })()`)
+  await window.webContents.executeJavaScript(`(async () => { const end=Date.now()+15000; while(!document.querySelector('form button[type="submit"]:not(:disabled)')) { [...document.querySelectorAll('button')].find(button => button.textContent === 'Skip for now')?.click(); if(Date.now()>end)throw new Error('Login form unavailable at '+location.href+': '+document.body.innerText);await new Promise(r=>setTimeout(r,25)); } })()`)
   await window.webContents.executeJavaScript(`(() => { if(document.querySelector('input[name="server-url"]'))throw new Error('Backend configuration must not be exposed in the UI');document.querySelector('form').requestSubmit(); })()`)
-  // The Web login replaces the document twice. Wait from the main process for the app to return.
+  if (context.mode === "web") await authenticateWindow(window, context, false)
+  // Wait from the main process while authentication replaces the Web document.
   const deadline = Date.now() + 30_000
   while (!await window.webContents.executeJavaScript(`!!document.querySelector('button[aria-label="Team"]') && !!document.querySelector('aside nav')`).catch(() => false)) {
-    if (Date.now() > deadline) throw new Error(`OIDC login timed out: ${await window.webContents.executeJavaScript("document.body.innerText")}; authorization: ${await Promise.all(authorizations.map(browser => browser.webContents.executeJavaScript("location.href+' '+document.body.innerText")))}`)
+    if (Date.now() > deadline) throw new Error(`Account login timed out: ${await window.webContents.executeJavaScript("document.body.innerText")}; authorization: ${await Promise.all(authorizations.map(browser => browser.webContents.executeJavaScript("location.href+' '+document.body.innerText")))}`)
     await new Promise(resolve => setTimeout(resolve, 50))
   }
   const result = await window.webContents.executeJavaScript(`(${exercise.toString()})(${JSON.stringify(context)})`)

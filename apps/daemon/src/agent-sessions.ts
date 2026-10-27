@@ -9,6 +9,7 @@ import type { AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp, type AgentPersistence } from "./agent-store.ts"
 import { AgentRuntime, type ResolveAgentProvider } from "./agent-runtime.ts"
+import { consumedTurns, SessionAdmissions, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { copyForkHistory } from "./agent-fork-history.ts"
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
 import type { AgentProviders } from "./agent-providers.ts"
@@ -93,6 +94,8 @@ export class AgentSessions {
   readonly #resolveProvider: ResolveAgentProvider
   readonly #mcp?: AgentMcp
   readonly #terminals?: TerminalSessions
+  readonly #quotas: AgentQuotaAuthority
+  readonly #admissions: SessionAdmissions
   readonly #git = new GitInspection()
   readonly #references: ComposerReferences
   readonly #runtimes = new Map<string, AgentRuntime>()
@@ -105,12 +108,14 @@ export class AgentSessions {
   readonly #closing = new AbortController()
   #closed = false
 
-  constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider, providers?: AgentProviders, mcp?: AgentMcp, terminals?: TerminalSessions) {
+  constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider, providers?: AgentProviders, mcp?: AgentMcp, terminals?: TerminalSessions, quotas: AgentQuotaAuthority = unavailableAgentQuotas) {
     this.#catalog = catalog
     this.journal = new AgentJournal(native)
     this.#references = new ComposerReferences(catalog, this.journal)
     this.#mcp = mcp
     this.#terminals = terminals
+    this.#quotas = quotas
+    this.#admissions = new SessionAdmissions(this.journal, quotas)
     this.#resolveProvider = providers ? id => providers.resolve(id) : id => {
       if (id !== "codex") throw new Error("Agent provider is unavailable")
       return { provider, config: { name: "Codex" } }
@@ -129,8 +134,11 @@ export class AgentSessions {
           .map(run => ({ ...run, state: "interrupted" as const, endedAt: timestamp() }))
         const turns = snapshot.turns.filter(turn => liveTurn(turn.state))
           .map(turn => ({ ...turn, state: "interrupted" as const, endedAt: timestamp() }))
-        const inputs = snapshot.inputs.filter(input => input.state === "dispatching")
-          .map(input => ({ ...input, state: "uncertain" as const, error: "Daemon restarted before delivery was confirmed" }))
+        const inputs = snapshot.inputs.filter(input => input.state === "dispatching").map(input => {
+          const unsent = snapshot.turns.some(turn => turn.id === input.turnId && !turn.consumed)
+          return { ...input, state: unsent ? "failed" as const : "uncertain" as const,
+            error: unsent ? "Daemon restarted before provider dispatch" : "Daemon restarted before delivery was confirmed" }
+        })
         const permissions = snapshot.permissions.filter(permission => permission.state === "pending")
           .map(permission => ({ ...permission, state: "cancelled" as const, resolvedAt: timestamp() }))
         const elicitations = snapshot.elicitations.filter(row => row.state === "pending")
@@ -151,6 +159,7 @@ export class AgentSessions {
   }
 
   onEvent(listener: (event: AgentEvent) => void): () => void { return this.journal.onEvent(listener) }
+  reconcileAdmissions(): Promise<void> { return this.#admissions.reconcile() }
 
   async #gitDirectories(sessionId: string): Promise<string[]> {
     const { session } = await this.journal.read(id(sessionId, "Session ID"))
@@ -226,7 +235,7 @@ export class AgentSessions {
     let runtime = this.#runtimes.get(sessionId)
     if (!runtime) {
       if (this.#closed) throw new Error("Agent service is stopping")
-      runtime = new AgentRuntime(this.journal, this.#catalog, this.#resolveProvider, sessionId, this.#mcp, this.#terminals)
+      runtime = new AgentRuntime(this.journal, this.#catalog, this.#resolveProvider, sessionId, this.#mcp, this.#terminals, this.#quotas)
       this.#runtimes.set(sessionId, runtime)
     }
     return runtime
@@ -418,7 +427,8 @@ export class AgentSessions {
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     if (!command.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
     const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : ""
-    const session = await this.journal.create(command, command.workspaceId, title, context, provider)
+    const session = await this.#admissions.allocate(command, "create", admissionGeneration =>
+      this.journal.create(command, command.workspaceId, title, context, provider, { admissionGeneration }))
     command.sessionId = session.id
     try {
       await this.#catalog.provisionSession(session.id, session.workspaceId, context)
@@ -452,7 +462,9 @@ export class AgentSessions {
       this.#resolveProvider(source.session.provider)
       const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : source.session.title
       const creation = { ...command, sessionId: undefined, workspaceId: source.session.workspaceId }
-      const child = await this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider)
+      const child = await this.#admissions.allocate(command, "fork", admissionGeneration =>
+        this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider,
+          { admissionGeneration, inheritedTurnCount: consumedTurns(source) }))
       command.sessionId = child.id
       command.workspaceId = child.workspaceId
       try {
@@ -515,7 +527,7 @@ export class AgentSessions {
   /** A new user request resumes a stopped or interrupted agent; startup then drains the backlog. */
   #deliver(sessionId: string): void {
     const runtime = this.#runtime(sessionId)
-    if (runtime.running || this.#closed) void runtime.pump()
+    if (runtime.running || this.#closed) runtime.resumeBacklog()
     // Startup failures are persisted on the run; the input stays queued for the next request.
     else void runtime.start().catch(() => {})
   }
@@ -547,7 +559,8 @@ export class AgentSessions {
       if (!previous) throw new Error("Input was not found")
       let input = previous
       if (command.method === "_deskfleet/input/retry") {
-        if (input.state !== "failed") throw new Error("Only a confirmed unconsumed input can be retried")
+        const quotaPaused = input.state === "pending" && snapshot.session.turnLimitReason && input.error
+        if (input.state !== "failed" && !quotaPaused) throw new Error("Only a confirmed unconsumed input can be retried")
         input = { ...input, state: "pending", error: undefined, requestedDelivery: "backlog" }
       } else if (command.method === "_deskfleet/input/withdraw") {
         if (!["pending", "failed"].includes(input.state)) throw new Error("This input has already been handled")
@@ -617,10 +630,14 @@ export class AgentSessions {
         const snapshot = await this.journal.read(sessionId)
         if (snapshot.session.archiveState === "archiving") throw new Error("Finish archiving this Session before restoring it")
         if (snapshot.session.archiveState === "active") return
-        const session = { ...snapshot.session, archiveState: "active" as const, updatedAt: timestamp() }
-        await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
+        await this.#admissions.allocate(command, "restore", async admissionGeneration => {
+          const session = { ...snapshot.session, admissionGeneration, archiveState: "active" as const, updatedAt: timestamp() }
+          await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
+          return session
+        })
       })
       const snapshot = await this.journal.read(sessionId)
+      await this.#admissions.synchronize(snapshot.session)
       await this.#complete(command, snapshot)
       return snapshot
     })
@@ -660,7 +677,9 @@ export class AgentSessions {
       await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
     })
     await this.#runtime(sessionId).stop()
+    const deleted = (await this.journal.read(sessionId)).session
     await this.#catalog.handle({ method: "workspaceSessionDestroy", params: { sessionId } })
+    await this.#admissions.releaseDeleted(deleted)
     this.#runtimes.delete(sessionId)
     await this.#complete(command, null)
     return null

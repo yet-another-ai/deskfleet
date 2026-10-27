@@ -146,3 +146,11 @@ test("unreachable signaling cannot hold local cleanup open", async () => {
   await connection.close()
   expect(f.close).toHaveBeenCalledOnce()
 })
+
+test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const)("explains relay denial after direct port failure: %s", async relayDeniedReason => {
+  const f = fixture()
+  Object.assign(f.grant, { relayDeniedReason })
+  f.native.answer = async () => { f.events().fail(new Error("ICE failed")) }
+  await expect(f.connect()).rejects.toThrow("Direct connection failed.")
+  expect(f.failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay") }))
+})

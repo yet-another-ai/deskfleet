@@ -7,9 +7,28 @@ resource boundaries; [Agent Sessions](agent-sessions.md) and
 points are the [server guide](../../apps/server/README.md),
 [daemon guide](../../apps/daemon/README.md), and shared Vue packages.
 
+[Identity and billing requirements](identity-billing.md) supersede the original
+OIDC-only identity decision and define the implemented account/subscription
+contract. Stripe is the first payment provider; [operations](stripe.md) describes
+the required offers, Portal, and webhook configuration.
+The server now owns verified accounts, password/Passkey authentication, and
+browser/native sessions. The implementation preserves the existing resource
+ownership and explicit Site Admin boundary.
+
 ## Confirmed product decisions
 
-- Prioritize the officially hosted service and use OIDC login.
+- Prioritize the officially hosted service and replace OIDC with owned accounts,
+  public email/password registration, and Passkeys.
+- Make Team the subscription boundary. Free limits members, unarchived Sessions,
+  and per-Session turns and has no TURN. Go/Pro remove those quantity limits and
+  provide distinct monthly TURN allowances. Only Site Admin can assign the
+  unlimited Enterprise override. Exact rules are owned by the
+  [plan matrix](identity-billing.md#plan-matrix).
+- Anchor monthly TURN periods to subscription dates and provide no payment grace
+  period. Preserve the original lifetime of already-issued relay access.
+- Use the same account system with unlimited allowances and no payments for
+  self-hosting. Existing databases are development-only and can be rebuilt;
+  no legacy OIDC identity/data migration is required.
 - Require login and Team selection before resource creation. Enroll each machine
   into its Team; the automatically created local Team is development scaffolding.
 - Members can operate every machine in their Team. Administrators manage members
@@ -18,7 +37,7 @@ points are the [server guide](../../apps/server/README.md),
   Providers, create or delete Workspaces, and create, archive, or restore Sessions.
 - Use PostgreSQL for the central server and SQLite for each daemon.
 - Keep site administration separate from Team roles. Explicit operator commands
-  grant or revoke the role for existing OIDC users. Site administrators manage
+  grant or revoke the role for existing users. Site administrators manage
   runtime site settings through the Web-only administration UI without gaining
   access to other Teams or their machines. Web and Electron both display public
   site settings and apply the Team-creation setting.
@@ -64,7 +83,8 @@ points are the [server guide](../../apps/server/README.md),
 
 | Area | Required server behavior | Responsibility retained elsewhere |
 | --- | --- | --- |
-| Identity | OIDC login integration, application login sessions, logout, current user, and client/device identity | Electron and Web implement their login entry points; daemon credentials are separate from user login |
+| Identity | Owned accounts, email verification/password recovery, password and Passkey login, application sessions/revocation, and client/device identity | Electron and Web implement their login entry points; daemon credentials are separate from user login |
+| Subscriptions and quotas | Team billing, verified paid coverage, monthly TURN periods, Enterprise grants/audit, and atomic member/Session capacity admission | Daemon checks effective per-Session turn limits and persists fork-inherited consumption; clients display limits and billing state |
 | Teams | Team creation and selection, membership/invitations, administrator/member roles, member removal, and authorization | Clients display the selected Team and available actions |
 | Site administration | Explicit site grants, site name/announcement/Team-creation settings, per-operation policies, and transactional site audit | Deployment operators bootstrap and recover grants through the server CLI; Web exposes a Team-independent administration page; Web and Electron display public site settings and apply the Team-creation setting |
 | Machine enrollment | Bind an installation identity and catalog origin to a Team, issue machine credentials, and support administrator removal/revocation | Daemon stores its credentials and proves its identity on outbound connections |
@@ -210,8 +230,8 @@ not by untrusted operation parameters.
 
 ## Delivery order and acceptance
 
-1. Establish PostgreSQL server persistence, shared identities/contracts, OIDC,
-   Teams, roles, and enrollment. Replace unauthenticated local creation gates.
+1. Establish PostgreSQL server persistence, shared identities/contracts, owned
+   accounts, Teams, roles, and enrollment. Replace unauthenticated local creation gates.
    Start extracting shared Vue components and application adapters in parallel.
 2. Connect daemon presence, authenticated management APIs, signaling, and ICE
    configuration. Implement the [peer identity/key exchange contract](webrtc-security.md),
@@ -228,6 +248,14 @@ The release workflow is: log in, select a Team, enroll a headless machine,
 configure a Provider and a Workspace with ordered directories, create a Session,
 run an Agent, inspect Git, and open a terminal from another client. Verify both
 direct and forced TURN connections.
+
+The identity/subscription replacement additionally follows the
+[delivery boundaries](identity-billing.md#delivery-boundaries) and
+[acceptance scenarios](identity-billing.md#acceptance-scenarios): real password
+and Passkey login, concurrent Team quota admission, fork-inherited turn limits,
+date-anchored TURN, expiry without grace, and manually assigned Enterprise.
+Forced TURN checks must use an eligible plan or self-hosted configuration, and
+Free must be verified to receive no relay credentials.
 
 Acceptance also covers:
 

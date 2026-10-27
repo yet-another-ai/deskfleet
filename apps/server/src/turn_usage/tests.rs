@@ -1,4 +1,10 @@
-use std::{net::TcpListener, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use actix_web::{App, http::StatusCode, test, web};
 use deskfleet_control_store::{AuthSession, ControlStore, now_ms, timestamp};
@@ -12,6 +18,14 @@ use super::Collector;
 use crate::{AppState, config::ServerConfig, configure};
 
 const WAIT: Duration = Duration::from_secs(5);
+// These collector lifecycle tests manipulate the same database singleton.
+static COLLECTOR_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn reset_collector(store: &ControlStore) {
+    store.database().execute_unprepared(
+        "UPDATE cp_turn_collector SET owner=NULL,lease_until=NULL,last_seen_at=NULL,gap_since=NULL WHERE singleton",
+    ).await.unwrap();
+}
 
 async fn peer(store: &ControlStore, auth: &AuthSession) -> PeerAuthorization {
     let team = store
@@ -144,10 +158,12 @@ async fn wait_totals(store: &ControlStore, team: &str, side: &str, expected: (i6
 #[tokio::test]
 #[ignore = "requires real PostgreSQL TEST_DATABASE_URL and Redis TEST_REDIS_URL"]
 async fn redis_usage_reaches_teams_and_collection_resumes_after_disconnect() {
+    let _collector_guard = COLLECTOR_TEST_LOCK.lock().await;
     let store =
         ControlStore::connect(&std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"))
             .await
             .unwrap();
+    reset_collector(&store).await;
     let redis_url = std::env::var("TEST_REDIS_URL").expect("set TEST_REDIS_URL");
     let client = redis::Client::open(redis_url.as_str()).unwrap();
     let mut connection = client.get_multiplexed_async_connection().await.unwrap();
@@ -157,12 +173,9 @@ async fn redis_usage_reaches_teams_and_collection_resumes_after_disconnect() {
         .map(|(id, _)| id)
         .collect();
     let user = store
-        .oidc_user(
-            &format!("https://turn-subscriber/{}", uuid::Uuid::new_v4()),
-            "owner",
+        .verified_user(
+            &format!("owner-{}@fixture.test", uuid::Uuid::new_v4()),
             "Owner",
-            None,
-            false,
         )
         .await
         .unwrap();
@@ -186,6 +199,13 @@ async fn redis_usage_reaches_teams_and_collection_resumes_after_disconnect() {
 
     let collector = Collector::start(store.clone(), &redis_url).unwrap();
     let collector_id = wait_subscription(&mut connection, &excluded).await;
+    timeout(WAIT, async {
+        while store.billing_summary(&first.team_id).await.unwrap()["metering"]["fresh"] != true {
+            sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("subscribed Redis heartbeat did not mark metering fresh");
     // Publishing the final totals before deltas makes the later count checks
     // detect accidental double counting without waiting an arbitrary grace period.
     for channel in [&first_channel, &second_channel] {
@@ -224,19 +244,33 @@ async fn redis_usage_reaches_teams_and_collection_resumes_after_disconnect() {
 #[actix_web::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn unavailable_redis_does_not_block_server_startup_or_health() {
-    // The port stays reserved but no Redis handshake is served.
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let _collector_guard = COLLECTOR_TEST_LOCK.lock().await;
+    // Each attempted Redis handshake fails, allowing repeated reconnect attempts.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let redis_url = format!("redis://{}/", listener.local_addr().unwrap());
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let observed = attempts.clone();
+    let rejecting = tokio::spawn(async move {
+        while let Ok((connection, _)) = listener.accept().await {
+            observed.fetch_add(1, Ordering::Relaxed);
+            drop(connection);
+        }
+    });
     let config = ServerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
         database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
         public_url: "https://control.test".into(),
         web_origins: vec![],
-        oidc: None,
+        auth: crate::auth::config::AuthConfig::development("https://control.test"),
+        billing: Default::default(),
         stun_urls: vec![],
         turn_urls: vec![],
         turn_secret: None,
-        turn_usage_redis_url: Some(format!("redis://{}/", listener.local_addr().unwrap())),
+        turn_usage_redis_url: Some(redis_url),
     };
+    let setup = ControlStore::connect(&config.database_url).await.unwrap();
+    reset_collector(&setup).await;
+    setup.close().await.unwrap();
     let state = web::Data::new(
         timeout(WAIT, AppState::new(config))
             .await
@@ -248,6 +282,29 @@ async fn unavailable_redis_does_not_block_server_startup_or_health() {
     let response =
         test::call_service(&app, test::TestRequest::get().uri("/healthz").to_request()).await;
     assert_eq!(response.status(), StatusCode::OK);
+    timeout(WAIT, async {
+        while attempts.load(Ordering::Relaxed) < 3 {
+            sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("collector did not retry failed Redis connections");
+    let last_seen: Option<i64> = store
+        .database()
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT last_seen_at FROM cp_turn_collector WHERE singleton",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "last_seen_at")
+        .unwrap();
+    assert_eq!(
+        last_seen, None,
+        "failed Redis attempts must not report fresh metering"
+    );
+    rejecting.abort();
     drop(app);
     drop(state);
     store.close().await.unwrap();

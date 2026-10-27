@@ -1,4 +1,6 @@
+import type { RelayDeniedReason } from "./relay.ts"
 import type { ProviderDisplaySnapshot } from "./providers.ts"
+import type { TeamBilling, AdminTeamBilling } from "./billing.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { DesktopEvent, IceCandidate } from "./desktop-media.ts"
@@ -15,7 +17,7 @@ export interface LocalEnrollment {
   configured: boolean; connected: boolean; revoked: boolean; serverUrl?: string; machineId?: string; teamId?: string
   identity: { originId: string; machineId: string }; machineName: string
 }
-export interface PeerGrant { peerId: string; authorization: PeerAuthorization; iceServers: RTCIceServer[] }
+export interface PeerGrant { peerId: string; authorization: PeerAuthorization; iceServers: RTCIceServer[]; relayDeniedReason?: RelayDeniedReason | null }
 export type CentralEvent =
   | { type: "peerEvent"; peerId: string; event: Omit<DesktopEvent, "sessionId"> }
   | Extract<ControlMessage, { type: "peerRevoked" | "catalogChanged" | "machinesChanged" | "presence" }>
@@ -26,6 +28,14 @@ export type CentralEvent =
 export interface SiteAdministrationApi {
   siteSettings(): Promise<SiteSettings>
   updateSiteSettings(settings: SiteSettings): Promise<SiteSettings>
+  billingTeams(): Promise<AdminTeamBilling[]>
+  setEnterprise(teamId: string, enabled: boolean): Promise<void>
+  registrationPolicy(): Promise<{ registrationEnabled: boolean }>
+  updateRegistration(enabled: boolean): Promise<void>
+  users(query: string): Promise<Array<{ id: string; name: string; email: string; disabled: boolean }>>
+  disableUser(userId: string, disabled: boolean): Promise<void>
+  /** Confirms recent authentication with a password, or a Passkey when omitted. */
+  reauthenticate(password?: string): Promise<void>
 }
 
 /** Explicit control-plane operations, shared by browser and the narrow Electron bridge. */
@@ -33,6 +43,10 @@ export interface CentralApi {
   status(): Promise<AccountState>
   login(): Promise<void>
   logout(): Promise<void>
+  openAccountSettings(): Promise<void>
+  billing(teamId: string): Promise<TeamBilling>
+  checkout(teamId: string, plan: "go" | "pro", requestId: string): Promise<void>
+  billingPortal(teamId: string): Promise<void>
   site(): Promise<SiteSettings>
   teams(): Promise<Team[]>
   createTeam(name: string): Promise<Team>

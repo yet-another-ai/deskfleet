@@ -25,15 +25,24 @@ description = "Restore the pinned, repository-local agent skills"
 run = "apm install --frozen"
 
 [tasks.dev]
+description = "Run the central API and Web client, including desktop login pages"
+depends = ["backend:dev", "web:dev"]
+
+[tasks."backend:dev"]
 description = "Run the Actix Web backend"
 run = "cargo run -p deskfleet-server --locked"
 
+[tasks."dev:seed"]
+description = "Create a verified Site Admin in the local development database"
+env.DATABASE_URL = "postgres://deskfleet:deskfleet-dev@127.0.0.1:55432/deskfleet"
+run = "cargo run -p deskfleet-server --locked -- dev-seed"
+
 [tasks."infra:up"]
-description = "Start local PostgreSQL, test PostgreSQL, Redis, OIDC, and TURN; wait for readiness"
+description = "Start local PostgreSQL, test PostgreSQL, Redis, and TURN; wait for readiness"
 run = "docker compose up --detach --wait --wait-timeout 120"
 
 [tasks."infra:down"]
-description = "Stop local infrastructure, preserving development database and OIDC volumes"
+description = "Stop local infrastructure, preserving development database volumes"
 run = "docker compose down"
 
 [tasks."backend:build"]
@@ -46,12 +55,12 @@ description = "Run persistence, API, and TURN collection tests against TEST_DATA
 run = "cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored"
 
 [tasks."backend:smoke"]
-description = "Verify OIDC, two authenticated daemons, WebRTC, and synchronized history against PostgreSQL"
+description = "Verify owned login, two authenticated daemons, WebRTC, and synchronized history against PostgreSQL"
 depends = ["native:debug", "backend:build"]
 run = "node scripts/smoke-backend.ts"
 
 [tasks."backend:smoke-clients"]
-description = "Verify built Web and Electron clients against real OIDC, PostgreSQL, and remote daemons"
+description = "Verify built Web and Electron clients against owned login, PostgreSQL, and remote daemons"
 depends = ["backend:build", "desktop:build", "web:build"]
 run = "node apps/desktop/scripts/smoke-backend-clients.ts"
 

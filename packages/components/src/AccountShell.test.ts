@@ -48,7 +48,8 @@ test("browses synchronized history with the machine offline and isolates equal l
   } as unknown as CentralApi
   view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [pinia, i18n] }, attachTo: document.body })
   await flushPromises()
-  await vi.waitFor(() => expect(view!.text()).toContain("Workspace 101"))
+  // The first mount also loads the workspace bundle while full checks build in parallel.
+  await vi.waitFor(() => expect(view!.text()).toContain("Workspace 101"), { timeout: 5_000 })
   expect(view.text()).toContain("Conversation 101")
   await router.push("/sessions/30"); await flushPromises()
   await vi.waitFor(() => expect(view!.text()).toContain("Message from 101"))
@@ -167,6 +168,57 @@ test("a Team without machines still opens Team settings beside Preferences", asy
   await buttonText("Back to app")!.trigger("click")
   expect(page().get("main h1").text()).toBe("Add a machine to Design team")
   expect(fake.central.members).toHaveBeenCalledWith("team-1")
+})
+
+test.each([
+  ["web", "admin", false], ["darwin", "member", false],
+  ["web", "member", true], ["darwin", "admin", true],
+] as const)("%s %s sees Plans & Usages separately from Team settings (machine: %s)", async (platform, role, hasMachine) => {
+  const fake = fakeCentral({
+    teams: [{ id: "team-1", name: "Design team", role }],
+    machines: hasMachine ? [machineFixture("m1", "team-1", "Build server")] : [],
+  })
+  withEmptyCatalogs(fake)
+  mountShell(fake.central, platform)
+  await flushPromises()
+  await vi.waitFor(() => expect(page().find('button[aria-label="Team"]').exists()).toBe(true))
+  await page().get('button[aria-label="Team"]').trigger("click")
+  await page().findAll('[role="menuitem"]').find(item => item.text() === "Team settings")!.trigger("click")
+  await flushPromises()
+  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Design team"))
+  expect(page().find("[data-team-plan]").exists()).toBe(false)
+  expect(fake.central.billing).not.toHaveBeenCalled()
+  const navItem = (label: string) => page().findAll('nav[aria-label="Settings sections"] a, nav[aria-label="Settings sections"] button').find(item => item.text() === label)!
+  await navItem("Plans & Usages").trigger("click")
+  await flushPromises()
+  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
+  expect(page().find("[data-team-plan]").exists()).toBe(true)
+  expect(page().find("[data-member-id]").exists()).toBe(false)
+  expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith("team-1")
+  if (hasMachine) expect(router.currentRoute.value.path).toBe("/settings/plans")
+  await navItem("Team settings").trigger("click")
+  await flushPromises()
+  expect(page().get("h1").text()).toBe("Design team")
+  expect(page().find("[data-team-plan]").exists()).toBe(false)
+})
+
+test.each([
+  [false, false, "team-2"], [true, false, "team-2"],
+  [true, true, "team-2"], [true, true, "team-1"],
+] as const)("a Stripe return opens the paying Team's Plans & Usages (target machine: %s, initial machine: %s, target: %s)", async (hasMachine, initialMachine, target) => {
+  const fake = fakeCentral({
+    teams: [{ id: "team-1", name: "First team", role: "admin" }, { id: "team-2", name: "Paying team", role: "admin" }],
+    machines: [...(hasMachine ? [machineFixture("m2", "team-2", "Build server")] : []), ...(initialMachine ? [machineFixture("m1", "team-1", "Initial server")] : [])],
+  })
+  withEmptyCatalogs(fake)
+  history.replaceState(history.state, "", `${location.pathname}?team=${target}&settings=plans${location.hash}`)
+  mountShell(fake.central, "web")
+  await flushPromises()
+  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
+  expect(page().get("section header").text()).toContain(target === "team-1" ? "First team" : "Paying team")
+  expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith(target)
+  expect(location.search).toBe("")
+  if (hasMachine) expect(router.currentRoute.value.path).toBe("/settings/plans")
 })
 
 test.each(["darwin", "web"] as const)("notification settings are available without machines (%s)", async (platform) => {

@@ -1,6 +1,7 @@
 //! API-only control plane: trusted identity/signaling and PostgreSQL read replicas.
 mod api;
 pub mod auth;
+pub mod billing;
 pub mod config;
 pub mod error;
 mod hub;
@@ -18,18 +19,22 @@ use error::Result;
 pub struct AppState {
     pub store: ControlStore,
     pub config: ServerConfig,
-    pub oidc: Option<auth::Oidc>,
+    pub auth: auth::AuthService,
+    pub billing: billing::BillingService,
     hub: hub::Hub,
     peers: peers::Negotiations,
     _turn_usage: Option<turn_usage::Collector>,
+    _billing_worker: billing::BillingWorker,
 }
 impl AppState {
     pub async fn new(config: ServerConfig) -> Result<Self> {
-        let store = ControlStore::connect(&config.database_url).await?;
-        let oidc = match config.oidc.clone() {
-            Some(c) => Some(auth::Oidc::discover(c).await?),
-            None => None,
-        };
+        let store = ControlStore::connect(&config.database_url)
+            .await?
+            .with_hosted_mode(config.billing.hosted);
+        let auth = auth::AuthService::new(config.auth.clone())?;
+        let billing =
+            billing::BillingService::new(config.billing.clone(), config.auth.web_url.clone())?;
+        let billing_worker = billing.start_worker(store.clone());
         let turn_usage = config
             .turn_usage_redis_url
             .as_deref()
@@ -39,10 +44,12 @@ impl AppState {
         Ok(Self {
             store,
             config,
-            oidc,
+            auth,
+            billing,
             hub: hub::Hub::default(),
             peers: peers::Negotiations::default(),
             _turn_usage: turn_usage,
+            _billing_worker: billing_worker,
         })
     }
     async fn notify_team(&self, team: &str, message: ControlMessage) {
@@ -64,11 +71,8 @@ pub fn configure(config: &mut ServiceConfig) {
     config.route("/healthz", web::get().to(health));
     config.service(
         web::scope("/api")
-            .route("/auth/start", web::post().to(auth::start))
-            .route("/auth/callback", web::get().to(auth::callback))
-            .route("/auth/exchange", web::post().to(auth::exchange))
-            .route("/auth/logout", web::post().to(auth::logout))
-            .route("/me", web::get().to(auth::me))
+            .configure(auth::configure)
+            .configure(billing::configure)
             .route("/site", web::get().to(site::public_settings))
             .route("/admin/site-settings", web::get().to(site::admin_settings))
             .route(

@@ -1,4 +1,5 @@
 //! PostgreSQL control-plane storage. Independent from each daemon's SQLite catalog.
+pub mod billing;
 mod history;
 mod identity;
 mod machines;
@@ -9,6 +10,7 @@ mod site;
 mod teams;
 mod turn_usage;
 
+pub use identity::normalize_email;
 pub use turn_usage::{TurnUsage, TurnUsageSide};
 
 use chrono::{SecondsFormat, Utc};
@@ -43,6 +45,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Clone)]
 pub struct ControlStore {
     db: DatabaseConnection,
+    hosted: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -66,7 +69,11 @@ impl ControlStore {
         }
         let db = Database::connect(url).await?;
         schema::migrate(&db).await?;
-        Ok(Self { db })
+        Ok(Self { db, hosted: false })
+    }
+    pub fn with_hosted_mode(mut self, hosted: bool) -> Self {
+        self.hosted = hosted;
+        self
     }
     pub fn database(&self) -> &DatabaseConnection {
         &self.db

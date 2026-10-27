@@ -161,6 +161,14 @@ pub struct AgentSessionRecord {
     /// Independent of provisioning and provider process state.
     #[serde(default)]
     pub archive_state: ArchiveState,
+    /// Consumption captured from the source when this Session was forked.
+    #[serde(default)]
+    pub inherited_turn_count: u32,
+    /// Central admission generation; replaced only when restoring an archive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admission_generation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_limit_reason: Option<String>,
     pub last_event_seq: AgentSequence,
     pub created_at: String,
     pub updated_at: String,
@@ -249,6 +257,9 @@ pub struct AgentTurn {
     pub dispatch_command_id: AgentCommandId,
     pub run_generation: u64,
     pub state: TurnState,
+    /// Set durably before provider dispatch; never cleared after dispatch begins.
+    #[serde(default)]
+    pub consumed: bool,
     pub started_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<String>,
@@ -379,6 +390,10 @@ pub struct AgentCreateSession {
     pub provider: String,
     pub title: String,
     pub context: SessionContext,
+    #[serde(default)]
+    pub inherited_turn_count: u32,
+    #[serde(default)]
+    pub admission_generation: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -13,6 +13,7 @@ import { withRestoredSessionMode } from "./agents/session-modes.ts"
 import { AgentElicitations } from "./agent-elicitations.ts"
 import type { AgentMcp, AgentMcpLease } from "./agent-mcp.ts"
 import type { TerminalSessions } from "./terminals.ts"
+import { consumeTurn, pauseTurn, TurnAdmissionBlocked, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
 export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
@@ -31,6 +32,7 @@ export class AgentRuntime {
   readonly #resolveProvider: ResolveAgentProvider
   readonly #mcp?: AgentMcp
   readonly #terminals?: TerminalSessions
+  readonly #quotas: AgentQuotaAuthority
   #mcpLease?: AgentMcpLease
   #providerName?: string
   #providerKind?: string
@@ -47,6 +49,7 @@ export class AgentRuntime {
   #endingTurn?: string
   #dispatching = false
   #pumpAgain = false
+  #quotaPaused = false
   #stopping = false
   #starting?: Promise<void>
   #stop?: Promise<void>
@@ -55,12 +58,13 @@ export class AgentRuntime {
   readonly #permissions = new Map<string, (response: acp.RequestPermissionResponse) => void>()
   readonly #discoveries = new Set<{ controller: AbortController; signal: AbortSignal; pending: Promise<AgentConfiguration> }>()
 
-  constructor(journal: AgentJournal, catalog: DaemonCatalog, resolveProvider: ResolveAgentProvider, sessionId: string, mcp?: AgentMcp, terminals?: TerminalSessions) {
+  constructor(journal: AgentJournal, catalog: DaemonCatalog, resolveProvider: ResolveAgentProvider, sessionId: string, mcp?: AgentMcp, terminals?: TerminalSessions, quotas: AgentQuotaAuthority = unavailableAgentQuotas) {
     this.journal = journal
     this.#catalog = catalog
     this.#resolveProvider = resolveProvider
     this.#mcp = mcp
     this.#terminals = terminals
+    this.#quotas = quotas
     this.sessionId = sessionId
     this.elicitations = new AgentElicitations(journal, sessionId, () => ({
       generation: this.#run?.generation, turnId: this.#active?.turn.id,
@@ -192,13 +196,14 @@ export class AgentRuntime {
       })
     }
     if (this.#recovering) return this.#recovering.then(() => this.start(selection, forkSource))
-    if (this.running) return Promise.resolve()
+    if (this.running) { this.resumeBacklog(); return }
     if (this.#starting) return this.#starting
     this.#starting = this.#start(selection, forkSource).finally(() => { this.#starting = undefined })
     return this.#starting
   }
 
   async #start(selection?: AgentConfigurationSelection, forkSource?: string): Promise<void> {
+    this.#quotaPaused = false
     this.#stopping = false
     this.#stop = undefined
     this.#configurationEpoch++
@@ -409,7 +414,7 @@ export class AgentRuntime {
   }
 
   pump(): Promise<void> {
-    if (!this.running || this.#active || this.#configuring || this.#forking) return Promise.resolve()
+    if (!this.running || this.#active || this.#configuring || this.#forking || this.#quotaPaused) return Promise.resolve()
     if (this.#dispatching) {
       this.#pumpAgain = true
       return Promise.resolve()
@@ -436,6 +441,9 @@ export class AgentRuntime {
     this.#delivery = delivery
     return delivery
   }
+
+  /** A user submission or explicit resume retries a paused queue; plan updates alone do not. */
+  resumeBacklog(): void { this.#quotaPaused = false; void this.pump() }
 
   /** Returns on delivery, not when the active prompt finishes. */
   steer(inputId: string, command: AgentCommand, requestedTurnId?: string): Promise<void> {
@@ -524,7 +532,7 @@ export class AgentRuntime {
     const connection = this.#connection
     const turn: AgentTurn = {
       id: await this.journal.id(), sessionId: this.sessionId, initialInputId: inputId, dispatchCommandId: command.id,
-      runGeneration: this.#run.generation, state: "running", startedAt: timestamp(),
+      runGeneration: this.#run.generation, state: "running", consumed: false, startedAt: timestamp(),
     }
     const input = await this.journal.serial(this.sessionId, async () => {
       const snapshot = await this.journal.read(this.sessionId)
@@ -551,11 +559,18 @@ export class AgentRuntime {
         input.content,
         connection.initialization.agentCapabilities?.promptCapabilities ?? undefined,
       )
+      if (!this.running || this.#connection !== connection) throw new Error("Agent stopped before delivery")
+      await consumeTurn(this.journal, this.#quotas, turn)
       sent = true
       return await connection.prompt({ sessionId: snapshot.session.providerSessionId!, prompt })
     })().then(
       result => this.#finish(turn, inputId, command, result),
-      error => this.#finish(turn, inputId, command, undefined, error, sent),
+      async error => {
+        if (error instanceof TurnAdmissionBlocked) {
+          this.#quotaPaused = true
+          await pauseTurn(this.journal, turn, command, error.message)
+        } else await this.#finish(turn, inputId, command, undefined, error, sent)
+      },
     ).catch(error => console.error("Could not persist Agent turn completion", error)).finally(() => {
       if (this.#active?.turn.id === turn.id) this.#active = undefined
       done()

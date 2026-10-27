@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -20,7 +21,7 @@ function deferred<T>() {
 
 test("headless daemon serves information from the Rust addon", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-test-"))
-  const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory,
+  const starting = startDaemon(0, { agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory,
     openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null,
   })
@@ -36,7 +37,7 @@ test("headless daemon serves information from the Rust addon", async context => 
 
 test("authenticated shutdown acknowledges before cleanup and releases discovery last", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-daemon-shutdown-"))
-  const starting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const starting = startDaemon(0, { agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   let restarting: ReturnType<typeof startDaemon> | undefined
   let releaseCleanup!: () => void
   let cleanupStarted!: () => void
@@ -66,7 +67,7 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
   await cleaning
   assert.deepEqual(await readDaemonDiscovery(directory), discovery)
   await assert.rejects(DaemonClient.connect(() => {}, () => {}, directory))
-  await assert.rejects(startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null }), /already running/)
+  await assert.rejects(startDaemon(0, { agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null }), /already running/)
   assert.deepEqual(await readDaemonDiscovery(directory), discovery)
   assert.equal(daemon.close(), daemon.closed)
   releaseCleanup()
@@ -77,7 +78,7 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
   assert.equal(daemon.close(), daemon.closed)
 
   context.signal.throwIfAborted()
-  restarting = startDaemon(0, { allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  restarting = startDaemon(0, { agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const restarted = await restarting
   context.signal.throwIfAborted()
   const next = await DaemonClient.connect(() => {}, () => {}, directory)
@@ -92,7 +93,7 @@ test("startup requests file and desktop permissions once without blocking health
   const accessibility = deferred<boolean | null>()
   const files = deferred<boolean | null>()
   const requests = { screen: 0, accessibility: 0, files: 0 }
-  const starting = startDaemon(0, { allowLocalControlForTests: true,
+  const starting = startDaemon(0, { agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true,
     controlDirectory: directory,
     openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: () => { requests.screen++; return screen.promise },
@@ -127,7 +128,7 @@ test("startup requests file and desktop permissions once without blocking health
   assert.equal((await client.call("catalogList", {})).workspaces[0]?.id, workspace.id)
 
   let competingRequests = 0
-  await assert.rejects(startDaemon(0, { allowLocalControlForTests: true,
+  await assert.rejects(startDaemon(0, { agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true,
     controlDirectory: directory,
     openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: async () => { competingRequests++; return null },
@@ -162,7 +163,7 @@ test("daemon shutdown does not wait for file or desktop permission responses", {
   const accessibility = deferred<boolean | null>()
   const files = deferred<boolean | null>()
   const starting = startDaemon(0, {
-    allowLocalControlForTests: true, controlDirectory: directory,
+    agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory,
     openCatalog: (_path, name) => openInMemoryCatalog(name),
     requestScreenCaptureAccess: () => screen.promise,
     requestAccessibilityAccess: () => accessibility.promise,
@@ -202,7 +203,7 @@ test("hosted Wayland startup authorizes screen and input once while IPC remains 
   let access = { screenCapture: true, control: true }
   const daemon = await startDaemon(0, {
     permissionPlatform: "linux", permissionMode: "guided", controlDirectory: directory,
-    allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name),
+    agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name),
     waylandDesktopAccess: {
       request: path => { requested.push(path); return consent.promise },
       check: async () => { checks++; return access },
@@ -255,7 +256,7 @@ for (const beforeConsentSettles of [false, true]) test(`connected clients learn 
   let access = { screenCapture: true, control: true }
   const daemon = await startDaemon(0, {
     permissionPlatform: "linux", controlDirectory: directory,
-    allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name),
+    agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name),
     waylandDesktopAccess: {
       request: path => { requested.push(path); return consent.promise },
       check: async () => { checks++; return access },
@@ -369,7 +370,7 @@ for (const permissionKey of permissionKeys) {
       const permission = deferred<boolean | null>()
       const otherKeys = permissionKeys.filter(key => key !== permissionKey)
       const starting = startDaemon(0, {
-        allowLocalControlForTests: true, controlDirectory: directory,
+        agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory,
         openCatalog: (_path, name) => openInMemoryCatalog(name),
         requestScreenCaptureAccess: permissionKey === "screenCapturePermission" ? () => permission.promise : async () => true,
         requestAccessibilityAccess: permissionKey === "accessibilityPermission" ? () => permission.promise : async () => true,

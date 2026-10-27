@@ -97,7 +97,7 @@ test("direct administration navigation handles denied server access and removes 
   mountShell(fake)
   await flushPromises()
   expect(page().get('[role="alert"]').text()).toBe("Site administrator access was revoked")
-  expect(page().find("form").exists()).toBe(false)
+  expect(page().find('[name="site-name"]').exists()).toBe(false)
   await button("Try again").trigger("click")
   await flushPromises()
   expect(page().find("form").exists()).toBe(true)

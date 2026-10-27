@@ -2,20 +2,13 @@
 use std::{env, io, net::SocketAddr};
 
 #[derive(Clone)]
-pub struct OidcConfig {
-    pub issuer: String,
-    pub client_id: String,
-    pub client_secret: Option<String>,
-    pub callback_url: String,
-    pub return_to: Vec<String>,
-}
-#[derive(Clone)]
 pub struct ServerConfig {
     pub bind_addr: SocketAddr,
     pub database_url: String,
     pub public_url: String,
     pub web_origins: Vec<String>,
-    pub oidc: Option<OidcConfig>,
+    pub auth: crate::auth::config::AuthConfig,
+    pub billing: crate::billing::BillingConfig,
     /// Operator-configured STUN URLs advertised on peer grants. Empty means none.
     pub stun_urls: Vec<String>,
     /// Operator-configured TURN/TURNS URLs advertised on peer grants. Empty means none.
@@ -26,23 +19,10 @@ pub struct ServerConfig {
 impl ServerConfig {
     pub fn from_env() -> io::Result<Self> {
         let public_url =
-            env::var("DESKFLEET_PUBLIC_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
-        let oidc = match env::var("DESKFLEET_OIDC_ISSUER") {
-            Ok(issuer) => Some(OidcConfig {
-                issuer,
-                client_id: required("DESKFLEET_OIDC_CLIENT_ID")?,
-                client_secret: env::var("DESKFLEET_OIDC_CLIENT_SECRET").ok(),
-                callback_url: format!("{}/api/auth/callback", public_url.trim_end_matches('/')),
-                return_to: list("DESKFLEET_OIDC_RETURN_TO"),
-            }),
-            Err(env::VarError::NotPresent) => None,
-            Err(_) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "invalid OIDC issuer",
-                ));
-            }
-        };
+            env::var("DESKFLEET_PUBLIC_URL").unwrap_or_else(|_| "http://localhost:8080".into());
+        let web_origins = list("DESKFLEET_WEB_ORIGINS");
+        let auth = crate::auth::config::AuthConfig::from_env(&public_url, &web_origins)?;
+        let billing = crate::billing::BillingConfig::from_env()?;
         let stun_urls = ice_urls("DESKFLEET_STUN_URLS", &["stun", "stuns"])?;
         let turn_urls = ice_urls("DESKFLEET_TURN_URLS", &["turn", "turns"])?;
         let turn_secret = env::var("DESKFLEET_TURN_SECRET")
@@ -60,8 +40,9 @@ impl ServerConfig {
             )?,
             database_url: required("DATABASE_URL")?,
             public_url,
-            web_origins: list("DESKFLEET_WEB_ORIGINS"),
-            oidc,
+            web_origins,
+            auth,
+            billing,
             stun_urls,
             turn_urls,
             turn_secret,

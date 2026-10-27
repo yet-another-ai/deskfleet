@@ -27,6 +27,8 @@ export interface LocalDesktopTarget {
 
 export interface DesktopMediaApi {
   prepare?(sessionId: string): Promise<RTCIceServer[]>
+  /** Additional context for a transport failure, without masking authorization errors. */
+  connectionFailure?(sessionId: string): string | undefined
   target(): Promise<LocalDesktopTarget>
   capabilities(): Promise<DesktopCapabilities>
   offer(options: DesktopOffer): Promise<{ sdp: string }>

@@ -12,7 +12,8 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
             database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
             public_url: "https://control.test".into(),
             web_origins: vec![],
-            oidc: None,
+            auth: deskfleet_server::auth::config::AuthConfig::development("https://control.test"),
+            billing: Default::default(),
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
@@ -24,7 +25,10 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
     let issuer = format!("https://fixture/{}", uuid::Uuid::new_v4());
     let user = state
         .store
-        .oidc_user(&issuer, "owner", "Owner", None, false)
+        .verified_user(
+            &format!("owner-{}@fixture.test", issuer.rsplit('/').next().unwrap()),
+            "Owner",
+        )
         .await
         .unwrap();
     let login = state.store.new_session(&user.id).await.unwrap();
@@ -75,14 +79,16 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
     );
     assert_eq!(
         call!(post, "/api/auth/logout", token, &json!({})).status(),
-        StatusCode::OK
+        StatusCode::NO_CONTENT
     );
 
-    // Simulate a fresh verified OIDC login for the same issuer/subject. The real
-    // OIDC exchange itself is covered by the end-to-end backend smoke fixture.
+    // A new login for the same verified account retains Team membership.
     let returning_user = state
         .store
-        .oidc_user(&issuer, "owner", "Owner", None, false)
+        .verified_user(
+            &format!("owner-{}@fixture.test", issuer.rsplit('/').next().unwrap()),
+            "Owner",
+        )
         .await
         .unwrap();
     assert_eq!(returning_user.id, user.id);

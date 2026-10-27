@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -25,7 +26,7 @@ test("machine scheduling uses real Session persistence, retains approvals, and r
   const working = join(directory, "working")
   await mkdir(working)
   const provider = new BackendAgent()
-  const options = { agentProvider: provider,
+  const options = { agentQuotas: new TestAgentQuotas(), agentProvider: provider,
     peers: { create: async () => { throw new Error("Unexpected peer creation") }, close: async () => {} },
     capabilities: async () => ({ displays: [], audio: false }),
   }
@@ -84,7 +85,7 @@ test("Workspace deletion and scheduled task creation cannot leave a dangling tar
   const directory = await mkdtemp(join(tmpdir(), "df-schedule-workspace-"))
   const working = join(directory, "working")
   await mkdir(working)
-  const runtime = new MachineRuntime(directory, {
+  const runtime = new MachineRuntime(directory, { agentQuotas: new TestAgentQuotas(),
     agentProvider: new BackendAgent(), peers: { create: async () => { throw new Error("Unexpected peer creation") }, close: async () => {} },
     openCatalog: (_path, name) => openInMemoryCatalog(name),
     capabilities: async () => ({ displays: [], audio: false }),
@@ -123,4 +124,28 @@ test("Workspace deletion and scheduled task creation cannot leave a dangling tar
   await rejected
   assert.deepEqual(await operations.handle("scheduleList", {}, actor), [])
   assert.deepEqual((await catalog.native.snapshot()).workspaces, [])
+})
+
+test("scheduled Session creation cannot bypass Team admission capacity", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-schedule-quota-"))
+  const quotas = new TestAgentQuotas(); quotas.capacity = 0
+  const runtime = new MachineRuntime(directory, {
+    agentQuotas: quotas, agentProvider: new BackendAgent(),
+    peers: { create: async () => { throw new Error("Unexpected peer creation") }, close: async () => {} },
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
+    capabilities: async () => ({ displays: [], audio: false }),
+  })
+  t.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
+  await runtime.init()
+  runtime.current.central.authorizeDelegation = async actor => actor
+  const actor: AgentActor = { kind: "user", userId: "member", deviceId: "login" }
+  const workspace = await runtime.current.catalog.native.createWorkspace("Quota", [{ path: directory }])
+  const task = await runtime.current.operations.handle("scheduleCreate", { schedule: {
+    title: "Cannot exceed capacity", prompt: "Read the repository", enabled: true, workspaceId: workspace.id,
+    target: { kind: "new", provider: "codex", context: "directory" }, trigger: { kind: "manual" },
+  } }, actor) as ScheduledTask
+  const run = await runtime.current.operations.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  assert.equal(run.state, "failed")
+  assert.match(run.error!, /Team Session allowance/)
+  assert.equal((await runtime.current.agents.journal.list()).length, 0)
 })

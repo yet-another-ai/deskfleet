@@ -197,7 +197,7 @@ try {
   assert.equal(await evaluate("document.querySelector('input[type=url]') === null"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   await screenshot("welcome-account")
-  // The UI completes this after OIDC; exercise persisted host progress here.
+  // The UI completes this after browser authentication; exercise persisted host progress here.
   assert.deepEqual(await evaluate("window.deskfleet.onboarding.complete()"), { step: "complete" })
   await evaluate("window.deskfleet.settings.setLocalAgentEnabled(false)")
   await stop()

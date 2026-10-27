@@ -13,12 +13,12 @@ import type { AgentProviderConfig, ProviderSnapshot } from "../apps/daemon/src/p
 import type { TerminalSummary } from "../apps/daemon/src/terminal-protocol.ts"
 import { BackendAgent } from "./fixtures/backend-agent.ts"
 import { connectBackendPeer, until, type BackendRequest } from "./fixtures/backend-peer.ts"
-import type { FixtureLogin } from "./fixtures/backend-oidc.ts"
+import type { FixtureLogin } from "./fixtures/backend-auth.ts"
 import { startBackendFixture } from "./fixtures/backend-server.ts"
 import { smokePortForwarding } from "./fixtures/backend-ports.ts"
 
 const fixture = await startBackendFixture()
-const { backend, oidc } = fixture
+const { backend, auth } = fixture
 const directory = await mkdtemp(join(tmpdir(), "deskfleet-backend-smoke-"))
 const execute = promisify(execFile)
 const daemons: Awaited<ReturnType<typeof startDaemon>>[] = []
@@ -35,21 +35,21 @@ function client(login: FixtureLogin): BackendRequest {
     })
     const text = await response.text()
     if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${text}`)
-    return JSON.parse(text) as T
+    return (text ? JSON.parse(text) : undefined) as T
   }
 }
 
 try {
-  const alice = await oidc.login(backend, { subject: "alice", name: "Alice smoke", email: "alice@example.invalid" })
-  const bob = await oidc.login(backend, { subject: "bob", name: "Bob smoke", email: "bob@example.invalid" })
+  const alice = await auth.login(backend, { subject: "alice", name: "Alice smoke", email: "alice@example.invalid" })
+  const bob = await auth.login(backend, { subject: "bob", name: "Bob smoke", email: "bob@example.invalid" })
   admin = client(alice)
   const member = client(bob)
-  assert.deepEqual(oidc.exchanges, ["alice", "bob"])
+  assert.deepEqual(auth.exchanges, ["alice", "bob"])
   assert.equal((await admin<{ user: { id: string } }>("/me")).user.id, alice.user.id)
   const team = await admin<{ id: string; role: string }>("/teams", { name: `Backend smoke ${randomUUID()}` })
   teamId = team.id
   assert.equal(team.role, "admin")
-  console.log("OIDC discovery, RS256, PKCE, nonce, and application login passed")
+  console.log("Mailbox verification, password login, and native proof exchange passed")
 
   const providers: BackendAgent[] = []
   const workspaces: CatalogWorkspace[] = []
@@ -173,7 +173,7 @@ try {
   assert.ok(audit.find(command => command.operationId === archiveId)?.result)
   console.log("Archive/restore retained files, backlog, audit, and terminal transcript; live processes remain stopped")
 
-  const reconnectLogin = await oidc.login(backend, { subject: "bob", name: "Bob smoke", email: "bob@example.invalid" })
+  const reconnectLogin = await auth.login(backend, { subject: "bob", name: "Bob smoke", email: "bob@example.invalid" })
   const reconnectRequest = client(reconnectLogin)
   const reconnectAgent = await connectBackendPeer({ backend, token: reconnectLogin.token, teamId, machineId: machines[1]!, purpose: "agent", request: reconnectRequest })
   const reconnectTerminal = await connectBackendPeer({ backend, token: reconnectLogin.token, teamId, machineId: machines[1]!, purpose: "terminal", request: reconnectRequest })
@@ -188,10 +188,21 @@ try {
   await reconnectTerminal.rpc("input", { sessionId: reconnectShell.id, data: Buffer.from("echo deskfleet-offline-peer\r").toString("base64") })
   await until(() => reconnectTerminal.messages, values => values.some(value => value.event?.kind === "output" && Buffer.from(value.event.data, "base64").toString("utf8").includes("deskfleet-offline-peer")), "terminal input survives signaling loss")
   assert.equal(providers[1]!.closes, 0)
+  await until(() => reconnectAgent.rpc<AgentSnapshot>("_deskfleet/session/subscribe", { sessionId: reconnectSessionId }),
+    value => value.inputs.length === 1 && value.inputs[0]!.state === "pending" && !!value.session.turnLimitReason,
+    "offline input waits for current Team entitlement authority")
+  assert.equal(providers[1]!.prompts.length, 0, "new provider turns require current central authority")
   await fixture.restartServer()
   await until(() => daemons.map(daemon => daemon.central.status()), values => values.every(value => value.connected), "daemon reconnects to restarted server")
   const secondCentral = () => member<{ snapshot: AgentSnapshot; lastEventSeq: string }>(`/machines/${machines[1]}/sessions/${reconnectSessionId}`)
-  await until(secondCentral, value => value.snapshot.inputs.length === 1 && value.snapshot.permissions.some(permission => permission.state === "pending"), "offline journal catches up after reconnect")
+  const paused = await until(secondCentral, value => value.snapshot.inputs.length === 1
+    && value.snapshot.inputs[0]!.state === "pending" && !!value.snapshot.session.turnLimitReason, "paused offline journal catches up after reconnect")
+  assert.equal(providers[1]!.prompts.length, 0, "reconnection does not automatically resume paused input")
+  await reconnectAgent.rpc("_deskfleet/input/retry", {
+    sessionId: reconnectSessionId, inputId: paused.snapshot.inputs[0]!.id, operationId: randomUUID(),
+  })
+  await until(secondCentral, value => value.snapshot.permissions.some(permission => permission.state === "pending"), "explicit retry resumes the original queued input")
+  assert.deepEqual(providers[1]!.prompts, ["Accepted while signaling is unavailable"])
   assert.ok((await reconnectAgent.rpc<{ id: string }[]>("_deskfleet/session/list", {})).some(value => value.id === reconnectSessionId))
   await reconnectRequest("/auth/logout", {})
   await until(() => [reconnectAgent.disconnected(), reconnectTerminal.disconnected()], values => values.every(Boolean), "logout revokes established peer access")

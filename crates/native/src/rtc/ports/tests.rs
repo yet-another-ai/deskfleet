@@ -2,6 +2,7 @@ use super::*;
 use crate::rtc::{Peer, PeerConfig};
 use bytes::Bytes;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpSocket;
 
 fn expires_after(duration: Duration) -> u64 {
     u64::try_from((SystemTime::now().duration_since(UNIX_EPOCH).unwrap() + duration).as_millis())
@@ -221,8 +222,20 @@ async fn duplex(socket: TcpStream, count: usize, outgoing: u8, expected: u8) {
 
 #[tokio::test]
 async fn refused_connection_does_not_close_the_listener_or_peer() {
-    let reserve = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let bind = |port| {
+        let socket = TcpSocket::new_v4().unwrap();
+        socket.set_reuseaddr(true).unwrap();
+        socket.bind((Ipv4Addr::LOCALHOST, port).into()).unwrap();
+        socket.listen(1).unwrap()
+    };
+    let reserve = bind(0);
     let target = reserve.local_addr().unwrap().port();
+    let _reserved_client = TcpStream::connect((Ipv4Addr::LOCALHOST, target))
+        .await
+        .unwrap();
+    let (_reserved_server, _) = reserve.accept().await.unwrap();
+    // The established connection reserves this port while the closed listener
+    // refuses new connections. Address reuse lets the service reopen it later.
     drop(reserve);
     let (left, right, local) = pair(target).await;
     let mut refused = TcpStream::connect((Ipv4Addr::LOCALHOST, local))
@@ -236,9 +249,7 @@ async fn refused_connection_does_not_close_the_listener_or_peer() {
             .unwrap(),
         0
     );
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, target))
-        .await
-        .unwrap();
+    let listener = bind(target);
     let service = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
         socket.write_all(b"ready").await.unwrap();

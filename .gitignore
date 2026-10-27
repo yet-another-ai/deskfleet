@@ -17,3 +17,6 @@ mise.local.lock
 
 # APM download cache only; deployed .agents/skills/ and apm.lock.yaml are tracked.
 apm_modules/
+
+# Development authentication emails contain one-use secrets.
+.local/mail/

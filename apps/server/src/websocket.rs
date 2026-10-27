@@ -30,6 +30,19 @@ async fn connect(
     state: web::Data<AppState>,
     is_daemon: bool,
 ) -> Result<HttpResponse> {
+    let browser_token = if !is_daemon {
+        let token = crate::auth::cookie_token(&req);
+        if token.is_some() {
+            crate::auth::browser_origin(&req, &state)?;
+            state
+                .store
+                .authenticate(token.as_deref().unwrap_or_default())
+                .await?;
+        }
+        token
+    } else {
+        None
+    };
     let (response, mut session, stream) =
         actix_ws::handle(&req, payload).map_err(|_| ApiError::bad("invalid WebSocket upgrade"))?;
     actix_web::rt::spawn(async move {
@@ -37,20 +50,24 @@ async fn connect(
             .max_frame_size(64 * 1024 * 1024)
             .aggregate_continuations()
             .max_continuation_size(64 * 1024 * 1024);
-        let first = tokio::time::timeout(Duration::from_secs(10), stream.next()).await;
-        let token = match first {
-            Ok(Some(Ok(actix_ws::AggregatedMessage::Text(text)))) => {
-                match serde_json::from_str::<ControlMessage>(&text) {
-                    Ok(ControlMessage::Authenticate { token }) if token.len() < 512 => token,
-                    _ => {
-                        let _ = session.close(Some(close_reason(4401))).await;
-                        return;
+        let token = if let Some(token) = browser_token {
+            token
+        } else {
+            let first = tokio::time::timeout(Duration::from_secs(10), stream.next()).await;
+            match first {
+                Ok(Some(Ok(actix_ws::AggregatedMessage::Text(text)))) => {
+                    match serde_json::from_str::<ControlMessage>(&text) {
+                        Ok(ControlMessage::Authenticate { token }) if token.len() < 512 => token,
+                        _ => {
+                            let _ = session.close(Some(close_reason(4401))).await;
+                            return;
+                        }
                     }
                 }
-            }
-            _ => {
-                let _ = session.close(Some(close_reason(4401))).await;
-                return;
+                _ => {
+                    let _ = session.close(Some(close_reason(4401))).await;
+                    return;
+                }
             }
         };
         let identity = if is_daemon {

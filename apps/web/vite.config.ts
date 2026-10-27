@@ -11,7 +11,7 @@ export default defineConfig({
     vue({ features: { vapor: true } }),
     VueI18nPlugin({ strictMessage: false, runtimeOnly: true }),
   ],
-  server: { host: "127.0.0.1", port: 5174, strictPort: true },
+  server: { host: "localhost", port: 5174, strictPort: true },
   build: {
     target: "es2023",
     rolldownOptions: { output: { codeSplitting: clientCodeSplitting } },

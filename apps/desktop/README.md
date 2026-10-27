@@ -7,7 +7,8 @@ with vue-router, Pinia, VueUse, vue-i18n, UnoCSS, Lucide icons, and xterm.js.
 
 ## Development
 
-From the repository root:
+Start `mise -E development run dev` from the repository root to run the API and
+Web login pages. Keep that terminal running, then use another terminal:
 
 ```sh
 mise run desktop:dev
@@ -27,7 +28,7 @@ saved catalog, conversation, and terminal history remain.
 downloads its platform binary the first time it is resolved.
 
 Set `VITE_DESKFLEET_SERVER_URL` before starting development or building the app
-to choose the backend; it defaults to `http://127.0.0.1:8080`. For example, in
+to choose the backend; it defaults to `http://localhost:8080`. For example, in
 PowerShell:
 
 ```powershell
@@ -57,7 +58,7 @@ Each process has its own Vite configuration (`vite.main.config.ts`,
 
 ## Interface layout
 
-The production client signs in to a configured backend through OIDC and selects
+The production client signs in to a configured backend through its owned account system and selects
 a team and an enrolled machine. The Electron main process owns account HTTP and
 WebSocket connections and stores the application token using Electron safeStorage.
 A narrow preload adapter exposes operations and events without exposing that token

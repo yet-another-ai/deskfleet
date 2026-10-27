@@ -1,4 +1,6 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { EventEmitter, once } from "node:events"
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
@@ -17,7 +19,7 @@ import { centralUrl } from "./central-protocol.ts"
 
 test("local discovery grants only host setup and never imports development resources", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-central-auth-"))
-  const development = await startDaemon(0, { controlDirectory: directory, allowLocalControlForTests: true, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const development = await startDaemon(0, { controlDirectory: directory, agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const old = await DaemonClient.connect(() => {}, () => {}, directory)
   await old.call("workspaceCreate", { name: "Development data", directories: [{ path: directory }] })
   old.close(); await development.close()
@@ -88,6 +90,9 @@ test("delegation rechecks membership without treating a removed user as a revoke
       users.push(JSON.parse(body).userId)
       response.writeHead(status)
       response.end(JSON.stringify({ authorized: status === 200 }))
+    } else if (request.url === "/api/daemon/entitlements") {
+      response.writeHead(status)
+      response.end(JSON.stringify({ error: { message: "Team limit reached" } }))
     } else response.end("{}")
   })
   server.on("upgrade", (_request, socket) => socket.destroy())
@@ -101,6 +106,8 @@ test("delegation rechecks membership without treating a removed user as a revoke
   status = 403
   await assert.rejects(daemon.central.authorizeDelegation(actor), /403/)
   assert.equal(daemon.central.status().revoked, false)
+  await assert.rejects(daemon.central.quotaRequest("GET", "/api/daemon/entitlements"), /Team limit reached/)
+  assert.equal(daemon.central.status().revoked, false, "quota denials never revoke an enrolled machine")
   status = 401
   await assert.rejects(daemon.central.authorizeDelegation(actor), /401/)
   assert.equal(daemon.central.status().revoked, true)
@@ -137,7 +144,7 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
   let hasSession = false
   const snapshot = () => ({ session: { id: "session", lastEventSeq: "1" } })
   const operations = {
-    agents: {
+    agents: { reconcileAdmissions: async () => {},
       onEvent: (listener: typeof agentChanged) => { agentChanged = listener; return () => {} },
       journal: {
         identity: { originId: "origin", machineId: "local" },
@@ -199,7 +206,7 @@ test("final synchronization has a shared deadline when the backend stops respond
   }))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { reconcileAdmissions: async () => {}, journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe },
     terminals: { onChange: unsubscribe },
@@ -229,7 +236,7 @@ test("explicit credential rejection persists logout without treating transport l
   }))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { reconcileAdmissions: async () => {}, journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
@@ -246,4 +253,68 @@ test("explicit credential rejection persists logout without treating transport l
   assert.equal(restored.status().identity.originId, "origin")
   await restored.close()
   assert.equal(requests, 1, "A revoked registration must not upload again after restart")
+})
+
+test("real Node WebSocket closes malformed control traffic without unhandled failures", { timeout: 5_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-failure-"))
+  const errors: string[] = []
+  context.mock.method(console, "error", (...values: unknown[]) => { errors.push(values.map(String).join(" ")) })
+  const server = createServer((_request, response) => response.setHeader("content-type", "application/json").end("{}"))
+  const closeCodes: number[] = []
+  let upgraded!: import("node:stream").Duplex
+  let resolveClosed!: () => void
+  const closed = new Promise<void>(resolve => { resolveClosed = resolve })
+  const textFrame = (value: string) => {
+    const body = Buffer.from(value)
+    assert.ok(body.length < 126)
+    return Buffer.concat([Buffer.from([0x81, body.length]), body])
+  }
+  server.on("upgrade", (request, socket) => {
+    upgraded = socket
+    const accept = createHash("sha1").update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64")
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+    // Exercise the actual Undici WebSocket restriction against application close(1002).
+    socket.write(textFrame("{"))
+    let received = Buffer.alloc(0)
+    socket.on("data", chunk => {
+      received = Buffer.concat([received, chunk])
+      while (received.length >= 6) {
+        const length = received[1]! & 0x7f
+        assert.ok(length < 126, "fixture expects short client frames")
+        if (received.length < 6 + length) return
+        const opcode = received[0]! & 0x0f
+        const mask = received.subarray(2, 6)
+        const body = Buffer.from(received.subarray(6, 6 + length))
+        for (let index = 0; index < body.length; index++) body[index] = body[index]! ^ mask[index % 4]!
+        received = received.subarray(6 + length)
+        if (opcode === 8) {
+          closeCodes.push(body.length >= 2 ? body.readUInt16BE(0) : 1005)
+          // A frame already in flight must not trigger another error while closing.
+          socket.write(textFrame(JSON.stringify({ type: "reconcilePeers", peers: [] })))
+          socket.end(Buffer.concat([Buffer.from([0x88, body.length]), body]))
+        }
+      }
+    })
+    socket.on("close", resolveClosed)
+  })
+  server.listen(0, "127.0.0.1"); await once(server, "listening")
+  const credentials = { serverId: "server", machineId: "machine", teamId: "team", serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, token: "fixture-secret" }
+  const path = join(directory, "central.json")
+  await writeFile(path, JSON.stringify(credentials))
+  const unsubscribe = () => () => {}
+  const operations = {
+    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
+    providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
+  } as unknown as MachineOperations
+  const central = new CentralClient(directory, operations, {} as ControlPeers)
+  context.after(async () => { await central.close(); upgraded?.destroy(); await server[Symbol.asyncDispose](); await rm(directory, { recursive: true, force: true }) })
+  await central.init()
+  await closed
+  await central.stop()
+  assert.equal(central.status().connected, false)
+  assert.equal(errors.length, 1, "a closing socket must ignore subsequent frames")
+  assert.deepEqual(closeCodes, [4002])
+  assert.equal(central.status().revoked, false)
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), credentials)
 })

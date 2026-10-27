@@ -14,7 +14,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
             database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
             public_url: "https://control.test".into(),
             web_origins: vec![],
-            oidc: None,
+            auth: crate::auth::config::AuthConfig::development("https://control.test"),
+            billing: Default::default(),
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
@@ -26,12 +27,18 @@ async fn postgres_http_permissions_replication_and_signaling() {
     let issuer = format!("https://test/{}", uuid::Uuid::new_v4());
     let user = state
         .store
-        .oidc_user(&issuer, "owner", "Owner", Some("owner@test.example"), true)
+        .verified_user("owner@test.example", "Owner")
         .await
         .unwrap();
     let outside = state
         .store
-        .oidc_user(&issuer, "outside", "Outside", None, false)
+        .verified_user(
+            &format!(
+                "outside-{}@fixture.test",
+                issuer.rsplit('/').next().unwrap()
+            ),
+            "Outside",
+        )
         .await
         .unwrap();
     let login = state.store.new_session(&user.id).await.unwrap();
@@ -65,7 +72,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
             &json!({"returnTo":"http://127.0.0.1:4455/auth/callback"})
         )
         .status(),
-        StatusCode::BAD_REQUEST
+        StatusCode::OK
     );
     let team: Value = test::read_body_json(call!(
         post,
@@ -85,18 +92,12 @@ async fn postgres_http_permissions_replication_and_signaling() {
     );
     let usage: Value = test::read_body_json(call!(get, &usage_path, token, &json!({}))).await;
     assert_eq!(
-        usage,
+        usage_counts(&usage),
         json!({"relayedBytes": "0", "activeSessionCount": 0, "memberCount": 1})
     );
     let teammate = state
         .store
-        .oidc_user(
-            &issuer,
-            "teammate",
-            "Teammate",
-            Some("teammate@test.example"),
-            true,
-        )
+        .verified_user("teammate@test.example", "Teammate")
         .await
         .unwrap();
     let invite = state
@@ -267,6 +268,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
             .get("binaryPath")
             .is_none()
     );
+    // Capacity follows durable daemon acknowledgements, independently of replicas.
+    let mut admission_generation = uuid::Uuid::new_v4().to_string();
     // History remains visible while the machine is offline; archiving still counts.
     for (seq, archive_state, expected) in [
         ("0", "active", 1),
@@ -274,6 +277,21 @@ async fn postgres_http_permissions_replication_and_signaling() {
         ("2", "archived", 0),
         ("3", "active", 1),
     ] {
+        if seq == "0" || seq == "3" {
+            admission_generation = uuid::Uuid::new_v4().to_string();
+            let kind = if seq == "0" { "create" } else { "restore" };
+            let session_id = if seq == "0" { None } else { Some("1") };
+            assert_eq!(
+                call!(
+                    post,
+                    "/api/daemon/session-admissions",
+                    machine_token,
+                    &json!({"operationId":admission_generation,"kind":kind,"sessionId":session_id})
+                )
+                .status(),
+                StatusCode::OK
+            );
+        }
         let response = call!(
             post,
             "/api/daemon/history",
@@ -283,6 +301,29 @@ async fn postgres_http_permissions_replication_and_signaling() {
             })
         );
         assert_eq!(response.status(), StatusCode::OK);
+        if seq == "0" || seq == "3" {
+            assert_eq!(
+                call!(
+                    post,
+                    &format!("/api/daemon/session-admissions/{admission_generation}/confirm"),
+                    machine_token,
+                    &json!({"generation":admission_generation,"sessionId":"1"})
+                )
+                .status(),
+                StatusCode::OK
+            );
+        } else if archive_state == "archived" {
+            assert_eq!(
+                call!(
+                    post,
+                    "/api/daemon/session-admissions/release",
+                    machine_token,
+                    &json!({"generation":admission_generation,"sessionId":"1"})
+                )
+                .status(),
+                StatusCode::OK
+            );
+        }
         let usage: Value = test::read_body_json(call!(get, &usage_path, token, &json!({}))).await;
         assert_eq!(usage["activeSessionCount"], expected);
     }
@@ -377,7 +418,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
         assert_eq!(response.status(), StatusCode::OK);
         let usage: Value = test::read_body_json(response).await;
         assert_eq!(
-            usage,
+            usage_counts(&usage),
             json!({"relayedBytes": "18446744073709551614", "activeSessionCount": 1, "memberCount": 2})
         );
     }
@@ -394,7 +435,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     let other_usage: Value =
         test::read_body_json(call!(get, &other_usage_path, outside_token, &json!({}))).await;
     assert_eq!(
-        other_usage,
+        usage_counts(&other_usage),
         json!({"relayedBytes": "0", "activeSessionCount": 0, "memberCount": 1})
     );
     let auth = &grant["authorization"];
@@ -450,7 +491,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     assert_eq!(call!(post,&format!("/api/machines/{machine_id}/rpc"),token,&json!({"method":"_deskfleet/session/archive","params":{"sessionId":"1","operationId":"fixture"}})).status(),StatusCode::OK);
     assert_eq!(
         call!(post, "/api/auth/logout", token, &json!({})).status(),
-        StatusCode::OK
+        StatusCode::NO_CONTENT
     );
     assert!(
         state
@@ -511,7 +552,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     let usage: Value =
         test::read_body_json(call!(get, &usage_path, renewed_token, &json!({}))).await;
     assert_eq!(
-        usage,
+        usage_counts(&usage),
         json!({"relayedBytes": "18446744073709551614", "activeSessionCount": 0, "memberCount": 1})
     );
     assert_eq!(
@@ -526,4 +567,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
     );
     worker.abort();
     state.store.close().await.unwrap();
+}
+
+fn usage_counts(value: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({"relayedBytes":value["relayedBytes"],"activeSessionCount":value["activeSessionCount"],"memberCount":value["memberCount"]})
 }

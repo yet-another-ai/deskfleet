@@ -6,7 +6,7 @@ import { HttpCentralClient } from "../../packages/client/src/http-central.ts"
 import { connectPortPeer } from "../../packages/client/src/ports-signaling.ts"
 import { PortForwards } from "../../apps/desktop/src/main/ports-controller.ts"
 import { createNativePortPeer } from "../../apps/desktop/src/main/ports-peer.ts"
-import type { FixtureLogin } from "./backend-oidc.ts"
+import type { FixtureLogin } from "./backend-auth.ts"
 import { until } from "./backend-peer.ts"
 
 /** Exercise the Desktop API against the real backend, daemon, TCP sockets and RTC. */

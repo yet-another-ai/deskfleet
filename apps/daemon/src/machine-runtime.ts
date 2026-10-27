@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { AgentProviders } from "./agent-providers.ts"
 import { AgentSessions } from "./agent-sessions.ts"
+import { CentralAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { AgentMcp } from "./agent-mcp.ts"
 import { dispatchMcp } from "./mcp-dispatch.ts"
 import { ScheduledTasks } from "./scheduled-tasks.ts"
@@ -21,6 +22,7 @@ interface MachineOptions {
   peers: ControlPeers
   capabilities: () => Promise<DesktopCapabilities>
   agentProvider?: AgentProvider
+  agentQuotas?: AgentQuotaAuthority
   terminals?: TerminalSessions
   allowLocalControlForTests?: boolean
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
@@ -70,7 +72,11 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
       dispatch: (method, params, actor, scope) => dispatchMcp(operations, method, params, actor, scope),
     })
     await mcp.init()
-    agents = new AgentSessions(catalog, catalog.native, options.agentProvider, providers, mcp, terminals)
+    const quotas = options.agentQuotas ?? new CentralAgentQuotas((method, path, body) => {
+      if (!central) throw new Error("Team allowance is unavailable")
+      return central.quotaRequest(method, path, body)
+    })
+    agents = new AgentSessions(catalog, catalog.native, options.agentProvider, providers, mcp, terminals, quotas)
     await agents.init()
     await terminals.init()
     agents.onSessionArchive(worktreeId => terminals.stopOwned(worktreeId))

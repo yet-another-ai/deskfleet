@@ -64,3 +64,16 @@ test("the setup deadline rejects a stalled offer without waiting for signaling t
   await rejected
   expect(close).toHaveBeenCalledOnce()
 })
+
+test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const)("explains relay denial after direct file failure: %s", async relayDeniedReason => {
+  const failed = vi.fn()
+  const central = {
+    createPeer: async () => ({ peerId: "a", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [], relayDeniedReason }),
+    onEvent: () => () => {}, offerPeer: async () => ({ sdp }), closePeer: async () => {},
+  } as unknown as CentralApi
+  const connecting = connectFilePeer(central, { kind: "machine", machineId: "3", teamId: "1" }, async (_servers, events) => ({
+    offer: async () => sdp, answer: async () => events.fail(new Error("ICE failed")), candidate: async () => {}, send: async () => {}, close: async () => {},
+  }), () => {}, failed)
+  await expect(connecting).rejects.toThrow("Direct connection failed.")
+  expect(failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay") }))
+})

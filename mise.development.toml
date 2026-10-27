@@ -7,13 +7,12 @@ DESKFLEET_TURN_URLS = "turn:127.0.0.1:3478?transport=udp"
 DESKFLEET_TURN_SECRET = "deskfleet-dev-relay-secret"
 
 # Keep DATABASE_URL local to the backend task: db:migrate owns daemon SQLite.
-[tasks.dev.env]
+[tasks."backend:dev".env]
 DATABASE_URL = "postgres://deskfleet:deskfleet-dev@127.0.0.1:55432/deskfleet"
 DESKFLEET_TURN_USAGE_REDIS_URL = "redis://127.0.0.1:56379/"
 DESKFLEET_BIND_ADDR = "127.0.0.1:8080"
-DESKFLEET_PUBLIC_URL = "http://127.0.0.1:8080"
-DESKFLEET_OIDC_ISSUER = "http://127.0.0.1:5556/dex"
-DESKFLEET_OIDC_CLIENT_ID = "deskfleet-dev"
-DESKFLEET_OIDC_CLIENT_SECRET = "deskfleet-dev-client-secret"
-DESKFLEET_OIDC_RETURN_TO = "http://127.0.0.1:5174/,http://127.0.0.1:*/auth/callback"
-DESKFLEET_WEB_ORIGINS = "http://127.0.0.1:5174"
+DESKFLEET_PUBLIC_URL = "http://localhost:8080"
+DESKFLEET_WEB_ORIGINS = "http://localhost:5174"
+DESKFLEET_AUTH_WEB_URL = "http://localhost:5174"
+DESKFLEET_MAIL_DIRECTORY = ".local/mail"
+DESKFLEET_DEPLOYMENT_MODE = "self-hosted"

@@ -358,3 +358,13 @@ test("reconnect also waits for a late abandoned offer's close added during the b
   await Promise.all([first, disconnecting, reconnecting])
   expect(api.offer).toHaveBeenCalledTimes(2)
 })
+
+test("shows the relay denial as desktop connection failure detail", async () => {
+  const { connection, api } = setup()
+  const detail = "Direct connection failed. This Team has used its monthly TURN relay allowance."
+  Object.assign(api, { connectionFailure: () => detail })
+  await connection.connect(options)
+  TestPeer.instances.at(-1)!.changeState("failed")
+  expect(connection.failure.value).toEqual({ kind: "connection", detail })
+  expect(connection.state.value).toBe("error")
+})

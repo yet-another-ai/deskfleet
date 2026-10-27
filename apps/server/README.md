@@ -1,6 +1,6 @@
 # deskfleet server
 
-An API-only Actix Web control plane backed by PostgreSQL. It owns OIDC identities,
+An API-only Actix Web control plane backed by PostgreSQL. It owns verified accounts and credentials,
 application sessions, Teams and roles, machine enrollment, management RPC routing,
 trusted WebRTC signaling, and read replicas of daemon catalogs and Agent journals.
 The independently deployed Vue Web frontend and Electron use the same API.
@@ -10,8 +10,8 @@ See the [backend scope](../../agents/docs/backend.md) and
 
 ## Run and configure
 
-For local development, the repository's Docker Compose supplies PostgreSQL, a
-Dex OIDC provider with two test accounts, and coturn. From the repository root:
+For local development, Docker Compose supplies PostgreSQL, Redis, and coturn.
+Authentication emails are written to the local `.local/mail/` directory. From the repository root:
 
 ```sh
 mise run infra:up
@@ -19,39 +19,45 @@ mise -E development run dev
 ```
 
 See the [development environment](../../agents/docs/environment.md#local-docker-compose)
-for login credentials, Web/Electron startup, isolated test databases, and cleanup.
+for mailbox verification, Web/Electron startup, isolated test databases, and cleanup.
 
 For your own services, use PostgreSQL 17 or later and the locked toolchain:
 
 ```sh
 DATABASE_URL='postgres://deskfleet:password@127.0.0.1:5432/deskfleet' \
-DESKFLEET_OIDC_ISSUER='https://identity.example.com' \
-DESKFLEET_OIDC_CLIENT_ID='deskfleet' \
-DESKFLEET_OIDC_CLIENT_SECRET='from-your-identity-provider' \
+DESKFLEET_AUTH_WEB_URL='https://app.example.com' \
+DESKFLEET_SMTP_HOST='smtp.example.com' \
+DESKFLEET_SMTP_USERNAME='mailer' \
+DESKFLEET_SMTP_PASSWORD='from-your-secret-store' \
+DESKFLEET_MAIL_FROM='deskfleet@example.com' \
 DESKFLEET_PUBLIC_URL='https://api.example.com' \
-DESKFLEET_OIDC_RETURN_TO='https://app.example.com/,http://127.0.0.1:*/auth/callback' \
 DESKFLEET_WEB_ORIGINS='https://app.example.com' \
 mise exec -- cargo run -p deskfleet-server --locked
 ```
 
-Register `https://api.example.com/api/auth/callback` as the OIDC provider's exact
-redirect URI. `DESKFLEET_OIDC_RETURN_TO` is a comma-separated allowlist of final
-application callbacks. Browser URLs must match the Web application's entry URL
-exactly, including its pathname and trailing slash. The one supported
-wildcard, `http://127.0.0.1:*/auth/callback`, allows Electron's ephemeral loopback
-port; it does not permit other hosts, paths, queries, or credentials. The OIDC
-callback redirects with a short-lived one-use `#loginCode`. The initiating client
-exchanges it together with the `loginVerifier` returned by `/api/auth/start`.
+The Web origin serves `/auth/*` through the SPA entry point. Build split-origin
+Web deployments with `VITE_DESKFLEET_SERVER_URL=https://api.example.com`.
+Use HTTPS and origins on the same site for the browser's SameSite=Lax cookies;
+unrelated cross-site Web/API hosting is unsupported. SMTP uses mandatory STARTTLS
+(default port 587). The local mail-file sink is available only on localhost.
+
+Electron opens the system browser at the trusted Web origin. Approval returns a
+60-second one-use `#loginCode` to `http://127.0.0.1:<port>/auth/callback`; the
+main process exchanges it with its private verifier. Other callback hosts,
+paths, queries and credentials are rejected.
 
 | Variable | Meaning |
 | --- | --- |
 | `DATABASE_URL` | Required PostgreSQL connection URL. SQLite is rejected. |
 | `DESKFLEET_BIND_ADDR` | IP and port; defaults to `127.0.0.1:8080`. |
-| `DESKFLEET_PUBLIC_URL` | Stable external API origin and server identity; defaults to `http://127.0.0.1:8080`. |
-| `DESKFLEET_OIDC_ISSUER` | OIDC discovery issuer. Without it, login is unavailable; there is no authentication bypass. |
-| `DESKFLEET_OIDC_CLIENT_ID` | Required when an issuer is configured. |
-| `DESKFLEET_OIDC_CLIENT_SECRET` | Confidential OIDC client secret, when required by the IdP. |
-| `DESKFLEET_OIDC_RETURN_TO` | Comma-separated application callback allowlist. |
+| `DESKFLEET_PUBLIC_URL` | Stable external API origin and server identity; defaults to `http://localhost:8080`. |
+| `DESKFLEET_TRUSTED_PROXY_IPS` | Comma-separated exact proxy IPs allowed to set `X-Real-IP` for authentication rate limits. Empty by default; proxies must overwrite that header. |
+| `DESKFLEET_AUTH_WEB_URL` | Trusted Web origin for verification links, Passkeys, and desktop authorization. Defaults to the first Web origin or API origin. |
+| `DESKFLEET_WEBAUTHN_RP_ID` | Passkey relying-party ID; defaults to the Web hostname. Keep it stable. |
+| `DESKFLEET_SMTP_HOST`, `DESKFLEET_SMTP_PORT` | STARTTLS mail relay and optional port (587). Required outside local development. |
+| `DESKFLEET_SMTP_USERNAME`, `DESKFLEET_SMTP_PASSWORD`, `DESKFLEET_MAIL_FROM` | Mail relay credentials and sender. |
+| `DESKFLEET_MAIL_DIRECTORY` | Local-only mail sink; defaults to `.local/mail`. Messages contain one-use secrets and are ignored by Git. |
+| `DESKFLEET_DEPLOYMENT_MODE` | `self-hosted` (default): unlimited allowances and no Stripe; or `hosted`. |
 | `DESKFLEET_WEB_ORIGINS` | Comma-separated browser origins permitted by CORS. |
 | `DESKFLEET_STUN_URLS` | Optional comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Empty means no STUN; there is no public default. Change the list and restart to update new grants. |
 | `DESKFLEET_TURN_URLS` | Optional comma-separated `turn:`/`turns:` URLs advertised on peer grants. Change the list and restart to update new grants. |
@@ -62,14 +68,14 @@ exchanges it together with the `loginVerifier` returned by `/api/auth/start`.
 For official hosting, run one server instance behind a TLS reverse proxy that
 supports WebSocket upgrades, request bodies of at least 64 MiB, and idle periods
 longer than the 20-second heartbeat. Serve the Web application separately. Store
-PostgreSQL data on persistent storage and supply database/OIDC/TURN secrets via
+PostgreSQL data on persistent storage and supply database/SMTP/TURN secrets via
 the deployment's secret mechanism. `DESKFLEET_PUBLIC_URL` must remain stable.
 Live socket routing and pending SDP exchanges are process-local, so this release
 requires one central instance; adding instances needs shared routing first.
 
 `GET /healthz` reports process liveness and protocol version. Database migrations
-and configured OIDC discovery complete before the HTTP listener starts. Database,
-migration, or discovery failures stop startup. Actix handles graceful shutdown.
+and authentication configuration validation complete before the HTTP listener starts.
+Database, migration, or invalid configuration failures stop startup. Actix handles graceful shutdown.
 
 ## Container image
 
@@ -79,7 +85,7 @@ Linux release artifacts. It runs as UID/GID `10001:10001` and listens on
 `0.0.0.0:8080` inside the container.
 
 Put the configuration above in an environment file, including `DATABASE_URL`,
-the public API URL, and OIDC settings. Use a database hostname reachable from
+the public API/Web origins, and SMTP settings. Use a database hostname reachable from
 the container; `127.0.0.1` inside it refers to the server container itself.
 For example, behind a reverse proxy on the same host:
 
@@ -114,7 +120,12 @@ HTTP health, and signal-driven shutdown, then removes its containers and network
 
 ### Site administration
 
-Site administrators use the same OIDC login as other users. Their grants are
+For the local Compose development stack, `mise run dev:seed` creates the verified
+Site Admin `admin@deskfleet.test` with password `deskfleet-dev-password`.
+This explicit debug-build command requires no mail delivery and leaves existing
+accounts unchanged. It creates no Team and is never run during normal startup.
+
+Site administrators use the same password/Passkey login as other users. Their grants are
 independent of Team roles and do not allow access to other Teams' machines,
 history, terminals, or Agent sessions. No user becomes a site administrator
 automatically. First log in, obtain the account's `user.id` from `GET /api/me`,
@@ -126,8 +137,7 @@ mise exec -- cargo run -p deskfleet-server --locked -- site-admin list
 mise exec -- cargo run -p deskfleet-server --locked -- site-admin revoke <user-id>
 ```
 
-These commands require `DATABASE_URL`; they do not start HTTP or require OIDC
-discovery. Packaged deployments can run `deskfleet-server site-admin ...`
+These commands require `DATABASE_URL`; they do not start HTTP or send mail. Packaged deployments can run `deskfleet-server site-admin ...`
 directly. The UUID must identify an existing user. Grant/revoke are idempotent,
 and the same grant command can recover access after the final grant is revoked.
 The CLI records its source as `cli`, without attributing the operation to an
@@ -153,12 +163,29 @@ again. Deployment secrets and startup options remain environment configuration.
 
 ### Application and machine authentication
 
-All protected HTTP requests use `Authorization: Bearer <opaque token>`. OIDC
-Authorization Code flow uses PKCE, state, nonce, and ID token signature, issuer,
-audience, and expiration validation. PostgreSQL stores hashes of application,
-machine, invitation, and exchange tokens; it stores OIDC flow state with short expirations. Application sessions last 30 days; machine credentials
-remain valid until administrator revocation. Daemons persist their enrollment
-credential locally, and clients persist their application session securely.
+Web uses Secure HttpOnly opaque session cookies, exact Origin checks and a
+CSRF cookie/header on mutations. Fetch `/api/auth/config` for a CSRF token and
+send it as `X-CSRF-Token` with credentials included. Native clients and machines
+use `Authorization: Bearer <opaque token>`. PostgreSQL stores token hashes.
+Application sessions last 30 days; machine credentials remain valid until
+administrator revocation.
+
+Registration first sends a one-hour mailbox-verification link. The mailbox owner
+chooses the password on verification; no unverified password is later attached
+to their account. Passwords use bounded, off-executor Argon2id hashing, 15–128
+characters, and screening of common values. Address matching trims whitespace
+and case-folds ASCII email without removing plus tags. Recovery links are
+purpose-bound, one-use, and expire after one hour. Recovery and password/email
+changes revoke all login sessions and peer grants without deleting Machines or
+stopping accepted execution. Ordinary recovery retains Passkeys. Security
+changes require a password or Passkey confirmation within ten minutes.
+
+Public registration is a separate persisted policy (`PATCH /api/auth/registration`),
+independent of Team creation. Site administrators can search accounts through
+`GET /api/admin/users?query=` and disable them with
+`PATCH /api/admin/users/{id}/disabled`. Disablement blocks login and later
+delegated authorization; changing these policies requires recent authentication.
+
 Machine removal leaves Team membership intact. A removed installation must
 prepare a fresh empty data directory and origin before enrolling again, including
 when returning to the same Team; the old machine's credentials and origin cannot
@@ -166,7 +193,9 @@ be reused. Old replicas stay scoped to the removed central machine ID.
 
 The `/api` routes cover:
 
-- `/auth/start`, `/auth/callback`, `/auth/exchange`, `/auth/logout`, and `/me`.
+- `/auth/config`, `/auth/register`, `/auth/verify`, `/auth/login`, recovery,
+  password/email changes, Passkey management, login-session inspection/revocation.
+- `/auth/start`, `/auth/desktop/complete`, `/auth/exchange`, `/auth/logout`, `/me`.
 - `/teams`, membership/role management, invitations, and `/invites/accept`.
 - Team machine enrollment/listing, renaming (`PATCH /machines/{id}`), and
   administrator machine removal.
@@ -246,5 +275,5 @@ TEST_REDIS_URL='redis://127.0.0.1:6379/' \
   mise exec -- cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored
 ```
 
-The backend smoke script additionally exercises a fixture OIDC provider, the live
+The backend smoke script additionally exercises mailbox verification and password/native exchange APIs, the live
 HTTP/WebSocket server, daemon synchronization, and actual WebRTC data channels.

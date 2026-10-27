@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -22,7 +23,7 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
     return client
   }
   const options = {
-    allowLocalControlForTests: true, controlDirectory: directory,
+    agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory,
     // Provider settings persist in agent-providers.json, independently of SQLite.
     // Each daemon still gets a new catalog; this test does not retain catalog state.
     openCatalog: (_path: string, name: string) => openInMemoryCatalog(name),

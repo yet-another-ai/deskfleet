@@ -11,7 +11,7 @@ import {
 
 export type TerminalConnectionState = "idle" | "connecting" | "connected" | "error"
 export type TerminalListener = (event: TerminalEvent, acknowledge: () => void) => void
-type TransportSignaling = Pick<TerminalSignalingApi, "offer" | "candidate" | "close" | "onEvent" | "prepare">
+type TransportSignaling = Pick<TerminalSignalingApi, "offer" | "candidate" | "close" | "onEvent" | "prepare" | "connectionFailure">
 
 interface PendingRequest {
   resolve: (result: unknown) => void
@@ -97,7 +97,7 @@ export class TerminalClient {
         const channel = peer.createDataChannel(TERMINAL_CHANNEL, { ordered: true })
         const session: PeerSession = {
           id, peer, channel, unsubscribe: () => {},
-          timeout: setTimeout(() => this.#fail(session, new Error("Terminal connection timed out")), 20_000),
+          timeout: setTimeout(() => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection timed out")), 20_000),
           resolve, reject, offered: false, remoteReady: false,
           localCandidates: [], remoteCandidates: [],
           localSending: Promise.resolve(), remoteAdding: Promise.resolve(),
@@ -111,7 +111,7 @@ export class TerminalClient {
           } else if (event.kind === "error") {
             this.#fail(session, new Error(event.error))
           } else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) {
-            this.#fail(session, new Error("Terminal connection closed"))
+            this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
           }
         })
         peer.onicecandidate = ({ candidate }) => {
@@ -127,11 +127,11 @@ export class TerminalClient {
         }
         peer.onconnectionstatechange = () => {
           if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
-            this.#fail(session, new Error("Terminal connection closed"))
+            this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
           }
         }
         channel.onopen = () => this.#ready(session)
-        channel.onclose = () => this.#fail(session, new Error("Terminal connection closed"))
+        channel.onclose = () => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
         channel.onerror = () => this.#fail(session, new Error("Terminal data channel failed"))
         channel.onmessage = ({ data }) => this.#message(session, data)
         void this.#negotiate(session).catch((error: unknown) => this.#fail(session, errorOf(error)))

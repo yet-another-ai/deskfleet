@@ -14,7 +14,7 @@ The TypeScript daemon calls Rust through napi-rs. Headless machines run it as a
 Node.js Single Executable Application (SEA); the Electron app hosts it in its
 main process. The Electron client uses Vue.
 
-The API-only backend uses PostgreSQL for OIDC accounts, teams, machine enrollment,
+The API-only backend uses PostgreSQL for verified accounts, teams, machine enrollment,
 resource catalogs, and synchronized Agent history. Daemons retain their local
 SQLite catalogs and execute Codex CLI, Claude Code, Cursor CLI, and Grok CLI
 sessions over ACP. The Web and Electron clients share Vue components, manage
@@ -42,14 +42,19 @@ Compose. With Docker running, run from the repository root:
 mise trust
 mise install --locked
 mise run infra:up
+mise run dev:seed
 mise -E development run dev
 ```
 
-Docker Compose provides local PostgreSQL, OIDC, and TURN services. In another
-terminal, run `mise run web:dev` and open `http://127.0.0.1:5174/`, or run
-`mise run desktop:dev`. Sign in with `alice@example.test` / `password` and create
-a team. See the [development guide](agents/docs/environment.md#local-docker-compose)
-for the second test account, separate test database, relay checks, and cleanup.
+Docker Compose provides local PostgreSQL, Redis, and TURN services. Authentication
+emails are written to `.local/mail/`. The `dev` task starts both the API and Web
+client. Open `http://localhost:5174/`, or run `mise run desktop:dev` in another
+terminal. Keep the Web service running for Electron's browser login. Sign in
+with the seeded Site Admin `admin@deskfleet.test` / `deskfleet-dev-password`,
+then create a team. You can also register an email and complete verification
+using its link from `.local/mail/`. See the
+[development guide](agents/docs/environment.md#local-docker-compose)
+for additional accounts, the separate test database, relay checks, and cleanup.
 
 `mise.toml` manages tool versions. `mise.lock`, `Cargo.lock`, and `pnpm-lock.yaml`
 lock tools, Rust dependencies, and JavaScript dependencies respectively.
@@ -57,13 +62,13 @@ lock tools, Rust dependencies, and JavaScript dependencies respectively.
 The server listens on `127.0.0.1:8080` by default:
 
 ```sh
-curl http://127.0.0.1:8080/healthz
+curl http://localhost:8080/healthz
 ```
 
 `DESKFLEET_BIND_ADDR` sets the listener's IP and port, and `RUST_LOG` configures
 logging. See [server configuration](apps/server/README.md) and
 [native binding development](crates/node/README.md). Hosting the API,
-PostgreSQL, OIDC, and TURN yourself is the
+PostgreSQL, SMTP, and TURN yourself is the
 [self-hosted backend guide](agents/docs/self-hosted.md). The repository
 Compose file is the local development stack.
 

@@ -2,12 +2,15 @@
 use deskfleet_control_store::ControlStore;
 use std::io;
 
-const USAGE: &str = "usage: deskfleet-server [site-admin list | site-admin grant <user-id> | site-admin revoke <user-id>]\n\nRun without arguments to start the HTTP server. Site administrator commands require DATABASE_URL and an existing user's UUID from /api/me.";
+mod seed;
+
+const USAGE: &str = "usage: deskfleet-server [dev-seed | site-admin list | site-admin grant <user-id> | site-admin revoke <user-id>]\n\nRun without arguments to start the HTTP server. Operations commands require DATABASE_URL. Site administrator commands require an existing user's UUID from /api/me. dev-seed creates a verified development administrator with documented credentials; it is only available in debug builds.";
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
     Serve,
     Help,
+    Seed,
     List,
     Grant(String),
     Revoke(String),
@@ -17,6 +20,7 @@ fn parse(args: &[String]) -> io::Result<Command> {
     let command = match args {
         [] => Command::Serve,
         [help] if matches!(help.as_str(), "--help" | "-h") => Command::Help,
+        [seed] if seed == "dev-seed" => Command::Seed,
         [group, help] if group == "site-admin" && matches!(help.as_str(), "--help" | "-h") => {
             Command::Help
         }
@@ -53,6 +57,12 @@ pub async fn run(args: &[String]) -> io::Result<bool> {
         println!("{USAGE}");
         return Ok(true);
     }
+    if command == Command::Seed && !cfg!(debug_assertions) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "dev-seed is only available in debug builds",
+        ));
+    }
     let url = std::env::var("DATABASE_URL")
         .ok()
         .filter(|url| !url.is_empty())
@@ -61,6 +71,7 @@ pub async fn run(args: &[String]) -> io::Result<bool> {
         .await
         .map_err(io::Error::other)?;
     match command {
+        Command::Seed => seed::run(&store).await?,
         Command::List => {
             let admins = store.site_admins().await.map_err(io::Error::other)?;
             println!(
@@ -114,6 +125,7 @@ mod tests {
     fn operations_require_explicit_actions_and_user_ids() {
         assert_eq!(parse(&[]).unwrap(), Command::Serve);
         assert_eq!(parse(&arguments(&["--help"])).unwrap(), Command::Help);
+        assert_eq!(parse(&arguments(&["dev-seed"])).unwrap(), Command::Seed);
         assert_eq!(
             parse(&arguments(&["site-admin", "list"])).unwrap(),
             Command::List
@@ -134,6 +146,7 @@ mod tests {
             vec!["site-admin", "revoke", "first-user"],
             vec!["site-admin", "list", "extra"],
             vec!["--unknown"],
+            vec!["dev-seed", "extra"],
         ] {
             assert!(parse(&arguments(&args)).is_err());
         }

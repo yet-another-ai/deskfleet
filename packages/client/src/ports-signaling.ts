@@ -1,3 +1,4 @@
+import { relayFailureMessage, type RelayDeniedReason } from "./relay.ts"
 import type { CentralApi } from "./central.ts"
 import type { IceCandidate } from "./desktop-media.ts"
 
@@ -33,6 +34,7 @@ export async function connectPortPeer(
   failed: (error: Error) => void, signal?: AbortSignal,
 ): Promise<PortConnection> {
   let peerId: string | undefined, peer: PortPeer | undefined
+  let relayDeniedReason: RelayDeniedReason | null | undefined
   let closed = false, opened = false, remoteReady = false, offered = false, grantClosed = false
   let localSdp = "", remoteSdp = ""
   let localSending = Promise.resolve(), remoteAdding = Promise.resolve()
@@ -43,7 +45,7 @@ export async function connectPortPeer(
   void ready.catch(() => {})
   let unsubscribe = () => {}
   let lifetime: ReturnType<typeof setTimeout> | undefined
-  const setup = setTimeout(() => fail(new Error("Port connection timed out")), 20_000)
+  const setup = setTimeout(() => connectionFailed(new Error("Port connection timed out")), 20_000)
   function closeGrant(): void {
     if (!peerId || grantClosed) return
     grantClosed = true
@@ -71,6 +73,10 @@ export async function connectPortPeer(
     failed(error)
   }
   function abort(): void { fail(new Error("Port connection was cancelled")) }
+  function connectionFailed(error: Error): void {
+    const detail = relayFailureMessage(relayDeniedReason)
+    fail(detail ? new Error(detail) : error)
+  }
   function checkReady(): void {
     if (opened && remoteReady && !closed) { clearTimeout(setup); resolveReady() }
   }
@@ -103,7 +109,7 @@ export async function connectPortPeer(
       remoteCandidates.push(value.candidate as IceCandidate); flushRemote()
     } else if (value.kind === "error") fail(new Error("error" in value ? String(value.error) : "Port peer failed"))
     else if (value.kind === "stateChanged" && "state" in value && ["failed", "closed"].includes(String(value.state))) {
-      fail(new Error("Port peer closed"))
+      connectionFailed(new Error("Port peer closed"))
     }
   })
   signal?.addEventListener("abort", abort, { once: true })
@@ -112,13 +118,14 @@ export async function connectPortPeer(
     if (closed) return
     const grant = await central.createPeer(target.teamId, target.machineId, "ports")
     peerId = grant.peerId
+    relayDeniedReason = grant.relayDeniedReason
     if (closed) { closeGrant(); return }
     const expires = Date.parse(grant.authorization.expiresAt)
     if (!Number.isFinite(expires) || expires <= Date.now()) throw new Error("Port authorization expired")
     lifetime = setTimeout(() => fail(new Error("Port authorization expired; reconnect to continue")), expires - Date.now())
     peer = await factory(grant.iceServers, {
       candidate: value => { localCandidates.push(value); flushLocal() },
-      open: () => { opened = true; checkReady() }, fail,
+      open: () => { opened = true; checkReady() }, fail: connectionFailed,
     })
     if (closed) { await closeNative(); return }
     localSdp = await peer.offer()

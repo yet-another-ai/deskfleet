@@ -1,47 +1,23 @@
-import { HttpCentralClient, serverAddress, type SavedAccount } from "./http-central.ts"
+import { HttpCentralClient, serverAddress } from "./http-central.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { resolveAppLocale } from "./i18n.ts"
 import { createBrowserFiles } from "./browser-files.ts"
 import { createBrowserNotificationSettings } from "./browser-notification-settings.ts"
 
-const accountKey = "deskfleet.account"
-const verifierKey = "deskfleet.login-verifier"
-
-/** The browser hosts no daemon; all machine access is obtained through its signed-in account. */
+/** The browser owns no bearer token; its login session stays in an HttpOnly cookie. */
 export async function browserClient(configuredServerUrl: string): Promise<DeskfleetDesktopApi> {
   const serverUrl = serverAddress(configuredServerUrl)
-  let account: SavedAccount = { serverUrl }
-  let initialError: string | undefined
-  const saved = sessionStorage.getItem(accountKey)
-  if (saved) {
-    const stored = JSON.parse(saved) as SavedAccount
-    if (stored.serverUrl === serverUrl) account = { serverUrl, token: stored.token, user: stored.user }
-  }
   const central = new HttpCentralClient({
-    account,
-    persist: async value => { sessionStorage.setItem(accountKey, JSON.stringify(value)) },
-    authorize: async client => {
-      const returnTo = `${location.origin}${location.pathname}`
-      const result = await client.authorizationUrl(returnTo)
-      sessionStorage.setItem(verifierKey, result.loginVerifier)
-      location.assign(result.authorizationUrl)
-    },
+    account: { serverUrl }, cookieAuth: true,
+    persist: async () => {},
+    authorize: async () => { location.assign("/auth/login") },
+    openExternal: async url => { location.assign(url) },
   })
-  const code = new URLSearchParams(location.hash.slice(1)).get("loginCode")
-  if (code) {
-    const verifier = sessionStorage.getItem(verifierKey)
-    sessionStorage.removeItem(verifierKey)
-    history.replaceState(null, "", location.pathname + location.search)
-    try {
-      if (!verifier) throw new Error("The login session has expired. Sign in again.")
-      await central.exchange(code, verifier)
-    } catch (reason) { initialError = reason instanceof Error ? reason.message : String(reason) }
-  }
   const unavailable = async (): Promise<never> => { throw new Error("Select a machine to continue") }
   const subscribe = () => () => {}
   const signaling = { offer: unavailable, candidate: unavailable, close: unavailable, onEvent: subscribe }
   return {
-    platform: "web", locale: resolveAppLocale(navigator.languages), central, siteAdministration: central, initialError,
+    platform: "web", locale: resolveAppLocale(navigator.languages), central, siteAdministration: central,
     files: createBrowserFiles(central),
     settings: {
       get: async () => ({ enabled: false, status: "stopped" }), setLocalAgentEnabled: unavailable,

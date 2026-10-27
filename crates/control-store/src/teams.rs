@@ -47,18 +47,16 @@ impl ControlStore {
     pub async fn team_usage(&self, user_id: &str, team_id: &str) -> Result<Value> {
         self.authorize_team(user_id, team_id, TeamAction::ReadUsage)
             .await?;
-        let row = one(
-            &self.db,
-            "SELECT jsonb_build_object(
-                'relayedBytes', (SELECT COALESCE(SUM(sent_bytes),0)::text FROM cp_turn_usage WHERE team_id=$1),
-                'activeSessionCount', (SELECT COUNT(*) FROM cp_sessions s JOIN cp_machines m ON m.id=s.machine_id WHERE m.team_id=$1 AND NOT m.revoked AND s.snapshot#>>'{session,archiveState}' IS DISTINCT FROM 'archived'),
-                'memberCount', (SELECT COUNT(*) FROM cp_members WHERE team_id=$1)
-            ) AS record",
-            vec![resource_id(team_id)?.into()],
-        )
-        .await?;
-        Ok(row.try_get("", "record")?)
+        let mut summary = self.billing_summary(team_id).await?;
+        let mut usage = summary["usage"].take();
+        usage["plan"] = summary["plan"].take();
+        usage["limits"] = summary["limits"].take();
+        usage["period"] = summary["period"].take();
+        usage["nextResetAt"] = summary["nextResetAt"].take();
+        usage["metering"] = summary["metering"].take();
+        Ok(usage)
     }
+
     pub async fn create_team(&self, user_id: &str, value: &str) -> Result<Team> {
         let value = name(value)?;
         let tx = self.db.begin().await?;
@@ -80,6 +78,11 @@ impl ControlStore {
         )
         .await?
         .try_get::<i64>("", "id")?;
+        tx.execute_raw(sql(
+            "INSERT INTO cp_billing_profiles(team_id,period_anchor) VALUES($1,$2)",
+            vec![id.into(), now_ms().into()],
+        ))
+        .await?;
         tx.execute_raw(sql(
             "INSERT INTO cp_members VALUES($1,$2,'admin')",
             vec![id.into(), user_id.into()],
@@ -123,6 +126,9 @@ impl ControlStore {
             &team_policy(&tx, user_id, team_id).await?,
             TeamAction::Delete,
         )?;
+        if tx.query_one_raw(sql("SELECT team_id FROM cp_billing_profiles WHERE team_id=$1 AND (customer_id IS NOT NULL OR subscription_id IS NOT NULL OR lease_until>$2) UNION ALL SELECT team_id FROM cp_checkout_attempts WHERE team_id=$1 LIMIT 1",vec![id.into(),now_ms().into()])).await?.is_some() {
+            return Err(Error::Conflict("team owns billing records and cannot be deleted"));
+        }
         if tx
             .query_one_raw(sql(
                 "SELECT id FROM cp_machines WHERE team_id=$1 LIMIT 1",
@@ -212,10 +218,7 @@ impl ControlStore {
         if role != "admin" && role != "member" {
             return Err(Error::Invalid("invalid team role"));
         }
-        let email = email.trim().to_lowercase();
-        if !email.contains('@') || email.len() > 320 {
-            return Err(Error::Invalid("invalid invitation email"));
-        }
+        let email = crate::normalize_email(email)?;
         let token = secret();
         let expires = now_ms() + 7 * 24 * 60 * 60 * 1000;
         self.db
@@ -251,6 +254,34 @@ impl ControlStore {
         }
         let id = invite.try_get::<i64>("", "team_id")?;
         let role = invite.try_get::<String>("", "role")?;
+        one(
+            &tx,
+            "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
+            vec![id.into()],
+        )
+        .await?;
+        let existing = tx
+            .query_one_raw(sql(
+                "SELECT user_id FROM cp_members WHERE team_id=$1 AND user_id=$2",
+                vec![id.into(), user_id.into()],
+            ))
+            .await?
+            .is_some();
+        if !existing {
+            let plan = crate::billing::effective_plan(&tx, id, self.hosted, now_ms()).await?;
+            if let Some(limit) = plan.limits().max_members {
+                let count: i64 = one(
+                    &tx,
+                    "SELECT COUNT(*) AS count FROM cp_members WHERE team_id=$1",
+                    vec![id.into()],
+                )
+                .await?
+                .try_get("", "count")?;
+                if count >= limit {
+                    return Err(Error::Conflict("member_limit"));
+                }
+            }
+        }
         tx.execute_raw(sql(
             "INSERT INTO cp_members VALUES($1,$2,$3) ON CONFLICT(team_id,user_id) DO NOTHING",
             vec![id.into(), user_id.into(), role.clone().into()],
@@ -277,7 +308,7 @@ async fn team_policy(
 ) -> Result<TeamPolicy> {
     let role = db
         .query_one_raw(sql(
-            "SELECT role FROM cp_members WHERE team_id=$1 AND user_id=$2",
+            "SELECT m.role FROM cp_members m JOIN cp_users u ON u.id=m.user_id WHERE m.team_id=$1 AND m.user_id=$2 AND u.email_verified AND NOT u.disabled",
             vec![resource_id(team_id)?.into(), user_id.into()],
         ))
         .await?

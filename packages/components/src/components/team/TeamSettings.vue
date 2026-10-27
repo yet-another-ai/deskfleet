@@ -6,7 +6,6 @@ import { useAccountSession } from "../../composables/useAccountSession.ts"
 import SettingsRow from "../settings/SettingsRow.vue"
 import TeamMachines from "./TeamMachines.vue"
 import TeamMembers from "./TeamMembers.vue"
-import TeamPlansUsage from "./TeamPlansUsage.vue"
 
 const { t } = useI18n()
 const id = useId()
@@ -45,7 +44,6 @@ async function rename(): Promise<void> {
       </form>
       <p v-if="error" role="alert" class="m-0 mt-2 text-sm text-ui-danger">{{ error }}</p>
     </section>
-    <TeamPlansUsage :key="`usage-${team.id}`" :team="team" />
     <TeamMembers :key="team.id" :team="team" :user-id="session.account.value.user?.id" />
     <TeamMachines />
   </template>

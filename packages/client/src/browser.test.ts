@@ -30,25 +30,28 @@ async function setup(saved?: { serverUrl: string; token: string; user: typeof us
   const api = await browserClient(`${serverUrl}/`)
   const central = api.central as HttpCentralClient
   clients.push(central)
-  return { central, fetch }
+  return { central, fetch, storage }
 }
 
 test("a fresh browser account uses the configured backend", async () => {
   const f = await setup()
-  expect(await f.central.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
+  expect(await f.central.status()).toEqual({ serverUrl, user, siteAdmin: false })
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: {} }))
   await f.central.site()
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/site`, expect.objectContaining({ headers: {} }))
+  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/site`, expect.objectContaining({ credentials: "include", headers: {} }))
+  expect(f.storage.getItem("deskfleet.account")).toBeNull()
 })
 
-test("saved credentials are restored only for the configured backend", async () => {
+test("browser authentication uses cookies and ignores saved bearer credentials", async () => {
   const f = await setup({ serverUrl, token: "saved-token", user })
   expect(await f.central.status()).toEqual({ serverUrl, user, siteAdmin: false })
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ headers: { Authorization: "Bearer saved-token" } }))
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: {} }))
 })
 
 test("browser storage cannot override the configured backend or reuse another server's token", async () => {
   const f = await setup({ serverUrl: "https://old.example", token: "old-token", user })
-  expect(await f.central.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
+  expect(await f.central.status()).toEqual({ serverUrl, user, siteAdmin: false })
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: {} }))
   await f.central.site()
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/site`, expect.objectContaining({ headers: {} }))
+  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/site`, expect.objectContaining({ credentials: "include", headers: {} }))
 })

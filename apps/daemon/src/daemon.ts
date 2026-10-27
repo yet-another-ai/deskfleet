@@ -1,3 +1,4 @@
+import type { AgentQuotaAuthority } from "./agent-quotas.ts"
 import { once } from "node:events"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -24,6 +25,7 @@ export async function startDaemon(port = 0, options: {
   permissionPlatform?: NodeJS.Platform
   waylandDesktopAccess?: WaylandDesktopPermissionApi
   agentProvider?: AgentProvider
+  agentQuotas?: AgentQuotaAuthority
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
   /** In-process fixtures only. Never enabled by configuration, IPC, or the CLI. */
   allowLocalControlForTests?: boolean
@@ -79,7 +81,7 @@ export async function startDaemon(port = 0, options: {
   }
   try {
     control = await startControlServer(peers, controlDirectory, undefined, undefined, () => { void close() }, permissions, options.agentProvider, {
-      allowLocalControlForTests: options.allowLocalControlForTests, openCatalog: options.openCatalog,
+      allowLocalControlForTests: options.allowLocalControlForTests, openCatalog: options.openCatalog, agentQuotas: options.agentQuotas,
     })
   } catch (error) {
     const cleanup = await Promise.allSettled([peers.closeAll(), server[Symbol.asyncDispose]()])

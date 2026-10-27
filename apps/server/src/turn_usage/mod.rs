@@ -50,21 +50,27 @@ async fn subscribe(client: &Client) -> io::Result<PubSub> {
 }
 
 async fn run(store: ControlStore, client: Client) {
+    let owner = uuid::Uuid::new_v4().to_string();
     loop {
+        if !matches!(store.claim_turn_collector(&owner).await, Ok(true)) {
+            time::sleep(Duration::from_secs(15)).await;
+            continue;
+        }
         match subscribe(&client).await {
             Ok(pubsub) => {
                 tracing::info!("TURN usage collector subscribed");
-                collect(&store, pubsub).await;
+                collect(&store, pubsub, &owner).await;
             }
             Err(error) => {
                 tracing::warn!(%error, "TURN usage subscription failed; retrying");
             }
         }
+        let _ = store.turn_collector_gap(&owner).await;
         time::sleep(RETRY_DELAY).await;
     }
 }
 
-async fn collect(store: &ControlStore, pubsub: PubSub) {
+async fn collect(store: &ControlStore, pubsub: PubSub, owner: &str) {
     let (mut sink, mut messages) = pubsub.split();
     let mut heartbeat = time::interval(Duration::from_secs(15));
     heartbeat.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
@@ -82,6 +88,9 @@ async fn collect(store: &ControlStore, pubsub: PubSub) {
                     tracing::warn!("TURN usage Redis heartbeat failed; reconnecting");
                     return;
                 }
+                if !matches!(store.heartbeat_turn_collector(owner).await, Ok(true)) {
+                    return;
+                }
                 continue;
             }
         };
@@ -97,7 +106,11 @@ async fn collect(store: &ControlStore, pubsub: PubSub) {
                 continue;
             }
         };
-        if store.record_turn_usage(&usage).await.is_err() {
+        if store
+            .record_turn_usage_owned(&usage, Some(owner))
+            .await
+            .is_err()
+        {
             tracing::warn!("TURN usage write failed; discarding event and reconnecting");
             return;
         }

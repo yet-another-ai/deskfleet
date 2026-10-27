@@ -111,6 +111,11 @@ export const router = createRouter({
           name: "settings-team",
           component: () => import("../components/team/TeamSettings.vue"),
         },
+        {
+          path: "plans",
+          name: "settings-plans",
+          component: () => import("../components/settings/PlansUsageSettings.vue"),
+        },
       ],
     },
     { path: "/:pathMatch(.*)*", redirect: "/" },

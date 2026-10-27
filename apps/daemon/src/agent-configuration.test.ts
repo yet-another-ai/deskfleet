@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { mkdtemp, rm } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
@@ -273,7 +274,7 @@ test("configuration discovery uses the target workspace without allocating a Ses
   const fake = fakeProvider()
   const catalog = new DaemonCatalog(directory)
   await catalog.init((_path, name) => openInMemoryCatalog(name))
-  const service = new AgentSessions(catalog, catalog.native, fake.provider)
+  const service = new AgentSessions(catalog, catalog.native, fake.provider, undefined, undefined, undefined, new TestAgentQuotas())
   await service.init()
   context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
   const workspace = await catalog.native.createWorkspace("Configuration target", [{ path: directory }, { path: tmpdir() }])
@@ -308,7 +309,7 @@ test("draft probes reuse startup, isolate callers, and invalidate changed launch
   await catalog.init((_path, name) => openInMemoryCatalog(name))
   const providers = new AgentProviders(directory, fake.provider)
   await providers.init()
-  const service = new AgentSessions(catalog, catalog.native, fake.provider, providers)
+  const service = new AgentSessions(catalog, catalog.native, fake.provider, providers, undefined, undefined, new TestAgentQuotas())
   await service.init()
   context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
   const workspace = await catalog.native.createWorkspace("Draft", [{ path: directory }])
@@ -351,7 +352,7 @@ test("closing Agent service closes a pending discovery process", async context =
   const fake = fakeProvider({ async newSession() { ready(); return new Promise(() => {}) } })
   const catalog = new DaemonCatalog(directory)
   await catalog.init((_path, name) => openInMemoryCatalog(name))
-  const service = new AgentSessions(catalog, catalog.native, fake.provider)
+  const service = new AgentSessions(catalog, catalog.native, fake.provider, undefined, undefined, undefined, new TestAgentQuotas())
   await service.init()
   context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
   const pending = assert.rejects(service.handle("_deskfleet/agent/configuration", { provider: "codex" }, service.actor()), /service is stopping/i)
@@ -370,7 +371,7 @@ test("draft configuration resolves the selected provider's current launch settin
   const providers = new AgentProviders(directory, fake.provider)
   await providers.init()
   const configured = await providers.create({ template: "codex", name: "Work agent", binaryPath: "/tools/codex", env: { CODEX_HOME: "/work/agent" } })
-  const service = new AgentSessions(catalog, catalog.native, fake.provider, providers)
+  const service = new AgentSessions(catalog, catalog.native, fake.provider, providers, undefined, undefined, new TestAgentQuotas())
   await service.init()
   context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
   const workspace = await catalog.native.createWorkspace("Configuration target", [{ path: directory }])

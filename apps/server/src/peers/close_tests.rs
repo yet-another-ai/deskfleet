@@ -17,7 +17,8 @@ async fn inactive_desktop_close_keeps_owner_checks_and_waits_for_daemon_cleanup(
             database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
             public_url: "https://control.test".into(),
             web_origins: vec![],
-            oidc: None,
+            auth: crate::auth::config::AuthConfig::development("https://control.test"),
+            billing: Default::default(),
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
@@ -29,7 +30,10 @@ async fn inactive_desktop_close_keeps_owner_checks_and_waits_for_daemon_cleanup(
     let issuer = format!("https://fixture/{}", uuid::Uuid::new_v4());
     let user = state
         .store
-        .oidc_user(&issuer, "owner", "Owner", None, false)
+        .verified_user(
+            &format!("owner-{}@fixture.test", issuer.rsplit('/').next().unwrap()),
+            "Owner",
+        )
         .await
         .unwrap();
     let team = state.store.create_team(&user.id, "Control").await.unwrap();

@@ -1,87 +1,128 @@
-//! OIDC authorization code flow with PKCE, nonce verification and one-use app codes.
+//! deskfleet-owned identity. Browsers use HttpOnly sessions; native clients keep
+//! one-use browser exchange credentials in their secure main-process store.
+mod account;
+pub mod config;
+mod desktop;
+mod mail;
+mod passkeys;
+mod passwords;
+
 use crate::{
     AppState,
-    config::OidcConfig,
     error::{ApiError, Result},
 };
-use actix_web::{HttpRequest, HttpResponse, web};
-use deskfleet_control_store::{AuthSession, MachineAuth, secret, secret_hash};
-use openidconnect::{
-    AccessTokenHash, AuthorizationCode, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken,
-    IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
-    SignatureVerificationError, TokenResponse,
-    core::{CoreAuthenticationFlow, CoreClient, CoreJsonWebKeySet, CoreProviderMetadata},
+use actix_web::{
+    HttpRequest, HttpResponse,
+    cookie::{Cookie, SameSite, time::Duration},
+    http::StatusCode,
+    web,
 };
-use serde::Deserialize;
+use deskfleet_control_store::{AuthSession, MachineAuth, secret};
 use serde_json::{Value, json};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::Semaphore;
+use webauthn_rs::prelude::*;
 
-pub struct Oidc {
-    config: OidcConfig,
-    metadata: Mutex<Arc<CoreProviderMetadata>>,
-    http: reqwest::Client,
+const SESSION_COOKIE: &str = "deskfleet_session";
+const CSRF_COOKIE: &str = "deskfleet_csrf";
+pub struct AuthService {
+    pub config: config::AuthConfig,
+    webauthn: Webauthn,
+    mail: mail::Mailer,
+    hashing: Arc<Semaphore>,
 }
-impl Oidc {
-    pub async fn discover(config: OidcConfig) -> Result<Self> {
-        let issuer = IssuerUrl::new(config.issuer.clone())
-            .map_err(|_| ApiError::bad("invalid OIDC issuer"))?;
-        let http = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(std::time::Duration::from_secs(15))
+impl AuthService {
+    pub fn new(config: config::AuthConfig) -> Result<Self> {
+        let origin = Url::parse(&config.web_url)
+            .map_err(|_| ApiError::bad("invalid authentication Web URL"))?;
+        let webauthn = WebauthnBuilder::new(&config.rp_id, &origin)
+            .map_err(|_| ApiError::bad("invalid WebAuthn RP/origin"))?
+            .rp_name("deskfleet")
             .build()
-            .map_err(|_| ApiError::internal())?;
-        let metadata = CoreProviderMetadata::discover_async(issuer, &http)
-            .await
-            .map_err(|_| ApiError::bad("OIDC provider discovery failed"))?;
+            .map_err(|_| ApiError::bad("invalid WebAuthn configuration"))?;
+        let mail = mail::Mailer::new(config.mail.clone())?;
         Ok(Self {
             config,
-            metadata: Mutex::new(Arc::new(metadata)),
-            http,
+            webauthn,
+            mail,
+            hashing: Arc::new(Semaphore::new(4)),
         })
     }
-    fn return_to(&self, value: &str) -> bool {
-        allowed_return_to(&self.config.return_to, value)
-    }
-    async fn metadata(&self) -> Arc<CoreProviderMetadata> {
-        self.metadata.lock().await.clone()
-    }
-    async fn refresh_keys(
-        &self,
-        previous: &Arc<CoreProviderMetadata>,
-    ) -> Result<Arc<CoreProviderMetadata>> {
-        // Serialize only a missing-key refresh. Concurrent callbacks that used
-        // the same cache reuse its replacement instead of fetching again.
-        let mut metadata = self.metadata.lock().await;
-        if Arc::ptr_eq(&metadata, previous) {
-            let keys = CoreJsonWebKeySet::fetch_async(metadata.jwks_uri(), &self.http)
-                .await
-                .map_err(|_| ApiError::unauthorized())?;
-            *metadata = Arc::new((**metadata).clone().set_jwks(keys));
-        }
-        Ok(metadata.clone())
-    }
 }
-fn allowed_return_to(allowlist: &[String], value: &str) -> bool {
-    let Ok(url) = url::Url::parse(value) else {
-        return false;
-    };
-    if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
-        return false;
-    }
-    allowlist.iter().any(|allowed| {
-        allowed == value
-            || (allowed == "http://127.0.0.1:*/auth/callback"
-                && url.scheme() == "http"
-                && url.host_str() == Some("127.0.0.1")
-                && url.port().is_some()
-                && url.path() == "/auth/callback"
-                && url.query().is_none())
-    })
+pub fn configure(config: &mut web::ServiceConfig) {
+    config
+        .route("/auth/config", web::get().to(public_config))
+        .route("/auth/register", web::post().to(passwords::register))
+        .route("/auth/verify", web::post().to(passwords::verify))
+        .route("/auth/login", web::post().to(passwords::login))
+        .route("/auth/recovery", web::post().to(passwords::recovery))
+        .route(
+            "/auth/recovery/complete",
+            web::post().to(passwords::recover),
+        )
+        .route(
+            "/auth/reauthenticate",
+            web::post().to(passwords::reauthenticate),
+        )
+        .route("/auth/password", web::post().to(account::password))
+        .route("/auth/email", web::post().to(account::email))
+        .route("/auth/email/verify", web::post().to(account::verify_email))
+        .route("/auth/sessions", web::get().to(account::sessions))
+        .route(
+            "/auth/sessions/revoke-all",
+            web::post().to(account::revoke_all),
+        )
+        .route(
+            "/auth/sessions/{id}",
+            web::delete().to(account::revoke_session),
+        )
+        .route("/auth/registration", web::patch().to(account::registration))
+        .route(
+            "/admin/users/{id}/disabled",
+            web::patch().to(account::disabled),
+        )
+        .route("/admin/users", web::get().to(account::users))
+        .route("/auth/passkeys", web::get().to(passkeys::list))
+        .route(
+            "/auth/passkeys/register/options",
+            web::post().to(passkeys::registration_options),
+        )
+        .route(
+            "/auth/passkeys/register",
+            web::post().to(passkeys::register),
+        )
+        .route("/auth/passkeys/{id}", web::patch().to(passkeys::rename))
+        .route("/auth/passkeys/{id}", web::delete().to(passkeys::remove))
+        .route(
+            "/auth/passkeys/login/options",
+            web::post().to(passkeys::login_options),
+        )
+        .route("/auth/passkeys/login", web::post().to(passkeys::login))
+        .route(
+            "/auth/passkeys/reauthenticate/options",
+            web::post().to(passkeys::reauthentication_options),
+        )
+        .route(
+            "/auth/passkeys/reauthenticate",
+            web::post().to(passkeys::reauthenticate),
+        )
+        .route("/auth/start", web::post().to(desktop::start))
+        .route("/auth/desktop/complete", web::post().to(desktop::complete))
+        .route("/auth/exchange", web::post().to(desktop::exchange))
+        .route("/auth/logout", web::post().to(logout))
+        .route("/me", web::get().to(me));
 }
-
 pub async fn user(req: &HttpRequest, state: &AppState) -> Result<AuthSession> {
-    Ok(state.store.authenticate(bearer(req)?).await?)
+    if let Ok(token) = bearer(req) {
+        return Ok(state.store.authenticate(token).await?);
+    }
+    if !matches!(req.method().as_str(), "GET" | "HEAD" | "OPTIONS") {
+        browser_mutation(req, state)?;
+    }
+    let token = req
+        .cookie(SESSION_COOKIE)
+        .ok_or_else(ApiError::unauthorized)?;
+    Ok(state.store.authenticate(token.value()).await?)
 }
 pub async fn machine(req: &HttpRequest, state: &AppState) -> Result<MachineAuth> {
     Ok(state.store.authenticate_machine(bearer(req)?).await?)
@@ -90,202 +131,175 @@ fn bearer(req: &HttpRequest) -> Result<&str> {
     req.headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
+        .and_then(|s| s.strip_prefix("Bearer "))
         .filter(|s| !s.is_empty() && s.len() < 512)
         .ok_or_else(ApiError::unauthorized)
 }
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Start {
-    return_to: String,
-}
-pub async fn start(state: web::Data<AppState>, body: web::Json<Start>) -> Result<web::Json<Value>> {
-    let oidc = state
-        .oidc
-        .as_ref()
-        .ok_or_else(|| ApiError::bad("OIDC login is not configured"))?;
-    if !oidc.return_to(&body.return_to) {
-        return Err(ApiError::bad("login return URL is not allowed"));
+pub(crate) fn browser_origin(req: &HttpRequest, state: &AppState) -> Result<()> {
+    let origin = req
+        .headers()
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(ApiError::forbidden)?;
+    if !state
+        .auth
+        .config
+        .allowed_origins
+        .iter()
+        .any(|allowed| allowed == origin)
+    {
+        return Err(ApiError::forbidden());
     }
-    let client = CoreClient::from_provider_metadata(
-        (*oidc.metadata().await).clone(),
-        ClientId::new(oidc.config.client_id.clone()),
-        oidc.config.client_secret.clone().map(ClientSecret::new),
-    )
-    .set_redirect_uri(
-        RedirectUrl::new(oidc.config.callback_url.clone()).map_err(|_| ApiError::internal())?,
-    );
-    let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
-    let (url, csrf, nonce) = client
-        .authorize_url(
-            CoreAuthenticationFlow::AuthorizationCode,
-            CsrfToken::new_random,
-            Nonce::new_random,
-        )
-        .add_scope(Scope::new("profile".into()))
-        .add_scope(Scope::new("email".into()))
-        .set_pkce_challenge(challenge)
-        .url();
-    let login_verifier = secret();
-    state.store.save_login_attempt(csrf.secret(),json!({"returnTo":body.return_to,"nonce":nonce.secret(),"pkce":verifier.secret(),"loginVerifierHash":secret_hash(&login_verifier)})).await?;
-    Ok(web::Json(
-        json!({"authorizationUrl":url.to_string(),"loginVerifier":login_verifier}),
-    ))
+    Ok(())
 }
-#[derive(Deserialize)]
-pub struct Callback {
-    code: Option<String>,
-    state: String,
-    error: Option<String>,
+fn browser_mutation(req: &HttpRequest, state: &AppState) -> Result<()> {
+    browser_origin(req, state)?;
+    let cookie = req.cookie(CSRF_COOKIE).ok_or_else(ApiError::forbidden)?;
+    let header = req
+        .headers()
+        .get("x-csrf-token")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(ApiError::forbidden)?;
+    if cookie.value().len() < 32 || cookie.value() != header {
+        return Err(ApiError::forbidden());
+    }
+    Ok(())
 }
-pub async fn callback(
-    state: web::Data<AppState>,
-    query: web::Query<Callback>,
-) -> Result<HttpResponse> {
-    let oidc = state.oidc.as_ref().ok_or_else(ApiError::unauthorized)?;
-    let attempt = state.store.consume_login_attempt(&query.state).await?;
-    if query.error.is_some() {
-        return Err(ApiError::unauthorized());
+pub(crate) fn cookie_token(req: &HttpRequest) -> Option<String> {
+    req.cookie(SESSION_COOKIE).map(|c| c.value().to_owned())
+}
+pub(crate) async fn recent(req: &HttpRequest, state: &AppState) -> Result<AuthSession> {
+    let auth = user(req, state).await?;
+    if !state.store.recent_authentication(&auth.id).await? {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "recent_authentication_required",
+            "Confirm your password or Passkey to continue.",
+        ));
     }
-    let code = query.code.clone().ok_or_else(ApiError::unauthorized)?;
-    let metadata = oidc.metadata().await;
-    let mut client = CoreClient::from_provider_metadata(
-        (*metadata).clone(),
-        ClientId::new(oidc.config.client_id.clone()),
-        oidc.config.client_secret.clone().map(ClientSecret::new),
-    )
-    .set_redirect_uri(
-        RedirectUrl::new(oidc.config.callback_url.clone()).map_err(|_| ApiError::internal())?,
-    );
-    let tokens = client
-        .exchange_code(AuthorizationCode::new(code))
-        .map_err(|_| ApiError::unauthorized())?
-        .set_pkce_verifier(PkceCodeVerifier::new(field(&attempt, "pkce")?.into()))
-        .request_async(&oidc.http)
-        .await
-        .map_err(|_| ApiError::unauthorized())?;
-    let token = tokens.id_token().ok_or_else(ApiError::unauthorized)?;
-    let nonce = Nonce::new(field(&attempt, "nonce")?.into());
-    let verification = token.claims(&client.id_token_verifier(), &nonce);
-    let claims = match verification {
-        Ok(claims) => claims,
-        Err(ClaimsVerificationError::SignatureVerification(
-            SignatureVerificationError::NoMatchingKey,
-        )) => {
-            // The authorization code has already been consumed. Refresh only
-            // the trusted JWKS, then reverify this same token exactly once.
-            client = CoreClient::from_provider_metadata(
-                (*oidc.refresh_keys(&metadata).await?).clone(),
-                ClientId::new(oidc.config.client_id.clone()),
-                oidc.config.client_secret.clone().map(ClientSecret::new),
-            );
-            token
-                .claims(&client.id_token_verifier(), &nonce)
-                .map_err(|_| ApiError::unauthorized())?
-        }
-        Err(_) => return Err(ApiError::unauthorized()),
-    };
-    let verifier = client.id_token_verifier();
-    if let Some(expected) = claims.access_token_hash() {
-        let actual = AccessTokenHash::from_token(
-            tokens.access_token(),
-            token.signing_alg().map_err(|_| ApiError::unauthorized())?,
-            token
-                .signing_key(&verifier)
-                .map_err(|_| ApiError::unauthorized())?,
-        )
-        .map_err(|_| ApiError::unauthorized())?;
-        if actual != *expected {
-            return Err(ApiError::unauthorized());
-        }
+    Ok(auth)
+}
+// Only explicitly configured proxies may supply a client IP. They must overwrite
+// X-Real-IP; arbitrary forwarded headers from Internet clients are ignored.
+fn client_ip(req: &HttpRequest, config: &config::AuthConfig) -> Option<std::net::IpAddr> {
+    let peer = req.peer_addr()?.ip();
+    if config.trusted_proxy_ips.contains(&peer)
+        && let Some(forwarded) = req
+            .headers()
+            .get("x-real-ip")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse().ok())
+    {
+        return Some(forwarded);
     }
-    let name = claims
-        .name()
-        .and_then(|n| n.get(None))
-        .map(|s| s.as_str())
-        .unwrap_or(claims.subject().as_str());
-    let user = state
+    Some(peer)
+}
+async fn limit(req: &HttpRequest, state: &AppState, kind: &str, email: Option<&str>) -> Result<()> {
+    let ip = client_ip(req, &state.auth.config)
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|| "unknown".into());
+    let allowed = state
         .store
-        .oidc_user(
-            &oidc.config.issuer,
-            claims.subject().as_str(),
-            name,
-            claims.email().map(|s| s.as_str()),
-            claims.email_verified().unwrap_or(false),
-        )
+        .auth_rate_limit(&format!("{kind}:ip:{ip}"), 30, 60_000)
         .await?;
-    let code = state
-        .store
-        .new_login_code(&user.id, field(&attempt, "loginVerifierHash")?)
-        .await?;
-    let mut url =
-        url::Url::parse(field(&attempt, "returnTo")?).map_err(|_| ApiError::internal())?;
-    url.set_fragment(Some(&format!("loginCode={code}")));
-    Ok(HttpResponse::Found()
-        .insert_header(("Location", url.to_string()))
-        .insert_header(("Cache-Control", "no-store"))
-        .finish())
-}
-fn field<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
-    v[key].as_str().ok_or_else(ApiError::internal)
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Exchange {
-    code: String,
-    login_verifier: String,
-}
-pub async fn exchange(
-    state: web::Data<AppState>,
-    body: web::Json<Exchange>,
-) -> Result<web::Json<Value>> {
-    Ok(web::Json(
+    let address_allowed = if let Some(email) = email {
         state
             .store
-            .exchange_login_code(&body.code, &body.login_verifier)
-            .await?,
-    ))
+            .auth_rate_limit(&format!("{kind}:email:{email}"), 5, 60_000)
+            .await?
+    } else {
+        true
+    };
+    if !allowed || !address_allowed {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "Too many attempts. Try again later.",
+        ));
+    }
+    Ok(())
 }
-pub async fn me(req: HttpRequest, state: web::Data<AppState>) -> Result<web::Json<Value>> {
-    let auth = user(&req, &state).await?;
-    let site_admin = state.store.is_site_admin(&auth.user.id).await?;
-    Ok(web::Json(
-        json!({"user":auth.user,"sessionId":auth.id,"siteAdmin":site_admin}),
-    ))
+fn cookie(name: &str, value: String, state: &AppState, http_only: bool) -> Cookie<'static> {
+    Cookie::build(name.to_owned(), value)
+        .path("/")
+        .secure(state.auth.config.secure_cookies)
+        .http_only(http_only)
+        .same_site(SameSite::Lax)
+        .max_age(Duration::days(30))
+        .finish()
 }
-pub async fn logout(req: HttpRequest, state: web::Data<AppState>) -> Result<web::Json<Value>> {
+fn session_response(state: &AppState, mut session: Value) -> Result<HttpResponse> {
+    let token = session["token"]
+        .as_str()
+        .ok_or_else(ApiError::internal)?
+        .to_owned();
+    session
+        .as_object_mut()
+        .ok_or_else(ApiError::internal)?
+        .remove("token");
+    let csrf = secret();
+    session["csrfToken"] = json!(csrf);
+    Ok(HttpResponse::Ok()
+        .insert_header(("Cache-Control", "no-store"))
+        .cookie(cookie(SESSION_COOKIE, token, state, true))
+        .cookie(cookie(CSRF_COOKIE, csrf, state, false))
+        .json(session))
+}
+fn cleared(state: &AppState) -> HttpResponse {
+    let mut expired = cookie(SESSION_COOKIE, String::new(), state, true);
+    expired.make_removal();
+    HttpResponse::NoContent()
+        .insert_header(("Cache-Control", "no-store"))
+        .cookie(expired)
+        .finish()
+}
+async fn public_config(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse> {
+    let csrf = req
+        .cookie(CSRF_COOKIE)
+        .filter(|c| c.value().len() >= 32)
+        .map(|c| c.value().to_owned())
+        .unwrap_or_else(secret);
+    Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).cookie(cookie(CSRF_COOKIE,csrf.clone(),&state,false)).json(json!({"webUrl":state.auth.config.web_url,"registrationEnabled":state.store.registration_enabled().await?,"csrfToken":csrf})))
+}
+pub async fn me(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse> {
     let auth = user(&req, &state).await?;
-    state.store.logout(&auth.id).await?;
-    let peers = state.store.revoke_login_peers(&auth.id).await?;
+    let csrf = req
+        .cookie(CSRF_COOKIE)
+        .map(|c| c.value().to_owned())
+        .unwrap_or_else(secret);
+    Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).cookie(cookie(CSRF_COOKIE,csrf.clone(),&state,false)).json(json!({"user":auth.user,"sessionId":auth.id,"siteAdmin":state.store.is_site_admin(&auth.user.id).await?,"csrfToken":csrf})))
+}
+pub async fn logout(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse> {
+    let auth = user(&req, &state).await?;
+    let peers = state
+        .store
+        .revoke_user_sessions(&auth.user.id, Some(&auth.id))
+        .await?;
     state.hub.revoke(peers, "logout").await;
-    Ok(web::Json(json!({})))
+    state.hub.disconnect_login(&auth.id).await;
+    Ok(cleared(&state))
 }
 
 #[cfg(test)]
-mod tests {
+mod proxy_tests {
+    use super::*;
     #[test]
-    fn callback_allowlist_only_accepts_exact_web_or_loopback_port() {
-        let allowed = vec![
-            "https://app.example/auth/callback".into(),
-            "http://127.0.0.1:*/auth/callback".into(),
-        ];
-        for value in [
-            "https://app.example/auth/callback",
-            "http://127.0.0.1:49152/auth/callback",
-        ] {
-            assert!(super::allowed_return_to(&allowed, value));
-        }
-        for value in [
-            "https://app.example.evil/auth/callback",
-            "https://app.example/auth/callback?next=evil",
-            "http://localhost:49152/auth/callback",
-            "http://127.0.0.1:49152/other",
-            "http://user@127.0.0.1:49152/auth/callback",
-            "http://127.0.0.1:49152/auth/callback#fragment",
-            "http://127.0.0.1:49152/auth/callback?query",
-        ] {
-            assert!(!super::allowed_return_to(&allowed, value), "{value}");
-        }
+    fn forwarded_address_requires_an_explicitly_trusted_peer() {
+        let mut config = config::AuthConfig::development("http://localhost");
+        let req = actix_web::test::TestRequest::get()
+            .peer_addr("127.0.0.1:9000".parse().unwrap())
+            .insert_header(("X-Real-IP", "192.0.2.8"))
+            .to_http_request();
+        assert_eq!(client_ip(&req, &config).unwrap().to_string(), "127.0.0.1");
+        config.trusted_proxy_ips.push("127.0.0.1".parse().unwrap());
+        assert_eq!(client_ip(&req, &config).unwrap().to_string(), "192.0.2.8");
+        let invalid = actix_web::test::TestRequest::get()
+            .peer_addr("127.0.0.1:9000".parse().unwrap())
+            .insert_header(("X-Real-IP", "192.0.2.8, 192.0.2.9"))
+            .to_http_request();
+        assert_eq!(
+            client_ip(&invalid, &config).unwrap().to_string(),
+            "127.0.0.1"
+        );
     }
 }

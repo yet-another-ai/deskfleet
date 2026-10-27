@@ -4,7 +4,7 @@ deskfleet manages AI agents and their working environments across a team's
 computers. Users can browse workspaces and session history, inspect Git state,
 and access terminals or desktops on the machine doing the work.
 
-The central Actix Web API uses PostgreSQL for OIDC application sessions, Teams,
+The central Actix Web API uses PostgreSQL for application sessions, Teams,
 machine enrollment, access grants, and synchronized catalog/history. Electron
 and the independently hosted Web app share the Vue UI and authenticated client
 operations. Each TypeScript daemon connects outbound to the backend and keeps
@@ -52,8 +52,16 @@ and protocol types remain independent of Actix Web and Node-API.
 
 ## Identity and team access
 
-The first backend release prioritizes the officially hosted service and uses
-OIDC for user login. The Rust backend is API-only. An independently hosted Vue
+The identity design supports the hosted service and self-hosted installations with
+deskfleet-owned accounts with public email/password registration and Passkeys.
+[Identity and billing requirements](identity-billing.md) define the accepted
+plan model, account flows, and enforcement boundaries. Web sessions use HttpOnly
+cookies; Electron exchanges a browser authorization for a secure main-process
+credential. Stripe subscriptions belong to Teams; Enterprise is a separate
+Site Admin override. Existing development databases must be rebuilt for this
+schema; legacy identity/data migration is not supported.
+
+The Rust backend is API-only. An independently hosted Vue
 Web client and the Electron client share a common UI component package.
 Creating resources requires an authenticated user and a selected Team.
 Headless machines need enrollment into that Team before accepting
@@ -69,8 +77,9 @@ part of the initial role model. Server and daemon authorization still checks the
 requested action and Team rather than treating a connected peer as authority.
 
 Site administrators have a separate installation-wide grant attached to their
-existing OIDC user. They manage runtime site settings without selecting or
-joining a Team. A site grant does not grant Team membership, machine access,
+existing user account. They manage runtime site settings and the target design's
+manual Team Enterprise grants without selecting or joining a Team. A site grant
+does not grant Team membership, machine access,
 history access, or peer/MCP execution rights. Deployment operators explicitly
 grant and revoke this role through the server's `site-admin` command; neither
 the first login nor an email address confers authority. Each administrative API
@@ -94,8 +103,8 @@ announcement and apply the Team-creation setting. The creation switch applies to
 all users, including site administrators, while existing Teams and invitations
 remain usable. Settings writes and administrator grant/revoke
 operations record their changes atomically in central site audit. Database URLs,
-OIDC configuration, service origins, and transport credentials remain deployment
-configuration; machine-local settings remain owned by their daemons.
+authentication configuration, service origins, and transport credentials remain
+deployment configuration; machine-local settings remain owned by their daemons.
 
 The current automatically created local Team and discovery-token actor are
 development scaffolding for this flow. They do not establish authenticated Team
@@ -106,6 +115,28 @@ include an import flow for it.
 
 The [backend implementation scope](backend.md) tracks the required capabilities,
 existing local assumptions, delivery order, and acceptance criteria.
+
+### Subscription and quota ownership
+
+The target subscription model makes each Team the billing and entitlement
+boundary, including single-member Teams. Central PostgreSQL owns subscription
+coverage, Enterprise overrides, period-attributed TURN usage, and atomic Team
+member/Session capacity admission. Enterprise overrides a paid subscription
+without cancelling it. Self-hosted installations use the same authentication
+system with unlimited allowances and no payment integration. The
+[plan matrix](identity-billing.md#plan-matrix) owns exact limits.
+
+The daemon remains the sole owner of Session execution. It obtains central
+capacity admission before creating, forking, or restoring Sessions, including
+scheduled creation. It enforces per-Session consumed turns at its new-turn
+boundary and retains inherited usage on fork. Async catalog snapshots cannot
+serve as a concurrent capacity-admission ledger. Paid coverage expiry gates new
+work without relying on a peer reconnect; accepted work retains its lifecycle.
+
+The server applies TURN allowances when granting new relay access. Previously
+issued access keeps its original bounded lifetime after exhaustion or paid
+expiry. Neither subscription limits nor Enterprise change Team authorization,
+machine credentials, resource ownership, or existing peer expiry/revocation.
 
 ## Resource model
 
@@ -233,7 +264,7 @@ The store is a persistence boundary, not an authorization boundary.
 
 `deskfleet-migration` owns explicit, reversible SQLite catalog migrations. The
 central server uses independent PostgreSQL migrations in `deskfleet-control-store`
-and applies them before accepting requests. Central storage owns OIDC identities,
+and applies them before accepting requests. Central storage owns user identities,
 login sessions, Team policy, enrollment, peer grants, and replicas qualified by
 central machine and local resource IDs. The local journal retains SQLite-specific
 SQL. Both stores have integration tests against their actual database engines.
@@ -287,9 +318,11 @@ Internal destruction remains available for rollback and development tests only.
 Electron reaches the backend through its main-process transport and narrow
 preload bridge. Web uses its browser transport. `VITE_DESKFLEET_SERVER_URL`
 selects the backend at build time for both clients; the UI cannot change it.
-Desktop and Web development default to `http://127.0.0.1:8080`, while production
-Web builds without that variable use the page's origin. Saved account addresses
-only scope credentials to that backend and never override the compiled choice.
+Desktop and Web development default to `http://localhost:8080`, while production
+Web builds without that variable use the page's origin. Saved desktop account
+addresses only scope credentials to that backend and never override the compiled
+choice. Web authentication uses HttpOnly cookies, without storing the backend
+address in browser storage.
 Both use the selected central Machine identity for routes, caches, drafts, and
 commands; integer local IDs do
 not identify resources across machines. The UI displays synchronized history
@@ -744,7 +777,7 @@ and [agent guide](../../AGENTS.md) for repository conventions.
 
 ## Backend acceptance
 
-The [backend implementation scope](backend.md) covers OIDC and Teams,
+The [backend implementation scope](backend.md) covers identity and Teams,
 PostgreSQL, enrollment, authorized management APIs, signaling, synchronized
 catalog/history, reversible Session archive, and the shared Vue component
 package with an independent Web client. The acceptance workflow in both Electron
