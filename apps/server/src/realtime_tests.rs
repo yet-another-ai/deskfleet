@@ -419,3 +419,62 @@ async fn postgres_database_failure_does_not_fall_back_to_local_daemon_authority(
     assert_eq!(daemon.stopped().await, 1012);
     fixture.close().await;
 }
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_enrollment_returns_credential_when_routing_notification_fails() {
+    use actix_web::{App, test, web};
+
+    let mut fixture = Fixture::new().await;
+    // Enrollment storage stays healthy while this Hub's independent pool fails.
+    fixture.source.hub = fixture.target.hub.clone();
+    let mut roster =
+        Socket::client(&fixture.source, &fixture.login_id, &fixture.actor.user_id).await;
+    fixture.target.store.close().await.unwrap();
+    let login = fixture
+        .source
+        .store
+        .new_session(&fixture.actor.user_id)
+        .await
+        .unwrap();
+    let store = fixture.source.store.clone();
+    let state = web::Data::new(fixture.source);
+    let app = test::init_service(
+        App::new()
+            .app_data(state.clone())
+            .configure(crate::configure),
+    )
+    .await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/api/teams/{}/machines", fixture.machine.team_id))
+            .insert_header((
+                "Authorization",
+                format!("Bearer {}", login["token"].as_str().unwrap()),
+            ))
+            .set_json(json!({
+                "name": "New machine", "originId": uuid::Uuid::new_v4().to_string(),
+                "localMachineId": "1",
+            }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let enrollment: serde_json::Value = test::read_body_json(response).await;
+    let machine = store
+        .authenticate_machine(enrollment["token"].as_str().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        machine.machine.id,
+        enrollment["machine"]["id"].as_str().unwrap()
+    );
+    assert_eq!(machine.machine.team_id, fixture.machine.team_id);
+    assert_eq!(roster.stopped().await, 1012);
+    assert!(roster.messages.try_recv().is_err());
+    drop(app);
+    drop(state);
+    drop(fixture.target);
+    store.close().await.unwrap();
+}

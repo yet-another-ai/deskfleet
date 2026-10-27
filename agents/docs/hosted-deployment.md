@@ -172,7 +172,8 @@ it unset for the same-origin production Web layout above. For split hosts, build
 environment does not rewrite an existing bundle. Electron defaults to
 `http://localhost:8080`; build the official desktop artifacts with
 `VITE_DESKFLEET_SERVER_URL=https://fleet.example.com`. Neither client exposes
-a backend-address setting, so changing the API origin requires rebuilding it.
+a backend-address setting. Changing a compiled API origin requires rebuilding
+that client; an unset production Web build follows the origin serving its page.
 
 The tag workflow requires these GitHub Actions secrets, separate from API secrets:
 
@@ -206,9 +207,10 @@ Before tagging, account for these current behaviors:
    same-origin Actions artifact retained for 14 days, not a GitHub Release asset;
    retain and deploy the build from the selected tag.
 4. The tag build workflow currently does not supply `VITE_DESKFLEET_SERVER_URL`.
-   Configure its Electron build environment with the official API origin before
-   distributing the desktop artifacts. Otherwise they target `http://localhost:8080`,
-   and testers cannot change that address in the welcome screen.
+   Before tagging, configure its Electron build steps with the official API
+   origin. Without that change, desktop artifacts target `http://localhost:8080`,
+   and testers cannot change that address in the welcome screen. Keep the Web
+   build variable unset if its artifact should remain same-origin.
 5. The repository has no production Compose stack. The server image contains
    only the API, runs as UID/GID `10001:10001`, and needs no application data
    volume. PostgreSQL and execution-machine data need persistent storage.

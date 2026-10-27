@@ -160,13 +160,18 @@ pub async fn enroll(
             b.capabilities,
         )
         .await?;
-    s.notify_team(
+    if s.notify_team(
         &m.team_id,
         ControlMessage::MachinesChanged {
             team_id: m.team_id.clone(),
         },
     )
-    .await?;
+    .await
+    .is_err()
+    {
+        // Enrollment committed; its plaintext credential is only returned here.
+        tracing::warn!("machine enrolled but roster notification failed");
+    }
     Ok(web::Json(json!({"machine":m,"token":t})))
 }
 pub async fn machines(
