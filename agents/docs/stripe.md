@@ -27,8 +27,8 @@ are exposed. Create and validate these objects separately in test mode before
 providing live configuration.
 
 `DESKFLEET_AUTH_WEB_URL` supplies Checkout and Portal return URLs. The browser
-returns to the paying Team's settings. This redirect grants no entitlements;
-only a server-verified paid invoice can establish paid coverage.
+returns to the paying Team's Plans & Usage settings section. This redirect grants
+no entitlements; only a server-verified paid invoice can establish paid coverage.
 
 ## Billing Portal
 

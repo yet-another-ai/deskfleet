@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "./components/common/UiButton.vue"
-import { Bell, Palette, SlidersHorizontal, Users } from "@lucide/vue"
+import { Bell, CreditCard, Palette, SlidersHorizontal, Users } from "@lucide/vue"
 import { defineAsyncComponent, onBeforeUnmount, provide, ref, watch } from "vue"
 import { useEventListener, useTitle } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
@@ -15,6 +15,7 @@ import TeamOnboarding from "./components/account/TeamOnboarding.vue"
 import PreferencesSettings from "./components/settings/PreferencesSettings.vue"
 import AppearanceSettings from "./components/settings/AppearanceSettings.vue"
 import NotificationsSettings from "./components/settings/NotificationsSettings.vue"
+import PlansUsageSettings from "./components/settings/PlansUsageSettings.vue"
 import SettingsLayout from "./components/settings/SettingsLayout.vue"
 import AccountFooter from "./components/sidebar/AccountFooter.vue"
 import AccountNotices from "./components/sidebar/AccountNotices.vue"
@@ -36,15 +37,23 @@ const { ready, account, site, teams, team, machine, dialog, shellSettings } = se
 const route = router.currentRoute
 const returnParams = new URLSearchParams(location.search)
 let billingReturnPending = props.host.platform === "web" && returnParams.get("settings") === "plans"
+let billingReturnTeam: string | undefined
+function finishBillingReturn(machineId?: string): void {
+  if (!billingReturnTeam || team.value?.id !== billingReturnTeam || (machine.value && machine.value.id !== machineId)) return
+  billingReturnTeam = undefined
+  session.openSettings("plans")
+  returnParams.delete("team"); returnParams.delete("settings")
+  const search = returnParams.toString()
+  history.replaceState(null, "", location.pathname + (search ? `?${search}` : "") + location.hash)
+}
 watch([ready, account], async () => {
   if (!billingReturnPending || !ready.value || !account.value.user) return
   billingReturnPending = false
   const selected = returnParams.get("team")
-  if (selected && teams.value.some(value => value.id === selected)) await session.selectTeam(selected)
-  session.openSettings("team")
-  returnParams.delete("team"); returnParams.delete("settings")
-  const search = returnParams.toString()
-  history.replaceState(null, "", location.pathname + (search ? `?${search}` : "") + location.hash)
+  billingReturnTeam = selected && teams.value.some(value => value.id === selected) ? selected : team.value?.id
+  if (billingReturnTeam) await session.selectTeam(billingReturnTeam)
+  // A Machine surface initializes its own route before it signals readiness.
+  if (!machine.value) finishBillingReturn()
 }, { immediate: true })
 useTitle(() => site.value?.siteName ?? "deskfleet")
 useEventListener(window, "focus", () => {
@@ -72,7 +81,7 @@ const section = (value: AccountSettingsSection) => [
     <template v-if="ready && onboarding">
       <WelcomePage v-if="onboarding.step !== 'complete' || !account.user" :host="host" :state="onboarding" @change="onboarding = $event" />
       <!-- Each selected machine runs in its own application scope; see MachineSurface. -->
-      <MachineSurface v-else-if="machine" :key="machine.id" :host="host" :session="session" :machine="machine" />
+      <MachineSurface v-else-if="machine" :key="machine.id" :host="host" :session="session" :machine="machine" @ready="finishBillingReturn" />
       <SiteAdminView v-else-if="host.platform === 'web' && route.name === 'site-admin'" />
       <SettingsLayout v-else-if="shellSettings" @back="shellSettings = undefined">
         <template #nav>
@@ -80,8 +89,10 @@ const section = (value: AccountSettingsSection) => [
           <button type="button" :class="section('appearance')" @click="shellSettings = 'appearance'"><Palette :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.appearance") }}</button>
           <button v-if="host.platform !== 'web'" type="button" :class="section('notifications')" @click="shellSettings = 'notifications'"><Bell :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.notifications") }}</button>
           <button v-if="team" type="button" :class="section('team')" @click="shellSettings = 'team'"><Users :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("team.settings") }}</button>
+          <button v-if="team" type="button" :class="section('plans')" @click="shellSettings = 'plans'"><CreditCard :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("team.plansUsage") }}</button>
         </template>
         <TeamSettings v-if="shellSettings === 'team'" />
+        <PlansUsageSettings v-else-if="shellSettings === 'plans'" />
         <NotificationsSettings v-else-if="shellSettings === 'notifications'" />
         <AppearanceSettings v-else-if="shellSettings === 'appearance'" />
         <PreferencesSettings v-else />

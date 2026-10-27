@@ -79,7 +79,10 @@ async function open(target: "go" | "pro" | "portal"): Promise<void> {
 
 <template>
   <section :aria-labelledby="`${id}-title`" class="mb-8">
-    <h2 :id="`${id}-title`" class="ui-section-title mb-2">{{ t("team.plansUsage") }}</h2>
+    <header class="mb-8">
+      <h1 :id="`${id}-title`" class="ui-page-title">{{ t("team.plansUsage") }}</h1>
+      <p class="m-0 mt-1 truncate text-[13px] text-ui-text-muted">{{ team.name }}</p>
+    </header>
     <p v-if="isLoading && !state" role="status" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("team.usageLoading") }}</p>
     <div v-else-if="error && !state" class="ui-card flex items-center justify-between gap-4 p-4">
       <p role="alert" class="m-0 text-sm text-ui-danger">{{ t("team.usageError") }}</p>

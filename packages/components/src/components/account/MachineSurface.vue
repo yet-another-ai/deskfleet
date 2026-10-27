@@ -13,6 +13,7 @@ import { appearanceStoreKey, useAppearanceStore } from "../../stores/appearance.
 
 // The parent keys this component by machine, so each machine gets a fresh mount.
 const props = defineProps<{ host: DeskfleetDesktopApi; session: AccountSession; machine: Machine }>()
+const emit = defineEmits<{ ready: [machineId: string] }>()
 const appearance = useAppearanceStore()
 const root = useTemplateRef<HTMLElement>("root")
 let app: VueApp | undefined
@@ -31,6 +32,7 @@ onMounted(async () => {
   app = createApp(App).provide(accountSessionKey, props.session).provide(appearanceStoreKey, appearance).use(state).use(router).use(i18n)
   if (vaporInteropPlugin) app.use(vaporInteropPlugin)
   app.mount(root.value)
+  emit("ready", props.machine.id)
 })
 onBeforeUnmount(() => {
   disposed = true

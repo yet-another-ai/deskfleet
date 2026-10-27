@@ -6,7 +6,7 @@ import { accountSessionKey, createAccountSession, type AccountSession } from "..
 import { i18n } from "../../i18n/index.ts"
 import { fakeCentral, billingFixture } from "../../test/central.ts"
 import TeamPlansUsage from "./TeamPlansUsage.vue"
-import TeamSettings from "./TeamSettings.vue"
+import PlansUsageSettings from "../settings/PlansUsageSettings.vue"
 
 let view: VueWrapper | undefined
 let session: AccountSession | undefined
@@ -22,7 +22,7 @@ async function setup(configure?: (fake: ReturnType<typeof fakeCentral>) => void)
   configure?.(fake)
   session = createAccountSession(fake.central)
   await flushPromises()
-  view = mount(TeamSettings, { global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: session } } })
+  view = mount(PlansUsageSettings, { global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: session } } })
   await flushPromises()
   return fake
 }
@@ -35,7 +35,7 @@ const button = (label: string) => usage().findAll("button").find(value => value.
 test.each([["0", "0 B"], ["1610612736", "1.5 GiB"]])("unlimited relay shows %s used without a bar that reads as a limit", async (bytes, formatted) => {
   const fake = await setup(fake => fake.central.billing.mockResolvedValue(billingFixture({ relayedBytes: bytes, activeSessionCount: 0, memberCount: 1 })))
   expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith("team-1")
-  expect(usage().get("h2").text()).toBe("Plans & Usages")
+  expect(usage().get("h1").text()).toBe("Plans & Usages")
   expect(usage().get("[data-team-plan]").text()).toContain("Self-hosted")
   expect(metric("traffic").get("h3").text()).toBe("Relayed traffic")
   expect(metric("traffic").get("[data-team-usage-amount]").text()).toBe(formatted)

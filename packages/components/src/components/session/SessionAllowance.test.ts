@@ -30,12 +30,16 @@ test("the last few turns warn and link to the Team's plans", async () => {
   await mountWith(30, 24, 5)
   expect(view!.get('[role="status"]').text()).toContain("1 turn left of 30 in this Session")
   expect(view!.get("button").text()).toBe("View plans")
+  await view!.get("button").trigger("click")
+  expect(session!.shellSettings.value).toBe("plans")
 })
 
 test("a paused Session shows the daemon's reason and that queued input is kept", async () => {
   await mountWith(30, 0, 30, "This Session has used its 30 Free turns.")
   expect(view!.get('[role="status"]').text()).toContain("This Session has used its 30 Free turns.")
   expect(view!.text()).toContain("Queued input is kept.")
+  await view!.get("button").trigger("click")
+  expect(session!.shellSettings.value).toBe("plans")
 })
 
 test("unlimited plans show nothing", async () => {

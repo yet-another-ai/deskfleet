@@ -23,10 +23,10 @@ const detail = computed(() => inherited.value ? t("billing.inheritedTurns", { co
 
 <template>
   <AgentNotice v-if="snapshot.session.turnLimitReason" tone="warning" :text="snapshot.session.turnLimitReason" :detail="t('billing.resumeHint')">
-    <UiButton v-if="account" size="sm" class="shrink-0" @click="account.openSettings('team')">{{ t("billing.viewPlans") }}</UiButton>
+    <UiButton v-if="account" size="sm" class="shrink-0" @click="account.openSettings('plans')">{{ t("billing.viewPlans") }}</UiButton>
   </AgentNotice>
   <AgentNotice v-else-if="remaining !== null && remaining <= 5" tone="warning" :text="t('billing.turnsLeft', { remaining, limit }, remaining)" :detail="detail">
-    <UiButton v-if="account" size="sm" class="shrink-0" @click="account.openSettings('team')">{{ t("billing.viewPlans") }}</UiButton>
+    <UiButton v-if="account" size="sm" class="shrink-0" @click="account.openSettings('plans')">{{ t("billing.viewPlans") }}</UiButton>
   </AgentNotice>
   <p v-else-if="limit !== null" class="m-0 px-1 text-xs text-ui-text-muted tabular-nums" data-session-turns>
     {{ t("billing.sessionTurns", { used, limit }) }}<template v-if="detail"> · {{ detail }}</template>

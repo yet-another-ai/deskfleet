@@ -335,9 +335,11 @@ names remain implementation details. Separate microservices are not required.
 - Account: registration, verification/resend, login, recovery, credential and
   login-session management. Electron opens trusted Web authentication and resumes
   after exchange.
-- Team Plans & Usage: effective plan, usage/limits, period and next reset,
-  remaining TURN, and actionable restriction reasons. Unlimited and unavailable
-  are distinct from numeric zero.
+- Plans & Usage is its own settings section, available with or without an
+  enrolled machine, and shows the selected Team's effective plan, usage/limits,
+  period and next reset, remaining TURN, and actionable restriction reasons.
+  Unlimited and unavailable are distinct from numeric zero. Team settings keep
+  team details, members, and machines separate from subscription management.
 - Billing: checkout progress, renewal/cancellation state, payment methods,
   invoices, and recovery actions for authorized administrators.
 - Session: consumed/remaining Free turns including inherited usage, capacity
