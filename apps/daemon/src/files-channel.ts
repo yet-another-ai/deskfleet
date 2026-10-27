@@ -2,8 +2,8 @@ import { setTimeout as delay } from "node:timers/promises"
 import { FILE_MAX_PENDING_REQUESTS, FILE_PIPELINE_BYTES, FILE_RPC_METADATA_BYTES, FILE_RPC_QUEUE_BYTES, type FileEndpoint, type FileMethod, type FileMethods } from "./files-protocol.ts"
 import { encodeFileFrame, FileFrameDecoder, FILE_WIRE_CHUNK_BYTES, type FileFrame, type FileFrameHeader } from "./files-wire.ts"
 
-const METHODS = new Set<FileMethod>(["list", "stat", "resolve", "read", "begin", "mkdir", "write", "finish", "commit", "abort"])
-const READ_METHODS = new Set<FileMethod>(["list", "stat", "resolve", "read"])
+const METHODS = new Set<FileMethod>(["list", "stat", "resolve", "openRead", "read", "closeRead", "begin", "mkdir", "write", "finish", "commit", "abort"])
+const READ_METHODS = new Set<FileMethod>(["list", "stat", "resolve", "openRead", "read", "closeRead"])
 export const fileAction = (method: FileMethod): "files:read" | "files:write" => READ_METHODS.has(method) ? "files:read" : "files:write"
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
 

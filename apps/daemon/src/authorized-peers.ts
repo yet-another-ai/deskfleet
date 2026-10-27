@@ -163,7 +163,7 @@ export class AuthorizedPeers {
             this.#agents.sessionDirectory ? sessionId => this.#agents.sessionDirectory!(sessionId) : undefined,
             this.#agents.sessionAttachmentDirectory ? sessionId => this.#agents.sessionAttachmentDirectory!(sessionId) : undefined,
           ),
-          data => peer.sendData(FILES_CHANNEL, Buffer.from(data)),
+          data => peer.sendData(FILES_CHANNEL, Buffer.from(data.buffer, data.byteOffset, data.byteLength)),
           method => { this.#live(params.peerId, fileAction(method)) },
           failure,
         )

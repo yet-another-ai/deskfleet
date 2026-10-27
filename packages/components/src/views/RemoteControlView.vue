@@ -23,6 +23,7 @@ const route = useRoute(), router = useRouter()
 const fleet = useFleetStore(), terminals = useTerminalsStore()
 const machine = computed(() => fleet.findMachine(props.machineId))
 const currentTarget = computed(() => props.machineId === fleet.targetId)
+const controlLabel = computed(() => machine.value?.local ? "machine.localControl" : "machine.remoteControl")
 const files = platformClient.files
 const target = useFileTarget(() => props.machineId)
 const tabs = [
@@ -32,8 +33,9 @@ const tabs = [
   { id: "system", label: "systemStatus.title", icon: Activity },
 ] as const
 type Tool = typeof tabs[number]["id"]
-const active = computed<Tool>(() => tabs.find(tab => tab.id === route.query.tab)?.id
-  ?? (machine.value?.desktop ? "desktop" : "terminal"))
+const availableTabs = computed(() => tabs.filter(tab => tab.id !== "desktop" || !machine.value?.local))
+const active = computed<Tool>(() => availableTabs.value.find(tab => tab.id === route.query.tab)?.id
+  ?? (machine.value?.desktop && !machine.value.local ? "desktop" : "terminal"))
 const visited = ref(new Set<Tool>())
 watchImmediate(() => [machine.value?.id, active.value] as const, ([id, tool], previous) => {
   if (id !== previous?.[0]) visited.value = new Set()
@@ -60,13 +62,13 @@ const activeTerminal = computed({
 
 <template>
   <PaneHeader>
-    {{ t('machine.remoteControl') }}
+    {{ t(controlLabel) }}
     <ResourcePath v-if="machine" :segments="[machine.name]" />
   </PaneHeader>
   <TabsRoot v-if="machine" :key="machineId" :model-value="active" class="flex min-h-0 flex-1 flex-col px-4 pb-4" @update:model-value="select">
-    <TabsList :aria-label="t('machine.remoteControl')" class="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-ui-border" loop>
+    <TabsList :aria-label="t(controlLabel)" class="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-ui-border" loop>
       <TabsTrigger
-        v-for="tab in tabs" :key="tab.id" :value="tab.id"
+        v-for="tab in availableTabs" :key="tab.id" :value="tab.id"
         class="flex h-9 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap border-b-2 px-3 text-[13px]"
         :class="active === tab.id ? 'border-ui-accent text-ui-accent' : 'border-transparent text-ui-text-muted hover:text-ui-text'"
       ><component :is="tab.icon" :size="15" aria-hidden="true" />{{ t(tab.label) }}</TabsTrigger>
@@ -76,7 +78,7 @@ const activeTerminal = computed({
       <TerminalWorkspace v-if="currentTarget" v-model:active-id="activeTerminal" :terminals="machineTerminals" :create="() => terminals.create()" />
       <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('terminal.unavailable') }}</p>
     </TabsContent>
-    <TabsContent v-if="visited.has('desktop')" v-show="active === 'desktop'" value="desktop" force-mount class="flex min-h-0 flex-1 flex-col">
+    <TabsContent v-if="!machine.local && visited.has('desktop')" v-show="active === 'desktop'" value="desktop" force-mount class="flex min-h-0 flex-1 flex-col">
       <DesktopView :machine-id="machineId" :visible="active === 'desktop'" />
     </TabsContent>
     <TabsContent v-if="visited.has('files')" v-show="active === 'files'" value="files" force-mount class="flex min-h-0 flex-1 flex-col overflow-auto">

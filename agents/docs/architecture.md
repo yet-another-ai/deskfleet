@@ -185,6 +185,19 @@ The first path is the Session's default working directory. Workspace paths may
 be non-Git for main-context terminals and directory Sessions; creating a worktree
 Session requires Git-backed paths with a commit.
 
+The Electron client can open its local Workspace directories in an installed
+editor, external terminal, or system file manager. The default action opens the
+first directory; each additional directory has its own action. Discovery and
+launching belong to the client's native platform integration, with a maintained
+application registry. The main process verifies that the requested Machine is
+its daemon's active registration on the signed-in server, then resolves the
+Workspace directory from the daemon's live catalog through the authenticated
+`catalogList` management RPC. This read observes completed Workspace edits
+without waiting for catalog replication. The renderer supplies resource IDs and
+a directory position, never an executable or filesystem path.
+This integration is unavailable for remote Machines and Web clients; it does not
+start an editor on a remote daemon or create a forwarding connection.
+
 Archiving is the normal way to finish using a Session. It closes the provider
 and Session-owned terminals while retaining the Session, its Worktree and files,
 queued inputs, conversation/tool history, terminal transcripts, and audit.
@@ -385,6 +398,21 @@ The desktop app stays resident in the system tray (the macOS menu bar or the
 Windows notification area), so its daemon and notifications stay available.
 Closing its window or using an ordinary quit command hides it. The tray menu,
 OS session end, or a termination signal quits the app and its hosted daemon.
+
+Web clients use the browser Notifications API for task completion and pending
+input alerts while the page is running. Web and Electron share the account-wide
+task monitor, including its history baseline and event deduplication. The Web
+account shell owns its monitor and live notifications across machine changes;
+leaving the page stops observation, and account changes dismiss existing alerts.
+Returning from the browser's page cache starts a fresh monitor.
+
+Browser onboarding offers an explicit **Enable notifications** action before
+continuing into the account UI. Only that click, or the corresponding action in
+Notifications settings, requests browser permission. Denial, dismissal, and
+skipping do not block setup. The onboarding decision and notification preferences
+are stored per browser origin; the master and event switches remain independent
+of the browser's permission. Settings reports denied or unavailable permission.
+There is no push delivery after the page closes.
 
 The daemon is the ACP client and owns local agent processes or adapter
 connections. Each AgentSession belongs to a Workspace and captures its Worktree execution
@@ -591,7 +619,12 @@ Session provisioning still owns creation
 and deletion of managed worktrees.
 
 The machine's Remote control page groups Terminal, Desktop, File transfer, and
-System status.
+System status. The current Electron client's own daemon is identified by its
+active registration with the signed-in server and marked as the local machine.
+Its Local control page omits Desktop and defaults to Terminal, retaining File
+transfer and System status. Locality is client-relative; the machine's advertised
+desktop capability remains available to other clients. Web clients have no local
+daemon, so their machine controls remain remote.
 Tools mount when first visited and retain their connections while switching tabs.
 Machine-owned shells live here; Session-owned shells stay in the Session panel.
 System status reads CPU usage, physical memory, swap, and machine details from

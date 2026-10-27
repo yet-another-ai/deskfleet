@@ -40,7 +40,8 @@ const nativePeer: FilePeerFactory = async (iceServers, events) => {
   return {
     offer: () => peer.createOffer(), answer: sdp => peer.acceptAnswer(sdp), candidate: value => peer.addIceCandidate(value),
     async send(bytes) {
-      const data = Buffer.from(bytes), deadline = Date.now() + 5_000
+      // File framing owns these bytes until send settles; NAPI snapshots them.
+      const data = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), deadline = Date.now() + 5_000
       for (;;) {
         if (closed) throw new Error("File peer closed")
         try { await peer.sendData(FILES_CHANNEL, data); return }

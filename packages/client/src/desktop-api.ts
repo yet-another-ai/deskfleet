@@ -12,6 +12,7 @@ import type { ProvidersApi } from "./providers.ts"
 import type { OnboardingApi } from "./onboarding.ts"
 import type { SystemApi } from "./system.ts"
 import type { AppearanceApi } from "./appearance.ts"
+import type { LocalApplicationsApi } from "./applications.ts"
 
 /** The preload bridge exposed to the main renderer as `window.deskfleet`. */
 export interface DeskfleetDesktopApi {
@@ -21,6 +22,7 @@ export interface DeskfleetDesktopApi {
   siteAdministration?: SiteAdministrationApi
   onboarding?: OnboardingApi
   appearance?: AppearanceApi
+  applications?: LocalApplicationsApi
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
   locale: AppLocale

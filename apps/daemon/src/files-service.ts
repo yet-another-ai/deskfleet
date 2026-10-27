@@ -1,13 +1,15 @@
-import { open, readdir } from "node:fs/promises"
+import { readdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { FILE_CHUNK_BYTES, type FileEndpoint, type FileMethod, type FileMethods, type FileReply } from "./files-protocol.ts"
-import { absolutePath, defaultDirectory, fileEntry, fileError, fileRoots, sessionResourcePath, whole } from "./files-paths.ts"
+import type { FileEndpoint, FileMethod, FileMethods, FileReply } from "./files-protocol.ts"
+import { absolutePath, defaultDirectory, fileEntry, fileError, fileRoots, sessionResourcePath } from "./files-paths.ts"
+import { FileReads } from "./files-reads.ts"
 import { FileUploads } from "./files-uploads.ts"
 
 /** Machine-local file access shared by authorized peers and the local desktop host. */
 export class FilesService implements FileEndpoint {
   readonly #sessionDirectory?: (sessionId: string) => Promise<string>
   readonly #uploads: FileUploads
+  readonly #reads = new FileReads()
   #running: Promise<unknown> = Promise.resolve()
   #closed = false
 
@@ -57,7 +59,9 @@ export class FilesService implements FileEndpoint {
         const request = params as FileMethods["resolve"]["params"]
         return { value: await fileEntry(await sessionResourcePath(request.sessionId, request.uri, this.#sessionDirectory)) }
       }
-      case "read": return this.#read(params as FileMethods["read"]["params"])
+      case "openRead": return { value: await this.#reads.open(params as FileMethods["openRead"]["params"]) }
+      case "read": return this.#reads.read(params as FileMethods["read"]["params"])
+      case "closeRead": return { value: await this.#reads.release(params as FileMethods["closeRead"]["params"]) }
       case "begin": return { value: await this.#uploads.begin(params as FileMethods["begin"]["params"]) }
       case "mkdir": return { value: await this.#uploads.mkdir(params as FileMethods["mkdir"]["params"]) }
       case "write": return { value: await this.#uploads.write(params as FileMethods["write"]["params"], data) }
@@ -68,28 +72,9 @@ export class FilesService implements FileEndpoint {
     }
   }
 
-  async #read(params: FileMethods["read"]["params"]): Promise<FileReply<{ bytes: number }>> {
-    const path = absolutePath(params.path)
-    const offset = whole(params.offset, "read offset"), length = whole(params.length, "read length")
-    if (!length || length > FILE_CHUNK_BYTES) throw fileError("Invalid file chunk size", "invalid")
-    if (params.modifiedAt !== undefined && (!Number.isFinite(params.modifiedAt) || params.modifiedAt < 0)) throw fileError("Invalid file timestamp", "invalid")
-    const file = await open(path, "r")
-    try {
-      const info = await file.stat()
-      if (!info.isFile()) throw fileError("Only regular files can be read", "unsupported")
-      if (params.modifiedAt !== undefined && params.modifiedAt !== info.mtimeMs) throw fileError("Source file changed during transfer", "changed")
-      if (offset > info.size) throw fileError("Read offset exceeds file size", "invalid")
-      const buffer = Buffer.alloc(Math.min(length, info.size - offset))
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, offset)
-      const after = await file.stat()
-      if (after.mtimeMs !== info.mtimeMs || after.size !== info.size) throw fileError("Source file changed during transfer", "changed")
-      return { value: { bytes: bytesRead }, data: buffer.subarray(0, bytesRead) }
-    } finally { await file.close() }
-  }
-
   async close(): Promise<void> {
     this.#closed = true
     await this.#running
-    await this.#uploads.close()
+    await Promise.all([this.#reads.close(), this.#uploads.close()])
   }
 }

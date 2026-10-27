@@ -1,8 +1,8 @@
 diff --git a/dist/index.js b/dist/index.js
-index 3e927271d2e805d1b111dfa6082686c17b2f62ae..2ad93adff6e5c0049db0b0f1e53f6950a92d5cde 100755
+index f44e3aa..8e07ecc 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -38086,7 +38086,11 @@ var CodexAppServerSupervisor = class {
+@@ -43076,7 +43076,11 @@ var CodexAppServerSupervisor = class {
      let closed = false;
      let stdoutEnded = false;
      let wedgedTimer = null;
@@ -14,7 +14,7 @@ index 3e927271d2e805d1b111dfa6082686c17b2f62ae..2ad93adff6e5c0049db0b0f1e53f6950
        child.dead = true;
        for (const listener of [...this.deathListeners]) {
          try {
-@@ -38209,14 +38213,14 @@ var CodexAppServerSupervisor = class {
+@@ -43199,14 +43203,14 @@ var CodexAppServerSupervisor = class {
          process11.stdin?.end();
        } catch {
        }
@@ -31,27 +31,27 @@ index 3e927271d2e805d1b111dfa6082686c17b2f62ae..2ad93adff6e5c0049db0b0f1e53f6950
            if (exitSeen) return;
            exitSeen = true;
            markDead();
-@@ -42473,7 +42477,8 @@ var CodexAcpServer = class {
-       authMethods: getCodexAuthMethods(_params.clientCapabilities),
-       _meta: {
-         steering: {
--          supported: true
-+          supported: true,
-+          supportsPromptRequired: true
-         },
-         // Only AIR gets the AIR extension, see `docs/air-extensions.md`.
-         ...this.capabilities.airClient ? {
-@@ -43856,6 +43861,9 @@ Check ${configPath} and project .codex directories, especially their config.toml
+@@ -48042,7 +48046,8 @@ var CodexAcpServer = class {
+     ];
+     return {
+       steering: {
+-        supported: true
++        supported: true,
++        supportsPromptRequired: true
+       },
+       ...this.capabilities.airClient ? {
+         [JETBRAINS_META_KEY]: {
+@@ -49756,6 +49761,9 @@ You have been logged out. Please try again.`);
          return { outcome: "injected" };
        }
      }
 +    if (params._meta?.steering?.idleBehavior === "promptRequired") {
 +      return { outcome: "promptRequired", reason: "noRunningTurn" };
 +    }
-     return await this.startNewTurnFromSteering(params);
+     return await this.startNewTurnFromSteering(params, clientUserMessageId);
    }
    /**
-@@ -43994,7 +44002,8 @@ Check ${configPath} and project .codex directories, especially their config.toml
+@@ -49897,7 +49905,8 @@ You have been logged out. Please try again.`);
      }
      return {
        sessionId,

@@ -11,6 +11,7 @@ import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import ConfirmDelete from "../components/catalog/ConfirmDelete.vue"
 import DirectoryList from "../components/catalog/DirectoryList.vue"
+import OpenWithMenu from "../components/catalog/OpenWithMenu.vue"
 import WorkspaceForm from "../components/catalog/WorkspaceForm.vue"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useFleetStore } from "../stores/fleet.ts"
@@ -23,6 +24,8 @@ const router = useRouter()
 const location = computed(() => fleet.findWorkspace(props.workspaceId))
 const editable = computed(() => fleet.canManageCatalog && location.value?.machine.online)
 const directories = computed(() => location.value?.workspace.directories ?? [])
+const applicationTarget = computed(() => platformClient.platform !== "web" && location.value?.machine.local && platformClient.applications
+  ? { api: platformClient.applications, machineId: location.value.machine.id, workspaceId: props.workspaceId } : undefined)
 const editing = ref(false)
 const browseDirectories = platformClient.filesystem.listDirectories
 watch(() => props.workspaceId, () => { editing.value = false })
@@ -56,10 +59,13 @@ async function remove(): Promise<void> {
       <section>
         <div class="ui-section-header">
           <h2 class="ui-section-title">{{ t("worktree.directories") }}</h2>
-          <UiButton type="button" :disabled="!editable || editing" @click="editing = true">{{ t("workspace.edit") }}</UiButton>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <OpenWithMenu v-if="applicationTarget" :key="workspaceId" v-bind="applicationTarget" :disabled="!editable || editing || directories.length === 0" />
+            <UiButton type="button" :disabled="!editable || editing" @click="editing = true">{{ t("workspace.edit") }}</UiButton>
+          </div>
         </div>
         <WorkspaceForm v-if="editing" :key="workspaceId" class="ui-card p-4" :initial="{ name: location.workspace.name, directories }" :browse="browseDirectories" :machine-name="location.machine.name" :submit-label="t('catalog.save')" :disabled="!editable" :save="save" @cancel="editing = false" />
-        <DirectoryList v-else :directories="directories" :disabled="!editable" default-action />
+        <DirectoryList v-else :key="`directories:${workspaceId}`" :directories="directories" :disabled="!editable" :application-target="applicationTarget" default-action />
       </section>
       <section>
         <div class="ui-section-header">

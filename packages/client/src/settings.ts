@@ -23,6 +23,16 @@ export interface NotificationSettings {
   taskNeedsInput: boolean
 }
 
+export function validateNotificationSettings(value: unknown): NotificationSettings {
+  if (!value || typeof value !== "object"
+    || !("enabled" in value) || typeof value.enabled !== "boolean"
+    || !("taskCompleted" in value) || typeof value.taskCompleted !== "boolean"
+    || !("taskNeedsInput" in value) || typeof value.taskNeedsInput !== "boolean") {
+    throw new Error("Notification settings must contain boolean preferences")
+  }
+  return { enabled: value.enabled, taskCompleted: value.taskCompleted, taskNeedsInput: value.taskNeedsInput }
+}
+
 export type SettingsResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 export interface SettingsApi extends LocalAgentSettingsApi {

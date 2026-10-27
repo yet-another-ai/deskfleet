@@ -215,11 +215,19 @@ export class FileTransferManager implements FilesApi {
     if (file.kind !== "file") throw new Error("Select a file to preview")
     if (file.size > PREVIEW_BYTES) throw new Error("This file is too large to preview. Download it instead.")
     const data = new Uint8Array(file.size)
-    for (let offset = 0; offset < file.size; offset += FILE_CHUNK_BYTES) {
-      const length = Math.min(FILE_CHUNK_BYTES, file.size - offset)
-      const chunk = await endpoint.call("read", { path: file.path, offset, length, modifiedAt: file.modifiedAt })
-      if (!chunk.data || chunk.data.byteLength !== length) throw new Error("File changed while loading the preview")
-      data.set(chunk.data, offset)
+    const { readId } = (await endpoint.call("openRead", { path: file.path, modifiedAt: file.modifiedAt })).value
+    let readCompleted = false
+    try {
+      for (let offset = 0; offset < file.size; offset += FILE_CHUNK_BYTES) {
+        const length = Math.min(FILE_CHUNK_BYTES, file.size - offset)
+        const chunk = await endpoint.call("read", { path: file.path, offset, length, modifiedAt: file.modifiedAt, readId })
+        if (!chunk.data || chunk.data.byteLength !== length) throw new Error("File changed while loading the preview")
+        data.set(chunk.data, offset)
+      }
+      readCompleted = true
+    } finally {
+      try { await endpoint.call("closeRead", { readId }) }
+      catch (error) { if (readCompleted) throw error }
     }
     return { data, name: file.name, mimeType: mimeType(file.name) }
   }

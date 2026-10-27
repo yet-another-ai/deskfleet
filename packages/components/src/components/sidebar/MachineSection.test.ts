@@ -29,10 +29,16 @@ async function setup(machine: Partial<MachineSummary> = {}) {
   return { wrapper, router }
 }
 
-test("headless machines expose one control entry for their tools", async () => {
-  const { wrapper, router } = await setup()
+test.each([
+  { local: true, desktop: true, label: "Local control" },
+  { local: true, desktop: false, label: "Local control" },
+  { local: false, desktop: true, label: "Remote control" },
+  { local: false, desktop: false, label: "Remote control" },
+])("machines expose one control entry with local=$local and desktop=$desktop", async ({ local, desktop, label }) => {
+  const { wrapper, router } = await setup({ local, desktop })
   const links = wrapper.findAll("a")
-  expect(links.map(link => link.text())).toEqual(["Remote control"])
+  expect(links.map(link => link.text())).toEqual([label])
+  expect(wrapper.text().includes("This machine")).toBe(local)
   expect(links[0]!.attributes("href")).toBe("/machines/local-daemon/control")
   expect(links[0]!.attributes("aria-current")).toBe("page")
   expect(wrapper.find('[title="New terminal"]').exists()).toBe(false)
@@ -51,7 +57,7 @@ test("machine tool consolidation preserves Workspace and Session navigation", as
     }],
   })
   expect(wrapper.findAll("a").map(link => [link.text(), link.attributes("href")])).toEqual([
-    ["Remote control", "/machines/local-daemon/control"],
+    ["Local control", "/machines/local-daemon/control"],
     ["Project", "/workspaces/workspace"],
     ["Workspace shell", "/terminals/workspace-shell"],
     ["Implement feature", "/sessions/session"],

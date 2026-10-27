@@ -110,12 +110,12 @@ fn send_error(error: webrtc::error::Error) -> PeerError {
     }
 }
 
-pub(super) async fn send_data(channels: &Channels, label: &str, data: &Bytes) -> Result<()> {
+pub(super) async fn send_data(channels: &Channels, label: &str, data: Bytes) -> Result<()> {
     let channel = find(channels, label, data.len()).await?;
     // Upstream checks the configured 1 MiB budget and enqueues under one lock,
     // including sends from concurrent callers.
     channel
-        .try_send(BytesMut::from(data.as_ref()))
+        .try_send(BytesMut::from(data))
         .await
         .map_err(send_error)
 }

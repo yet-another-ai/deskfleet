@@ -1,7 +1,7 @@
 import { Notification } from "electron"
 import type { NotificationSettings } from "../../../../packages/client/src/settings.ts"
 import { t } from "./i18n.ts"
-import type { TaskNotification } from "./task-notification-monitor.ts"
+import type { TaskNotification } from "@deskfleet/client/task-notification-monitor"
 
 export class DesktopNotifications {
   readonly #settings: { get(): NotificationSettings }

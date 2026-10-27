@@ -13,11 +13,13 @@ export async function copyFileChunks(options: {
   let failure: { error: unknown } | undefined
   const fail = (error: unknown) => { failure ??= { error } }
   const check = () => { options.check(); if (failure) throw failure.error }
+  check()
+  const { readId } = (await source.call("openRead", { path: file.path, modifiedAt: file.modifiedAt })).value
 
   function queue(offset: number, length: number): void {
     // Observe read failures immediately, including reads ahead of a slower chunk.
     const reading = (length
-      ? source.call("read", { path: file.path, offset, length, modifiedAt: file.modifiedAt })
+      ? source.call("read", { path: file.path, offset, length, modifiedAt: file.modifiedAt, readId })
       : Promise.resolve({ value: { bytes: 0 }, data: new Uint8Array() })
     ).catch(error => { fail(error); return undefined })
     let writing: Promise<FileReply<{ bytes: number }>> | undefined
@@ -51,13 +53,18 @@ export async function copyFileChunks(options: {
       queue(offset, length)
       offset += length
       // A single capacity waiter avoids attaching a new handler to every
-      // outstanding chunk each time one of the 512 slots becomes available.
+      // outstanding chunk each time a pipeline slot becomes available.
       if (active.size >= FILE_PIPELINE_CHUNKS) await new Promise<void>(resolve => { available = resolve })
     } while (offset < file.size)
     await Promise.all(active)
     check()
+  } catch (error) {
+    fail(error)
+    throw error
   } finally {
     // No finish/commit/next item may race requests from this file, even on error.
     await Promise.all(active)
+    try { await source.call("closeRead", { readId }) }
+    catch (error) { if (!failure) throw error }
   }
 }

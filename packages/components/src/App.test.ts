@@ -171,7 +171,7 @@ test.each([
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("machine-control"))
   expect(dial).toHaveBeenCalledWith({ mode: "create", terminalId: expect.any(String), cols: 80, rows: 24, cwd })
   expect(router.currentRoute.value.query).toEqual({ tab: "terminal", terminal: dial.mock.calls[0]![0].terminalId })
-  expect(wrapper.get('[role="tablist"][aria-label="Remote control"] [aria-selected="true"]').text()).toBe("Terminal")
+  expect(wrapper.get('[role="tablist"][aria-label="Local control"] [aria-selected="true"]').text()).toBe("Terminal")
   expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
 })
 

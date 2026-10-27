@@ -2,10 +2,12 @@
 import { ChevronRight } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import type { Machine } from "@deskfleet/client/central"
+import { useAccountSession } from "../../composables/useAccountSession.ts"
 
 defineProps<{ machine: Machine }>()
 const emit = defineEmits<{ select: [] }>()
 const { t } = useI18n()
+const session = useAccountSession()
 </script>
 
 <template>
@@ -19,6 +21,7 @@ const { t } = useI18n()
       @click="emit('select')"
     >
       <span class="truncate">{{ machine.name }}</span>
+      <span v-if="machine.id === session?.localMachineId.value" class="ui-badge shrink-0 rounded-full font-normal">{{ t("machine.local") }}</span>
       <span v-if="!machine.online" class="ui-badge shrink-0 rounded-full font-normal">{{ t("machine.offline") }}</span>
       <ChevronRight :size="14" class="shrink-0" aria-hidden="true" />
     </button>

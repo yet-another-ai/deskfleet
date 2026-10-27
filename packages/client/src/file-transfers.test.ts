@@ -109,6 +109,28 @@ test("a rejected pipelined write drains outstanding chunks and removes staging w
   expect(await readdir(destination)).toEqual([])
 })
 
+test("a source changed after its last chunk fails final validation before destination finish or commit", async () => {
+  let sourceFile = "", finishes = 0, commits = 0
+  const { source, destination, manager } = await fixture(endpoint => ({
+    close: () => endpoint.close(),
+    async call(method, params, data) {
+      if (method === "finish") ++finishes
+      if (method === "commit") ++commits
+      const result = await endpoint.call(method, params, data)
+      if (method === "write") await writeFile(sourceFile, "changed after the source chunk was read")
+      return result
+    },
+  }))
+  sourceFile = join(source, "payload.bin")
+  await writeFile(sourceFile, "original")
+  const id = await manager.enqueue({ source: { target: { kind: "local" }, path: sourceFile }, destination: { target: remote, path: destination } })
+  const result = await settled(manager, id, "failed")
+  expect(result.error).toContain("Source file changed")
+  expect(finishes).toBe(0)
+  expect(commits).toBe(0)
+  expect(await readdir(destination)).toEqual([])
+})
+
 test("directory symlinks fail a folder task instead of silently omitting children", async () => {
   const { symlink } = await import("node:fs/promises")
   const { source, destination, manager } = await fixture()
@@ -141,6 +163,29 @@ test.each([
   await writeFile(join(directory, name), new Uint8Array(bytes))
   const result = await manager.readResource({ target: remote, sessionId: "12", uri: name })
   expect(result).toEqual({ name, mimeType, data: new Uint8Array(bytes) })
+})
+
+test.each([true, false])("preview cleanup preserves a prior read failure: %s", async readFails => {
+  const directory = await mkdtemp(join(tmpdir(), "deskfleet-preview-cleanup-"))
+  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  await writeFile(join(directory, "preview.txt"), "preview")
+  const service = new FilesService(async () => directory)
+  const readError = Object.assign(new Error("Source read failed"), { code: "EIO" })
+  const closeError = new Error("Source close validation failed")
+  const released = vi.fn()
+  const endpoint: FileEndpoint = {
+    async call(method, params, data) {
+      const result = await service.call(method, params, data)
+      if (method === "read" && readFails) throw readError
+      if (method === "closeRead") { released(); throw closeError }
+      return result
+    },
+    close: () => service.close(),
+  }
+  const manager = new FileTransferManager({ endpoint: async () => endpoint, chooseLocalDirectory: async () => null })
+  cleanups.push(() => manager.close())
+  await expect(manager.readResource({ target: remote, sessionId: "12", uri: "preview.txt" })).rejects.toBe(readFails ? readError : closeError)
+  expect(released).toHaveBeenCalledOnce()
 })
 
 test("closing the account interrupts pending file calls before waiting for the queue", async () => {

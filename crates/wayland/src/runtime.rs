@@ -240,7 +240,6 @@ fn share_error(error: &Error) -> Error {
         Error::StaleSource => Error::StaleSource,
         Error::InvalidInput(message) => Error::InvalidInput(message),
         Error::Portal(error) => Error::Portal(error.clone()),
-        Error::Response(error) => Error::Response(error.clone()),
         Error::Io(error) => Error::Unavailable(error.to_string()),
         Error::Input(message) => Error::Input(message.clone()),
         Error::Stopped => Error::Stopped,

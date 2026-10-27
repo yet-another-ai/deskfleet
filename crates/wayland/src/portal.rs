@@ -8,11 +8,7 @@ use std::{
 };
 
 use futures_util::StreamExt;
-use zbus::{
-    Connection, Proxy,
-    proxy::SignalStream,
-    zvariant::{OwnedObjectPath, OwnedValue, Value},
-};
+use zbus::{Connection, OwnedObjectPath, OwnedVariant, Proxy, Variant, proxy::SignalStream};
 
 use crate::{
     APP_ID, Error, PermissionSnapshot, PermissionStatus, Result, Source, input::Eis, token,
@@ -22,7 +18,7 @@ const DESTINATION: &str = "org.freedesktop.portal.Desktop";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const REMOTE: &str = "org.freedesktop.portal.RemoteDesktop";
 const SCREEN: &str = "org.freedesktop.portal.ScreenCast";
-type Properties = HashMap<String, OwnedValue>;
+type Properties = HashMap<String, OwnedVariant>;
 
 pub struct Live {
     pub connection: Connection,
@@ -43,10 +39,10 @@ impl Live {
             .ok_or(Error::StaleSource)?
             .clone();
         let proxy = desktop_proxy(&self.connection, SCREEN).await?;
-        let fd: zbus::zvariant::OwnedFd = proxy
+        let fd: zbus::OwnedFd = proxy
             .call(
                 "OpenPipeWireRemote",
-                &(&self.session, HashMap::<&str, Value<'_>>::new()),
+                &(&self.session, HashMap::<&str, Variant<'_>>::new()),
             )
             .await?;
         Ok((fd.into(), source))
@@ -130,7 +126,7 @@ pub async fn authorize(
     // file installed by the app uses this same basename on every launch.
     desktop_proxy(&connection, "org.freedesktop.host.portal.Registry")
         .await?
-        .call::<_, _, ()>("Register", &(APP_ID, HashMap::<&str, Value<'_>>::new()))
+        .call::<_, _, ()>("Register", &(APP_ID, HashMap::<&str, Variant<'_>>::new()))
         .await?;
     capabilities(&connection).await?;
     let bus = Proxy::new_owned(
@@ -149,7 +145,10 @@ pub async fn authorize(
         REMOTE,
         "CreateSession",
         None,
-        HashMap::from([("session_handle_token", Value::from(session_token.as_str()))]),
+        HashMap::from([(
+            "session_handle_token",
+            Variant::from(session_token.as_str()),
+        )]),
     )
     .await?;
     let session: OwnedObjectPath = String::try_from(
@@ -167,11 +166,11 @@ pub async fn authorize(
     .await?;
     let closed = session_proxy.receive_signal("Closed").await?;
     let mut options = HashMap::from([
-        ("types", Value::from(3u32)),
-        ("persist_mode", Value::from(2u32)),
+        ("types", Variant::from(3u32)),
+        ("persist_mode", Variant::from(2u32)),
     ]);
     if let Some(restore) = restore.as_deref() {
-        options.insert("restore_token", Value::from(restore));
+        options.insert("restore_token", Variant::from(restore));
     }
     request(
         &connection,
@@ -187,9 +186,9 @@ pub async fn authorize(
         "SelectSources",
         Some(&session),
         HashMap::from([
-            ("types", Value::from(1u32)),
-            ("multiple", Value::from(true)),
-            ("cursor_mode", Value::from(2u32)),
+            ("types", Variant::from(1u32)),
+            ("multiple", Variant::from(true)),
+            ("cursor_mode", Variant::from(2u32)),
         ]),
     )
     .await?;
@@ -239,10 +238,10 @@ pub(crate) async fn connect_input(
 ) -> Option<Eis> {
     let connected = async {
         let remote = desktop_proxy(connection, REMOTE).await?;
-        let fd: zbus::zvariant::OwnedFd = remote
+        let fd: zbus::OwnedFd = remote
             .call(
                 "ConnectToEIS",
-                &(session, HashMap::<&str, Value<'_>>::new()),
+                &(session, HashMap::<&str, Variant<'_>>::new()),
             )
             .await?;
         Eis::connect(fd.into()).await
@@ -305,10 +304,10 @@ async fn request(
     interface: &'static str,
     method: &str,
     session: Option<&OwnedObjectPath>,
-    mut options: HashMap<&str, Value<'_>>,
+    mut options: HashMap<&str, Variant<'_>>,
 ) -> Result<Properties> {
     let token = unique_token();
-    options.insert("handle_token", Value::from(token.clone()));
+    options.insert("handle_token", Variant::from(token.clone()));
     let sender = connection
         .unique_name()
         .ok_or(Error::Stopped)?
@@ -381,16 +380,16 @@ mod tests {
         let properties: Properties = HashMap::from([
             (
                 "size".into(),
-                Value::from((1920i32, 1080i32)).try_to_owned().unwrap(),
+                Variant::from((1920i32, 1080i32)).try_to_owned().unwrap(),
             ),
-            ("pipewire-serial".into(), OwnedValue::from(u64::MAX - 1)),
+            ("pipewire-serial".into(), OwnedVariant::from(u64::MAX - 1)),
             (
                 "mapping_id".into(),
-                Value::from("monitor-b").try_to_owned().unwrap(),
+                Variant::from("monitor-b").try_to_owned().unwrap(),
             ),
         ]);
         // Exercise the actual a(ua{sv}) response conversion before parsing it.
-        let wire = Value::from(vec![(42u32, properties), (43, HashMap::new())])
+        let wire = Variant::from(vec![(42u32, properties), (43, HashMap::new())])
             .try_to_owned()
             .unwrap();
         let streams = Vec::<(u32, Properties)>::try_from(wire).unwrap();

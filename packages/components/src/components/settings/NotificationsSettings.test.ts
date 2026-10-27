@@ -2,8 +2,14 @@ import { client, configureClient, getClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { NotificationSettings } from "../../../../client/src/settings.ts"
+import { getBrowserNotificationPermission, requestBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
 import { i18n } from "../../i18n/index.ts"
 import NotificationsSettings from "./NotificationsSettings.vue"
+
+vi.mock("@deskfleet/client/browser-notifications", () => ({
+  getBrowserNotificationPermission: vi.fn(() => "default"),
+  requestBrowserNotificationPermission: vi.fn(async () => "granted"),
+}))
 
 const host = getClient()
 const enabled: NotificationSettings = { enabled: true, taskCompleted: true, taskNeedsInput: true }
@@ -15,6 +21,9 @@ function render() {
 const toggle = (key: keyof NotificationSettings) => wrapper!.get(`[role="switch"][aria-labelledby="notifications-${key}-label"]`)
 
 beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(getBrowserNotificationPermission).mockReturnValue("default")
+  vi.mocked(requestBrowserNotificationPermission).mockResolvedValue("granted")
   vi.spyOn(client.settings, "getNotifications").mockResolvedValue({ ...enabled })
   vi.spyOn(client.settings, "setNotifications").mockImplementation(async settings => settings)
 })
@@ -110,10 +119,52 @@ test.each([
   for (const control of controls) expect(view.get(`#${control.attributes("aria-describedby")}`).text()).not.toBe("")
 })
 
-test("does not request or display desktop settings in the browser", async () => {
+test("browser settings show preferences and request permission only from the enable button", async () => {
   configureClient({ ...host, platform: "web" })
   const view = render()
   await flushPromises()
-  expect(client.settings.getNotifications).not.toHaveBeenCalled()
-  expect(view.find('[role="switch"]').exists()).toBe(false)
+  expect(client.settings.getNotifications).toHaveBeenCalledOnce()
+  expect(view.findAll('[role="switch"]')).toHaveLength(3)
+  expect(view.text()).toContain("Browser notifications")
+  expect(requestBrowserNotificationPermission).not.toHaveBeenCalled()
+  await toggle("taskCompleted").trigger("click")
+  await flushPromises()
+  expect(client.settings.setNotifications).toHaveBeenLastCalledWith({ ...enabled, taskCompleted: false })
+  expect(requestBrowserNotificationPermission).not.toHaveBeenCalled()
+  await view.findAll("button").find(button => button.text() === "Enable notifications")!.trigger("click")
+  await flushPromises()
+  expect(requestBrowserNotificationPermission).toHaveBeenCalledOnce()
+  expect(view.get('[role="status"]').text()).toBe("Notifications are allowed in this browser.")
+})
+
+test.each(["denied", "unsupported"] as const)("browser %s permission remains separate from notification preferences", async permission => {
+  configureClient({ ...host, platform: "web" })
+  vi.mocked(getBrowserNotificationPermission).mockReturnValue(permission)
+  const view = render()
+  await flushPromises()
+  expect(view.findAll("button").some(button => button.text() === "Enable notifications")).toBe(false)
+  expect(view.get('[role="status"]').text()).toContain(permission === "denied" ? "browser’s site settings" : "unavailable")
+  await toggle("enabled").trigger("click")
+  await flushPromises()
+  expect(client.settings.setNotifications).toHaveBeenLastCalledWith({ ...enabled, enabled: false })
+  expect(requestBrowserNotificationPermission).not.toHaveBeenCalled()
+  vi.mocked(getBrowserNotificationPermission).mockReturnValue("granted")
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(view.get('[role="status"]').text()).toBe("Notifications are allowed in this browser.")
+})
+
+test("browser permission request failures can be retried", async () => {
+  configureClient({ ...host, platform: "web" })
+  vi.mocked(requestBrowserNotificationPermission).mockRejectedValueOnce(new Error("Permission request failed"))
+  const view = render()
+  await flushPromises()
+  const enable = () => view.findAll("button").find(button => button.text() === "Enable notifications")!
+  await enable().trigger("click")
+  await flushPromises()
+  expect(view.get('[role="alert"]').text()).toBe("Permission request failed")
+  await enable().trigger("click")
+  await flushPromises()
+  expect(view.find('[role="alert"]').exists()).toBe(false)
+  expect(view.get('[role="status"]').text()).toBe("Notifications are allowed in this browser.")
 })

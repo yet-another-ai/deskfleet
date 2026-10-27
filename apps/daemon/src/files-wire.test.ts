@@ -19,19 +19,32 @@ test("file frames preserve binary bytes across fragmented prefixes and coalesced
   assert.equal(frames[1].metadataBytes, second.length)
 })
 
-test("a maximum-sized operation reassembles from bounded DataChannel messages", () => {
+test("maximum-sized ordinary reads and writes use two DataChannel messages", () => {
   const bytes = new Uint8Array(FILE_CHUNK_BYTES).map((_, index) => index % 251)
-  const frame = encodeFileFrame({ id: 1, method: "write", params: { transferId: "upload", path: "", offset: 0 } }, bytes)
-  assert(frame.length > FILE_WIRE_CHUNK_BYTES)
-  const decoder = new FileFrameDecoder()
-  const decoded = []
-  for (let offset = 0; offset < frame.length; offset += FILE_WIRE_CHUNK_BYTES) {
-    const complete = decoder.push(frame.subarray(offset, offset + FILE_WIRE_CHUNK_BYTES))
-    if (offset + FILE_WIRE_CHUNK_BYTES < frame.length) assert.deepEqual(complete, [])
-    decoded.push(...complete)
+  for (const header of [
+    { id: 1, method: "write" as const, params: { transferId: "upload", path: "图片.png", offset: 1024 * 1024 } },
+    { id: 2, value: { bytes: bytes.length } },
+  ]) {
+    const frame = encodeFileFrame(header, bytes)
+    assert.equal(Math.ceil(frame.length / FILE_WIRE_CHUNK_BYTES), 2)
+    const decoder = new FileFrameDecoder()
+    assert.deepEqual(decoder.push(frame.subarray(0, FILE_WIRE_CHUNK_BYTES)), [])
+    const decoded = decoder.push(frame.subarray(FILE_WIRE_CHUNK_BYTES))
+    assert.equal(decoded.length, 1)
+    assert.deepEqual(decoded[0].header, header)
+    assert.deepEqual(decoded[0].data, bytes)
   }
+})
+
+test("metadata larger than the usual headroom still fragments and preserves binary data", () => {
+  const bytes = new Uint8Array(FILE_CHUNK_BYTES).fill(231)
+  const header = { id: 1, method: "write" as const, params: { transferId: "upload", path: "图片/".repeat(500), offset: 0 } }
+  const frame = encodeFileFrame(header, bytes)
+  assert(frame.length > 2 * FILE_WIRE_CHUNK_BYTES)
+  const decoder = new FileFrameDecoder(), decoded = []
+  for (let offset = 0; offset < frame.length; offset += FILE_WIRE_CHUNK_BYTES) decoded.push(...decoder.push(frame.subarray(offset, offset + FILE_WIRE_CHUNK_BYTES)))
   assert.equal(decoded.length, 1)
-  assert.equal(decoded[0].header.id, 1)
+  assert.deepEqual(decoded[0].header, header)
   assert.deepEqual(decoded[0].data, bytes)
 })
 

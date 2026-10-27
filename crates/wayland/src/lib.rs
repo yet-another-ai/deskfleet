@@ -32,8 +32,6 @@ pub enum Error {
     InvalidInput(&'static str),
     #[error("Wayland portal failed: {0}")]
     Portal(#[from] zbus::Error),
-    #[error("invalid Wayland portal response: {0}")]
-    Response(#[from] zbus::zvariant::Error),
     #[error("Wayland desktop I/O failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("Wayland input failed: {0}")]

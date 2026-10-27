@@ -164,7 +164,8 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   const terminalId = terminals[0].id
   const query = new URLSearchParams(location.hash.split("?", 2)[1])
   require(query.get("tab") === "terminal" && query.get("terminal") === terminalId, "Default terminal route must select its control tab and terminal ID")
-  await until(() => document.querySelector('[role="tablist"][aria-label="Remote control"] [aria-selected="true"]')?.textContent?.trim() === "Terminal", "Selected Terminal control tab")
+  await until(() => document.querySelector('[role="tablist"][aria-label="Local control"] [aria-selected="true"]')?.textContent?.trim() === "Terminal", "Selected Terminal control tab")
+  require(![...document.querySelectorAll('[role="tablist"][aria-label="Local control"] [role="tab"]')].some(tab => tab.textContent?.trim() === "Desktop"), "Local controls must hide Desktop")
   await until(() => document.querySelector(`[role="tab"][data-terminal-id="${terminalId}"]`)?.getAttribute("aria-selected") === "true", "Selected default shell")
   return { workspaceId: workspace.id, worktreeId: main.id, terminalId }
 

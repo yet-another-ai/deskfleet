@@ -1,6 +1,7 @@
 import { installCentralAccount } from "./central-account.ts"
 import { installFiles } from "./files.ts"
 import { installPorts } from "./ports.ts"
+import { installLocalApplications } from "./applications.ts"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { join } from "node:path"
 import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
@@ -15,7 +16,7 @@ import { establishedDesktopProfile, OnboardingController } from "./onboarding-co
 import { installOnboarding } from "./onboarding.ts"
 import { NotificationSettingsController } from "./notification-settings.ts"
 import { DesktopNotifications } from "./notifications.ts"
-import { TaskNotificationMonitor } from "./task-notification-monitor.ts"
+import { TaskNotificationMonitor } from "@deskfleet/client/task-notification-monitor"
 import { installSettings, publishLocalAgentState } from "./settings.ts"
 import { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 import {
@@ -38,6 +39,7 @@ function start(): void {
     installRendererProtocol()
     installDesktopMediaIpc()
     const central = await installCentralAccount()
+    installLocalApplications(central)
     const files = installFiles(central)
     const ports = installPorts(central)
     installRendererPermissions()

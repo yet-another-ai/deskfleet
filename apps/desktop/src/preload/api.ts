@@ -12,6 +12,7 @@ import { filesApi } from "./files.ts"
 import { onboardingApi } from "./onboarding.ts"
 import { appearanceApi } from "./appearance.ts"
 import { portsApi } from "./ports.ts"
+import { applicationsApi } from "./applications.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -49,6 +50,7 @@ return {
   platform: process.platform as DeskfleetDesktopApi["platform"],
   locale: isAppLocale(locale) ? locale : DEFAULT_LOCALE,
   appearance: appearanceApi(),
+  applications: applicationsApi(),
   files: filesApi(),
   ports: portsApi(),
   settings: {

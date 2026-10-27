@@ -1,5 +1,5 @@
-import type { CentralApi, CentralEvent } from "@deskfleet/client/central"
-import type { AgentSnapshot } from "../../../daemon/src/agent-protocol.ts"
+import type { CentralApi, CentralEvent } from "./central.ts"
+import type { AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 
 export interface TaskNotification {
   kind: "taskCompleted" | "taskNeedsInput"
@@ -22,7 +22,7 @@ interface SeenMachine {
   sessions: Map<string, SeenSession>
 }
 
-/** Observes synchronized tasks in the main process, independently of the visible machine or route. */
+/** Observes synchronized tasks independently of the host's visible machine or route. */
 export class TaskNotificationMonitor {
   readonly #source: NotificationSource
   readonly #notify: (notification: TaskNotification) => void

@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest"
 import { FilesRpcClient } from "./files-rpc.ts"
-import { encodeFileFrame, FileFrameDecoder } from "../../../apps/daemon/src/files-wire.ts"
+import { encodeFileFrame, FileFrameDecoder, FILE_WIRE_CHUNK_BYTES } from "../../../apps/daemon/src/files-wire.ts"
 import { FILE_CHUNK_BYTES, FILE_MAX_PENDING_REQUESTS, FILE_PIPELINE_CHUNKS } from "../../../apps/daemon/src/files-protocol.ts"
 
 test("file RPC multiplexes binary replies and preserves actionable conflict errors", async () => {
@@ -44,6 +44,27 @@ test("an interrupted write rejects without replay and the next request reconnect
   expect(attempts).toBe(2)
   await client.close()
   expect(closes).toHaveBeenCalled()
+})
+
+test("a maximum-sized write uses two transport messages without a tiny final fragment", async () => {
+  const packets: Uint8Array[] = [], decoder = new FileFrameDecoder()
+  const payload = new Uint8Array(FILE_CHUNK_BYTES).map((_, index) => index % 251)
+  const client = new FilesRpcClient(async receive => ({
+    async send(bytes) {
+      packets.push(bytes)
+      for (const frame of decoder.push(bytes)) {
+        expect(frame.data).toEqual(payload)
+        receive(encodeFileFrame({ id: frame.header.id, value: { bytes: frame.data.length } }))
+      }
+    }, async close() {},
+  }))
+  try {
+    await expect(client.call("write", { transferId: "upload", path: "", offset: 0 }, payload)).resolves.toMatchObject({ value: { bytes: payload.length } })
+    expect(packets).toHaveLength(2)
+    expect(packets[0]!.length).toBe(FILE_WIRE_CHUNK_BYTES)
+    expect(packets[1]!.length).toBeGreaterThan(63 * 1024)
+    expect(packets[1]!.length).toBeLessThanOrEqual(FILE_WIRE_CHUNK_BYTES)
+  } finally { await client.close() }
 })
 
 test("a blocked transport accepts a complete 64 MiB window and leaves room for control requests", async () => {

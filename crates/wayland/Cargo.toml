@@ -13,7 +13,7 @@ rustix = { version = "1", features = ["time"] }
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-zbus = { version = "5.13", default-features = false, features = ["tokio"] }
+zbus = { version = "6.1", default-features = false, features = ["tokio", "proxy", "tracing"] }
 
 [lints]
 workspace = true

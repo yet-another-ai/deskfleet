@@ -5,12 +5,20 @@ import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouter } from "vue-router"
 import type { DirectoryBinding } from "../../stores/fleet-types.ts"
+import type { LocalApplicationsApi } from "../../../../client/src/applications.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
+import OpenWithMenu from "./OpenWithMenu.vue"
 
 /** With an `owner`, shells belong to that Session and open in its terminal panel. */
-const props = defineProps<{ directories: DirectoryBinding[]; disabled?: boolean; defaultAction?: boolean; owner?: { sessionId: string; worktreeId: string } }>()
+const props = defineProps<{
+  directories: DirectoryBinding[]
+  disabled?: boolean
+  defaultAction?: boolean
+  owner?: { sessionId: string; worktreeId: string }
+  applicationTarget?: { api: LocalApplicationsApi; machineId: string; workspaceId: string }
+}>()
 const layout = useLayoutStore()
 const { t } = useI18n()
 const router = useRouter()
@@ -52,6 +60,7 @@ async function open(cwd?: string): Promise<void> {
           <div v-if="directory.git" class="font-mono text-xs text-ui-text-faint">{{ directory.git.branch }}</div>
           <div v-else-if="directory.git === null" class="text-xs text-ui-text-faint">{{ t("panel.notGit") }}</div>
         </div>
+        <OpenWithMenu v-if="applicationTarget && index > 0" :key="directory.path" v-bind="applicationTarget" :directory-index="index" :directory-path="directory.path" :disabled="disabled" compact />
         <UiButton type="button" class="shrink-0" :disabled="disabled || launching" :aria-label="t('worktree.openTerminalAt', { path: directory.path })" @click="open(directory.path)">
           <SquareTerminal :size="15" aria-hidden="true" />{{ t("worktree.openTerminal") }}
         </UiButton>

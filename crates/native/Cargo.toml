@@ -22,6 +22,7 @@ rtc.workspace = true
 rand.workspace = true
 portable-pty.workspace = true
 sysinfo.workspace = true
+socket2.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 filedescriptor.workspace = true
