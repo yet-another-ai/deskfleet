@@ -160,8 +160,10 @@ first directory; each additional directory has its own action. Discovery and
 launching belong to the client's native platform integration, with a maintained
 application registry. The main process verifies that the requested Machine is
 its daemon's active registration on the signed-in server, then resolves the
-Workspace directory from the authenticated catalog. The renderer supplies
-resource IDs and a directory position, never an executable or filesystem path.
+Workspace directory from the daemon's live catalog through the authenticated
+`catalogList` management RPC. This read observes completed Workspace edits
+without waiting for catalog replication. The renderer supplies resource IDs and
+a directory position, never an executable or filesystem path.
 This integration is unavailable for remote Machines and Web clients; it does not
 start an editor on a remote daemon or create a forwarding connection.
 

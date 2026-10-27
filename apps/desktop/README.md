@@ -85,7 +85,9 @@ It checks platform installation locations and executable search paths without
 running applications during discovery. Launches resolve the selected application
 again and pass the directory as an argument or working directory, without shell
 interpolation. The preload bridge accepts application and resource IDs; the main
-process verifies local enrollment and resolves paths from the authorized catalog.
+process verifies local enrollment and resolves paths from the daemon's live catalog
+through the authenticated `catalogList` management RPC. Newly created or edited
+Workspace directories are available without waiting for central catalog sync.
 
 Management uses authenticated HTTP; live Agent, Git, terminal, and desktop traffic
 uses an authorized WebRTC peer with server-provided STUN/TURN settings. Offline
