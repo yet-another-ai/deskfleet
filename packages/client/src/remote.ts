@@ -118,9 +118,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         // current record so discovery also sees later capture-permission changes.
         const current = (await central.machines(machine.teamId)).find(value => value.id === machine.id)
         if (!current) throw new Error("Machine is no longer available in this team")
-        name = current.name
-        online = current.online
-        return { id: current.id, name, online, desktop: current.capabilities.desktop === true }
+        return { id: machine.id, name, online, desktop: current.capabilities.desktop === true }
       },
       capabilities: () => rpc("capabilities"),
       start: (options: DesktopStart) => {

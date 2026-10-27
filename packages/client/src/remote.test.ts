@@ -74,11 +74,14 @@ test("desktop control is requested explicitly when starting its authorized peer"
 
 test("desktop discovery reads capabilities published after enrollment and later permission changes", async () => {
   const f = fixture()
-  const current: Machine = { id: "central7", teamId: "team2", name: "Renamed", originId: "origin", localMachineId: "1", capabilities: {}, online: true }
+  const current: Machine = { id: "central7", teamId: "team2", name: "Remote", originId: "origin", localMachineId: "1", capabilities: {}, online: true }
   f.central.machines = vi.fn(async () => [structuredClone(current)])
-  expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Renamed", online: true, desktop: false })
+  f.emit({ type: "presence", machineId: "central7", online: true })
+  expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Remote", online: true, desktop: false })
   current.capabilities = { desktop: true }
-  expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Renamed", online: true, desktop: true })
+  expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Remote", online: true, desktop: true })
+  f.emit({ type: "presence", machineId: "central7", online: false })
+  expect((await f.remote.api.desktop.target()).online).toBe(false)
   current.capabilities = { desktop: false }
   expect((await f.remote.api.desktop.target()).desktop).toBe(false)
   expect(f.central.machines).toHaveBeenLastCalledWith("team2")
