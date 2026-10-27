@@ -6,6 +6,13 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 const detail = (error: unknown) => error instanceof Error ? error.message : String(error)
 const missing = (error: unknown) => ["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")
 const key = (path: string) => path.split(sep).join("/")
+// Windows briefly denies `.git/config` while another Git process holds it (common
+// during submodule add). Treat that as retryable contention, not a sticky failure.
+const CONFIG_LOCK_RETRIES = 40
+const transientGitConfigLock = (error: unknown) => {
+  const text = detail(error)
+  return /unable to access .+config['"]?: Permission denied/iu.test(text)
+}
 
 function git(root: string, args: string[], input?: string): Promise<string> {
   // check-ignore does not support literal pathspec magic. Its stdin paths are
@@ -44,6 +51,7 @@ export class GitWatch {
   #again = false
   #started = false
   #error: string | undefined
+  #configLockStreak = 0
   healthy = true
 
   constructor(root: string, changed: (error?: string) => void) {
@@ -83,6 +91,23 @@ export class GitWatch {
     // Only topology/ignore changes rebuild directory subscriptions, not file writes.
     this.#timer = setTimeout(() => { this.#timer = undefined; void this.#rebuild() }, 50)
     this.#timer.unref()
+  }
+
+  /** Retry a transient config lock without reporting a sticky watcher failure. */
+  async #deferConfigLock(): Promise<boolean> {
+    if (this.#closed) return false
+    this.#configLockStreak++
+    if (this.#configLockStreak > CONFIG_LOCK_RETRIES) {
+      this.#configLockStreak = 0
+      return false
+    }
+    const delayMs = Math.min(50 * this.#configLockStreak, 500)
+    // Always wait: inside an active rebuild `#schedule` would only set `#again`
+    // and a tight continue loop would spin on the still-locked config file.
+    // Keep the timer referenced so `await start()` cannot finish while a retry
+    // is owed (unref would let the event loop drain under test).
+    await new Promise<void>(resolve => { setTimeout(resolve, delayMs) })
+    return !this.#closed
   }
 
   #event(directory: string, metadata: boolean, event: string, filename: string | null): void {
@@ -142,15 +167,26 @@ export class GitWatch {
       while (this.#candidates.size && !this.#closed) {
         const candidates = new Map(this.#candidates)
         this.#candidates.clear()
-        const input = [...candidates.keys()].map(path => "./" + key(relative(this.root, path))).join("\0") + "\0"
-        const ignored = new Set((await git(this.root, ["check-ignore", "--no-index", "-z", "--stdin"], input)).split("\0").filter(Boolean).map(path => resolve(this.root, path)))
-        if (this.#closed) return
-        let changed = false
-        for (const [path, topology] of candidates) {
-          if (ignored.has(path)) this.#ignored.add(path)
-          else { changed = true; if (topology) void this.#topology(path) }
+        try {
+          const input = [...candidates.keys()].map(path => "./" + key(relative(this.root, path))).join("\0") + "\0"
+          const ignored = new Set((await git(this.root, ["check-ignore", "--no-index", "-z", "--stdin"], input)).split("\0").filter(Boolean).map(path => resolve(this.root, path)))
+          if (this.#closed) return
+          let changed = false
+          for (const [path, topology] of candidates) {
+            if (ignored.has(path)) this.#ignored.add(path)
+            else { changed = true; if (topology) void this.#topology(path) }
+          }
+          if (changed) this.#notify()
+        } catch (error) {
+          if (transientGitConfigLock(error) && await this.#deferConfigLock()) {
+            for (const [path, topology] of candidates) {
+              this.#candidates.set(path, this.#candidates.get(path) === true || topology)
+            }
+            this.#schedule()
+            return
+          }
+          throw error
         }
-        if (changed) this.#notify()
       }
     } catch (error) { this.#failure(error) }
     finally { this.#classifying = false }
@@ -177,11 +213,18 @@ export class GitWatch {
         this.#again = false
         try {
           await this.#scan()
+          this.#configLockStreak = 0
           // Writes while a new directory was being discovered must not leave a
           // snapshot cached from before its OS watch became active.
           if (this.#started && !this.#closed) this.#notify()
           this.#started = true
-        } catch (error) { this.#failure(error) }
+        } catch (error) {
+          if (transientGitConfigLock(error) && await this.#deferConfigLock()) {
+            this.#again = true
+            continue
+          }
+          this.#failure(error)
+        }
       } while (this.#again && !this.#closed)
     })()
     this.#rebuilding = pending

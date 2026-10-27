@@ -274,17 +274,54 @@ test("replacing a watched directory rebinds its watch and refreshes cached edits
   assert.deepEqual(f.errors, [])
 })
 
+test("transient .git/config permission errors are retried without a sticky failure", async context => {
+  let revParse = 0
+  const original = childProcess.execFile
+  const lock = "warning: unable to access '.git/config': Permission denied\nfatal: unknown error occurred while reading the configuration files"
+  const mock = context.mock.method(childProcess, "execFile", (...args: Parameters<typeof childProcess.execFile>) => {
+    const argv = args[1]
+    const callback = args.find(argument => typeof argument === "function") as ((error: Error | null, stdout: string, stderr: string) => void) | undefined
+    if (Array.isArray(argv) && argv.includes("rev-parse") && revParse++ === 0 && callback) {
+      const error = Object.assign(new Error("Command failed: git"), { code: 128 })
+      queueMicrotask(() => callback(error, "", `${lock}\n`))
+      return { stdin: { on() { return this }, end() { return this } }, stdout: { on() { return this } }, stderr: { on() { return this } }, on() { return this }, once() { return this } } as unknown as ReturnType<typeof childProcess.execFile>
+    }
+    return original(...args)
+  })
+  syncBuiltinESMExports()
+  context.after(() => { mock.mock.restore(); syncBuiltinESMExports() })
+  const f = await fixture(context)
+  assert.ok(revParse > 1, "rev-parse should retry after the injected lock")
+  assert.deepEqual(f.errors, [])
+  assert.equal((await f.inspection.status("1", [f.root])).repositories.length, 1)
+  await f.changed(() => writeFile(join(f.root, "source.txt"), "after transient lock\n"))
+})
+
 test("submodules use their own ignore rules and watch metadata outside the working tree", async context => {
   const f = await fixture(context)
+  // Finish submodule topology before watching. On Windows, `git submodule add`
+  // briefly locks `.git/config`; racing an open watcher yields Permission denied
+  // that is not a product failure once the lock is released.
+  f.stop()
   const source = join(f.root, "source-repository")
   await repository(source)
   await git(f.root, "-c", "protocol.file.allow=always", "submodule", "add", source, "module")
   await git(f.root, "commit", "--no-gpg-sign", "-am", "submodule")
-  await delay(400)
+  let events = 0
+  const errors: string[] = []
+  await f.watch([f.root], error => { events++; if (error) errors.push(error) })
   const module = join(f.root, "module")
-  await f.changed(() => writeFile(join(module, "source.txt"), "module change\n"))
-  await f.changed(() => git(module, "add", "source.txt"))
-  assert.deepEqual(f.errors, [])
+  async function changed(action: () => Promise<unknown>) {
+    const before = events
+    await action()
+    const until = Date.now() + 5_000
+    while (events === before && Date.now() < until) await delay(20)
+    assert.ok(events > before, "OS notification did not arrive")
+    assert.deepEqual(errors, [])
+  }
+  await changed(() => writeFile(join(module, "source.txt"), "module change\n"))
+  await changed(() => git(module, "add", "source.txt"))
+  assert.deepEqual(errors, [])
   assert.ok((await f.inspection.status("1", [f.root])).repositories[0]!.changes.some(change => change.path === "module"))
 })
 
