@@ -90,6 +90,38 @@ test("managed sessions preserve directory order, share a checkout for one revisi
   assert.equal(state.sessions.size, 0)
 })
 
+test("managed sessions can check out a selected local or remote base branch", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  await repository(source)
+  await git(source, "checkout", "-b", "feat/local")
+  await writeFile(join(source, "frontend", "source.txt"), "local branch content\n")
+  await git(source, "add", ".")
+  await git(source, "-c", "user.name=deskfleet test", "-c", "user.email=test@example.invalid", "commit", "--no-gpg-sign", "-m", "local branch")
+  const localRevision = await git(source, "rev-parse", "HEAD")
+  await git(source, "checkout", "-b", "temp-remote")
+  await writeFile(join(source, "frontend", "source.txt"), "remote branch content\n")
+  await git(source, "add", ".")
+  await git(source, "-c", "user.name=deskfleet test", "-c", "user.email=test@example.invalid", "commit", "--no-gpg-sign", "-m", "remote branch")
+  const remoteRevision = await git(source, "rev-parse", "HEAD")
+  await git(source, "update-ref", "refs/remotes/origin/release", remoteRevision)
+  await git(source, "checkout", "main")
+  await git(source, "branch", "-D", "temp-remote")
+
+  const state = catalogFixture([{ path: source }])
+  const managed = new ManagedSessionWorktrees(state.catalog, join(directory, "daemon"))
+  const fromLocal = await managed.create("1", undefined, "feat/local")
+  assert.equal(await git(fromLocal.worktree.directories[0]!.path, "rev-parse", "HEAD"), localRevision)
+  assert.equal(await readFile(join(fromLocal.worktree.directories[0]!.path, "frontend", "source.txt"), "utf8"), "local branch content\n")
+
+  const fromRemote = await managed.create("1", undefined, "origin/release")
+  assert.equal(await git(fromRemote.worktree.directories[0]!.path, "rev-parse", "HEAD"), remoteRevision)
+  assert.equal(await readFile(join(fromRemote.worktree.directories[0]!.path, "frontend", "source.txt"), "utf8"), "remote branch content\n")
+
+  await managed.destroy(fromLocal.id)
+  await managed.destroy(fromRemote.id)
+})
+
 test("changing or resetting the root affects new sessions and preserves cleanup after restart", async context => {
   const directory = await fixture(context)
   const source = join(directory, "source")

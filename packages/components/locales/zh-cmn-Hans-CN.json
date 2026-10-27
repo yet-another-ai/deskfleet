@@ -347,6 +347,8 @@
       "worktree": "从每个目录已提交的 HEAD 创建隔离的 Git 检出",
       "directory": "直接在工作区目录中工作，包括未提交的更改"
     },
+    "baseBranch": "基础分支",
+    "baseBranchChoice": "基础分支：{branch}",
     "model": "模型",
     "reasoningEffort": "推理强度",
     "mode": "模式",

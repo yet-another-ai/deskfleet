@@ -192,3 +192,26 @@ test("untracked symlinks show the target name without exposing target contents",
   assert.equal(diff.patch.includes("private target contents"), false)
   assert.equal(await readFile(join(base, "outside.txt"), "utf8"), "private target contents\n")
 })
+
+test("branches lists local and remote branches without remote HEAD symrefs and orders currentBranch first", async context => {
+  const base = await fixture(context)
+  const root = join(base, "source")
+  const plain = join(base, "plain")
+  await repository(root)
+  await mkdir(plain)
+  await git(root, "branch", "feat/alpha")
+  await git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+  await git(root, "update-ref", "refs/remotes/origin/feat/remote", "HEAD")
+  await git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+  await git(root, "checkout", "feat/alpha")
+  assert.deepEqual(await inspection.branches("1", root), {
+    workspaceId: "1",
+    currentBranch: "feat/alpha",
+    branches: ["feat/alpha", "main", "origin/feat/remote", "origin/main"],
+  })
+  assert.deepEqual(await inspection.branches("1", plain), {
+    workspaceId: "1",
+    currentBranch: null,
+    branches: [],
+  })
+})

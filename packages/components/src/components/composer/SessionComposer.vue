@@ -2,10 +2,11 @@
 import { client } from "@deskfleet/client/platform"
 import UiButton from "../common/UiButton.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
+import UiCheckbox from "../common/UiCheckbox.vue"
 import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, MessageSquare, Monitor, Plus, Sparkles, Square, Upload, X } from "@lucide/vue"
 import { useDropZone, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
-import { computed, reactive, ref, useId, useTemplateRef } from "vue"
+import { computed, reactive, ref, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
@@ -15,6 +16,7 @@ import { attachmentsFromFiles, createMachineFileAttachment, createPastedTextAtta
 import { fileSize } from "../../services/file-format.ts"
 import { commandDraft, type ComposerMention } from "../../services/composer-mentions.ts"
 import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
+import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import AgentUsage from "./AgentUsage.vue"
@@ -39,8 +41,11 @@ const attachments = defineModel<ComposerAttachment[]>("attachments", { default: 
 const mentions = defineModel<ComposerMention[]>("mentions", { default: () => [] })
 /** The execution context a new Session will use; only offered with `showTarget`. */
 const context = defineModel<AgentSessionContext>("context", { default: "worktree" })
+/** The base branch for a new worktree Session; only offered when `showTarget` and `context === "worktree"`. */
+const baseBranch = defineModel<string>("baseBranch")
 const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: [] }>()
 const { t } = useI18n()
+const agents = useAgentSessionsStore()
 const textarea = useTemplateRef<HTMLTextAreaElement>("textarea")
 const configurationSelector = useTemplateRef<InstanceType<typeof AgentConfigurationSelector>>("configurationSelector")
 const configuration = ref<AgentConfiguration | null>(null)
@@ -61,11 +66,37 @@ const commandInput = computed(() => commandDraft(draft.value) || mentions.value.
 const placeholder = computed(() => t(props.activeTurn ? "agent.backlogHint" : "composer.placeholder"))
 const checkout = computed(() => props.location?.worktree?.directories.find(directory => directory.git)?.git ?? undefined)
 const changes = computed(() => (checkout.value?.changes ?? []).reduce((total, change) => ({ additions: total.additions + change.additions, deletions: total.deletions + change.deletions }), { additions: 0, deletions: 0 }))
-const contexts = [
-  { id: "worktree", icon: GitBranch },
-  { id: "directory", icon: FolderOpen },
-] as const satisfies readonly { id: AgentSessionContext; icon: unknown }[]
-const selected = computed(() => contexts.find(option => option.id === context.value) ?? contexts[0])
+const availableBranches = ref<string[]>([])
+let branchProbeGeneration = 0
+watch(() => [props.showTarget, props.location?.workspace?.id, props.location?.machine.online] as const, async ([showTarget, workspaceId, online], previous) => {
+  const token = ++branchProbeGeneration
+  if (workspaceId !== previous?.[1]) {
+    availableBranches.value = []
+    baseBranch.value = undefined
+  }
+  if (!showTarget || !workspaceId || !online) {
+    if (!showTarget || !workspaceId) {
+      availableBranches.value = []
+      baseBranch.value = undefined
+    }
+    return
+  }
+  try {
+    const snapshot = await agents.gitBranches(workspaceId)
+    if (token !== branchProbeGeneration) return
+    const branches = snapshot?.branches ?? []
+    availableBranches.value = branches
+    if (!branches.length) {
+      baseBranch.value = undefined
+    } else if (!baseBranch.value || !branches.includes(baseBranch.value)) {
+      baseBranch.value = (snapshot?.currentBranch && branches.includes(snapshot.currentBranch)) ? snapshot.currentBranch : branches[0]
+    }
+  } catch {
+    if (token !== branchProbeGeneration) return
+    availableBranches.value = []
+    baseBranch.value = undefined
+  }
+}, { immediate: true })
 const { isOverDropZone } = useDropZone(dropZoneRef, {
   onDrop(files) {
     if (files?.length && !props.disabled && !props.submitting) void addFiles(files)
@@ -126,22 +157,29 @@ function keydown(event: KeyboardEvent): void {
       </template>
       <template v-if="showTarget && location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
-        <DropdownMenuRoot :modal="false">
-          <DropdownMenuTrigger class="inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :aria-label="t('composer.contextChoice', { context: t(`composer.contextOption.${selected.id}`) })" data-composer-context>
-            <component :is="selected.icon" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ t(`composer.contextOption.${selected.id}`) }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-          </DropdownMenuTrigger>
-          <DropdownMenuPortal>
-          <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.context')" class="ui-menu z-50 flex w-72 flex-col" loop>
-            <DropdownMenuRadioGroup v-model="context">
-            <DropdownMenuRadioItem v-for="option in contexts" :key="option.id" as="button" type="button" :value="option.id" class="ui-menu-item items-start">
-              <component :is="option.icon" :size="15" :stroke-width="1.75" class="mt-0.5 shrink-0 text-ui-text-muted" aria-hidden="true" />
-              <span class="min-w-0 flex-1"><span class="block text-[13px] text-ui-text">{{ t(`composer.contextOption.${option.id}`) }}</span><span class="block text-xs text-ui-text-muted">{{ t(`composer.contextHint.${option.id}`) }}</span></span>
-              <Check v-if="option.id === context" :size="15" :stroke-width="2" class="mt-0.5 shrink-0" aria-hidden="true" />
-            </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-          </DropdownMenuPortal>
-        </DropdownMenuRoot>
+        <label class="inline-flex min-w-0 cursor-pointer select-none items-center gap-1.5 text-ui-text" :title="t(`composer.contextHint.${context}`)" data-composer-context>
+          <UiCheckbox :model-value="context === 'worktree'" :aria-label="t('composer.contextOption.worktree')" @update:model-value="context = $event ? 'worktree' : 'directory'" />
+          <span class="truncate">{{ t("composer.contextOption.worktree") }}</span>
+        </label>
+        <template v-if="context === 'worktree' && availableBranches.length && baseBranch">
+          <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
+          <DropdownMenuRoot :modal="false">
+            <DropdownMenuTrigger class="inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :aria-label="t('composer.baseBranchChoice', { branch: baseBranch })" data-composer-branch>
+              <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ baseBranch }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuPortal>
+            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-y-auto" loop>
+              <DropdownMenuRadioGroup v-model="baseBranch">
+              <DropdownMenuRadioItem v-for="branch in availableBranches" :key="branch" as="button" type="button" :value="branch" class="ui-menu-item">
+                <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+                <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ branch }}</span>
+                <Check v-if="branch === baseBranch" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+              </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+            </DropdownMenuPortal>
+          </DropdownMenuRoot>
+        </template>
       </template>
       <template v-else-if="location.worktree">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />

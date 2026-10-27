@@ -338,7 +338,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (command) commandReceived(command)
     }
   }
-  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe" | "_deskfleet/composer/references" | "_deskfleet/composer/resolve">>(
+  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/branches" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe" | "_deskfleet/composer/references" | "_deskfleet/composer/resolve">>(
     method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string, submittedDraft?: SubmittedAgentDraft,
   ): Promise<AgentMethods[M]["result"]> {
     const operationId = crypto.randomUUID()
@@ -427,11 +427,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const result = await mutation("_deskfleet/session/configure", { sessionId, ...choices })
     return mergeConfiguration(sessionId, result, sequence, commands)
   }
-  async function create(workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string): Promise<AgentSnapshot> {
+  async function create(workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string, baseBranch?: string): Promise<AgentSnapshot> {
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
     const choices = draftConfiguration.value.provider === provider ? draftConfiguration.value : undefined
+    const branch = workspaceId && context === "worktree" && baseBranch?.trim() ? baseBranch.trim() : undefined
     const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", {
-      ...(workspaceId ? { workspaceId } : {}), title, provider, context, model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode,
+      ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(branch ? { baseBranch: branch } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode,
     })
     snapshotReceived(snapshot)
     return snapshot
@@ -487,6 +488,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   async function restore(sessionId: string): Promise<void> {
     snapshotReceived(await mutation("_deskfleet/session/restore", { sessionId }))
   }
+  const gitBranches = (workspaceId: string) => call("_deskfleet/git/branches", { workspaceId })
   const gitStatus = (sessionId: string, force = false) => call("_deskfleet/git/status", { sessionId, ...(force ? { force } : {}) })
   const composerReferences = (params: ComposerReferenceSearch) => call("_deskfleet/composer/references", params)
   const resolveComposerReferences = (sessionId: string, references: ComposerReference[]) => call("_deskfleet/composer/resolve", { sessionId, references })
@@ -513,5 +515,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); client.close() })
-  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, composerReferences, resolveComposerReferences, gitStatus, gitDiff, watchGit }
+  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, composerReferences, resolveComposerReferences, gitBranches, gitStatus, gitDiff, watchGit }
 })

@@ -302,15 +302,63 @@ test("returning to unchanged conversation history scrolls after loading, while l
 })
 
 test("the new-session composer remembers a working-directory choice and creates that Session", async () => {
-  await wrapper.get('[aria-label="Session context: New worktree"]').trigger("click")
-  await page().findAll('[role="menuitemradio"]').find(item => item.text().startsWith("Working directory"))!.trigger("click"); await flushPromises()
-  expect(page().find('[role="menu"]').exists()).toBe(false)
+  const checkbox = wrapper.get('[role="checkbox"][aria-label="New worktree"]')
+  expect(checkbox.attributes("aria-checked")).toBe("true")
+  await checkbox.trigger("click")
+  await flushPromises()
+  expect(checkbox.attributes("aria-checked")).toBe("false")
   expect(window.localStorage.getItem("deskfleet.session-context")).toBe("directory")
   await wrapper.get("textarea").setValue("Fix it in place")
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
   expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ workspaceId, context: "directory" })
   window.localStorage.removeItem("deskfleet.session-context")
+})
+
+test("the new-session composer lists local and remote branches, defaults to currentBranch, hides when New worktree is unchecked, and passes the chosen baseBranch for worktree sessions", async () => {
+  wrapper.unmount()
+  disposePinia(pinia)
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+    if (method === "_deskfleet/git/branches") {
+      return { workspaceId, currentBranch: "main", branches: ["main", "feat/local", "origin/main", "origin/release"] }
+    }
+    return normal(method, params)
+  })
+  await router.push("/")
+  pinia = createPinia()
+  wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia, router, i18n], stubs: { LiveTerminal: true } } })
+  await flushPromises()
+
+  const checkbox = wrapper.get('[role="checkbox"][aria-label="New worktree"]')
+  expect(checkbox.attributes("aria-checked")).toBe("true")
+  const branchTrigger = wrapper.get('[data-composer-branch]')
+  expect(branchTrigger.attributes("aria-label")).toBe("Base branch: main")
+  expect(branchTrigger.text()).toBe("main")
+
+  await checkbox.trigger("click")
+  await flushPromises()
+  expect(wrapper.find('[data-composer-branch]').exists()).toBe(false)
+  await checkbox.trigger("click")
+  await flushPromises()
+  expect(wrapper.find('[data-composer-branch]').exists()).toBe(true)
+
+  await wrapper.get('[data-composer-branch]').trigger("click")
+  await flushPromises()
+  const items = page().findAll('[aria-label="Base branch"] [role="menuitemradio"]')
+  expect(items.map(item => item.text())).toEqual(["main", "feat/local", "origin/main", "origin/release"])
+  await items.find(item => item.text() === "origin/release")!.trigger("click")
+  await flushPromises()
+  expect(wrapper.get('[data-composer-branch]').text()).toBe("origin/release")
+
+  await wrapper.get("textarea").setValue("Start from release")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({
+    workspaceId,
+    context: "worktree",
+    baseBranch: "origin/release",
+  })
 })
 
 test("new sessions use the selected configured provider and show its name", async () => {

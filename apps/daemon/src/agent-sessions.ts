@@ -304,6 +304,13 @@ export class AgentSessions {
     if (method === "_deskfleet/command/get") {
       return this.journal.command(string(params.operationId, "operation ID"))
     }
+    if (method === "_deskfleet/git/branches") {
+      const workspaceId = id(params.workspaceId, "Workspace ID")
+      const workspace = (await this.#catalog.native.snapshot()).workspaces.find(value => value.id === workspaceId)
+      const directory = workspace?.worktrees.find(worktree => !worktree.sessionId)?.directories[0]
+      if (!directory) throw new Error("Unknown local workspace")
+      return this.#git.branches(workspaceId, directory.path)
+    }
     if (method === "_deskfleet/git/status" || method === "_deskfleet/git/diff") {
       const sessionId = id(params.sessionId, "Session ID")
       const directories = await this.#gitDirectories(sessionId)
@@ -447,12 +454,14 @@ export class AgentSessions {
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     if (!command.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
+    const baseBranch = command.params.baseBranch === undefined ? undefined : string(command.params.baseBranch, "base branch").trim()
+    if (baseBranch !== undefined && (!baseBranch || context !== "worktree")) throw new Error("Invalid base branch")
     const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : ""
     const session = await this.#admissions.allocate(command, "create", admissionGeneration =>
       this.journal.create(command, command.workspaceId, title, context, provider, { admissionGeneration }))
     command.sessionId = session.id
     try {
-      await this.#catalog.provisionSession(session.id, session.workspaceId, context)
+      await this.#catalog.provisionSession(session.id, session.workspaceId, context, baseBranch)
       await this.journal.serial(session.id, async () => {
         const snapshot = await this.journal.read(session.id)
         const ready = { ...snapshot.session, lifecycle: "ready" as const, updatedAt: timestamp() }

@@ -10,6 +10,7 @@ interface Peer { id: string; relayDeniedReason?: RelayDeniedReason | null; timer
 const management = new Set<string>([
   "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure",
   "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/command/get",
+  "_deskfleet/git/branches",
 ])
 
 /** One selected machine owns this adapter; the host replaces its Pinia scope on target changes. */

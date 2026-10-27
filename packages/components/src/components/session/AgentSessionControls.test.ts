@@ -1,4 +1,4 @@
-import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import type { AgentEvent } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test } from "vitest"
@@ -106,14 +106,13 @@ test("only a new Session offers its context, and an existing directory Session i
   const machine = { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], sessions: [], terminals: [] }
   const workspace = { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] }
   const fresh = mount(SessionComposer, { attachTo: document.body, props: { location: { machine, workspace }, showTarget: true, context: "worktree" }, global: { plugins: [i18n] } }); wrappers.push(fresh)
-  await button(fresh, "Session context: New worktree").trigger("click")
+  const checkbox = fresh.get('[role="checkbox"][aria-label="New worktree"]')
+  expect(checkbox.attributes("aria-checked")).toBe("true")
+  await checkbox.trigger("click")
   await flushPromises()
-  const options = new DOMWrapper(document.body).findAll('[role="menuitemradio"]')
-  expect(options.map(option => option.attributes("aria-checked"))).toEqual(["true", "false"])
-  await options[1]!.trigger("click")
   expect(fresh.emitted("update:context")).toEqual([["directory"]])
   const worktree = { id: "31", directories: [{ path: "/code/web" }], terminals: [] }
   const existing = mount(SessionComposer, { props: { location: { machine, workspace, worktree, session: { id: "30", context: "directory" } } }, global: { plugins: [i18n], stubs: { RouterLink: { template: "<a><slot /></a>" } } } }); wrappers.push(existing)
-  expect(existing.find('[aria-label^="Session context:"]').exists()).toBe(false)
+  expect(existing.find('[role="checkbox"]').exists()).toBe(false)
   expect(existing.text()).toContain("Working directory")
 })

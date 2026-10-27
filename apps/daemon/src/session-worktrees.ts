@@ -40,17 +40,41 @@ function pathsMatch(left: string, right: string): boolean {
   return left.replaceAll("\\", "/").toLowerCase() === right.replaceAll("\\", "/").toLowerCase()
 }
 
-async function sourceDirectory(path: string): Promise<SourceDirectory> {
+function validateBranchName(branch: string): void {
+  if (!branch || branch.startsWith("-") || branch === "HEAD" || branch.endsWith("/HEAD")
+    || branch.includes("..") || branch.includes("@{") || /[\0-\x20\x7f~^:?*[\\]/u.test(branch)) {
+    throw new Error(`Invalid base branch: ${branch}`)
+  }
+}
+
+async function resolveBranchRevision(root: string, branch: string): Promise<string | null> {
+  validateBranchName(branch)
+  for (const prefix of ["refs/heads/", "refs/remotes/"]) {
+    try { return await git(["-C", root, "rev-parse", "--verify", "--quiet", `${prefix}${branch}^{commit}`]) }
+    catch { /* try next ref namespace */ }
+  }
+  return null
+}
+
+async function sourceDirectory(path: string, baseBranch?: string, primaryRepository?: string): Promise<SourceDirectory> {
   const directory = await realpath(path)
   let root: string
   let repository: string
-  let revision: string
+  let head: string
   try {
     root = await realpath(await git(["-C", directory, "rev-parse", "--show-toplevel"]))
     repository = await realpath(await git(["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"]))
-    revision = await git(["-C", root, "rev-parse", "--verify", "HEAD"])
+    head = await git(["-C", root, "rev-parse", "--verify", "HEAD"])
   } catch (error) {
     throw new Error(`Cannot isolate ${path}: a Git working tree with a committed HEAD is required`, { cause: error })
+  }
+  let revision = head
+  if (baseBranch !== undefined) {
+    const resolved = await resolveBranchRevision(root, baseBranch)
+    if (resolved) revision = resolved
+    else if (!primaryRepository || repository === primaryRepository) {
+      throw new Error(`Cannot isolate ${path}: branch ${baseBranch} was not found`)
+    }
   }
   const relativePath = relative(root, directory)
   if (isAbsolute(relativePath) || relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
@@ -72,14 +96,16 @@ export class ManagedSessionWorktrees {
     this.#storage = storage
   }
 
-  async create(workspaceId: string, allocated?: CatalogWorkspaceSession): Promise<ManagedWorkspaceSession> {
+  async create(workspaceId: string, allocated?: CatalogWorkspaceSession, baseBranch?: string): Promise<ManagedWorkspaceSession> {
     const workspace = (await this.#catalog.snapshot()).workspaces.find(value => value.id === workspaceId)
     const main = workspace?.worktrees.find(worktree => !worktree.sessionId)
     if (!main || main.directories.length === 0) throw new Error("Workspace has no main directories")
     // Resolve all sources before allocating anything; non-Git workspaces remain
     // usable for terminals but cannot supply isolated agent sessions.
     const sources: SourceDirectory[] = []
-    for (const directory of main.directories) sources.push(await sourceDirectory(directory.path))
+    for (const directory of main.directories) {
+      sources.push(await sourceDirectory(directory.path, baseBranch, sources[0]?.repository))
+    }
     // A settings change affects the next Session, never an in-flight creation.
     const root = await this.#storage?.root()
     const physicalRoot = root ? await realpath(root) : undefined

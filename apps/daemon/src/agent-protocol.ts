@@ -1,5 +1,5 @@
 import type { ContentBlock, CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest, SessionNotification } from "@agentclientprotocol/sdk/unstable"
-import type { GitDiffRequest, GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
+import type { GitBranchesSnapshot, GitDiffRequest, GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 import type { ComposerReferenceResolve, ComposerReferenceResult, ComposerReferenceSearch } from "./composer-reference-protocol.ts"
 
 import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection, AgentPromptCapabilities } from "./agent-configuration-protocol.ts"
@@ -180,10 +180,11 @@ export interface AgentMethods {
   "_deskfleet/composer/resolve": { params: ComposerReferenceResolve; result: ContentBlock[] }
   "_deskfleet/session/configure": { params: AgentMutation & AgentConfigurationSelection; result: AgentConfiguration }
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
-  "_deskfleet/session/create": { params: { workspaceId?: string; operationId: string; title?: string; provider: string; context: AgentSessionContext } & AgentConfigurationSelection; result: AgentSnapshot }
+  "_deskfleet/session/create": { params: { workspaceId?: string; operationId: string; title?: string; provider: string; context: AgentSessionContext; baseBranch?: string } & AgentConfigurationSelection; result: AgentSnapshot }
   "_deskfleet/session/fork": { params: AgentMutation & { context: AgentSessionContext; title?: string }; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
+  "_deskfleet/git/branches": { params: { workspaceId: string }; result: GitBranchesSnapshot }
   "_deskfleet/git/status": { params: { sessionId: string; force?: boolean }; result: GitStatusSnapshot }
   "_deskfleet/git/diff": { params: GitDiffRequest; result: GitFileDiff }
   /** Viewer-owned, transient subscriptions; never written to the Session journal. */

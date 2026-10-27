@@ -347,6 +347,8 @@
       "worktree": "Isolated Git checkouts from each directory's committed HEAD",
       "directory": "Work in the Workspace's directories, including uncommitted changes"
     },
+    "baseBranch": "Base branch",
+    "baseBranchChoice": "Base branch: {branch}",
     "model": "Model",
     "reasoningEffort": "Reasoning",
     "mode": "Mode",

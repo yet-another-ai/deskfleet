@@ -28,6 +28,12 @@ export interface GitStatusSnapshot {
   directories: { path: string; repositoryId: string | null; error?: string }[]
 }
 
+export interface GitBranchesSnapshot {
+  workspaceId: string
+  currentBranch: string | null
+  branches: string[]
+}
+
 export interface GitChangedNotification {
   sessionId: string
   subscriptionId: string

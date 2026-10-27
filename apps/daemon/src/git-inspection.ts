@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { lstat, open, readlink, realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
-import type { GitDiffRequest, GitFileChange, GitFileDiff, GitFileStatus, GitRepositoryStatus, GitStatusSnapshot } from "./git-protocol.ts"
+import type { GitBranchesSnapshot, GitDiffRequest, GitFileChange, GitFileDiff, GitFileStatus, GitRepositoryStatus, GitStatusSnapshot } from "./git-protocol.ts"
 import { GitWatch } from "./git-watch.ts"
 
 const execute = promisify(execFile)
@@ -272,6 +272,41 @@ export class GitInspection {
     const repositories: GitRepositoryStatus[] = []
     for (const root of roots.values()) repositories.push(await this.#status(root, force))
     return { sessionId, repositories, directories }
+  }
+
+  async branches(workspaceId: string, path: string): Promise<GitBranchesSnapshot> {
+    try {
+      if (!(await stat(path)).isDirectory()) return { workspaceId, currentBranch: null, branches: [] }
+      const output = (await git(path, ["rev-parse", "--show-toplevel"])).text.replace(/\n$/u, "")
+      const root = await realpath(output)
+      const [symbolic, refs] = await Promise.all([
+        git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).then(value => value.text.replace(/\n$/u, "")).catch(() => null),
+        git(root, ["for-each-ref", "--format=%(refname)%00%(symref)", "refs/heads", "refs/remotes"]),
+      ])
+      const localBranches: string[] = []
+      const remoteBranches: string[] = []
+      const seen = new Set<string>()
+      for (const line of refs.text.split("\n")) {
+        if (!line) continue
+        const [ref = "", symref = ""] = line.split("\0")
+        if (ref.startsWith("refs/heads/")) {
+          const name = ref.slice("refs/heads/".length).trim()
+          if (name && !seen.has(name)) { seen.add(name); localBranches.push(name) }
+        } else if (ref.startsWith("refs/remotes/")) {
+          if (symref.trim() || ref.endsWith("/HEAD")) continue
+          const name = ref.slice("refs/remotes/".length).trim()
+          if (name && name !== "HEAD" && !seen.has(name)) { seen.add(name); remoteBranches.push(name) }
+        }
+      }
+      const currentBranch = symbolic && localBranches.includes(symbolic) ? symbolic : null
+      const branches = [
+        ...(currentBranch ? [currentBranch, ...localBranches.filter(name => name !== currentBranch)] : localBranches),
+        ...remoteBranches,
+      ]
+      return { workspaceId, currentBranch, branches }
+    } catch {
+      return { workspaceId, currentBranch: null, branches: [] }
+    }
   }
 
   async diff(request: GitDiffRequest, paths: string[]): Promise<GitFileDiff> {

@@ -56,7 +56,7 @@ export class DaemonCatalog {
     return this.#catalog
   }
 
-  async provisionSession(id: string, workspaceId: string | undefined, context: AgentSessionContext): Promise<void> {
+  async provisionSession(id: string, workspaceId: string | undefined, context: AgentSessionContext, baseBranch?: string): Promise<void> {
     if (!this.#sessions) throw new Error("Local catalog is not available")
     if (!workspaceId) {
       if (context !== "directory") throw new Error("Sessions without a workspace use the home directory")
@@ -65,7 +65,7 @@ export class DaemonCatalog {
       const machineId = (await this.native.snapshot()).machineId
       const allocated = { id, machineId, workspaceId }
       if (context === "directory") await this.#sessions.useDirectories(allocated)
-      else await this.#sessions.create(workspaceId, allocated)
+      else await this.#sessions.create(workspaceId, allocated, baseBranch)
     }
     this.changed()
   }
