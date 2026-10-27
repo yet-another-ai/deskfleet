@@ -171,6 +171,9 @@ export class GitWatch {
           const input = [...candidates.keys()].map(path => "./" + key(relative(this.root, path))).join("\0") + "\0"
           const ignored = new Set((await git(this.root, ["check-ignore", "--no-index", "-z", "--stdin"], input)).split("\0").filter(Boolean).map(path => resolve(this.root, path)))
           if (this.#closed) return
+          // Classify retries no longer always schedule a `#scan`, so clear the
+          // streak here; otherwise a recovered lock reduces the next budget.
+          this.#configLockStreak = 0
           let changed = false
           for (const [path, topology] of candidates) {
             if (ignored.has(path)) this.#ignored.add(path)
