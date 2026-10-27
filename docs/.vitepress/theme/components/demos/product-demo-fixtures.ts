@@ -19,8 +19,9 @@ export function configuration(provider: string, model?: string, reasoningEffort?
   }
 }
 
-export function input(id: string, sessionId: string, text: string, author: string, state: AgentInput["state"] = "delivered"): AgentInput {
-  return { id, sessionId, submissionCommandId: `submit-${id}`, author: { kind: "user", userId: author }, content: [{ type: "text", text }], acceptedSeq: id, state, requestedDelivery: "backlog", actualDelivery: state === "delivered" ? "turn_start" : undefined, createdAt: "" }
+export function input(id: string, sessionId: string, content: string | AgentInput["content"], author: string, state: AgentInput["state"] = "delivered"): AgentInput {
+  const blocks = typeof content === "string" ? [{ type: "text" as const, text: content }] : content
+  return { id, sessionId, submissionCommandId: `submit-${id}`, author: { kind: "user", userId: author }, content: blocks, acceptedSeq: id, state, requestedDelivery: "backlog", actualDelivery: state === "delivered" ? "turn_start" : undefined, createdAt: "" }
 }
 
 export function fixtures(chinese: boolean) {
