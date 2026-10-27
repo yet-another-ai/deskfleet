@@ -59,7 +59,8 @@ async fn inactive_desktop_close_keeps_owner_checks_and_waits_for_daemon_cleanup(
     state
         .hub
         .add_daemon(&machine.id, "fixture", send, shutdown)
-        .await;
+        .await
+        .unwrap();
     let app = test::init_service(
         App::new()
             .app_data(state.clone())

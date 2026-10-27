@@ -337,7 +337,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
     state
         .hub
         .add_daemon(machine_id, "fixture", send, shutdown)
-        .await;
+        .await
+        .unwrap();
     let hub = state.hub.clone();
     let machine = machine_id.to_owned();
     let worker = actix_web::rt::spawn(async move {

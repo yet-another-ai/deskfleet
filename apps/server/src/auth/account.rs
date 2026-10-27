@@ -29,8 +29,8 @@ pub(super) async fn password(
         .store
         .change_password(&auth.user.id, &hash, &auth.id)
         .await?;
-    state.hub.revoke(peers, "password_changed").await;
-    state.hub.disconnect_user(&auth.user.id).await;
+    state.hub.revoke(peers, "password_changed").await?;
+    state.hub.disconnect_user(&auth.user.id).await?;
     Ok(cleared(&state))
 }
 pub(super) async fn email(
@@ -81,8 +81,8 @@ pub(super) async fn verify_email(
         .store
         .verify_email_change(&body.token, &auth.user.id)
         .await?;
-    state.hub.revoke(peers, "email_changed").await;
-    state.hub.disconnect_user(&auth.user.id).await;
+    state.hub.revoke(peers, "email_changed").await?;
+    state.hub.disconnect_user(&auth.user.id).await?;
     if state.auth.mail.send(&previous,"Your deskfleet email changed","Your account email address was changed. If you did not authorize this, contact the installation operator immediately.").await.is_err(){tracing::warn!("account email change notification delivery failed");}
     Ok(cleared(&state))
 }
@@ -118,8 +118,8 @@ pub(super) async fn revoke_session(
         .store
         .revoke_user_sessions(&auth.user.id, Some(&id))
         .await?;
-    state.hub.revoke(peers, "session_revoked").await;
-    state.hub.disconnect_login(&id).await;
+    state.hub.revoke(peers, "session_revoked").await?;
+    state.hub.disconnect_login(&id).await?;
     if *id == auth.id {
         Ok(cleared(&state))
     } else {
@@ -135,8 +135,8 @@ pub(super) async fn revoke_all(
         .store
         .revoke_user_sessions(&auth.user.id, None)
         .await?;
-    state.hub.revoke(peers, "sessions_revoked").await;
-    state.hub.disconnect_user(&auth.user.id).await;
+    state.hub.revoke(peers, "sessions_revoked").await?;
+    state.hub.disconnect_user(&auth.user.id).await?;
     Ok(cleared(&state))
 }
 pub(super) async fn registration(
@@ -162,8 +162,8 @@ pub(super) async fn disabled(
         .store
         .disable_account(&auth.user.id, &id, body.disabled)
         .await?;
-    state.hub.revoke(peers, "account_disabled").await;
-    state.hub.disconnect_user(&id).await;
+    state.hub.revoke(peers, "account_disabled").await?;
+    state.hub.disconnect_user(&id).await?;
     Ok(HttpResponse::NoContent().finish())
 }
 

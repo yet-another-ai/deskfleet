@@ -101,10 +101,16 @@ async fn connect(
                 .add_client(&id, user, &connection_id, send, shutdown)
                 .await;
         } else {
-            state
+            if state
                 .hub
                 .add_daemon(&id, &connection_id, send, shutdown)
-                .await;
+                .await
+                .is_err()
+            {
+                state.hub.remove_daemon(&id, &connection_id).await;
+                let _ = session.close(Some(close_reason(1012))).await;
+                return;
+            }
             let _ = state.store.machine_seen(&id).await;
         }
         let ready = ControlMessage::Ready {
@@ -115,8 +121,11 @@ async fn connect(
         let setup = async {
             send_json(&mut session, &ready).await?;
             if is_daemon {
-                let peers = state.store.valid_machine_peers(&id).await.map_err(|_| ())?;
-                send_json(&mut session, &ControlMessage::ReconcilePeers { peers }).await?;
+                state
+                    .hub
+                    .reconcile_daemon(&id, &connection_id)
+                    .await
+                    .map_err(|_| ())?;
                 if let Some(team) = &team {
                     state
                         .notify_team(
@@ -126,7 +135,8 @@ async fn connect(
                                 online: true,
                             },
                         )
-                        .await;
+                        .await
+                        .map_err(|_| ())?;
                 }
             }
             Ok::<_, ()>(())
@@ -174,13 +184,17 @@ async fn connect(
                 },
                 _=heartbeat.tick()=>{
                     if last_pong.elapsed()>Duration::from_secs(60){break}
+                    if is_daemon && !state.hub.is_current(&id,&connection_id).await {close_code=1012;break;}
                     let active=if is_daemon{state.store.machine(&id).await.map(|_|true)}else{state.store.session_is_active(&id).await};
                     match active {
                         Ok(true)=>{},
                         Ok(false)=>{close_code=4401;break;},
                         Err(error)=>{close_code=store_failure_close(&error,if is_daemon{4403}else{4401});break;},
                     }
-                    if is_daemon{let _=state.store.machine_seen(&id).await;}
+                    if is_daemon{
+                        if state.hub.reconcile_daemon(&id,&connection_id).await.is_err(){close_code=1012;break;}
+                        let _=state.store.machine_seen(&id).await;
+                    }
                     if session.ping(b"deskfleet").await.is_err(){break}
                 }
             }
@@ -189,7 +203,7 @@ async fn connect(
             if state.hub.remove_daemon(&id, &connection_id).await
                 && let Some(team) = team
             {
-                state
+                let _ = state
                     .notify_team(
                         &team,
                         ControlMessage::Presence {

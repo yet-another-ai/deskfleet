@@ -19,6 +19,8 @@ import { smokePortForwarding } from "./fixtures/backend-ports.ts"
 
 const fixture = await startBackendFixture()
 const { backend, auth } = fixture
+let httpFixture: Awaited<ReturnType<typeof startBackendFixture>> | undefined
+let httpBackend = backend
 const directory = await mkdtemp(join(tmpdir(), "deskfleet-backend-smoke-"))
 const execute = promisify(execFile)
 const daemons: Awaited<ReturnType<typeof startDaemon>>[] = []
@@ -29,7 +31,7 @@ let teamId: string | undefined
 
 function client(login: FixtureLogin): BackendRequest {
   return async <T>(path: string, body?: unknown, method = body === undefined ? "GET" : "POST"): Promise<T> => {
-    const response = await fetch(`${backend}/api${path}`, {
+    const response = await fetch(`${httpBackend}/api${path}`, {
       method, headers: { authorization: `Bearer ${login.token}`, "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(20_000),
     })
@@ -40,6 +42,11 @@ function client(login: FixtureLogin): BackendRequest {
 }
 
 try {
+  // Keep daemon/client sockets on A while API requests reach B. Both processes
+  // advertise the same public identity, as replicas behind one proxy would.
+  httpFixture = await startBackendFixture({ publicUrl: backend })
+  httpBackend = httpFixture.backend
+  assert.notEqual(httpBackend, backend)
   const alice = await auth.login(backend, { subject: "alice", name: "Alice smoke", email: "alice@example.invalid" })
   const bob = await auth.login(backend, { subject: "bob", name: "Bob smoke", email: "bob@example.invalid" })
   admin = client(alice)
@@ -101,7 +108,7 @@ try {
   await member("/invites/accept", { token: invite.token })
   await rpc(machines[0]!, "catalogList", {}, member)
   await assert.rejects(member(`/machines/${machines[0]}`, undefined, "DELETE"), /403/u)
-  console.log("Two daemon registrations, control RPC, Provider settings, team authorization, and equal local IDs passed")
+  console.log("Two API processes: daemon registrations, cross-process control RPC, Provider settings, team authorization, and equal local IDs passed")
 
   await smokePortForwarding(backend, bob, teamId, machines[0]!)
 
@@ -184,6 +191,7 @@ try {
   await reconnectTerminal.rpc("attach", { sessionId: reconnectShell.id })
   await fixture.stopServer()
   await until(() => daemons.map(daemon => daemon.central.status()), values => values.every(value => !value.connected), "daemon detects central server interruption")
+  assert.equal((await readCentral()).snapshot.session.id, sessionId, "The second API process keeps synchronized history readable")
   await reconnectAgent.rpc("_deskfleet/input/submit", { sessionId: reconnectSessionId, operationId: randomUUID(), delivery: "backlog", content: [{ type: "text", text: "Accepted while signaling is unavailable" }] })
   await reconnectTerminal.rpc("input", { sessionId: reconnectShell.id, data: Buffer.from("echo deskfleet-offline-peer\r").toString("base64") })
   await until(() => reconnectTerminal.messages, values => values.some(value => value.event?.kind === "output" && Buffer.from(value.event.data, "base64").toString("utf8").includes("deskfleet-offline-peer")), "terminal input survives signaling loss")
@@ -278,6 +286,7 @@ try {
   console.log("A removed machine re-enrolls into its original team with empty data; retired worktree paths and history stay intact")
 } catch (error) {
   if (fixture.diagnostics()) console.error(fixture.diagnostics())
+  if (httpFixture?.diagnostics()) console.error(httpFixture.diagnostics())
   throw error
 } finally {
   await Promise.allSettled(closePeers.map(close => close()))
@@ -286,6 +295,6 @@ try {
     for (const machine of machines) await admin(`/machines/${machine}`, undefined, "DELETE").catch(() => {})
     if (teamId) await admin(`/teams/${teamId}`, undefined, "DELETE").catch(() => {})
   }
-  await fixture.close()
+  await Promise.all([fixture.close(), httpFixture?.close()])
   await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

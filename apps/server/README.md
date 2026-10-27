@@ -7,6 +7,9 @@ The independently deployed Vue Web frontend and Electron use the same API.
 Execution, provider processes, files, PTYs, and terminal output stay on the daemon.
 See the [backend scope](../../agents/docs/backend.md) and
 [WebRTC authorization](../../agents/docs/webrtc-security.md).
+For the official v0.1.0 trial, use the
+[hosted deployment checklist](../../agents/docs/hosted-deployment.md) for service
+provisioning, runtime/build secrets, and public smoke acceptance.
 
 ## Run and configure
 
@@ -65,13 +68,22 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | Optional `redis://` or `rediss://` URL for [Team TURN usage collection](../../agents/docs/self-hosted.md#team-turn-usage-collection). Empty or unset disables it. |
 | `RUST_LOG` | Log filter; defaults to `info`. |
 
-For official hosting, run one server instance behind a TLS reverse proxy that
+For official hosting, run server instances behind a TLS reverse proxy that
 supports WebSocket upgrades, request bodies of at least 64 MiB, and idle periods
-longer than the 20-second heartbeat. Serve the Web application separately. Store
-PostgreSQL data on persistent storage and supply database/SMTP/TURN secrets via
+longer than the 60-second socket timeout. Serve the Web application separately.
+Store PostgreSQL data on persistent storage and supply database/SMTP/TURN secrets via
 the deployment's secret mechanism. `DESKFLEET_PUBLIC_URL` must remain stable.
-Live socket routing and pending SDP exchanges are process-local, so this release
-requires one central instance; adding instances needs shared routing first.
+Instances share one PostgreSQL database, public origin, and service configuration.
+PostgreSQL leases fence machine socket ownership; short-lived inboxes route
+requests, replies, client events, and revocations across instances. SDP offers,
+answers, and early ICE candidates are shared in PostgreSQL as well. The load
+balancer does not need sticky sessions, and there are no additional routing
+environment variables. Redis remains specific to TURN usage collection.
+
+Database outages close signaling for reconnect instead of trusting stale local
+routes. A process crash can interrupt an in-flight RPC; check the daemon's
+operation receipt before retrying. Existing WebRTC grants keep their normal
+bounded lifetime. See [multi-instance operation](../../agents/docs/self-hosted.md#what-this-release-runs).
 
 `GET /healthz` reports process liveness and protocol version. Database migrations
 and authentication configuration validation complete before the HTTP listener starts.
@@ -228,6 +240,9 @@ IDs remain daemon-local inside payloads and are scoped by the central machine ID
 Clients and daemons connect to `/api/client/ws` and `/api/daemon/ws`. Their first
 message is `{ "type": "authenticate", "token": "..." }`; tokens never appear in
 URLs. A daemon reconnect receives all still-valid peer grants for reconciliation.
+The same reconciliation runs on its 20-second heartbeat, repairing a lost
+revocation broadcast at the next successful database read and signaling delivery
+while retaining active peers.
 WS authentication/access failures close with 4401/4403; transient routing replacement
 uses 1012. Explicit revocation has an independent shutdown path if outbound queues
 are full. Transport loss alone preserves existing WebRTC peers until their fixed

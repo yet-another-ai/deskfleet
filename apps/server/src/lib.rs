@@ -22,7 +22,7 @@ pub struct AppState {
     pub auth: auth::AuthService,
     pub billing: billing::BillingService,
     hub: hub::Hub,
-    peers: peers::Negotiations,
+    _routing: hub::Router,
     _turn_usage: Option<turn_usage::Collector>,
     _billing_worker: billing::BillingWorker,
 }
@@ -41,21 +41,21 @@ impl AppState {
             .map(|url| turn_usage::Collector::start(store.clone(), url))
             .transpose()
             .map_err(|error| error::ApiError::bad(error.to_string()))?;
+        let (hub, routing) = hub::Hub::connect(store.clone()).await?;
         Ok(Self {
             store,
             config,
             auth,
             billing,
-            hub: hub::Hub::default(),
-            peers: peers::Negotiations::default(),
+            hub,
+            _routing: routing,
             _turn_usage: turn_usage,
             _billing_worker: billing_worker,
         })
     }
-    async fn notify_team(&self, team: &str, message: ControlMessage) {
-        if let Ok(users) = self.store.team_user_ids(team).await {
-            self.hub.notify_users(&users, message).await;
-        }
+    async fn notify_team(&self, team: &str, message: ControlMessage) -> Result<()> {
+        let users = self.store.team_user_ids(team).await?;
+        self.hub.notify_users(&users, message).await
     }
 }
 pub fn configure(config: &mut ServiceConfig) {
@@ -152,3 +152,6 @@ async fn health() -> web::Json<HealthResponse> {
 
 #[cfg(test)]
 mod integration_tests;
+
+#[cfg(test)]
+mod realtime_tests;
