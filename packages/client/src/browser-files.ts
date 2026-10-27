@@ -2,7 +2,7 @@ import type { CentralApi } from "./central.ts"
 import { FileTransferManager } from "./file-transfers.ts"
 import { createBrowserFileEndpoint } from "./files-peer.ts"
 import type { FilesApi, FileTransfer } from "./files.ts"
-import { FILE_CHUNK_BYTES, type FileConflict, type FileEndpoint, type FileEntry, type FileKind, type FileListing, type FileMethod, type FileMethods, type FileReply } from "../../../apps/daemon/src/files-protocol.ts"
+import { FILE_CHUNK_BYTES, FILE_MAX_OPEN_READS, type FileConflict, type FileEndpoint, type FileEntry, type FileKind, type FileListing, type FileMethod, type FileMethods, type FileReply } from "../../../apps/daemon/src/files-protocol.ts"
 
 type DirectoryHandle = FileSystemDirectoryHandle
 interface Upload {
@@ -11,6 +11,7 @@ interface Upload {
   finished: Set<string>; conflict: FileConflict
   stop: AbortController; calls: Set<Promise<unknown>>; tail: Promise<void>
 }
+interface ReadSession { path: string; handle: FileSystemFileHandle; size: number; modifiedAt: number }
 const codeOf = (error: unknown) => error instanceof Error ? error.name : ""
 const conflict = () => Object.assign(new Error("A file or folder with this name already exists"), { code: "conflict" })
 const segments = (path: string) => {
@@ -24,6 +25,7 @@ const segments = (path: string) => {
 export class BrowserFilesEndpoint implements FileEndpoint {
   readonly #roots = new Map<string, DirectoryHandle>()
   readonly #uploads = new Map<string, Upload>()
+  readonly #reads = new Map<string, ReadSession>()
   readonly #calls = new Set<Promise<unknown>>()
   #selected: string | undefined
   #closed = false
@@ -139,6 +141,19 @@ export class BrowserFilesEndpoint implements FileEndpoint {
     }
   }
 
+  async #openRead(params: FileMethods["openRead"]["params"]): Promise<ReadSession> {
+    const handle = await this.#handle(params.path)
+    if (handle.kind !== "file") throw new Error("A file is required")
+    const file = await handle.getFile()
+    if (params.modifiedAt !== undefined && file.lastModified !== params.modifiedAt) throw new Error("File changed during transfer")
+    return { path: params.path, handle, size: file.size, modifiedAt: file.lastModified }
+  }
+  async #readFile(session: ReadSession): Promise<File> {
+    const file = await session.handle.getFile()
+    if (file.size !== session.size || file.lastModified !== session.modifiedAt) throw new Error("File changed during transfer")
+    return file
+  }
+
   async call<M extends FileMethod>(method: M, params: FileMethods[M]["params"], data?: Uint8Array): Promise<FileReply<FileMethods[M]["result"]>> {
     if (this.#closed) throw new Error("Local file access is closed")
     const upload = "transferId" in params && method !== "abort" ? this.#uploads.get(params.transferId) : undefined
@@ -161,13 +176,29 @@ export class BrowserFilesEndpoint implements FileEndpoint {
       case "list": return { value: await this.#list((params as FileMethods["list"]["params"]).path) }
       case "stat": { const { path } = params as FileMethods["stat"]["params"]; return { value: await this.#entry(path, await this.#handle(path)) } }
       case "resolve": throw new Error("Agent resources belong to the executing machine")
+      case "openRead": {
+        const session = await this.#openRead(params as FileMethods["openRead"]["params"])
+        if (this.#reads.size >= FILE_MAX_OPEN_READS) throw new Error("Too many open file reads")
+        const readId = crypto.randomUUID()
+        this.#reads.set(readId, session)
+        return { value: { readId } }
+      }
+      case "closeRead": {
+        const { readId } = params as FileMethods["closeRead"]["params"]
+        const session = this.#reads.get(readId)
+        this.#reads.delete(readId)
+        if (session) await this.#readFile(session)
+        return { value: null }
+      }
       case "read": {
-        const { path, offset, length, modifiedAt } = params as FileMethods["read"]["params"]
+        const request = params as FileMethods["read"]["params"]
+        const { path, offset, length, modifiedAt, readId } = request
         if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0 || length > FILE_CHUNK_BYTES) throw new Error("Invalid file read")
-        const handle = await this.#handle(path)
-        if (handle.kind !== "file") throw new Error("A file is required")
-        const file = await handle.getFile()
-        if (modifiedAt !== undefined && file.lastModified !== modifiedAt) throw new Error("File changed during transfer")
+        const session = readId === undefined ? await this.#openRead(request) : this.#reads.get(readId)
+        if (!session) throw new Error("Unknown file read")
+        if (path !== session.path) throw new Error("File read path does not match its session")
+        if (modifiedAt !== undefined && modifiedAt !== session.modifiedAt) throw new Error("File changed during transfer")
+        const file = await this.#readFile(session)
         const data = new Uint8Array(await file.slice(offset, offset + length).arrayBuffer())
         return { value: { bytes: data.byteLength }, data }
       }
@@ -260,6 +291,7 @@ export class BrowserFilesEndpoint implements FileEndpoint {
     for (const upload of this.#uploads.values()) upload.stop.abort()
     await Promise.allSettled([...this.#calls])
     await Promise.all([...this.#uploads.keys()].map(id => this.#remove(id)))
+    this.#reads.clear()
     this.#roots.clear()
   }
 }

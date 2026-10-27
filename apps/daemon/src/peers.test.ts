@@ -86,9 +86,17 @@ test("native peers exchange binary and text DataChannel messages through the dae
       }))
     }
     await waitFor("waiting for both data channels to open", Promise.all(opened.map(ready => ready.promise)))
-    const payload = Buffer.from([0, 1, 127, 128, 255])
-    await waitFor("sending binary", left.sendData("operations", payload))
-    assert.deepEqual(await waitFor("receiving binary", binary.promise), payload)
+    // A sliced Buffer may be reused as soon as sendData returns its Promise.
+    const storage = Buffer.from([42, 0, 1, 127, 128, 255, 43])
+    const payload = storage.subarray(1, -1)
+    const expected = Buffer.from(payload)
+    const sending = left.sendData("operations", payload)
+    payload.fill(0xa5)
+    await waitFor("sending binary", sending)
+    const received = await waitFor("receiving binary", binary.promise)
+    assert.deepEqual(received, expected)
+    received.fill(0x5a)
+    assert.deepEqual(payload, Buffer.alloc(expected.length, 0xa5))
     await waitFor("sending text", right.sendText("operations", "deskfleet: 你好"))
     assert.equal(await waitFor("receiving text", text.promise), "deskfleet: 你好")
     assert.deepEqual(errors, [])
@@ -96,6 +104,8 @@ test("native peers exchange binary and text DataChannel messages through the dae
     closing = true
     await waitFor("closing daemon", daemon.close())
     await waitFor("draining peer event streams", Promise.all(pumps))
+    global.gc?.()
+    assert.deepEqual(received, Buffer.alloc(expected.length, 0x5a))
     await assert.rejects(left.sendText("operations", "closed"), /closed/)
     await assert.rejects(daemon.peers.create("after shutdown"), /closed/)
   } catch (error) {

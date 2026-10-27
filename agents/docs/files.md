@@ -90,10 +90,13 @@ OS-user authority; Session roots do not globally restrict daemon filesystem acce
 
 The reliable ordered `deskfleet-files` DataChannel carries length-prefixed JSON
 metadata followed by raw binary file bytes. File operations carry at most
-128 KiB; wire fragments are at most 65,535 bytes and respect a smaller negotiated
-transport limit. These are DataChannel message sizes, not UDP packet sizes;
+127 KiB; this reserves 1 KiB for ordinary frame metadata so a full read or write
+fits two wire messages instead of leaving a tiny third message. Larger metadata
+still uses the same fragmentation. Wire fragments are at most 65,535 bytes and
+respect a smaller negotiated transport limit. These are DataChannel message sizes,
+not UDP packet sizes;
 WebRTC owns SCTP/DTLS fragmentation.
-Metadata frames have an 8 MiB limit. Each peer allows 576 pending requests,
+Metadata frames have an 8 MiB limit. Each peer allows 580 pending requests,
 leaving 64 slots beyond the bulk transfer window for control operations, with at
 most 64 MiB of pending request payload and 8 MiB of
 pending request metadata. Encoded request and response queues allow 72 MiB,
@@ -102,7 +105,7 @@ The RPC idle timeout is 60 seconds without send or receive progress, so a large
 window can drain normally on slower links without an absolute request deadline.
 The provisional protocol remains version 1.
 
-Bulk file copies pipeline up to 512 chunks across source
+Bulk file copies pipeline up to 516 chunks across source
 reads and destination writes. Writes enter the channel in offset order without
 waiting for each preceding acknowledgement, so network round trips overlap with
 disk work. The slot count is derived from a fixed 64 MiB file-content budget, so
@@ -113,8 +116,9 @@ all outstanding operations, including when cancellation or an error stops new
 work. Native and browser receivers serialize each upload's mutations; browser
 abort bypasses that queue to interrupt publication and reject pending writes.
 
-The endpoint operations are `list`, `stat`, `resolve`, `read`, `begin`, `mkdir`,
-`write`, `finish`, `commit`, and `abort`. `begin` accepts either a destination
+The endpoint operations are `list`, `stat`, `resolve`, `openRead`, `read`,
+`closeRead`, `begin`, `mkdir`, `write`, `finish`, `commit`, and `abort`.
+`begin` accepts either a destination
 `directory` or a `sessionId` that targets the Session's daemon-managed
 `<machine directory>/session-attachments/<sessionId>/` directory for composer
 file attachments. An upload's paths are relative to its
@@ -123,6 +127,27 @@ paths name descendants. Absolute paths, traversal segments, backslashes, and
 alternate-stream colons are rejected in upload paths. Reads and writes check
 chunk sizes and offsets; writes are sequential. Source size and modification
 time detect changes while copying.
+
+Bulk copies and resource previews open one source read session per file. The
+native endpoint retains its file handle; each read validates the path's file
+identity, size, and modification time before returning bytes. `closeRead`
+validates once more and closes the handle, including when validation fails.
+The client drains outstanding reads and writes before closing the read session;
+only successful final validation allows destination finish/commit. Cancellation,
+failure, and peer closure release retained handles. Each endpoint permits at most
+32 active source sessions. Browser sessions retain the selected file handle and
+check its size and modification time; Electron still checks path authorization
+for each read. Standalone reads without a session open and release their own handle.
+
+All native WebRTC peers request a 4 MiB UDP receive buffer when each socket is
+wrapped, including after ICE rebinding. The runtime keeps larger existing buffers
+and accepts OS limits without changing system-wide settings. This provides burst
+headroom independently of the unchanged 1 MiB DataChannel send budget. Native
+file transports pass Buffer views over owned wire frames; NAPI takes one snapshot
+on the JavaScript thread before dispatching asynchronous work. Rust then transfers
+owned storage into the channel and back into Node buffers where possible. Shared
+storage and hosts that forbid external buffers, such as Electron, retain the
+required copy instead of borrowing mutable JavaScript memory across threads.
 
 Each selected root file or folder is one queue item. A folder's internal manifest
 includes its descendants and empty directories, but the UI never expands it
@@ -238,3 +263,22 @@ connection setup, and hash verification are excluded. Run one benchmark at a
 time and compare the same native build profile; real network rates also depend
 on both machines and the network between them. CI checks bounded overlap,
 ordered writes, and failure/cancellation behavior without timing thresholds.
+
+For transport isolation, run `mise exec -- node scripts/benchmark-webrtc.ts
+--size-mib 32 --rounds 3`. This connects two native peers on the same host,
+exchanges SDP and host ICE candidates directly without STUN/TURN, and measures
+delivery in both directions without filesystem or file RPC work. Timing includes
+copying received messages into a preallocated buffer; allocation and SHA-256
+verification are excluded. JSON output records throughput, process CPU,
+event-loop delay, send-call latency, and backpressure retries. `--chunk-kib`,
+`--window`, and `--retry-ms` allow controlled comparisons; the window limits
+outstanding send calls, not the transport's internal buffering.
+
+`files:benchmark` builds a debug addon. For optimized measurements, explicitly
+run `mise run native:release`, then invoke either benchmark script directly so
+the task does not rebuild debug. Both scripts accept `--addon /absolute/path`
+to select a separately built native addon without replacing the installed one.
+The file harness also accepts `--transport direct` to retain the transfer queue
+and filesystem endpoints while bypassing WebRTC, and `--profile` to include
+process, filesystem RPC, and native send metrics. RPC latency includes time in
+the endpoint's serialized queue; it is not a measure of disk service time alone.

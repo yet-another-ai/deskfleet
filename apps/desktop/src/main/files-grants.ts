@@ -199,7 +199,7 @@ class GrantedFilesEndpoint implements FileEndpoint {
       if (!params || typeof params !== "object" || Array.isArray(params)) throw fileError("Invalid file request", "invalid")
       const result = await this.#call(method, params, data)
       // Do not deliver bytes/listings from a document or account that was revoked while awaiting I/O.
-      await this.#grants.assert(this.#target, method === "list" || method === "stat" || method === "resolve" || method === "read" ? "read" : "write")
+      await this.#grants.assert(this.#target, ["list", "stat", "resolve", "openRead", "read", "closeRead"].includes(method) ? "read" : "write")
       return result
     })
     this.#running = next.catch(() => {})
@@ -233,6 +233,15 @@ class GrantedFilesEndpoint implements FileEndpoint {
         const reply = await this.#service.call("stat", { path })
         await this.#grants.assert(this.#target, "read", reply.value.path)
         return reply
+      }
+      case "openRead": {
+        const request = params as FileMethods["openRead"]["params"]
+        const path = await this.#grants.assert(this.#target, "read", request.path)
+        return this.#service.call("openRead", { ...request, path })
+      }
+      case "closeRead": {
+        await this.#grants.assert(this.#target, "read")
+        return this.#service.call("closeRead", params as FileMethods["closeRead"]["params"])
       }
       case "read": {
         const request = params as FileMethods["read"]["params"]

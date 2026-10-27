@@ -84,7 +84,48 @@ test("write requests require their own permission before reaching the endpoint",
   assert.match(String(failures[0]), /read-only grant/)
 })
 
-test("a complete 64 MiB read window and a control request can await a slow sender", async context => {
+test("a maximum-sized read response uses two transport messages", async context => {
+  const payload = new Uint8Array(FILE_CHUNK_BYTES).fill(173)
+  const packets: Uint8Array[] = [], failures: unknown[] = []
+  const endpoint = { call: async () => ({ value: { bytes: payload.length }, data: payload }), async close() {} } as FileEndpoint
+  const channel = new FilesChannel(endpoint, async data => { packets.push(data) }, () => {}, error => failures.push(error))
+  context.after(() => channel.close())
+  receive(channel, { id: 1, method: "read", params: { path: "/payload", offset: 0, length: payload.length } })
+  await until(() => packets.length >= 2 || failures.length > 0)
+  assert.deepEqual(failures, [])
+  assert.equal(packets.length, 2)
+  assert.equal(packets[0].length, FILE_WIRE_CHUNK_BYTES)
+  assert(packets[1].length > 63 * 1024 && packets[1].length <= FILE_WIRE_CHUNK_BYTES)
+  const decoder = new FileFrameDecoder()
+  assert.deepEqual(decoder.push(packets[0]), [])
+  assert.deepEqual(decoder.push(packets[1])[0].data, payload)
+})
+
+test("read handles require read permission and work without write permission", async context => {
+  const replies: FileFrame[] = [], failures: unknown[] = [], actions: string[] = []
+  const decoder = new FileFrameDecoder()
+  let allowed = true, calls = 0
+  const endpoint = { async call() { calls++; return { value: { readId: "reader" } } }, async close() {} } as FileEndpoint
+  const channel = new FilesChannel(endpoint, async bytes => { replies.push(...decoder.push(bytes)) }, method => {
+    const action = fileAction(method)
+    actions.push(action)
+    if (!allowed || action !== "files:read") throw new Error("read permission denied")
+  }, error => failures.push(error))
+  context.after(() => channel.close())
+  receive(channel, { id: 1, method: "openRead", params: { path: "/payload" } })
+  receive(channel, { id: 2, method: "closeRead", params: { readId: "reader" } })
+  await until(() => replies.length === 2 || failures.length > 0)
+  assert.deepEqual(failures, [])
+  assert.equal(calls, 2)
+  assert(actions.every(action => action === "files:read"))
+  allowed = false
+  receive(channel, { id: 3, method: "openRead", params: { path: "/payload" } })
+  await until(() => failures.length > 0)
+  assert.equal(calls, 2)
+  assert.match(String(failures[0]), /read permission denied/)
+})
+
+test("a full read window stays within 64 MiB and leaves room for a control request", async context => {
   const payload = Buffer.alloc(FILE_CHUNK_BYTES, 137)
   let release!: () => void, sending!: () => void
   const blocked = new Promise<void>(resolve => { release = resolve })
@@ -116,7 +157,9 @@ test("a complete 64 MiB read window and a control request can await a slow sende
   release()
   await until(() => replies === FILE_PIPELINE_CHUNKS + 1 || failures.length > 0)
   assert.deepEqual(failures, [])
-  assert.equal(receivedBytes, FILE_PIPELINE_BYTES)
+  assert.equal(receivedBytes, FILE_PIPELINE_CHUNKS * FILE_CHUNK_BYTES)
+  assert(receivedBytes <= FILE_PIPELINE_BYTES)
+  assert(receivedBytes + FILE_CHUNK_BYTES > FILE_PIPELINE_BYTES)
 })
 
 test("pending write payload is capped at 64 MiB independently of request count", async () => {
@@ -130,7 +173,8 @@ test("pending write payload is capped at 64 MiB independently of request count",
     for (let id = 1; id <= FILE_PIPELINE_CHUNKS; id++) receive(channel, { id, method: "write", params: { transferId: "upload", path: "", offset: (id - 1) * FILE_CHUNK_BYTES } }, payload)
     assert.equal(writes, FILE_PIPELINE_CHUNKS)
     assert.deepEqual(failures, [])
-    receive(channel, { id: FILE_PIPELINE_CHUNKS + 1, method: "write", params: { transferId: "upload", path: "", offset: FILE_PIPELINE_BYTES } }, new Uint8Array(1))
+    const submittedBytes = FILE_PIPELINE_CHUNKS * FILE_CHUNK_BYTES
+    receive(channel, { id: FILE_PIPELINE_CHUNKS + 1, method: "write", params: { transferId: "upload", path: "", offset: submittedBytes } }, new Uint8Array(FILE_PIPELINE_BYTES - submittedBytes + 1))
     await until(() => closed)
     assert.equal(writes, FILE_PIPELINE_CHUNKS)
     assert.match(String(failures[0]), /payload queue is full/)

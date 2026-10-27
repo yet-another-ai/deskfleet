@@ -10,6 +10,7 @@ mod events;
 mod feedback;
 mod h265_payloader;
 mod ports;
+mod runtime;
 mod sample_track;
 mod types;
 
@@ -101,6 +102,7 @@ impl Peer {
         let ports = ports::Forwarding::default();
         let pc = Arc::new(
             PeerConnectionBuilder::new()
+                .with_runtime(Arc::new(runtime::BufferedRuntime::default()))
                 .with_configuration(rtc_config)
                 .with_media_engine(media)
                 .with_interceptor_registry(interceptors)
@@ -317,7 +319,7 @@ impl Peer {
     /// A full send buffer is reported as [`PeerError::Backpressure`].
     pub async fn send_data(&self, label: &str, data: Bytes) -> Result<()> {
         self.ensure_open()?;
-        channels::send_data(&self.channels, label, &data).await
+        channels::send_data(&self.channels, label, data).await
     }
 
     pub async fn send_text(&self, label: &str, text: &str) -> Result<()> {

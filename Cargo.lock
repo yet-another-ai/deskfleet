@@ -1582,6 +1582,7 @@ dependencies = [
  "rtc",
  "serde",
  "serde_json",
+ "socket2",
  "sysinfo",
  "thiserror 2.0.21",
  "tokio",

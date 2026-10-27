@@ -72,6 +72,18 @@ test("preview grants bind a trusted Session root, reject absolute/file-URL escap
   await expect(browse.call("resolve", { sessionId: "session", uri: "inside.txt" })).rejects.toThrow("Session")
 })
 
+test("read-only folder grants authorize explicit read sessions and retain path checks for every chunk", async () => {
+  const { root, outside, authority } = await fixture()
+  const grants = authority(), target = await grants.issue(root, { read: true, write: false })
+  const endpoint = grants.endpoint(target), path = join(root, "inside.txt")
+  await expect(endpoint.call("openRead", { path: join(outside, "secret.txt") })).rejects.toThrow("outside")
+  const { readId } = (await endpoint.call("openRead", { path })).value
+  expect(Buffer.from((await endpoint.call("read", { path, readId, offset: 0, length: 8 })).data!).toString()).toBe("selected")
+  await expect(endpoint.call("read", { path: join(outside, "secret.txt"), readId, offset: 0, length: 6 })).rejects.toThrow("outside")
+  await endpoint.call("closeRead", { readId })
+  await expect(endpoint.call("read", { path, readId, offset: 0, length: 1 })).rejects.toThrow("not found")
+})
+
 test("existing junctions or directory symlinks cannot escape reads, previews or destinations", async () => {
   const { root, outside, authority } = await fixture()
   await symlink(outside, join(root, "escape"), process.platform === "win32" ? "junction" : "dir")

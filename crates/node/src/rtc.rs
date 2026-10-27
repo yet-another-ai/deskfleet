@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use deskfleet_native::{input::InputWorker, media::DesktopStream, rtc};
-use napi::bindgen_prelude::Buffer;
-use napi::{Error, Result};
+use napi::bindgen_prelude::{Buffer, BufferSlice, PromiseRaw};
+use napi::{Env, Error, Result};
 use napi_derive::napi;
 use tokio::sync::Mutex;
 
@@ -138,7 +138,8 @@ impl From<rtc::PeerEvent> for PeerEvent {
             } => {
                 result.kind = "data".to_owned();
                 result.label = Some(label);
-                result.data = Some(data.to_vec().into());
+                // Transfer uniquely owned storage; Bytes copies if another owner still exists.
+                result.data = Some(Vec::<u8>::from(data).into());
                 result.is_string = Some(is_string);
             }
             rtc::PeerEvent::KeyframeRequested => result.kind = "keyframeRequested".to_owned(),
@@ -259,12 +260,22 @@ impl NativePeer {
             .map_err(native_error)
     }
 
-    #[napi]
-    pub async fn send_data(&self, label: String, data: Buffer) -> Result<()> {
-        self.peer
-            .send_data(&label, data.to_vec().into())
-            .await
-            .map_err(native_error)
+    #[napi(ts_return_type = "Promise<void>")]
+    pub fn send_data<'env>(
+        &self,
+        env: &'env Env,
+        label: String,
+        data: BufferSlice<'env>,
+    ) -> Result<PromiseRaw<'env, ()>> {
+        // Snapshot on the JS thread before returning: callers may immediately reuse
+        // their mutable Buffer. Only owned storage crosses into the async transport.
+        let data = data.as_ref().to_vec();
+        let peer = Arc::clone(&self.peer);
+        env.spawn_future(async move {
+            peer.send_data(&label, data.into())
+                .await
+                .map_err(native_error)
+        })
     }
 
     #[napi]

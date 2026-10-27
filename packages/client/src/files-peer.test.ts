@@ -55,6 +55,7 @@ test.each([2048, 0, 65536])("browser file frames respect negotiated maxMessageSi
     expect((await endpoint.call("write", { transferId: "upload", path: "", offset: 0 }, bytes)).value.bytes).toBe(bytes.length)
     const limit = negotiated ? Math.min(FILE_WIRE_CHUNK_BYTES, negotiated) : FILE_WIRE_CHUNK_BYTES
     expect(packets.every(packet => packet.length <= limit)).toBe(true)
+    if (!negotiated || negotiated >= FILE_WIRE_CHUNK_BYTES) expect(packets).toHaveLength(2)
     expect(Math.max(...packets.map(packet => packet.length))).toBe(Math.min(limit, encodeFileFrame({ id: 1, method: "write", params: { transferId: "upload", path: "", offset: 0 } }, bytes).length))
     expect(received).toHaveLength(1)
     expect(Buffer.from(received[0]!).equals(Buffer.from(bytes))).toBe(true)

@@ -36,6 +36,28 @@ test("unsupported browsers explain the directory-access requirement and cancella
   await endpoint.close()
 })
 
+test("browser read sessions retain the selected handle, bind its path, and validate changes before release", async () => {
+  let file = new File(["hello"], "note.txt", { lastModified: 123 })
+  const fileHandle = { kind: "file", name: "note.txt", getFile: async () => file }
+  const getFileHandle = vi.fn(async () => fileHandle)
+  const directory = { kind: "directory", name: "chosen", isSameEntry: async () => true, async *entries() {}, getFileHandle }
+  vi.stubGlobal("window", { showDirectoryPicker: async () => directory })
+  const endpoint = new BrowserFilesEndpoint()
+  await endpoint.choose()
+  const path = "/chosen/note.txt"
+  const { readId } = (await endpoint.call("openRead", { path, modifiedAt: 123 })).value
+  for (const offset of [0, 1]) {
+    expect((await endpoint.call("read", { path, readId, offset, length: 1 })).data).toEqual(new Uint8Array(["hello".charCodeAt(offset)]))
+  }
+  expect(getFileHandle).toHaveBeenCalledOnce()
+  await expect(endpoint.call("read", { path: "/chosen/another.txt", readId, offset: 0, length: 1 })).rejects.toThrow("path")
+  file = new File(["world"], "note.txt", { lastModified: 124 })
+  await expect(endpoint.call("read", { path, readId, offset: 0, length: 1 })).rejects.toThrow("changed")
+  await expect(endpoint.call("closeRead", { readId })).rejects.toThrow("changed")
+  await expect(endpoint.call("read", { path, readId, offset: 0, length: 1 })).rejects.toThrow("Unknown file read")
+  await endpoint.close()
+})
+
 test("account changes and cached-page suspension discard local grants without breaking the wrapper", async () => {
   const directory = { kind: "directory", name: "chosen", isSameEntry: async () => true, async *entries() {} }
   const events = new Map<string, (event: { persisted: boolean }) => void>()
