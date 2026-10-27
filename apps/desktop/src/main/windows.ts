@@ -1,11 +1,11 @@
 import { app, BrowserWindow, type WebPreferences } from "electron"
 import { join } from "node:path"
-import { LOCALE_ARGUMENT_PREFIX } from "../../../../packages/client/src/i18n.ts"
+import { LOCALE_ARGUMENT_PREFIX, resolveAppLocale } from "../../../../packages/client/src/i18n.ts"
 import { resolveRendererEntrypoint } from "../shared/renderer-security.ts"
 import { attachDesktopMedia } from "./desktop-media.ts"
 import { attachSettings } from "./settings.ts"
 import { attachExternalLinks, isAuxiliaryRendererUrl } from "./external-links.ts"
-import { getMainLocale } from "./i18n.ts"
+import { attachAppearance } from "./appearance.ts"
 import type { BackgroundLifecycle } from "./lifecycle.ts"
 import { buildResourcePath } from "./paths.ts"
 import { followSystemTheme, windowChromeOptions } from "./window-chrome.ts"
@@ -15,7 +15,7 @@ let mainWindow: BrowserWindow | null = null
 export function secureWebPreferences(): WebPreferences {
   return {
     preload: join(import.meta.dirname, "../preload/index.cjs"),
-    additionalArguments: [`${LOCALE_ARGUMENT_PREFIX}${getMainLocale()}`],
+    additionalArguments: [`${LOCALE_ARGUMENT_PREFIX}${resolveAppLocale(app.getPreferredSystemLanguages())}`],
     contextIsolation: true,
     nodeIntegration: false,
     nodeIntegrationInWorker: false,
@@ -52,6 +52,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
   mainWindow = window
   attachDesktopMedia(window)
   attachSettings(window)
+  attachAppearance(window)
   followSystemTheme(window, process.platform)
   window.once("closed", () => {
     if (mainWindow === window) mainWindow = null
@@ -76,6 +77,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
     webPreferences: secureWebPreferences(),
   }))
   window.webContents.on("did-create-window", (child) => {
+    attachAppearance(child)
     followSystemTheme(child, process.platform)
     attachExternalLinks(child.webContents)
     child.webContents.on("will-navigate", (event, url) => {

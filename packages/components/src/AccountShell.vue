@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "./components/common/UiButton.vue"
-import { Bell, SlidersHorizontal, Users } from "@lucide/vue"
+import { Bell, Palette, SlidersHorizontal, Users } from "@lucide/vue"
 import { defineAsyncComponent, onBeforeUnmount, provide, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
@@ -12,6 +12,7 @@ import BrandLogo from "./components/common/BrandLogo.vue"
 import TeamAccessDialog from "./components/account/TeamAccessDialog.vue"
 import TeamOnboarding from "./components/account/TeamOnboarding.vue"
 import PreferencesSettings from "./components/settings/PreferencesSettings.vue"
+import AppearanceSettings from "./components/settings/AppearanceSettings.vue"
 import NotificationsSettings from "./components/settings/NotificationsSettings.vue"
 import SettingsLayout from "./components/settings/SettingsLayout.vue"
 import AccountFooter from "./components/sidebar/AccountFooter.vue"
@@ -54,11 +55,13 @@ const section = (value: AccountSettingsSection) => [
       <SettingsLayout v-else-if="shellSettings" @back="shellSettings = undefined">
         <template #nav>
           <button type="button" :class="section('preferences')" @click="shellSettings = 'preferences'"><SlidersHorizontal :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.preferences") }}</button>
+          <button type="button" :class="section('appearance')" @click="shellSettings = 'appearance'"><Palette :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.appearance") }}</button>
           <button v-if="host.platform !== 'web'" type="button" :class="section('notifications')" @click="shellSettings = 'notifications'"><Bell :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.notifications") }}</button>
           <button v-if="team" type="button" :class="section('team')" @click="shellSettings = 'team'"><Users :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("team.settings") }}</button>
         </template>
         <TeamSettings v-if="shellSettings === 'team'" />
         <NotificationsSettings v-else-if="shellSettings === 'notifications'" />
+        <AppearanceSettings v-else-if="shellSettings === 'appearance'" />
         <PreferencesSettings v-else />
       </SettingsLayout>
       <div v-else class="flex min-h-0 flex-1">

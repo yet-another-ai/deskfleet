@@ -171,8 +171,23 @@
     "openLabel": "Open {title}",
     "restoreLabel": "Restore {title}"
   },
+  "appearance": {
+    "language": "Language",
+    "theme": "Theme",
+    "followSystem": "Follow system",
+    "light": "Light",
+    "dark": "Dark",
+    "fonts": "Fonts",
+    "interfaceFont": "Interface font",
+    "terminalFont": "Terminal font",
+    "fontHint": "Enter a font name or a comma-separated fallback list. Leave blank to use the default.",
+    "terminalFontHint": "Use a monospace font or a CSS fallback list, such as \"Cascadia Code\", \"Noto Sans Mono CJK SC\", monospace. Leave blank to use the default.",
+    "interfacePreview": "The quick brown fox jumps over the lazy dog. 0123456789 你好，世界。",
+    "terminalPreview": "$ echo \"Hello, world! 你好，世界。\"\n0123456789  [] () => !="
+  },
   "settings": {
     "preferences": "Preferences",
+    "appearance": "Appearance",
     "notifications": "Notifications",
     "notificationsEnabled": "Desktop notifications",
     "notificationsDescription": "Allow deskfleet to send notifications on this computer.",

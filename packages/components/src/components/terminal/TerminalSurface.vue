@@ -3,7 +3,9 @@ import { FitAddon } from "@xterm/addon-fit"
 import { Terminal, type ITheme } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
 import { useResizeObserver } from "@vueuse/core"
+import { storeToRefs } from "pinia"
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue"
+import { useAppearanceStore } from "../../stores/appearance.ts"
 
 const props = defineProps<{
   /** Written once when the terminal opens; `\n` becomes a new line. */
@@ -28,11 +30,12 @@ const theme: ITheme = {
 }
 
 const container = useTemplateRef<HTMLDivElement>("container")
+const { terminalFont } = storeToRefs(useAppearanceStore())
 const fit = new FitAddon()
 const terminal = new Terminal({
   cursorBlink: props.interactive ?? false,
   disableStdin: !props.interactive,
-  fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+  fontFamily: terminalFont.value,
   fontSize: 13,
   scrollback: props.scrollback ?? 5_000,
   theme,
@@ -47,6 +50,10 @@ watch(() => props.interactive, (interactive) => {
   if (interactive) terminal.focus()
 })
 watch(() => props.scrollback, (scrollback) => { terminal.options.scrollback = scrollback ?? 5_000 })
+watch(terminalFont, (fontFamily) => {
+  terminal.options.fontFamily = fontFamily
+  if (container.value) fit.fit()
+})
 
 onMounted(() => {
   terminal.open(container.value!)

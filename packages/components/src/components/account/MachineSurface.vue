@@ -9,9 +9,11 @@ import App from "../../App.vue"
 import { accountSessionKey, type AccountSession } from "../../composables/useAccountSession.ts"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
+import { appearanceStoreKey, useAppearanceStore } from "../../stores/appearance.ts"
 
 // The parent keys this component by machine, so each machine gets a fresh mount.
 const props = defineProps<{ host: DeskfleetDesktopApi; session: AccountSession; machine: Machine }>()
+const appearance = useAppearanceStore()
 const root = useTemplateRef<HTMLElement>("root")
 let app: VueApp | undefined
 let state: Pinia | undefined
@@ -25,7 +27,7 @@ onMounted(async () => {
   remote = remoteMachineClient(props.host, props.session.central, props.machine)
   configureClient(remote.api)
   state = createPinia()
-  app = createApp(App).provide(accountSessionKey, props.session).use(state).use(router).use(i18n)
+  app = createApp(App).provide(accountSessionKey, props.session).provide(appearanceStoreKey, appearance).use(state).use(router).use(i18n)
   if (vaporInteropPlugin) app.use(vaporInteropPlugin)
   app.mount(root.value)
 })

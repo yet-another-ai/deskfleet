@@ -48,7 +48,7 @@ function focus(): void { (input.value?.$el as HTMLInputElement | undefined)?.foc
   </ComboboxRoot>
   <SelectRoot v-else :model-value="modelValue || null" :name="name" :required="required" :disabled="disabled" @update:model-value="emit('update:modelValue', String($event ?? ''))">
     <SelectTrigger v-bind="$attrs" class="ui-input inline-flex items-center justify-between gap-2 text-left text-[13px]" :data-control-name="name">
-      <SelectValue :placeholder="placeholder" class="min-w-0 truncate" /><SelectIcon class="shrink-0 text-ui-text-muted"><ChevronDown :size="14" aria-hidden="true" /></SelectIcon>
+      <SelectValue :placeholder="placeholder" class="min-w-0 truncate">{{ modelValue ? label(modelValue) : undefined }}</SelectValue><SelectIcon class="shrink-0 text-ui-text-muted"><ChevronDown :size="14" aria-hidden="true" /></SelectIcon>
     </SelectTrigger>
     <SelectPortal :to="portalTo">
       <SelectContent position="popper" :side-offset="5" class="ui-menu z-100 max-h-[min(20rem,var(--reka-select-content-available-height))] min-w-[var(--reka-select-trigger-width)] overflow-hidden">

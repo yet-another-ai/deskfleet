@@ -3,7 +3,7 @@ import type { AccountState, CentralApi, LocalEnrollment, Machine, Team, TeamMemb
 import { router } from "../router/index.ts"
 
 export type AccountDialog = "create-team" | "join-team" | "add-machine"
-export type AccountSettingsSection = "preferences" | "notifications" | "team"
+export type AccountSettingsSection = "preferences" | "appearance" | "notifications" | "team"
 export interface HeadlessMachine { name: string; originId: string; localMachineId: string }
 
 /**

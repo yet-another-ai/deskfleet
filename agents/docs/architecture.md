@@ -252,6 +252,14 @@ Worktree; terminal transcripts stay solely on the daemon.
 
 ## Daemon and session lifecycle
 
+Settings → Appearance belongs to the client viewing the team. Language, color
+theme, interface font, and terminal font are saved in the desktop profile's
+`appearance.json`, or in browser-local storage for Web. They do not modify the
+selected machine or synchronize through the backend. Changes apply to existing
+client windows, including native desktop chrome and menus; new windows load the
+saved preferences before mounting their UI. Font fields accept CSS `font-family`
+lists, with an empty value restoring the application default.
+
 The daemon runs as the OS user whose files, credentials, and tools the agents
 use. Closing a window or losing a connection must leave ongoing work running.
 Local clients connect over authenticated IPC, such as a Unix-domain socket or

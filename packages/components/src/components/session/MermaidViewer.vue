@@ -1,21 +1,22 @@
 <script setup lang="ts">
 import { client as platformClient } from "@deskfleet/client/platform"
 import { Check, Copy, Ellipsis, ExternalLink, LocateFixed, Maximize2, PanelRight, RotateCcw, ZoomIn, ZoomOut } from "@lucide/vue"
-import { usePreferredDark, watchImmediate } from "@vueuse/core"
-import { getActivePinia } from "pinia"
+import { watchImmediate } from "@vueuse/core"
+import { getActivePinia, storeToRefs } from "pinia"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, inject, onBeforeUnmount, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { router } from "../../router/index.ts"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
 import { renderMermaidDiagram } from "../../services/mermaid.ts"
+import { useAppearanceStore } from "../../stores/appearance.ts"
 import { broadcastMermaidLocate, locateMermaidInMainView, openMermaidSidebarTab, useLayoutStore, type MermaidSource } from "../../stores/layout.ts"
 import IconButton from "../common/IconButton.vue"
 
 const props = withDefaults(defineProps<{ code: string; mode?: "inline" | "focus" | "sidebar" | "window"; source?: MermaidSource }>(), { mode: "inline" })
 const { t } = useI18n()
 const platform = platformClient.platform
-const prefersDark = usePreferredDark()
+const { isDark } = storeToRefs(useAppearanceStore())
 const root = useTemplateRef<HTMLDivElement>("root")
 const resourceContext = inject(agentResourceContextKey, computed(() => undefined))
 const svg = ref<string>()
@@ -28,7 +29,7 @@ const copied = ref(false)
 let dragStartX = 0, dragStartY = 0, generation = 0, disposed = false
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
-watchImmediate([() => props.code, prefersDark], ([code, dark]) => {
+watchImmediate([() => props.code, isDark], ([code, dark]) => {
   const version = ++generation
   svg.value = undefined
   if (!code.trim()) return

@@ -1,7 +1,9 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { init } from "echarts/core"
+import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
+import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appearance.ts"
 import SystemUsageChart from "./SystemUsageChart.vue"
 
 const chart = vi.hoisted(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() }))
@@ -9,9 +11,13 @@ vi.mock("echarts/core", () => ({ use: vi.fn(), init: vi.fn(() => chart) }))
 let resize: ResizeObserverCallback
 let width = 640
 let wrapper: VueWrapper | undefined
+let pinia: ReturnType<typeof createPinia>
 const sample = { time: Date.UTC(2026, 9, 26, 10), cpu: 42, memory: 50 }
 
 beforeEach(() => {
+  localStorage.removeItem(APPEARANCE_STORAGE_KEY)
+  pinia = createPinia()
+  setActivePinia(pinia)
   vi.clearAllMocks()
   width = 640
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => width)
@@ -26,6 +32,8 @@ beforeEach(() => {
 afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
+  disposePinia(pinia)
+  localStorage.removeItem(APPEARANCE_STORAGE_KEY)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -70,4 +78,24 @@ test("passes missing observation intervals as gaps instead of joining them into 
   expect(option.xAxis.max).toBe(next.time)
   expect(option.series[0].data).toEqual([[sample.time, 42], [sample.time + 1, null], [next.time, 75]])
   expect(option.series[1].data).toEqual([[sample.time, 50], [sample.time + 1, null], [next.time, 60]])
+})
+
+test("redraws an existing chart when the selected theme or interface font changes", async () => {
+  const appearance = useAppearanceStore()
+  appearance.settings.theme = "light"
+  wrapper = mount(SystemUsageChart, { attachTo: document.body, props: { samples: [sample], active: true }, global: { plugins: [i18n] } })
+  await flushPromises()
+  chart.setOption.mockClear()
+
+  appearance.settings.theme = "dark"
+  await flushPromises()
+  expect(chart.setOption).toHaveBeenCalledOnce()
+
+  const font = "Arial, sans-serif"
+  ;(wrapper.element as HTMLElement).style.fontFamily = font
+  appearance.settings.interfaceFont = font
+  await flushPromises()
+  expect(chart.setOption).toHaveBeenCalledTimes(2)
+  expect(chart.setOption.mock.lastCall![0].textStyle.fontFamily).toBe(font)
+  expect(init).toHaveBeenCalledOnce()
 })

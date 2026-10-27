@@ -1,18 +1,22 @@
 import { client } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { computed, ref } from "vue"
-import { afterEach, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { FilesApi } from "../../../../client/src/files.ts"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { agentResourceContextKey, type AgentResourceContext } from "../../services/agent-resources.ts"
 import * as mermaidService from "../../services/mermaid.ts"
+import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appearance.ts"
 import { mermaidSidebarTabs, resetMermaidSidebarTabs } from "../../stores/layout.ts"
 import AgentMarkdown from "./AgentMarkdown.vue"
 import MermaidViewer from "./MermaidViewer.vue"
 
 const originalFiles = client.files
 let wrapper: VueWrapper | undefined
+let pinia: ReturnType<typeof createPinia>
+beforeEach(() => { localStorage.removeItem(APPEARANCE_STORAGE_KEY); pinia = createPinia(); setActivePinia(pinia) })
 const context = () => ref<AgentResourceContext>({ target: { kind: "machine", machineId: "42", teamId: "7" }, sessionId: "12" })
 function render(files: Partial<FilesApi>, text: string, value = context()) {
   client.files = files as FilesApi
@@ -30,6 +34,8 @@ function render(files: Partial<FilesApi>, text: string, value = context()) {
 afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
+  disposePinia(pinia)
+  localStorage.removeItem(APPEARANCE_STORAGE_KEY)
   client.files = originalFiles
   resetMermaidSidebarTabs()
   vi.restoreAllMocks()
@@ -160,4 +166,22 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
   await flushPromises()
   expect(writeText).toHaveBeenCalledWith("\\int_0^1 x^2 \\, dx = \\frac{1}{3}")
   expect(copyButton.attributes("data-copied")).toBe("true")
+})
+
+test("renders Mermaid with the selected application theme and updates existing diagrams", async () => {
+  const appearance = useAppearanceStore()
+  appearance.settings.theme = "light"
+  const renderDiagram = vi.spyOn(mermaidService, "renderMermaidDiagram")
+    .mockResolvedValue('<svg data-test-mermaid="ok"><g></g></svg>')
+  render({}, "```mermaid\ngraph TD\n  A --> B\n```")
+  await flushPromises()
+  expect(renderDiagram).toHaveBeenLastCalledWith("graph TD\n  A --> B", false)
+
+  appearance.settings.theme = "dark"
+  await flushPromises()
+  expect(renderDiagram).toHaveBeenLastCalledWith("graph TD\n  A --> B", true)
+  appearance.settings.theme = "light"
+  await flushPromises()
+  expect(renderDiagram).toHaveBeenLastCalledWith("graph TD\n  A --> B", false)
+  expect(renderDiagram).toHaveBeenCalledTimes(3)
 })

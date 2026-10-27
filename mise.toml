@@ -201,6 +201,11 @@ description = "Verify the actual Electron package entry and bundled ACP adapter 
 depends = ["desktop:build"]
 run = "node apps/desktop/scripts/smoke-startup.ts"
 
+[tasks."desktop:smoke-appearance"]
+description = "Verify Appearance controls, native theme, CSS fonts, and restart persistence in Electron"
+depends = ["desktop:build"]
+run = "node apps/desktop/scripts/smoke-appearance.ts"
+
 [tasks."desktop:smoke-local-agent"]
 description = "Verify Settings startup, shutdown, and the hosted local Agent lifetime in Electron"
 depends = ["native:debug", "desktop:build"]

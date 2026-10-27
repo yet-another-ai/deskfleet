@@ -10,6 +10,7 @@ import type { LocalAgentState } from "../../../../packages/client/src/local-agen
 import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT, type SettingsResult } from "../../../../packages/client/src/settings.ts"
 import { filesApi } from "./files.ts"
 import { onboardingApi } from "./onboarding.ts"
+import { appearanceApi } from "./appearance.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -46,6 +47,7 @@ return {
   ...(central ? { central, onboarding: onboardingApi() } : {}),
   platform: process.platform as DeskfleetDesktopApi["platform"],
   locale: isAppLocale(locale) ? locale : DEFAULT_LOCALE,
+  appearance: appearanceApi(),
   files: filesApi(),
   settings: {
     get: () => invokeSettings("get"),

@@ -4,7 +4,7 @@
  * uno.config.ts. Text tokens meet WCAG AA on canvas, sidebar, and surface, and
  * `text-faint` meets 3:1 for secondary labels.
  */
-/* A host can select its theme with color-scheme; the product follows the OS. */
+/* Appearance overrides color-scheme on the root; the default follows the OS. */
 :root {
   color-scheme: light dark;
   /* Keep canvas and text in sync with apps/desktop/src/main/window-chrome.ts. */

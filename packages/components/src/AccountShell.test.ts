@@ -1,5 +1,6 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, expect, test, vi } from "vitest"
+import { createPinia, disposePinia, type Pinia } from "pinia"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { configureClient, getClient } from "@deskfleet/client/platform"
 import type { CentralApi, CentralEvent, Machine } from "@deskfleet/client/central"
 import { i18n } from "./i18n/index.ts"
@@ -11,7 +12,9 @@ import { fakeCentral, machineFixture } from "./test/central.ts"
 const host = getClient()
 const page = () => new DOMWrapper(document.body)
 let view: VueWrapper | undefined
-afterEach(async () => { view?.unmount(); view = undefined; configureClient(host); await router.replace("/"); vi.restoreAllMocks() })
+let pinia: Pinia
+beforeEach(() => { pinia = createPinia() })
+afterEach(async () => { view?.unmount(); view = undefined; disposePinia(pinia); configureClient(host); await router.replace("/"); vi.restoreAllMocks() })
 
 test("browses synchronized history with the machine offline and isolates equal local IDs when switching machines", async () => {
   const listeners = new Set<(event: CentralEvent) => void>()
@@ -41,7 +44,7 @@ test("browses synchronized history with the machine offline and isolates equal l
     events: vi.fn(async (machineId: string) => ({ events: [agentEvent(1, "input", snapshot(machineId).inputs[0]!)], lastEventSeq: "1" })),
     rpc: vi.fn(async () => { throw new Error("Offline") }), createPeer: vi.fn(),
   } as unknown as CentralApi
-  view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [i18n] }, attachTo: document.body })
+  view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [pinia, i18n] }, attachTo: document.body })
   await flushPromises()
   await vi.waitFor(() => expect(view!.text()).toContain("Workspace 101"))
   expect(view.text()).toContain("Conversation 101")
@@ -67,7 +70,7 @@ test("browses synchronized history with the machine offline and isolates equal l
 })
 
 const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin") => {
-  view = mount(AccountShell, { props: { host: { ...host, platform, central } }, global: { plugins: [i18n] }, attachTo: document.body })
+  view = mount(AccountShell, { props: { host: { ...host, platform, central } }, global: { plugins: [pinia, i18n] }, attachTo: document.body })
 }
 const buttonText = (text: string) => page().findAll("button").find(button => button.text() === text)
 /**

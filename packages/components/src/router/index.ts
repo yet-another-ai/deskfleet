@@ -79,6 +79,11 @@ export const router = createRouter({
           component: () => import("../components/settings/PreferencesSettings.vue"),
         },
         {
+          path: "appearance",
+          name: "settings-appearance",
+          component: () => import("../components/settings/AppearanceSettings.vue"),
+        },
+        {
           path: "notifications",
           name: "settings-notifications",
           component: () => import("../components/settings/NotificationsSettings.vue"),

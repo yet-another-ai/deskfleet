@@ -1,11 +1,13 @@
-import { createPinia } from "pinia"
+import { createPinia, disposePinia } from "pinia"
 import { createApp, vaporInteropPlugin } from "vue"
-import { client as platformClient, getClient } from "@deskfleet/client/platform"
+import { getClient } from "@deskfleet/client/platform"
 import { i18n } from "./i18n/index.ts"
+import { useAppearanceStore } from "./stores/appearance.ts"
 import "./styles.css"
 
 export async function mountDeskfleet(target: string | Element = "#root") {
-  document.documentElement.lang = platformClient.locale
+  const state = createPinia()
+  await useAppearanceStore(state).initialize()
   if (window.location.hash.startsWith("#/mermaid")) {
     const params = new URLSearchParams(window.location.hash.split("?")[1])
     const root = (await import("./components/session/MermaidViewer.vue")).default
@@ -18,7 +20,8 @@ export async function mountDeskfleet(target: string | Element = "#root") {
         diagramId: params.get("diagramId") || undefined,
       },
     })
-    app.use(vaporInteropPlugin).use(createPinia()).use((await import("./router/index.ts")).router).use(i18n).mount(target)
+    app.onUnmount(() => disposePinia(state))
+    app.use(vaporInteropPlugin).use(state).use((await import("./router/index.ts")).router).use(i18n).mount(target)
     return app
   }
   const host = getClient()
@@ -28,7 +31,8 @@ export async function mountDeskfleet(target: string | Element = "#root") {
     : (await import("./App.vue")).default
   const app = host.central ? createApp(root, { host: { ...host } }) : createApp(root)
   app.use(vaporInteropPlugin)
-  app.use(createPinia())
+  app.use(state)
+  app.onUnmount(() => disposePinia(state))
   if (!host.central) app.use((await import("./router/index.ts")).router)
   app.use(i18n)
   app.mount(target)

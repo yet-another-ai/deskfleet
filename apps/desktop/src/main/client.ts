@@ -3,9 +3,9 @@ import { installFiles } from "./files.ts"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { join } from "node:path"
 import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
-import { resolveAppLocale } from "../../../../packages/client/src/i18n.ts"
+import { AppearanceSettingsController } from "./appearance-settings.ts"
+import { installAppearance } from "./appearance.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
-import { setMainLocale } from "./i18n.ts"
 import { keepRunningInBackground } from "./lifecycle.ts"
 import { KeepAwakeController } from "./keep-awake.ts"
 import { LocalAgentController } from "./local-agent-controller.ts"
@@ -33,7 +33,7 @@ function start(): void {
   app.on("second-instance", show)
 
   void app.whenReady().then(async () => {
-    setMainLocale(resolveAppLocale(app.getPreferredSystemLanguages()))
+    installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
     installDesktopMediaIpc()
     const central = await installCentralAccount()

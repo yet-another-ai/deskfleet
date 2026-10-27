@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import { usePreferredDark, useResizeObserver } from "@vueuse/core"
+import { useResizeObserver } from "@vueuse/core"
 import { LineChart, type LineSeriesOption } from "echarts/charts"
 import { GridComponent, LegendComponent, TooltipComponent, type GridComponentOption, type LegendComponentOption, type TooltipComponentOption } from "echarts/components"
 import { init, use, type ComposeOption, type EChartsType } from "echarts/core"
 import { SVGRenderer } from "echarts/renderers"
+import { storeToRefs } from "pinia"
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { SYSTEM_STATUS_HISTORY, SYSTEM_STATUS_INTERVAL } from "../../composables/useSystemStatus.ts"
+import { useAppearanceStore } from "../../stores/appearance.ts"
 
 use([LineChart, GridComponent, LegendComponent, TooltipComponent, SVGRenderer])
 type ChartOption = ComposeOption<LineSeriesOption | GridComponentOption | LegendComponentOption | TooltipComponentOption>
 const props = defineProps<{ samples: { time: number; cpu: number; memory: number }[]; active: boolean }>()
 const { t, locale } = useI18n()
 const element = useTemplateRef<HTMLDivElement>("chart")
-const prefersDark = usePreferredDark()
+const { isDark, interfaceFont } = storeToRefs(useAppearanceStore())
 let chartInstance: EChartsType | undefined
 
 function colors(host: HTMLElement): Record<string, string> {
@@ -99,7 +101,7 @@ function render(): void {
 
 onMounted(render)
 useResizeObserver(element, render)
-watch([() => props.samples, () => props.active, locale, prefersDark], render, { flush: "post" })
+watch([() => props.samples, () => props.active, locale, isDark, interfaceFont], render, { flush: "post" })
 onBeforeUnmount(() => chartInstance?.dispose())
 </script>
 

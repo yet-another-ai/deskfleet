@@ -1,5 +1,12 @@
 import { mount } from "@vue/test-utils"
-import { expect, test, vi } from "vitest"
+import { createPinia, disposePinia, setActivePinia } from "pinia"
+import { nextTick } from "vue"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appearance.ts"
+
+let pinia: ReturnType<typeof createPinia>
+beforeEach(() => { localStorage.removeItem(APPEARANCE_STORAGE_KEY); pinia = createPinia(); setActivePinia(pinia) })
+afterEach(() => { disposePinia(pinia); localStorage.removeItem(APPEARANCE_STORAGE_KEY) })
 
 const terminals: FakeTerminal[] = []
 const fits: { fit: ReturnType<typeof vi.fn> }[] = []
@@ -77,4 +84,28 @@ test("forwards terminal input and size changes and enables input only when attac
   expect(terminal.options.disableStdin).toBe(true)
   wrapper.unmount()
   expect(terminal.subscription.dispose).toHaveBeenCalledTimes(3)
+})
+
+test("applies the terminal font fallback list to existing terminals and refits their cells", async () => {
+  const appearance = useAppearanceStore()
+  const defaultFont = appearance.terminalFont
+  const customFont = '"JetBrains Mono", "Noto Sans Mono CJK SC", monospace'
+  appearance.settings.terminalFont = customFont
+  const wrapper = mount(TerminalSurface)
+  const terminal = terminals.at(-1)!
+  const fit = fits.at(-1)!
+  expect(terminal.options.fontFamily).toBe(customFont)
+  fit.fit.mockClear()
+
+  appearance.settings.terminalFont = '"Cascadia Code", Consolas, monospace'
+  await nextTick()
+  expect(terminal.options.fontFamily).toBe('"Cascadia Code", Consolas, monospace')
+  expect(fit.fit).toHaveBeenCalledOnce()
+  expect(terminal.open).toHaveBeenCalledOnce()
+
+  appearance.settings.terminalFont = ""
+  await nextTick()
+  expect(terminal.options.fontFamily).toBe(defaultFont)
+  expect(fit.fit).toHaveBeenCalledTimes(2)
+  wrapper.unmount()
 })
