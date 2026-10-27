@@ -87,8 +87,13 @@ pub(super) async fn registration_options(
             300_000,
         )
         .await?;
+    let mut public_key = encoded(options)?["publicKey"].clone();
+    // Anonymous login must not disclose account-specific credential IDs. Ask
+    // browsers to create discoverable credentials for that login ceremony.
+    public_key["authenticatorSelection"]["residentKey"] = json!("required");
+    public_key["authenticatorSelection"]["requireResidentKey"] = json!(true);
     Ok(web::Json(
-        json!({"ceremonyId":token,"publicKey":encoded(options)?["publicKey"]}),
+        json!({"ceremonyId":token,"publicKey":public_key}),
     ))
 }
 pub(super) async fn register(
@@ -169,7 +174,29 @@ pub(super) async fn login_options(
     browser_mutation(&req, &state)?;
     let email = deskfleet_control_store::normalize_email(&body.email)?;
     limit(&req, &state, "login", Some(&email)).await?;
-    options(&state, &email, "passkey_login", None).await
+    // Bind the ceremony to this email and its current credential version, but
+    // never expose whether it belongs to an active account or has any keys.
+    let record = state.store.password_credentials(&email).await?;
+    let user_id = record.as_ref().and_then(|record| record["userId"].as_str());
+    let version = record.as_ref().map(|record| &record["version"]);
+    let (options, ceremony) = state
+        .auth
+        .webauthn
+        .start_discoverable_authentication()
+        .map_err(|_| ApiError::internal())?;
+    let token = state
+        .store
+        .issue_identity_challenge(
+            "passkey_login",
+            user_id,
+            &email,
+            json!({"state":encoded(ceremony)?,"sessionId":null,"version":version}),
+            300_000,
+        )
+        .await?;
+    Ok(web::Json(
+        json!({"ceremonyId":token,"publicKey":encoded(options)?["publicKey"]}),
+    ))
 }
 pub(super) async fn reauthentication_options(
     req: HttpRequest,
@@ -202,12 +229,34 @@ async fn finish(
         return Err(ApiError::unauthorized());
     }
     let user_id = field(&saved, "userId")?;
-    let ceremony: PasskeyAuthentication = decoded(saved["record"]["state"].clone())?;
-    let result = state
-        .auth
-        .webauthn
-        .finish_passkey_authentication(&body.credential, &ceremony)
-        .map_err(|_| ApiError::unauthorized())?;
+    let result = if purpose == "passkey_login" {
+        let (credential_user, _) = state
+            .auth
+            .webauthn
+            .identify_discoverable_authentication(&body.credential)
+            .map_err(|_| ApiError::unauthorized())?;
+        if credential_user.to_string() != user_id {
+            return Err(ApiError::unauthorized());
+        }
+        let ceremony: DiscoverableAuthentication = decoded(saved["record"]["state"].clone())?;
+        let credentials: Vec<DiscoverableKey> = keys(state, user_id)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        state.auth.webauthn.finish_discoverable_authentication(
+            &body.credential,
+            ceremony,
+            &credentials,
+        )
+    } else {
+        let ceremony: PasskeyAuthentication = decoded(saved["record"]["state"].clone())?;
+        state
+            .auth
+            .webauthn
+            .finish_passkey_authentication(&body.credential, &ceremony)
+    }
+    .map_err(|_| ApiError::unauthorized())?;
     let mut found = false;
     for row in state.store.passkeys(user_id).await? {
         let mut key: Passkey = decoded(row["record"].clone())?;

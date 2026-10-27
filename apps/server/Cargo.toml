@@ -21,7 +21,7 @@ actix-cors = "0.7"
 futures-util = "0.3"
 redis = { version = "1.8.0", default-features = false, features = ["tokio-rustls-comp"] }
 argon2 = { version = "0.5", features = ["std"] }
-webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation", "conditional-ui"] }
 # WebAuthn uses OpenSSL; build its crypto library without a host installation.
 openssl = { version = "0.10", features = ["vendored"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }

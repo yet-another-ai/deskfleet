@@ -94,6 +94,11 @@ open decisions, not an implicit cascading deletion.
 - Passkey ceremonies use server-side, expiring, single-use challenge state.
   Validate RP ID, allowed origins, and user verification. Store public credential
   material, not private keys.
+  Public login options use discoverable credentials and expose the same options
+  for every email, without credential IDs or account-existence signals. New
+  registrations require resident credentials. Earlier nonresident development
+  keys still work for authenticated reauthentication; use password login to
+  register a discoverable replacement for public Passkey login.
 - Rate-limit authentication, registration, recovery, and mail sending. Secrets
   must not enter logs, history, analytics, or client-visible errors.
 - Retain opaque application sessions with hashed tokens in central storage.

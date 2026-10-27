@@ -14,6 +14,11 @@ use deskfleet_server::{
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use serde_json::{Value, json};
 
+#[path = "support/passkey_privacy.rs"]
+mod passkey_privacy;
+#[path = "support/resident_passkey.rs"]
+mod resident_passkey;
+
 fn request(method: Method, path: &str, csrf: &str, session: Option<&str>) -> test::TestRequest {
     let request = test::TestRequest::default()
         .method(method)
@@ -158,8 +163,7 @@ async fn mailbox_proof_cookies_csrf_recovery_desktop_and_disable() {
     assert_eq!(sessions.as_array().unwrap().len(), 1);
     // Exercise real WebAuthn signatures with a software authenticator. Its
     // test-only UV flag stands in for successful platform user verification.
-    use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey};
-    let mut authenticator = WebauthnAuthenticator::new(SoftPasskey::new(true));
+    let mut authenticator = resident_passkey::ResidentPasskey::new();
     let options: Value = test::call_and_read_body_json(
         &app,
         request(
