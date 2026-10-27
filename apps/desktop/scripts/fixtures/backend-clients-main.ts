@@ -212,7 +212,7 @@ async function captureScreenshots(window: BrowserWindow, context: BackendClients
   process.stderr.write(`${context.mode} UI screenshots saved to ${directory}\n`)
 }
 
-async function openTerminal(machineId: string): Promise<void> {
+async function openTerminal(machineId: string, local: boolean): Promise<void> {
   location.hash = `/machines/${machineId}/control?tab=terminal`
   const deadline = Date.now() + 30_000
   async function until(predicate: () => boolean): Promise<void> {
@@ -221,7 +221,11 @@ async function openTerminal(machineId: string): Promise<void> {
       await new Promise(resolve => setTimeout(resolve, 25))
     }
   }
-  await until(() => document.querySelector('[role="tablist"][aria-label="Remote control"] [aria-selected="true"]')?.textContent?.trim() === "Terminal")
+  const label = local ? "Local control" : "Remote control"
+  const tools = () => document.querySelector(`[role="tablist"][aria-label="${label}"]`)
+  await until(() => tools()?.querySelector('[aria-selected="true"]')?.textContent?.trim() === "Terminal")
+  const desktop = [...tools()!.querySelectorAll('[role="tab"]')].some(tab => tab.textContent?.trim() === "Desktop")
+  if (desktop === local) throw new Error(local ? "Local controls must hide Desktop" : "Remote controls must retain Desktop")
   await until(() => !!document.querySelector('button[aria-label="New shell"]'))
   document.querySelector<HTMLButtonElement>('button[aria-label="New shell"]')!.click()
   await until(() => !!document.querySelector('[data-connection="connected"]'))
@@ -292,7 +296,7 @@ void app.whenReady().then(async () => {
   }
   const result = await window.webContents.executeJavaScript(`(${exercise.toString()})(${JSON.stringify(context)})`)
   await captureScreenshots(window, context)
-  await window.webContents.executeJavaScript(`(${openTerminal.toString()})(${JSON.stringify(context.machines[0])})`)
+  await window.webContents.executeJavaScript(`(${openTerminal.toString()})(${JSON.stringify(context.machines[0])},${context.mode === "electron"})`)
   const terminalTitle = `DF_${context.mode}_REMOTE_PTY`
   const command = process.platform === "win32" ? `powershell -NoProfile -Command "Write-Output ('DF_' + '${context.mode}' + '_REMOTE_PTY')"` : `printf 'DF_%s_REMOTE_PTY\\n' ${context.mode}`
   await window.webContents.executeJavaScript(`(()=>{const data=new DataTransfer();data.setData('text/plain',${JSON.stringify(command)});document.querySelector('.xterm-helper-textarea').dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));})()`)
