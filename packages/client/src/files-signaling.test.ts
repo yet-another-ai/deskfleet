@@ -65,7 +65,7 @@ test("the setup deadline rejects a stalled offer without waiting for signaling t
   expect(close).toHaveBeenCalledOnce()
 })
 
-test.each(["free_plan", "turn_quota_exhausted"] as const)("explains relay denial after direct file failure: %s", async relayDeniedReason => {
+test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const)("explains relay denial after direct file failure: %s", async relayDeniedReason => {
   const failed = vi.fn()
   const central = {
     createPeer: async () => ({ peerId: "a", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [], relayDeniedReason }),

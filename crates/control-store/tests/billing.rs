@@ -8,6 +8,9 @@ use deskfleet_protocol::control::{PeerActor, PeerAuthorization, PeerTarget};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use serde_json::json;
 
+// Only tests that mutate the collector singleton need to share this guard.
+static COLLECTOR_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn fixture() -> (ControlStore, String, String, String) {
     let store =
         ControlStore::connect(&std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL"))
@@ -152,6 +155,7 @@ async fn free_seats_and_session_admissions_are_atomic_and_generation_safe() {
 #[tokio::test]
 #[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
 async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
+    let _collector_guard = COLLECTOR_TEST_LOCK.lock().await;
     let (store, owner, team, machine) = fixture().await;
     assert!(!store.relay_allowed(&team).await.unwrap());
     assert_eq!(
@@ -230,6 +234,28 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
         .release_billing_operation(&team, &lease)
         .await
         .unwrap();
+    for last_seen in [None, Some(now_ms() - 60_000)] {
+        execute(
+            &store,
+            "UPDATE cp_turn_collector SET last_seen_at=$1 WHERE singleton",
+            vec![last_seen.into()],
+        )
+        .await;
+        assert_eq!(
+            store.relay_denied_reason(&team).await.unwrap(),
+            Some(RelayDeniedReason::MeteringUnavailable)
+        );
+        assert_eq!(
+            store.billing_summary(&team).await.unwrap()["metering"]["fresh"],
+            false
+        );
+    }
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET last_seen_at=$1 WHERE singleton",
+        vec![now_ms().into()],
+    )
+    .await;
     assert!(store.relay_allowed(&team).await.unwrap());
     let session = store.new_session(&owner).await.unwrap();
     let auth = store
@@ -262,6 +288,26 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
         .save_peer(&authorization, &auth.id, now + 60_000)
         .await
         .unwrap();
+    store.save_peer_relay_decision(&peer, true).await.unwrap();
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET last_seen_at=$1,gap_since=$1 WHERE singleton",
+        vec![(now_ms() - 60_000).into()],
+    )
+    .await;
+    assert!(!store.relay_allowed(&team).await.unwrap());
+    assert!(store.peer_relay_decision(&peer).await.unwrap());
+    // A new heartbeat restores admission; the historical collection gap remains visible.
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET last_seen_at=$1 WHERE singleton",
+        vec![now_ms().into()],
+    )
+    .await;
+    assert!(store.relay_allowed(&team).await.unwrap());
+    let summary = store.billing_summary(&team).await.unwrap();
+    assert_eq!(summary["metering"]["fresh"], true);
+    assert!(summary["metering"]["gapSince"].is_string());
     let mut traffic = TurnUsage {
         peer_id: peer,
         realm: "test".into(),
@@ -277,6 +323,12 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
         store.relay_denied_reason(&team).await.unwrap(),
         Some(RelayDeniedReason::TurnQuotaExhausted)
     );
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET last_seen_at=NULL WHERE singleton",
+        vec![],
+    )
+    .await;
     store
         .set_enterprise(&operator.id, &team, true)
         .await
@@ -284,6 +336,12 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
     assert!(store.relay_allowed(&team).await.unwrap());
     traffic.sent_bytes = 100;
     store.record_turn_usage(&traffic).await.unwrap();
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET last_seen_at=$1 WHERE singleton",
+        vec![now_ms().into()],
+    )
+    .await;
     store
         .set_enterprise(&operator.id, &team, false)
         .await
@@ -306,6 +364,22 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
         .release_billing_operation(&team, &lease)
         .await
         .unwrap();
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET last_seen_at=NULL WHERE singleton",
+        vec![],
+    )
+    .await;
+    assert_eq!(
+        store.relay_denied_reason(&team).await.unwrap(),
+        Some(RelayDeniedReason::MeteringUnavailable)
+    );
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET last_seen_at=$1 WHERE singleton",
+        vec![now_ms().into()],
+    )
+    .await;
     assert!(store.relay_allowed(&team).await.unwrap());
     assert_eq!(
         store.billing_profile(&team).await.unwrap().period_anchor,
@@ -322,6 +396,16 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
         "free"
     );
     assert!(!store.relay_allowed(&team).await.unwrap());
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET last_seen_at=NULL WHERE singleton",
+        vec![],
+    )
+    .await;
+    assert_eq!(
+        store.relay_denied_reason(&team).await.unwrap(),
+        Some(RelayDeniedReason::FreePlan)
+    );
     assert_eq!(
         store
             .clone()
@@ -341,6 +425,59 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
     );
     let rows=store.database().query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres,"SELECT id FROM cp_site_audit WHERE action='enterprise.update' AND after_value->>'teamId'=$1",vec![team.into()])).await.unwrap();
     assert_eq!(rows.len(), 2);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn collector_claims_do_not_refresh_metering_and_heartbeats_require_current_ownership() {
+    let _collector_guard = COLLECTOR_TEST_LOCK.lock().await;
+    let (store, _, team, _) = fixture().await;
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET owner=NULL,lease_until=NULL,last_seen_at=NULL,gap_since=NULL WHERE singleton",
+        vec![],
+    )
+    .await;
+    let owner = uuid::Uuid::new_v4().to_string();
+    for _ in 0..3 {
+        assert!(store.claim_turn_collector(&owner).await.unwrap());
+        let summary = store.billing_summary(&team).await.unwrap();
+        assert_eq!(summary["metering"]["fresh"], false);
+        assert!(summary["metering"]["lastSeenAt"].is_null());
+        store.turn_collector_gap(&owner).await.unwrap();
+    }
+    let stale = now_ms() - 60_000;
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET last_seen_at=$1 WHERE singleton",
+        vec![stale.into()],
+    )
+    .await;
+    for _ in 0..3 {
+        assert!(store.claim_turn_collector(&owner).await.unwrap());
+        let summary = store.billing_summary(&team).await.unwrap();
+        assert_eq!(summary["metering"]["fresh"], false);
+        assert_eq!(summary["metering"]["lastSeenAt"], timestamp(stale));
+    }
+    assert!(store.heartbeat_turn_collector(&owner).await.unwrap());
+    assert_eq!(
+        store.billing_summary(&team).await.unwrap()["metering"]["fresh"],
+        true
+    );
+    let other = uuid::Uuid::new_v4().to_string();
+    assert!(!store.heartbeat_turn_collector(&other).await.unwrap());
+    execute(
+        &store,
+        "UPDATE cp_turn_collector SET lease_until=$1 WHERE singleton",
+        vec![(now_ms() - 1).into()],
+    )
+    .await;
+    assert!(!store.heartbeat_turn_collector(&owner).await.unwrap());
+    assert!(store.claim_turn_collector(&other).await.unwrap());
+    assert!(!store.heartbeat_turn_collector(&owner).await.unwrap());
+    assert!(store.heartbeat_turn_collector(&other).await.unwrap());
+    store.turn_collector_gap(&other).await.unwrap();
+    assert!(!store.heartbeat_turn_collector(&other).await.unwrap());
 }
 
 #[tokio::test]

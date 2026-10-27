@@ -84,11 +84,11 @@ async fn collect(store: &ControlStore, pubsub: PubSub, owner: &str) {
                 }
             },
             _ = heartbeat.tick() => {
-                if !matches!(store.claim_turn_collector(owner).await, Ok(true)) {
-                    return;
-                }
                 if !matches!(time::timeout(CONNECTION_TIMEOUT, sink.ping::<redis::Value>()).await, Ok(Ok(_))) {
                     tracing::warn!("TURN usage Redis heartbeat failed; reconnecting");
+                    return;
+                }
+                if !matches!(store.heartbeat_turn_collector(owner).await, Ok(true)) {
                     return;
                 }
                 continue;

@@ -58,6 +58,11 @@ impl Plan {
 pub enum RelayDeniedReason {
     FreePlan,
     TurnQuotaExhausted,
+    MeteringUnavailable,
+}
+
+fn metering_fresh(last_seen: Option<i64>, now: i64) -> bool {
+    last_seen.is_some_and(|seen| now - seen < 60_000)
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -179,7 +184,7 @@ impl ControlStore {
             "plan":plan,"limits":plan.limits(),"enterpriseOverride":p.enterprise,
             "usage":{"activeSessionCount":row.try_get::<i64>("","sessions")?,"memberCount":row.try_get::<i64>("","members")?,"relayedBytes":row.try_get::<String>("","bytes")?},
             "period":{"start":timestamp(start),"end":timestamp(end)},"nextResetAt":timestamp(end),
-            "metering":{"lastSeenAt":last_seen.map(timestamp),"gapSince":meter.try_get::<Option<i64>>("","gap_since")?.map(timestamp),"fresh":last_seen.is_some_and(|seen| now_ms()-seen < 60_000)},
+            "metering":{"lastSeenAt":last_seen.map(timestamp),"gapSince":meter.try_get::<Option<i64>>("","gap_since")?.map(timestamp),"fresh":metering_fresh(last_seen,now_ms())},
             "subscription":p.subscription_id.map(|_|json!({"plan":p.plan,"status":p.subscription_status,"paidThrough":p.paid_through.map(timestamp),"cancelAtPeriodEnd":p.cancel_at_period_end}))
         }))
     }
@@ -190,18 +195,19 @@ impl ControlStore {
 
     pub async fn relay_denied_reason(&self, team_id: &str) -> Result<Option<RelayDeniedReason>> {
         let profile = self.billing_profile(team_id).await?;
-        let Some(limit) = profile
-            .effective_plan(self.hosted, now_ms())
-            .limits()
-            .turn_bytes
-        else {
+        let now = now_ms();
+        let Some(limit) = profile.effective_plan(self.hosted, now).limits().turn_bytes else {
             return Ok(None);
         };
         if limit == 0 {
             return Ok(Some(RelayDeniedReason::FreePlan));
         }
-        let (start, end) = period_at(profile.period_anchor, now_ms());
-        let allowed: bool = one(&self.db,"SELECT COALESCE(SUM(sent_bytes),0)<$4::bigint AS allowed FROM cp_turn_usage WHERE team_id=$1 AND collected_at >= $2 AND collected_at < $3",vec![resource_id(team_id)?.into(),start.into(),end.into(),limit.into()]).await?.try_get("","allowed")?;
+        let (start, end) = period_at(profile.period_anchor, now);
+        let meter = one(&self.db,"SELECT last_seen_at,(SELECT COALESCE(SUM(sent_bytes),0)<$4::bigint FROM cp_turn_usage WHERE team_id=$1 AND collected_at >= $2 AND collected_at < $3) AS allowed FROM cp_turn_collector WHERE singleton",vec![resource_id(team_id)?.into(),start.into(),end.into(),limit.into()]).await?;
+        if !metering_fresh(meter.try_get("", "last_seen_at")?, now) {
+            return Ok(Some(RelayDeniedReason::MeteringUnavailable));
+        }
+        let allowed: bool = meter.try_get("", "allowed")?;
         Ok((!allowed).then_some(RelayDeniedReason::TurnQuotaExhausted))
     }
 
@@ -275,10 +281,15 @@ impl ControlStore {
         Ok(())
     }
 
-    /// A single collector owns a short renewable lease; disconnected periods stay visible.
+    /// Claim ownership before connecting; a lease alone is not evidence of healthy collection.
     pub async fn claim_turn_collector(&self, owner: &str) -> Result<bool> {
         let now = now_ms();
-        Ok(self.db.execute_raw(sql("UPDATE cp_turn_collector SET gap_since=CASE WHEN owner IS NOT NULL AND (lease_until IS NULL OR lease_until<$2) THEN COALESCE(gap_since,last_seen_at,$2) ELSE gap_since END,owner=$1,lease_until=$2+45000,last_seen_at=$2 WHERE singleton AND (owner=$1 OR lease_until IS NULL OR lease_until<$2)",vec![owner.into(),now.into()])).await?.rows_affected()==1)
+        Ok(self.db.execute_raw(sql("UPDATE cp_turn_collector SET gap_since=CASE WHEN owner IS NOT NULL AND (lease_until IS NULL OR lease_until<$2) THEN COALESCE(gap_since,last_seen_at,$2) ELSE gap_since END,owner=$1,lease_until=$2+45000 WHERE singleton AND (owner=$1 OR lease_until IS NULL OR lease_until<$2)",vec![owner.into(),now.into()])).await?.rows_affected()==1)
+    }
+    /// Renew freshness only after a successful ping on the subscribed Redis connection.
+    pub async fn heartbeat_turn_collector(&self, owner: &str) -> Result<bool> {
+        let now = now_ms();
+        Ok(self.db.execute_raw(sql("UPDATE cp_turn_collector SET lease_until=$2+45000,last_seen_at=$2 WHERE singleton AND owner=$1 AND lease_until>$2",vec![owner.into(),now.into()])).await?.rows_affected()==1)
     }
     pub async fn turn_collector_gap(&self, owner: &str) -> Result<()> {
         self.db.execute_raw(sql("UPDATE cp_turn_collector SET gap_since=COALESCE(gap_since,$2),lease_until=$2 WHERE singleton AND owner=$1",vec![owner.into(),now_ms().into()])).await?;

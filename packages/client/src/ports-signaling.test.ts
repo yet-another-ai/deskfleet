@@ -147,7 +147,7 @@ test("unreachable signaling cannot hold local cleanup open", async () => {
   expect(f.close).toHaveBeenCalledOnce()
 })
 
-test.each(["free_plan", "turn_quota_exhausted"] as const)("explains relay denial after direct port failure: %s", async relayDeniedReason => {
+test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const)("explains relay denial after direct port failure: %s", async relayDeniedReason => {
   const f = fixture()
   Object.assign(f.grant, { relayDeniedReason })
   f.native.answer = async () => { f.events().fail(new Error("ICE failed")) }
