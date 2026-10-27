@@ -9,6 +9,8 @@ const props = defineProps<{
   title: string
   description: string
   confirmLabel: string
+  /** Non-destructive confirmations use the primary action. */
+  tone?: "danger" | "primary"
   /** Runs the confirmed action; the dialog stays open with its error when it rejects. */
   confirm(): Promise<void>
 }>()
@@ -37,7 +39,7 @@ async function submit(): Promise<void> {
     <p v-if="error" role="alert" class="m-0 mt-4 text-sm text-ui-danger">{{ error }}</p>
     <div class="ui-dialog-actions">
       <UiButton type="button" :disabled="pending" @click="cancel">{{ t("catalog.cancel") }}</UiButton>
-      <UiButton variant="danger" type="button" :disabled="pending" @click="submit">{{ confirmLabel }}</UiButton>
+      <UiButton :variant="tone ?? 'danger'" type="button" :disabled="pending" @click="submit">{{ confirmLabel }}</UiButton>
     </div>
   </UiDialog>
 </template>

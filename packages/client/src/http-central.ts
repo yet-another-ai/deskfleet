@@ -4,6 +4,7 @@ import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
 import type { TeamBilling, AdminTeamBilling } from "./billing.ts"
+import { authenticatePasskey } from "./passkeys.ts"
 
 export interface SavedAccount { serverUrl: string; token?: string; user?: AccountUser }
 export interface HttpCentralOptions {
@@ -125,6 +126,10 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   async updateRegistration(enabled: boolean) { await this.request("PATCH", "/api/auth/registration", { enabled }) }
   users(query: string) { return this.request<Array<{ id: string; name: string; email: string; disabled: boolean }>>("GET", `/api/admin/users?query=${encodeURIComponent(query)}`) }
   async disableUser(userId: string, disabled: boolean) { await this.request("PATCH", `/api/admin/users/${encodeURIComponent(userId)}/disabled`, { disabled }) }
+  async reauthenticate(password?: string) {
+    if (password === undefined) await authenticatePasskey(this, "reauthenticate")
+    else await this.request("POST", "/api/auth/reauthenticate", { password })
+  }
   async setEnterprise(teamId: string, enabled: boolean) { await this.request("PUT", `/api/admin/teams/${encodeURIComponent(teamId)}/enterprise`, { enabled }) }
   site() { return this.request<SiteSettings>("GET", "/api/site") }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }

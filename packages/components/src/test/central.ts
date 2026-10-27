@@ -55,6 +55,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     updateRegistration: vi.fn(async (_enabled: boolean) => {}),
     users: vi.fn(async (_query: string) => []),
     disableUser: vi.fn(async (_userId: string, _disabled: boolean) => {}),
+    reauthenticate: vi.fn(async (_password?: string) => {}),
     teams: vi.fn(async () => state.teams.map(team => ({ ...team }))),
     createTeam: vi.fn(async (name: string) => {
       const team = { id: `team-${state.teams.length + 1}`, name, role: "admin" as const }

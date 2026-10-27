@@ -34,6 +34,8 @@ export interface SiteAdministrationApi {
   updateRegistration(enabled: boolean): Promise<void>
   users(query: string): Promise<Array<{ id: string; name: string; email: string; disabled: boolean }>>
   disableUser(userId: string, disabled: boolean): Promise<void>
+  /** Confirms recent authentication with a password, or a Passkey when omitted. */
+  reauthenticate(password?: string): Promise<void>
 }
 
 /** Explicit control-plane operations, shared by browser and the narrow Electron bridge. */
