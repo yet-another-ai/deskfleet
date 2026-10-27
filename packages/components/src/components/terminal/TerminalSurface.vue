@@ -75,6 +75,12 @@ watch(() => props.interactive, (interactive) => {
 watch(() => props.scrollback, (scrollback) => { terminal.options.scrollback = scrollback ?? 5_000 })
 watch(fontFamily, (fontFamily) => {
   terminal.options.fontFamily = fontFamily
+  // LigaturesAddon binds joiners to the family active at load; recreate it when the font changes.
+  if (ligaturesAddon) {
+    ligaturesAddon.dispose()
+    ligaturesAddon = undefined
+  }
+  updateLigatures()
   if (container.value) fit.fit()
 })
 watch(ligatures, updateLigatures)

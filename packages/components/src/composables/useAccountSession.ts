@@ -109,7 +109,8 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   }
   async function reload(): Promise<void> {
     account.value = await central.status()
-    site.value = undefined
+    // Keep the last public site until a replacement arrives so focus refreshes do not
+    // blank the title, announcement, or create-team controls while site() is in flight.
     const loadSite = central.site().then(value => { site.value = value })
     if (!account.value.user) {
       ++machinesRevision

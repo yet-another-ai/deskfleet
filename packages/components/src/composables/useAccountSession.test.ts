@@ -197,7 +197,16 @@ test("account refresh updates site privileges and creation policy even without a
   await flushPromises()
   expect(session.account.value.siteAdmin).toBe(false)
   expect(session.site.value).toEqual(fake.state.site)
+  const previous = session.site.value
+  let finishSite!: (value: NonNullable<typeof previous>) => void
+  fake.central.site.mockImplementationOnce(() => new Promise(resolve => { finishSite = resolve }))
+  const refreshing = session.reload()
+  await flushPromises()
+  expect(session.site.value).toEqual(previous)
+  finishSite({ siteName: "Still here", announcement: "", allowTeamCreation: true })
+  await refreshing
+  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true })
   fake.central.site.mockRejectedValueOnce(new Error("Site unavailable"))
   await expect(session.reload()).rejects.toThrow("Site unavailable")
-  expect(session.site.value).toBeUndefined()
+  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true })
 })

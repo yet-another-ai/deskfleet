@@ -120,8 +120,10 @@ function submit(delivery: "backlog" | "steer"): void {
   })
 }
 async function showFork(snapshot: AgentSnapshot, sourceId: string): Promise<void> {
-  await fleet.refreshLocalCatalog()
+  // Open the child before refreshing the catalog: the fork already exists, and a
+  // refresh failure must not reject the dialog into allocating another child.
   if (router.currentRoute.value.name === "session" && props.sessionId === sourceId) await router.push({ name: "session", params: { sessionId: snapshot.session.id } })
+  await fleet.refreshLocalCatalog().catch(() => undefined)
 }
 async function fork(context: AgentSessionContext): Promise<void> {
   if (busy.value) return

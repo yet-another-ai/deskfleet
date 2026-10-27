@@ -100,10 +100,14 @@ test("applies the terminal font fallback list to existing terminals and refits t
   const defaultFont = appearance.terminalFont
   const customFont = '"JetBrains Mono", "Noto Sans Mono CJK SC", monospace'
   appearance.settings.terminalFont = customFont
+  appearance.settings.terminalLigatures = true
+  const initialAddons = ligatureAddons.length
   const wrapper = mount(TerminalSurface)
   const terminal = terminals.at(-1)!
   const fit = fits.at(-1)!
   expect(terminal.options.fontFamily).toBe(customFont)
+  expect(ligatureAddons).toHaveLength(initialAddons + 1)
+  const firstAddon = ligatureAddons.at(-1)!
   fit.fit.mockClear()
 
   appearance.settings.terminalFont = '"Cascadia Code", Consolas, monospace'
@@ -111,11 +115,15 @@ test("applies the terminal font fallback list to existing terminals and refits t
   expect(terminal.options.fontFamily).toBe('"Cascadia Code", Consolas, monospace')
   expect(fit.fit).toHaveBeenCalledOnce()
   expect(terminal.open).toHaveBeenCalledOnce()
+  expect(firstAddon.dispose).toHaveBeenCalledOnce()
+  expect(ligatureAddons).toHaveLength(initialAddons + 2)
+  expect(terminal.loadAddon).toHaveBeenLastCalledWith(ligatureAddons.at(-1))
 
   appearance.settings.terminalFont = ""
   await nextTick()
   expect(terminal.options.fontFamily).toBe(defaultFont)
   expect(fit.fit).toHaveBeenCalledTimes(2)
+  expect(ligatureAddons).toHaveLength(initialAddons + 3)
   wrapper.unmount()
 })
 
