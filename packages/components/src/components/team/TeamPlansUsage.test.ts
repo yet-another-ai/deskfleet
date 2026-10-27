@@ -44,7 +44,7 @@ test("failed usage requests can be retried without showing zero as the result", 
     .mockResolvedValueOnce({ relayedBytes: "2048" }))
   expect(usage().get('[role="alert"]').text()).toBe("Could not load usage.")
   expect(usage().find("[data-team-usage-amount]").exists()).toBe(false)
-  await usage().get("button").trigger("click")
+  await usage().findAll("button").find(button => button.text() === "Retry")!.trigger("click")
   await flushPromises()
   expect(fake.central.teamUsage).toHaveBeenCalledTimes(2)
   expect(usage().find('[role="alert"]').exists()).toBe(false)

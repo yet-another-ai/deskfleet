@@ -703,6 +703,7 @@
     "name": "Team name",
     "plansUsage": "Plans & Usages",
     "relayedTraffic": "Relayed traffic",
+    "relayedTrafficHint": "Only traffic relayed through DeskFleet's public servers counts toward usage. Direct internet or LAN connections and P2P traffic are not counted.",
     "usageAllTime": "All time",
     "unlimited": "Unlimited",
     "usageLoading": "Loading usage…",

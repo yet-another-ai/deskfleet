@@ -703,6 +703,7 @@
     "name": "团队名称",
     "plansUsage": "套餐与用量",
     "relayedTraffic": "转发的流量",
+    "relayedTrafficHint": "仅统计通过 DeskFleet 公网服务器转发的流量。公网、局域网直连及 P2P 连接的流量不计入用量。",
     "usageAllTime": "累计",
     "unlimited": "无限额度",
     "usageLoading": "正在加载用量…",

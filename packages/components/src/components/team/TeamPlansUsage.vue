@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Info } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { computed, useId } from "vue"
 import { useI18n } from "vue-i18n"
@@ -6,6 +7,7 @@ import type { Team } from "@deskfleet/client/central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { fileSize } from "../../services/file-format.ts"
 import UiButton from "../common/UiButton.vue"
+import IconButton from "../common/IconButton.vue"
 
 const props = defineProps<{ team: Team }>()
 const { t } = useI18n()
@@ -24,7 +26,10 @@ const amount = computed(() => fileSize(Number(state.value.relayedBytes)))
     <div class="ui-card p-4">
       <div class="mb-4 flex items-center justify-between gap-4">
         <div>
-          <h3 :id="`${id}-traffic`" class="m-0 text-sm font-medium">{{ t("team.relayedTraffic") }}</h3>
+          <div class="flex items-center gap-1">
+            <h3 :id="`${id}-traffic`" class="m-0 text-sm font-medium">{{ t("team.relayedTraffic") }}</h3>
+            <IconButton :icon="Info" :label="t('team.relayedTrafficHint')" class="-my-1" />
+          </div>
           <p class="m-0 mt-1 text-xs text-ui-text-muted">{{ t("team.usageAllTime") }}</p>
         </div>
         <span class="ui-badge shrink-0">{{ t("team.unlimited") }}</span>
