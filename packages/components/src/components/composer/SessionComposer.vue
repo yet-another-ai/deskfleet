@@ -10,6 +10,8 @@ import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-p
 import type { AgentSessionSummary, WorktreeSummary } from "../../stores/fleet-types.ts"
 import type { WorkspaceLocation } from "../../stores/fleet.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
+import AgentUsage from "./AgentUsage.vue"
+import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
 const configurationLoading = ref(false)
 const props = defineProps<{
   location: (WorkspaceLocation & { session?: AgentSessionSummary; worktree?: WorktreeSummary }) | null
@@ -18,6 +20,7 @@ const props = defineProps<{
   submitting?: boolean
   activeTurn?: boolean
   canSteer?: boolean
+  usage?: AgentUsageUpdate
   /** Whether the empty composer offers to cancel the active turn. */
   canCancel?: boolean
 }>()
@@ -86,9 +89,12 @@ function keydown(event: KeyboardEvent): void {
       <textarea ref="textarea" v-model="draft" rows="2" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @keydown="keydown" />
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <AgentConfigurationSelector v-if="location" :workspace-id="location.workspace.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" />
-        <UiButton variant="ghost" size="sm" v-if="canSteer && !empty" type="button" class="ml-auto cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
-        <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="ml-auto h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
-        <UiButton v-else variant="primary" size="icon" class="h-8 w-8 rounded-full" :class="!(canSteer && !empty) && 'ml-auto'" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></UiButton>
+        <div class="ml-auto flex shrink-0 items-center gap-2">
+          <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
+          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+          <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
+          <UiButton v-else variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></UiButton>
+        </div>
       </div>
     </div>
   </div>

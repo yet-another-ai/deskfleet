@@ -667,6 +667,14 @@ finished turn folds its tool calls, thoughts, and interim messages behind its
 duration and leaves its final message visible. Answered permissions are shown
 on their tool call; only pending ones offer choices.
 
+The Session composer shows context utilization from the latest committed ACP
+`usage_update` in its journal, with token counts and capacity in the details.
+When that update includes cost, the details show the provider-reported cumulative
+Session cost in its reported currency. Each update replaces the previous usage
+snapshot; context can decrease after compaction, and costs are never summed.
+Usage stays hidden until the provider reports it and is restored from journal
+history when a viewer reconnects.
+
 The shared renderer store survives route changes. It separates connection status
 from Session/run/turn state and retains drafts during navigation. Response loss
 leaves a visible operation with its original UUID; checking the result queries

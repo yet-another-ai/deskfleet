@@ -7,8 +7,8 @@ import type { ProviderSnapshot } from "../../../apps/daemon/src/provider-protoco
 import App from "./App.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
-import { actor, agentElicitation, agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
-import { catalogFixture, workspaceId } from "./test/catalog.ts"
+import { actor, agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
+import { catalogFixture, sessionId as otherSessionId, workspaceId } from "./test/catalog.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { useProvidersStore } from "./stores/providers.ts"
 import { deferred } from "./test/desktop-media.ts"
@@ -65,6 +65,57 @@ beforeEach(async () => {
   await flushPromises()
 })
 afterEach(() => { wrapper?.unmount(); disposePinia(pinia); vi.restoreAllMocks() })
+
+test("session usage restores from history, follows committed updates, and remains scoped to its session", async () => {
+  expect(wrapper.find("[data-agent-usage]").exists()).toBe(false)
+  events.push(agentEvent(1, "acp", { sessionId: "provider", update: { sessionUpdate: "usage_update", used: 64_000, size: 128_000, cost: { amount: 0.25, currency: "USD" } } }))
+  snapshot.session.lastEventSeq = "1"
+  await wrapper.get("textarea").setValue("Continue the session")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.get("[data-agent-usage]").text()).toBe("50%")
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "usage_update", used: 16_000, size: 128_000 } })
+  await flushPromises()
+  expect(wrapper.get("[data-agent-usage]").text()).toBe("13%")
+  // Replayed older events and the SDK mirror must not replace committed usage.
+  transport.receive({ method: "_deskfleet/session/event", params: structuredClone(events[0]) })
+  transport.receive({ method: "session/update", params: { sessionId: "30", update: { sessionUpdate: "usage_update", used: 100_000, size: 128_000 } } })
+  await flushPromises()
+  expect(wrapper.get("[data-agent-usage]").text()).toBe("13%")
+  await wrapper.get("[data-agent-usage]").trigger("click")
+  await flushPromises()
+  expect(page().get("[data-agent-usage-used]").text()).toBe("16,000 tokens")
+  expect(page().find("[data-agent-usage-cost]").exists()).toBe(false)
+  expect(wrapper.get('[aria-label="Conversation"]').text()).not.toContain("tokens")
+  await router.push({ name: "workspace", params: { workspaceId } })
+  await flushPromises()
+  expect(wrapper.find("[data-agent-usage]").exists()).toBe(false)
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  await flushPromises()
+  expect(wrapper.get("[data-agent-usage]").text()).toBe("13%")
+  await wrapper.get("[data-agent-usage]").trigger("click")
+  await flushPromises()
+  const other = agentSnapshot()
+  other.session.id = otherSessionId
+  other.session.workspaceId = workspaceId
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => {
+    if (params.sessionId === otherSessionId && method === "_deskfleet/session/subscribe") return structuredClone(other)
+    if (params.sessionId === otherSessionId && method === "_deskfleet/session/history") return []
+    return normal(method, params)
+  })
+  await router.push({ name: "session", params: { sessionId: otherSessionId } })
+  await flushPromises()
+  expect(wrapper.find("[data-agent-usage]").exists()).toBe(false)
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "usage_update", used: 96_000, size: 128_000 } })
+  await flushPromises()
+  expect(wrapper.find("[data-agent-usage]").exists()).toBe(false)
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  await flushPromises()
+  expect(wrapper.get("[data-agent-usage]").text()).toBe("75%")
+})
 
 test("a workspace prompt creates a Session, keeps shared candidates, streams tools and preserves execution when navigating away", async () => {
   await wrapper.get("textarea").setValue("Implement the feature")

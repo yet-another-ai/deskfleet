@@ -480,6 +480,15 @@
   },
   "agent": {
     "conversation": "Conversation",
+    "usage": {
+      "title": "Session usage",
+      "context": "Context usage",
+      "summary": "Context usage: {percent}",
+      "used": "Used",
+      "capacity": "Capacity",
+      "tokens": "{count} tokens",
+      "cost": "Session cost"
+    },
     "localUser": "Local user",
     "system": "System",
     "sourceMachine": "Machine {id}",

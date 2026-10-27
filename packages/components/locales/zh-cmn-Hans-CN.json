@@ -480,6 +480,15 @@
   },
   "agent": {
     "conversation": "对话",
+    "usage": {
+      "title": "会话用量",
+      "context": "上下文用量",
+      "summary": "上下文用量：{percent}",
+      "used": "已用",
+      "capacity": "容量",
+      "tokens": "{count} token",
+      "cost": "会话费用"
+    },
     "localUser": "本地用户",
     "system": "系统",
     "sourceMachine": "机器 {id}",
