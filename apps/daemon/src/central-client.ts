@@ -161,11 +161,13 @@ export class CentralClient {
     this.#lastReceived = Date.now()
     socket.addEventListener("open", () => this.#send({ type: "authenticate", token: this.#credentials!.token }))
     socket.addEventListener("message", event => {
-      if (this.#socket !== socket) return
+      if (this.#socket !== socket || socket.readyState !== WebSocket.OPEN) return
       this.#lastReceived = Date.now()
       const pending = this.#message(event.data).catch(error => {
         console.error("Central control message failed", error instanceof Error ? error.message : String(error))
-        socket.close(1002, "Invalid control message")
+        if (this.#socket !== socket || socket.readyState !== WebSocket.OPEN) return
+        // Node and browser WebSockets only allow 1000 or application codes 3000–4999.
+        socket.close(4002, "Invalid control message")
       }).finally(() => this.#requests.delete(pending))
       this.#requests.add(pending)
     })
