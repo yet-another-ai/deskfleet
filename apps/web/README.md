@@ -8,10 +8,13 @@ interfaces and the HTTPS/WebSocket adapter. The Rust server exposes APIs only.
 From the repository root:
 
 ```sh
-mise exec -- pnpm --filter @deskfleet/web dev
+mise -E development run dev
 mise exec -- pnpm --filter @deskfleet/web typecheck
 mise exec -- pnpm --filter @deskfleet/web build
 ```
+
+The `dev` task runs both the API and Web client. Use `mise run web:dev` when the
+API is already running separately. Electron also uses this Web service for login.
 
 Open Vite at `http://localhost:5174` (its listener binds to loopback). The
 development API defaults to `http://localhost:8080`. WebAuthn requires a DNS

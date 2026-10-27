@@ -15,22 +15,24 @@ mise install --locked
 ```
 
 With Docker Engine or Docker Desktop running Linux containers and Docker Compose
-v2.20 or newer installed, start the local dependencies and backend:
+v2.20 or newer installed, start the local dependencies, API, and Web client:
 
 ```sh
 mise run infra:up
 mise -E development run dev
 ```
 
-In another terminal, run `mise run web:dev` and open `http://localhost:5174/`, or
-run `mise run desktop:dev`. Both clients use `http://localhost:8080` and the same
+The `dev` task starts the API and Web client together. Open `http://localhost:5174/`,
+or run `mise run desktop:dev` in another terminal. Electron also needs the Web
+service for its browser login, so keep `dev` running. Both clients use
+`http://localhost:8080` and the same
 owned account service. Choose Register, enter an email, and open the verification
 link in `.local/mail/` to set your name and password. Register a second account
 and invite its verified email to exercise the member role. No account has a
 preassigned Team or Site Admin role. The backend creates its schema on startup.
 
 For an existing PostgreSQL deployment during development, use the
-[server guide](../../apps/server/README.md) and `mise run dev` without the
+[server guide](../../apps/server/README.md) and `mise run backend:dev` without the
 `development` environment. Running that API outside the local Compose stack is
 the [self-hosted backend guide](self-hosted.md).
 
@@ -110,9 +112,9 @@ instance carries TURN usage notifications.
 
 `infra:up` waits for all four health checks. `mise.development.toml` opts into
 their connection settings with `-E development`; it leaves the base environment
-and CI settings alone. The development `DATABASE_URL` is scoped to the `dev`
+and CI settings alone. The development `DATABASE_URL` is scoped to the `backend:dev`
 task, so `db:migrate` continues to target the daemon's SQLite catalog. No Vite
-production URL is set by the development environment. The `dev` task also enables
+production URL is set by the development environment. The backend task also enables
 [Team TURN usage collection](self-hosted.md#team-turn-usage-collection) through
 the local Redis instance.
 
@@ -120,7 +122,7 @@ The backend owns registration, password recovery and Passkeys. Local mail is
 written as restricted `.eml` files to `.local/mail/`; use their one-use links in
 the trusted Web application. These messages are ignored by Git. No production
 mail relay is contacted by the local fixture. Use `localhost` consistently for Web and API origins: Passkeys require a DNS
-hostname. Listeners remain bound to `127.0.0.1`.
+hostname. Services remain bound to loopback; Vite uses `localhost`.
 
 These are public development credentials, with HTTP and a loopback-only coturn
 instance advertised as both STUN (`DESKFLEET_STUN_URLS`) and TURN
@@ -222,8 +224,9 @@ then include the configuration and lockfile changes together.
 | --- | --- |
 | `mise run install` | Install the pnpm workspace from the frozen lockfile |
 | `mise run infra:up` / `infra:down` | Start or stop the local Compose dependencies |
-| `mise run dev` | Run the Actix Web server |
-| `mise -E development run dev` | Run the API with the local Compose database, local mail, and TURN settings |
+| `mise run dev` | Run the API and Web client, including Electron's browser login pages |
+| `mise -E development run dev` | Run both services with the local Compose database, local mail, and TURN settings |
+| `mise run backend:dev` | Run only the Actix Web API; add `-E development` for local Compose settings |
 | `mise run backend:test` | Run real PostgreSQL and Redis integration tests using `TEST_DATABASE_URL` and `TEST_REDIS_URL` |
 | `mise run backend:smoke` | Exercise owned authentication, two enrolled daemons, native WebRTC, and synchronized history |
 | `mise run backend:smoke-clients` | Drive the built Web and Electron clients through login and remote execution; use `xvfb-run -a` on headless Linux |

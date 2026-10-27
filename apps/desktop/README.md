@@ -7,7 +7,8 @@ with vue-router, Pinia, VueUse, vue-i18n, UnoCSS, Lucide icons, and xterm.js.
 
 ## Development
 
-From the repository root:
+Start `mise -E development run dev` from the repository root to run the API and
+Web login pages. Keep that terminal running, then use another terminal:
 
 ```sh
 mise run desktop:dev

@@ -154,7 +154,7 @@ can still point a single browser or Electron install at another origin; the Web
 client keeps that choice in `sessionStorage` for the tab, and Electron stores
 it with the account.
 
-A debug build (`mise run dev` or `cargo build -p deskfleet-server`) is for
+A debug build (`mise run backend:dev` or `cargo build -p deskfleet-server`) is for
 development. Production runs the release binary.
 
 ## Configuration reference

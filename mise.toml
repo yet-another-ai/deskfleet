@@ -25,6 +25,10 @@ description = "Restore the pinned, repository-local agent skills"
 run = "apm install --frozen"
 
 [tasks.dev]
+description = "Run the central API and Web client, including desktop login pages"
+depends = ["backend:dev", "web:dev"]
+
+[tasks."backend:dev"]
 description = "Run the Actix Web backend"
 run = "cargo run -p deskfleet-server --locked"
 
