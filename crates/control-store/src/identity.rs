@@ -40,6 +40,52 @@ fn user(row: &QueryResult) -> Result<User> {
     })
 }
 impl ControlStore {
+    /// Create the explicitly requested development administrator once. An
+    /// existing mailbox is never changed or granted additional privileges.
+    pub async fn seed_development_admin(
+        &self,
+        email: &str,
+        display_name: &str,
+        password_hash: &str,
+    ) -> Result<bool> {
+        let email = normalize_email(email)?;
+        let tx = self.db.begin().await?;
+        let inserted = tx
+            .query_one_raw(sql(
+                "INSERT INTO cp_users(id,name,email,email_verified,password_hash,disabled) VALUES($1,$2,$3,TRUE,$4,FALSE) ON CONFLICT(email) DO NOTHING RETURNING id",
+                vec![
+                    uuid::Uuid::now_v7().to_string().into(),
+                    name(display_name)?.into(),
+                    email.into(),
+                    password_hash.into(),
+                ],
+            ))
+            .await?;
+        let Some(inserted) = inserted else {
+            tx.commit().await?;
+            return Ok(false);
+        };
+        let user_id: String = inserted.try_get("", "id")?;
+        let now = crate::now_ms();
+        tx.execute_raw(sql(
+            "INSERT INTO cp_site_admins(user_id,granted_at,source) VALUES($1,$2,'cli')",
+            vec![user_id.clone().into(), now.into()],
+        ))
+        .await?;
+        tx.execute_raw(sql(
+            "INSERT INTO cp_site_audit(source,action,target_user_id,before_value,after_value,occurred_at) VALUES('cli','admin.grant',$1,$2,$3,$4)",
+            vec![
+                user_id.into(),
+                json!({"siteAdmin":false}).into(),
+                json!({"siteAdmin":true}).into(),
+                now.into(),
+            ],
+        ))
+        .await?;
+        tx.commit().await?;
+        Ok(true)
+    }
+
     /// Provision a mailbox-verified identity; HTTP callers use verify_registration.
     pub async fn verified_user(&self, email: &str, display_name: &str) -> Result<User> {
         let email = normalize_email(email)?;

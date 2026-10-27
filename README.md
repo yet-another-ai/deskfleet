@@ -42,15 +42,18 @@ Compose. With Docker running, run from the repository root:
 mise trust
 mise install --locked
 mise run infra:up
+mise run dev:seed
 mise -E development run dev
 ```
 
 Docker Compose provides local PostgreSQL, Redis, and TURN services. Authentication
 emails are written to `.local/mail/`. The `dev` task starts both the API and Web
 client. Open `http://localhost:5174/`, or run `mise run desktop:dev` in another
-terminal. Keep the Web service running for Electron's browser login. Register an
-email, open its verification link from `.local/mail/`, set a password, and create
-a team. See the [development guide](agents/docs/environment.md#local-docker-compose)
+terminal. Keep the Web service running for Electron's browser login. Sign in
+with the seeded Site Admin `admin@deskfleet.test` / `deskfleet-dev-password`,
+then create a team. You can also register an email and complete verification
+using its link from `.local/mail/`. See the
+[development guide](agents/docs/environment.md#local-docker-compose)
 for additional accounts, the separate test database, relay checks, and cleanup.
 
 `mise.toml` manages tool versions. `mise.lock`, `Cargo.lock`, and `pnpm-lock.yaml`

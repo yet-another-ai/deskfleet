@@ -19,6 +19,7 @@ v2.20 or newer installed, start the local dependencies, API, and Web client:
 
 ```sh
 mise run infra:up
+mise run dev:seed
 mise -E development run dev
 ```
 
@@ -28,8 +29,21 @@ service for its browser login, so keep `dev` running. Both clients use
 `http://localhost:8080` and the same
 owned account service. Choose Register, enter an email, and open the verification
 link in `.local/mail/` to set your name and password. Register a second account
-and invite its verified email to exercise the member role. No account has a
-preassigned Team or Site Admin role. The backend creates its schema on startup.
+and invite its verified email to exercise the member role. Ordinary registration
+does not assign a Team or Site Admin role. The backend creates its schema on startup.
+
+`mise run dev:seed` is an optional shortcut that targets the local Compose
+development database and creates a verified Site Admin:
+
+- Email: `admin@deskfleet.test`
+- Password: `deskfleet-dev-password`
+
+Sign in directly with those credentials; no verification email or separate
+administrator grant is needed. Create a Team from onboarding when needed.
+The command applies the schema, runs without starting HTTP or sending mail, and
+is only available in debug builds. Repeated runs leave an existing account's
+password, profile, disablement, and permissions unchanged. It never runs
+automatically with `dev` and never resets existing data.
 
 For an existing PostgreSQL deployment during development, use the
 [server guide](../../apps/server/README.md) and `mise run backend:dev` without the
@@ -226,6 +240,7 @@ then include the configuration and lockfile changes together.
 | `mise run infra:up` / `infra:down` | Start or stop the local Compose dependencies |
 | `mise run dev` | Run the API and Web client, including Electron's browser login pages |
 | `mise -E development run dev` | Run both services with the local Compose database, local mail, and TURN settings |
+| `mise run dev:seed` | Create the default verified Site Admin in the local Compose development database; preserve existing accounts |
 | `mise run backend:dev` | Run only the Actix Web API; add `-E development` for local Compose settings |
 | `mise run backend:test` | Run real PostgreSQL and Redis integration tests using `TEST_DATABASE_URL` and `TEST_REDIS_URL` |
 | `mise run backend:smoke` | Exercise owned authentication, two enrolled daemons, native WebRTC, and synchronized history |

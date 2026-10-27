@@ -120,6 +120,11 @@ HTTP health, and signal-driven shutdown, then removes its containers and network
 
 ### Site administration
 
+For the local Compose development stack, `mise run dev:seed` creates the verified
+Site Admin `admin@deskfleet.test` with password `deskfleet-dev-password`.
+This explicit debug-build command requires no mail delivery and leaves existing
+accounts unchanged. It creates no Team and is never run during normal startup.
+
 Site administrators use the same password/Passkey login as other users. Their grants are
 independent of Team roles and do not allow access to other Teams' machines,
 history, terminals, or Agent sessions. No user becomes a site administrator
