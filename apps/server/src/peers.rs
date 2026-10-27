@@ -470,6 +470,82 @@ pub(crate) async fn daemon_event(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    fn config(
+        stun_urls: Vec<String>,
+        turn_urls: Vec<String>,
+        turn_secret: Option<&str>,
+    ) -> ServerConfig {
+        ServerConfig {
+            bind_addr: "127.0.0.1:8080".parse().unwrap(),
+            database_url: "postgres://unused".into(),
+            public_url: "http://127.0.0.1:8080".into(),
+            web_origins: vec![],
+            oidc: None,
+            stun_urls,
+            turn_urls,
+            turn_secret: turn_secret.map(str::to_owned),
+            turn_usage_redis_url: None,
+        }
+    }
+    #[test]
+    fn ice_servers_advertise_configured_stun_and_turn_lists() {
+        let servers = ice_servers(
+            &config(
+                vec![
+                    "stun:stun.example.com:3478".into(),
+                    "stuns:stun.example.com:5349".into(),
+                ],
+                vec![
+                    "turn:turn.example.com:3478?transport=udp".into(),
+                    "turn:turn.example.com:3478?transport=tcp".into(),
+                ],
+                Some("shared-secret"),
+            ),
+            "peer-1",
+            1_700_000_000_000,
+        )
+        .unwrap();
+        assert_eq!(servers.len(), 2);
+        assert_eq!(
+            servers[0].urls,
+            vec![
+                "stun:stun.example.com:3478".to_owned(),
+                "stuns:stun.example.com:5349".to_owned()
+            ]
+        );
+        assert!(servers[0].username.is_none());
+        assert!(servers[0].credential.is_none());
+        assert_eq!(
+            servers[1].urls,
+            vec![
+                "turn:turn.example.com:3478?transport=udp".to_owned(),
+                "turn:turn.example.com:3478?transport=tcp".to_owned()
+            ]
+        );
+        assert_eq!(servers[1].username.as_deref(), Some("1700000000:peer-1"));
+        assert!(
+            servers[1]
+                .credential
+                .as_ref()
+                .is_some_and(|c| !c.is_empty())
+        );
+    }
+    #[test]
+    fn ice_servers_omit_entries_when_lists_are_empty() {
+        assert!(
+            ice_servers(&config(vec![], vec![], None), "peer", 1)
+                .unwrap()
+                .is_empty()
+        );
+        let stun_only = ice_servers(
+            &config(vec!["stun:stun.example.com:3478".into()], vec![], None),
+            "peer",
+            1,
+        )
+        .unwrap();
+        assert_eq!(stun_only.len(), 1);
+        assert!(stun_only[0].credential.is_none());
+    }
     #[test]
     fn desktop_control_requires_an_explicit_boolean() {
         let viewing: Start = serde_json::from_value(json!({"displayId": 1})).unwrap();

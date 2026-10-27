@@ -2,6 +2,7 @@
 [env]
 TEST_DATABASE_URL = "postgres://deskfleet_test:deskfleet-test@127.0.0.1:55433/deskfleet_test"
 TEST_REDIS_URL = "redis://127.0.0.1:56379/"
+DESKFLEET_STUN_URLS = "stun:127.0.0.1:3478"
 DESKFLEET_TURN_URLS = "turn:127.0.0.1:3478?transport=udp"
 DESKFLEET_TURN_SECRET = "deskfleet-dev-relay-secret"
 

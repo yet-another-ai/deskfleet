@@ -177,8 +177,8 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | `DESKFLEET_OIDC_CLIENT_SECRET` | when the IdP requires a confidential client | unset | Sent on the token request when the variable is present, including when it is empty. Omit the variable for a public client that uses PKCE only. |
 | `DESKFLEET_OIDC_RETURN_TO` | for login | empty | Comma-separated final application URLs. See below. |
 | `DESKFLEET_WEB_ORIGINS` | for cross-origin browsers | empty | Comma-separated exact origins (`https://app.example.com`, with port if it is not the default). |
-| `DESKFLEET_STUN_URLS` | no | empty | Comma-separated STUN URLs advertised to peers. |
-| `DESKFLEET_TURN_URLS` | no | empty | Comma-separated TURN or TURNS URLs. Setting any URL requires a secret. |
+| `DESKFLEET_STUN_URLS` | no | empty | Comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Invalid schemes fail startup. Empty means no STUN; deskfleet does not ship a public STUN default. |
+| `DESKFLEET_TURN_URLS` | no | empty | Comma-separated `turn:`/`turns:` URLs advertised on peer grants. Invalid schemes fail startup. Setting any URL requires a secret. |
 | `DESKFLEET_TURN_SECRET` | with TURN URLs | unset | Shared with the TURN server's REST `static-auth-secret`. Empty is treated as missing and startup fails when TURN URLs are set. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | no | unset | `redis://` or `rediss://` URL for [Team TURN usage collection](#team-turn-usage-collection). Empty disables collection. Invalid URLs fail startup; unavailable Redis is retried in the background. |
 | `RUST_LOG` | no | `info` | `tracing` `EnvFilter`. A missing or invalid value falls back to `info`. |
@@ -342,6 +342,10 @@ peers can use.
 
 `DESKFLEET_STUN_URLS` is independent. TURN URLs are not also advertised as
 STUN. An empty ICE list is valid: peers then try direct candidates only.
+Clients and daemons take ICE servers only from peer grants, so operators change
+STUN/TURN membership by updating these environment variables and restarting the
+API; new grants pick up the new lists without client releases or hardcoded
+public STUN servers.
 
 TURN forwards DTLS. It does not decrypt sessions, and the API never sees the
 DTLS private keys. Relay ports are the TURN server's configuration; the API

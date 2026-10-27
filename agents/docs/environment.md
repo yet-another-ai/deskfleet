@@ -125,11 +125,12 @@ Use `127.0.0.1` consistently; `localhost` is a different allowed origin/issuer.
 See [Dex's configuration example](https://github.com/dexidp/dex/blob/v2.46.1/config.yaml.dist)
 for the upstream configuration format.
 
-These are public development credentials, with HTTP and a loopback-only TURN
-relay. All published ports bind to `127.0.0.1`; this setup supports clients and
-daemons on the same host, not LAN or hosted deployments. The API, Dex, and Web
-URLs must change together when choosing different host ports, and both the
-backend and coturn must use the same TURN secret.
+These are public development credentials, with HTTP and a loopback-only coturn
+instance advertised as both STUN (`DESKFLEET_STUN_URLS`) and TURN
+(`DESKFLEET_TURN_URLS`). All published ports bind to `127.0.0.1`; this setup
+supports clients and daemons on the same host, not LAN or hosted deployments.
+The API, Dex, and Web URLs must change together when choosing different host
+ports, and both the backend and coturn must use the same TURN secret.
 
 Run the database and full remote workflow checks using the isolated test service:
 

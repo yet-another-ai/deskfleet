@@ -53,8 +53,8 @@ exchanges it together with the `loginVerifier` returned by `/api/auth/start`.
 | `DESKFLEET_OIDC_CLIENT_SECRET` | Confidential OIDC client secret, when required by the IdP. |
 | `DESKFLEET_OIDC_RETURN_TO` | Comma-separated application callback allowlist. |
 | `DESKFLEET_WEB_ORIGINS` | Comma-separated browser origins permitted by CORS. |
-| `DESKFLEET_STUN_URLS` | Optional comma-separated STUN URLs. |
-| `DESKFLEET_TURN_URLS` | Optional comma-separated TURN/TURNS URLs. |
+| `DESKFLEET_STUN_URLS` | Optional comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Empty means no STUN; there is no public default. Change the list and restart to update new grants. |
+| `DESKFLEET_TURN_URLS` | Optional comma-separated `turn:`/`turns:` URLs advertised on peer grants. Change the list and restart to update new grants. |
 | `DESKFLEET_TURN_SECRET` | Required with TURN URLs; shared with coturn's REST credential mechanism. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | Optional `redis://` or `rediss://` URL for [Team TURN usage collection](../../agents/docs/self-hosted.md#team-turn-usage-collection). Empty or unset disables it. |
 | `RUST_LOG` | Log filter; defaults to `info`. |
