@@ -1,6 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test } from "vitest"
 import type { TeamBilling } from "@deskfleet/client/billing"
+import { HttpError } from "@deskfleet/client/http-central"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
 import { i18n } from "../../i18n/index.ts"
 import { fakeCentral, billingFixture } from "../../test/central.ts"
@@ -131,6 +132,34 @@ test("Team admins choose an offer and reuse its checkout request id when retryin
   await button("Upgrade to Go")!.trigger("click"); await flushPromises()
   expect(fake.central.checkout).toHaveBeenCalledTimes(2)
   expect(fake.central.checkout.mock.calls[1]).toEqual(fake.central.checkout.mock.calls[0])
+})
+
+test.each([false, true])("returning to an earlier offer creates a new checkout after its replacement (first result uncertain: %s)", async uncertain => {
+  const fake = await setup(fake => {
+    fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true })
+    if (uncertain) fake.central.checkout.mockRejectedValueOnce(new Error("Response lost"))
+  })
+  for (const label of ["Upgrade to Go", "Upgrade to Pro", "Upgrade to Go"]) {
+    await button(label)!.trigger("click"); await flushPromises()
+  }
+  const calls = fake.central.checkout.mock.calls
+  expect(calls.map(call => call.slice(0, 2))).toEqual([["team-1", "go"], ["team-1", "pro"], ["team-1", "go"]])
+  expect(calls[2]![2]).not.toBe(calls[0]![2])
+})
+
+test("an explicitly finished checkout gets a new request id on the next attempt", async () => {
+  const fake = await setup(fake => {
+    fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true })
+    fake.central.checkout
+      .mockRejectedValueOnce(new Error("Response lost"))
+      .mockRejectedValueOnce(new HttpError(409, "Start a new checkout request", undefined, "checkout_finished"))
+  })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await button("Upgrade to Go")!.trigger("click"); await flushPromises()
+  }
+  const calls = fake.central.checkout.mock.calls
+  expect(calls[1]).toEqual(calls[0])
+  expect(calls[2]![2]).not.toBe(calls[1]![2])
 })
 
 test("a failed renewal offers billing admins the payment recovery action", async () => {

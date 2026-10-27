@@ -5,6 +5,7 @@ import { computed, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import type { Team } from "@deskfleet/client/central"
+import { HttpError } from "@deskfleet/client/http-central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { fileSize } from "../../services/file-format.ts"
 import IconButton from "../common/IconButton.vue"
@@ -62,7 +63,13 @@ async function open(target: "go" | "pro" | "portal"): Promise<void> {
       const key = `${props.team.id}:${target}`
       const requestId = checkoutIds.get(key) ?? crypto.randomUUID()
       checkoutIds.set(key, requestId)
-      await central.checkout(props.team.id, target, requestId)
+      try { await central.checkout(props.team.id, target, requestId) }
+      catch (reason) {
+        if (reason instanceof HttpError && reason.code === "checkout_finished") checkoutIds.delete(key)
+        throw reason
+      }
+      // Opening succeeded; it replaces any previous unpaid attempt for this Team.
+      checkoutIds.clear()
       checkoutOpened.value = true
     }
   } catch (reason) { actionError.value = reason instanceof Error ? reason.message : String(reason) }
