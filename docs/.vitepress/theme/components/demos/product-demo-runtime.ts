@@ -125,11 +125,17 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   }
   agents.create = async (workspaceId, title, context, provider) => {
     const id = String(serial++)
-    const snapshot: AgentSnapshot = { session: { id, workspaceId, title, context, provider, lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "", updatedAt: "", capabilities: { steering: true, resume: true } }, runs: [{ sessionId: id, generation: 1, state: "running", startedAt: "" }], inputs: [], turns: [], permissions: [], elicitations: [] }
+    const snapshot: AgentSnapshot = { session: { id, ...(workspaceId ? { workspaceId } : {}), title, context, provider, lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "", updatedAt: "", capabilities: { steering: true, resume: true } }, runs: [{ sessionId: id, generation: 1, state: "running", startedAt: "" }], inputs: [], turns: [], permissions: [], elicitations: [] }
     agents.views[id] = { snapshot, events: [], loading: false, error: null, snapshotSeq: "0", historySeq: "0" }
     agents.configurations[id] = configuration(provider, agents.draftConfiguration.model, agents.draftConfiguration.reasoningEffort)
-    const workspace = fleet.findWorkspace(workspaceId)!.workspace
-    workspace.sessions.push({ id, title, context, archiveState: "active", provider: demoProviders.find(item => item.id === provider)?.name, providerTemplate: provider, worktree: { id: `worktree-${id}`, directories: context === "directory" ? workspace.directories : [{ path: `/workspace/.worktrees/${id}` }], terminals: [] } })
+    const summary = { id, title, context, archiveState: "active" as const, provider: demoProviders.find(item => item.id === provider)?.name, providerTemplate: provider, worktree: { id: `worktree-${id}`, directories: [{ path: workspaceId ? `/workspace/.worktrees/${id}` : "/workspace" }], terminals: [] } }
+    if (workspaceId) {
+      const workspace = fleet.findWorkspace(workspaceId)!.workspace
+      summary.worktree.directories = context === "directory" ? workspace.directories : summary.worktree.directories
+      workspace.sessions.push(summary)
+    } else {
+      fleet.machines[0]!.sessions.push(summary)
+    }
     agents.sessions[id] = snapshot.session
     return snapshot
   }

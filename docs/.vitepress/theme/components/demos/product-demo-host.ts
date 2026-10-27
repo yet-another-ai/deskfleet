@@ -36,7 +36,7 @@ const host: DeskfleetDesktopApi = {
     onChanged: subscribe,
   },
   catalog: {
-    list: async () => ({ teamId: "1", machineId: "1", machineName: "Studio Mac", workspaces }),
+    list: async () => ({ teamId: "1", machineId: "1", machineName: "Studio Mac", workspaces, sessions: [] }),
     createWorkspace: async (name, directories) => {
       const id = String(900 + workspaces.length)
       const workspace = { id, name, worktrees: [{ id, workspaceId: id, directories }] }

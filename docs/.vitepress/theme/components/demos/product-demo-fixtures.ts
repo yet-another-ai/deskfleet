@@ -30,7 +30,7 @@ export function fixtures(chinese: boolean) {
     { id: "302", workspaceId: "202", provider: "codex", title: say("Add session search", "添加会话搜索"), context: "worktree", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "", updatedAt: "", capabilities: { steering: true, resume: true } },
     { id: "303", workspaceId: "201", provider: "claude-code", title: say("Keyboard navigation", "键盘导航"), context: "worktree", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "", updatedAt: "", capabilities: { steering: true, resume: true } },
   ]
-  const machine: MachineSummary = { id: "demo-machine", name: "Studio Mac", local: false, online: true, desktop: true, terminals: [], workspaces: [
+  const machine: MachineSummary = { id: "demo-machine", name: "Studio Mac", local: false, online: true, desktop: true, terminals: [], sessions: [], workspaces: [
     { id: "201", name: "website", directories: [{ path: "/workspace/website" }], terminals: [], sessions: [] },
     { id: "202", name: "api", directories: [{ path: "/workspace/api" }], terminals: [], sessions: [] },
   ] }
