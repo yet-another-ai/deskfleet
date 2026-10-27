@@ -250,6 +250,14 @@ impl NativeCatalog {
     }
 
     #[napi]
+    pub async fn agent_admission_deleted(&self, operation_id: String) -> Result<bool> {
+        self.catalog
+            .agent_admission_deleted(&operation_id)
+            .await
+            .map_err(native_error)
+    }
+
+    #[napi]
     pub async fn agent_commands(&self, session_id: String) -> Result<String> {
         json(
             self.catalog

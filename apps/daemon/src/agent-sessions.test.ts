@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -138,7 +139,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   provider.failConfiguration = failConfiguration
   const providers = new AgentProviders(daemon, provider)
   await providers.init()
-  const service = new AgentSessions(catalog, catalog.native, provider, providers)
+  const service = new AgentSessions(catalog, catalog.native, provider, providers, undefined, undefined, new TestAgentQuotas())
   await service.init()
   const actor: AgentActor = { ...service.actor(), kind: "user", userId: "alice" }
   const bob: AgentActor = { ...actor, userId: "bob", sourceMachine: { originId: "other-origin", id: "2" } }
@@ -249,7 +250,7 @@ test("failed archive retains archiving admission state and retry survives servic
   await assert.rejects(f.submit("blocked while archiving").result, /Restore this Session/u)
   assert.ok(await f.catalog.sessionWorktree(f.sessionId))
   await f.service.close()
-  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
   await restarted.init()
   try {
     assert.equal((await restarted.journal.read(f.sessionId)).session.archiveState, "archiving")
@@ -329,6 +330,7 @@ test("steering consumes a selected candidate once and keeps its author separate 
   assert.equal(input.actualDelivery, "steer")
   assert.equal(input.turnId, turn.id)
   assert.deepEqual(f.provider.steers, ["change direction"])
+  assert.equal(state.turns.filter(turn => turn.consumed).length, 1, "current-turn steering does not consume another turn")
   f.provider.finish()
   await until(f.read, state => state.turns.every(turn => turn.state === "completed"))
   await delay(30)
@@ -379,6 +381,7 @@ test("steer at the turn boundary becomes a tracked normal prompt and unknown del
   const steer = await f.submit("race", f.bob, "steer", state.turns[0]!.id).result
   await until(f.read, state => state.turns.length === 2 && state.turns[1]?.state === "running" && f.provider.prompts.length === 2)
   assert.deepEqual(f.provider.prompts, ["hold", "race"])
+  assert.equal((await f.read()).turns.filter(turn => turn.consumed).length, 2, "promptRequired fallback consumes a new turn")
   const uncertain = await f.submit("uncertain", f.actor, "steer", (await f.read()).turns[1]!.id).result
   await until(f.read, state => state.inputs.find(input => input.id === uncertain.inputId)?.state === "uncertain")
   f.provider.finish()
@@ -495,7 +498,7 @@ test("service restart cancels recorded questions and stale provider generations 
   const orphan: AgentElicitation = { id: await f.service.journal.id(), sessionId: f.sessionId, runGeneration: snapshot.runs.at(-1)!.generation,
     request: questionRequest, state: "pending", createdAt: new Date().toISOString() }
   await f.service.journal.commit(snapshot, { elicitations: [orphan], events: [f.service.journal.event(f.sessionId, "elicitation", orphan)] })
-  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
   await restored.init()
   t.after(() => restored.close())
   assert.equal((await restored.journal.read(f.sessionId)).elicitations[0]!.state, "cancelled")
@@ -512,7 +515,7 @@ test("restart cancels a URL completed before consent without retaining its compl
     state: "pending", createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
   }
   await f.service.journal.commit(snapshot, { elicitations: [orphan], events: [f.service.journal.event(f.sessionId, "elicitation", orphan)] })
-  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
   t.after(() => restored.close())
   await restored.init()
   const recovered = (await restored.journal.read(f.sessionId)).elicitations[0]!
@@ -815,7 +818,7 @@ test("draft selections reach the first prompt and live configuration survives se
   assert.equal(changed.reasoningEfforts?.currentValue, "low")
   assert.deepEqual(await f.service.handle("_deskfleet/session/configure", operation, f.actor), changed)
   await f.service.close()
-  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
   await restored.init()
   t.after(() => restored.close())
   const connections = f.provider.clients.length
@@ -865,7 +868,7 @@ test("failed selection discovery after restart keeps the saved choice and backlo
   await f.submit("waiting for valid effort").result
   await until(f.read, state => state.runs.length === 2 && state.runs.at(-1)?.state === "failed")
   await f.service.close()
-  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
   await restored.init()
   t.after(() => restored.close())
   const before = await f.read()
@@ -977,7 +980,7 @@ test("failed configuration recovery keeps the configured provider and applies it
   assert.match(failed.session.error!, /Unsupported agent reasoning_effort: retired/)
   await f.service.close()
   await f.providers.update(configured.id, { name: "Renamed account", binaryPath: "/tools/updated-codex", env: { CODEX_HOME: "/work/updated" } })
-  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers)
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   await restored.init()
   t.after(() => restored.close())
   const before = await restored.journal.read(sessionId)

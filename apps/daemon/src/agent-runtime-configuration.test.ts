@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import { mkdtemp, mkdir, rm } from "node:fs/promises"
@@ -127,7 +128,7 @@ async function setup(t: TestContext, provider: ConfigurationProvider, selection:
   const catalog = new DaemonCatalog(daemonDirectory)
   await catalog.init((_path, name) => openInMemoryCatalog(name))
   const workspace = await catalog.native.createWorkspace("Configuration fixture", [{ path: workspaceDirectory }])
-  const service = new AgentSessions(catalog, catalog.native, provider)
+  const service = new AgentSessions(catalog, catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
   await service.init()
   t.after(async () => {
     try { await service.close() } finally { await catalog.close(); await rm(directory, { recursive: true, force: true }) }
@@ -168,7 +169,7 @@ test("session command catalogs update independently of choices and survive daemo
   assert.deepEqual(current.skills, [])
   assert.equal(current.models?.currentValue, "second")
   await f.service.close()
-  const service = new AgentSessions(f.catalog, f.catalog.native, provider)
+  const service = new AgentSessions(f.catalog, f.catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
   try {
     await service.init()
     const restored = await service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, service.actor()) as AgentConfiguration
@@ -191,7 +192,7 @@ test("resumed providers replace old commands and ignore updates from the previou
   await provider.client.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "available_commands_update", availableCommands: [] } })
   assert.deepEqual((await f.configuration()).skills, [])
   await f.service.close()
-  const service = new AgentSessions(f.catalog, f.catalog.native, provider)
+  const service = new AgentSessions(f.catalog, f.catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
   try {
     await service.init()
     const restored = await service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, service.actor()) as AgentConfiguration
@@ -216,7 +217,7 @@ for (const rejectedRetry of [false, true]) {
     }, f.service.actor()), /Operation ID was reused/)
     await f.service.close()
     const connections = provider.connections
-    const service = new AgentSessions(f.catalog, f.catalog.native, provider)
+    const service = new AgentSessions(f.catalog, f.catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
     try {
       await service.init()
       const configuration = await service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, service.actor()) as AgentConfiguration
@@ -468,7 +469,7 @@ test("a saved mode survives a service restart and an omitted resume configuratio
   provider.resumeOptions = "missing"
   provider.changes.length = 0
   // A fresh service reads only the durable journal; no runtime state is reused.
-  const service = new AgentSessions(f.catalog, f.catalog.native, provider)
+  const service = new AgentSessions(f.catalog, f.catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
   try {
     await service.init()
     const actor = service.actor()

@@ -54,6 +54,8 @@ async fn create(local: &LocalCatalog) -> AgentCreatedSession {
             provider: "codex".into(),
             title: "Test".into(),
             context: SessionContext::Worktree,
+            inherited_turn_count: 0,
+            admission_generation: None,
         })
         .await
         .unwrap()
@@ -130,6 +132,8 @@ async fn identity_allocator_and_atomic_creation_survive_restart() {
                 provider: "codex".into(),
                 title: "duplicate".into(),
                 context: SessionContext::Worktree,
+                inherited_turn_count: 0,
+                admission_generation: None,
             })
             .await
             .is_err()
@@ -442,6 +446,7 @@ async fn failed_input_can_have_another_turn_attempt_but_only_one_active_turn() {
         dispatch_command_id: dispatch.id,
         run_generation: 1,
         state: TurnState::Running,
+        consumed: true,
         started_at: TIME.into(),
         ended_at: None,
         stop_reason: None,
@@ -452,6 +457,22 @@ async fn failed_input_can_have_another_turn_attempt_but_only_one_active_turn() {
     changes.turns = vec![first.clone()];
     changes.events = vec![event(current.id, EventKind::Turn, &first)];
     let current = local.agent_commit(changes).await.unwrap().session.unwrap();
+    let mut unconsumed = first.clone();
+    unconsumed.consumed = false;
+    let mut changes = transaction(&current);
+    changes.turns = vec![unconsumed];
+    assert!(
+        local.agent_commit(changes).await.is_err(),
+        "consumed usage cannot be erased"
+    );
+    let mut changed_baseline = current.clone();
+    changed_baseline.inherited_turn_count += 1;
+    let mut changes = transaction(&current);
+    changes.session = Some(changed_baseline);
+    assert!(
+        local.agent_commit(changes).await.is_err(),
+        "fork baseline is immutable"
+    );
     let next_dispatch = command(&local, Some(current.id)).await;
     let second = AgentTurn {
         id: local.agent_allocate_id().await.unwrap().into(),
@@ -689,5 +710,48 @@ async fn archive_state_and_browser_audit_persist_without_losing_the_owned_contex
     assert_eq!(restored.session.archive_state, ArchiveState::Active);
     assert!(restored.runs.is_empty());
     assert_eq!(local.agent_commands(session.id).await.unwrap(), commands);
+    local.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn admission_deletion_requires_a_local_creation_and_deletion_receipt() {
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
+    let mut creation = command(&local, None).await;
+    creation.method = "_deskfleet/session/create".into();
+    let operation_id = creation.operation_id.clone();
+    let created = local
+        .agent_create_session(AgentCreateSession {
+            command: creation,
+            workspace_id: None,
+            provider: "codex".into(),
+            title: "Quota".into(),
+            context: SessionContext::Directory,
+            inherited_turn_count: 7,
+            admission_generation: Some(operation_id.clone()),
+        })
+        .await
+        .unwrap();
+    assert!(!local.agent_admission_deleted(&operation_id).await.unwrap());
+    let mut deletion = command(&local, Some(created.session.id)).await;
+    deletion.method = "_deskfleet/session/delete".into();
+    local
+        .agent_commit(AgentCommit {
+            command: Some(deletion),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(!local.agent_admission_deleted(&operation_id).await.unwrap());
+    local
+        .delete_workspace_session(created.session.id)
+        .await
+        .unwrap();
+    assert!(local.agent_admission_deleted(&operation_id).await.unwrap());
+    assert!(
+        !local
+            .agent_admission_deleted(&uuid::Uuid::new_v4().to_string())
+            .await
+            .unwrap()
+    );
     local.close().await.unwrap();
 }

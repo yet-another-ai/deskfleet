@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises"
@@ -75,7 +76,7 @@ async function setup(context: TestContext) {
       return connection
     },
   }
-  const service = new AgentSessions(catalog, catalog.native, provider, undefined, undefined, terminals)
+  const service = new AgentSessions(catalog, catalog.native, provider, undefined, undefined, terminals, new TestAgentQuotas())
   await service.init()
   service.onSessionArchive(worktreeId => terminals.stopOwned(worktreeId))
   const releases: (() => void)[] = []
@@ -188,7 +189,7 @@ test("machine shutdown releases ACP terminal handles before closing their regist
     },
   }
   const runtime = new MachineRuntime(directory, {
-    agentProvider: provider, terminals,
+    agentProvider: provider, terminals, agentQuotas: new TestAgentQuotas(),
     peers: { create: async () => { throw new Error("Unexpected peer creation") }, close: async () => {} },
     capabilities: async () => ({ displays: [], audio: false }),
     openCatalog: (_path, name) => openInMemoryCatalog(name),

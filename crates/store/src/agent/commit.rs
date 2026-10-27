@@ -51,6 +51,7 @@ impl LocalCatalog {
                         || next.provider != current.provider
                         || next.context != current.context
                         || next.created_at != current.created_at
+                        || next.inherited_turn_count != current.inherited_turn_count
                     {
                         return Err(StoreError::InvalidAgent(
                             "session ownership, provider, and context are immutable",

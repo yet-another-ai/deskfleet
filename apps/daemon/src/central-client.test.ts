@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { EventEmitter, once } from "node:events"
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
@@ -17,7 +18,7 @@ import { centralUrl } from "./central-protocol.ts"
 
 test("local discovery grants only host setup and never imports development resources", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-central-auth-"))
-  const development = await startDaemon(0, { controlDirectory: directory, allowLocalControlForTests: true, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const development = await startDaemon(0, { controlDirectory: directory, agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
   const old = await DaemonClient.connect(() => {}, () => {}, directory)
   await old.call("workspaceCreate", { name: "Development data", directories: [{ path: directory }] })
   old.close(); await development.close()
@@ -88,6 +89,9 @@ test("delegation rechecks membership without treating a removed user as a revoke
       users.push(JSON.parse(body).userId)
       response.writeHead(status)
       response.end(JSON.stringify({ authorized: status === 200 }))
+    } else if (request.url === "/api/daemon/entitlements") {
+      response.writeHead(status)
+      response.end(JSON.stringify({ error: { message: "Team limit reached" } }))
     } else response.end("{}")
   })
   server.on("upgrade", (_request, socket) => socket.destroy())
@@ -101,6 +105,8 @@ test("delegation rechecks membership without treating a removed user as a revoke
   status = 403
   await assert.rejects(daemon.central.authorizeDelegation(actor), /403/)
   assert.equal(daemon.central.status().revoked, false)
+  await assert.rejects(daemon.central.quotaRequest("GET", "/api/daemon/entitlements"), /Team limit reached/)
+  assert.equal(daemon.central.status().revoked, false, "quota denials never revoke an enrolled machine")
   status = 401
   await assert.rejects(daemon.central.authorizeDelegation(actor), /401/)
   assert.equal(daemon.central.status().revoked, true)
@@ -137,7 +143,7 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
   let hasSession = false
   const snapshot = () => ({ session: { id: "session", lastEventSeq: "1" } })
   const operations = {
-    agents: {
+    agents: { reconcileAdmissions: async () => {},
       onEvent: (listener: typeof agentChanged) => { agentChanged = listener; return () => {} },
       journal: {
         identity: { originId: "origin", machineId: "local" },
@@ -199,7 +205,7 @@ test("final synchronization has a shared deadline when the backend stops respond
   }))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { reconcileAdmissions: async () => {}, journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe },
     terminals: { onChange: unsubscribe },
@@ -229,7 +235,7 @@ test("explicit credential rejection persists logout without treating transport l
   }))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { reconcileAdmissions: async () => {}, journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations

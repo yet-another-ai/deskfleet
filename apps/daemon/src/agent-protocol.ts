@@ -30,6 +30,10 @@ export interface AgentSessionRecord {
   lifecycle: "provisioning" | "ready" | "provision_failed" | "deleting"
   /** Archiving blocks execution while resource closure is pending or failed. */
   archiveState: "active" | "archiving" | "archived"
+  /** Immutable usage captured from the source Session at fork creation. */
+  inheritedTurnCount?: number
+  admissionGeneration?: string
+  turnLimitReason?: string
   lastEventSeq: string
   createdAt: string
   updatedAt: string
@@ -89,6 +93,8 @@ export interface AgentTurn {
   dispatchCommandId: string
   runGeneration: number
   state: "starting" | "running" | "cancelling" | "completed" | "cancelled" | "interrupted" | "failed"
+  /** Persisted before calling the provider; false for confirmed unsent attempts. */
+  consumed?: boolean
   startedAt: string
   endedAt?: string
   stopReason?: string

@@ -86,6 +86,24 @@ export class CentralClient {
     return structuredClone(actor)
   }
 
+  /** Machine credentials authorize fresh quota decisions independently of peer lifetime. */
+  async quotaRequest(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
+    const credentials = this.#credentials
+    if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Team allowance is unavailable")
+    const response = await fetch(`${credentials.serverUrl}${path}`, {
+      method, headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.any([AbortSignal.timeout(15_000), this.#httpClosing.signal]),
+    })
+    if (response.status === 401) await this.#revoked()
+    if (!response.ok) {
+      const error = await response.json().catch(() => null) as { message?: string; error?: { message?: string } | string } | null
+      const message = error?.message ?? (typeof error?.error === "string" ? error.error : error?.error?.message)
+      throw new Error(message || `Team allowance request failed (${response.status})`)
+    }
+    return response.json()
+  }
+
   async enroll(value: MachineEnrollment): Promise<CentralStatus> {
     if (this.#stopping || this.#closed || this.#enrolling) throw new Error("Machine enrollment is unavailable")
     if (this.#credentials) throw new Error("This daemon already belongs to a team")
@@ -178,7 +196,9 @@ export class CentralClient {
     const message = JSON.parse(raw) as ServerMessage
     if (message.type === "ready") {
       if (message.machineId !== this.#credentials?.machineId || message.teamId !== this.#credentials?.teamId || message.serverId !== this.#credentials?.serverId) throw new Error("Control identity mismatch")
-      this.#connected = true; this.#sync.enable(); return
+      this.#connected = true; this.#sync.enable()
+      void this.#operations.agents.reconcileAdmissions().catch(error => console.error("Session admission reconciliation failed", error))
+      return
     }
     if (message.type === "ping") { this.#send({ type: "pong" }); return }
     if (message.type === "pong") return

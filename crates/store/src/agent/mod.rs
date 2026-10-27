@@ -153,6 +153,44 @@ impl LocalCatalog {
         .await
     }
 
+    /// Prove a released local allocation from retained receipts, even after its row is gone.
+    pub async fn agent_admission_deleted(&self, operation_id: &str) -> Result<bool, StoreError> {
+        let Some(admission) = self.agent_command(operation_id).await? else {
+            return Ok(false);
+        };
+        if !matches!(
+            admission.method.as_str(),
+            "_deskfleet/session/create" | "_deskfleet/session/fork" | "_deskfleet/session/restore"
+        ) {
+            return Ok(false);
+        }
+        let Some(id) = admission.session_id else {
+            return Ok(false);
+        };
+        let db = self.catalog.database().begin().await?;
+        let existing: Option<AgentSessionRecord> = record(
+            &db,
+            "SELECT record_json FROM agent_sessions WHERE session_id = ?",
+            vec![id.as_i64().into()],
+        )
+        .await?;
+        if existing.is_some() {
+            return Ok(false);
+        }
+        let commands: Vec<AgentCommand> = records(
+            &db,
+            "SELECT record_json FROM agent_commands WHERE session_id IS NULL \
+             AND json_extract(record_json, '$.sessionId') = ?",
+            vec![id.to_string().into()],
+        )
+        .await?;
+        let deleted = commands
+            .iter()
+            .any(|command| command.is_canonical && command.method == "_deskfleet/session/delete");
+        db.commit().await?;
+        Ok(deleted)
+    }
+
     /// Current audit receipts for one Session, including failed and rejected requests.
     pub async fn agent_commands(
         &self,
@@ -224,6 +262,9 @@ impl LocalCatalog {
             context: request.context,
             lifecycle: SessionLifecycle::Provisioning,
             archive_state: ArchiveState::Active,
+            inherited_turn_count: request.inherited_turn_count,
+            admission_generation: request.admission_generation,
+            turn_limit_reason: None,
             last_event_seq: 0.into(),
             created_at: request.command.received_at.clone(),
             updated_at: request.command.received_at.clone(),

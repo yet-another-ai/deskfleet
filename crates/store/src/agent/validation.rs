@@ -102,7 +102,8 @@ pub(super) async fn turn(db: &impl ConnectionTrait, value: &AgentTurn) -> Result
             || old.initial_input_id != value.initial_input_id
             || old.dispatch_command_id != value.dispatch_command_id
             || old.run_generation != value.run_generation
-            || old.started_at != value.started_at)
+            || old.started_at != value.started_at
+            || old.consumed && !value.consumed)
     {
         return Err(StoreError::InvalidAgent(
             "turn identity and attempt are immutable",

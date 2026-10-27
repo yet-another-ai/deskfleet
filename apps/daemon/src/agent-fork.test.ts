@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -61,7 +62,7 @@ async function setup(t: { after(action: () => Promise<void>): void }, supported 
   const workspace = await catalog.native.createWorkspace("Fork", [{ path: repository }])
   const provider = new ForkProvider()
   provider.supported = supported
-  const sessions = new AgentSessions(catalog, catalog.native, provider)
+  const sessions = new AgentSessions(catalog, catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
   await sessions.init()
   t.after(async () => { await sessions.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
   const actor = sessions.actor()
@@ -99,9 +100,15 @@ test("fork creates an independent conversation, history and owned context, and r
   assert.ok(history.some(event => event.kind === "input" && JSON.stringify(event.payload).includes("Remember this")))
   assert.ok(history.some(event => event.kind === "acp" && JSON.stringify(event.payload).includes("An inherited answer")))
   assert.equal(child.inputs.length, 0, "inherited inputs cannot enter the new backlog")
+  assert.equal(child.session.inheritedTurnCount, 1)
+  assert.equal(child.turns.length, 0)
+  await f.sessions.handle("_deskfleet/input/submit", { sessionId: child.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Continue fork" }], delivery: "backlog" }, f.actor)
+  await until(() => f.sessions.journal.read(child.session.id), value => value.turns.at(-1)?.state === "completed")
+  const grandchild = await f.sessions.handle("_deskfleet/session/fork", { sessionId: child.session.id, operationId: randomUUID(), context: "directory" }, f.actor) as AgentSnapshot
+  assert.equal(grandchild.session.inheritedTurnCount, 2, "fork-of-fork includes inherited and own dispatched turns")
   assert.ok(child.runs.at(-1)!.generation > original.runs.at(-1)!.generation)
-  assert.deepEqual((await f.fork("worktree", operationId)).session, child.session)
-  assert.equal(f.provider.forks.length, 1)
+  assert.equal((await f.fork("worktree", operationId)).session.id, child.session.id)
+  assert.equal(f.provider.forks.length, 2)
   await assert.rejects(f.fork("directory", operationId), /reused/)
   await f.sessions.handle("_deskfleet/session/stop", { sessionId: child.session.id, operationId: randomUUID() }, f.actor)
   await f.sessions.handle("_deskfleet/session/resume", { sessionId: child.session.id, operationId: randomUUID() }, f.actor)
@@ -115,7 +122,7 @@ test("machine-scoped Sessions cannot fork into a worktree context", async t => {
   const catalog = new DaemonCatalog(directory)
   await catalog.init((_path, name) => openInMemoryCatalog(name))
   const provider = new ForkProvider()
-  const sessions = new AgentSessions(catalog, catalog.native, provider)
+  const sessions = new AgentSessions(catalog, catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
   await sessions.init()
   t.after(async () => { await sessions.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
   const actor = sessions.actor()

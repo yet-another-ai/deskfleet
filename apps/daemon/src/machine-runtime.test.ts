@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -20,6 +21,7 @@ import { MachineRuntime } from "./machine-runtime.ts"
 const execute = promisify(execFile)
 const credentials = { serverUrl: "http://127.0.0.1:9", serverId: "server", teamId: "team", machineId: "machine", token: "retired-token", revoked: true }
 const options = {
+  agentQuotas: new TestAgentQuotas(),
   peers: { create: async () => { throw new Error("Unexpected peer creation") }, close: async () => {} },
   capabilities: async () => ({ displays: [], audio: false }),
 }

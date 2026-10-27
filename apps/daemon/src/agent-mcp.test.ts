@@ -1,3 +1,4 @@
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import { mkdtemp, mkdir, rm } from "node:fs/promises"
@@ -96,7 +97,7 @@ test("Session reference capability follows the initiating actor's MCP delegation
   const gateway = new AgentMcp({ async authorize() {}, async dispatch() {} })
   await gateway.init()
   const provider = new Provider()
-  const sessions = new AgentSessions(catalog, catalog.native, provider, undefined, gateway)
+  const sessions = new AgentSessions(catalog, catalog.native, provider, undefined, gateway, undefined, new TestAgentQuotas())
   await sessions.init()
   t.after(async () => { await sessions.close(); await gateway.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
   const create = (initiator: AgentActor) => sessions.handle("_deskfleet/session/create", {
@@ -133,7 +134,7 @@ test("ACP creation and resume get fresh grants and stop or connection loss revok
   const gateway = new AgentMcp({ servers: () => additionalServers, async authorize() {}, async dispatch() { return "authorized" } })
   await gateway.init()
   const provider = new Provider()
-  const sessions = new AgentSessions(catalog, catalog.native, provider, undefined, gateway)
+  const sessions = new AgentSessions(catalog, catalog.native, provider, undefined, gateway, undefined, new TestAgentQuotas())
   await sessions.init()
   t.after(async () => { await sessions.close(); await gateway.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
   const session = await sessions.handle("_deskfleet/session/create", { workspaceId: resource.id, operationId: randomUUID(), provider: "codex", context: "directory" }, actor) as AgentSnapshot
