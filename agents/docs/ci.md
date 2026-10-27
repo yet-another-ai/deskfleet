@@ -109,6 +109,12 @@ through authenticated IPC after restart. Select the in-memory catalog explicitly
 in each fixture rather than switching all CI databases through an environment
 variable.
 
+The registration-reset IPC test also opens a fresh in-memory catalog for each
+machine context. It verifies concurrent reset requests, identity replacement,
+and discovery continuity without filesystem-backed SQLite migrations consuming
+the IPC request deadline on Windows runners. The separate durable-reset test
+still uses file catalogs and checks preserved records and identity after restart.
+
 Static and test jobs may restore the Cargo target cache. Build jobs use Cargo
 download caches without restoring compiled targets. The setup action fetches
 the locked crates and installs the workspace before saving those download caches,

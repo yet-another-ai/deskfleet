@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 import { promisify } from "node:util"
-import { openCatalog } from "@deskfleet/native"
+import { openCatalog, openInMemoryCatalog } from "@deskfleet/native"
 import { BackendAgent } from "../../../scripts/fixtures/backend-agent.ts"
 import { until } from "../../../scripts/fixtures/backend-peer.ts"
 import type { AgentSnapshot } from "./agent-protocol.ts"
@@ -128,7 +128,15 @@ test("registration preparation retains host IPC and resolves getters to the new 
   }
   await seed(directory)
   context.signal.throwIfAborted()
-  starting = startDaemon(0, { controlDirectory: directory, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  starting = startDaemon(0, {
+    controlDirectory: directory,
+    // This tests IPC continuity, not SQLite persistence. Each context gets its own catalog.
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
+    permissionPlatform: "darwin" as const,
+    requestScreenCaptureAccess: async () => null,
+    requestAccessibilityAccess: async () => null,
+    requestFullDiskAccess: async () => null,
+  })
   const daemon = await starting
   context.signal.throwIfAborted()
   const first = own(await DaemonClient.connect(() => {}, () => {}, directory))
