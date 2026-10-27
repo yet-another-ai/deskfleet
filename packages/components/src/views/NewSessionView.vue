@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia"
-import { computed, ref, watch } from "vue"
+import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
@@ -14,8 +14,7 @@ const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
 const providers = useProvidersStore()
 const router = useRouter()
-const layout = useLayoutStore()
-const { sessionContext } = storeToRefs(layout)
+const { sessionContext } = storeToRefs(useLayoutStore())
 const { newSessionTarget } = storeToRefs(fleet)
 const draftKey = computed(() => {
   const target = newSessionTarget.value
@@ -25,10 +24,6 @@ const draftKey = computed(() => {
 const draft = computed({ get: () => agents.drafts[draftKey.value] ?? "", set: value => { agents.drafts[draftKey.value] = value } })
 const submitting = ref(false)
 const error = ref<string | null>(null)
-// Machine-scoped chat has no Workspace directories to check out.
-watch(() => newSessionTarget.value?.workspace?.id, id => {
-  if (!id && sessionContext.value !== "directory") sessionContext.value = "directory"
-}, { immediate: true })
 async function submit(): Promise<void> {
   const target = newSessionTarget.value
   const text = draft.value

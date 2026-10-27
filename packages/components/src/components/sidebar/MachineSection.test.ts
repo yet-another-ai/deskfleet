@@ -46,7 +46,7 @@ test("machine tool consolidation preserves Workspace and Session navigation", as
     desktop: true,
     workspaces: [{
       id: "workspace", name: "Project", directories: [{ path: "/project" }],
-      sessions: [], terminals: [{ id: "workspace-shell", title: "Workspace shell", cwd: "/project" }],
+      terminals: [{ id: "workspace-shell", title: "Workspace shell", cwd: "/project" }],
       sessions: [{ id: "session", title: "Implement feature", provider: "Codex" }],
     }],
   })

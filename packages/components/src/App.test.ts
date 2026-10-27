@@ -156,7 +156,8 @@ test("workspace deletion requires confirmation and clears its composer target", 
   await button(wrapper, "Confirm deletion").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   expect(remove).toHaveBeenCalledWith(workspaceId)
-  expect(chips(wrapper)).toEqual([])
+  // Without a Workspace, the composer still targets the machine for chat.
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "Codex"])
 })
 
 test.each([
