@@ -25,6 +25,15 @@ pub async fn teams(req: HttpRequest, s: web::Data<AppState>) -> Result<web::Json
     let a = auth::user(&req, &s).await?;
     Ok(web::Json(json!(s.store.teams(&a.user.id).await?)))
 }
+pub async fn team_usage(
+    req: HttpRequest,
+    s: web::Data<AppState>,
+    p: web::Path<String>,
+) -> Result<web::Json<Value>> {
+    let a = auth::user(&req, &s).await?;
+    let relayed_bytes = s.store.team_relayed_bytes(&a.user.id, &p).await?;
+    Ok(web::Json(json!({"relayedBytes": relayed_bytes})))
+}
 pub async fn create_team(
     req: HttpRequest,
     s: web::Data<AppState>,

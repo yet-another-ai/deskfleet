@@ -72,6 +72,7 @@ pub fn configure(config: &mut ServiceConfig) {
             .route("/teams", web::post().to(api::create_team))
             .route("/teams/{teamId}", web::patch().to(api::rename_team))
             .route("/teams/{teamId}", web::delete().to(api::delete_team))
+            .route("/teams/{teamId}/usage", web::get().to(api::team_usage))
             .route("/teams/{teamId}/members", web::get().to(api::members))
             .route(
                 "/teams/{teamId}/members/{userId}",

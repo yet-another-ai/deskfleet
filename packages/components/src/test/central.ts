@@ -50,6 +50,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       return { ...team }
     }),
     members: vi.fn(async (_teamId: string) => state.members.map(member => ({ ...member }))),
+    teamUsage: vi.fn(async (_teamId: string) => ({ relayedBytes: "0" })),
     setMemberRole: vi.fn(async (_teamId: string, userId: string, role: TeamMember["role"]) => {
       state.members.find(member => member.userId === userId)!.role = role
     }),

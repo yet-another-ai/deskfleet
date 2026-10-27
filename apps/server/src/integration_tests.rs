@@ -1,6 +1,7 @@
 //! HTTP authorization and signaling tests backed by a real PostgreSQL instance.
 use super::*;
 use actix_web::{App, http::StatusCode, test};
+use deskfleet_control_store::{TurnUsage, TurnUsageSide, now_ms};
 use deskfleet_protocol::control::ControlMessage;
 use serde_json::{Value, json};
 
@@ -74,6 +75,16 @@ async fn postgres_http_permissions_replication_and_signaling() {
     ))
     .await;
     let team_id = team["id"].as_str().unwrap();
+    let usage_path = format!("/api/teams/{team_id}/usage");
+    let response =
+        test::call_service(&app, test::TestRequest::get().uri(&usage_path).to_request()).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        call!(get, &usage_path, outside_token, &json!({})).status(),
+        StatusCode::FORBIDDEN
+    );
+    let usage: Value = test::read_body_json(call!(get, &usage_path, token, &json!({}))).await;
+    assert_eq!(usage, json!({"relayedBytes": "0"}));
     let teammate = state
         .store
         .oidc_user(
@@ -95,6 +106,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
         .accept_invite(&teammate.id, invite["token"].as_str().unwrap())
         .await
         .unwrap();
+    let teammate_login = state.store.new_session(&teammate.id).await.unwrap();
+    let teammate_token = teammate_login["token"].as_str().unwrap();
     let (send, mut roster) = tokio::sync::mpsc::channel(128);
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
@@ -285,6 +298,40 @@ async fn postgres_http_permissions_replication_and_signaling() {
     let grant: Value = test::read_body_json(call!(post, "/api/peers", token, &create)).await;
     let peer_id = grant["peerId"].as_str().unwrap();
     assert!(uuid::Uuid::parse_str(peer_id).is_ok());
+    for side in [TurnUsageSide::Client, TurnUsageSide::Peer] {
+        state
+            .store
+            .record_turn_usage(&TurnUsage {
+                peer_id: peer_id.into(),
+                realm: "turn.test".into(),
+                allocation_id: "1".into(),
+                side,
+                received_bytes: 500,
+                sent_bytes: i64::MAX,
+                collected_at: now_ms(),
+            })
+            .await
+            .unwrap();
+    }
+    for member_token in [token, teammate_token] {
+        let response = call!(get, &usage_path, member_token, &json!({}));
+        assert_eq!(response.status(), StatusCode::OK);
+        let usage: Value = test::read_body_json(response).await;
+        assert_eq!(usage, json!({"relayedBytes": "18446744073709551614"}));
+    }
+    let other_team = state
+        .store
+        .create_team(&outside.id, "Other team")
+        .await
+        .unwrap();
+    let other_usage_path = format!("/api/teams/{}/usage", other_team.id);
+    assert_eq!(
+        call!(get, &other_usage_path, token, &json!({})).status(),
+        StatusCode::FORBIDDEN
+    );
+    let other_usage: Value =
+        test::read_body_json(call!(get, &other_usage_path, outside_token, &json!({}))).await;
+    assert_eq!(other_usage, json!({"relayedBytes": "0"}));
     let auth = &grant["authorization"];
     let expires =
         chrono::DateTime::parse_from_rfc3339(auth["expiresAt"].as_str().unwrap()).unwrap();
@@ -369,6 +416,10 @@ async fn postgres_http_permissions_replication_and_signaling() {
         .change_member(&user.id, team_id, &teammate.id, None)
         .await
         .unwrap();
+    assert_eq!(
+        call!(get, &usage_path, teammate_token, &json!({})).status(),
+        StatusCode::FORBIDDEN
+    );
     assert_eq!(
         call!(
             post,

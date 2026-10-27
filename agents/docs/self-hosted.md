@@ -370,6 +370,10 @@ Saved peer grants map TURN usernames to Teams. The `cp_turn_usage` table stores
 interval byte deltas with separate client-side and peer-side counters. Unknown
 peers are skipped.
 
+Team settings show **Plans & Usages** to every member. Relayed traffic is the
+cumulative sum of sent bytes across both socket sides, with an unlimited allowance.
+`GET /api/teams/{team}/usage` returns this total as the decimal string `relayedBytes`.
+
 These counters measure coturn protocol bytes. Summing both sides' receive and
 send counters counts forwarded traffic more than once. Inspect Team totals by
 side with:

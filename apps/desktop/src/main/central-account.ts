@@ -83,7 +83,7 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
     enroll: credentials => daemonCall("centralEnroll", credentials),
   }, teamId, name)
   const methods: Record<string, (...args: never[]) => unknown> = Object.fromEntries([
-    "status", "setServer", "login", "logout", "teams", "createTeam", "enrollHeadless", "members", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "machines", "renameMachine", "removeMachine", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
+    "status", "setServer", "login", "logout", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "machines", "renameMachine", "removeMachine", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
   ].map(method => [method, (client[method as keyof HttpCentralClient] as (...args: never[]) => unknown).bind(client)]))
   methods.localEnrollment = localEnrollment
   methods.enrollLocal = enrollLocal

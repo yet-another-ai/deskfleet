@@ -1,5 +1,5 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { AccountState, AccountUser, CentralApi, CentralEvent, Machine, PeerGrant, Team, TeamMember } from "./central.ts"
+import type { AccountState, AccountUser, CentralApi, CentralEvent, Machine, PeerGrant, Team, TeamMember, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -85,6 +85,7 @@ export class HttpCentralClient implements CentralApi {
   createTeam(name: string) { return this.request<Team>("POST", "/api/teams", { name }) }
   enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string }) { return this.request<{ machine: Machine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine) }
   members(teamId: string) { return this.request<TeamMember[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/members`) }
+  teamUsage(teamId: string) { return this.request<TeamUsage>("GET", `/api/teams/${encodeURIComponent(teamId)}/usage`) }
   renameTeam(teamId: string, name: string) { return this.request<Team>("PATCH", `/api/teams/${encodeURIComponent(teamId)}`, { name }) }
   invite(teamId: string, email: string, role: "admin" | "member") { return this.request<{ token: string; expiresAt: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/invites`, { email, role }) }
   acceptInvite(token: string) { return this.request<Team>("POST", "/api/invites/accept", { token }) }
