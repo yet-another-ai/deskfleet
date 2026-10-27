@@ -5,6 +5,10 @@ conversation journal. Electron uses the same ACP DataChannel facade intended for
 remote clients. This document owns the collaboration, persistence, and transport
 contract; [architecture](architecture.md) owns the resource hierarchy.
 
+The target [identity and billing requirements](identity-billing.md) add Team
+capacity admission and per-Session turn limits. These are planned capabilities;
+the current journal and execution behavior below are not proof of enforcement.
+
 ## Ownership and collaboration
 
 All authorized clients can operate on a Session simultaneously, without a control
@@ -61,6 +65,12 @@ still awaiting completion. Inherited history is display-only and cannot reenter
 the execution backlog. Provider run generations remain separate from subsequent
 child activity, including when providers reuse tool IDs.
 
+Under the target subscription rules, fork also captures the source's consumed
+turn total as an immutable inherited baseline. The child adds its own subsequent
+consumption; further forks inherit the full total. This accounting is separate
+from copying display history and does not synthesize executable turns. See
+[turn limits and inheritance](identity-billing.md#per-session-turns-and-fork-inheritance).
+
 An operation ID identifies one fork; retrying cannot allocate another Session.
 A provider or provisioning failure remains a failed child Session and cannot
 fall back to a blank conversation. A rejection before allocation remains an
@@ -89,6 +99,10 @@ creates a new PTY while preserving the ended terminal's record and transcript.
 Reading an archived Session cannot trigger implicit resume or terminal creation.
 Archive state must be durable and synchronized, distinct from provider process
 state. Archived Sessions retain their Workspace ownership and Worktree records.
+
+The target quota model releases an unarchived-Session slot only on completed
+archive. Restore requires fresh Team capacity admission, and neither operation
+resets consumed turns or inherited usage.
 
 Archive cannot reuse Session destruction or terminal hangup, both of which delete
 data today. See [terminal archive behavior](terminals.md#ownership-and-lifecycle)
