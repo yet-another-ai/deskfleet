@@ -11,6 +11,15 @@ pub struct User {
     pub email: Option<String>,
 }
 
+/// Public runtime configuration for one deskfleet installation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SiteSettings {
+    pub site_name: String,
+    pub announcement: String,
+    pub allow_team_creation: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Team {
@@ -166,6 +175,7 @@ pub fn typescript() -> String {
     let config = ts_rs::Config::default();
     let declarations = [
         User::decl(&config),
+        SiteSettings::decl(&config),
         Team::decl(&config),
         Machine::decl(&config),
         PeerActor::decl(&config),

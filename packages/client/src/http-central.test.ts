@@ -28,7 +28,7 @@ test("exchanges the callback code with its client verifier and exposes account d
   await f.client.exchange("callback-code", "verifier")
   const request = f.fetch.mock.calls[1] as unknown as [string, RequestInit]
   expect(JSON.parse(request[1].body as string)).toEqual({ code: "callback-code", loginVerifier: "verifier" })
-  expect(await f.client.status()).toEqual({ serverUrl: "https://fleet.example", user: { id: "u1", name: "Ada" } })
+  expect(await f.client.status()).toEqual({ serverUrl: "https://fleet.example", siteAdmin: false, user: { id: "u1", name: "Ada" } })
   expect(f.persist).toHaveBeenCalledWith(expect.objectContaining({ token: "new-token" }))
 })
 
@@ -56,7 +56,7 @@ test("changing servers invalidates account observers before another account conn
   const f = setup()
   const events = vi.fn()
   f.client.onEvent(events)
-  expect(await f.client.setServer("https://another.example")).toEqual({ serverUrl: "https://another.example", user: undefined })
+  expect(await f.client.setServer("https://another.example")).toEqual({ serverUrl: "https://another.example", siteAdmin: false, user: undefined })
   expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
   expect(f.sockets[0]!.close).toHaveBeenCalledOnce()
   expect(f.persist).toHaveBeenCalledExactlyOnceWith({ serverUrl: "https://another.example" })
@@ -73,7 +73,7 @@ test("reports API errors and falls back to HTTP status for non-JSON failures", a
 test("changing servers notifies account-owned file connections and clears the old account", async () => {
   const f = setup(); const events = vi.fn()
   f.client.onEvent(events)
-  expect(await f.client.setServer("https://other.example")).toEqual({ serverUrl: "https://other.example", user: undefined })
+  expect(await f.client.setServer("https://other.example")).toEqual({ serverUrl: "https://other.example", siteAdmin: false, user: undefined })
   expect(f.sockets[0]!.close).toHaveBeenCalledOnce()
   expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
   await f.client.setServer("https://other.example/")
@@ -84,8 +84,28 @@ test("an expired account notifies connections after clearing saved credentials",
   const f = setup(); const events = vi.fn()
   f.client.onEvent(events)
   f.fetch.mockResolvedValueOnce(new Response("{}", { status: 401 }))
-  expect(await f.client.status()).toEqual({ serverUrl: "https://fleet.example", user: undefined })
+  expect(await f.client.status()).toEqual({ serverUrl: "https://fleet.example", siteAdmin: false, user: undefined })
   expect(f.persist).toHaveBeenCalledWith({ serverUrl: "https://fleet.example" })
   expect(f.sockets[0]!.close).toHaveBeenCalledOnce()
   expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
+})
+
+test("site administrator capabilities are refreshed from the server without persisting them", async () => {
+  const f = setup()
+  f.responses.push({ user: { id: "u1", name: "Ada" }, siteAdmin: true }, { user: { id: "u1", name: "Ada" }, siteAdmin: false })
+  expect((await f.client.status()).siteAdmin).toBe(true)
+  expect((await f.client.status()).siteAdmin).toBe(false)
+  expect(f.persist).not.toHaveBeenCalled()
+})
+
+test("loads public settings and saves site settings through the admin endpoint", async () => {
+  const f = setup()
+  const settings = { siteName: "Studio fleet", announcement: "News", allowTeamCreation: false }
+  f.responses.push(settings, settings, settings)
+  expect(await f.client.site()).toEqual(settings)
+  expect(await f.client.siteSettings()).toEqual(settings)
+  expect(await f.client.updateSiteSettings(settings)).toEqual(settings)
+  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/site", expect.objectContaining({ method: "GET" }))
+  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/site-settings", expect.objectContaining({ method: "GET" }))
+  expect(f.fetch).toHaveBeenNthCalledWith(3, "https://fleet.example/api/admin/site-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(settings) }))
 })

@@ -2,6 +2,8 @@ use actix_web::{App, HttpServer, web};
 use deskfleet_server::{AppState, config::ServerConfig, configure};
 use tracing_subscriber::EnvFilter;
 
+mod cli;
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt()
@@ -10,6 +12,9 @@ async fn main() -> std::io::Result<()> {
         )
         .try_init()
         .map_err(std::io::Error::other)?;
+    if cli::run(&std::env::args().skip(1).collect::<Vec<_>>()).await? {
+        return Ok(());
+    }
     let config = ServerConfig::from_env()?;
     let bind = config.bind_addr;
     let origins = config.web_origins.clone();

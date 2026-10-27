@@ -68,6 +68,33 @@ release does not expose Session deletion to users. Per-Workspace sharing rules a
 part of the initial role model. Server and daemon authorization still checks the
 requested action and Team rather than treating a connected peer as authority.
 
+Site administrators have a separate installation-wide grant attached to their
+existing OIDC user. They manage runtime site settings without selecting or
+joining a Team. A site grant does not grant Team membership, machine access,
+history access, or peer/MCP execution rights. Deployment operators explicitly
+grant and revoke this role through the server's `site-admin` command; neither
+the first login nor an email address confers authority. Each administrative API
+operation reads the current grant, so existing login sessions observe revocation.
+
+Central authorization uses resource policies with typed actions and explicit
+`authorize` calls. `TeamPolicy` and `MachinePolicy` receive membership in the
+target resource's actual Team; `SitePolicy` receives the current site grant.
+`TeamScope` and `MachineScope` restrict collection queries in SQL. The policies
+live alongside central store operations and do not depend on HTTP, so management,
+signaling, and delegated Agent operations share the same Team rules. Existing
+transaction checks, peer expiry/revocation, and daemon delegation bounds remain
+part of authorization. Rules such as retaining a Team's final administrator are
+transactional business invariants in addition to policy checks.
+
+PostgreSQL owns runtime site name, announcement, and Team-creation policy. The
+public site endpoint exposes only those fields; authenticated site administrators
+can edit them in the shared client's Site administration page. The creation
+switch applies to all users, including site administrators, while existing Teams
+and invitations remain usable. Settings writes and administrator grant/revoke
+operations record their changes atomically in central site audit. Database URLs,
+OIDC configuration, service origins, and transport credentials remain deployment
+configuration; machine-local settings remain owned by their daemons.
+
 The current automatically created local Team and discovery-token actor are
 development scaffolding for this flow. They do not establish authenticated Team
 membership and must not authorize resource creation in the integrated product.

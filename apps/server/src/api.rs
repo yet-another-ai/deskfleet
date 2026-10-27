@@ -4,6 +4,7 @@ use crate::{
     error::{ApiError, Result},
 };
 use actix_web::{HttpRequest, web};
+use deskfleet_control_store::policies::MachineAction;
 use deskfleet_protocol::control::{ControlMessage, PeerActor};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -277,7 +278,9 @@ pub async fn rpc(
     b: web::Json<Rpc>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    s.store.authorized_machine(&a.user.id, &p).await?;
+    s.store
+        .authorize_machine(&a.user.id, &p, MachineAction::Manage)
+        .await?;
     if !MANAGEMENT.contains(&b.method.as_str()) || !b.params.is_object() {
         return Err(ApiError::bad("unsupported management method"));
     }
@@ -403,7 +406,7 @@ pub async fn authorize_delegation(
 ) -> Result<web::Json<Value>> {
     let machine = auth::machine(&req, &s).await?;
     s.store
-        .authorized_machine(&b.user_id, &machine.machine.id)
+        .authorize_machine(&b.user_id, &machine.machine.id, MachineAction::Manage)
         .await?;
     Ok(web::Json(json!({"authorized": true})))
 }

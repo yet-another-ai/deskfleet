@@ -112,6 +112,46 @@ HTTP health, and signal-driven shutdown, then removes its containers and network
 
 ## Authentication and API
 
+### Site administration
+
+Site administrators use the same OIDC login as other users. Their grants are
+independent of Team roles and do not allow access to other Teams' machines,
+history, terminals, or Agent sessions. No user becomes a site administrator
+automatically. First log in, obtain the account's `user.id` from `GET /api/me`,
+then run an operations command with access to the server database:
+
+```sh
+mise exec -- cargo run -p deskfleet-server --locked -- site-admin grant <user-id>
+mise exec -- cargo run -p deskfleet-server --locked -- site-admin list
+mise exec -- cargo run -p deskfleet-server --locked -- site-admin revoke <user-id>
+```
+
+These commands require `DATABASE_URL`; they do not start HTTP or require OIDC
+discovery. Packaged deployments can run `deskfleet-server site-admin ...`
+directly. The UUID must identify an existing user. Grant/revoke are idempotent,
+and the same grant command can recover access after the final grant is revoked.
+The CLI records its source as `cli`, without attributing the operation to an
+interactive user.
+
+`GET /api/me` returns the current `siteAdmin` flag. Administrators can open
+**Site administration** from the account menu, including when they have no Team.
+`GET /api/site` publicly returns only `siteName`, `announcement`, and
+`allowTeamCreation`; the defaults are `deskfleet`, an empty announcement, and
+`true`. The shared clients display the name/announcement and honor the creation
+switch. Closing Team creation applies to all users, including site administrators;
+existing Teams and invitation acceptance are unaffected.
+
+`GET /api/admin/site-settings` and `PATCH /api/admin/site-settings` require the
+current site grant. PATCH accepts all three settings fields, rejects unknown
+fields, and returns the saved settings. Names are trimmed and must contain
+1–200 UTF-8 bytes; announcements allow up to 10,000 UTF-8 bytes. Configuration
+and grant/revoke changes write `cp_site_audit` in the same transaction, recording
+source, actor or target user, time, and previous/new values. Subsequent requests
+read updated settings and grants without restarting the backend or logging in
+again. Deployment secrets and startup options remain environment configuration.
+
+### Application and machine authentication
+
 All protected HTTP requests use `Authorization: Bearer <opaque token>`. OIDC
 Authorization Code flow uses PKCE, state, nonce, and ID token signature, issuer,
 audience, and expiration validation. PostgreSQL stores hashes of application,

@@ -1,4 +1,16 @@
 {
+  "siteAdmin": {
+    "title": "站点管理",
+    "description": "管理此 deskfleet 站点的配置。",
+    "forbidden": "此页面需要站点管理员权限。",
+    "siteName": "站点名称",
+    "announcement": "站点公告",
+    "announcementDescription": "向使用此站点的所有人显示。留空则隐藏公告。",
+    "allowTeamCreation": "允许创建团队",
+    "allowTeamCreationDescription": "已登录用户可以创建团队。",
+    "teamCreationDisabled": "使用团队管理员提供的邀请码加入团队。",
+    "saved": "站点配置已保存。"
+  },
   "mcpServers": {
     "title": "MCP 服务器",
     "description": "配置 {machine} 上 Agent 可使用的工具。",

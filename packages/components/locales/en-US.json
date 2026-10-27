@@ -1,4 +1,16 @@
 {
+  "siteAdmin": {
+    "title": "Site administration",
+    "description": "Manage settings for this deskfleet site.",
+    "forbidden": "Site administrator access is required.",
+    "siteName": "Site name",
+    "announcement": "Announcement",
+    "announcementDescription": "Shown to everyone using this site. Leave empty to hide it.",
+    "allowTeamCreation": "Allow team creation",
+    "allowTeamCreationDescription": "Signed-in users can create teams.",
+    "teamCreationDisabled": "Join a team using an invitation from its administrator.",
+    "saved": "Site settings saved."
+  },
   "mcpServers": {
     "title": "MCP Servers",
     "description": "Configure tools available to agents on {machine}.",

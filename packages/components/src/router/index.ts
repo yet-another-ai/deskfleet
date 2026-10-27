@@ -16,6 +16,12 @@ export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     {
+      path: "/admin",
+      name: "site-admin",
+      component: () => import("../views/SiteAdminView.vue"),
+      meta: { fullWindow: true },
+    },
+    {
       path: "/",
       name: "new-session",
       component: () => import("../views/NewSessionView.vue"),

@@ -5,6 +5,7 @@ pub mod config;
 pub mod error;
 mod hub;
 mod peers;
+mod site;
 mod turn_usage;
 mod websocket;
 
@@ -68,6 +69,12 @@ pub fn configure(config: &mut ServiceConfig) {
             .route("/auth/exchange", web::post().to(auth::exchange))
             .route("/auth/logout", web::post().to(auth::logout))
             .route("/me", web::get().to(auth::me))
+            .route("/site", web::get().to(site::public_settings))
+            .route("/admin/site-settings", web::get().to(site::admin_settings))
+            .route(
+                "/admin/site-settings",
+                web::patch().to(site::update_settings),
+            )
             .route("/teams", web::get().to(api::teams))
             .route("/teams", web::post().to(api::create_team))
             .route("/teams/{teamId}", web::patch().to(api::rename_team))

@@ -1,5 +1,5 @@
 import { computed, inject, ref, type ComputedRef, type InjectionKey, type Ref } from "vue"
-import type { AccountState, CentralApi, LocalEnrollment, Machine, Team, TeamMember } from "@deskfleet/client/central"
+import type { AccountState, CentralApi, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
 import { router } from "../router/index.ts"
 
 export type AccountDialog = "create-team" | "join-team" | "add-machine"
@@ -17,6 +17,7 @@ export interface AccountSession {
   /** False until the first account status arrives, so no signed-out flash precedes it. */
   ready: Ref<boolean>
   account: Ref<AccountState>
+  site: Ref<SiteSettings | undefined>
   teams: Ref<Team[]>
   teamId: Ref<string | undefined>
   team: ComputedRef<Team | undefined>
@@ -56,7 +57,8 @@ const message = (reason: unknown) => reason instanceof Error ? reason.message : 
 
 export function createAccountSession(central: CentralApi, initialNotice?: string): AccountSession {
   const ready = ref(false)
-  const account = ref<AccountState>({ serverUrl: "" })
+  const account = ref<AccountState>({ serverUrl: "", siteAdmin: false })
+  const site = ref<SiteSettings>()
   const teams = ref<Team[]>([])
   const teamId = ref<string>()
   const members = ref<TeamMember[]>([])
@@ -107,15 +109,18 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   }
   async function reload(): Promise<void> {
     account.value = await central.status()
+    site.value = undefined
+    const loadSite = central.site().then(value => { site.value = value })
     if (!account.value.user) {
       ++machinesRevision
       ++membersRevision
       teams.value = []; teamId.value = undefined; machines.value = []; machineId.value = undefined
       members.value = []
       dialog.value = undefined; shellSettings.value = undefined
+      await loadSite
       return
     }
-    const [list] = await Promise.all([central.teams(), loadEnrollment()])
+    const [list] = await Promise.all([central.teams(), loadEnrollment(), loadSite])
     teams.value = list
     if (!list.some(value => value.id === teamId.value)) {
       const enrolledTeam = enrollment.value?.serverUrl === account.value.serverUrl ? enrollment.value.teamId : undefined
@@ -163,10 +168,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     if (event.type === "accountChanged") void background(reload)
     else if (event.type === "connection") {
       connected.value = event.connected
-      if (event.connected && teamId.value) void background(async () => {
-        await loadEnrollment()
-        await Promise.all([loadMachines(), loadMembers()])
-      })
+      if (event.connected) void background(reload)
     } else if (event.type === "machinesChanged" && event.teamId === teamId.value) void refreshMachines()
     else if (event.type === "presence") {
       const target = machines.value.find(value => value.id === event.machineId)
@@ -176,7 +178,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   void background(reload).finally(() => { ready.value = true; if (initialNotice) notice.value = initialNotice })
 
   return {
-    central, ready, account, teams, teamId, team, members, machines, machineId, machine, enrollment, localMachineId, canEnrollLocal,
+    central, ready, account, site, teams, teamId, team, members, machines, machineId, machine, enrollment, localMachineId, canEnrollLocal,
     connected, notice, dialog, shellSettings, reload,
     refreshMachines,
     async signIn(serverUrl) { await central.setServer(serverUrl); await central.login(); await reload() },

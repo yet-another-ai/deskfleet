@@ -2,6 +2,7 @@
 import UiButton from "./components/common/UiButton.vue"
 import { Bell, Palette, SlidersHorizontal, Users } from "@lucide/vue"
 import { defineAsyncComponent, onBeforeUnmount, provide, ref } from "vue"
+import { useEventListener, useTitle } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { OnboardingState } from "@deskfleet/client/onboarding"
@@ -19,6 +20,8 @@ import AccountFooter from "./components/sidebar/AccountFooter.vue"
 import AccountNotices from "./components/sidebar/AccountNotices.vue"
 import TeamSwitcher from "./components/sidebar/TeamSwitcher.vue"
 import TeamSettings from "./components/team/TeamSettings.vue"
+import SiteAdminView from "./views/SiteAdminView.vue"
+import { router } from "./router/index.ts"
 import { accountSessionKey, createAccountSession, type AccountSettingsSection } from "./composables/useAccountSession.ts"
 
 const loadMachineSurface = () => import("./components/account/MachineSurface.vue")
@@ -29,7 +32,12 @@ void loadMachineSurface()
 const props = defineProps<{ host: DeskfleetDesktopApi }>()
 const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
-const { ready, account, teams, team, machine, dialog, shellSettings } = session
+const { ready, account, site, teams, team, machine, dialog, shellSettings } = session
+const route = router.currentRoute
+useTitle(() => site.value?.siteName ?? "deskfleet")
+useEventListener(window, "focus", () => {
+  void session.reload().catch((reason: unknown) => { session.notice.value = reason instanceof Error ? reason.message : String(reason) })
+})
 provide(accountSessionKey, session)
 onBeforeUnmount(session.dispose)
 const onboarding = ref<OnboardingState | undefined>(props.host.onboarding ? undefined : { step: "complete" })
@@ -48,10 +56,12 @@ const section = (value: AccountSettingsSection) => [
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-ui-canvas text-ui-text">
+    <p v-if="site?.announcement" role="status" class="m-0 max-h-32 shrink-0 overflow-y-auto whitespace-pre-wrap break-words border-b border-ui-border bg-ui-surface px-5 py-2 text-sm">{{ site.announcement }}</p>
     <template v-if="ready && onboarding">
       <WelcomePage v-if="onboarding.step !== 'complete' || !account.user" :host="host" :state="onboarding" @change="onboarding = $event" />
       <!-- Each selected machine runs in its own application scope; see MachineSurface. -->
       <MachineSurface v-else-if="machine" :key="machine.id" :host="host" :session="session" :machine="machine" />
+      <SiteAdminView v-else-if="route.name === 'site-admin'" />
       <SettingsLayout v-else-if="shellSettings" @back="shellSettings = undefined">
         <template #nav>
           <button type="button" :class="section('preferences')" @click="shellSettings = 'preferences'"><SlidersHorizontal :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.preferences") }}</button>

@@ -1,3 +1,4 @@
+use crate::policies::{MachineAction, MachinePolicy, authorize};
 use crate::{ControlStore, Result, json_rows, now_ms, one, resource_id, sql};
 use deskfleet_protocol::control::PeerAuthorization;
 use sea_orm::{ConnectionTrait, TransactionTrait};
@@ -12,7 +13,9 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         let machine_id = resource_id(&auth.target_machine.id)?;
         let team_id = resource_id(&auth.team_id)?;
-        one(&tx, "SELECT m.id FROM cp_machines m JOIN cp_members member ON member.team_id=m.team_id JOIN cp_login_sessions login ON login.user_id=member.user_id WHERE m.id=$1 AND m.team_id=$2 AND member.user_id=$3 AND login.id=$4 AND NOT m.revoked AND NOT login.revoked AND login.expires_at>$5 FOR SHARE OF m,member,login", vec![machine_id.into(),team_id.into(),auth.actor.user_id.clone().into(),login_id.into(),now_ms().into()]).await?;
+        let membership = one(&tx, "SELECT member.role FROM cp_machines m JOIN cp_members member ON member.team_id=m.team_id JOIN cp_login_sessions login ON login.user_id=member.user_id WHERE m.id=$1 AND m.team_id=$2 AND member.user_id=$3 AND login.id=$4 AND NOT m.revoked AND NOT login.revoked AND login.expires_at>$5 FOR SHARE OF m,member,login", vec![machine_id.into(),team_id.into(),auth.actor.user_id.clone().into(),login_id.into(),now_ms().into()]).await?;
+        let role = membership.try_get::<String>("", "role")?.parse()?;
+        authorize(&MachinePolicy::new(Some(role)), MachineAction::Connect)?;
         tx.execute_raw(sql("INSERT INTO cp_peers(id,machine_id,team_id,user_id,login_session_id,grant_json,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7)",vec![auth.peer_id.clone().into(),machine_id.into(),team_id.into(),auth.actor.user_id.clone().into(),login_id.into(),serde_json::to_value(auth)?.into(),expires.into()])).await?;
         tx.commit().await?;
         Ok(())

@@ -35,7 +35,7 @@ function deferred<T>() {
 function setup(initial: AgentSnapshot[] = [snapshot()]) {
   const listeners = new Set<(event: CentralEvent) => void>()
   const state = {
-    account: { serverUrl: "https://deskfleet.example", user: { id: "user", name: "Ada" } } as AccountState,
+    account: { siteAdmin: false, serverUrl: "https://deskfleet.example", user: { id: "user", name: "Ada" } } as AccountState,
     teams: [team], machines: [machine("local"), machine("remote")],
     snapshots: new Map<string, AgentSnapshot[]>([["local", initial], ["remote", []]]),
   }
@@ -212,13 +212,13 @@ test("logout invalidates an in-flight task read and another account starts from 
   f.emit({ type: "catalogChanged", machineId: "local" })
   const updated = snapshot("1", 2)
   updated.turns = [turn("old-account-completion")]
-  f.state.account = { serverUrl: "https://deskfleet.example" }
+  f.state.account = { siteAdmin: false, serverUrl: "https://deskfleet.example" }
   f.emit({ type: "accountChanged" })
   read.resolve([updated])
   await vi.waitFor(() => expect(f.source.status).toHaveBeenCalledTimes(2))
   expect(f.notify).not.toHaveBeenCalled()
 
-  f.state.account = { serverUrl: "https://other.example", user: { id: "other-user", name: "Bob" } }
+  f.state.account = { siteAdmin: false, serverUrl: "https://other.example", user: { id: "other-user", name: "Bob" } }
   f.state.snapshots.set("local", [updated])
   const calls = f.source.sessions.mock.calls.length
   f.emit({ type: "accountChanged" })

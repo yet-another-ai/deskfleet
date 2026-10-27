@@ -249,7 +249,10 @@ pub async fn exchange(
 }
 pub async fn me(req: HttpRequest, state: web::Data<AppState>) -> Result<web::Json<Value>> {
     let auth = user(&req, &state).await?;
-    Ok(web::Json(json!({"user":auth.user,"sessionId":auth.id})))
+    let site_admin = state.store.is_site_admin(&auth.user.id).await?;
+    Ok(web::Json(
+        json!({"user":auth.user,"sessionId":auth.id,"siteAdmin":site_admin}),
+    ))
 }
 pub async fn logout(req: HttpRequest, state: web::Data<AppState>) -> Result<web::Json<Value>> {
     let auth = user(&req, &state).await?;

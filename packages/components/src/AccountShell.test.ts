@@ -30,6 +30,7 @@ test("browses synchronized history with the machine offline and isolates equal l
   }
   const central = {
     status: vi.fn(async () => ({ serverUrl: "https://fleet.example", user: signedIn ? { id: "u1", name: "Ada" } : undefined })),
+    site: vi.fn(async () => ({ siteName: "deskfleet", announcement: "", allowTeamCreation: true })),
     setServer: vi.fn(), login: vi.fn(async () => { signedIn = true }), logout: vi.fn(async () => { signedIn = false }),
     teams: vi.fn(async () => [{ id: "7", name: "Team", role: "member" }]),
     members: vi.fn(async () => [{ userId: "u1", name: "Ada", role: "member" }]),

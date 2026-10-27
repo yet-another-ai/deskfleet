@@ -6,7 +6,7 @@ use crate::{
 };
 use actix_web::{HttpRequest, web};
 use base64::Engine;
-use deskfleet_control_store::{now_ms, timestamp};
+use deskfleet_control_store::{now_ms, policies::MachineAction, timestamp};
 use deskfleet_protocol::control::{IceServer, PeerAuthorization, PeerTarget};
 use hmac::{Hmac, KeyInit, Mac};
 use sdp::description::{common::Attribute, session::SessionDescription};
@@ -64,7 +64,7 @@ pub async fn create(
     let a = auth::user(&req, &s).await?;
     let machine = s
         .store
-        .authorized_machine(&a.user.id, &b.machine_id)
+        .authorize_machine(&a.user.id, &b.machine_id, MachineAction::Connect)
         .await?;
     if machine.team_id != b.team_id {
         return Err(ApiError::forbidden());
@@ -133,7 +133,7 @@ async fn authorize(req: &HttpRequest, s: &AppState, id: &str) -> Result<PeerAuth
     let a = auth::user(req, s).await?;
     let p = s.store.peer(id, &a.id).await?;
     s.store
-        .authorized_machine(&a.user.id, &p.target_machine.id)
+        .authorize_machine(&a.user.id, &p.target_machine.id, MachineAction::Connect)
         .await?;
     Ok(p)
 }
@@ -278,7 +278,11 @@ pub async fn close(
     // This lookup remains bound to the original login and current machine access.
     let authorization = s.store.peer_for_close(&p, &actor.id).await?;
     s.store
-        .authorized_machine(&actor.user.id, &authorization.target_machine.id)
+        .authorize_machine(
+            &actor.user.id,
+            &authorization.target_machine.id,
+            MachineAction::Connect,
+        )
         .await?;
     let peers = s.store.revoke_peer(&p).await?;
     s.hub.revoke(peers, "closed").await;

@@ -184,3 +184,20 @@ test("creating and joining Teams select them; signing out clears every selection
   expect(session.teams.value).toEqual([])
   expect(session.teamId.value).toBeUndefined()
 })
+
+test("account refresh updates site privileges and creation policy even without a Team", async () => {
+  const fake = fakeCentral({ teams: [], siteAdmin: true })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  expect(session.account.value.siteAdmin).toBe(true)
+  expect(session.site.value?.allowTeamCreation).toBe(true)
+  fake.state.siteAdmin = false
+  fake.state.site = { siteName: "Changed site", announcement: "News", allowTeamCreation: false }
+  fake.emit({ type: "connection", connected: true })
+  await flushPromises()
+  expect(session.account.value.siteAdmin).toBe(false)
+  expect(session.site.value).toEqual(fake.state.site)
+  fake.central.site.mockRejectedValueOnce(new Error("Site unavailable"))
+  await expect(session.reload()).rejects.toThrow("Site unavailable")
+  expect(session.site.value).toBeUndefined()
+})

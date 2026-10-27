@@ -30,7 +30,7 @@ function showTeamDialog(mode: "create-team" | "join-team"): void {
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator class="my-1 border-t border-ui-border" />
         <DropdownMenuItem v-if="session.team.value" as="button" type="button" class="ui-menu-item" @select="session.openSettings('team')"><Settings :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("team.settings") }}</DropdownMenuItem>
-        <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="openDialog(() => showTeamDialog('create-team'))"><Plus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("team.create") }}</DropdownMenuItem>
+        <DropdownMenuItem v-if="session.site.value?.allowTeamCreation" as="button" type="button" class="ui-menu-item" @select="openDialog(() => showTeamDialog('create-team'))"><Plus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("team.create") }}</DropdownMenuItem>
         <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="openDialog(() => showTeamDialog('join-team'))"><UserPlus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("team.join") }}</DropdownMenuItem>
       </template>
     </MenuPopover>

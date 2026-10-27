@@ -1,3 +1,6 @@
+use crate::policies::{
+    TeamAction, TeamCreationAction, TeamCreationPolicy, TeamPolicy, TeamScope, authorize,
+};
 use crate::{
     ControlStore, Error, Result, json_rows, name, now_ms, one, resource_id, secret, secret_hash,
     sql, timestamp,
@@ -7,25 +10,32 @@ use sea_orm::{ConnectionTrait, TransactionTrait};
 use serde_json::{Value, json};
 
 impl ControlStore {
+    pub(crate) async fn team_policy(&self, user_id: &str, team_id: &str) -> Result<TeamPolicy> {
+        team_policy(&self.db, user_id, team_id).await
+    }
     pub async fn team_role(&self, user_id: &str, team_id: &str) -> Result<String> {
-        self.db
-            .query_one_raw(sql(
-                "SELECT role FROM cp_members WHERE team_id=$1 AND user_id=$2",
-                vec![resource_id(team_id)?.into(), user_id.into()],
-            ))
-            .await?
-            .ok_or(Error::Forbidden)?
-            .try_get("", "role")
-            .map_err(Error::from)
+        let policy = self.team_policy(user_id, team_id).await?;
+        authorize(&policy, TeamAction::Read)?;
+        Ok(policy.role().ok_or(Error::Forbidden)?.as_str().into())
+    }
+    /// Authorize a Team action against the caller's current membership.
+    ///
+    /// # Errors
+    /// Returns an error for denied actions, invalid IDs, or database failures.
+    pub async fn authorize_team(
+        &self,
+        user_id: &str,
+        team_id: &str,
+        action: TeamAction,
+    ) -> Result<()> {
+        authorize(&self.team_policy(user_id, team_id).await?, action)
     }
     pub async fn require_admin(&self, user_id: &str, team_id: &str) -> Result<()> {
-        if self.team_role(user_id, team_id).await? != "admin" {
-            return Err(Error::Forbidden);
-        }
-        Ok(())
+        self.authorize_team(user_id, team_id, TeamAction::ManageMembers)
+            .await
     }
     pub async fn teams(&self, user_id: &str) -> Result<Vec<Team>> {
-        self.db.query_all_raw(sql("SELECT t.id,t.name,m.role FROM cp_teams t JOIN cp_members m ON m.team_id=t.id WHERE m.user_id=$1 ORDER BY t.id",vec![user_id.into()])).await?.into_iter().map(|r|Ok(Team{id:r.try_get::<i64>("","id")?.to_string(),name:r.try_get("","name")?,role:r.try_get("","role")?})).collect()
+        TeamScope::new(user_id).resolve(self).await
     }
     /// Return cumulative TURN outbound bytes and current Team resource counts.
     ///
@@ -35,7 +45,8 @@ impl ControlStore {
     /// # Errors
     /// Returns an error for nonmembers, an invalid Team ID, or a database failure.
     pub async fn team_usage(&self, user_id: &str, team_id: &str) -> Result<Value> {
-        self.team_role(user_id, team_id).await?;
+        self.authorize_team(user_id, team_id, TeamAction::ReadUsage)
+            .await?;
         let row = one(
             &self.db,
             "SELECT jsonb_build_object(
@@ -51,6 +62,17 @@ impl ControlStore {
     pub async fn create_team(&self, user_id: &str, value: &str) -> Result<Team> {
         let value = name(value)?;
         let tx = self.db.begin().await?;
+        let allow_creation = one(
+            &tx,
+            "SELECT allow_team_creation FROM cp_site_settings WHERE singleton FOR SHARE",
+            vec![],
+        )
+        .await?
+        .try_get("", "allow_team_creation")?;
+        authorize(
+            &TeamCreationPolicy::new(allow_creation),
+            TeamCreationAction::Create,
+        )?;
         let id = one(
             &tx,
             "INSERT INTO cp_teams(name) VALUES($1) RETURNING id",
@@ -71,7 +93,8 @@ impl ControlStore {
         })
     }
     pub async fn rename_team(&self, user_id: &str, team_id: &str, value: &str) -> Result<Team> {
-        self.require_admin(user_id, team_id).await?;
+        self.authorize_team(user_id, team_id, TeamAction::Rename)
+            .await?;
         let value = name(value)?;
         self.db
             .execute_raw(sql(
@@ -86,7 +109,8 @@ impl ControlStore {
         })
     }
     pub async fn delete_team(&self, user_id: &str, team_id: &str) -> Result<()> {
-        self.require_admin(user_id, team_id).await?;
+        self.authorize_team(user_id, team_id, TeamAction::Delete)
+            .await?;
         let tx = self.db.begin().await?;
         let id = resource_id(team_id)?;
         one(
@@ -95,6 +119,10 @@ impl ControlStore {
             vec![id.into()],
         )
         .await?;
+        authorize(
+            &team_policy(&tx, user_id, team_id).await?,
+            TeamAction::Delete,
+        )?;
         if tx
             .query_one_raw(sql(
                 "SELECT id FROM cp_machines WHERE team_id=$1 LIMIT 1",
@@ -111,7 +139,8 @@ impl ControlStore {
         Ok(())
     }
     pub async fn members(&self, user_id: &str, team_id: &str) -> Result<Vec<Value>> {
-        self.team_role(user_id, team_id).await?;
+        self.authorize_team(user_id, team_id, TeamAction::ReadMembers)
+            .await?;
         json_rows(&self.db,"SELECT jsonb_build_object('userId',u.id,'name',u.name,'email',u.email,'role',m.role) AS record FROM cp_members m JOIN cp_users u ON u.id=m.user_id WHERE m.team_id=$1 ORDER BY u.id",vec![resource_id(team_id)?.into()]).await
     }
     pub async fn change_member(
@@ -132,16 +161,10 @@ impl ControlStore {
             vec![id.into()],
         )
         .await?;
-        let actor_role = one(
-            &tx,
-            "SELECT role FROM cp_members WHERE team_id=$1 AND user_id=$2",
-            vec![id.into(), actor.into()],
-        )
-        .await?
-        .try_get::<String>("", "role")?;
-        if actor_role != "admin" {
-            return Err(Error::Forbidden);
-        }
+        authorize(
+            &team_policy(&tx, actor, team_id).await?,
+            TeamAction::ManageMembers,
+        )?;
         let current = one(
             &tx,
             "SELECT role FROM cp_members WHERE team_id=$1 AND user_id=$2",
@@ -184,7 +207,8 @@ impl ControlStore {
         email: &str,
         role: &str,
     ) -> Result<Value> {
-        self.require_admin(user_id, team_id).await?;
+        self.authorize_team(user_id, team_id, TeamAction::ManageMembers)
+            .await?;
         if role != "admin" && role != "member" {
             return Err(Error::Invalid("invalid team role"));
         }
@@ -244,6 +268,24 @@ impl ControlStore {
             role: self.team_role(user_id, &id.to_string()).await?,
         })
     }
+}
+
+async fn team_policy(
+    db: &impl ConnectionTrait,
+    user_id: &str,
+    team_id: &str,
+) -> Result<TeamPolicy> {
+    let role = db
+        .query_one_raw(sql(
+            "SELECT role FROM cp_members WHERE team_id=$1 AND user_id=$2",
+            vec![resource_id(team_id)?.into(), user_id.into()],
+        ))
+        .await?
+        .map(|row| row.try_get::<String>("", "role"))
+        .transpose()?
+        .map(|role| role.parse())
+        .transpose()?;
+    Ok(TeamPolicy::new(role))
 }
 impl ControlStore {
     pub async fn team_user_ids(&self, team_id: &str) -> Result<Vec<String>> {

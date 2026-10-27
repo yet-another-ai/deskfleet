@@ -1,5 +1,5 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { AccountState, AccountUser, CentralApi, CentralEvent, Machine, PeerGrant, Team, TeamMember, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, CentralApi, CentralEvent, Machine, PeerGrant, SiteSettings, Team, TeamMember, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -32,10 +32,12 @@ export class HttpCentralClient implements CentralApi {
   #disposed = false
   constructor(options: HttpCentralOptions) { this.#options = options; this.#account = options.account }
   async status(): Promise<AccountState> {
+    let siteAdmin = false
     if (this.#account.token) {
       try {
-        const result = await this.request<{ user: AccountUser }>("GET", "/api/me")
+        const result = await this.request<{ user: AccountUser; siteAdmin: boolean }>("GET", "/api/me")
         this.#account.user = result.user
+        siteAdmin = result.siteAdmin === true
         this.#connect()
       } catch (error) {
         if (!(error instanceof HttpError) || error.status !== 401) throw error
@@ -44,7 +46,7 @@ export class HttpCentralClient implements CentralApi {
         this.#emit({ type: "accountChanged" })
       }
     }
-    return { serverUrl: this.#account.serverUrl, user: this.#account.user }
+    return { serverUrl: this.#account.serverUrl, user: this.#account.user, siteAdmin }
   }
   async setServer(address: string): Promise<AccountState> {
     const serverUrl = serverAddress(address)
@@ -81,6 +83,9 @@ export class HttpCentralClient implements CentralApi {
     }
     return response.status === 204 ? undefined as T : await response.json() as T
   }
+  site() { return this.request<SiteSettings>("GET", "/api/site") }
+  siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }
+  updateSiteSettings(settings: SiteSettings) { return this.request<SiteSettings>("PATCH", "/api/admin/site-settings", settings) }
   teams() { return this.request<Team[]>("GET", "/api/teams") }
   createTeam(name: string) { return this.request<Team>("POST", "/api/teams", { name }) }
   enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string }) { return this.request<{ machine: Machine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine) }

@@ -14,10 +14,10 @@ const session = useAccountSession()!
     <div>
       <BrandLogo :size="64" class="mb-5" />
       <h1 class="m-0 text-xl font-semibold">{{ t("team.welcome", { name: session.account.value.user?.name ?? "" }) }}</h1>
-      <p class="m-0 mt-2 text-sm text-ui-text-muted">{{ t("team.welcomeDescription") }}</p>
+      <p class="m-0 mt-2 text-sm text-ui-text-muted">{{ t(session.site.value?.allowTeamCreation ? "team.welcomeDescription" : "siteAdmin.teamCreationDisabled") }}</p>
     </div>
     <div class="flex flex-col gap-2">
-      <button type="button" class="ui-option-card" @click="session.dialog.value = 'create-team'">
+      <button v-if="session.site.value?.allowTeamCreation" type="button" class="ui-option-card" @click="session.dialog.value = 'create-team'">
         <Plus :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
         <span class="min-w-0 flex-1"><span class="block text-sm">{{ t("team.create") }}</span><span class="mt-0.5 block text-[13px] text-ui-text-muted">{{ t("team.createDescription") }}</span></span>
         <ChevronRight :size="16" class="shrink-0 text-ui-text-faint" aria-hidden="true" />

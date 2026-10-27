@@ -1,3 +1,4 @@
+use crate::policies::{MachineAction, MachinePolicy, MachineScope, TeamAction, authorize};
 use crate::{
     ControlStore, Error, MachineAuth, Result, name, now_ms, one, resource_id, secret, secret_hash,
     sql, timestamp,
@@ -6,7 +7,7 @@ use deskfleet_protocol::control::Machine;
 use sea_orm::{ConnectionTrait, QueryResult};
 use serde_json::Value;
 
-fn machine(row: QueryResult) -> Result<Machine> {
+pub(crate) fn machine(row: QueryResult) -> Result<Machine> {
     Ok(Machine {
         id: row.try_get::<i64>("", "id")?.to_string(),
         team_id: row.try_get::<i64>("", "team_id")?.to_string(),
@@ -30,7 +31,8 @@ impl ControlStore {
         local_id: &str,
         capabilities: Value,
     ) -> Result<(Machine, String)> {
-        self.team_role(user_id, team_id).await?;
+        self.authorize_team(user_id, team_id, TeamAction::EnrollMachine)
+            .await?;
         uuid::Uuid::parse_str(origin).map_err(|_| Error::Invalid("invalid catalog origin UUID"))?;
         resource_id(local_id)?;
         let token = secret();
@@ -64,26 +66,32 @@ impl ControlStore {
         )
     }
     pub async fn authorized_machine(&self, user_id: &str, id: &str) -> Result<Machine> {
+        self.authorize_machine(user_id, id, MachineAction::Read)
+            .await
+    }
+    /// Authorize an action using membership in the Machine's actual Team.
+    ///
+    /// # Errors
+    /// Returns an error for denied actions, missing/revoked machines, or database failures.
+    pub async fn authorize_machine(
+        &self,
+        user_id: &str,
+        id: &str,
+        action: MachineAction,
+    ) -> Result<Machine> {
         let m = self.machine(id).await?;
-        self.team_role(user_id, &m.team_id).await?;
+        let membership = self.team_policy(user_id, &m.team_id).await?;
+        authorize(&MachinePolicy::new(membership.role()), action)?;
         Ok(m)
     }
     pub async fn machines(&self, user_id: &str, team_id: &str) -> Result<Vec<Machine>> {
-        self.team_role(user_id, team_id).await?;
-        self.db
-            .query_all_raw(sql(
-                "SELECT * FROM cp_machines WHERE team_id=$1 AND NOT revoked ORDER BY id",
-                vec![resource_id(team_id)?.into()],
-            ))
-            .await?
-            .into_iter()
-            .map(machine)
-            .collect()
+        MachineScope::new(user_id, team_id).resolve(self).await
     }
     /// Every Team member can rename a machine; the daemon keeps its own hostname.
     pub async fn rename_machine(&self, user_id: &str, id: &str, value: &str) -> Result<Machine> {
-        let mut m = self.machine(id).await?;
-        self.team_role(user_id, &m.team_id).await?;
+        let mut m = self
+            .authorize_machine(user_id, id, MachineAction::Rename)
+            .await?;
         let value = name(value)?;
         self.db
             .execute_raw(sql(
@@ -116,8 +124,8 @@ impl ControlStore {
         Ok(())
     }
     pub async fn revoke_machine(&self, user_id: &str, id: &str) -> Result<()> {
-        let m = self.machine(id).await?;
-        self.require_admin(user_id, &m.team_id).await?;
+        self.authorize_machine(user_id, id, MachineAction::Remove)
+            .await?;
         self.db
             .execute_raw(sql(
                 "UPDATE cp_machines SET revoked=TRUE WHERE id=$1",

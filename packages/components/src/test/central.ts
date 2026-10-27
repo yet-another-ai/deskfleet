@@ -1,8 +1,10 @@
 import { vi } from "vitest"
-import type { CentralApi, CentralEvent, LocalEnrollment, Machine, Team, TeamMember } from "../../../client/src/central.ts"
+import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "../../../client/src/central.ts"
 
 export interface FakeCentralOptions {
   signedIn?: boolean
+  siteAdmin?: boolean
+  site?: SiteSettings
   teams?: Team[]
   machines?: Machine[]
   members?: TeamMember[]
@@ -19,6 +21,8 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
   const listeners = new Set<(event: CentralEvent) => void>()
   const state = {
     signedIn: options.signedIn ?? true,
+    siteAdmin: options.siteAdmin ?? false,
+    site: options.site ?? { siteName: "deskfleet", announcement: "", allowTeamCreation: true },
     teams: options.teams ?? [{ id: "team-1", name: "Design team", role: "admin" as const }],
     machines: options.machines ?? [],
     members: options.members ?? [
@@ -27,12 +31,15 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     ],
     enrollment: options.enrollment,
   }
-  const status = () => ({ serverUrl: "https://fleet.example", user: state.signedIn ? { id: "user-1", name: "Ada", email: "ada@example.test" } : undefined })
+  const status = () => ({ serverUrl: "https://fleet.example", siteAdmin: state.signedIn && state.siteAdmin, user: state.signedIn ? { id: "user-1", name: "Ada", email: "ada@example.test" } : undefined })
   const central = {
     status: vi.fn(async () => status()),
     setServer: vi.fn(async () => status()),
     login: vi.fn(async () => { state.signedIn = true }),
     logout: vi.fn(async () => { state.signedIn = false }),
+    site: vi.fn(async () => ({ ...state.site })),
+    siteSettings: vi.fn(async () => ({ ...state.site })),
+    updateSiteSettings: vi.fn(async (settings: SiteSettings) => { state.site = { ...settings }; return { ...state.site } }),
     teams: vi.fn(async () => state.teams.map(team => ({ ...team }))),
     createTeam: vi.fn(async (name: string) => {
       const team = { id: `team-${state.teams.length + 1}`, name, role: "admin" as const }

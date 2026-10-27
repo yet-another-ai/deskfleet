@@ -13,7 +13,7 @@ async function fixture(platform: NodeJS.Platform = "darwin") {
   directories.push(directory)
   const path = join(directory, "onboarding.json")
   const permissions: DesktopPermissionsState = { fullDiskAccessPermission: { status: "denied" }, screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "granted" } }
-  const central = { setServer: vi.fn(async (serverUrl: string) => ({ serverUrl })) }
+  const central = { setServer: vi.fn(async (serverUrl: string) => ({ serverUrl, siteAdmin: false })) }
   const state: LocalAgentState = { enabled: true, status: "running" }
   const localAgent = {
     state,
@@ -141,7 +141,7 @@ test("failed progress writes preserve the active step", async () => {
 test("concurrent transitions cannot skip welcome steps", async () => {
   const f = await fixture()
   let resolve!: () => void
-  f.central.setServer.mockImplementationOnce(serverUrl => new Promise(done => { resolve = () => done({ serverUrl }) }))
+  f.central.setServer.mockImplementationOnce(serverUrl => new Promise(done => { resolve = () => done({ serverUrl, siteAdmin: false }) }))
   const saving = f.controller.saveServer("https://deskfleet.example")
   await vi.waitFor(() => expect(f.central.setServer).toHaveBeenCalledOnce())
   await expect(f.controller.complete()).rejects.toThrow("changing state")

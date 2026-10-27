@@ -33,7 +33,7 @@ export async function mountDeskfleet(target: string | Element = "#root") {
   app.use(vaporInteropPlugin)
   app.use(state)
   app.onUnmount(() => disposePinia(state))
-  if (!host.central) app.use((await import("./router/index.ts")).router)
+  app.use((await import("./router/index.ts")).router)
   app.use(i18n)
   app.mount(target)
   return app
