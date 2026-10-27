@@ -253,17 +253,25 @@ test("a plain directory can become a repository without another subscription", a
   assert.equal((await f.inspection.status("1", [f.root])).repositories[0]!.changes.length, 1)
 })
 
-test("replacing a watched directory rebinds its OS watch to the new directory", async context => {
+test("replacing a watched directory rebinds its watch and refreshes cached edits", async context => {
+  const callbacks = controlledWatches(context)
   const f = await fixture(context)
-  await f.changed(() => mkdir(join(f.root, "nested")))
-  await delay(250)
-  await f.changed(async () => {
-    await rename(join(f.root, "nested"), join(f.root, "old"))
-    await mkdir(join(f.root, "nested"))
-    await writeFile(join(f.root, "nested", "new.txt"), "replacement\n")
-  })
-  await delay(350)
-  await f.changed(() => writeFile(join(f.root, "nested", "new.txt"), "after replacement\n"))
+  const nested = join(f.root, "nested")
+  await mkdir(nested)
+  callbacks.get(f.root)!("rename", "nested")
+  await eventually(() => callbacks.has(nested), "new directory was not watched")
+  const original = callbacks.get(nested)!
+  await rename(nested, join(f.root, "old"))
+  await mkdir(nested)
+  await writeFile(join(nested, "new.txt"), "replacement\n")
+  callbacks.get(f.root)!("rename", "nested")
+  await eventually(() => callbacks.get(nested) !== original, "replacement directory did not receive a new watch")
+  const status = async () => (await f.inspection.status("1", [f.root])).repositories[0]!
+  assert.equal((await status()).changes.find(change => change.path === "nested/new.txt")?.additions, 1)
+  await writeFile(join(nested, "new.txt"), "after replacement\nsecond line\n")
+  callbacks.get(nested)!("change", "new.txt")
+  await eventually(async () => (await status()).changes.find(change => change.path === "nested/new.txt")?.additions === 2, "replacement directory edit did not invalidate its cached snapshot")
+  assert.deepEqual(f.errors, [])
 })
 
 test("submodules use their own ignore rules and watch metadata outside the working tree", async context => {
