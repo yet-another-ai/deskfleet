@@ -6,6 +6,7 @@ import type { AgentCommand, AgentEvent } from "../../../../apps/daemon/src/agent
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
 import { deferred } from "../test/desktop-media.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
+import { useProvidersStore } from "./providers.ts"
 import { client as platformClient } from "@deskfleet/client/platform"
 const mock = vi.hoisted(() => ({ call: vi.fn(), connect: vi.fn(async () => {}), close: vi.fn(), notification: (_value: { method: string; params: unknown }) => {}, request: (_value: { id: string; method: string; params: unknown }): Promise<unknown> => Promise.resolve(), state: (_state: string) => {} }))
 vi.mock("../services/agent-client.ts", () => ({ AgentClient: class {
@@ -25,6 +26,148 @@ beforeEach(() => {
 })
 afterEach(() => disposePinia(pinia))
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
+
+test("command updates replace catalogs without losing configuration and outrank stale reads", async () => {
+  useProvidersStore().providers = [{ id: "codex", name: "Codex", template: "codex", icon: "codex" }]
+  const store = useAgentSessionsStore(); await store.open("30")
+  const stale = { provider: { id: "codex", name: "Codex" }, models: null, reasoningEfforts: null, modes: null, commands: [{ name: "old", description: "Old" }], skills: [] }
+  const response = deferred<typeof stale>()
+  mock.call.mockReturnValueOnce(response.promise)
+  const reading = store.sessionConfiguration("30", true)
+  await flushPromises()
+  receive(agentEvent(1, "acp", { sessionId: "provider", update: { sessionUpdate: "available_commands_update", availableCommands: [
+    { name: "compact", description: "Compact context" }, { name: "$review", description: "Review changes" },
+  ] } }))
+  receive(agentEvent(2, "acp", { sessionId: "provider", update: { sessionUpdate: "config_option_update", configOptions: [
+    { id: "model", name: "Model", type: "select", category: "model", currentValue: "new-model", options: [{ value: "new-model", name: "New model" }] },
+  ] } }))
+  response.resolve(stale)
+  await reading
+  expect(store.configurations["30"]?.models?.currentValue).toBe("new-model")
+  expect(store.configurations["30"]?.commands?.map(command => command.name)).toEqual(["compact"])
+  expect(store.configurations["30"]?.skills?.[0]?.invocation).toBe("$review")
+  receive(agentEvent(3, "run", { sessionId: "30", generation: 2, state: "starting", startedAt: "now" }))
+  expect(store.configurations["30"]?.commands).toEqual([])
+  expect(store.configurations["30"]?.skills).toEqual([])
+  receive(agentEvent(4, "acp", { sessionId: "provider-2", update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "new", description: "New command" }] } }))
+  expect(store.configurations["30"]?.commands?.map(command => command.name)).toEqual(["new"])
+})
+
+test.each(["read", "configure"] as const)("%s keeps newly discovered commands when only model configuration changes during the request", async operation => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const discovered = { provider: { id: "codex", name: "Codex" }, models: null, reasoningEfforts: null, modes: null,
+    commands: [{ name: "compact", description: "Compact context" }],
+    skills: [{ id: "$review", name: "review", description: "Review changes", invocation: "$review" }] }
+  const response = deferred<typeof discovered>()
+  mock.call.mockReturnValueOnce(response.promise)
+  const reading = operation === "read" ? store.sessionConfiguration("30", true) : store.configureSession("30", { model: "new-model" })
+  await flushPromises()
+  receive(agentEvent(1, "acp", { sessionId: "provider", update: { sessionUpdate: "config_option_update", configOptions: [
+    { id: "model", name: "Model", type: "select", category: "model", currentValue: "new-model", options: [{ value: "new-model", name: "New model" }] },
+  ] } }))
+  response.resolve(discovered)
+  await reading
+  expect(store.configurations["30"]?.models?.currentValue).toBe("new-model")
+  expect(store.configurations["30"]?.commands).toEqual(discovered.commands)
+  expect(store.configurations["30"]?.skills).toEqual(discovered.skills)
+})
+
+test("provider metadata arriving after a command event classifies skills without another RPC", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  receive(agentEvent(1, "acp", { sessionId: "provider", update: { sessionUpdate: "available_commands_update", availableCommands: [
+    { name: "compact", description: "Compact context" }, { name: "$review", description: "Review changes" },
+  ] } }))
+  useProvidersStore().providers = [{ id: "codex", name: "Codex", template: "codex", icon: "codex" }]
+  await flushPromises()
+  expect(store.configurations["30"]?.commands?.map(command => command.name)).toEqual(["compact"])
+  expect(store.configurations["30"]?.skills?.[0]?.invocation).toBe("$review")
+  expect(mock.call.mock.calls.some(([method]) => method === "_deskfleet/session/configuration")).toBe(false)
+})
+
+test.each(["new run", "configuration response"] as const)("late provider metadata does not revive commands superseded by a %s", async replacement => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  receive(agentEvent(1, "acp", { sessionId: "provider", update: { sessionUpdate: "available_commands_update", availableCommands: [
+    { name: "$old", description: "Old skill" },
+  ] } }))
+  if (replacement === "new run") receive(agentEvent(2, "run", { sessionId: "30", generation: 2, state: "starting", startedAt: "now" }))
+  else {
+    mock.call.mockResolvedValueOnce({ provider: { id: "codex", name: "Codex" }, models: null, reasoningEfforts: null, modes: null, commands: [], skills: [] })
+    await store.sessionConfiguration("30", true)
+  }
+  useProvidersStore().providers = [{ id: "codex", name: "Codex", template: "codex", icon: "codex" }]
+  await flushPromises()
+  expect(store.configurations["30"]?.commands).toEqual([])
+  expect(store.configurations["30"]?.skills).toEqual([])
+})
+
+test("reference reads use transient RPCs and leave drafts and operation receipts untouched", async () => {
+  const store = useAgentSessionsStore()
+  store.drafts["workspace:20"] = "Read @app"
+  const reference = { kind: "file" as const, originId: "origin", workspaceId: "20", directoryIndex: 0, sourceDirectory: "/source", relativePath: "app.ts" }
+  const normal = mock.call.getMockImplementation()!
+  mock.call.mockImplementation(async (method: string, params: unknown) => {
+    if (method === "_deskfleet/composer/references") return { items: [{ reference, name: "app.ts", description: "/source" }], truncated: false }
+    if (method === "_deskfleet/composer/resolve") return [{ type: "resource_link", uri: "file:///worktree/app.ts", name: "app.ts" }]
+    return normal(method, params)
+  })
+  expect((await store.composerReferences({ workspaceId: "20", kind: "file", query: "app" })).items[0]?.reference).toEqual(reference)
+  expect(await store.resolveComposerReferences("30", [reference])).toEqual([{ type: "resource_link", uri: "file:///worktree/app.ts", name: "app.ts" }])
+  expect(store.operations).toEqual({})
+  expect(store.drafts["workspace:20"]).toBe("Read @app")
+})
+
+test("failed submission retains selected identities and acknowledgment preserves a newer draft", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const reference = { kind: "session" as const, originId: "origin", workspaceId: "20", sessionId: "29" }
+  const mention = { id: "mention", start: 5, end: 14, token: "@previous", reference }
+  store.drafts["30"] = "Read @previous"
+  store.draftMentions["30"] = [mention]
+  store.draftAttachments["30"] = [{ id: "old", kind: "pasted_text", text: "old", lines: 1 }]
+  mock.call.mockRejectedValueOnce(new Error("Lost response"))
+  await expect(store.submit("30", "Read @previous", "backlog")).rejects.toThrow("Lost response")
+  expect(store.draftMentions["30"]).toEqual([mention])
+  const operation = Object.values(store.operations)[0]!
+  store.drafts["30"] = "Read @previous again"
+  store.draftAttachments["30"].push({ id: "new", kind: "pasted_text", text: "new", lines: 1 })
+  receive(agentEvent(1, "command", { id: "50", operationId: operation.operationId, actor, sessionId: "30", method: operation.method, params: operation.params, isCanonical: true, status: "completed", receivedAt: "now" }))
+  expect(store.drafts["30"]).toBe("Read @previous again")
+  expect(store.draftMentions["30"]).toEqual([mention])
+  expect(store.draftAttachments["30"]?.map(item => item.id)).toEqual(["new"])
+})
+
+test("an acknowledgment preserves a new reference with the same visible text", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const reference = { kind: "session" as const, originId: "origin", workspaceId: "20", sessionId: "29" }
+  const mention = { id: "first", start: 5, end: 14, token: "@previous", reference }
+  store.drafts["30"] = "Read @previous"
+  store.draftMentions["30"] = [mention]
+  mock.call.mockRejectedValueOnce(new Error("Lost response"))
+  await expect(store.submit("30", "Read @previous", "backlog")).rejects.toThrow("Lost response")
+  const operation = Object.values(store.operations)[0]!
+  const replacement = { ...mention, id: "replacement", reference: { ...reference, sessionId: "28" } }
+  store.draftMentions["30"] = [replacement]
+  receive(agentEvent(1, "command", { id: "50", operationId: operation.operationId, actor, sessionId: "30", method: operation.method, params: operation.params, isCanonical: true, status: "completed", receivedAt: "now" }))
+  expect(store.drafts["30"]).toBe("Read @previous")
+  expect(store.draftMentions["30"]).toEqual([replacement])
+})
+
+test("submission retains the draft snapshot captured before asynchronous reference resolution", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const reference = { kind: "session" as const, originId: "origin", workspaceId: "20", sessionId: "29" }
+  const submitted = [{ id: "first", start: 5, end: 14, token: "@previous", reference }]
+  const replacement = { ...submitted[0]!, id: "replacement", reference: { ...reference, sessionId: "28" } }
+  store.drafts["30"] = "Read @previous"
+  store.draftMentions["30"] = [replacement]
+  store.draftAttachments["30"] = [{ id: "old", kind: "pasted_text", text: "old", lines: 1 }, { id: "new", kind: "pasted_text", text: "new", lines: 1 }]
+  await store.submit("30", [{ type: "text", text: "Read @previous" }], "backlog", undefined, "Read @previous", { mentions: submitted, attachmentIds: ["old"] })
+  expect(store.drafts["30"]).toBe("Read @previous")
+  expect(store.draftMentions["30"]).toEqual([replacement])
+  expect(store.draftAttachments["30"]?.map(item => item.id)).toEqual(["new"])
+  await store.submit("30", [{ type: "text", text: "Read @previous" }], "backlog", undefined, "Read @previous", { mentions: [replacement], attachmentIds: ["new"] })
+  expect(store.drafts["30"]).toBe("")
+  expect(store.draftMentions["30"]).toEqual([])
+  expect(store.draftAttachments["30"]).toEqual([])
+})
 
 test("fork retries preserve the original context and operation ID while installing a separate Session", async () => {
   const store = useAgentSessionsStore(); await store.open("30")

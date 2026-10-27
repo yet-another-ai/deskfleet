@@ -24,6 +24,7 @@ const rendererDirectory = resolve(import.meta.dirname, "../out/renderer")
 const preloadPath = join(directory, "local-preload.cjs")
 const screenshotPath = join(tmpdir(), `deskfleet-agent-smoke-${process.pid}.png`)
 const questionScreenshotPath = join(tmpdir(), `deskfleet-agent-question-${process.pid}.png`)
+const completionScreenshotPath = join(tmpdir(), `deskfleet-agent-completion-${process.pid}.png`)
 let daemon: Awaited<ReturnType<typeof startDaemon>> | undefined
 let electron: ChildProcess | undefined
 let exited: Promise<void> | undefined
@@ -54,7 +55,15 @@ class ScriptedProvider implements AgentProvider {
     const finish = () => { const done = active; active = undefined; done?.({ stopReason: "end_turn" }) }
     return {
       initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } },
-      newSession: async () => ({ sessionId: "smoke-provider-session", configOptions: configuration() }),
+      newSession: async () => {
+        setImmediate(() => { void Promise.resolve(client.onUpdate({ sessionId: "smoke-provider-session", update: {
+          sessionUpdate: "available_commands_update", availableCommands: [
+            { name: "compact", description: "Summarize the conversation", input: { hint: "focus" } },
+            { name: "$review", description: "Review the current changes" },
+          ],
+        } })).catch(error => this.failures.push(error)) })
+        return { sessionId: "smoke-provider-session", configOptions: configuration() }
+      },
       resume: async () => ({ configOptions: configuration() }),
       setConfigOption: async params => {
         assert.ok(typeof params.value === "string")
@@ -147,7 +156,7 @@ async function stopClient(): Promise<void> {
 }
 
 async function launchClient(phase: AgentSmokeContext["phase"], previous?: AgentSmokeResult): Promise<AgentSmokeResult> {
-  const context: AgentSmokeContext = { phase, rendererDirectory, preloadPath, repository, screenshotPath, questionScreenshotPath, ...previous }
+  const context: AgentSmokeContext = { phase, rendererDirectory, preloadPath, repository, screenshotPath, questionScreenshotPath, completionScreenshotPath, ...previous }
   electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${join(directory, `profile-${++clientNumber}`)}`, `--agent-smoke-context=${JSON.stringify(context)}`], {
     cwd: resolve(import.meta.dirname, "../../.."), env: { ...process.env, DESKFLEET_DAEMON_DIRECTORY: controlDirectory }, stdio: ["ignore", "ignore", "pipe", "ipc"],
   })
@@ -199,12 +208,13 @@ try {
   assert.deepEqual(restored, first)
   assert.equal(provider.connections, connections, "Reconnecting must not restart the provider")
   assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate", "Smoke changed model prompt"])
-  console.log("Production Electron Agent: configured providers, dynamic configuration, streaming, backlog, steering, permissions, user question forms, read-only ACP terminal output, simultaneous terminal viewers, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath, questionScreenshotPath })
+  console.log("Production Electron Agent: configured providers, dynamic configuration, file/command/skill completions, streaming, backlog, steering, permissions, user question forms, read-only ACP terminal output, simultaneous terminal viewers, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath, questionScreenshotPath, completionScreenshotPath })
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   if (provider.failures.length) console.error(provider.failures)
   console.error(`Agent smoke screenshot: ${screenshotPath}`)
   console.error(`Agent question screenshot: ${questionScreenshotPath}`)
+  console.error(`Agent completion screenshot: ${completionScreenshotPath}`)
   throw error
 } finally {
   await stopClient()

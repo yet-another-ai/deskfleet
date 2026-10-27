@@ -18,6 +18,25 @@ export interface AgentPromptCapabilities {
   embeddedContext?: boolean
 }
 
+export interface AgentComposerCommand {
+  name: string
+  description: string
+  inputHint?: string
+}
+
+export interface AgentComposerSkill {
+  id: string
+  name: string
+  description: string
+  /** The spelling understood by the selected provider, including its prefix. */
+  invocation: string
+}
+
+export interface AgentComposerCatalog {
+  commands: AgentComposerCommand[]
+  skills: AgentComposerSkill[]
+}
+
 /** Configuration reported by the installed agent for a draft or live Session. */
 export interface AgentConfiguration {
   provider: AgentChoice
@@ -25,6 +44,8 @@ export interface AgentConfiguration {
   reasoningEfforts: AgentConfigOption | null
   modes: AgentConfigOption | null
   promptCapabilities?: AgentPromptCapabilities
+  commands?: AgentComposerCommand[]
+  skills?: AgentComposerSkill[]
 }
 
 export interface AgentConfigurationSelection {
@@ -42,6 +63,8 @@ export interface AgentConfigurationParams extends AgentConfigurationSelection {
   restore?: AgentConfigurationSelection
   /** Close a draft probe without looking up its possibly deleted provider/workspace. */
   release?: boolean
+  /** Wait briefly for the provider's initial command notification. */
+  composer?: boolean
 }
 
 export function validateAgentConfigurationParams(params: Record<string, unknown>): void {
@@ -51,6 +74,7 @@ export function validateAgentConfigurationParams(params: Record<string, unknown>
     throw new Error("Invalid Agent configuration probe ID")
   }
   if (params.release !== undefined && typeof params.release !== "boolean") throw new Error("Invalid Agent configuration release")
+  if (params.composer !== undefined && typeof params.composer !== "boolean") throw new Error("Invalid Agent composer discovery")
   if (params.release && !params.probeId) throw new Error("Agent configuration release requires a probe ID")
   if (params.restore !== undefined) {
     if (!params.probeId || !params.restore || typeof params.restore !== "object" || Array.isArray(params.restore)) {
@@ -116,10 +140,38 @@ export function agentPromptCapabilities(capabilities?: acp.PromptCapabilities | 
   return Object.keys(result).length ? result : undefined
 }
 
+/** Only adapter-defined spellings or explicit skill metadata identify a skill. */
+export function agentComposerCatalog(available: acp.AvailableCommand[], providerKind: string): AgentComposerCatalog {
+  const commands: AgentComposerCommand[] = []
+  const skills: AgentComposerSkill[] = []
+  const seen = new Set<string>()
+  for (const command of available) {
+    if (!command.name || seen.has(command.name)) continue
+    seen.add(command.name)
+    const { name, description } = command
+    // codex-acp advertises skills with a literal "$" prefix; pi-acp uses
+    // "skill:" commands from Pi's get_commands response.
+    if (providerKind === "codex" && name.startsWith("$") && name.length > 1) {
+      skills.push({ id: name, name: name.slice(1), description, invocation: name })
+    } else if (providerKind === "pi" && name.startsWith("skill:") && name.length > 6) {
+      skills.push({ id: name, name: name.slice(6), description, invocation: `/${name}` })
+    } else {
+      const jetbrains = command._meta?.jetbrains
+      const air = typeof jetbrains === "object" && jetbrains !== null && "air" in jetbrains ? jetbrains.air : undefined
+      const confirmedClaudeSkill = providerKind === "claude-code" && typeof air === "object" && air !== null
+        && "kind" in air && air.kind === "skill" && "skillPath" in air && typeof air.skillPath === "string"
+      if (confirmedClaudeSkill) skills.push({ id: name, name, description, invocation: `/${name}` })
+      else commands.push({ name, description, ...(command.input?.hint ? { inputHint: command.input.hint } : {}) })
+    }
+  }
+  return { commands, skills }
+}
+
 export function agentConfiguration(
   options: acp.SessionConfigOption[],
   provider: AgentChoice = { id: "codex", name: "Codex" },
   promptCapabilities?: AgentPromptCapabilities,
+  composer?: AgentComposerCatalog,
 ): AgentConfiguration {
   return {
     provider,
@@ -127,5 +179,6 @@ export function agentConfiguration(
     reasoningEfforts: selectReasoningEffort(options),
     modes: selectAgentOption(options, "mode", "mode"),
     ...(promptCapabilities ? { promptCapabilities } : {}),
+    ...composer,
   }
 }

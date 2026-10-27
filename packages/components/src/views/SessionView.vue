@@ -27,7 +27,8 @@ import { useTerminalsStore } from "../stores/terminals.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { latestAgentUsage } from "../services/agent-usage.ts"
-import { buildPromptContent } from "../services/composer-attachments.ts"
+import { buildComposerPrompt } from "../services/composer-prompt.ts"
+import { commandDraft } from "../services/composer-mentions.ts"
 
 // xterm stays out of the session bundle until the panel is opened.
 const SessionTerminalPanel = defineAsyncComponent(() => import("../components/terminal/SessionTerminalPanel.vue"))
@@ -73,6 +74,7 @@ const forkDisabled = computed(() => !connected.value || !!view.value?.loading ||
 const resumeUnavailable = computed(() => snapshot.value?.session.lifecycle === "ready" && run.value?.state !== "running" && !canResume.value)
 const draft = computed({ get: () => agents.drafts[props.sessionId] ?? "", set: value => { agents.drafts[props.sessionId] = value } })
 const attachments = computed({ get: () => agents.draftAttachments[props.sessionId] ?? [], set: value => { agents.draftAttachments[props.sessionId] = value } })
+const mentions = computed({ get: () => agents.draftMentions[props.sessionId] ?? [], set: value => { agents.draftMentions[props.sessionId] = value } })
 const unresolvedSubmission = computed(() => Object.values(agents.operations).some(operation => operation.sessionId === props.sessionId && operation.text === draft.value))
 const pending = computed(() => Object.values(agents.operations).filter(operation => operation.sessionId === props.sessionId && operation.error))
 // Shells need the Session's own Worktree on this machine.
@@ -81,6 +83,7 @@ const empty = computed(() => !view.value?.loading && !snapshot.value?.elicitatio
 const busy = ref(false)
 const forkOpen = ref(false)
 const actionError = ref<string | null>(null)
+const draftError = computed(() => actionError.value ?? agents.draftErrors[props.sessionId])
 const scroller = ref<HTMLElement | null>(null)
 const followBottom = ref(true)
 const scroll = () => { const el = scroller.value; if (el) followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 100 }
@@ -110,13 +113,22 @@ async function action(operation: () => Promise<unknown>): Promise<void> {
   finally { if (props.sessionId === sessionId) busy.value = false }
 }
 function submit(delivery: "backlog" | "steer"): void {
+  if (agents.preparingDrafts[props.sessionId]) return
   void action(async () => {
+    const sessionId = props.sessionId
+    delete agents.draftErrors[sessionId]
     const currentDraft = draft.value
     const currentAttachments = attachments.value
-    const content = currentAttachments.length
-      ? await buildPromptContent({ draft: currentDraft, attachments: currentAttachments, sessionId: props.sessionId, target: resourceTarget.value, filesApi: client.files })
+    const currentMentions = mentions.value
+    const submittedDraft = { mentions: currentMentions, attachmentIds: currentAttachments.map(item => item.id) }
+    const turnId = activeTurn.value?.id
+    const content = currentAttachments.length || currentMentions.length
+      ? await buildComposerPrompt({ draft: currentDraft, attachments: currentAttachments, mentions: currentMentions,
+        providerId: snapshot.value!.session.provider, sessionId, target: resourceTarget.value, filesApi: client.files, resolveReferences: agents.resolveComposerReferences })
       : currentDraft
-    await agents.submit(props.sessionId, content, delivery, delivery === "steer" ? activeTurn.value?.id : undefined, currentDraft)
+    const command = commandDraft(typeof content === "string" ? content : content.find(block => block.type === "text")?.text ?? "")
+    const intent = command ? "backlog" : delivery
+    await agents.submit(sessionId, content, intent, intent === "steer" ? turnId : undefined, currentDraft, submittedDraft)
   })
 }
 async function showFork(snapshot: AgentSnapshot, sourceId: string): Promise<void> {
@@ -158,7 +170,7 @@ async function checkOperation(operationId: string): Promise<void> {
     <AgentNotice v-for="operation in pending" :key="operation.operationId" tone="warning" :text="t('agent.operationPending')" :detail="operation.error">
       <UiButton type="button" :disabled="busy" @click="action(() => checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</UiButton>
     </AgentNotice>
-    <AgentNotice v-if="actionError && !pending.some(operation => operation.error === actionError)" tone="danger" :text="actionError" />
+    <AgentNotice v-if="draftError && !pending.some(operation => operation.error === draftError)" tone="danger" :text="draftError" />
     <template v-if="snapshot">
       <AgentNotice v-if="!active" :text="t(snapshot.session.archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')" />
       <AgentNotice v-if="snapshot.session.lifecycle !== 'ready'" :tone="snapshot.session.lifecycle === 'provision_failed' ? 'danger' : 'progress'" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
@@ -169,7 +181,7 @@ async function checkOperation(operationId: string): Promise<void> {
       <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!active || !connected || busy" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
     </template>
   </div>
-  <SessionComposer v-if="location" v-model="draft" v-model:attachments="attachments" :location="location" :usage="usage" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
+  <SessionComposer v-if="location" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
   <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
   <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
   <div v-if="focusedMermaid" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">

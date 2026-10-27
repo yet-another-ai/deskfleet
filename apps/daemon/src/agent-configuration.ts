@@ -1,7 +1,8 @@
 import type * as acp from "@agentclientprotocol/sdk/unstable"
-import { agentConfiguration, agentPromptCapabilities, selectAgentOption, selectReasoningEffort, type AgentConfiguration, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, selectAgentOption, selectReasoningEffort, type AgentConfiguration, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { codexProvider } from "./agents/codex.ts"
+import { AgentComposerCommands } from "./agent-composer-commands.ts"
 
 /** Apply dependent choices against the provider's latest confirmed configuration. */
 export async function applyAgentConfiguration(
@@ -46,6 +47,7 @@ export async function readAgentConfiguration(
   const timeout = setTimeout(() => controller.abort(new Error("Agent configuration request timed out")), dependencies.timeoutMs ?? 45_000)
   let agent: AgentConnection | undefined
   let notifiedOptions: acp.SessionConfigOption[] | undefined
+  const commands = new AgentComposerCommands()
   let aborted!: () => void
   const cancelled = new Promise<never>((_, reject) => {
     aborted = () => reject(signal.reason)
@@ -54,6 +56,7 @@ export async function readAgentConfiguration(
   const connecting = Promise.resolve().then(() => provider.connect(config, {
     onUpdate({ update }) {
       if (update.sessionUpdate === "config_option_update") notifiedOptions = update.configOptions
+      if (update.sessionUpdate === "available_commands_update") commands.update(update.availableCommands)
     },
     signal,
   }))
@@ -71,17 +74,20 @@ export async function readAgentConfiguration(
         catch { signal.throwIfAborted() }
       }
     } else options = await applyAgentConfiguration(agent, session.sessionId, options, params)
+    if (params.composer) await commands.ready(signal)
     signal.throwIfAborted()
     dependencies.onOptions?.(options)
     return agentConfiguration(
       options,
       { id: params.provider, name: config.name },
       agentPromptCapabilities(agent.initialization.agentCapabilities?.promptCapabilities),
+      commands.current && agentComposerCatalog(commands.current, provider.id),
     )
   })()
   try {
     return await Promise.race([discovery, cancelled])
   } finally {
+    commands.close()
     clearTimeout(timeout)
     signal.removeEventListener("abort", aborted)
     // Providers observe the signal while initializing; once connected, close()

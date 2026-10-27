@@ -15,6 +15,7 @@ import type { AgentProviders } from "./agent-providers.ts"
 import type { AgentMcp } from "./agent-mcp.ts"
 import type { TerminalSessions } from "./terminals.ts"
 import { GitInspection } from "./git-inspection.ts"
+import { ComposerReferences } from "./composer-references.ts"
 import type {
   AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentReceipt, AgentSnapshot,
 } from "./agent-protocol.ts"
@@ -93,6 +94,7 @@ export class AgentSessions {
   readonly #mcp?: AgentMcp
   readonly #terminals?: TerminalSessions
   readonly #git = new GitInspection()
+  readonly #references: ComposerReferences
   readonly #runtimes = new Map<string, AgentRuntime>()
   readonly #operations = new Map<string, Promise<unknown>>()
   readonly #transitions = new Map<string, Promise<unknown>>()
@@ -106,6 +108,7 @@ export class AgentSessions {
   constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider, providers?: AgentProviders, mcp?: AgentMcp, terminals?: TerminalSessions) {
     this.#catalog = catalog
     this.journal = new AgentJournal(native)
+    this.#references = new ComposerReferences(catalog, this.journal)
     this.#mcp = mcp
     this.#terminals = terminals
     this.#resolveProvider = providers ? id => providers.resolve(id) : id => {
@@ -256,10 +259,28 @@ export class AgentSessions {
     }
     if (method === "_deskfleet/session/configuration") {
       const sessionId = id(params.sessionId, "Session ID")
+      if (params.composer !== undefined && typeof params.composer !== "boolean") throw new Error("Invalid composer discovery flag")
       await this.journal.read(sessionId)
-      const pending = this.#runtime(sessionId).configuration(this.#closing.signal)
+      const pending = this.#runtime(sessionId).configuration(this.#closing.signal, params.composer === true)
       this.#discovery.add(pending)
       try { return await pending } finally { this.#discovery.delete(pending) }
+    }
+    if (method === "_deskfleet/composer/references" || method === "_deskfleet/composer/resolve") {
+      const sessionReference = method === "_deskfleet/composer/references" ? params.kind === "session"
+        : Array.isArray(params.references) && params.references.some(reference => reference?.kind === "session")
+      let allowSessionReferences = !!this.#mcp && actor.kind === "user" && !!actor.userId && !!actor.deviceId
+      if (allowSessionReferences && sessionReference && params.sessionId !== undefined) {
+        const creation = (await this.journal.commands(id(params.sessionId, "Session ID")))
+          .find(command => command.isCanonical && (command.method === "_deskfleet/session/create" || command.method === "_deskfleet/session/fork"))
+        // Existing providers inherit their initiating actor's MCP delegation,
+        // even when a different authenticated viewer later opens the Session.
+        allowSessionReferences = creation?.actor.kind === "user" && !!creation.actor.userId && !!creation.actor.deviceId
+      }
+      if (method === "_deskfleet/composer/references") return this.#references.search(params, allowSessionReferences)
+      if (!allowSessionReferences && sessionReference) {
+        throw new Error("Session references require the built-in MCP server and an authenticated user")
+      }
+      return this.#references.resolve(params)
     }
     if (method === "_deskfleet/session/list") return this.journal.list()
     if (method === "_deskfleet/session/subscribe") return this.journal.read(id(params.sessionId, "Session ID"))

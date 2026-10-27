@@ -305,6 +305,35 @@ test("Agent RPC uses the server actor and cannot perform management over WebRTC"
   assert.equal(f.calls[1]?.actor.userId, "alice")
 })
 
+test("composer search and resolution require execution authority and use the verified peer actor", async context => {
+  const denied = fixture(), allowed = fixture()
+  context.after(async () => { await denied.peers.closeAll(); await allowed.peers.closeAll() })
+  await denied.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: ["agent:read"] }, iceServers: [] })
+  await denied.rpc(1, "initialize", { protocolVersion: 1 })
+  const requests = [
+    { method: "_deskfleet/composer/references", params: { workspaceId: "1", kind: "file", query: "source" } },
+    { method: "_deskfleet/composer/resolve", params: { sessionId: "1", references: [] } },
+  ]
+  for (const [index, request] of requests.entries()) {
+    await denied.rpc(index + 2, request.method, request.params)
+    const response = denied.sent.join("").trim().split("\n").map(line => JSON.parse(line)).find(value => value.id === index + 2)
+    assert.match(response.error.message, /does not allow this operation/)
+  }
+  assert.deepEqual(denied.calls, [])
+
+  const authorization = { ...grant(), actions: ["agent:read", "agent:execute"] }
+  await allowed.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] })
+  authorization.actor.userId = "changed-after-verification"
+  await allowed.rpc(1, "initialize", { protocolVersion: 1 })
+  for (const [index, request] of requests.entries()) {
+    await allowed.rpc(index + 2, request.method, { ...request.params, actor: { kind: "system", userId: "spoof" } })
+    const response = allowed.sent.join("").trim().split("\n").map(line => JSON.parse(line)).find(value => value.id === index + 2)
+    assert.equal(response.error, undefined)
+    assert.equal(response.result, null)
+  }
+  assert.deepEqual(allowed.calls, requests.map(({ method }) => ({ method, actor: grant().actor })))
+})
+
 test("expiry closes access without a signaling connection and ignores queued input", async context => {
   const f = fixture(); context.after(() => f.peers.closeAll())
   await f.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })

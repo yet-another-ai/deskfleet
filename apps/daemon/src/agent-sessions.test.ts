@@ -16,6 +16,7 @@ import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import type { AgentConfiguration, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentActor, AgentElicitation, AgentReceipt, AgentSnapshot } from "./agent-protocol.ts"
+import type { ComposerReferenceResult } from "./composer-reference-protocol.ts"
 import type { GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 
 const execute = promisify(execFile)
@@ -153,6 +154,22 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   }
   return { catalog, service, provider, providers, actor, bob, create, snapshot, sessionId, read, submit, directory, repository }
 }
+
+test("local composer without MCP finds files and returns no Session candidates while still rejecting selected Session references", async t => {
+  const f = await setup(t)
+  const actor = f.service.actor()
+  const scope = { workspaceId: f.snapshot.session.workspaceId }
+  const files = await f.service.handle("_deskfleet/composer/references", { ...scope, kind: "file", query: "README" }, actor) as ComposerReferenceResult
+  assert.equal(files.items.length, 1)
+  assert.equal(files.items[0]?.name, "README.md")
+  for (const viewer of [actor, { ...f.actor, deviceId: "browser-device" }]) {
+    assert.deepEqual(await f.service.handle("_deskfleet/composer/references", { ...scope, kind: "session", query: "" }, viewer), { items: [], truncated: false })
+    await assert.rejects(f.service.handle("_deskfleet/composer/resolve", { sessionId: f.sessionId, references: [{
+      kind: "session", originId: f.service.journal.identity.originId, workspaceId: scope.workspaceId, sessionId: f.sessionId,
+    }] }, viewer), /require the built-in MCP server and an authenticated user/u)
+  }
+  await assert.rejects(f.service.handle("_deskfleet/composer/references", { sessionId: f.sessionId, workspaceId: "9223372036854775807", kind: "session", query: "" }, actor), /outside the reference Workspace/u)
+})
 
 test("archive retains files and history, cancels approval and questions, and restore waits for explicit input", async t => {
   const f = await setup(t)
@@ -317,6 +334,43 @@ test("steering consumes a selected candidate once and keeps its author separate 
   await delay(30)
   assert.deepEqual(f.provider.prompts, ["hold"])
 })
+
+for (const direct of [false, true]) {
+  test(`${direct ? "direct submission" : "backlog action"} cannot steer commands and retains them for the next turn`, async t => {
+    const f = await setup(t)
+    await f.submit("hold").result
+    const active = await until(f.read, state => state.turns.some(turn => turn.state === "running") && f.provider.prompts.length === 1)
+    const operationId = randomUUID()
+    const receipt = await f.service.handle("_deskfleet/input/submit", {
+      sessionId: f.sessionId, operationId, delivery: direct ? "steer" : "backlog", turnId: active.turns[0]!.id,
+      content: [
+        { type: "resource_link", uri: "file:///workspace/README.md", name: "README.md" },
+        { type: "text", text: "  /skill:release notes" },
+      ],
+    }, f.actor) as AgentReceipt
+    const steeringId = direct ? operationId : randomUUID()
+    if (!direct) await f.service.handle("_deskfleet/input/steer", {
+      sessionId: f.sessionId, operationId: steeringId, inputId: receipt.inputId, turnId: active.turns[0]!.id,
+    }, f.bob)
+    const rejected = await until(
+      () => f.service.handle("_deskfleet/command/get", { operationId: steeringId }, f.actor) as Promise<{ status: string; error?: string }>,
+      command => command?.status === "rejected",
+    )
+    assert.match(rejected.error!, /Commands must start a new turn/)
+    const input = (await f.read()).inputs.find(input => input.id === receipt.inputId)!
+    assert.equal(input.state, "pending")
+    assert.equal(input.requestedDelivery, "backlog")
+    assert.equal(input.dispatchCommandId, undefined)
+    assert.equal(input.error, undefined)
+    assert.deepEqual(f.provider.steers, [])
+    f.provider.finish()
+    await until(f.read, () => f.provider.prompts.length === 2)
+    assert.deepEqual(f.provider.prompts, ["hold", "  /skill:release notes"])
+    f.provider.finish()
+    await until(f.read, state => state.inputs.find(input => input.id === receipt.inputId)?.state === "delivered")
+    assert.equal((await f.read()).inputs.find(input => input.id === receipt.inputId)?.actualDelivery, "turn_start")
+  })
+}
 
 test("steer at the turn boundary becomes a tracked normal prompt and unknown delivery never retries", async t => {
   const f = await setup(t)

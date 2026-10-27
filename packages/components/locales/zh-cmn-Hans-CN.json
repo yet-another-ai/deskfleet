@@ -287,6 +287,21 @@
     "pastedTextLines": "{n} 行",
     "removeAttachment": "移除 {name}",
     "dropFiles": "拖放文件以添加附件",
+    "completions": {
+      "label": "提示词补全",
+      "references": "已选引用",
+      "file": "文件",
+      "session": "会话",
+      "skill": "技能",
+      "command": "命令",
+      "loading": "正在查找补全项…",
+      "empty": "没有匹配的文件或会话。",
+      "noSkills": "此 Agent 没有可在此处使用的匹配技能。",
+      "noCommands": "此 Agent 没有匹配的命令。",
+      "refine": "继续输入以缩小搜索范围。",
+      "keyboard": "↑↓ 选择 · Enter 或 Tab 插入 · Esc 关闭",
+      "remove": "移除引用 {name}"
+    },
     "context": "会话上下文",
     "contextChoice": "会话上下文：{context}",
     "contextOption": {

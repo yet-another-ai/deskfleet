@@ -13,6 +13,7 @@ import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { useProvidersStore } from "./stores/providers.ts"
 import { deferred } from "./test/desktop-media.ts"
 import SessionView from "./views/SessionView.vue"
+import type { ComposerMention } from "./services/composer-mentions.ts"
 const transport = vi.hoisted(() => ({ call: vi.fn(), receive: (_value: { method: string; params: unknown }) => {}, state: (_state: string) => {} }))
 vi.mock("./services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof transport.state, receive: typeof transport.receive) { transport.state = state; transport.receive = receive }
@@ -141,6 +142,103 @@ test("a workspace prompt creates a Session, keeps shared candidates, streams too
   expect(wrapper.get('[aria-label="Conversation"] [data-permission-id="60"]').text()).toContain("Reject · Grace")
   await router.push({ name: "workspace", params: { workspaceId } }); await flushPromises()
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/session/stop" || method === "_deskfleet/turn/cancel")).toBe(false)
+})
+
+function draftWithReferences(): { text: string; mentions: ComposerMention[] } {
+  const text = "Review @README.md using @Earlier design"
+  const references: Array<{ token: string; reference: ComposerMention["reference"] }> = [
+    { token: "@README.md", reference: { kind: "file", originId: "origin", workspaceId, directoryIndex: 0, sourceDirectory: "/code/web", relativePath: "README.md" } },
+    { token: "@Earlier design", reference: { kind: "session", originId: "origin", workspaceId, sessionId: otherSessionId } },
+  ]
+  const mentions = references.map(({ token, reference }, index) => ({ id: `mention-${index}`, start: text.indexOf(token), end: text.indexOf(token) + token.length, token, reference }))
+  const agents = useAgentSessionsStore(pinia)
+  agents.drafts[`workspace:${workspaceId}`] = text
+  agents.draftMentions[`workspace:${workspaceId}`] = mentions
+  return { text, mentions }
+}
+
+test("new Session references resolve against the created Session before its first prompt is submitted", async () => {
+  const { text, mentions } = draftWithReferences()
+  const resolution = deferred<ReturnType<typeof agentInput>["content"]>()
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/composer/resolve" ? resolution.promise : normal(method, params))
+  await flushPromises()
+  expect(wrapper.findAll("[data-composer-mentions] li")).toHaveLength(2)
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+
+  const agents = useAgentSessionsStore(pinia)
+  expect(router.currentRoute.value.params.sessionId).toBe("30")
+  expect(agents.drafts["30"]).toBe(text)
+  expect(agents.draftMentions["30"]).toEqual(mentions)
+  expect(agents.drafts[`workspace:${workspaceId}`]).toBe("")
+  expect(agents.draftMentions[`workspace:${workspaceId}`]).toEqual([])
+  expect(transport.call).toHaveBeenCalledWith("_deskfleet/composer/resolve", { sessionId: "30", references: mentions.map(mention => mention.reference) })
+  expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/input/submit")).toBe(false)
+  expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeDefined()
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await wrapper.get("textarea").trigger("keydown", { key: "Enter" })
+  await flushPromises()
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/composer/resolve")).toHaveLength(1)
+  expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/input/submit")).toBe(false)
+
+  const resolved: ReturnType<typeof agentInput>["content"] = [
+    { type: "resource_link", uri: "file:///worktree/new/README.md", name: "README.md", size: 128 },
+    { type: "text", text: `Referenced Session ${otherSessionId}: Earlier design. Read it with deskfleet_session_history.` },
+  ]
+  resolution.resolve(resolved)
+  await flushPromises()
+  const submission = transport.call.mock.calls.find(([method]) => method === "_deskfleet/input/submit")?.[1]
+  expect(submission).toEqual({ sessionId: "30", operationId: expect.any(String), delivery: "backlog", content: [{ type: "text", text }, ...resolved] })
+  expect(transport.call.mock.calls.findIndex(([method]) => method === "_deskfleet/session/create")).toBeLessThan(transport.call.mock.calls.findIndex(([method]) => method === "_deskfleet/composer/resolve"))
+  expect(agents.drafts["30"]).toBe("")
+  expect(agents.draftMentions["30"]).toEqual([])
+  expect(agents.preparingDrafts["30"]).toBeUndefined()
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit")).toHaveLength(1)
+  expect(wrapper.get('[aria-label="Queued"]').text()).toContain("README.md")
+})
+
+test("a new Session keeps its moved draft and references when resolution fails and shows the error without submitting", async () => {
+  const { text, mentions } = draftWithReferences()
+  const resolution = deferred<ReturnType<typeof agentInput>["content"]>()
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/composer/resolve" ? resolution.promise : normal(method, params))
+  await flushPromises()
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.params.sessionId).toBe("30")
+  expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeDefined()
+  resolution.reject(new Error("Referenced file is unavailable in this Session: README.md"))
+  await flushPromises()
+
+  const agents = useAgentSessionsStore(pinia)
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/session/create")).toHaveLength(1)
+  expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/input/submit")).toBe(false)
+  expect(agents.drafts["30"]).toBe(text)
+  expect(agents.draftMentions["30"]).toEqual(mentions)
+  expect(agents.drafts[`workspace:${workspaceId}`]).toBe("")
+  expect(agents.draftMentions[`workspace:${workspaceId}`]).toEqual([])
+  expect(wrapper.get<HTMLTextAreaElement>("textarea").element.value).toBe(text)
+  expect(wrapper.findAll("[data-composer-mentions] li")).toHaveLength(2)
+  expect(wrapper.findAll('[role="alert"]').some(notice => notice.text().includes("Referenced file is unavailable in this Session: README.md"))).toBe(true)
+  expect(wrapper.text()).not.toContain(i18n.global.t("agent.disconnected"))
+  expect(wrapper.findAll("button").some(button => button.text() === "Reconnect")).toBe(false)
+  expect(agents.views["30"]?.error).toBeNull()
+  expect(agents.draftErrors["30"]).toContain("Referenced file is unavailable")
+  expect(agents.state).toBe("connected")
+  expect(agents.preparingDrafts["30"]).toBeUndefined()
+  expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeUndefined()
+  await wrapper.get("textarea").setValue(`${text} again`)
+  expect(agents.drafts["30"]).toBe(`${text} again`)
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/composer/resolve"
+    ? [{ type: "resource_link", uri: "file:///worktree/new/README.md", name: "README.md" }]
+    : normal(method, params))
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/session/create")).toHaveLength(1)
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit")).toHaveLength(1)
+  expect(agents.drafts["30"]).toBe("")
+  expect(agents.draftErrors["30"]).toBeUndefined()
 })
 
 test.each(["archiving", "archived"] as const)("questions remain visible but cannot be answered while a Session is %s", async archiveState => {

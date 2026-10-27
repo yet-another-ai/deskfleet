@@ -48,6 +48,10 @@ const connection = acp.agent({ name: "deskfleet-mode-fixture" })
     await client.notify(acp.methods.client.session.update, {
       sessionId: params.sessionId, update: { sessionUpdate: "current_mode_update", currentModeId: currentMode },
     })
+    await client.notify(acp.methods.client.session.update, {
+      sessionId: params.sessionId, update: { sessionUpdate: "available_commands_update",
+        availableCommands: [{ name: "review", description: "Review changes" }] },
+    })
     return { configOptions: options(), modes: { ...modes, currentModeId: currentMode } }
   })
   .onRequest(acp.methods.agent.session.setMode, async ({ params, client }) => {

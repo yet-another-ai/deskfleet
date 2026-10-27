@@ -6,7 +6,8 @@ import { AgentJournal, errorMessage, requireActiveSession, timestamp } from "./a
 import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 
 import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
-import { agentConfiguration, agentPromptCapabilities, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+import { AgentComposerCommands } from "./agent-composer-commands.ts"
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
 import { withRestoredSessionMode } from "./agents/session-modes.ts"
 import { AgentElicitations } from "./agent-elicitations.ts"
@@ -32,6 +33,8 @@ export class AgentRuntime {
   readonly #terminals?: TerminalSessions
   #mcpLease?: AgentMcpLease
   #providerName?: string
+  #providerKind?: string
+  #commands?: AgentComposerCommands
   #configuration?: acp.SessionConfigOption[]
   #availableConfiguration?: acp.SessionConfigOption[]
   #openingConfiguration = false
@@ -86,7 +89,7 @@ export class AgentRuntime {
     }
   }
 
-  async configuration(signal?: AbortSignal): Promise<AgentConfiguration> {
+  async configuration(signal?: AbortSignal, composer = false): Promise<AgentConfiguration> {
     await this.#starting?.catch(() => {})
     signal?.throwIfAborted()
     const saved = await savedAgentConfiguration(this.journal, this.sessionId)
@@ -94,16 +97,23 @@ export class AgentRuntime {
     const providerId = snapshot.session.provider
     // Reading a removed provider's history remains possible. Only a new process
     // requires that its launch settings still exist.
-    try { this.#providerName = this.#resolveProvider(providerId).config.name } catch {}
+    try {
+      const launch = this.#resolveProvider(providerId)
+      this.#providerName = launch.config.name
+      this.#providerKind = launch.provider.id
+    } catch {}
     const identity = { id: providerId, name: this.#providerName ?? providerId }
     const promptCapabilities = snapshot.session.capabilities?.promptCapabilities
+    if (composer && this.running) await this.#commands?.ready(signal)
+    const availableCommands = this.#commands ? this.#commands.current : saved.commands
+    const commands = availableCommands && agentComposerCatalog(availableCommands, this.#providerKind ?? "")
     if (snapshot.session.archiveState !== "active" || this.running || !snapshot.session.error) {
-      return agentConfiguration(this.#configuration ?? saved.options, identity, promptCapabilities)
+      return agentConfiguration(this.#configuration ?? saved.options, identity, promptCapabilities, commands)
     }
     // Discover alternatives without resuming the failed conversation, changing
     // its saved selection, or releasing any pending inputs.
     let available: AgentConfiguration
-    if (this.#availableConfiguration?.length) available = agentConfiguration(this.#availableConfiguration, identity, promptCapabilities)
+    if (this.#availableConfiguration?.length) available = agentConfiguration(this.#availableConfiguration, identity, promptCapabilities, commands)
     else {
       const previousStop = this.#stop
       await previousStop
@@ -118,7 +128,7 @@ export class AgentRuntime {
         }
         const controller = new AbortController()
         const discoverySignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
-        const pending = readAgentConfiguration({ provider: providerId, ...saved.selection }, worktree.directories[0]!.path,
+        const pending = readAgentConfiguration({ provider: providerId, ...saved.selection, composer }, worktree.directories[0]!.path,
           { ...this.#resolveProvider(providerId), signal: discoverySignal, recoverSelection: true,
             onOptions: options => { this.#availableConfiguration = options },
           })
@@ -217,11 +227,14 @@ export class AgentRuntime {
       await this.journal.commit(current, { runs: [run], events: [this.journal.event(this.sessionId, "run", run)] })
     })
     this.#run = run
+    this.#commands?.close()
+    this.#commands = new AgentComposerCommands()
     try {
       // Resolve at process launch so edits apply to the next run, while an
       // existing process keeps the settings with which it was started.
       const { provider, config } = this.#resolveProvider(snapshot.session.provider)
       this.#providerName = config.name
+      this.#providerKind = provider.id
       const connection = await provider.connect(config, {
         ...(this.#terminals ? { terminals: { sessions: this.#terminals, cwd: worktree.directories[0].path, worktreeId: worktree.id } } : {}),
         onUpdate: params => this.#update(params, run.generation),
@@ -301,6 +314,7 @@ export class AgentRuntime {
       void this.pump()
     } catch (error) {
       this.#stopping = true
+      this.#commands?.close()
       this.#releaseMcp()
       await this.#connection?.close().catch(() => {})
       this.#connection = undefined
@@ -318,6 +332,8 @@ export class AgentRuntime {
 
   async #update(params: acp.SessionNotification, generation: number): Promise<void> {
     const configurationEpoch = this.#configurationEpoch
+    if (params.update.sessionUpdate === "available_commands_update"
+      && (this.#run?.generation !== generation || this.#stopping)) return
     if (params.update.sessionUpdate === "config_option_update") {
       if (this.#run?.generation !== generation || this.#stopping) return
       if (this.#openingConfiguration) {
@@ -329,6 +345,10 @@ export class AgentRuntime {
       if (this.#run.state !== "running" || this.#configuring) return
     }
     await this.journal.serial(this.sessionId, async () => {
+      if (params.update.sessionUpdate === "available_commands_update") {
+        if (this.#run?.generation !== generation || this.#stopping) return
+        this.#commands?.update(params.update.availableCommands)
+      }
       if (params.update.sessionUpdate === "config_option_update") {
         if (this.#run?.generation !== generation || this.#run.state !== "running" || this.#stopping
           || this.#configuring || configurationEpoch !== this.#configurationEpoch) return
@@ -434,6 +454,23 @@ export class AgentRuntime {
   }
 
   async #steer(inputId: string, command: AgentCommand, requestedTurnId?: string): Promise<void> {
+    const queuedCommand = await this.journal.serial(this.sessionId, async () => {
+      const snapshot = await this.journal.read(this.sessionId)
+      const previous = this.#claim(snapshot, inputId, command, true)
+      const firstText = previous.content.find(block => block.type === "text")?.text ?? ""
+      if (!/^\s*\/\S+/u.test(firstText)) return false
+      const input: AgentInput = { ...previous, state: "pending", requestedDelivery: "backlog",
+        requestedTurnId: undefined, dispatchCommandId: undefined, dispatcher: undefined, error: undefined }
+      const rejected: AgentCommand = { ...command, status: "rejected", completedAt: timestamp(),
+        error: "Commands must start a new turn; this input remains queued" }
+      await this.journal.commit(snapshot, { inputs: [input], command: rejected, events: [
+        this.journal.event(this.sessionId, "input", input), this.journal.event(this.sessionId, "command", rejected),
+      ] })
+      return true
+    })
+    // Keep rejected command steering outside the delivery-error path: the
+    // durable input is still valid and must remain in the shared backlog.
+    if (queuedCommand) throw new Error("Commands must start a new turn; this input remains queued")
     let sent = false
     try {
       const active = this.#active
@@ -582,6 +619,7 @@ export class AgentRuntime {
   #connectionLost(error: Error, generation: number): void {
     if (this.#run?.generation !== generation || this.#stopping) return
     this.#releaseMcp()
+    this.#commands?.close()
     this.#connection = undefined
     const recovery = this.#lost(error, generation).catch(error => console.error("Agent recovery failed", error)).finally(() => {
       if (this.#recovering === recovery) this.#recovering = undefined
@@ -611,6 +649,7 @@ export class AgentRuntime {
   }
   async #stopRun(): Promise<void> {
     this.#stopping = true
+    this.#commands?.close()
     this.#releaseMcp()
     const discoveries = [...this.#discoveries]
     for (const discovery of discoveries) discovery.controller.abort(new Error("Agent configuration discovery was stopped"))

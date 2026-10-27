@@ -1,11 +1,13 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { onScopeDispose, ref } from "vue"
+import { onScopeDispose, ref, watch } from "vue"
 import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 import type { ElicitationDraft } from "../services/agent-elicitation.ts"
 import type { ComposerAttachment } from "../services/composer-attachments.ts"
-import { agentConfiguration as normalizeAgentConfiguration } from "../../../../apps/daemon/src/agent-configuration-protocol.ts"
+import type { ComposerMention } from "../services/composer-mentions.ts"
+import type { ComposerReference, ComposerReferenceSearch } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
+import { agentComposerCatalog, agentConfiguration as normalizeAgentConfiguration } from "../../../../apps/daemon/src/agent-configuration-protocol.ts"
 import type { AgentConfiguration } from "../../../client/src/agent-configuration.ts"
 import type { GitChangedNotification, GitDiffRequest } from "../../../../apps/daemon/src/git-protocol.ts"
 import { useProvidersStore } from "./providers.ts"
@@ -26,10 +28,16 @@ export interface PendingAgentOperation {
   sessionId?: string
   method: AgentMethod
   text?: string
+  attachmentIds?: string[]
+  mentionSnapshot?: string
   workspaceId?: string
   params: Record<string, unknown>
   error?: string
   result?: unknown
+}
+export interface SubmittedAgentDraft {
+  mentions: readonly ComposerMention[]
+  attachmentIds: readonly string[]
 }
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
 const sequenceCompare = (left: string, right: string) => BigInt(left) < BigInt(right) ? -1 : BigInt(left) > BigInt(right) ? 1 : 0
@@ -47,11 +55,16 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const views = ref<Record<string, AgentSessionView>>({})
   const drafts = ref<Record<string, string>>({})
   const draftAttachments = ref<Record<string, ComposerAttachment[]>>({})
+  const draftMentions = ref<Record<string, ComposerMention[]>>({})
+  const draftErrors = ref<Record<string, string>>({})
+  const preparingDrafts = ref<Record<string, boolean>>({})
   const elicitationDrafts = ref<Record<string, ElicitationDraft>>({})
   const draftConfiguration = useLocalStorage<AgentSelection>("deskfleet.agent-configuration", { provider: "codex" })
   const configurations = ref<Record<string, AgentConfiguration>>({})
   const configurationReads = new Map<string, Promise<AgentConfiguration>>()
   const configurationSequences = new Map<string, string>()
+  const commandSequences = new Map<string, string>()
+  const unclassifiedCommands = new Map<string, Parameters<typeof agentComposerCatalog>[0]>()
   const state = ref<AgentConnectionState>("idle")
   const error = ref<string | null>(null)
   const operations = ref<Record<string, PendingAgentOperation>>({})
@@ -65,6 +78,21 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   let refreshing: Promise<void> | null = null
   let activeSessionId: string | undefined
   let disposed = false
+
+  function projectCommands(sessionId: string, commands: Parameters<typeof agentComposerCatalog>[0]): void {
+    const current = configurations.value[sessionId]
+    const providerId = sessions.value[sessionId]?.provider ?? current?.provider.id
+    const provider = providers.providers.find(provider => provider.id === providerId)
+    configurations.value[sessionId] = {
+      ...(current ?? normalizeAgentConfiguration([], { id: providerId ?? "", name: provider?.name ?? providerId ?? "" })),
+      ...(provider ? agentComposerCatalog(commands, provider.template) : { commands: [], skills: [] }),
+    }
+    if (provider) unclassifiedCommands.delete(sessionId)
+    else unclassifiedCommands.set(sessionId, commands)
+  }
+  watch(() => providers.providers, () => {
+    for (const [sessionId, commands] of unclassifiedCommands) projectCommands(sessionId, commands)
+  })
 
   function view(id: string): AgentSessionView {
     views.value[id] ??= { snapshot: null, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
@@ -101,10 +129,13 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const pending = operations.value[operationId]
     if (!pending) return
     if (pending.text !== undefined && pending.sessionId) {
-      if ((drafts.value[pending.sessionId] ?? "") === pending.text) {
+      delete draftErrors.value[pending.sessionId]
+      if ((drafts.value[pending.sessionId] ?? "") === pending.text
+        && JSON.stringify(draftMentions.value[pending.sessionId] ?? []) === pending.mentionSnapshot) {
         drafts.value[pending.sessionId] = ""
+        draftMentions.value[pending.sessionId] = []
       }
-      draftAttachments.value[pending.sessionId] = []
+      draftAttachments.value[pending.sessionId] = (draftAttachments.value[pending.sessionId] ?? []).filter(item => !pending.attachmentIds?.includes(item.id))
     }
     delete operations.value[operationId]
   }
@@ -155,14 +186,26 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       journal(event.sessionId).set(event.seq, event)
       if (event.kind === "session" && sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) sessions.value[event.sessionId] = event.payload as AgentSessionRecord
       if (event.kind === "command") commandReceived(event.payload as AgentCommand)
+      if (event.kind === "run" && (event.payload as AgentRun).state === "starting"
+        && sequenceCompare(event.seq, commandSequences.get(event.sessionId) ?? "0") > 0) {
+        const current = configurations.value[event.sessionId]
+        if (current) configurations.value[event.sessionId] = { ...current, commands: [], skills: [] }
+        unclassifiedCommands.delete(event.sessionId)
+        commandSequences.set(event.sessionId, event.seq)
+      }
       if (event.kind === "acp" && "update" in event.payload && event.payload.update.sessionUpdate === "config_option_update"
         && sequenceCompare(event.seq, configurationSequences.get(event.sessionId) ?? "0") > 0) {
         const providerId = sessions.value[event.sessionId]?.provider ?? configurations.value[event.sessionId]?.provider.id
         const provider = providers.providers.find(provider => provider.id === providerId)
-        configurations.value[event.sessionId] = normalizeAgentConfiguration(event.payload.update.configOptions, providerId ? {
+        configurations.value[event.sessionId] = { ...configurations.value[event.sessionId], ...normalizeAgentConfiguration(event.payload.update.configOptions, providerId ? {
           id: providerId, name: provider?.name ?? configurations.value[event.sessionId]?.provider.name ?? providerId,
-        } : undefined)
+        } : undefined) }
         configurationSequences.set(event.sessionId, event.seq)
+      }
+      if (event.kind === "acp" && "update" in event.payload && event.payload.update.sessionUpdate === "available_commands_update"
+        && sequenceCompare(event.seq, commandSequences.get(event.sessionId) ?? "0") > 0) {
+        projectCommands(event.sessionId, event.payload.update.availableCommands)
+        commandSequences.set(event.sessionId, event.seq)
       }
       changed.add(event.sessionId)
     }
@@ -295,12 +338,17 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (command) commandReceived(command)
     }
   }
-  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe">>(
-    method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string,
+  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe" | "_deskfleet/composer/references" | "_deskfleet/composer/resolve">>(
+    method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string, submittedDraft?: SubmittedAgentDraft,
   ): Promise<AgentMethods[M]["result"]> {
     const operationId = crypto.randomUUID()
     const sessionId = "sessionId" in params ? params.sessionId as string : undefined
-    operations.value[operationId] = { operationId, sessionId, method, text, workspaceId: "workspaceId" in params ? params.workspaceId as string : undefined, params: { ...params, operationId } }
+    operations.value[operationId] = { operationId, sessionId, method, text,
+      ...(text !== undefined && sessionId ? {
+        attachmentIds: submittedDraft ? [...submittedDraft.attachmentIds] : (draftAttachments.value[sessionId] ?? []).map(item => item.id),
+        mentionSnapshot: JSON.stringify(submittedDraft?.mentions ?? draftMentions.value[sessionId] ?? []),
+      } : {}),
+      workspaceId: "workspaceId" in params ? params.workspaceId as string : undefined, params: { ...params, operationId } }
     try {
       const result = await call(method, { ...params, operationId } as AgentMethods[M]["params"])
       completeOperation(operationId)
@@ -343,7 +391,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
 
-  async function agentConfiguration(params: AgentSelection & { workspaceId?: string; probeId?: string; restore?: Omit<AgentSelection, "provider"> }): Promise<AgentConfiguration> {
+  async function agentConfiguration(params: AgentSelection & { workspaceId?: string; probeId?: string; composer?: boolean; restore?: Omit<AgentSelection, "provider"> }): Promise<AgentConfiguration> {
     const result = await call("_deskfleet/agent/configuration", params)
     if (!result) throw new Error("Agent configuration is unavailable")
     return result
@@ -351,22 +399,33 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   async function releaseAgentConfiguration(params: { provider: string; workspaceId?: string; probeId: string }): Promise<void> {
     await call("_deskfleet/agent/configuration", { ...params, release: true })
   }
-  function sessionConfiguration(sessionId: string): Promise<AgentConfiguration> {
-    const current = configurationReads.get(sessionId)
+  function mergeConfiguration(sessionId: string, result: AgentConfiguration, sequence: string | undefined, commands: string | undefined): AgentConfiguration {
+    const latest = configurations.value[sessionId]
+    const catalog = commands === commandSequences.get(sessionId) ? result : latest ?? result
+    if (catalog === result) unclassifiedCommands.delete(sessionId)
+    configurations.value[sessionId] = {
+      ...(sequence === configurationSequences.get(sessionId) ? result : latest ?? result),
+      commands: catalog.commands, skills: catalog.skills,
+    }
+    return configurations.value[sessionId]!
+  }
+  function sessionConfiguration(sessionId: string, composer = false): Promise<AgentConfiguration> {
+    const key = `${sessionId}:${composer}`
+    const current = configurationReads.get(key)
     if (current) return current
     const sequence = configurationSequences.get(sessionId)
-    const reading = call("_deskfleet/session/configuration", { sessionId }).then(result => {
-      if (sequence === configurationSequences.get(sessionId)) configurations.value[sessionId] = result
-      return configurations.value[sessionId]!
-    }).finally(() => { configurationReads.delete(sessionId) })
-    configurationReads.set(sessionId, reading)
+    const commands = commandSequences.get(sessionId)
+    const reading = call("_deskfleet/session/configuration", { sessionId, ...(composer ? { composer } : {}) })
+      .then(result => mergeConfiguration(sessionId, result, sequence, commands))
+      .finally(() => { configurationReads.delete(key) })
+    configurationReads.set(key, reading)
     return reading
   }
   async function configureSession(sessionId: string, choices: Omit<AgentSelection, "provider">): Promise<AgentConfiguration> {
     const sequence = configurationSequences.get(sessionId)
+    const commands = commandSequences.get(sessionId)
     const result = await mutation("_deskfleet/session/configure", { sessionId, ...choices })
-    if (sequence === configurationSequences.get(sessionId)) configurations.value[sessionId] = result
-    return configurations.value[sessionId]!
+    return mergeConfiguration(sessionId, result, sequence, commands)
   }
   async function create(workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string): Promise<AgentSnapshot> {
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
@@ -383,12 +442,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     snapshotReceived(snapshot)
     return snapshot
   }
-  const submit = (sessionId: string, content: string | AgentInput["content"], delivery: "backlog" | "steer", turnId?: string, draftText?: string) => {
+  const submit = (sessionId: string, content: string | AgentInput["content"], delivery: "backlog" | "steer", turnId?: string, draftText?: string, submittedDraft?: SubmittedAgentDraft) => {
     const blocks = typeof content === "string" ? [{ type: "text" as const, text: content }] : content
     const trackedText = draftText ?? (typeof content === "string" ? content : (drafts.value[sessionId] ?? ""))
     return mutation("_deskfleet/input/submit", {
       sessionId, content: blocks, delivery, ...(turnId ? { turnId } : {}),
-    }, trackedText)
+    }, trackedText, submittedDraft)
   }
   const steer = (sessionId: string, inputId: string, turnId: string) => mutation("_deskfleet/input/steer", { sessionId, inputId, turnId })
   const withdraw = (sessionId: string, inputId: string) => mutation("_deskfleet/input/withdraw", { sessionId, inputId })
@@ -420,6 +479,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     snapshotReceived(await mutation("_deskfleet/session/restore", { sessionId }))
   }
   const gitStatus = (sessionId: string, force = false) => call("_deskfleet/git/status", { sessionId, ...(force ? { force } : {}) })
+  const composerReferences = (params: ComposerReferenceSearch) => call("_deskfleet/composer/references", params)
+  const resolveComposerReferences = (sessionId: string, references: ComposerReference[]) => call("_deskfleet/composer/resolve", { sessionId, references })
   const gitDiff = (request: GitDiffRequest) => call("_deskfleet/git/diff", request)
   async function watchGit(sessionId: string, listener: (error?: string) => void): Promise<() => void> {
     const subscriptionId = crypto.randomUUID()
@@ -443,5 +504,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); client.close() })
-  return { sessions, views, drafts, draftAttachments, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, archive, restore, gitStatus, gitDiff, watchGit }
+  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, archive, restore, composerReferences, resolveComposerReferences, gitStatus, gitDiff, watchGit }
 })

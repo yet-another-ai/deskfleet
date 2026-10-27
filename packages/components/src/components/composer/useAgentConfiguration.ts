@@ -6,7 +6,7 @@ import { useProvidersStore } from "../../stores/providers.ts"
 type Choices = Omit<AgentSelection, "provider">
 interface DraftRequest { id: number; choices: Choices; restore?: Choices; resolve(): void }
 interface ConfigurationProbe {
-  params: { provider: string; workspaceId?: string; probeId: string }
+  params: { provider: string; workspaceId?: string; probeId: string; composer?: boolean }
   pending?: Promise<AgentConfiguration>
   next?: DraftRequest
   retired: boolean
@@ -85,7 +85,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     }
   }
 
-  async function configure(choices?: Choices): Promise<void> {
+  async function configure(choices?: Choices, composer = false): Promise<void> {
     const currentRequest = ++requestId
     const { workspaceId, sessionId, providerId } = target()
     if (!sessionId && !providerId) return
@@ -95,6 +95,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     requestedModel.value = !sessionId && changingModel && configuration.value?.models?.options.some(option => option.id === choices.model) ? choices.model : undefined
     if (!sessionId) {
       const current = probe ?? newProbe()
+      if (composer) current.params.composer = true
       current.next?.resolve()
       const confirmed = discovered.value
       // A daemon may have expired this probe. Restore only this target's
@@ -112,6 +113,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     }
     try {
       if (choices) await agents.configureSession(sessionId, choices)
+      else if (composer) await agents.sessionConfiguration(sessionId, true)
       else await agents.sessionConfiguration(sessionId)
     } catch (cause) {
       if (currentRequest === requestId) error.value = cause instanceof Error ? cause.message : String(cause)
@@ -138,6 +140,12 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     retire()
     return configure(target().sessionId ? undefined : {})
   }
+  /** Completion discovery shares this composer's existing draft provider session. */
+  async function discover(): Promise<void> {
+    if (probe?.pending) await probe.pending.catch(() => {})
+    await configure(undefined, true)
+    if (error.value) throw new Error(error.value)
+  }
   function invalidate(): void {
     ++requestId
     retire()
@@ -161,5 +169,5 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   const modelName = computed(() => configuration.value?.models?.options.find(option => option.id === modelValue.value)?.name ?? modelValue.value ?? selection.value?.model)
   const reasoningEffort = computed(() => configuration.value?.reasoningEfforts?.currentValue ?? selection.value?.reasoningEffort)
   const modeName = computed(() => configuration.value?.modes?.options.find(option => option.id === configuration.value?.modes?.currentValue)?.name ?? configuration.value?.modes?.currentValue ?? selection.value?.mode)
-  return { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload }
+  return { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload, discover }
 }

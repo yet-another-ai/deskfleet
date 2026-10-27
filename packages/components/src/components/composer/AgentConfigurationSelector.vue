@@ -3,14 +3,14 @@ import { Check, ChevronDown, ChevronRight, LoaderCircle } from "@lucide/vue"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "reka-ui"
 import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentChoice } from "../../../../client/src/agent-configuration.ts"
+import type { AgentChoice, AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { useAgentConfiguration } from "./useAgentConfiguration.ts"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import { useProvidersStore } from "../../stores/providers.ts"
 import { useAgentSessionsStore, type AgentSelection } from "../../stores/agent-sessions.ts"
 
 const props = defineProps<{ workspaceId?: string; sessionId?: string; providerId?: string; selection?: AgentSelection; disabled?: boolean }>()
-const emit = defineEmits<{ loading: [value: boolean]; "update:providerId": [value: string]; "update:selection": [value: AgentSelection] }>()
+const emit = defineEmits<{ loading: [value: boolean]; configuration: [value: AgentConfiguration | null]; "update:providerId": [value: string]; "update:selection": [value: AgentSelection] }>()
 const { t, te } = useI18n()
 const providers = useProvidersStore()
 const agents = useAgentSessionsStore()
@@ -24,9 +24,11 @@ const draftSelection = computed({
 const providerId = computed(() => props.sessionId ? agents.sessions[props.sessionId]?.provider ?? agents.configurations[props.sessionId]?.provider.id : props.providerId ?? providers.selectedId)
 const selectedProvider = computed(() => providers.providers.find(provider => provider.id === providerId.value))
 const providerUnavailable = computed(() => !!(props.sessionId || props.providerId) && providers.loaded && !selectedProvider.value)
-const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }), draftSelection)
+const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload, discover } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }), draftSelection)
 const providerPending = computed(() => !selectedProvider.value && !configuration.value && !providerUnavailable.value)
 watch(loading, value => emit("loading", value), { immediate: true })
+watch(configuration, value => emit("configuration", value), { immediate: true })
+defineExpose({ discover })
 const root = useTemplateRef<{ $el: HTMLElement }>("root")
 type Control = "agent" | "model" | "reasoning" | "mode"
 interface ConfigurationControl { id: Control; label: string; value?: string; name?: string; options: AgentChoice[]; disabled: boolean }

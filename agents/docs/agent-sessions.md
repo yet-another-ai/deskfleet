@@ -325,6 +325,63 @@ blocks to the provider while keeping the original blocks in the journal.
 Provider content, plans, tool patches, and unknown metadata remain in the journal.
 Credentials stay on the executing machine and are not stored in audit records.
 
+### Composer references and commands
+
+The textarea offers completions at the cursor for `@` files and Sessions, `$`
+skills, and `/` commands at the start of a message. Selected file, Session, and
+skill identities remain associated with their text and appear as removable
+reference chips. Editing a selected token turns it back into ordinary text.
+References and attachments share prompt serialization before the durable input
+is submitted, including on new-Session creation.
+
+File search runs on the target daemon across all ordered captured Session
+directories, or the Workspace directories for a draft. It searches paths with
+bounded traversal, skips `.git`, Git-ignored paths and directory trees, and does
+not follow symlinks. Non-Git directories remain searchable. A draft file reference
+retains its directory position, observed source binding, and relative path. After
+Session creation, resolution uses that position in the captured directories;
+generated worktrees therefore receive their own file URI. A source-only file
+missing from the generated checkout produces an explicit error. Changed source
+bindings require reselection. File mentions are live `resource_link` blocks, not
+uploads or content snapshots. Composition without a Workspace has no `@`
+candidates and never searches the home directory implicitly.
+
+Session mentions select other Sessions in the same Workspace, including archived
+ones, and retain catalog-origin-qualified IDs. Resolution emits text identifying
+the Session and instructing the provider to inspect `deskfleet_session`, then read
+the latest 100 recorded events with `deskfleet_session_history` using the current
+snapshot's `session.lastEventSeq`. It does not copy a conversation or resume the target.
+This requires the built-in MCP server and an authenticated user; the existing
+Workspace delegation is unchanged. When that capability is unavailable, Session
+search returns no candidates while file search remains available; resolving a
+selected Session reference still fails. Existing Sessions use their initiating
+actor's MCP delegation; drafts use the current viewer's identity for creation.
+Team-wide and cross-machine references
+are outside this scope.
+
+The `/` catalog comes from ACP `available_commands_update`, including descriptions
+and argument hints. Draft discovery reuses the configuration probe, and live
+updates replace the catalog. Journal replay retains the latest catalog from the
+current provider run; a new run clears old commands until it advertises its own.
+Discovery can wait briefly for the initial notification without resuming a
+stopped conversation. Slash commands are ordinary prompt text and enter the
+backlog for a new turn, including when typed manually; they are not steered into
+the current turn.
+
+The `$` menu uses the same provider-advertised catalog. Codex's `$name` entries,
+Pi's `skill:name` entries, and Claude entries with explicit skill metadata are
+recognized as skills. Submission uses the provider's native invocation spelling;
+Pi and Claude skills use slash invocations at the start of the message and enter
+the backlog. Other advertised commands remain in `/`. The daemon does not scan
+skill directories or infer universal skill invocation semantics.
+
+`composer-references.ts` owns file/Session discovery and resolution;
+`agent-composer-commands.ts` owns the initial command-notification wait. Shared
+`composer-mentions.ts` and `composer-prompt.ts` own token identities and prompt
+assembly. Both reference RPCs require `agent:execute` on the authenticated Agent
+peer, return reference metadata rather than file contents, and do not write the
+journal. Provider prompts retain the existing submission and delivery audit.
+
 ## Backlog, steering, and cancellation
 
 Ordinary messages enter a shared backlog ordered by acceptance sequence. An idle,
@@ -502,10 +559,12 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | --- | --- |
 | `initialize` | Negotiate protocol, facade capabilities, byte limit, and catalog identity |
 | `_deskfleet/session/list` | Read persisted Session summaries |
-| `_deskfleet/agent/configuration` | Discover provider model, reasoning, and mode choices for a draft in a Workspace's default directory |
+| `_deskfleet/agent/configuration` | Discover provider configuration and advertised commands/skills for a draft in the Workspace's default directory, or home without a Workspace |
+| `_deskfleet/composer/references` | Search file or same-Workspace Session metadata for the current compose context; requires `agent:execute` |
+| `_deskfleet/composer/resolve` | Resolve selected references into prompt blocks against the receiving Session's captured context; requires `agent:execute` |
 | `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning/mode selections, and start it; return snapshot |
 | `_deskfleet/session/fork` | Idempotently fork an idle Session's conversation into a new worktree or directory Session under the same Workspace and provider; return the child snapshot |
-| `_deskfleet/session/configuration` | Read the Session's confirmed provider configuration |
+| `_deskfleet/session/configuration` | Read the Session's confirmed configuration and advertised commands/skills |
 | `_deskfleet/session/configure` | Audit and apply model/reasoning/mode changes to a Session without changing its provider |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
 | `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
@@ -747,4 +806,4 @@ When added, deletion removes central conversation/tool content and
 content-bearing audit parameters/results, retaining metadata-only audit; stale
 uploads must not restore that content. Local durable receipts continue to serve
 the existing idempotency contract. See [backend implementation scope](backend.md)
-for the delivery plan; attachments remain outside that first backend scope.
+for the delivery plan.

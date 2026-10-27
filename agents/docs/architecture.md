@@ -414,6 +414,16 @@ provider connection. A Session's provider identity cannot be changed.
 Configuration options and confirmed changes use the existing ACP event journal
 so attached viewers can follow them.
 
+Composer completions share this provider discovery for `/` commands and supported
+`$` skill invocations. `@` file search runs on the target daemon across the
+Workspace draft or Session's captured directories; draft references resolve in
+the new Session's context after creation. `@` Session references use the existing
+MCP history tools within the same Workspace, including archived conversations.
+These references share attachment serialization and do not expand delegated
+authority. Machine-scoped composition has no `@` candidates. The
+[Agent Session guide](agent-sessions.md#composer-references-and-commands) owns
+completion, serialization, and command queue semantics.
+
 All authorized users and devices can operate on a Session concurrently, without
 control ownership or transfer. Commands record the initiating user and source
 machine separately from the executing machine. Pending inputs appear in a shared

@@ -16,6 +16,7 @@ export interface AgentSmokeContext {
   repository: string
   screenshotPath: string
   questionScreenshotPath: string
+  completionScreenshotPath: string
   sessionId?: string
   workspaceId?: string
   worktreeId?: string
@@ -155,6 +156,52 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     await click(label)
     await until(() => prompt()?.value === "", `Submission ${text}`)
   }
+  async function verifyCompletions(): Promise<void> {
+    const original = "Smoke first prompt"
+    const menu = () => document.querySelector<HTMLElement>("[data-composer-completions]")
+    const option = (kind: string) => menu()?.querySelector<HTMLButtonElement>(`[data-completion-kind="${kind}"]`)
+    const mention = (kind: string) => document.querySelector<HTMLElement>(`[data-mention-kind="${kind}"]`)
+    async function type(text: string): Promise<void> {
+      await until(() => !!prompt(), "Prompt composer")
+      const input = prompt()!
+      input.focus()
+      input.dispatchEvent(new FocusEvent("focus"))
+      input.value = text
+      input.setSelectionRange(text.length, text.length)
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+    async function remove(kind: string): Promise<void> {
+      const removeButton = mention(kind)?.querySelector<HTMLButtonElement>('button[aria-label^="Remove reference"]')
+      require(removeButton, `Selected ${kind} reference must have a remove action`)
+      removeButton.click()
+      await until(() => !mention(kind), `Removed ${kind} reference`)
+      require(prompt()?.value.trim() === original, `Removing ${kind} must preserve the surrounding prompt`)
+    }
+    await type(`${original} @README`)
+    await until(() => !!option("file")?.textContent?.includes("README.md"), "Workspace file completion")
+    require(prompt()!.getAttribute("aria-expanded") === "true" && menu()?.querySelector('[role="listbox"]'), "File results must be an accessible completion menu")
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    console.info("deskfleet-completion-preview")
+    await until(() => (window as unknown as { completionPreviewCaptured?: boolean }).completionPreviewCaptured === true, "Completion screenshot captured")
+    prompt()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }))
+    await until(() => !!mention("file"), "Selected file reference")
+    require(prompt()?.value === `${original} @README.md `, "File selection must complete only the token")
+    await remove("file")
+    await type("/com")
+    await until(() => !!option("command")?.textContent?.includes("compact") && menu()?.querySelector('[role="listbox"]')?.getAttribute("aria-busy") === "false", "Provider slash command completion")
+    prompt()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    await until(() => prompt()?.value === "/compact " && !menu(), "Selected slash command without submitting")
+    require(location.hash === "#/" && !document.querySelector("[data-composer-mentions]"), "Command completion must remain a plain draft")
+    await type(`${original} $rev`)
+    await until(() => !!option("skill")?.textContent?.includes("review"), "Provider skill completion")
+    option("skill")!.click()
+    await until(() => !!mention("skill"), "Selected provider skill")
+    require(prompt()?.value === `${original} $review `, "Native skill completion must work within the prompt")
+    await remove("skill")
+    await type(original)
+    await until(() => !menu() && prompt()?.value === original, "Restored original smoke prompt")
+    require((await api.catalog.list()).workspaces[0]!.worktrees.length === 1, "Completion discovery must not create a managed Session Worktree")
+  }
   async function openSession(id: string): Promise<void> {
     const link = () => document.querySelector<HTMLAnchorElement>(`a[href="#/sessions/${id}"]`)
     await until(() => !!link(), "Session sidebar link")
@@ -224,6 +271,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     await selectConfiguration("reasoning", "high")
     require((await api.catalog.list()).workspaces[0]!.worktrees.length === 1, "Draft model discovery must not create a managed Session Worktree")
     await collapseConfiguration()
+    await verifyCompletions()
     await send("Smoke first prompt", "Send")
     await until(() => /^#\/sessions\/[0-9]+$/u.test(location.hash), "Created Session route")
     sessionId = location.hash.split("/").at(-1)!
@@ -372,17 +420,33 @@ void app.whenReady().then(async () => {
   installDesktopMediaIpc()
   const window = new BrowserWindow({
     show: false, width: 1280, height: 960,
-    webPreferences: { preload: context.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, additionalArguments: ["--deskfleet-locale=en-US"] },
+    webPreferences: { preload: context.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true, additionalArguments: ["--deskfleet-locale=en-US"] },
   })
   attachDesktopMedia(window)
   let previewCaptured = false
+  async function screenshot(path: string): Promise<void> {
+    // Fresh offscreen paints support multiple previews without stalling the
+    // hidden native-window compositor on Wayland.
+    await new Promise(resolve => setTimeout(resolve, 250))
+    const pixels = await new Promise<Buffer>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Agent screenshot paint timed out")), 5_000)
+      window.webContents.once("paint", (_event, _dirty, image) => { clearTimeout(timeout); resolve(image.toPNG()) })
+      window.webContents.invalidate()
+    })
+    await writeFile(path, pixels)
+    previewCaptured = true
+  }
   window.webContents.on("console-message", event => {
-    const question = event.message === "deskfleet-elicitation-preview"
-    if (!question && event.message !== "deskfleet-agent-terminal-preview") return
+    const previews: Record<string, [string, string]> = {
+      "deskfleet-completion-preview": [context.completionScreenshotPath, "completionPreviewCaptured"],
+      "deskfleet-elicitation-preview": [context.questionScreenshotPath, "elicitationPreviewCaptured"],
+      "deskfleet-agent-terminal-preview": [context.screenshotPath, "agentTerminalPreviewCaptured"],
+    }
+    const preview = previews[event.message]
+    if (!preview) return
     void (async () => {
-      await writeFile(question ? context.questionScreenshotPath : context.screenshotPath, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
-      previewCaptured = true
-      await window.webContents.executeJavaScript(question ? "window.elicitationPreviewCaptured = true" : "window.agentTerminalPreviewCaptured = true")
+      await screenshot(preview[0])
+      await window.webContents.executeJavaScript(`window.${preview[1]} = true`)
     })().catch(error => process.send?.({ error: String(error) }))
   })
   window.webContents.on("render-process-gone", (_event, details) => process.send?.({ error: `Renderer exited: ${details.reason}` }))
@@ -408,10 +472,7 @@ void app.whenReady().then(async () => {
       await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("restore")`)
     }
   } finally {
-    // Keep one capture per hidden window: the first phase previews the question;
-    // the restore phase previews ACP output. Repeated hidden-window
-    // captures can stall the compositor on Wayland.
-    if (!previewCaptured) await writeFile(context.screenshotPath, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+    if (!previewCaptured) await screenshot(context.screenshotPath)
   }
   process.send?.({ result })
 }).catch(error => { process.send?.({ error: String(error) }); app.quit() })

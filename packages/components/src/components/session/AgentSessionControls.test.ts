@@ -34,6 +34,14 @@ test("backlog exposes steer/withdraw only for candidates and retry only for conf
   expect(view.get('[data-input-id="42"]').find("button").exists()).toBe(false)
   await view.setProps({ canSteer: false }); expect(view.text()).not.toContain("Steer now")
 })
+test("queued commands and native skill commands remain withdrawable without a steer action", () => {
+  const view = mount(AgentBacklog, { props: { inputs: [
+    agentInput({ content: [{ type: "text", text: "/compact" }] }),
+    agentInput({ id: "41", content: [{ type: "resource_link", uri: "file:///repo/app.ts", name: "app.ts" }, { type: "text", text: "/skill:review check this file" }] }),
+  ], canSteer: true, disabled: false }, global: { plugins: [i18n] } }); wrappers.push(view)
+  expect(view.text()).not.toContain("Steer now")
+  expect(view.findAll('[aria-label="Withdraw"]')).toHaveLength(2)
+})
 test("only pending permissions are actionable and an answer is recorded on its tool call with the winning actor", async () => {
   const view = mount(AgentPermissions, { props: { permissions: [agentPermission()], disabled: false }, global: { plugins: [i18n] } }); wrappers.push(view)
   await button(view, "Allow once").trigger("click"); expect(view.emitted("respond")).toEqual([["60", "allow"]])

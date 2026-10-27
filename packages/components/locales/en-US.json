@@ -287,6 +287,21 @@
     "pastedTextLines": "{n} line | {n} lines",
     "removeAttachment": "Remove {name}",
     "dropFiles": "Drop files to attach",
+    "completions": {
+      "label": "Prompt suggestions",
+      "references": "Selected references",
+      "file": "Files",
+      "session": "Sessions",
+      "skill": "Skills",
+      "command": "Commands",
+      "loading": "Finding suggestions…",
+      "empty": "No matching files or sessions.",
+      "noSkills": "No matching skills available here from this agent.",
+      "noCommands": "No matching commands from this agent.",
+      "refine": "Type more to narrow the results.",
+      "keyboard": "↑↓ to choose · Enter or Tab to insert · Esc to dismiss",
+      "remove": "Remove reference {name}"
+    },
     "context": "Session context",
     "contextChoice": "Session context: {context}",
     "contextOption": {

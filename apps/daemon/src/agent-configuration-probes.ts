@@ -1,7 +1,8 @@
 import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { applyAgentConfiguration } from "./agent-configuration.ts"
-import { agentConfiguration, agentPromptCapabilities, type AgentConfiguration, type AgentConfigurationParams } from "./agent-configuration-protocol.ts"
+import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, type AgentConfiguration, type AgentConfigurationParams } from "./agent-configuration-protocol.ts"
 import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
+import { AgentComposerCommands } from "./agent-composer-commands.ts"
 
 interface Launch { provider: AgentProvider; config: AgentConfig }
 interface Probe {
@@ -17,6 +18,7 @@ interface Probe {
   connection?: AgentConnection
   sessionId?: string
   options: acp.SessionConfigOption[]
+  commands: AgentComposerCommands
   notifiedOptions?: acp.SessionConfigOption[]
   configuring: boolean
   idleTimer?: ReturnType<typeof setTimeout>
@@ -87,7 +89,7 @@ export class AgentConfigurationProbes {
         current = {
           key, identity, provider: launch.provider, controller: new AbortController(),
           createdAt: Date.now(), lastUsed: Date.now(), pending: 0, queue: Promise.resolve(),
-          options: [], configuring: false, retired: false,
+          options: [], commands: new AgentComposerCommands(), configuring: false, retired: false,
         }
         this.#probes.set(key, current)
         this.#live.add(current)
@@ -133,7 +135,9 @@ export class AgentConfigurationProbes {
         probe.connecting = Promise.resolve().then(() => launch.provider.connect(launch.config, {
           signal,
           onUpdate({ update }) {
-            if (probe.retired || update.sessionUpdate !== "config_option_update") return
+            if (probe.retired) return
+            if (update.sessionUpdate === "available_commands_update") probe.commands.update(update.availableCommands)
+            if (update.sessionUpdate !== "config_option_update") return
             if (!probe.sessionId) probe.notifiedOptions = update.configOptions
             else if (!probe.configuring) probe.options = update.configOptions
           },
@@ -158,11 +162,13 @@ export class AgentConfigurationProbes {
       probe.configuring = true
       probe.options = await applyAgentConfiguration(probe.connection, probe.sessionId!, probe.options, params,
         options => { probe.options = options })
+      if (params.composer) await probe.commands.ready(signal)
       signal.throwIfAborted()
       return agentConfiguration(
         probe.options,
         { id: params.provider, name: launch.config.name },
         agentPromptCapabilities(probe.connection.initialization.agentCapabilities?.promptCapabilities),
+        probe.commands.current && agentComposerCatalog(probe.commands.current, launch.provider.id),
       )
     })()
     try {
@@ -208,6 +214,7 @@ export class AgentConfigurationProbes {
   #retire(probe: Probe, reason: unknown): Promise<void> {
     if (probe.closing) return probe.closing
     probe.retired = true
+    probe.commands.close()
     if (this.#probes.get(probe.key) === probe) this.#probes.delete(probe.key)
     clearTimeout(probe.idleTimer)
     probe.closing = Promise.resolve().then(async () => {

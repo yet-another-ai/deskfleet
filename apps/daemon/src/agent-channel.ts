@@ -21,6 +21,7 @@ interface PermissionCall { sessionId: string; permissionId: string; resolved: bo
 interface GitSubscription { stop?: () => void }
 
 const METHODS = new Set<AgentMethod>([
+  "_deskfleet/composer/references", "_deskfleet/composer/resolve",
   "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure",
   "_deskfleet/session/list", "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/subscribe", "_deskfleet/session/history",
   "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",

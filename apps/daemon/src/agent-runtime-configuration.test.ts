@@ -35,6 +35,8 @@ class ConfigurationProvider implements AgentProvider {
   newSessionOptions: "full" | "missing" | "empty" = "full"
   resumeOptions: "full" | "missing" | "empty" = "full"
   notifyOpeningOptions = false
+  openingCommands?: acp.AvailableCommand[]
+  resumeCommands?: acp.AvailableCommand[]
   onSetOption?: (params: acp.SetSessionConfigOptionRequest) => void
   changes: acp.SetSessionConfigOptionRequest[] = []
   prompts: { model: string; effort: string }[] = []
@@ -58,6 +60,9 @@ class ConfigurationProvider implements AgentProvider {
         if (this.notifyOpeningOptions) await client.onUpdate({
           sessionId: "conversation", update: { sessionUpdate: "config_option_update", configOptions: options(this.model, this.effort, this.mode) },
         })
+        if (this.openingCommands) await client.onUpdate({ sessionId: "conversation", update: {
+          sessionUpdate: "available_commands_update", availableCommands: this.openingCommands,
+        } })
         return {
           sessionId: "conversation",
           ...(this.newSessionOptions === "missing" ? {} : {
@@ -69,6 +74,9 @@ class ConfigurationProvider implements AgentProvider {
         this.model = "first"
         this.effort = "high"
         this.mode = "manual"
+        if (this.resumeCommands) await client.onUpdate({ sessionId: "conversation", update: {
+          sessionUpdate: "available_commands_update", availableCommands: this.resumeCommands,
+        } })
         return this.resumeOptions === "missing" ? {} : {
           configOptions: this.resumeOptions === "empty" ? [] : options(this.model, this.effort, this.mode),
         }
@@ -143,6 +151,54 @@ async function setup(t: TestContext, provider: ConfigurationProvider, selection:
   }, actor)
   return { service, catalog, create, sessionId, read, configuration, configure, stop, resume, submit }
 }
+
+test("session command catalogs update independently of choices and survive daemon restart", async t => {
+  const provider = new ConfigurationProvider()
+  provider.openingCommands = [{ name: "review", description: "Review changes" }, { name: "$release", description: "Release skill" }]
+  const f = await setup(t, provider)
+  const initial = await f.configuration()
+  assert.deepEqual(initial.commands, [{ name: "review", description: "Review changes" }])
+  assert.deepEqual(initial.skills, [{ id: "$release", name: "release", description: "Release skill", invocation: "$release" }])
+  await provider.client.onUpdate({ sessionId: "conversation", update: {
+    sessionUpdate: "available_commands_update", availableCommands: [{ name: "compact", description: "Compact context" }],
+  } })
+  await provider.notify(options("second", "low"))
+  const current = await f.configuration()
+  assert.deepEqual(current.commands, [{ name: "compact", description: "Compact context" }])
+  assert.deepEqual(current.skills, [])
+  assert.equal(current.models?.currentValue, "second")
+  await f.service.close()
+  const service = new AgentSessions(f.catalog, f.catalog.native, provider)
+  try {
+    await service.init()
+    const restored = await service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, service.actor()) as AgentConfiguration
+    assert.deepEqual(restored, current)
+  } finally { await service.close() }
+})
+
+test("resumed providers replace old commands and ignore updates from the previous run", async t => {
+  const provider = new ConfigurationProvider()
+  provider.openingCommands = [{ name: "$old", description: "Old skill" }]
+  const f = await setup(t, provider)
+  const previous = provider.client
+  await f.stop()
+  await f.resume()
+  assert.equal((await f.configuration()).skills, undefined, "The new provider has not advertised any skills")
+  await previous.onUpdate({ sessionId: "conversation", update: {
+    sessionUpdate: "available_commands_update", availableCommands: [{ name: "$stale", description: "Stale skill" }],
+  } })
+  assert.equal((await f.configuration()).skills, undefined)
+  await provider.client.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "available_commands_update", availableCommands: [] } })
+  assert.deepEqual((await f.configuration()).skills, [])
+  await f.service.close()
+  const service = new AgentSessions(f.catalog, f.catalog.native, provider)
+  try {
+    await service.init()
+    const restored = await service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, service.actor()) as AgentConfiguration
+    assert.deepEqual(restored.commands, [])
+    assert.deepEqual(restored.skills, [])
+  } finally { await service.close() }
+})
 
 for (const rejectedRetry of [false, true]) {
   test(`initial configuration survives restart after ${rejectedRetry ? "a rejected creation retry" : "the completed creation receipt"}`, async t => {

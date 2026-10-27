@@ -651,6 +651,31 @@ test("the first registry revision does not interrupt an already-open draft probe
   expect(row(view, "model").attributes("data-value")).toBe("sequoia")
 })
 
+test("completion discovery waits for and reuses the model selector's draft probe", async () => {
+  const pending = deferredConfiguration()
+  const catalog = { ...configuration(), commands: [{ name: "compact", description: "Compact context" }], skills: [] }
+  const api = vi.mocked(agents.agentConfiguration).mockReturnValueOnce(pending.promise).mockResolvedValueOnce(catalog)
+  const view = render()
+  await trigger(view).trigger("click")
+  const probeId = api.mock.calls[0]![0].probeId
+  const discovery = view.vm.discover()
+  expect(api).toHaveBeenCalledTimes(1)
+  pending.resolve(configuration())
+  await discovery
+  expect(api).toHaveBeenCalledTimes(2)
+  expect(api.mock.calls[1]![0]).toMatchObject({ provider: "codex", workspaceId: "11", probeId, composer: true })
+  expect(view.emitted("configuration")?.at(-1)).toEqual([catalog])
+})
+
+test("live completion discovery uses its existing Session and requests composer metadata", async () => {
+  const read = vi.spyOn(agents, "sessionConfiguration").mockResolvedValue(configuration())
+  const view = mount(AgentConfigurationSelector, { props: { workspaceId: "11", sessionId: "30" }, global: { plugins: [i18n, pinia] } })
+  wrappers.push(view)
+  await view.vm.discover()
+  expect(read).toHaveBeenCalledExactlyOnceWith("30", true)
+  expect(agents.agentConfiguration).not.toHaveBeenCalled()
+})
+
 test("explicit draft edits carry confirmed restoration choices separately from their delta", async () => {
   const api = vi.mocked(agents.agentConfiguration).mockResolvedValueOnce(nativeConfiguration("auto", "orbit", "high"))
   const view = render(); await trigger(view).trigger("click"); await flushPromises()

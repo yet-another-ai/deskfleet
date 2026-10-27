@@ -2,10 +2,10 @@
 import { client } from "@deskfleet/client/platform"
 import UiButton from "../common/UiButton.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
-import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Monitor, Plus, Square, Upload, X } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, MessageSquare, Monitor, Plus, Sparkles, Square, Upload, X } from "@lucide/vue"
 import { useDropZone, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
-import { computed, ref, useTemplateRef } from "vue"
+import { computed, reactive, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
@@ -13,9 +13,13 @@ import type { FileEntry } from "../../../../client/src/files.ts"
 import { useFileTarget } from "../../composables/useFileTarget.ts"
 import { attachmentsFromFiles, createMachineFileAttachment, createPastedTextAttachment, hasSubmittableText, shouldFoldPastedText, type ComposerAttachment } from "../../services/composer-attachments.ts"
 import { fileSize } from "../../services/file-format.ts"
+import { commandDraft, type ComposerMention } from "../../services/composer-mentions.ts"
+import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import AgentUsage from "./AgentUsage.vue"
+import ComposerCompletions from "./ComposerCompletions.vue"
+import { useComposerCompletions } from "./useComposerCompletions.ts"
 import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
 const configurationLoading = ref(false)
 const filePickerOpen = ref(false)
@@ -32,11 +36,20 @@ const props = defineProps<{
 }>()
 const draft = defineModel<string>({ default: "" })
 const attachments = defineModel<ComposerAttachment[]>("attachments", { default: () => [] })
+const mentions = defineModel<ComposerMention[]>("mentions", { default: () => [] })
 /** The execution context a new Session will use; only offered with `showTarget`. */
 const context = defineModel<AgentSessionContext>("context", { default: "worktree" })
 const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: [] }>()
 const { t } = useI18n()
 const textarea = useTemplateRef<HTMLTextAreaElement>("textarea")
+const configurationSelector = useTemplateRef<InstanceType<typeof AgentConfigurationSelector>>("configurationSelector")
+const configuration = ref<AgentConfiguration | null>(null)
+const completionId = useId()
+const completion = reactive(useComposerCompletions({
+  draft, mentions, textarea, location: () => props.location,
+  disabled: () => !!(props.disabled || props.submitting), configuration,
+  discover: () => configurationSelector.value?.discover?.() ?? Promise.resolve(),
+}))
 const fileInput = useTemplateRef<HTMLInputElement>("fileInput")
 const dropZoneRef = useTemplateRef<HTMLElement>("dropZoneRef")
 useTextareaAutosize({ element: textarea, input: draft })
@@ -44,6 +57,7 @@ const fileTarget = useFileTarget(() => props.location?.machine.id)
 const filesApi = computed(() => client.files)
 const initialPickerPath = computed(() => props.location?.worktree?.directories[0]?.path ?? props.location?.workspace?.directories[0]?.path)
 const empty = computed(() => !hasSubmittableText(draft.value, attachments.value))
+const commandInput = computed(() => commandDraft(draft.value) || mentions.value.some(mention => mention.reference.kind === "skill" && mention.reference.invocation.startsWith("/")))
 const placeholder = computed(() => t(props.activeTurn ? "agent.backlogHint" : "composer.placeholder"))
 const checkout = computed(() => props.location?.worktree?.directories.find(directory => directory.git)?.git ?? undefined)
 const changes = computed(() => (checkout.value?.changes ?? []).reduce((total, change) => ({ additions: total.additions + change.additions, deletions: total.deletions + change.deletions }), { additions: 0, deletions: 0 }))
@@ -94,9 +108,10 @@ function onPaste(event: ClipboardEvent): void {
 }
 function submit(delivery: "backlog" | "steer"): void {
   if (props.disabled || props.submitting || configurationLoading.value || !props.location || empty.value) return
-  emit("submit", delivery)
+  emit("submit", commandInput.value ? "backlog" : delivery)
 }
 function keydown(event: KeyboardEvent): void {
+  if (completion.keydown(event)) return
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit("backlog") }
 }
 </script>
@@ -139,6 +154,7 @@ function keydown(event: KeyboardEvent): void {
       <span v-if="changes.additions || changes.deletions" class="ml-auto shrink-0 rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></span>
     </div>
     <div ref="dropZoneRef" class="relative rounded-2xl border bg-ui-surface shadow-ui-card transition-colors focus-within:border-ui-accent/60" :class="isOverDropZone ? 'border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
+      <ComposerCompletions v-if="completion.trigger" :id="completionId" :candidates="completion.candidates" :selected="completion.selected" :loading="completion.loading" :error="completion.error" :truncated="completion.truncated" :kind="completion.trigger.kind" @select="completion.accept" @highlight="completion.selected = $event" />
       <span v-if="showTarget && submitting" class="composer-creation-beam" aria-hidden="true" />
       <input ref="fileInput" type="file" multiple class="sr-only" data-composer-file-input @change="onFilesPicked" />
       <ul v-if="attachments.length" class="m-0 flex list-none flex-wrap gap-2 px-3 pt-3 pb-0" :aria-label="t('composer.attachments')" data-composer-attachments>
@@ -154,7 +170,14 @@ function keydown(event: KeyboardEvent): void {
           </button>
         </li>
       </ul>
-      <textarea ref="textarea" v-model="draft" rows="2" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @keydown="keydown" @paste="onPaste" />
+      <ul v-if="mentions.length" class="m-0 flex list-none flex-wrap gap-2 px-3 pt-3 pb-0" :aria-label="t('composer.completions.references')" data-composer-mentions>
+        <li v-for="mention in mentions" :key="mention.id" class="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs" :data-mention-kind="mention.reference.kind">
+          <component :is="mention.reference.kind === 'file' ? File : mention.reference.kind === 'session' ? MessageSquare : Sparkles" :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+          <span class="truncate text-ui-text" :title="mention.token">{{ mention.token }}</span>
+          <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.completions.remove', { name: mention.token })" :disabled="disabled || submitting" @click="completion.remove(mention.id)"><X :size="12" aria-hidden="true" /></button>
+        </li>
+      </ul>
+      <textarea ref="textarea" :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <DropdownMenuRoot v-if="location" :modal="false">
           <DropdownMenuTrigger class="ui-button-ghost h-7 w-7 shrink-0 rounded-lg p-0 text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.attach')" :title="t('composer.attach')" :disabled="disabled || submitting" data-composer-attach>
@@ -173,10 +196,10 @@ function keydown(event: KeyboardEvent): void {
             </DropdownMenuContent>
           </DropdownMenuPortal>
         </DropdownMenuRoot>
-        <AgentConfigurationSelector v-if="location" :workspace-id="location.workspace?.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" />
+        <AgentConfigurationSelector v-if="location" ref="configurationSelector" :workspace-id="location.workspace?.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" @configuration="configuration = $event" />
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
-          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
           <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
           <UiButton v-else variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></UiButton>
         </div>

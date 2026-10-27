@@ -113,7 +113,8 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       // session/load replays history before its response. This handler runs
       // synchronously when that notification is read, so the flag still covers
       // the replay and is clear before any later notification is read.
-      if (replayingHistory && params.update.sessionUpdate !== "config_option_update" && params.update.sessionUpdate !== "current_mode_update") return
+      if (replayingHistory && params.update.sessionUpdate !== "config_option_update"
+        && params.update.sessionUpdate !== "current_mode_update" && params.update.sessionUpdate !== "available_commands_update") return
       try {
         const notified = sessionModes.notification(params)
         if (notified.update.sessionUpdate !== "config_option_update") {

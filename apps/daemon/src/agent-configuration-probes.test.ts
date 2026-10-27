@@ -74,6 +74,39 @@ function fakeProvider(hooks: {
 
 const params = { provider: "codex", workspaceId: "1", probeId: "draft" }
 
+test("composer discovery captures post-setup commands, native skills and later replacement catalogs", async context => {
+  const fake = fakeProvider({ async newSession() {
+    setImmediate(() => { void fake.clients[0]!.onUpdate({ sessionId: "probe-1", update: {
+      sessionUpdate: "available_commands_update", availableCommands: [
+        { name: "review", description: "Review changes", input: { hint: "instructions" } },
+        { name: "$release", description: "Prepare a release" },
+      ],
+    } }) })
+  } })
+  const probes = new AgentConfigurationProbes()
+  context.after(() => probes.close())
+  const configuration = await probes.read("alice", { ...params, provider: "custom-codex", composer: true }, "/workspace", fake)
+  assert.deepEqual(configuration.commands, [{ name: "review", description: "Review changes", inputHint: "instructions" }])
+  assert.deepEqual(configuration.skills, [{ id: "$release", name: "release", description: "Prepare a release", invocation: "$release" }])
+  await fake.clients[0]!.onUpdate({ sessionId: "probe-1", update: { sessionUpdate: "available_commands_update", availableCommands: [] } })
+  const replaced = await probes.read("alice", { ...params, provider: "custom-codex", composer: true }, "/workspace", fake)
+  assert.deepEqual(replaced.commands, [])
+  assert.deepEqual(replaced.skills, [])
+  assert.equal(fake.configs.length, 1)
+})
+
+test("closing a probe cancels pending initial command discovery", async () => {
+  const opened = deferred()
+  const fake = fakeProvider({ async newSession() { opened.resolve() } })
+  const probes = new AgentConfigurationProbes()
+  const reading = assert.rejects(probes.read("alice", { ...params, composer: true }, "/workspace", fake), /stopped|stopping/)
+  await opened.promise
+  await nextTurn()
+  await probes.close()
+  await reading
+  assert.equal(fake.closes, 1)
+})
+
 test("warm draft choices reuse one ACP process/session and use its dependent options", async context => {
   const fake = fakeProvider()
   const probes = new AgentConfigurationProbes()

@@ -10,6 +10,7 @@ import { gatewayInvoker } from "@deskfleet/mcp"
 import { AgentMcp, type AgentMcpLease } from "./agent-mcp.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import type { AgentActor, AgentSnapshot } from "./agent-protocol.ts"
+import type { ComposerReferenceResult } from "./composer-reference-protocol.ts"
 import type { AgentClient, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { DaemonCatalog } from "./catalog.ts"
 
@@ -84,6 +85,42 @@ class Provider implements AgentProvider {
     }
   }
 }
+
+test("Session reference capability follows the initiating actor's MCP delegation while drafts use the current viewer", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deskfleet-mcp-references-"))
+  const workspace = join(directory, "workspace")
+  await mkdir(workspace)
+  const catalog = new DaemonCatalog(join(directory, "daemon"))
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
+  const resource = await catalog.native.createWorkspace("MCP fixture", [{ path: workspace }])
+  const gateway = new AgentMcp({ async authorize() {}, async dispatch() {} })
+  await gateway.init()
+  const provider = new Provider()
+  const sessions = new AgentSessions(catalog, catalog.native, provider, undefined, gateway)
+  await sessions.init()
+  t.after(async () => { await sessions.close(); await gateway.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
+  const create = (initiator: AgentActor) => sessions.handle("_deskfleet/session/create", {
+    workspaceId: resource.id, operationId: randomUUID(), provider: "codex", context: "directory",
+  }, initiator) as Promise<AgentSnapshot>
+  const local = await create(sessions.actor())
+  const delegated = await create(actor)
+  assert.deepEqual(provider.servers.map(servers => servers.length), [0, 1])
+  const search = (scope: { sessionId?: string; workspaceId?: string }) => sessions.handle("_deskfleet/composer/references", {
+    ...scope, kind: "session", query: "",
+  }, actor) as Promise<ComposerReferenceResult>
+  assert.deepEqual(await search({ sessionId: local.session.id }), { items: [], truncated: false })
+  const candidate = (await search({ sessionId: delegated.session.id })).items[0]!
+  assert.equal(candidate.reference.kind, "session")
+  assert.equal(candidate.reference.kind === "session" && candidate.reference.sessionId, local.session.id)
+  assert.equal((await search({ workspaceId: resource.id })).items.length, 2)
+  await assert.rejects(sessions.handle("_deskfleet/composer/resolve", {
+    sessionId: local.session.id, references: [candidate.reference],
+  }, actor), /require the built-in MCP server and an authenticated user/u)
+  const resolved = await sessions.handle("_deskfleet/composer/resolve", {
+    sessionId: delegated.session.id, references: [candidate.reference],
+  }, actor) as acp.ContentBlock[]
+  assert.equal(resolved[0]?.type, "text")
+})
 
 test("ACP creation and resume get fresh grants and stop or connection loss revokes the old grant", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deskfleet-mcp-"))

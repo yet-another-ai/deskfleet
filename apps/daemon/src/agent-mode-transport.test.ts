@@ -76,7 +76,10 @@ test("ACP translates unsolicited mode changes and keeps mode updates while filte
   updates.length = 0
   const loaded = await connection.resume({ ...session, sessionId })
   assert.equal(selectedMode(loaded.configOptions), "plan")
-  assert.deepEqual(updates.map(update => update.update.sessionUpdate), ["config_option_update"])
+  assert.deepEqual(updates.map(update => update.update.sessionUpdate), ["config_option_update", "available_commands_update"])
+  const commands = updates.at(-1)?.update
+  if (commands?.sessionUpdate !== "available_commands_update") assert.fail("Missing resumed commands")
+  assert.deepEqual(commands.availableCommands, [{ name: "review", description: "Review changes" }])
 })
 
 test("ACP restores a saved standalone mode after a fresh process omits its resume catalog", { timeout: 15_000 }, async t => {
