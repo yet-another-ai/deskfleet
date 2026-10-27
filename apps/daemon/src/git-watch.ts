@@ -179,11 +179,13 @@ export class GitWatch {
           if (changed) this.#notify()
         } catch (error) {
           if (transientGitConfigLock(error) && await this.#deferConfigLock()) {
+            // Rebind rename candidates before retrying: a follow-up `#scan` alone
+            // would reuse the old directory inode watch and miss later edits.
             for (const [path, topology] of candidates) {
               this.#candidates.set(path, this.#candidates.get(path) === true || topology)
+              if (topology) void this.#topology(path)
             }
-            this.#schedule()
-            return
+            continue
           }
           throw error
         }

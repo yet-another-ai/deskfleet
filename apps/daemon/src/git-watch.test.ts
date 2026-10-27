@@ -297,6 +297,40 @@ test("transient .git/config permission errors are retried without a sticky failu
   await f.changed(() => writeFile(join(f.root, "source.txt"), "after transient lock\n"))
 })
 
+test("a classify config-lock retry still rebinds a replaced directory watch", async context => {
+  const callbacks = controlledWatches(context)
+  const f = await fixture(context)
+  const nested = join(f.root, "nested")
+  await mkdir(nested)
+  callbacks.get(f.root)!("rename", "nested")
+  await eventually(() => callbacks.has(nested), "new directory was not watched")
+  const originalWatch = callbacks.get(nested)!
+  // Fail the first check-ignore that classifies the replacement rename so the
+  // retry path must call topology itself instead of relying on a later scan.
+  let checkIgnoreLocks = 0
+  const original = childProcess.execFile
+  const lock = "warning: unable to access '.git/config': Permission denied\nfatal: unknown error occurred while reading the configuration files"
+  const mock = context.mock.method(childProcess, "execFile", (...args: Parameters<typeof childProcess.execFile>) => {
+    const argv = args[1]
+    const callback = args.find(argument => typeof argument === "function") as ((error: Error | null, stdout: string, stderr: string) => void) | undefined
+    if (Array.isArray(argv) && argv.includes("check-ignore") && checkIgnoreLocks++ === 0 && callback) {
+      const error = Object.assign(new Error("Command failed: git"), { code: 128 })
+      queueMicrotask(() => callback(error, "", `${lock}\n`))
+      return { stdin: { on() { return this }, end() { return this } }, stdout: { on() { return this } }, stderr: { on() { return this } }, on() { return this }, once() { return this } } as unknown as ReturnType<typeof childProcess.execFile>
+    }
+    return original(...args)
+  })
+  syncBuiltinESMExports()
+  context.after(() => { mock.mock.restore(); syncBuiltinESMExports() })
+  await rename(nested, join(f.root, "old"))
+  await mkdir(nested)
+  await writeFile(join(nested, "new.txt"), "replacement\n")
+  callbacks.get(f.root)!("rename", "nested")
+  await eventually(() => callbacks.get(nested) !== originalWatch, "config-lock retry did not rebind the replaced directory watch")
+  assert.ok(checkIgnoreLocks > 1, "check-ignore should retry after the injected lock")
+  assert.deepEqual(f.errors, [])
+})
+
 test("submodules use their own ignore rules and watch metadata outside the working tree", async context => {
   const f = await fixture(context)
   // Finish submodule topology before watching. On Windows, `git submodule add`
