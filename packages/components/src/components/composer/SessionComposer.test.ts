@@ -32,7 +32,7 @@ test("composer folds long pasted text into an attachment chip, enforces text req
 
   pinia = createPinia()
   const location: WorkspaceLocation = {
-    machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], terminals: [] },
+    machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] },
     workspace: { id: workspaceId, name: "DeskFleet", directories: [{ path: "/repo", git: undefined }], sessions: [], terminals: [] },
   }
 
