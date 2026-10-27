@@ -1,16 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import type { NotificationSettings } from "../../../../packages/client/src/settings.ts"
+import { validateNotificationSettings, type NotificationSettings } from "../../../../packages/client/src/settings.ts"
 
-export function validateNotificationSettings(value: unknown): NotificationSettings {
-  if (!value || typeof value !== "object"
-    || !("enabled" in value) || typeof value.enabled !== "boolean"
-    || !("taskCompleted" in value) || typeof value.taskCompleted !== "boolean"
-    || !("taskNeedsInput" in value) || typeof value.taskNeedsInput !== "boolean") {
-    throw new Error("Notification settings must contain boolean preferences")
-  }
-  return { enabled: value.enabled, taskCompleted: value.taskCompleted, taskNeedsInput: value.taskNeedsInput }
-}
+export { validateNotificationSettings } from "../../../../packages/client/src/settings.ts"
 
 /** Preferences belong to this desktop installation, independently of the selected machine. */
 export class NotificationSettingsController {

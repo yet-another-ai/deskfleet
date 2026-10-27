@@ -2,6 +2,8 @@
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
 import { client } from "@deskfleet/client/platform"
+import { getBrowserNotificationPermission, requestBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
+import { useEventListener } from "@vueuse/core"
 import { computed, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { NotificationSettings } from "../../../../client/src/settings.ts"
@@ -12,9 +14,11 @@ const settings = ref<NotificationSettings | null>(null)
 const loading = ref(true)
 const saving = ref(false)
 const requestError = ref<string | null>(null)
+const web = client.platform === "web"
+const permission = ref(web ? getBrowserNotificationPermission() : undefined)
 const busy = computed(() => loading.value || saving.value)
 const options = [
-  { key: "enabled", label: "settings.notificationsEnabled", description: "settings.notificationsDescription" },
+  { key: "enabled", label: web ? "settings.browserNotificationsEnabled" : "settings.notificationsEnabled", description: web ? "settings.browserNotificationsDescription" : "settings.notificationsDescription" },
   { key: "taskCompleted", label: "settings.notificationTaskCompleted", description: "settings.notificationTaskCompletedDescription" },
   { key: "taskNeedsInput", label: "settings.notificationTaskNeedsInput", description: "settings.notificationTaskNeedsInputDescription" },
 ] as const
@@ -40,12 +44,27 @@ async function toggle(key: keyof NotificationSettings) {
   } finally { saving.value = false }
 }
 
-onMounted(() => { if (client.platform !== "web") void load() })
+async function enablePermission(): Promise<void> {
+  if (busy.value) return
+  saving.value = true
+  requestError.value = null
+  try { permission.value = await requestBrowserNotificationPermission() }
+  catch (error) { requestError.value = error instanceof Error ? error.message : String(error) }
+  finally { saving.value = false }
+}
+
+useEventListener(window, "focus", () => { if (web) permission.value = getBrowserNotificationPermission() })
+onMounted(() => { void load() })
 </script>
 
 <template>
   <h1 class="ui-page-title mb-6">{{ t("settings.notifications") }}</h1>
-  <section v-if="client.platform !== 'web'" :aria-label="t('settings.notifications')">
+  <section :aria-label="t('settings.notifications')">
+    <div v-if="web" class="ui-card mb-4 p-4">
+      <p class="m-0 text-sm font-medium">{{ t("settings.notificationPermission") }}</p>
+      <p role="status" class="m-0 mt-2 text-[13px] leading-relaxed text-ui-text-muted">{{ t(`settings.notificationPermissionStatus.${permission}`) }}</p>
+      <UiButton v-if="permission === 'default'" class="mt-3" :disabled="busy" @click="enablePermission">{{ t("settings.enableBrowserNotifications") }}</UiButton>
+    </div>
     <div class="ui-card px-4">
       <SettingsRow v-for="option in options" :key="option.key" :label="t(option.label)" :label-id="`notifications-${option.key}-label`" :description-id="`notifications-${option.key}-description`">
         <template #description>{{ t(option.description) }}</template>

@@ -21,7 +21,7 @@ vi.mock("electron", async () => {
 })
 vi.mock("./i18n.ts", () => ({ t: (key: string) => `translated:${key}` }))
 import { DesktopNotifications } from "./notifications.ts"
-import type { TaskNotification } from "./task-notification-monitor.ts"
+import type { TaskNotification } from "@deskfleet/client/task-notification-monitor"
 
 beforeEach(() => {
   vi.resetAllMocks()

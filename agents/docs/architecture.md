@@ -355,6 +355,21 @@ Windows notification area), so its daemon and notifications stay available.
 Closing its window or using an ordinary quit command hides it. The tray menu,
 OS session end, or a termination signal quits the app and its hosted daemon.
 
+Web clients use the browser Notifications API for task completion and pending
+input alerts while the page is running. Web and Electron share the account-wide
+task monitor, including its history baseline and event deduplication. The Web
+account shell owns its monitor and live notifications across machine changes;
+leaving the page stops observation, and account changes dismiss existing alerts.
+Returning from the browser's page cache starts a fresh monitor.
+
+Browser onboarding offers an explicit **Enable notifications** action before
+continuing into the account UI. Only that click, or the corresponding action in
+Notifications settings, requests browser permission. Denial, dismissal, and
+skipping do not block setup. The onboarding decision and notification preferences
+are stored per browser origin; the master and event switches remain independent
+of the browser's permission. Settings reports denied or unavailable permission.
+There is no push delivery after the page closes.
+
 The daemon is the ACP client and owns local agent processes or adapter
 connections. Each AgentSession belongs to a Workspace and captures its Worktree execution
 context at startup; later edits to the Workspace must not silently retarget a

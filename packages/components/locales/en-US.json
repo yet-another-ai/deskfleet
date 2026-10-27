@@ -206,6 +206,16 @@
     "notifications": "Notifications",
     "notificationsEnabled": "Desktop notifications",
     "notificationsDescription": "Allow deskfleet to send notifications on this computer.",
+    "browserNotificationsEnabled": "Browser notifications",
+    "browserNotificationsDescription": "Allow deskfleet to send notifications while this page is open.",
+    "notificationPermission": "Browser permission",
+    "enableBrowserNotifications": "Enable notifications",
+    "notificationPermissionStatus": {
+      "default": "Allow notifications in your browser to receive task updates.",
+      "granted": "Notifications are allowed in this browser.",
+      "denied": "Notifications are blocked. Allow them in your browser’s site settings to receive task updates.",
+      "unsupported": "Notifications are unavailable in this browser or connection. Try a supported browser over HTTPS."
+    },
     "notificationTaskCompleted": "Task completed",
     "notificationTaskCompletedDescription": "Notify me when an agent finishes a task.",
     "notificationTaskNeedsInput": "Task needs input",
@@ -910,6 +920,9 @@
   "welcome": {
     "title": "Welcome to deskfleet",
     "description": "Connect to your team’s server and get this computer ready, one step at a time.",
+    "notificationsTitle": "Stay up to date with your tasks",
+    "notificationsDescription": "Get a notification when an agent finishes a task or needs your input.",
+    "notificationsDetails": "Allow browser notifications to receive updates while deskfleet is open, even when you are using another tab. You can change this later in Settings.",
     "progress": "Setup progress",
     "steps": {
       "server": "Backend server",

@@ -2,6 +2,7 @@ import { HttpCentralClient, type SavedAccount } from "./http-central.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { resolveAppLocale } from "./i18n.ts"
 import { createBrowserFiles } from "./browser-files.ts"
+import { createBrowserNotificationSettings } from "./browser-notification-settings.ts"
 
 const accountKey = "deskfleet.account"
 const verifierKey = "deskfleet.login-verifier"
@@ -43,7 +44,7 @@ export async function browserClient(defaultServerUrl: string): Promise<Deskfleet
       getLaunchAtStartup: async () => ({ available: false, enabled: false }), setLaunchAtStartup: unavailable,
       getKeepAwake: async () => ({ enabled: false }), setKeepAwake: unavailable,
       getWorktreeRoot: unavailable, setWorktreeRoot: unavailable, chooseWorktreeRoot: unavailable,
-      getNotifications: async () => ({ enabled: false, taskCompleted: false, taskNeedsInput: false }), setNotifications: unavailable,
+      ...createBrowserNotificationSettings(localStorage),
       onChanged: subscribe,
     },
     catalog: { list: unavailable, createWorkspace: unavailable, updateWorkspace: unavailable, deleteWorkspace: unavailable, onChanged: subscribe },

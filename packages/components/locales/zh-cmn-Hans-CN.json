@@ -206,6 +206,16 @@
     "notifications": "通知",
     "notificationsEnabled": "桌面通知",
     "notificationsDescription": "允许 deskfleet 在本机发送通知。",
+    "browserNotificationsEnabled": "浏览器通知",
+    "browserNotificationsDescription": "允许 deskfleet 在页面保持打开时发送通知。",
+    "notificationPermission": "浏览器权限",
+    "enableBrowserNotifications": "启用通知",
+    "notificationPermissionStatus": {
+      "default": "在浏览器中允许通知，以接收任务动态。",
+      "granted": "此浏览器已允许通知。",
+      "denied": "通知已被阻止。请在浏览器的网站设置中允许通知，以接收任务动态。",
+      "unsupported": "当前浏览器或连接不支持通知。请通过 HTTPS 使用支持通知的浏览器。"
+    },
     "notificationTaskCompleted": "任务完成",
     "notificationTaskCompletedDescription": "智能体完成任务时通知我。",
     "notificationTaskNeedsInput": "任务需要回应",
@@ -910,6 +920,9 @@
   "welcome": {
     "title": "欢迎使用 deskfleet",
     "description": "连接团队的后端服务器，按步骤完成这台电脑的设置。",
+    "notificationsTitle": "及时了解任务动态",
+    "notificationsDescription": "智能体完成任务或需要你回应时，接收通知提醒。",
+    "notificationsDetails": "允许浏览器通知后，只要 deskfleet 保持打开，切换到其他标签页也能收到任务动态。你可以稍后在设置中更改。",
     "progress": "设置进度",
     "steps": {
       "server": "后端服务器",

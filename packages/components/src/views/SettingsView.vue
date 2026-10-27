@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { client } from "@deskfleet/client/platform"
 import { Bell, Bot, Palette, Plug, SlidersHorizontal, Users } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRouter } from "vue-router"
@@ -24,7 +23,7 @@ function leave(): void {
     <template #nav>
       <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
       <SidebarLink :to="{ name: 'settings-appearance' }" :icon="Palette" :label="t('settings.appearance')" replace />
-      <SidebarLink v-if="client.platform !== 'web'" :to="{ name: 'settings-notifications' }" :icon="Bell" :label="t('settings.notifications')" replace />
+      <SidebarLink :to="{ name: 'settings-notifications' }" :icon="Bell" :label="t('settings.notifications')" replace />
       <SidebarLink :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
       <SidebarLink :to="{ name: 'settings-mcp-servers' }" :icon="Plug" :label="t('mcpServers.title')" replace />
       <SidebarLink v-if="account?.team.value" :to="{ name: 'settings-team' }" :icon="Users" :label="t('team.settings')" replace />

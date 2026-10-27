@@ -169,14 +169,14 @@ test("a Team without machines still opens Team settings beside Preferences", asy
   expect(fake.central.members).toHaveBeenCalledWith("team-1")
 })
 
-test.each(["darwin", "web"] as const)("notification settings are available without machines only on desktop (%s)", async (platform) => {
+test.each(["darwin", "web"] as const)("notification settings are available without machines (%s)", async (platform) => {
   const fake = fakeCentral()
   mountShell(fake.central, platform)
   await flushPromises()
   await page().get('button[aria-label="Settings"]').trigger("click")
   await flushPromises()
   const notifications = page().findAll('nav[aria-label="Settings sections"] button').find(button => button.text() === "Notifications")
-  expect(!!notifications).toBe(platform !== "web")
+  expect(notifications).toBeDefined()
   if (notifications) {
     await notifications.trigger("click")
     await flushPromises()
