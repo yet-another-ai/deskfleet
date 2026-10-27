@@ -1,4 +1,4 @@
-import type { CentralApi } from "./central.ts"
+import type { CentralApi, SiteAdministrationApi } from "./central.ts"
 import type { DesktopMediaApi } from "./desktop-media.ts"
 import type { CatalogApi } from "./catalog.ts"
 import type { FilesystemApi } from "./filesystem.ts"
@@ -17,6 +17,8 @@ import type { AppearanceApi } from "./appearance.ts"
 export interface DeskfleetDesktopApi {
   platform: "darwin" | "linux" | "win32" | "web"
   central?: CentralApi
+  /** Only the Web host exposes site administration. */
+  siteAdministration?: SiteAdministrationApi
   onboarding?: OnboardingApi
   appearance?: AppearanceApi
   initialError?: string

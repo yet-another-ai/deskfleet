@@ -22,6 +22,12 @@ export type CentralEvent =
   | { type: "connection"; connected: boolean }
   | { type: "accountChanged" }
 
+/** Site management is available to the Web host, separately from the desktop bridge. */
+export interface SiteAdministrationApi {
+  siteSettings(): Promise<SiteSettings>
+  updateSiteSettings(settings: SiteSettings): Promise<SiteSettings>
+}
+
 /** Explicit control-plane operations, shared by browser and the narrow Electron bridge. */
 export interface CentralApi {
   status(): Promise<AccountState>
@@ -29,8 +35,6 @@ export interface CentralApi {
   login(): Promise<void>
   logout(): Promise<void>
   site(): Promise<SiteSettings>
-  siteSettings(): Promise<SiteSettings>
-  updateSiteSettings(settings: SiteSettings): Promise<SiteSettings>
   teams(): Promise<Team[]>
   createTeam(name: string): Promise<Team>
   members(teamId: string): Promise<TeamMember[]>

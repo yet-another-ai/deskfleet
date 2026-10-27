@@ -36,7 +36,7 @@ export async function browserClient(defaultServerUrl: string): Promise<Deskfleet
   const subscribe = () => () => {}
   const signaling = { offer: unavailable, candidate: unavailable, close: unavailable, onEvent: subscribe }
   return {
-    platform: "web", locale: resolveAppLocale(navigator.languages), central, initialError,
+    platform: "web", locale: resolveAppLocale(navigator.languages), central, siteAdministration: central, initialError,
     files: createBrowserFiles(central),
     settings: {
       get: async () => ({ enabled: false, status: "stopped" }), setLocalAgentEnabled: unavailable,

@@ -134,10 +134,11 @@ The CLI records its source as `cli`, without attributing the operation to an
 interactive user.
 
 `GET /api/me` returns the current `siteAdmin` flag. Administrators can open
-**Site administration** from the account menu, including when they have no Team.
+**Site administration** from the Web client's account menu, including when they
+have no Team. The administration UI is Web-only.
 `GET /api/site` publicly returns only `siteName`, `announcement`, and
 `allowTeamCreation`; the defaults are `deskfleet`, an empty announcement, and
-`true`. The shared clients display the name/announcement and honor the creation
+`true`. Web and Electron display the name/announcement and honor the creation
 switch. Closing Team creation applies to all users, including site administrators;
 existing Teams and invitation acceptance are unaffected.
 

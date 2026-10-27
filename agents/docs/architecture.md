@@ -88,9 +88,11 @@ transactional business invariants in addition to policy checks.
 
 PostgreSQL owns runtime site name, announcement, and Team-creation policy. The
 public site endpoint exposes only those fields; authenticated site administrators
-can edit them in the shared client's Site administration page. The creation
-switch applies to all users, including site administrators, while existing Teams
-and invitations remain usable. Settings writes and administrator grant/revoke
+can edit them in the Web client's Site administration page. The administration
+UI is Web-only. Web and Electron both display the public site name and
+announcement and apply the Team-creation setting. The creation switch applies to
+all users, including site administrators, while existing Teams and invitations
+remain usable. Settings writes and administrator grant/revoke
 operations record their changes atomically in central site audit. Database URLs,
 OIDC configuration, service origins, and transport credentials remain deployment
 configuration; machine-local settings remain owned by their daemons.

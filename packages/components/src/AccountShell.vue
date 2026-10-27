@@ -61,7 +61,7 @@ const section = (value: AccountSettingsSection) => [
       <WelcomePage v-if="onboarding.step !== 'complete' || !account.user" :host="host" :state="onboarding" @change="onboarding = $event" />
       <!-- Each selected machine runs in its own application scope; see MachineSurface. -->
       <MachineSurface v-else-if="machine" :key="machine.id" :host="host" :session="session" :machine="machine" />
-      <SiteAdminView v-else-if="route.name === 'site-admin'" />
+      <SiteAdminView v-else-if="host.platform === 'web' && route.name === 'site-admin'" />
       <SettingsLayout v-else-if="shellSettings" @back="shellSettings = undefined">
         <template #nav>
           <button type="button" :class="section('preferences')" @click="shellSettings = 'preferences'"><SlidersHorizontal :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.preferences") }}</button>

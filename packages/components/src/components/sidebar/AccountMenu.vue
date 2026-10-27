@@ -2,6 +2,7 @@
 import { ChevronUp, LogOut, ShieldCheck } from "@lucide/vue"
 import { DropdownMenuItem } from "reka-ui"
 import { useI18n } from "vue-i18n"
+import { client } from "@deskfleet/client/platform"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { router } from "../../router/index.ts"
 import MenuPopover from "../common/MenuPopover.vue"
@@ -29,7 +30,7 @@ function signOut(): void {
         <div class="mt-0.5 truncate text-xs text-ui-text-faint">{{ session.account.value.serverUrl }}</div>
         <div v-if="session.site.value" class="mt-0.5 truncate text-xs text-ui-text-muted">{{ session.site.value.siteName }}</div>
       </div>
-      <DropdownMenuItem v-if="session.account.value.siteAdmin" as="button" type="button" class="ui-menu-item mt-1" @select="router.push({ name: 'site-admin' })"><ShieldCheck :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("siteAdmin.title") }}</DropdownMenuItem>
+      <DropdownMenuItem v-if="client.platform === 'web' && client.siteAdministration && session.account.value.siteAdmin" as="button" type="button" class="ui-menu-item mt-1" @select="router.push({ name: 'site-admin' })"><ShieldCheck :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("siteAdmin.title") }}</DropdownMenuItem>
       <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-1" @select="signOut"><LogOut :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.signOut") }}</DropdownMenuItem>
     </template>
   </MenuPopover>

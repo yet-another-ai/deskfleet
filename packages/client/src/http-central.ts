@@ -1,5 +1,5 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { AccountState, AccountUser, CentralApi, CentralEvent, Machine, PeerGrant, SiteSettings, Team, TeamMember, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, CentralApi, CentralEvent, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, Team, TeamMember, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -23,7 +23,7 @@ export function serverAddress(input: string): string {
 }
 
 /** Tokens stay inside the host transport. Neither shared UI nor Electron renderer receives them. */
-export class HttpCentralClient implements CentralApi {
+export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   #account: SavedAccount
   readonly #options: HttpCentralOptions
   readonly #listeners = new Set<(event: CentralEvent) => void>()

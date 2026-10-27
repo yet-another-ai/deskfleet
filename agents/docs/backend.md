@@ -19,7 +19,9 @@ points are the [server guide](../../apps/server/README.md),
 - Use PostgreSQL for the central server and SQLite for each daemon.
 - Keep site administration separate from Team roles. Explicit operator commands
   grant or revoke the role for existing OIDC users. Site administrators manage
-  runtime site settings without gaining access to other Teams or their machines.
+  runtime site settings through the Web-only administration UI without gaining
+  access to other Teams or their machines. Web and Electron both display public
+  site settings and apply the Team-creation setting.
 - Central resource policies use explicit typed actions; Team and Machine list
   scopes enforce membership in SQL. Shared operation boundaries retain these
   checks for HTTP, signaling, and delegated Agent access.
@@ -64,7 +66,7 @@ points are the [server guide](../../apps/server/README.md),
 | --- | --- | --- |
 | Identity | OIDC login integration, application login sessions, logout, current user, and client/device identity | Electron and Web implement their login entry points; daemon credentials are separate from user login |
 | Teams | Team creation and selection, membership/invitations, administrator/member roles, member removal, and authorization | Clients display the selected Team and available actions |
-| Site administration | Explicit site grants, site name/announcement/Team-creation settings, per-operation policies, and transactional site audit | Deployment operators bootstrap and recover grants through the server CLI; clients expose a Team-independent administration page |
+| Site administration | Explicit site grants, site name/announcement/Team-creation settings, per-operation policies, and transactional site audit | Deployment operators bootstrap and recover grants through the server CLI; Web exposes a Team-independent administration page; Web and Electron display public site settings and apply the Team-creation setting |
 | Machine enrollment | Bind an installation identity and catalog origin to a Team, issue machine credentials, and support administrator removal/revocation | Daemon stores its credentials and proves its identity on outbound connections |
 | Presence | Authenticated daemon connections, online status, last observed time, and machine capabilities | Daemon reports actual runtime/capture/provider capabilities; a peer connection has its own state |
 | Resource catalog | Team-scoped Machine/Workspace/Session/Worktree queries, source identity mapping, synchronized directory metadata, and active/archived Session filtering | Daemon owns Workspace configuration and captured Session directories |

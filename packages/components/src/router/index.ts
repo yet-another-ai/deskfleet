@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from "vue-router"
+import { client } from "@deskfleet/client/platform"
 
 declare module "vue-router" {
   interface RouteMeta {
@@ -18,6 +19,7 @@ export const router = createRouter({
     {
       path: "/admin",
       name: "site-admin",
+      beforeEnter: () => client.platform === "web" ? true : "/",
       component: () => import("../views/SiteAdminView.vue"),
       meta: { fullWindow: true },
     },

@@ -2,12 +2,13 @@
 import { useAsyncState } from "@vueuse/core"
 import { computed, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
-import type { SiteSettings } from "@deskfleet/client/central"
+import type { SiteAdministrationApi, SiteSettings } from "@deskfleet/client/central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
 import SettingsRow from "./SettingsRow.vue"
 
+const props = defineProps<{ api: SiteAdministrationApi }>()
 const { t } = useI18n()
 const id = useId()
 const session = useAccountSession()!
@@ -15,7 +16,7 @@ const form = ref<SiteSettings>()
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 const { state: current, isLoading: loading, error: loadError, executeImmediate: load } = useAsyncState(
   async () => {
-    const settings = await session.central.siteSettings()
+    const settings = await props.api.siteSettings()
     form.value = { ...settings }
     session.site.value = settings
     return settings
@@ -29,7 +30,7 @@ const changed = computed(() => !!form.value?.siteName.trim() && (
 ))
 const { isLoading: saving, isReady: saved, error: saveError, executeImmediate: save } = useAsyncState(
   async () => {
-    const settings = await session.central.updateSiteSettings({ ...form.value!, siteName: form.value!.siteName.trim() })
+    const settings = await props.api.updateSiteSettings({ ...form.value!, siteName: form.value!.siteName.trim() })
     current.value = settings
     form.value = { ...settings }
     session.site.value = settings

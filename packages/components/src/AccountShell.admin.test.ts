@@ -3,6 +3,7 @@ import { createPinia, disposePinia, type Pinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { configureClient, getClient } from "@deskfleet/client/platform"
 import { HttpError } from "@deskfleet/client/http-central"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import AccountShell from "./AccountShell.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
@@ -13,11 +14,13 @@ let pinia: Pinia
 const host = getClient()
 const page = () => new DOMWrapper(document.body)
 const button = (text: string) => page().findAll("button").find(value => value.text() === text)!
-beforeEach(() => { pinia = createPinia() })
+beforeEach(() => { pinia = createPinia(); configureClient({ ...host, platform: "web" }) })
 afterEach(async () => { view?.unmount(); view = undefined; disposePinia(pinia); configureClient(host); await router.replace("/"); vi.restoreAllMocks() })
-function mountShell(fake: ReturnType<typeof fakeCentral>): void {
+function mountShell(fake: ReturnType<typeof fakeCentral>, platform: DeskfleetDesktopApi["platform"] = "web"): void {
+  const adapter = { ...host, platform, central: fake.central, siteAdministration: platform === "web" ? fake.central : undefined }
+  configureClient(adapter)
   view = mount(AccountShell, {
-    props: { host: { ...getClient(), platform: "web", central: fake.central } },
+    props: { host: adapter },
     global: { plugins: [pinia, i18n, router] }, attachTo: document.body,
   })
 }
@@ -66,6 +69,25 @@ test("an ordinary Team admin has no site menu entry and direct navigation never 
   expect(page().get('[role="alert"]').text()).toBe("Site administrator access is required.")
   expect(page().find("form").exists()).toBe(false)
   expect(fake.central.siteSettings).not.toHaveBeenCalled()
+})
+
+test.each(["darwin", "linux", "win32"] as const)("%s keeps public site settings but does not expose administration to a site admin", async platform => {
+  const fake = fakeCentral({ siteAdmin: true, teams: [], site: { siteName: "Studio fleet", announcement: "Maintenance on Sunday", allowTeamCreation: false } })
+  mountShell(fake, platform)
+  await flushPromises()
+  expect(document.title).toBe("Studio fleet")
+  expect(view!.text()).toContain("Maintenance on Sunday")
+  expect(view!.text()).toContain("Join a team using an invitation")
+  expect(view!.text()).not.toContain("Create a team")
+  await page().get('button[aria-label="Ada"]').trigger("click")
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).not.toContain("Site administration")
+  await page().get('[role="menu"]').trigger("keydown", { key: "Escape" })
+  await router.push("/admin")
+  await flushPromises()
+  expect(router.currentRoute.value.path).toBe("/")
+  expect(page().find('[name="site-name"]').exists()).toBe(false)
+  expect(fake.central.siteSettings).not.toHaveBeenCalled()
+  expect(fake.central.updateSiteSettings).not.toHaveBeenCalled()
 })
 
 test("direct administration navigation handles denied server access and removes the form after role refresh", async () => {
