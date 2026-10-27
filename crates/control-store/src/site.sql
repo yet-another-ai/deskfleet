@@ -16,7 +16,7 @@ CREATE TABLE cp_site_audit (
  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  actor_user_id TEXT REFERENCES cp_users(id),
  source TEXT NOT NULL CHECK (source IN ('cli', 'user')),
- action TEXT NOT NULL CHECK (action IN ('admin.grant', 'admin.revoke', 'settings.update')),
+ action TEXT NOT NULL CHECK (action IN ('admin.grant', 'admin.revoke', 'settings.update', 'enterprise.update', 'account.disable', 'registration.update')),
  target_user_id TEXT REFERENCES cp_users(id),
  before_value JSONB NOT NULL,
  after_value JSONB NOT NULL,

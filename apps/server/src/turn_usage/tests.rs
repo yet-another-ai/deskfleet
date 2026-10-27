@@ -157,12 +157,9 @@ async fn redis_usage_reaches_teams_and_collection_resumes_after_disconnect() {
         .map(|(id, _)| id)
         .collect();
     let user = store
-        .oidc_user(
-            &format!("https://turn-subscriber/{}", uuid::Uuid::new_v4()),
-            "owner",
+        .verified_user(
+            &format!("owner-{}@fixture.test", uuid::Uuid::new_v4()),
             "Owner",
-            None,
-            false,
         )
         .await
         .unwrap();
@@ -231,7 +228,8 @@ async fn unavailable_redis_does_not_block_server_startup_or_health() {
         database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
         public_url: "https://control.test".into(),
         web_origins: vec![],
-        oidc: None,
+        auth: crate::auth::config::AuthConfig::development("https://control.test"),
+        billing: Default::default(),
         stun_urls: vec![],
         turn_urls: vec![],
         turn_secret: None,

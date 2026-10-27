@@ -4,7 +4,7 @@ use crate::{
     sql, timestamp,
 };
 use deskfleet_protocol::control::Machine;
-use sea_orm::{ConnectionTrait, QueryResult};
+use sea_orm::{ConnectionTrait, QueryResult, TransactionTrait};
 use serde_json::Value;
 
 pub(crate) fn machine(row: QueryResult) -> Result<Machine> {
@@ -126,12 +126,19 @@ impl ControlStore {
     pub async fn revoke_machine(&self, user_id: &str, id: &str) -> Result<()> {
         self.authorize_machine(user_id, id, MachineAction::Remove)
             .await?;
-        self.db
-            .execute_raw(sql(
-                "UPDATE cp_machines SET revoked=TRUE WHERE id=$1",
-                vec![resource_id(id)?.into()],
-            ))
-            .await?;
+        let tx = self.db.begin().await?;
+        // Lock the Machine before releasing reservations, matching admission order.
+        tx.execute_raw(sql(
+            "UPDATE cp_machines SET revoked=TRUE WHERE id=$1",
+            vec![resource_id(id)?.into()],
+        ))
+        .await?;
+        tx.execute_raw(sql(
+            "UPDATE cp_session_admissions SET status='released' WHERE machine_id=$1",
+            vec![resource_id(id)?.into()],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 }

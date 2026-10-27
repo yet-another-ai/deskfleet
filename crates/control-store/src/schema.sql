@@ -1,19 +1,39 @@
 CREATE TABLE cp_users (
- id TEXT PRIMARY KEY, issuer TEXT NOT NULL, subject TEXT NOT NULL,
- name TEXT NOT NULL, email TEXT, email_verified BOOLEAN NOT NULL,
- UNIQUE (issuer, subject)
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE,
+ email_verified BOOLEAN NOT NULL DEFAULT TRUE, password_hash TEXT,
+ credential_version BIGINT NOT NULL DEFAULT 0, disabled BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE TABLE cp_login_sessions (
  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES cp_users(id),
  device_id TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+ created_at BIGINT NOT NULL, authenticated_at BIGINT NOT NULL,
  expires_at BIGINT NOT NULL, revoked BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE TABLE cp_login_attempts (
  state_hash TEXT PRIMARY KEY, record JSONB NOT NULL, expires_at BIGINT NOT NULL
 );
 CREATE TABLE cp_login_codes (
- code_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES cp_users(id), verifier_hash TEXT NOT NULL, expires_at BIGINT NOT NULL
+ code_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES cp_users(id), verifier_hash TEXT NOT NULL,
+ credential_version BIGINT NOT NULL, expires_at BIGINT NOT NULL
 );
+CREATE TABLE cp_identity_challenges (
+ token_hash TEXT PRIMARY KEY, purpose TEXT NOT NULL,
+ user_id TEXT REFERENCES cp_users(id), email TEXT NOT NULL, record JSONB NOT NULL,
+ expires_at BIGINT NOT NULL
+);
+CREATE INDEX cp_identity_challenges_expiry ON cp_identity_challenges(expires_at);
+CREATE TABLE cp_passkeys (
+ id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES cp_users(id), name TEXT NOT NULL,
+ credential_id TEXT NOT NULL UNIQUE, record JSONB NOT NULL, created_at BIGINT NOT NULL
+);
+CREATE TABLE cp_auth_limits (
+ key_hash TEXT NOT NULL, period BIGINT NOT NULL, requests INTEGER NOT NULL,
+ PRIMARY KEY (key_hash,period)
+);
+CREATE TABLE cp_registration_policy (
+ singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK(singleton), enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+INSERT INTO cp_registration_policy(singleton,enabled) VALUES(TRUE,TRUE);
 CREATE TABLE cp_teams (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name TEXT NOT NULL);
 CREATE TABLE cp_members (
  team_id BIGINT NOT NULL REFERENCES cp_teams(id) ON DELETE CASCADE,

@@ -52,11 +52,17 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         format!("{url}{separator}options=-csearch_path%3D{schema}&application_name={schema}");
     let store = ControlStore::connect(&scoped_url).await.unwrap();
     let admin = store
-        .oidc_user("https://site.test", "operator", "Operator", None, false)
+        .verified_user(
+            &format!("operator-{}@fixture.test", uuid::Uuid::new_v4()),
+            "Operator",
+        )
         .await
         .unwrap();
     let member = store
-        .oidc_user("https://site.test", "member", "Member", None, false)
+        .verified_user(
+            &format!("member-{}@fixture.test", uuid::Uuid::new_v4()),
+            "Member",
+        )
         .await
         .unwrap();
     let defaults = SiteSettings {

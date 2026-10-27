@@ -12,7 +12,8 @@ async fn team_members_rename_machines_and_catalogs_use_the_team_name() {
             database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
             public_url: "https://control.test".into(),
             web_origins: vec![],
-            oidc: None,
+            auth: deskfleet_server::auth::config::AuthConfig::development("https://control.test"),
+            billing: Default::default(),
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
@@ -24,23 +25,26 @@ async fn team_members_rename_machines_and_catalogs_use_the_team_name() {
     let issuer = format!("https://fixture/{}", uuid::Uuid::new_v4());
     let admin = state
         .store
-        .oidc_user(&issuer, "admin", "Admin", None, false)
+        .verified_user(
+            &format!("admin-{}@fixture.test", issuer.rsplit('/').next().unwrap()),
+            "Admin",
+        )
         .await
         .unwrap();
     let member = state
         .store
-        .oidc_user(
-            &issuer,
-            "member",
-            "Member",
-            Some("member@example.test"),
-            true,
-        )
+        .verified_user("member@example.test", "Member")
         .await
         .unwrap();
     let outsider = state
         .store
-        .oidc_user(&issuer, "outsider", "Outsider", None, false)
+        .verified_user(
+            &format!(
+                "outsider-{}@fixture.test",
+                issuer.rsplit('/').next().unwrap()
+            ),
+            "Outsider",
+        )
         .await
         .unwrap();
     let team = state

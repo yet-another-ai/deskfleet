@@ -20,7 +20,8 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
             database_url: format!("{url}{separator}options=-csearch_path%3D{schema}"),
             public_url: "https://control.test".into(),
             web_origins: vec![],
-            oidc: None,
+            auth: deskfleet_server::auth::config::AuthConfig::development("https://control.test"),
+            billing: Default::default(),
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
@@ -31,12 +32,18 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
     );
     let admin = state
         .store
-        .oidc_user("https://site.test", "admin", "Admin", None, false)
+        .verified_user(
+            &format!("admin-{}@fixture.test", uuid::Uuid::new_v4()),
+            "Admin",
+        )
         .await
         .unwrap();
     let member = state
         .store
-        .oidc_user("https://site.test", "member", "Member", None, false)
+        .verified_user(
+            &format!("member-{}@fixture.test", uuid::Uuid::new_v4()),
+            "Member",
+        )
         .await
         .unwrap();
     state

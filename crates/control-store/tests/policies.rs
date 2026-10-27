@@ -102,21 +102,24 @@ async fn database_scopes_and_actions_follow_current_target_membership() {
     let store = ControlStore::connect(&url).await.unwrap();
     let issuer = format!("https://policy-fixture/{}", uuid::Uuid::new_v4());
     let admin = store
-        .oidc_user(&issuer, "owner", "Owner", None, false)
-        .await
-        .unwrap();
-    let member = store
-        .oidc_user(
-            &issuer,
-            "member",
-            "Member",
-            Some("member@policy.test"),
-            true,
+        .verified_user(
+            &format!("owner-{}@fixture.test", issuer.rsplit('/').next().unwrap()),
+            "Owner",
         )
         .await
         .unwrap();
+    let member = store
+        .verified_user("member@policy.test", "Member")
+        .await
+        .unwrap();
     let outsider = store
-        .oidc_user(&issuer, "outsider", "Outsider", None, false)
+        .verified_user(
+            &format!(
+                "outsider-{}@fixture.test",
+                issuer.rsplit('/').next().unwrap()
+            ),
+            "Outsider",
+        )
         .await
         .unwrap();
     let team = store.create_team(&admin.id, "Member team").await.unwrap();

@@ -98,11 +98,27 @@ pub async fn create(
         issued_at: timestamp(now),
         expires_at: timestamp(expires),
     };
+    let relay_denied_reason = s.store.relay_denied_reason(&b.team_id).await?;
+    let relay_allowed = relay_denied_reason.is_none();
     s.store.save_peer(&authorization, &a.id, expires).await?;
+    s.store.save_peer_relay_decision(&id, relay_allowed).await?;
     s.peers.insert(&id, expires).await;
     Ok(web::Json(
-        json!({"peerId":id,"authorization":authorization,"iceServers":ice_servers(&s.config,&id,expires)?}),
+        json!({"peerId":id,"authorization":authorization,"iceServers":grant_ice_servers(&s.config,&id,expires,relay_allowed)?,"relayAllowed":relay_allowed,"relayDeniedReason":relay_denied_reason}),
     ))
+}
+fn grant_ice_servers(
+    config: &ServerConfig,
+    peer_id: &str,
+    expires: i64,
+    relay_allowed: bool,
+) -> Result<Vec<IceServer>> {
+    if relay_allowed {
+        return ice_servers(config, peer_id, expires);
+    }
+    let mut direct = config.clone();
+    direct.turn_urls.clear();
+    ice_servers(&direct, peer_id, expires)
 }
 pub fn ice_servers(config: &ServerConfig, peer_id: &str, expires: i64) -> Result<Vec<IceServer>> {
     let mut servers = Vec::new();
@@ -169,7 +185,8 @@ pub async fn offer(
     let expires = chrono::DateTime::parse_from_rfc3339(&authorization.expires_at)
         .map_err(|_| ApiError::internal())?
         .timestamp_millis();
-    let result=s.hub.request(&authorization.target_machine.id,"peer.offer",json!({"peerId":p.as_str(),"sdp":b.sdp,"authorization":authorization,"iceServers":ice_servers(&s.config,&p,expires)?,"options":b.options}),Some(authorization.actor.clone())).await;
+    let relay_allowed = s.store.peer_relay_decision(&p).await?;
+    let result=s.hub.request(&authorization.target_machine.id,"peer.offer",json!({"peerId":p.as_str(),"sdp":b.sdp,"authorization":authorization,"iceServers":grant_ice_servers(&s.config,&p,expires,relay_allowed)?,"options":b.options}),Some(authorization.actor.clone())).await;
     let result = match result {
         Ok(result) => result,
         Err(error) => {
@@ -485,7 +502,8 @@ pub(crate) mod tests {
             database_url: "postgres://unused".into(),
             public_url: "http://127.0.0.1:8080".into(),
             web_origins: vec![],
-            oidc: None,
+            auth: crate::auth::config::AuthConfig::development("http://127.0.0.1:8080"),
+            billing: Default::default(),
             stun_urls,
             turn_urls,
             turn_secret: turn_secret.map(str::to_owned),

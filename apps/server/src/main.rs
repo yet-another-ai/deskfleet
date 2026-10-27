@@ -21,8 +21,9 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(AppState::new(config).await.map_err(std::io::Error::other)?);
     let server = HttpServer::new(move || {
         let mut cors = actix_cors::Cors::default()
-            .allowed_methods(["GET", "POST", "PATCH", "DELETE"])
-            .allowed_headers(["authorization", "content-type"])
+            .allowed_methods(["GET", "POST", "PUT", "PATCH", "DELETE"])
+            .allowed_headers(["authorization", "content-type", "x-csrf-token"])
+            .supports_credentials()
             .max_age(3600);
         for origin in &origins {
             cors = cors.allowed_origin(origin);

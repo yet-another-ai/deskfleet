@@ -243,6 +243,20 @@ impl Hub {
             let _ = daemon.shutdown.send(Some(4403));
         }
     }
+    pub async fn disconnect_login(&self, login_id: &str) {
+        if let Some(clients) = self.inner.lock().await.clients.get(login_id) {
+            for client in clients.values() {
+                let _ = client.shutdown.send(Some(4401));
+            }
+        }
+    }
+    pub async fn disconnect_user(&self, user_id: &str) {
+        for clients in self.inner.lock().await.clients.values() {
+            for client in clients.values().filter(|client| client.user_id == user_id) {
+                let _ = client.shutdown.send(Some(4401));
+            }
+        }
+    }
 }
 
 #[cfg(test)]

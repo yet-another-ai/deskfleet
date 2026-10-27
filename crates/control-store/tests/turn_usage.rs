@@ -70,12 +70,9 @@ async fn postgres_turn_usage_attributes_teams_and_counts_each_delta() {
     let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL to PostgreSQL");
     let store = ControlStore::connect(&url).await.unwrap();
     let user = store
-        .oidc_user(
-            &format!("https://turn-fixture/{}", uuid::Uuid::new_v4()),
-            "owner",
+        .verified_user(
+            &format!("owner-{}@fixture.test", uuid::Uuid::new_v4()),
             "Owner",
-            None,
-            false,
         )
         .await
         .unwrap();
