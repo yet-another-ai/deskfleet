@@ -16,6 +16,7 @@ async fn team_members_rename_machines_and_catalogs_use_the_team_name() {
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
+            turn_usage_redis_url: None,
         })
         .await
         .unwrap(),

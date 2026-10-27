@@ -24,9 +24,10 @@ run agents. Daemons stay on the computers they enroll. The API authorizes
 management calls and WebRTC signaling, then stores account data and replicas of
 catalogs and Agent history.
 
-PostgreSQL holds the central records. There is no second database and no object
-store. The tables are the `cp_*` schema created in the connection's search path
-(normally `public`). Startup applies them before the listener opens.
+PostgreSQL holds the central records; optional Redis carries TURN usage
+notifications. There is no object store. The tables are the `cp_*` schema created
+in the connection's search path (normally `public`). Startup applies them before
+the listener opens.
 
 | Stored on the API's PostgreSQL database | Stays on the enrolled machine |
 | --- | --- |
@@ -179,6 +180,7 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | `DESKFLEET_STUN_URLS` | no | empty | Comma-separated STUN URLs advertised to peers. |
 | `DESKFLEET_TURN_URLS` | no | empty | Comma-separated TURN or TURNS URLs. Setting any URL requires a secret. |
 | `DESKFLEET_TURN_SECRET` | with TURN URLs | unset | Shared with the TURN server's REST `static-auth-secret`. Empty is treated as missing and startup fails when TURN URLs are set. |
+| `DESKFLEET_TURN_USAGE_REDIS_URL` | no | unset | `redis://` or `rediss://` URL for [Team TURN usage collection](#team-turn-usage-collection). Empty disables collection. Invalid URLs fail startup; unavailable Redis is retried in the background. |
 | `RUST_LOG` | no | `info` | `tracing` `EnvFilter`. A missing or invalid value falls back to `info`. |
 
 The OIDC redirect URI is derived, not configured separately:
@@ -345,12 +347,56 @@ TURN forwards DTLS. It does not decrypt sessions, and the API never sees the
 DTLS private keys. Relay ports are the TURN server's configuration; the API
 does not allocate them and does not have a port-range variable.
 
+### Team TURN usage collection
+
+The backend can collect coturn usage through a single Redis instance and store
+it by Team in PostgreSQL. This records usage only.
+
+Configure coturn's statistics connection, separately from its authentication:
+
+```ini
+redis-statsdb="ip=redis.internal port=6379 dbname=0 password=<redis-password> connect_timeout=5"
+```
+
+Set `DESKFLEET_TURN_USAGE_REDIS_URL` on the backend to the same Redis service,
+for example `redis://:<redis-password>@redis.internal:6379/0` (URL-encode the
+password), then restart the backend. Keep the existing TURN REST authentication
+settings. Restrict Redis access to the TURN publishers and backend subscriber.
+Run one backend collector per statistics stream to avoid counting broadcasts
+multiple times. Pub/Sub channels span database indices; use separate Redis
+services to isolate environments.
+
+Saved peer grants map TURN usernames to Teams. The `cp_turn_usage` table stores
+interval byte deltas with separate client-side and peer-side counters. Unknown
+peers are skipped.
+
+These counters measure coturn protocol bytes. Summing both sides' receive and
+send counters counts forwarded traffic more than once. Inspect Team totals by
+side with:
+
+```sql
+SELECT team_id, side,
+       SUM(received_bytes) AS received_bytes,
+       SUM(sent_bytes) AS sent_bytes
+FROM cp_turn_usage
+GROUP BY team_id, side;
+```
+
+[Redis Pub/Sub has no replay](https://redis.io/docs/latest/develop/pubsub/#delivery-semantics).
+Notifications missed during Redis, coturn statistics, or subscriber downtime
+cannot be recovered. Failed PostgreSQL writes are logged and skipped; an abnormal
+TURN exit can also lose unreported traffic. Missing traffic remains unbilled.
+Redis outages leave the API available, and the collector reconnects automatically.
+If coturn's initial Redis DNS resolution or TLS setup fails, fixing the issue may
+also require restarting coturn. The event format is defined in the
+[coturn statistics schema](https://github.com/coturn/coturn/blob/4.18.0/turndb/schema.stats.redis).
+
 ## Database, backup, and upgrade
 
 Create an empty database and a role, and put that URL in `DATABASE_URL`. The
-first start creates `cp_migrations` and version `1` of the schema under the
-transaction advisory lock `761946021`. Later starts take the same lock and
-apply any migration that is not recorded.
+first start creates `cp_migrations` and applies schema versions `1` (central
+records) and `2` (TURN usage) under the transaction advisory lock `761946021`.
+Later starts take the same lock and apply any migration that is not recorded.
 
 From a source checkout, the same database can be inspected with:
 
@@ -360,7 +406,7 @@ DATABASE_URL='postgres://...' \
 ```
 
 The example accepts `up`, `status`, and `down`. `down` drops every central
-table and its rows, then removes migration version `1`. It is a destructive
+table and its rows, reverting the applied migration versions. It is a destructive
 reset, not an upgrade step. The running server migrates on startup; production
 does not need this example.
 
@@ -389,7 +435,7 @@ To upgrade the API:
 Migrations finish before the new process listens. Daemons reconnect on their
 own. A PostgreSQL major-version upgrade is a database operation: dump, load
 into the new server, and point `DATABASE_URL` at that read-write instance. The
-development Compose volume is pinned to PostgreSQL 17 for this reason; a
+development Compose volume is pinned to PostgreSQL 18 for this reason; a
 production major upgrade has the same constraint.
 
 ## Clients and machines

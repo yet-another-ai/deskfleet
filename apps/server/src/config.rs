@@ -19,6 +19,7 @@ pub struct ServerConfig {
     pub stun_urls: Vec<String>,
     pub turn_urls: Vec<String>,
     pub turn_secret: Option<String>,
+    pub turn_usage_redis_url: Option<String>,
 }
 impl ServerConfig {
     pub fn from_env() -> io::Result<Self> {
@@ -59,6 +60,9 @@ impl ServerConfig {
             stun_urls: list("DESKFLEET_STUN_URLS"),
             turn_urls,
             turn_secret,
+            turn_usage_redis_url: env::var("DESKFLEET_TURN_USAGE_REDIS_URL")
+                .ok()
+                .filter(|value| !value.is_empty()),
         })
     }
 }

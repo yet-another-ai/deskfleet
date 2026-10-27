@@ -16,6 +16,7 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
+            turn_usage_redis_url: None,
         })
         .await
         .unwrap(),

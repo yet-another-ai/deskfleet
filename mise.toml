@@ -29,7 +29,7 @@ description = "Run the Actix Web backend"
 run = "cargo run -p deskfleet-server --locked"
 
 [tasks."infra:up"]
-description = "Start local PostgreSQL, test PostgreSQL, OIDC, and TURN; wait for readiness"
+description = "Start local PostgreSQL, test PostgreSQL, Redis, OIDC, and TURN; wait for readiness"
 run = "docker compose up --detach --wait --wait-timeout 120"
 
 [tasks."infra:down"]
@@ -42,7 +42,7 @@ wait_for = ["native:debug", "rust:clippy", "rust:test"]
 run = "cargo build -p deskfleet-server --locked"
 
 [tasks."backend:test"]
-description = "Run central persistence and API integration tests against TEST_DATABASE_URL (PostgreSQL)"
+description = "Run persistence, API, and TURN collection tests against TEST_DATABASE_URL and TEST_REDIS_URL"
 run = "cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored"
 
 [tasks."backend:smoke"]

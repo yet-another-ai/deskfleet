@@ -21,6 +21,7 @@ async fn inactive_desktop_close_keeps_owner_checks_and_waits_for_daemon_cleanup(
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
+            turn_usage_redis_url: None,
         })
         .await
         .unwrap(),

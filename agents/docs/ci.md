@@ -15,8 +15,9 @@ a stable `Gate` result for branch protection.
   once on Linux with `mise run ci:check:static`, plus Rust, daemon, and desktop
   tests on Linux, macOS, and Windows with `mise run test`. It supports reusable
   calls and manual runs. A separate Linux job runs real PostgreSQL integration
-  tests and the OIDC/two-daemon remote workflow against the same pinned PostgreSQL
-  18.6 image as local development, both directly and with relay-only peers through
+  tests, Redis-backed Team TURN collection tests, and the OIDC/two-daemon remote
+  workflow against the same pinned PostgreSQL 18.6 and Redis images as local
+  development, both directly and with relay-only peers through
   an isolated coturn container. It also validates the development Compose configuration.
   The same job drives the built Web and Electron clients under Xvfb through
   actual login, remote execution, archive/restore, and offline history flows.

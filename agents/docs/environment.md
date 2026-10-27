@@ -98,19 +98,24 @@ on October 25, 2026. The [official PostgreSQL 18 image](https://hub.docker.com/_
 stores `PGDATA` at `/var/lib/postgresql/18/docker`, so both database services
 mount storage at `/var/lib/postgresql`. The coturn relay uses plain TCP and UDP;
 DTLS remains disabled because it is opt-in in coturn 4.18.
+A single [Redis 8.10.3](https://github.com/redis/redis/releases/tag/8.10.3)
+instance carries TURN usage notifications.
 
 | Service | Host endpoint | Data lifetime |
 | --- | --- | --- |
 | `postgres` | `127.0.0.1:55432`, database/user `deskfleet`, password `deskfleet-dev` | Named volume `postgres-18-data` |
 | `postgres-test` | `127.0.0.1:55433`, database/user `deskfleet_test`, password `deskfleet-test` | Temporary memory filesystem, cleared on stop |
+| `redis` | `127.0.0.1:56379`, no password | Temporary memory filesystem, persistence disabled |
 | `oidc` (Dex) | `http://127.0.0.1:5556/dex` | Named volume for signing keys and login state |
 | `turn` (coturn) | `127.0.0.1:3478` TCP/UDP, relay ports `49160–49180` UDP | Temporary |
 
-`infra:up` waits for all four health checks. `mise.development.toml` opts into
+`infra:up` waits for all five health checks. `mise.development.toml` opts into
 their connection settings with `-E development`; it leaves the base environment
 and CI settings alone. The development `DATABASE_URL` is scoped to the `dev`
 task, so `db:migrate` continues to target the daemon's SQLite catalog. No Vite
-production URL is set by the development environment.
+production URL is set by the development environment. The `dev` task also enables
+[Team TURN usage collection](self-hosted.md#team-turn-usage-collection) through
+the local Redis instance.
 
 Dex uses authorization code flow with PKCE and signed ID tokens, through the
 same backend authentication path as a hosted OIDC provider. Its registered
@@ -140,8 +145,9 @@ build their dependencies automatically. They can run while the development API
 is running and never reset its database. `backend:smoke-relay` repeats the native,
 Web, and Electron flows with TURN forced, verifying actual relay traffic. On
 headless Linux, prefix the client and relay commands with `xvfb-run -a`.
-For only the automated checks, `docker compose up -d --wait postgres-test turn`
-starts the two services they need.
+For only the automated checks,
+`docker compose up -d --wait postgres-test redis turn` starts the services they
+need. `backend:test` uses `TEST_DATABASE_URL` and `TEST_REDIS_URL`.
 
 Inspect or stop the stack with:
 
@@ -215,7 +221,7 @@ then include the configuration and lockfile changes together.
 | `mise run infra:up` / `infra:down` | Start or stop the local Compose dependencies |
 | `mise run dev` | Run the Actix Web server |
 | `mise -E development run dev` | Run the API with the local Compose database, OIDC, and TURN settings |
-| `mise run backend:test` | Run real PostgreSQL integration tests using `TEST_DATABASE_URL` |
+| `mise run backend:test` | Run real PostgreSQL and Redis integration tests using `TEST_DATABASE_URL` and `TEST_REDIS_URL` |
 | `mise run backend:smoke` | Exercise OIDC, two enrolled daemons, native WebRTC, and synchronized history |
 | `mise run backend:smoke-clients` | Drive the built Web and Electron clients through login and remote execution; use `xvfb-run -a` on headless Linux |
 | `mise run backend:smoke-relay` | Force both backend smoke suites through the configured TURN relay |

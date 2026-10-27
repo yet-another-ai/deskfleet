@@ -5,6 +5,9 @@ mod machines;
 mod peers;
 pub mod schema;
 mod teams;
+mod turn_usage;
+
+pub use turn_usage::{TurnUsage, TurnUsageSide};
 
 use chrono::{SecondsFormat, Utc};
 use deskfleet_protocol::control::{Machine, User};

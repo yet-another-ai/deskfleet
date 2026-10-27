@@ -56,6 +56,7 @@ exchanges it together with the `loginVerifier` returned by `/api/auth/start`.
 | `DESKFLEET_STUN_URLS` | Optional comma-separated STUN URLs. |
 | `DESKFLEET_TURN_URLS` | Optional comma-separated TURN/TURNS URLs. |
 | `DESKFLEET_TURN_SECRET` | Required with TURN URLs; shared with coturn's REST credential mechanism. |
+| `DESKFLEET_TURN_USAGE_REDIS_URL` | Optional `redis://` or `rediss://` URL for [Team TURN usage collection](../../agents/docs/self-hosted.md#team-turn-usage-collection). Empty or unset disables it. |
 | `RUST_LOG` | Log filter; defaults to `info`. |
 
 For official hosting, run one server instance behind a TLS reverse proxy that
@@ -167,6 +168,10 @@ trusted center binds each exact SDP exchange and ICE generation to one actor,
 Team, target machine, and purpose. The WebRTC stacks perform certificate fingerprint
 verification during DTLS. Failed negotiation requires a new peer authorization.
 
+The backend also supports optional
+[Team TURN usage collection](../../agents/docs/self-hosted.md#team-turn-usage-collection)
+through Redis; the deployment guide covers setup and collection limits.
+
 The Rust wire source is `crates/protocol/src/control.rs`; its generated type-only
 bindings are `crates/protocol/control.ts`:
 
@@ -180,7 +185,7 @@ The central `deskfleet-control-store` crate has a separate PostgreSQL `cp_*`
 schema. It does not reuse or import daemon SQLite tables. Startup applies explicit
 numbered SQL under a transaction and advisory lock; schema versions are tracked
 in `cp_migrations`. Back up PostgreSQL before schema changes. The central migration
-example supports `up`, `status`, and `down`; `down` of version 1 drops central tables
+example supports `up`, `status`, and `down`; `down` drops central tables
 and their data. The daemon's `db:migrate` task manages a different SQLite database.
 
 ```sh
@@ -189,12 +194,14 @@ mise exec -- cargo run -p deskfleet-control-store --example migrate -- status
 
 ## Verification
 
-Unit tests run without PostgreSQL. Integration tests require a PostgreSQL instance.
+Unit tests run without external services. Integration tests require PostgreSQL;
+TURN collection integration tests also require Redis.
 Each run creates uniquely scoped fixture identities.
 
 ```sh
 mise exec -- cargo test -p deskfleet-protocol -p deskfleet-server -p deskfleet-control-store --locked
 TEST_DATABASE_URL='postgres://postgres:password@127.0.0.1:5432/deskfleet_test' \
+TEST_REDIS_URL='redis://127.0.0.1:6379/' \
   mise exec -- cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored
 ```
 

@@ -201,6 +201,7 @@ async fn oidc_login_refreshes_rotated_keys_without_redeeming_the_code_twice() {
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
+            turn_usage_redis_url: None,
         })
         .await
         .unwrap(),

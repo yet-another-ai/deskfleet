@@ -17,6 +17,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
+            turn_usage_redis_url: None,
         })
         .await
         .unwrap(),

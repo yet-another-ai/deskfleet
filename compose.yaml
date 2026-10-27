@@ -39,6 +39,19 @@ services:
       timeout: 5s
       retries: 30
 
+  redis:
+    image: redis:8.10.3@sha256:0c257ce8b2f31f9f7595f587edf8ac259a248ba3ced82badc8c7aa826a85224f
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
   oidc:
     image: ghcr.io/dexidp/dex:v2.46.1@sha256:65b72ca0f4b0bf6d4ada84ec21da8851782563404ac7b8f926923d27ceced9ab
     command: ["dex", "serve", "/etc/dex/deskfleet.yaml"]
@@ -55,6 +68,9 @@ services:
 
   turn:
     image: coturn/coturn:4.18.0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
+    depends_on:
+      redis:
+        condition: service_healthy
     tmpfs:
       - /var/lib/coturn
     command:
@@ -64,6 +80,7 @@ services:
       - --use-auth-secret
       - --static-auth-secret=deskfleet-dev-relay-secret
       - --realm=deskfleet.local
+      - --redis-statsdb=ip=redis dbname=0 connect_timeout=5
       - --listening-port=3478
       - --min-port=49160
       - --max-port=49180

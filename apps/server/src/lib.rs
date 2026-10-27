@@ -5,6 +5,7 @@ pub mod config;
 pub mod error;
 mod hub;
 mod peers;
+mod turn_usage;
 mod websocket;
 
 use actix_web::{web, web::ServiceConfig};
@@ -19,6 +20,7 @@ pub struct AppState {
     pub oidc: Option<auth::Oidc>,
     hub: hub::Hub,
     peers: peers::Negotiations,
+    _turn_usage: Option<turn_usage::Collector>,
 }
 impl AppState {
     pub async fn new(config: ServerConfig) -> Result<Self> {
@@ -27,12 +29,19 @@ impl AppState {
             Some(c) => Some(auth::Oidc::discover(c).await?),
             None => None,
         };
+        let turn_usage = config
+            .turn_usage_redis_url
+            .as_deref()
+            .map(|url| turn_usage::Collector::start(store.clone(), url))
+            .transpose()
+            .map_err(|error| error::ApiError::bad(error.to_string()))?;
         Ok(Self {
             store,
             config,
             oidc,
             hub: hub::Hub::default(),
             peers: peers::Negotiations::default(),
+            _turn_usage: turn_usage,
         })
     }
     async fn notify_team(&self, team: &str, message: ControlMessage) {

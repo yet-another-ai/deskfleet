@@ -305,12 +305,33 @@ async fn postgres_migration_can_revert_and_reapply_in_isolated_schema() {
     db.execute_unprepared(&format!("SET search_path TO {schema}"))
         .await
         .unwrap();
+    db.execute_unprepared("CREATE TABLE cp_migrations (version INTEGER PRIMARY KEY)")
+        .await
+        .unwrap();
+    db.execute_unprepared(include_str!("../src/schema.sql"))
+        .await
+        .unwrap();
+    db.execute_unprepared(
+        "INSERT INTO cp_migrations VALUES (1); INSERT INTO cp_teams(name) VALUES ('existing team')",
+    )
+    .await
+    .unwrap();
+    deskfleet_control_store::schema::migrate(&db).await.unwrap();
+    let row = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT EXISTS(SELECT 1 FROM cp_teams WHERE name='existing team') AND to_regclass('cp_turn_usage') IS NOT NULL AS upgraded",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(row.try_get::<bool>("", "upgraded").unwrap());
     deskfleet_control_store::schema::migrate(&db).await.unwrap();
     deskfleet_control_store::schema::down(&db).await.unwrap();
     let row = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
-            "SELECT to_regclass('cp_users') IS NULL AS removed",
+            "SELECT to_regclass('cp_users') IS NULL AND to_regclass('cp_turn_usage') IS NULL AS removed",
         ))
         .await
         .unwrap()

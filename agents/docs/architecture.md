@@ -438,6 +438,11 @@ cannot connect directly. Desktop streaming, terminal traffic, and bulk results
 need flow control appropriate to their latency and throughput; validate this
 with the selected WebRTC implementation.
 
+The central backend optionally collects coturn Redis Pub/Sub counters by Team
+and stores them in PostgreSQL. See
+[Team TURN usage collection](self-hosted.md#team-turn-usage-collection) for setup
+and collection limits.
+
 The native transport uses `webrtc-rs` with configurable STUN/TURN servers,
 trickle ICE, reliable ordered DataChannels, RTP media tracks, and RTCP feedback.
 `PeerSessions` gives the daemon ownership of peer creation and shutdown. These
