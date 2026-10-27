@@ -383,6 +383,7 @@ export class AgentSessions {
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     const sourceId = command.sessionId!
     return this.#runtime(sourceId).withFork(async source => {
+      if (!source.session.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
       this.#resolveProvider(source.session.provider)
       const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : source.session.title
       const creation = { ...command, sessionId: undefined, workspaceId: source.session.workspaceId }

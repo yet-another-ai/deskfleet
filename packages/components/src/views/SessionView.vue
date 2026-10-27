@@ -60,7 +60,12 @@ const canFork = computed(() => active.value && snapshot.value?.session.lifecycle
   && !snapshot.value.permissions.some(permission => permission.state === "pending")
   && !snapshot.value.elicitations.some(elicitation => elicitation.state === "pending"))
 const pendingFork = computed(() => Object.values(agents.operations).find(operation => operation.sessionId === props.sessionId && operation.method === "_deskfleet/session/fork"))
-const forkContext = computed(() => pendingFork.value?.params.context as AgentSessionContext | undefined ?? snapshot.value?.session.context ?? "worktree")
+const forkContext = computed(() => {
+  const pending = pendingFork.value?.params.context as AgentSessionContext | undefined
+  if (pending) return pending
+  if (!snapshot.value?.session.workspaceId) return "directory"
+  return snapshot.value.session.context ?? "worktree"
+})
 const forkDisabled = computed(() => !connected.value || !!view.value?.loading || !!view.value?.error)
 // A stopped or interrupted agent resumes on the next message; only a dead end is shown.
 const resumeUnavailable = computed(() => snapshot.value?.session.lifecycle === "ready" && run.value?.state !== "running" && !canResume.value)
@@ -156,7 +161,7 @@ async function checkOperation(operationId: string): Promise<void> {
   </div>
   <SessionComposer v-if="location" v-model="draft" :location="location" :usage="usage" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
   <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
-  <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
+  <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
   <div v-if="focusedMermaid" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">
     <div v-if="!sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pl-20 pr-3">
       <WindowToolbar />

@@ -47,6 +47,22 @@ test("maps configured directories onto the workspace and exposes only Session-ow
   expect(store.findWorktree(sessionWorktreeId)?.session).toBe(session)
 })
 
+test("findWorktree resolves machine-scoped Session worktrees", async () => {
+  const store = setup()
+  const snapshot = catalogFixture()
+  snapshot.workspaces = []
+  snapshot.sessions = [{ id: "41", sessionId: "40", directories: [{ path: "/home/demo" }] }]
+  vi.mocked(platformClient.catalog.list).mockResolvedValue(snapshot)
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  agents.sessions["40"] = { ...agentSnapshot().session, id: "40", workspaceId: undefined, title: "Home chat", context: "directory", archiveState: "active" }
+  const location = store.findWorktree("41")
+  expect(location?.workspace).toBeUndefined()
+  expect(location?.session.id).toBe("40")
+  expect(location?.worktree.directories.map(({ path }) => path)).toEqual(["/home/demo"])
+  expect(store.findSession("40")?.worktree?.id).toBe("41")
+})
+
 test("terminal ownership follows live changes and survives catalog refreshes", async () => {
   const store = setup()
   await store.refreshLocalCatalog()

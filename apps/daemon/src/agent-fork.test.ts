@@ -110,6 +110,32 @@ test("fork creates an independent conversation, history and owned context, and r
   assert.deepEqual((await f.sessions.journal.read(original.session.id)).inputs, original.inputs)
 })
 
+test("machine-scoped Sessions cannot fork into a worktree context", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-fork-home-"))
+  const catalog = new DaemonCatalog(directory)
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
+  const provider = new ForkProvider()
+  const sessions = new AgentSessions(catalog, catalog.native, provider)
+  await sessions.init()
+  t.after(async () => { await sessions.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
+  const actor = sessions.actor()
+  const source = await sessions.handle("_deskfleet/session/create", {
+    operationId: randomUUID(), provider: "codex", context: "directory", title: "Home",
+  }, actor) as AgentSnapshot
+  assert.equal(source.session.workspaceId, undefined)
+  await assert.rejects(
+    sessions.handle("_deskfleet/session/fork", { sessionId: source.session.id, operationId: randomUUID(), context: "worktree" }, actor),
+    /home directory/,
+  )
+  assert.equal((await sessions.journal.list()).length, 1)
+  const child = await sessions.handle("_deskfleet/session/fork", {
+    sessionId: source.session.id, operationId: randomUUID(), context: "directory",
+  }, actor) as AgentSnapshot
+  assert.equal(child.session.lifecycle, "ready")
+  assert.equal(child.session.workspaceId, undefined)
+  assert.equal(child.session.context, "directory")
+})
+
 test("unsupported and busy source sessions cannot allocate a fork", async t => {
   const unsupported = await setup(t, false)
   const unsupportedOperation = randomUUID()

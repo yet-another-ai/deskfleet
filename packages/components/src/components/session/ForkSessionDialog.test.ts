@@ -56,3 +56,19 @@ test("fork submission prevents duplicate clicks and dismissal until the result a
   await flushPromises()
   expect(wrapper.emitted("close")).toEqual([[]])
 })
+
+test("machine-scoped Sessions only offer directory fork context", async () => {
+  const confirm = vi.fn().mockResolvedValue(undefined)
+  wrapper = mount(ForkSessionDialog, {
+    attachTo: document.body,
+    props: { context: "worktree", allowWorktree: false, disabled: false, retrying: false, confirm },
+    global: { plugins: [i18n] },
+  })
+  await flushPromises()
+  const dialog = content()
+  expect(dialog.find('[role="radio"][value="worktree"]').exists()).toBe(false)
+  expect(dialog.get('[role="radio"][value="directory"]').attributes("aria-checked")).toBe("true")
+  await dialog.get(".ui-button-primary").trigger("click")
+  await flushPromises()
+  expect(confirm).toHaveBeenCalledExactlyOnceWith("directory")
+})

@@ -24,7 +24,6 @@ export interface SessionLocation extends SessionTarget {
 }
 /** Every worktree exposed by the client belongs to a Session. */
 export interface WorktreeLocation extends SessionLocation {
-  workspace: WorkspaceSummary
   worktree: WorktreeSummary
 }
 /** Ownership is explicit; a terminal's working directory never determines its scope. */
@@ -37,8 +36,11 @@ export interface TerminalLocation {
 }
 
 function* worktreeLocations(machines: MachineSummary[]): Generator<WorktreeLocation> {
-  for (const machine of machines) for (const workspace of machine.workspaces) {
-    for (const session of workspace.sessions) if (session.worktree) yield { machine, workspace, session, worktree: session.worktree }
+  for (const machine of machines) {
+    for (const session of machine.sessions) if (session.worktree) yield { machine, session, worktree: session.worktree }
+    for (const workspace of machine.workspaces) {
+      for (const session of workspace.sessions) if (session.worktree) yield { machine, workspace, session, worktree: session.worktree }
+    }
   }
 }
 function* terminalLocations(machines: MachineSummary[]): Generator<TerminalLocation> {
