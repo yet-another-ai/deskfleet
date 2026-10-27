@@ -37,7 +37,7 @@ export interface AccountSession {
   shellSettings: Ref<AccountSettingsSection | undefined>
   reload(): Promise<void>
   refreshMachines(): Promise<void>
-  signIn(serverUrl: string): Promise<void>
+  signIn(): Promise<void>
   signOut(): Promise<void>
   selectTeam(id: string): Promise<void>
   selectMachine(id: string): void
@@ -182,7 +182,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     central, ready, account, site, teams, teamId, team, members, machines, machineId, machine, enrollment, localMachineId, canEnrollLocal,
     connected, notice, dialog, shellSettings, reload,
     refreshMachines,
-    async signIn(serverUrl) { await central.setServer(serverUrl); await central.login(); await reload() },
+    async signIn() { await central.login(); await reload() },
     async signOut() { await central.logout(); await reload() },
     selectTeam,
     selectMachine(id) { if (machines.value.some(value => value.id === id)) machineId.value = id },

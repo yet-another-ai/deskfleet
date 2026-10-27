@@ -13,25 +13,19 @@ async function fixture(platform: NodeJS.Platform = "darwin") {
   directories.push(directory)
   const path = join(directory, "onboarding.json")
   const permissions: DesktopPermissionsState = { fullDiskAccessPermission: { status: "denied" }, screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "granted" } }
-  const central = { setServer: vi.fn(async (serverUrl: string) => ({ serverUrl, siteAdmin: false })) }
   const state: LocalAgentState = { enabled: true, status: "running" }
   const localAgent = {
     state,
-    startIfEnabled: vi.fn(async () => state),
     refreshPermissions: vi.fn(async () => permissions),
     requestPermission: vi.fn(async () => permissions),
   }
-  const options = { path, platform, central, localAgent }
+  const options = { path, platform, localAgent }
   return { ...options, controller: new OnboardingController(options), restart: () => new OnboardingController(options) }
 }
 
-test("welcome saves the server before starting the daemon and resumes permission steps after restart", async () => {
+test("welcome begins with platform permissions and resumes saved progress after restart", async () => {
   const f = await fixture()
-  expect(await f.controller.get()).toEqual({ step: "server" })
-  expect(f.localAgent.startIfEnabled).not.toHaveBeenCalled()
-  expect(await f.controller.saveServer("https://deskfleet.example")).toEqual({ step: "fullDiskAccess" })
-  expect(f.central.setServer).toHaveBeenCalledExactlyOnceWith("https://deskfleet.example")
-  expect(f.central.setServer.mock.invocationCallOrder[0]).toBeLessThan(f.localAgent.startIfEnabled.mock.invocationCallOrder[0]!)
+  expect(await f.controller.get()).toEqual({ step: "fullDiskAccess" })
   expect(await f.controller.permissions()).toMatchObject({ fullDiskAccessPermission: { status: "denied" } })
   await f.controller.requestPermission("fullDiskAccess")
   expect(f.localAgent.requestPermission).toHaveBeenCalledExactlyOnceWith("fullDiskAccess")
@@ -43,7 +37,6 @@ test("welcome saves the server before starting the daemon and resumes permission
   expect(await resumed.get()).toEqual({ step: "account" })
   expect(await resumed.complete()).toEqual({ step: "complete" })
   expect(await f.restart().get()).toEqual({ step: "complete" })
-  expect(f.central.setServer).toHaveBeenCalledOnce()
   expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "complete" })
 })
 
@@ -54,8 +47,7 @@ test("Linux guides screen and input access, reuses startup authorization, and re
     screenCapturePermission: { status: "requesting" },
     accessibilityPermission: { status: "requesting" },
   })
-  expect(await f.controller.saveServer("https://deskfleet.example")).toEqual({ step: "screenCapture" })
-  expect(f.localAgent.startIfEnabled).toHaveBeenCalledOnce()
+  expect(await f.controller.get()).toEqual({ step: "screenCapture" })
   expect(await f.controller.permissions()).toMatchObject({ screenCapturePermission: { status: "requesting" } })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
   await expect(f.controller.requestPermission("fullDiskAccess")).rejects.toThrow("step has changed")
@@ -75,7 +67,7 @@ test("Linux guides screen and input access, reuses startup authorization, and re
 
 test("Linux welcome retries or defers desktop permissions without adding Full Disk Access", async () => {
   const f = await fixture("linux")
-  await f.controller.saveServer("https://deskfleet.example")
+  await f.controller.get()
   await f.controller.requestPermission("screenCapture")
   expect(f.localAgent.requestPermission).toHaveBeenCalledExactlyOnceWith("screenCapture")
   expect(await f.controller.advancePermission("screenCapture")).toEqual({ step: "accessibility" })
@@ -86,7 +78,7 @@ test("Linux welcome retries or defers desktop permissions without adding Full Di
 
 test("Windows skips OS permission steps", async () => {
   const f = await fixture("win32")
-  expect(await f.controller.saveServer("https://deskfleet.example")).toEqual({ step: "account" })
+  expect(await f.controller.get()).toEqual({ step: "account" })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })
 
@@ -94,44 +86,53 @@ test.each(["darwin", "linux"] as const)("disabled local Agent preference skips %
   const f = await fixture(platform)
   f.localAgent.state.enabled = false
   f.localAgent.state.status = "stopped"
-  expect(await f.controller.saveServer("https://deskfleet.example")).toEqual({ step: "account" })
+  expect(await f.controller.get()).toEqual({ step: "account" })
   expect(f.localAgent.state.enabled).toBe(false)
 })
 
 test("Linux guides an attached running daemon when desktop auto-start is disabled", async () => {
   const f = await fixture("linux")
   f.localAgent.state.enabled = false
-  expect(await f.controller.saveServer("https://deskfleet.example")).toEqual({ step: "screenCapture" })
+  expect(await f.controller.get()).toEqual({ step: "screenCapture" })
   expect(f.localAgent.state.enabled).toBe(false)
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })
 
-test("server validation and daemon startup failures keep welcome on the server step", async () => {
+test("an enabled Agent startup failure still exposes permission guidance for retry", async () => {
   const f = await fixture()
-  f.central.setServer.mockRejectedValueOnce(new Error("Use HTTPS"))
-  await expect(f.controller.saveServer("http://deskfleet.example")).rejects.toThrow("HTTPS")
-  expect(f.localAgent.startIfEnabled).not.toHaveBeenCalled()
-  expect(await f.controller.get()).toEqual({ step: "server" })
   f.localAgent.state.status = "error"
   f.localAgent.state.error = "Daemon startup failed"
-  await expect(f.controller.saveServer("https://deskfleet.example")).rejects.toThrow("Daemon startup failed")
-  expect(await f.restart().get()).toEqual({ step: "server" })
+  expect(await f.controller.get()).toEqual({ step: "fullDiskAccess" })
+  await f.controller.requestPermission("fullDiskAccess")
+  expect(f.localAgent.requestPermission).toHaveBeenCalledExactlyOnceWith("fullDiskAccess")
+})
+
+test.each(["darwin", "linux", "win32"] as const)("old server setup progress resumes at the first %s step", async platform => {
+  const f = await fixture(platform)
+  await writeFile(f.path, JSON.stringify({ step: "server" }))
+  const step = platform === "darwin" ? "fullDiskAccess" : platform === "linux" ? "screenCapture" : "account"
+  expect(await f.controller.get()).toEqual({ step })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step })
 })
 
 test("permissions cannot be requested out of order or after setup completes", async () => {
   const f = await fixture()
-  await expect(f.controller.permissions()).rejects.toThrow("permission step")
   await expect(f.controller.complete()).rejects.toThrow("step has changed")
-  await f.controller.saveServer("https://deskfleet.example")
   await expect(f.controller.requestPermission("accessibility")).rejects.toThrow("step has changed")
   await expect(f.controller.advancePermission("screenCapture")).rejects.toThrow("step has changed")
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
   expect(await f.controller.get()).toEqual({ step: "fullDiskAccess" })
+  await f.controller.advancePermission("fullDiskAccess")
+  await f.controller.advancePermission("screenCapture")
+  await f.controller.advancePermission("accessibility")
+  await f.controller.complete()
+  await expect(f.controller.permissions()).rejects.toThrow("permission step")
+  await expect(f.controller.requestPermission("fullDiskAccess")).rejects.toThrow("step has changed")
 })
 
 test("failed progress writes preserve the active step", async () => {
   const f = await fixture()
-  await f.controller.saveServer("https://deskfleet.example")
+  await f.controller.get()
   await mkdir(`${f.path}.tmp`)
   await expect(f.controller.advancePermission("fullDiskAccess")).rejects.toThrow()
   expect(await f.controller.get()).toEqual({ step: "fullDiskAccess" })
@@ -140,13 +141,14 @@ test("failed progress writes preserve the active step", async () => {
 
 test("concurrent transitions cannot skip welcome steps", async () => {
   const f = await fixture()
-  let resolve!: () => void
-  f.central.setServer.mockImplementationOnce(serverUrl => new Promise(done => { resolve = () => done({ serverUrl, siteAdmin: false }) }))
-  const saving = f.controller.saveServer("https://deskfleet.example")
-  await vi.waitFor(() => expect(f.central.setServer).toHaveBeenCalledOnce())
-  await expect(f.controller.complete()).rejects.toThrow("changing state")
-  resolve()
-  await saving
+  await f.controller.get()
+  let resolve!: (value: DesktopPermissionsState) => void
+  f.localAgent.requestPermission.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  const requesting = f.controller.requestPermission("fullDiskAccess")
+  await vi.waitFor(() => expect(f.localAgent.requestPermission).toHaveBeenCalledOnce())
+  await expect(f.controller.advancePermission("fullDiskAccess")).rejects.toThrow("changing state")
+  resolve({ fullDiskAccessPermission: { status: "granted" }, screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "denied" } })
+  await requesting
   expect(await f.controller.get()).toEqual({ step: "fullDiskAccess" })
 })
 
@@ -158,7 +160,6 @@ test("an existing account or desktop settings profile does not restart welcome",
   expect(await establishedDesktopProfile(directory)).toBe(true)
   const migrated = new OnboardingController({ ...f, established: () => establishedDesktopProfile(directory) })
   expect(await migrated.get()).toEqual({ step: "complete" })
-  expect(f.localAgent.startIfEnabled).not.toHaveBeenCalled()
   expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "complete" })
   expect(await f.restart().get()).toEqual({ step: "complete" })
 
@@ -167,7 +168,6 @@ test("an existing account or desktop settings profile does not restart welcome",
   await writeFile(join(settingsDirectory, "settings.json"), JSON.stringify({ localAgentEnabled: true }))
   const resumed = new OnboardingController({ ...settingsOnly, established: () => establishedDesktopProfile(settingsDirectory) })
   expect(await resumed.get()).toEqual({ step: "complete" })
-  expect(settingsOnly.localAgent.startIfEnabled).not.toHaveBeenCalled()
 })
 
 test("invalid persisted progress is reported", async () => {

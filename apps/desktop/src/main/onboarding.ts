@@ -13,9 +13,6 @@ export function installOnboarding(controller: OnboardingController): void {
     if (!isDesktopMediaSender(event)) throw new Error("Welcome IPC is restricted to the main renderer")
     switch (method) {
       case "get": return controller.get()
-      case "saveServer":
-        if (typeof value !== "string") throw new Error("Server address must be a string")
-        return controller.saveServer(value)
       case "permissions": return controller.permissions()
       case "requestPermission": return controller.requestPermission(permission(value))
       case "advancePermission": return controller.advancePermission(permission(value))

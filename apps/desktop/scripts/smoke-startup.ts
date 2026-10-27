@@ -101,7 +101,7 @@ async function inspectRenderer(): Promise<void> {
     socket!.addEventListener("open", () => resolveOpen(), { once: true })
     socket!.addEventListener("error", () => reject(new Error("Could not inspect the production renderer")), { once: true })
   })
-  await until(async () => await evaluate<boolean>("document.readyState === 'complete' && !!document.querySelector('#root input[type=url]') && !!window.deskfleet?.onboarding") ? true : undefined)
+  await until(async () => await evaluate<boolean>("document.readyState === 'complete' && !!document.querySelector('#root h1') && !!window.deskfleet?.onboarding") ? true : undefined)
 }
 
 async function screenshot(name: string): Promise<void> {
@@ -177,36 +177,24 @@ try {
   await stat(join(appPath, "out/main/index.js"))
   await mkdir(profile)
   await inspectRenderer()
-  assert.deepEqual(await evaluate("window.deskfleet.onboarding.get()"), { step: "server" })
-  assert.deepEqual(await evaluate("window.deskfleet.settings.get()"), { enabled: true, status: "stopped" })
-  await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
-  await screenshot("welcome-server")
-
-  // Exercise the production form and IPC, without needing an OIDC server.
-  await evaluate(`(() => {
-    const input = document.querySelector('input[name="server-url"]');
-    input.value = "https://deskfleet.example.com";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.form.requestSubmit();
-  })()`)
-  const firstStep = process.platform === "darwin" ? "fullDiskAccess" : "account"
-  await until(async () => (await evaluate<{ step: string }>("window.deskfleet.onboarding.get()")).step === firstStep ? true : undefined)
+  const permissionSteps = process.platform === "darwin" ? ["fullDiskAccess", "screenCapture", "accessibility"] : process.platform === "linux" ? ["screenCapture", "accessibility"] : []
+  assert.deepEqual(await evaluate("window.deskfleet.onboarding.get()"), { step: permissionSteps[0] ?? "account" })
+  assert.equal(await evaluate("document.querySelector('input[name=server-url]') === null && !('saveServer' in window.deskfleet.onboarding)"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   await stat(join(daemonDirectory, "daemon.json"))
-  // macOS permission dialogs require manual interaction; skip them through
+  await screenshot("welcome-initial")
+  // OS permission dialogs require manual interaction; skip them through
   // their production API so this smoke does not change machine permissions.
-  if (process.platform === "darwin") {
-    for (const permission of ["fullDiskAccess", "screenCapture", "accessibility"]) {
-      await evaluate(`window.deskfleet.onboarding.advancePermission(${JSON.stringify(permission)})`)
-    }
+  for (const permission of permissionSteps) {
+    await evaluate(`window.deskfleet.onboarding.advancePermission(${JSON.stringify(permission)})`)
   }
   assert.deepEqual(JSON.parse(await readFile(join(profile, "onboarding.json"), "utf8")), { step: "account" })
   await stop()
 
-  // An unfinished welcome resumes at account, with the saved backend address.
+  // An unfinished welcome resumes at account without a backend address field.
   await inspectRenderer()
   assert.deepEqual(await evaluate("window.deskfleet.onboarding.get()"), { step: "account" })
-  assert.equal(await evaluate("document.querySelector('input[name=server-url]').value"), "https://deskfleet.example.com")
+  assert.equal(await evaluate("document.querySelector('input[type=url]') === null"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   await screenshot("welcome-account")
   // The UI completes this after OIDC; exercise persisted host progress here.
@@ -242,7 +230,7 @@ try {
     assert.equal(pi.initialization.agentInfo?.version, dependencies["pi-acp"])
   } finally { await pi.close() }
   await probeHostedDaemon()
-  console.log("Electron startup smoke passed: welcome server setup, saved progress, disabled auto-start, Codex, Claude Code, and Pi adapters, hosted daemon identity, and authenticated management boundary")
+  console.log("Electron startup smoke passed: welcome without server configuration, saved progress, disabled auto-start, Codex, Claude Code, and Pi adapters, hosted daemon identity, and authenticated management boundary")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error

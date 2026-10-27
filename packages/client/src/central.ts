@@ -31,7 +31,6 @@ export interface SiteAdministrationApi {
 /** Explicit control-plane operations, shared by browser and the narrow Electron bridge. */
 export interface CentralApi {
   status(): Promise<AccountState>
-  setServer(serverUrl: string): Promise<AccountState>
   login(): Promise<void>
   logout(): Promise<void>
   site(): Promise<SiteSettings>

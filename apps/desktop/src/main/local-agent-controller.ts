@@ -67,7 +67,7 @@ export class LocalAgentController {
     return this.state
   }
 
-  /** Resume startup after the welcome server step without changing the saved preference. */
+  /** Start or reconnect the local Agent without changing the saved preference. */
   startIfEnabled(): Promise<LocalAgentState> {
     if (this.#operation) return this.#operation
     this.#operation = (async () => {

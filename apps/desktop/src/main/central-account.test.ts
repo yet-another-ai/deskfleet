@@ -13,6 +13,7 @@ vi.mock("electron", () => ({
 }))
 vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
+vi.mock("./backend.ts", () => ({ backendUrl: "https://fleet.example/" }))
 import { app, ipcMain, safeStorage } from "electron"
 import { CENTRAL_CHANNEL, installCentralAccount } from "./central-account.ts"
 
@@ -55,6 +56,23 @@ test("restores an encrypted account using the async decryption result", async ()
   expect(f.fetch).toHaveBeenCalledWith(`${serverUrl}/api/me`, expect.objectContaining({ headers: { Authorization: "Bearer restored-token" } }))
 })
 
+test("a fresh profile uses the compiled backend without account configuration", async () => {
+  const f = await setup()
+  await rm(f.path)
+  const client = await f.install()
+  expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
+  expect(safeStorage.decryptStringAsync).not.toHaveBeenCalled()
+})
+
+test("a saved backend cannot override the compiled address or supply its credentials", async () => {
+  const f = await setup({ serverUrl: "https://old.example", encryptedToken: Buffer.from("old-token").toString("base64"), user })
+  const client = await f.install()
+  expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
+  expect(safeStorage.decryptStringAsync).not.toHaveBeenCalled()
+  await client.site()
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/site`, expect.objectContaining({ headers: {} }))
+})
+
 test("desktop IPC reads public site settings but rejects administration even for a site administrator", async () => {
   const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
   const client = await f.install()
@@ -68,6 +86,7 @@ test("desktop IPC reads public site settings but rejects administration even for
   const event = {} as Electron.IpcMainInvokeEvent
   await expect(invoke(event, "site", [])).resolves.toEqual(settings)
   await expect(invoke(event, "siteSettings", [])).rejects.toThrow("Invalid account operation")
+  await expect(invoke(event, "setServer", ["https://other.example"])).rejects.toThrow("Invalid account operation")
   await expect(invoke(event, "updateSiteSettings", [settings])).rejects.toThrow("Invalid account operation")
   expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/site`, expect.objectContaining({ method: "GET" }))
 })

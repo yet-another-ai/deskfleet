@@ -285,8 +285,13 @@ retains those checkouts and their local changes; disconnect never destroys them.
 Internal destruction remains available for rollback and development tests only.
 
 Electron reaches the backend through its main-process transport and narrow
-preload bridge. Web uses its browser transport. Both use the selected central
-Machine identity for routes, caches, drafts, and commands; integer local IDs do
+preload bridge. Web uses its browser transport. `VITE_DESKFLEET_SERVER_URL`
+selects the backend at build time for both clients; the UI cannot change it.
+Desktop and Web development default to `http://127.0.0.1:8080`, while production
+Web builds without that variable use the page's origin. Saved account addresses
+only scope credentials to that backend and never override the compiled choice.
+Both use the selected central Machine identity for routes, caches, drafts, and
+commands; integer local IDs do
 not identify resources across machines. The UI displays synchronized history
 while a machine is offline and attaches through WebRTC for live Agent, Git, and
 terminal operations. The working directory remains separate from terminal
@@ -321,18 +326,19 @@ app waits for its cleanup before exiting. The app never spawns a separate daemon
 process. The standalone Node.js SEA is the headless distribution of the same
 daemon and runs independently of any desktop app.
 
-Desktop first-run setup uses a welcome page: backend server, platform-specific
-permissions, then account sign-in. macOS guides Full Disk Access,
-screen/system-audio recording, and Accessibility. Linux guides screen sharing
+Desktop first-run setup uses a welcome page: platform-specific permissions, then
+account sign-in. macOS guides Full Disk Access, screen/system-audio recording,
+and Accessibility. Linux guides screen sharing
 and keyboard/mouse control through its desktop authorization dialog, without
 Full Disk Access or macOS System Settings instructions. The host saves
 the current step in `onboarding.json` under its user-data directory and resumes
-it after restart. A fresh installation shows the server step before starting its
-daemon. A profile that already has an account or desktop settings, but no welcome
-file, is treated as finished so sign-in is not repeated and the local Agent still
-starts. After saving the server, it starts or reuses the local Agent according to
-the existing enabled preference. Windows clients and clients without a running
-local Agent skip the OS permission steps. Users can defer an individual
+it after restart. A profile that already has an account or desktop settings, but
+no welcome file, is treated as finished so sign-in is not repeated and the local
+Agent still starts. Startup starts or reuses the local Agent according to the
+existing enabled preference. Windows clients skip the OS permission steps, as
+do clients with local Agent startup disabled and no running daemon. An enabled
+Agent that fails to start retains permission guidance so users can retry.
+Users can defer an individual
 permission without blocking account setup or unrelated Agent work.
 
 After acquiring discovery and initializing local IPC, a macOS desktop-hosted

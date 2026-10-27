@@ -26,6 +26,20 @@ saved catalog, conversation, and terminal history remain.
 `mise exec -- pnpm --filter @deskfleet/desktop exec electron .`. Electron
 downloads its platform binary the first time it is resolved.
 
+Set `VITE_DESKFLEET_SERVER_URL` before starting development or building the app
+to choose the backend; it defaults to `http://127.0.0.1:8080`. For example, in
+PowerShell:
+
+```powershell
+$env:VITE_DESKFLEET_SERVER_URL = "https://api.example.com"
+mise run desktop:build
+```
+
+Vite embeds the address in the main-process bundle. Changing the backend requires
+rebuilding the app; environment variables set only when launching a built app
+do not override it. The UI has no backend-address setting. The server address
+stored with an account only scopes its saved credentials to the compiled backend.
+
 ## Layout
 
 | Path | Process | Bundle |
@@ -352,14 +366,15 @@ signed macOS application; see the [Electron notification documentation](https://
 
 ## Welcome and initial setup
 
-The welcome page configures the backend server, guides macOS Full Disk Access,
-screen/system-audio recording, and Accessibility in that order, then signs in.
+The welcome page guides macOS Full Disk Access, screen/system-audio recording,
+and Accessibility in that order, then signs in to the compiled backend.
 The desktop host saves the current step in `onboarding.json` under `userData`;
-closing the window or restarting the app resumes the unfinished step. A fresh
-profile does not start its local Agent or open permission dialogs before the
-server step is submitted. Saving the server starts or reuses the local Agent
-when its saved preference is enabled. A disabled local Agent and platforms that
-do not require these permissions proceed directly to sign-in.
+closing the window or restarting the app resumes the unfinished step. Startup
+starts or reuses the local Agent when its saved preference is enabled. macOS
+startup checks permissions silently; Wayland requests its combined desktop
+authorization during startup. Clients with local Agent startup disabled and no
+running daemon, and platforms that do not require these permissions, proceed
+directly to sign-in.
 
 Each permission page explains the capability and provides an explicit request,
 a status refresh, and a way to continue without it. Returning from System
@@ -367,7 +382,7 @@ Settings refreshes permission status silently. Full Disk Access must be enabled
 for the app or executable hosting the Agent; restart that host if macOS requires
 it. Permission denial does not prevent sign-in or unrelated Agent operations.
 Completed setup is not repeated at each launch. Signed-out users and Web clients
-use the same welcome design for server selection and account sign-in.
+use the same welcome design for account sign-in.
 
 ## Local Agent
 

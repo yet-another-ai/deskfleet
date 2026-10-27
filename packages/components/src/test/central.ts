@@ -34,7 +34,6 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
   const status = () => ({ serverUrl: "https://fleet.example", siteAdmin: state.signedIn && state.siteAdmin, user: state.signedIn ? { id: "user-1", name: "Ada", email: "ada@example.test" } : undefined })
   const central = {
     status: vi.fn(async () => status()),
-    setServer: vi.fn(async () => status()),
     login: vi.fn(async () => { state.signedIn = true }),
     logout: vi.fn(async () => { state.signedIn = false }),
     site: vi.fn(async () => ({ ...state.site })),

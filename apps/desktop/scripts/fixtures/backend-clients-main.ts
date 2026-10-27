@@ -83,8 +83,10 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   }
   if (context.mode === "web") require(!("deskfleet" in window), "Web must not receive an Electron preload")
   else {
-    const api = (window as unknown as { deskfleet: { central: { status(): Promise<unknown> } } }).deskfleet
-    require(!JSON.stringify(await api.central.status()).includes('"token"'), "The Electron renderer must not receive the app session token")
+    const api = (window as unknown as { deskfleet: { central: { status(): Promise<{ serverUrl: string }> } } }).deskfleet
+    const account = await api.central.status()
+    require(account.serverUrl === context.backend, "The Electron client must use its compiled backend address")
+    require(!JSON.stringify(account).includes('"token"'), "The Electron renderer must not receive the app session token")
   }
   if (offline) {
     await until(() => (machineRow(0) ?? document.querySelector("aside"))?.textContent?.includes("Offline") === true, "offline machine presence")
@@ -258,7 +260,7 @@ void app.whenReady().then(async () => {
     installSettings(controller, keepAwake, new NotificationSettingsController(join(app.getPath("userData"), "notifications.json")), new WorktreeRootSettingsController(context.daemonDirectory))
     keepAwake.get()
     await controller.initialize()
-    const central = await installCentralAccount({ openAuthorization: async url => {
+    await installCentralAccount({ openAuthorization: async url => {
       const browser = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } })
       authorizations.push(browser)
       browser.webContents.on("console-message", (event) => { if (event.level === "error") process.stderr.write(`${event.message}\n`) })
@@ -267,7 +269,7 @@ void app.whenReady().then(async () => {
     // This fixture exercises signed-in clients; smoke-startup covers first-run setup.
     const onboardingPath = join(context.profileDirectory, "onboarding.json")
     await writeFile(onboardingPath, JSON.stringify({ step: "complete" }))
-    installOnboarding(new OnboardingController({ path: onboardingPath, platform: process.platform, central, localAgent: controller }))
+    installOnboarding(new OnboardingController({ path: onboardingPath, platform: process.platform, localAgent: controller }))
     protocol.handle(RENDERER_SCHEME, request => {
       const path = resolveRendererResourcePath(request.url, context.rendererDirectory)
       return path ? net.fetch(pathToFileURL(path).toString()) : new Response(null, { status: 400 })
@@ -286,8 +288,8 @@ void app.whenReady().then(async () => {
   window.webContents.debugger.attach("1.3")
   await window.webContents.debugger.sendCommand("Page.addScriptToEvaluateOnNewDocument", { source: `Object.defineProperty(navigator,'languages',{get:()=>['en-US']});${context.forceRelay ? "const NativePeer=window.RTCPeerConnection;window.RTCPeerConnection=class extends NativePeer{constructor(config){super({...config,iceTransportPolicy:'relay'})}};" : ""}` })
   await window.loadURL(context.mode === "web" ? context.webUrl : BUNDLED_RENDERER_URL)
-  await window.webContents.executeJavaScript(`(async () => { const end=Date.now()+15000; while(!document.querySelector('input[type="url"]:not(:disabled)')) { if(Date.now()>end)throw new Error('Login form unavailable: '+document.body.innerText);await new Promise(r=>setTimeout(r,25)); } })()`)
-  await window.webContents.executeJavaScript(`(() => { const input=document.querySelector('input[type="url"]');input.value=${JSON.stringify(context.backend)};input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('form').requestSubmit(); })()`)
+  await window.webContents.executeJavaScript(`(async () => { const end=Date.now()+15000; while(!document.querySelector('form button[type="submit"]:not(:disabled)')) { if(Date.now()>end)throw new Error('Login form unavailable: '+document.body.innerText);await new Promise(r=>setTimeout(r,25)); } })()`)
+  await window.webContents.executeJavaScript(`(() => { if(document.querySelector('input[name="server-url"]'))throw new Error('Backend configuration must not be exposed in the UI');document.querySelector('form').requestSubmit(); })()`)
   // The Web login replaces the document twice. Wait from the main process for the app to return.
   const deadline = Date.now() + 30_000
   while (!await window.webContents.executeJavaScript(`!!document.querySelector('button[aria-label="Team"]') && !!document.querySelector('aside nav')`).catch(() => false)) {

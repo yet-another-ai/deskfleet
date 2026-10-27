@@ -788,8 +788,7 @@
   },
   "account": {
     "signIn": "登录 deskfleet",
-    "signInDescription": "使用团队的 deskfleet 服务器和身份提供商登录。",
-    "server": "服务器地址",
+    "signInDescription": "通过团队的身份提供商登录。",
     "continueOidc": "通过身份提供商登录",
     "signingIn": "正在登录…",
     "signOut": "退出登录",
@@ -931,22 +930,18 @@
   },
   "welcome": {
     "title": "欢迎使用 deskfleet",
-    "description": "连接团队的后端服务器，按步骤完成这台电脑的设置。",
+    "description": "按步骤完成这台电脑的设置，然后登录团队。",
     "notificationsTitle": "及时了解任务动态",
     "notificationsDescription": "智能体完成任务或需要你回应时，接收通知提醒。",
     "notificationsDetails": "允许浏览器通知后，只要 deskfleet 保持打开，切换到其他标签页也能收到任务动态。你可以稍后在设置中更改。",
     "progress": "设置进度",
     "steps": {
-      "server": "后端服务器",
       "fullDiskAccess": "完全磁盘访问权限",
       "screenCapture": "屏幕录制",
       "accessibility": "辅助功能",
       "account": "登录账户"
     },
     "stepCount": "第 {current} 步，共 {total} 步",
-    "serverTitle": "连接后端服务器",
-    "serverDescription": "输入团队的 deskfleet 后端地址。你的账户和机器将连接到此服务器。",
-    "savingServer": "正在保存服务器…",
     "continue": "继续",
     "continueAs": "以 {name} 的身份继续",
     "systemSettings": "macOS 系统设置",

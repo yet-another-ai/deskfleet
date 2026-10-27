@@ -2,26 +2,29 @@ import { app, BrowserWindow, ipcMain, safeStorage, shell } from "electron"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
-import { HttpCentralClient, type SavedAccount } from "@deskfleet/client/http-central"
+import { HttpCentralClient, serverAddress, type SavedAccount } from "@deskfleet/client/http-central"
 import type { LocalEnrollment } from "@deskfleet/client/central"
 import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { enrollLocalMachine } from "./local-enrollment.ts"
+import { backendUrl } from "./backend.ts"
 
 export const CENTRAL_CHANNEL = "deskfleet:central"
 export const CENTRAL_EVENT = "deskfleet:central-event"
 interface StoredAccount { serverUrl: string; encryptedToken?: string; user?: SavedAccount["user"] }
 
 async function readAccount(path: string): Promise<SavedAccount> {
+  const serverUrl = serverAddress(backendUrl)
   let value: StoredAccount
   try { value = JSON.parse(await readFile(path, "utf8")) as StoredAccount }
   catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return { serverUrl: "http://127.0.0.1:8080" }
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return { serverUrl }
     throw error
   }
+  if (value.serverUrl !== serverUrl) return { serverUrl }
   const token = value.encryptedToken && await safeStorage.isAsyncEncryptionAvailable()
     ? (await safeStorage.decryptStringAsync(Buffer.from(value.encryptedToken, "base64"))).result : undefined
-  return { serverUrl: value.serverUrl, token, user: token ? value.user : undefined }
+  return { serverUrl, token, user: token ? value.user : undefined }
 }
 async function saveAccount(path: string, account: SavedAccount): Promise<void> {
   const encryptedToken = account.token && await safeStorage.isAsyncEncryptionAvailable()
@@ -83,7 +86,7 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
     enroll: credentials => daemonCall("centralEnroll", credentials),
   }, teamId, name)
   const methods: Record<string, (...args: never[]) => unknown> = Object.fromEntries([
-    "status", "setServer", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "machines", "renameMachine", "removeMachine", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
+    "status", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "machines", "renameMachine", "removeMachine", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
   ].map(method => [method, (client[method as keyof HttpCentralClient] as (...args: never[]) => unknown).bind(client)]))
   methods.localEnrollment = localEnrollment
   methods.enrollLocal = enrollLocal

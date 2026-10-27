@@ -19,6 +19,10 @@ separately hosted API; production otherwise uses the page's origin. Deploy
 `dist/` on a static host. Configure the backend's allowed CORS origins and OIDC
 return URLs to include the application's origin and exact entry URL.
 
+The welcome page signs in to this compiled backend and has no address setting.
+Changing the backend requires rebuilding the Web client. The address saved with
+the browser account only scopes its credentials; it cannot override the build.
+
 Sign in through the configured OIDC provider, select a team and a machine, and
 use its synchronized resource catalog. An administrator can create a team,
 manage members, generate an invitation code, and enroll a headless machine.

@@ -1,14 +1,12 @@
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import type { CentralApi } from "../../../../packages/client/src/central.ts"
 import { ONBOARDING_PERMISSIONS, onboardingPermissions, type OnboardingPermission, type OnboardingState, type OnboardingStep } from "../../../../packages/client/src/onboarding.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"
 
 interface OnboardingOptions {
   path: string
   platform: NodeJS.Platform
-  central: Pick<CentralApi, "setServer">
-  localAgent: Pick<LocalAgentController, "state" | "startIfEnabled" | "refreshPermissions" | "requestPermission">
+  localAgent: Pick<LocalAgentController, "state" | "refreshPermissions" | "requestPermission">
   /** True when this user-data directory already belongs to an install that predates welcome progress. */
   established?: () => boolean | Promise<boolean>
 }
@@ -28,7 +26,7 @@ export async function establishedDesktopProfile(directory: string): Promise<bool
   return false
 }
 
-const steps: readonly OnboardingStep[] = ["server", ...ONBOARDING_PERMISSIONS, "account", "complete"]
+const steps: readonly OnboardingStep[] = [...ONBOARDING_PERMISSIONS, "account", "complete"]
 
 /** The welcome flow records progress; the daemon owns every OS permission action. */
 export class OnboardingController {
@@ -42,6 +40,9 @@ export class OnboardingController {
     if (!this.#state) {
       try {
         const stored: unknown = JSON.parse(await readFile(this.#options.path, "utf8"))
+        if (stored && typeof stored === "object" && "step" in stored && stored.step === "server") {
+          return this.#save(this.#initialStep())
+        }
         if (!stored || typeof stored !== "object" || !("step" in stored) || !steps.includes(stored.step as OnboardingStep)) {
           throw new Error("Invalid welcome setup progress")
         }
@@ -51,21 +52,16 @@ export class OnboardingController {
         if (await this.#options.established?.()) {
           try { this.#state = await this.#save("complete") }
           catch { this.#state = { step: "complete" } }
-        } else this.#state = { step: "server" }
+        } else return this.#save(this.#initialStep())
       }
     }
     return { ...this.#state }
   }
 
-  saveServer(serverUrl: string): Promise<OnboardingState> {
-    return this.#run(async () => {
-      await this.#requireStep("server")
-      await this.#options.central.setServer(serverUrl)
-      const local = await this.#options.localAgent.startIfEnabled()
-      if (local.status === "error") throw new Error(local.error ?? "Local Agent could not start")
-      const firstPermission = onboardingPermissions(this.#options.platform)[0]
-      return this.#save(local.status === "running" ? firstPermission ?? "account" : "account")
-    })
+  #initialStep(): OnboardingStep {
+    const local = this.#options.localAgent.state
+    return local.enabled || local.status === "running"
+      ? onboardingPermissions(this.#options.platform)[0] ?? "account" : "account"
   }
 
   async permissions() {

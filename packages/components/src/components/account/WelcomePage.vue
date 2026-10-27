@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
-import { Check, ChevronRight, FolderOpen, KeyRound, Monitor, MousePointer2, Server, ShieldCheck } from "@lucide/vue"
+import { Check, ChevronRight, FolderOpen, KeyRound, Monitor, MousePointer2, ShieldCheck } from "@lucide/vue"
 import { useEventListener, whenever } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -17,7 +17,6 @@ const session = useAccountSession()!
 const onboarding = props.host.onboarding
 const firstRun = props.state.step !== "complete"
 const step = ref<OnboardingStep>(firstRun ? props.state.step : "account")
-const serverUrl = ref(session.account.value.serverUrl)
 const pending = ref(false)
 const refreshing = ref(false)
 const error = ref(session.notice.value)
@@ -34,8 +33,8 @@ const requesting = computed(() => currentPermission.value?.status === "requestin
 const canRequest = computed(() => !granted.value && !requesting.value && (!linux.value
   || !refreshing.value && currentPermission.value?.status !== "checking"))
 const permissionMessages = computed(() => `welcome.${linux.value ? "wayland" : "permissions"}.${permission.value}`)
-const steps = computed<OnboardingStep[]>(() => ["server", ...(firstRun ? permissionSteps.value : []), "account"])
-const icons = { server: Server, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, account: KeyRound, complete: Check }
+const steps = computed<OnboardingStep[]>(() => [...(firstRun ? permissionSteps.value : []), "account"])
+const icons = { fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, account: KeyRound, complete: Check }
 const currentIndex = computed(() => steps.value.indexOf(step.value))
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 const stepLabel = (value: OnboardingStep) => t(linux.value && (value === "screenCapture" || value === "accessibility")
@@ -59,15 +58,7 @@ async function act(work: () => Promise<void>): Promise<void> {
 async function submit(): Promise<void> {
   await act(async () => {
     session.notice.value = undefined
-    if (step.value === "server") {
-      if (onboarding) move(await onboarding.saveServer(serverUrl.value.trim()))
-      else {
-        await session.central.setServer(serverUrl.value.trim())
-        move({ step: "account" })
-      }
-      return
-    }
-    if (!session.account.value.user) await session.signIn(serverUrl.value.trim())
+    if (!session.account.value.user) await session.signIn()
     move(firstRun && onboarding ? await onboarding.complete() : { step: "complete" })
   })
 }
@@ -161,17 +152,12 @@ onBeforeUnmount(() => { unsubscribe?.() })
         </template>
         <form v-else class="flex flex-col gap-5" @submit.prevent="submit">
           <div>
-            <h1 class="m-0 text-xl font-semibold">{{ t(step === "server" ? "welcome.serverTitle" : "account.signIn") }}</h1>
-            <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t(step === "server" ? "welcome.serverDescription" : "account.signInDescription") }}</p>
+            <h1 class="m-0 text-xl font-semibold">{{ t("account.signIn") }}</h1>
+            <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t("account.signInDescription") }}</p>
           </div>
-          <label v-if="step === 'server' || !session.account.value.user" class="flex flex-col gap-1.5 text-sm">
-            {{ t("account.server") }}
-            <input v-model="serverUrl" type="url" name="server-url" class="ui-input" required autocomplete="url" :disabled="pending" placeholder="https://deskfleet.example.com" />
-          </label>
-          <p v-else class="m-0 break-words text-sm text-ui-text-muted">{{ session.account.value.serverUrl }}</p>
           <p v-if="error" role="alert" class="m-0 break-words text-sm text-ui-danger">{{ error }}</p>
           <UiButton variant="primary" class="min-h-9 text-sm" type="submit" :disabled="pending">
-            {{ step === "server" ? t(pending ? "welcome.savingServer" : "welcome.continue") : session.account.value.user ? t("welcome.continueAs", { name: session.account.value.user.name }) : t(pending ? "account.signingIn" : "account.continueOidc") }}
+            {{ session.account.value.user ? t("welcome.continueAs", { name: session.account.value.user.name }) : t(pending ? "account.signingIn" : "account.continueOidc") }}
           </UiButton>
         </form>
       </section>

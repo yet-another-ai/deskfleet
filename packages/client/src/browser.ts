@@ -1,4 +1,4 @@
-import { HttpCentralClient, type SavedAccount } from "./http-central.ts"
+import { HttpCentralClient, serverAddress, type SavedAccount } from "./http-central.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { resolveAppLocale } from "./i18n.ts"
 import { createBrowserFiles } from "./browser-files.ts"
@@ -8,11 +8,15 @@ const accountKey = "deskfleet.account"
 const verifierKey = "deskfleet.login-verifier"
 
 /** The browser hosts no daemon; all machine access is obtained through its signed-in account. */
-export async function browserClient(defaultServerUrl: string): Promise<DeskfleetDesktopApi> {
-  let account: SavedAccount = { serverUrl: defaultServerUrl }
+export async function browserClient(configuredServerUrl: string): Promise<DeskfleetDesktopApi> {
+  const serverUrl = serverAddress(configuredServerUrl)
+  let account: SavedAccount = { serverUrl }
   let initialError: string | undefined
   const saved = sessionStorage.getItem(accountKey)
-  if (saved) account = JSON.parse(saved) as SavedAccount
+  if (saved) {
+    const stored = JSON.parse(saved) as SavedAccount
+    if (stored.serverUrl === serverUrl) account = { serverUrl, token: stored.token, user: stored.user }
+  }
   const central = new HttpCentralClient({
     account,
     persist: async value => { sessionStorage.setItem(accountKey, JSON.stringify(value)) },

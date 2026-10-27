@@ -10,6 +10,7 @@ import { tmpdir } from "node:os"
 import { extname, join, resolve } from "node:path"
 import { promisify } from "node:util"
 import { build } from "esbuild"
+import { build as buildWeb } from "vite"
 import { startDaemon } from "../../daemon/src/daemon.ts"
 import type { AgentSnapshot } from "../../daemon/src/agent-protocol.ts"
 import { BackendAgent } from "../../../scripts/fixtures/backend-agent.ts"
@@ -21,7 +22,7 @@ const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-clients
 const root = resolve(import.meta.dirname, "../../..")
 const executable = createRequire(import.meta.url)("electron") as string
 const execute = promisify(execFile)
-const webDirectory = join(root, "apps/web/dist")
+const webDirectory = join(directory, "web")
 const web = createServer((request, response) => {
   const path = new URL(request.url!, "http://fixture").pathname
   const file = path === "/" ? "/index.html" : path
@@ -90,7 +91,10 @@ async function launch(mode: BackendClientsContext["mode"]): Promise<void> {
   } finally { await stopClient() }
 }
 try {
-  await build({ entryPoints: [join(import.meta.dirname, "fixtures/backend-clients-main.ts")], outfile: join(directory, "client.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" })
+  // Both client bundles receive the fixture backend at compile time, as shipped clients do.
+  const define = { "import.meta.env.VITE_DESKFLEET_SERVER_URL": JSON.stringify(fixture.backend) }
+  await buildWeb({ root: join(root, "apps/web"), configFile: join(root, "apps/web/vite.config.ts"), define, build: { outDir: webDirectory, emptyOutDir: true } })
+  await build({ entryPoints: [join(import.meta.dirname, "fixtures/backend-clients-main.ts")], outfile: join(directory, "client.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24", define })
   const team = await request<{ id: string }>("/teams", { name: `Clients ${randomUUID()}` }); teamId = team.id
   for (let index = 0; index < 2; index++) {
     const repository = join(directory, `repo-${index}`); await mkdir(repository)

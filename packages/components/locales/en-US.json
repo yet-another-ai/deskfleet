@@ -788,8 +788,7 @@
   },
   "account": {
     "signIn": "Sign in to deskfleet",
-    "signInDescription": "Use your team’s deskfleet server and identity provider.",
-    "server": "Server address",
+    "signInDescription": "Sign in with your team’s identity provider.",
     "continueOidc": "Continue with your identity provider",
     "signingIn": "Signing in…",
     "signOut": "Sign out",
@@ -931,22 +930,18 @@
   },
   "welcome": {
     "title": "Welcome to deskfleet",
-    "description": "Connect to your team’s server and get this computer ready, one step at a time.",
+    "description": "Get this computer ready and sign in to your team, one step at a time.",
     "notificationsTitle": "Stay up to date with your tasks",
     "notificationsDescription": "Get a notification when an agent finishes a task or needs your input.",
     "notificationsDetails": "Allow browser notifications to receive updates while deskfleet is open, even when you are using another tab. You can change this later in Settings.",
     "progress": "Setup progress",
     "steps": {
-      "server": "Backend server",
       "fullDiskAccess": "Full Disk Access",
       "screenCapture": "Screen recording",
       "accessibility": "Accessibility",
       "account": "Your account"
     },
     "stepCount": "Step {current} of {total}",
-    "serverTitle": "Connect your server",
-    "serverDescription": "Enter the address of your team’s deskfleet backend. Your account and machines will connect to this server.",
-    "savingServer": "Saving server…",
     "continue": "Continue",
     "continueAs": "Continue as {name}",
     "systemSettings": "macOS System Settings",

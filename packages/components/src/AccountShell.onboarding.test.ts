@@ -11,7 +11,7 @@ import { fakeCentral } from "./test/central.ts"
 let view: VueWrapper | undefined
 afterEach(() => { view?.unmount(); view = undefined; vi.restoreAllMocks() })
 
-function setup(initialStep: OnboardingStep = "server", signedIn = false, platform: DeskfleetDesktopApi["platform"] = "darwin") {
+function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false, platform: DeskfleetDesktopApi["platform"] = "darwin") {
   const fake = fakeCentral({ signedIn, teams: [] })
   const state: OnboardingState = { step: initialStep }
   const permissions: DesktopPermissionsState = {
@@ -24,7 +24,6 @@ function setup(initialStep: OnboardingStep = "server", signedIn = false, platfor
   const next = (step: OnboardingStep) => { state.step = step; return { ...state } }
   const onboarding = {
     get: vi.fn(async () => ({ ...state })),
-    saveServer: vi.fn(async (url: string) => { await fake.central.setServer(url); return next(order[0] ?? "account") }),
     permissions: vi.fn(async () => ({ ...permissions })),
     requestPermission: vi.fn(async (kind: OnboardingPermission) => {
       permissions[`${kind}Permission`] = { status: "requesting" }
@@ -60,21 +59,13 @@ async function submit(): Promise<void> {
   await flushPromises()
 }
 
-test("welcome saves the server, guides each permission, and finishes only after successful sign-in", async () => {
+test("welcome guides each permission and finishes only after successful sign-in without server configuration", async () => {
   const app = setup()
   app.mount()
   await flushPromises()
-  expect(view!.get("h1").text()).toBe("Connect your server")
-  expect(app.onboarding.permissions).not.toHaveBeenCalled()
-  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
-  await view!.get('[name="server-url"]').setValue("https://team.example")
-  app.onboarding.saveServer.mockRejectedValueOnce(new Error("Invalid backend address"))
-  await submit()
-  expect(view!.get('[role="alert"]').text()).toBe("Invalid backend address")
-  expect(view!.get("h1").text()).toBe("Connect your server")
-  await submit()
-  expect(app.onboarding.saveServer).toHaveBeenLastCalledWith("https://team.example")
   expect(view!.get("h1").text()).toBe("Full Disk Access")
+  expect(view!.find('[name="server-url"]').exists()).toBe(false)
+  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Full Disk Access", "Screen recording", "Accessibility", "Your account"])
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
   await click("Enable access")
   expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("fullDiskAccess")
@@ -89,12 +80,13 @@ test("welcome saves the server, guides each permission, and finishes only after 
   await click("Skip for now")
   expect(app.onboarding.advancePermission.mock.calls).toEqual([["fullDiskAccess"], ["screenCapture"], ["accessibility"]])
   expect(view!.get("h1").text()).toBe("Sign in to deskfleet")
+  expect(view!.find('input[type="url"]').exists()).toBe(false)
   app.fake.central.login.mockRejectedValueOnce(new Error("Sign-in cancelled"))
   await submit()
   expect(view!.get('[role="alert"]').text()).toBe("Sign-in cancelled")
   expect(app.onboarding.complete).not.toHaveBeenCalled()
   await submit()
-  expect(app.fake.central.setServer).toHaveBeenLastCalledWith("https://team.example")
+  expect(app.fake.central.login).toHaveBeenCalledTimes(2)
   expect(app.onboarding.complete).toHaveBeenCalledOnce()
   expect(view!.text()).toContain("Welcome, Ada")
   expect(app.listeners.size).toBe(0)
@@ -128,17 +120,16 @@ test("signed-in users resume the saved permission, refresh on focus, and can ret
 })
 
 test("Linux welcome shows the shared startup authorization and continues through both granted steps", async () => {
-  const app = setup("server", false, "linux")
+  const app = setup("screenCapture", false, "linux")
   app.permissions.screenCapturePermission = { status: "requesting" }
   app.permissions.accessibilityPermission = { status: "requesting" }
   app.mount()
   await flushPromises()
   expect(view!.findAll("ol li").map(item => item.text())).toEqual([
-    "Backend server", "Screen sharing", "Mouse and keyboard control", "Your account",
+    "Screen sharing", "Mouse and keyboard control", "Your account",
   ])
-  await submit()
   expect(view!.get("h1").text()).toBe("Screen sharing")
-  expect(view!.text()).toContain("Step 2 of 4")
+  expect(view!.text()).toContain("Step 1 of 3")
   expect(view!.get('[role="status"]').text()).toBe("Waiting for desktop authorization…")
   expect(view!.text()).not.toMatch(/macOS|System Settings|Full Disk Access|system audio|quit and reopen/u)
   for (const text of ["Retry access", "Skip for now"]) {
@@ -154,7 +145,7 @@ test("Linux welcome shows the shared startup authorization and continues through
   await flushPromises()
   await click("Continue")
   expect(view!.get("h1").text()).toBe("Mouse and keyboard control")
-  expect(view!.text()).toContain("Step 3 of 4")
+  expect(view!.text()).toContain("Step 2 of 3")
   expect(view!.get('[role="status"]').text()).toBe("Access enabled")
   await click("Continue")
   expect(view!.get("h1").text()).toBe("Sign in to deskfleet")
@@ -253,6 +244,7 @@ test("completed setup shows the same welcome sign-in without repeating permissio
   expect(view!.get("h1").text()).toBe("Sign in to deskfleet")
   expect(view!.text()).toContain("Welcome to deskfleet")
   expect(view!.text()).not.toContain("Full Disk Access")
+  expect(view!.find('input[type="url"]').exists()).toBe(false)
   await submit()
   expect(app.onboarding.permissions).not.toHaveBeenCalled()
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()

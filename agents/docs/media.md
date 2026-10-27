@@ -93,8 +93,8 @@ An explicit backend never falls back to another encoder. `media-foundation`
 advertises only H.264. This also allows testing MF on a machine with NVENC.
 
 On macOS, the daemon owns Screen Recording and Accessibility consent through the
-shared `DesktopPermissions` lifecycle. The desktop app starts its hosted daemon
-after the welcome page saves the backend server, then guides Full Disk Access,
+shared `DesktopPermissions` lifecycle. The desktop app starts its enabled hosted
+daemon during startup, then the welcome page guides Full Disk Access,
 Screen Recording, and Accessibility in order. In this guided mode, startup and
 focus refreshes only check permissions; each explicit welcome action requests
 one permission through authenticated local IPC. Standalone daemons request all

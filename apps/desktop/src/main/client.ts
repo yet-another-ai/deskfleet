@@ -59,7 +59,7 @@ function start(): void {
     const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), powerSaveBlocker)
     const userData = app.getPath("userData")
     const onboarding = new OnboardingController({
-      path: join(userData, "onboarding.json"), platform: process.platform, central, localAgent,
+      path: join(userData, "onboarding.json"), platform: process.platform, localAgent,
       established: () => establishedDesktopProfile(userData),
     })
     installOnboarding(onboarding)
@@ -82,9 +82,8 @@ function start(): void {
       )
     })
     try { keepAwake.get() } catch (error) { console.error(error) }
-    let startLocalAgent = false
-    try { startLocalAgent = (await onboarding.get()).step !== "server" } catch (error) { console.error(error) }
-    await localAgent.initialize({ start: startLocalAgent })
+    await localAgent.initialize()
+    try { await onboarding.get() } catch (error) { console.error(error) }
     if (lifecycle.quitting) return
     createTray({ show, quit: () => lifecycle.quit() })
     show()

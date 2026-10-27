@@ -52,16 +52,6 @@ test("collects Session summary pages without merging equal IDs from another mach
   expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/machines/remote7/sessions?after=1&limit=200", expect.anything())
 })
 
-test("changing servers invalidates account observers before another account connects", async () => {
-  const f = setup()
-  const events = vi.fn()
-  f.client.onEvent(events)
-  expect(await f.client.setServer("https://another.example")).toEqual({ serverUrl: "https://another.example", siteAdmin: false, user: undefined })
-  expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
-  expect(f.sockets[0]!.close).toHaveBeenCalledOnce()
-  expect(f.persist).toHaveBeenCalledExactlyOnceWith({ serverUrl: "https://another.example" })
-})
-
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {
   const f = setup()
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))
@@ -70,14 +60,14 @@ test("reports API errors and falls back to HTTP status for non-JSON failures", a
   await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" })
 })
 
-test("changing servers notifies account-owned file connections and clears the old account", async () => {
+test("signing out notifies account-owned connections and retains the configured backend", async () => {
   const f = setup(); const events = vi.fn()
   f.client.onEvent(events)
-  expect(await f.client.setServer("https://other.example")).toEqual({ serverUrl: "https://other.example", siteAdmin: false, user: undefined })
+  await f.client.logout()
+  expect(await f.client.status()).toEqual({ serverUrl: "https://fleet.example", siteAdmin: false, user: undefined })
   expect(f.sockets[0]!.close).toHaveBeenCalledOnce()
   expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
-  await f.client.setServer("https://other.example/")
-  expect(events).toHaveBeenCalledOnce()
+  expect(f.persist).toHaveBeenCalledExactlyOnceWith({ serverUrl: "https://fleet.example" })
 })
 
 test("an expired account notifies connections after clearing saved credentials", async () => {
