@@ -34,13 +34,13 @@ impl Fixture {
         path
     }
 
-    fn directory(&self, path: &str) -> PathBuf {
+    fn directory(&self, path: impl AsRef<Path>) -> PathBuf {
         let path = self.root.join(path);
         fs::create_dir_all(&path).unwrap();
         path
     }
 
-    fn bundle(&self, path: &str) -> PathBuf {
+    fn bundle(&self, path: impl AsRef<Path>) -> PathBuf {
         let path = self.directory(path);
         fs::create_dir_all(path.join("Contents")).unwrap();
         fs::write(path.join("Contents/Info.plist"), "fixture").unwrap();
@@ -110,7 +110,7 @@ fn resolves_windows_installations_without_running_path_cmd_scripts() {
 fn mac_bundles_work_without_installed_command_line_tools() {
     let fixture = Fixture::new("macos");
     let open = fixture.executable("system/usr/bin/open");
-    let code = fixture.bundle("Applications/Visual Studio Code.app");
+    let code = fixture.bundle(Path::new("Applications").join("Visual Studio Code.app"));
     fixture.bundle("system/System/Applications/Utilities/Terminal.app");
     assert_eq!(fixture.ids(), ["vscode", "terminal", "file-manager"]);
     let directory = fixture.directory("project with spaces");
