@@ -27,6 +27,27 @@ impl ControlStore {
     pub async fn teams(&self, user_id: &str) -> Result<Vec<Team>> {
         self.db.query_all_raw(sql("SELECT t.id,t.name,m.role FROM cp_teams t JOIN cp_members m ON m.team_id=t.id WHERE m.user_id=$1 ORDER BY t.id",vec![user_id.into()])).await?.into_iter().map(|r|Ok(Team{id:r.try_get::<i64>("","id")?.to_string(),name:r.try_get("","name")?,role:r.try_get("","role")?})).collect()
     }
+    /// Return cumulative TURN outbound bytes and current Team resource counts.
+    ///
+    /// Sessions use their latest synchronized archive state, independent of
+    /// execution or machine presence. Removed machines do not contribute.
+    ///
+    /// # Errors
+    /// Returns an error for nonmembers, an invalid Team ID, or a database failure.
+    pub async fn team_usage(&self, user_id: &str, team_id: &str) -> Result<Value> {
+        self.team_role(user_id, team_id).await?;
+        let row = one(
+            &self.db,
+            "SELECT jsonb_build_object(
+                'relayedBytes', (SELECT COALESCE(SUM(sent_bytes),0)::text FROM cp_turn_usage WHERE team_id=$1),
+                'activeSessionCount', (SELECT COUNT(*) FROM cp_sessions s JOIN cp_machines m ON m.id=s.machine_id WHERE m.team_id=$1 AND NOT m.revoked AND s.snapshot#>>'{session,archiveState}' IS DISTINCT FROM 'archived'),
+                'memberCount', (SELECT COUNT(*) FROM cp_members WHERE team_id=$1)
+            ) AS record",
+            vec![resource_id(team_id)?.into()],
+        )
+        .await?;
+        Ok(row.try_get("", "record")?)
+    }
     pub async fn create_team(&self, user_id: &str, value: &str) -> Result<Team> {
         let value = name(value)?;
         let tx = self.db.begin().await?;

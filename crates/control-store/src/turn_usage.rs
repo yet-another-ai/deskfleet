@@ -1,4 +1,4 @@
-use crate::{ControlStore, Error, Result, one, resource_id, sql};
+use crate::{ControlStore, Error, Result, sql};
 use sea_orm::ConnectionTrait;
 
 /// The allocation socket whose counters coturn reported.
@@ -31,24 +31,6 @@ pub struct TurnUsage {
 }
 
 impl ControlStore {
-    /// Return a Team's cumulative TURN outbound bytes as a decimal string.
-    ///
-    /// Both allocation socket sides contribute their sent bytes. Received bytes
-    /// are excluded, and the decimal result preserves PostgreSQL's numeric sum.
-    ///
-    /// # Errors
-    /// Returns an error for nonmembers, an invalid Team ID, or a database failure.
-    pub async fn team_relayed_bytes(&self, user_id: &str, team_id: &str) -> Result<String> {
-        self.team_role(user_id, team_id).await?;
-        let row = one(
-            &self.db,
-            "SELECT COALESCE(SUM(sent_bytes),0)::text AS relayed_bytes FROM cp_turn_usage WHERE team_id=$1",
-            vec![resource_id(team_id)?.into()],
-        )
-        .await?;
-        Ok(row.try_get("", "relayed_bytes")?)
-    }
-
     /// Record a usage event against the Team stored in its peer authorization.
     ///
     /// Returns false for an unknown peer. Each notification counts separately;

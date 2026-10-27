@@ -8,7 +8,7 @@ export type AccountUser = Omit<User, "email"> & { email?: User["email"] }
 export interface AccountState { serverUrl: string; user?: AccountUser }
 export type Team = Omit<WireTeam, "role"> & { role: "admin" | "member" }
 export interface TeamMember { userId: string; name: string; email?: string | null; role: "admin" | "member" }
-export interface TeamUsage { relayedBytes: string }
+export interface TeamUsage { relayedBytes: string; activeSessionCount: number; memberCount: number }
 export type Machine = Omit<WireMachine, "capabilities" | "lastSeenAt"> & { capabilities: Record<string, unknown>; lastSeenAt?: WireMachine["lastSeenAt"] }
 export interface LocalEnrollment {
   configured: boolean; connected: boolean; revoked: boolean; serverUrl?: string; machineId?: string; teamId?: string

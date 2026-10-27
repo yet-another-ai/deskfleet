@@ -87,10 +87,7 @@ async fn postgres_turn_usage_attributes_teams_and_counts_each_delta() {
     let first = peer(&store, &auth, now_ms() + 60_000).await;
     let expired = peer(&store, &auth, now_ms() - 1000).await;
     assert_eq!(
-        store
-            .team_relayed_bytes(&user.id, &first.team_id)
-            .await
-            .unwrap(),
+        store.team_usage(&user.id, &first.team_id).await.unwrap()["relayedBytes"],
         "0"
     );
     let event = TurnUsage {
@@ -107,10 +104,7 @@ async fn postgres_turn_usage_attributes_teams_and_counts_each_delta() {
     assert!(store.record_turn_usage(&event).await.unwrap());
     assert_eq!(totals(&store, &first.team_id, "client").await, (2, 20, 40));
     assert_eq!(
-        store
-            .team_relayed_bytes(&user.id, &first.team_id)
-            .await
-            .unwrap(),
+        store.team_usage(&user.id, &first.team_id).await.unwrap()["relayedBytes"],
         "40"
     );
 
@@ -149,21 +143,15 @@ async fn postgres_turn_usage_attributes_teams_and_counts_each_delta() {
     assert_eq!(totals(&store, &expired.team_id, "peer").await, (0, 0, 0));
     assert_eq!(totals(&store, &first.team_id, "client").await, (2, 20, 40));
     assert_eq!(
-        store
-            .team_relayed_bytes(&user.id, &first.team_id)
-            .await
-            .unwrap(),
+        store.team_usage(&user.id, &first.team_id).await.unwrap()["relayedBytes"],
         "110"
     );
     assert_eq!(
-        store
-            .team_relayed_bytes(&user.id, &expired.team_id)
-            .await
-            .unwrap(),
+        store.team_usage(&user.id, &expired.team_id).await.unwrap()["relayedBytes"],
         "8"
     );
     assert!(matches!(
-        store.team_relayed_bytes("nonmember", &first.team_id).await,
+        store.team_usage("nonmember", &first.team_id).await,
         Err(Error::Forbidden)
     ));
 
@@ -173,10 +161,7 @@ async fn postgres_turn_usage_attributes_teams_and_counts_each_delta() {
         assert!(store.record_turn_usage(&revoked_usage).await.unwrap());
     }
     assert_eq!(
-        store
-            .team_relayed_bytes(&user.id, &first.team_id)
-            .await
-            .unwrap(),
+        store.team_usage(&user.id, &first.team_id).await.unwrap()["relayedBytes"],
         "18446744073709551724"
     );
     store.close().await.unwrap();

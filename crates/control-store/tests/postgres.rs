@@ -292,6 +292,135 @@ async fn postgres_roles_tokens_replication_and_revocation() {
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_team_usage_counts_current_members_and_latest_unarchived_sessions() {
+    let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL to PostgreSQL");
+    let store = ControlStore::connect(&url).await.unwrap();
+    let issuer = format!("https://usage-fixture/{}", uuid::Uuid::new_v4());
+    let admin = store
+        .oidc_user(&issuer, "admin", "Admin", None, false)
+        .await
+        .unwrap();
+    let member = store
+        .oidc_user(
+            &issuer,
+            "member",
+            "Member",
+            Some("member@test.example"),
+            true,
+        )
+        .await
+        .unwrap();
+    let team = store.create_team(&admin.id, "Usage team").await.unwrap();
+    let other = store.create_team(&admin.id, "Other team").await.unwrap();
+    assert_eq!(
+        store.team_usage(&admin.id, &team.id).await.unwrap(),
+        json!({"relayedBytes":"0", "activeSessionCount":0, "memberCount":1})
+    );
+    let invite = store
+        .invite(&admin.id, &team.id, "member@test.example", "member")
+        .await
+        .unwrap();
+    assert_eq!(
+        store.team_usage(&admin.id, &team.id).await.unwrap()["memberCount"],
+        1
+    );
+    store
+        .accept_invite(&member.id, invite["token"].as_str().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        store.team_usage(&member.id, &team.id).await.unwrap()["memberCount"],
+        2
+    );
+
+    let mut machines = Vec::new();
+    for (name, team_id) in [
+        ("first", &team.id),
+        ("second", &team.id),
+        ("other", &other.id),
+    ] {
+        let (machine, _) = store
+            .enroll(
+                &admin.id,
+                team_id,
+                name,
+                &uuid::Uuid::new_v4().to_string(),
+                "1",
+                json!({}),
+            )
+            .await
+            .unwrap();
+        // These machines have never connected or reported presence.
+        assert!(!machine.online);
+        assert!(machine.last_seen_at.is_none());
+        machines.push(machine);
+    }
+    for (machine, session_id, archive_state) in [
+        (&machines[0], "1", "active"),
+        (&machines[0], "2", "archived"),
+        (&machines[0], "3", "archiving"),
+        (&machines[1], "1", "active"),
+        (&machines[2], "1", "active"),
+    ] {
+        let mut state = snapshot(session_id, "0");
+        state["session"]["archiveState"] = json!(archive_state);
+        store
+            .sync_history(&machine.id, session_id, state, vec![], vec![])
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        store.team_usage(&member.id, &team.id).await.unwrap(),
+        json!({"relayedBytes":"0", "activeSessionCount":3, "memberCount":2})
+    );
+    assert_eq!(
+        store.team_usage(&admin.id, &other.id).await.unwrap(),
+        json!({"relayedBytes":"0", "activeSessionCount":1, "memberCount":1})
+    );
+    // Archive, reject an older active snapshot, then restore the same Session.
+    for (seq, archive_state, expected) in
+        [("1", "archived", 2), ("0", "active", 2), ("2", "active", 3)]
+    {
+        let mut state = snapshot("1", seq);
+        state["session"]["archiveState"] = json!(archive_state);
+        store
+            .sync_history(&machines[0].id, "1", state, vec![], vec![])
+            .await
+            .unwrap();
+        assert_eq!(
+            store.team_usage(&admin.id, &team.id).await.unwrap()["activeSessionCount"],
+            expected
+        );
+    }
+    store
+        .revoke_machine(&admin.id, &machines[1].id)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.team_usage(&admin.id, &team.id).await.unwrap()["activeSessionCount"],
+        2
+    );
+    store
+        .change_member(&admin.id, &team.id, &member.id, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.team_usage(&admin.id, &team.id).await.unwrap(),
+        json!({"relayedBytes":"0", "activeSessionCount":2, "memberCount":1})
+    );
+    assert!(matches!(
+        store.team_usage(&member.id, &team.id).await,
+        Err(Error::Forbidden)
+    ));
+    assert_eq!(
+        store.team_usage(&admin.id, &other.id).await.unwrap()["activeSessionCount"],
+        1
+    );
+    store.close().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn postgres_migration_can_revert_and_reapply_in_isolated_schema() {
     use sea_orm::{ConnectOptions, ConnectionTrait, Database, DbBackend, Statement};
     let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL to PostgreSQL");

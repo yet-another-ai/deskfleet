@@ -84,7 +84,10 @@ async fn postgres_http_permissions_replication_and_signaling() {
         StatusCode::FORBIDDEN
     );
     let usage: Value = test::read_body_json(call!(get, &usage_path, token, &json!({}))).await;
-    assert_eq!(usage, json!({"relayedBytes": "0"}));
+    assert_eq!(
+        usage,
+        json!({"relayedBytes": "0", "activeSessionCount": 0, "memberCount": 1})
+    );
     let teammate = state
         .store
         .oidc_user(
@@ -108,6 +111,9 @@ async fn postgres_http_permissions_replication_and_signaling() {
         .unwrap();
     let teammate_login = state.store.new_session(&teammate.id).await.unwrap();
     let teammate_token = teammate_login["token"].as_str().unwrap();
+    let usage: Value =
+        test::read_body_json(call!(get, &usage_path, teammate_token, &json!({}))).await;
+    assert_eq!(usage["memberCount"], 2);
     let (send, mut roster) = tokio::sync::mpsc::channel(128);
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
@@ -261,6 +267,25 @@ async fn postgres_http_permissions_replication_and_signaling() {
             .get("binaryPath")
             .is_none()
     );
+    // History remains visible while the machine is offline; archiving still counts.
+    for (seq, archive_state, expected) in [
+        ("0", "active", 1),
+        ("1", "archiving", 1),
+        ("2", "archived", 0),
+        ("3", "active", 1),
+    ] {
+        let response = call!(
+            post,
+            "/api/daemon/history",
+            machine_token,
+            &json!({
+                "sessionId":"1", "snapshot":{"session":{"id":"1", "lastEventSeq":seq, "archiveState":archive_state}, "runs":[]}, "events":[]
+            })
+        );
+        assert_eq!(response.status(), StatusCode::OK);
+        let usage: Value = test::read_body_json(call!(get, &usage_path, token, &json!({}))).await;
+        assert_eq!(usage["activeSessionCount"], expected);
+    }
     let create = json!({"teamId":team_id,"machineId":machine_id,"purpose":"agent"});
     assert_eq!(
         call!(post, "/api/peers", token, &create).status(),
@@ -317,7 +342,10 @@ async fn postgres_http_permissions_replication_and_signaling() {
         let response = call!(get, &usage_path, member_token, &json!({}));
         assert_eq!(response.status(), StatusCode::OK);
         let usage: Value = test::read_body_json(response).await;
-        assert_eq!(usage, json!({"relayedBytes": "18446744073709551614"}));
+        assert_eq!(
+            usage,
+            json!({"relayedBytes": "18446744073709551614", "activeSessionCount": 1, "memberCount": 2})
+        );
     }
     let other_team = state
         .store
@@ -331,7 +359,10 @@ async fn postgres_http_permissions_replication_and_signaling() {
     );
     let other_usage: Value =
         test::read_body_json(call!(get, &other_usage_path, outside_token, &json!({}))).await;
-    assert_eq!(other_usage, json!({"relayedBytes": "0"}));
+    assert_eq!(
+        other_usage,
+        json!({"relayedBytes": "0", "activeSessionCount": 0, "memberCount": 1})
+    );
     let auth = &grant["authorization"];
     let expires =
         chrono::DateTime::parse_from_rfc3339(auth["expiresAt"].as_str().unwrap()).unwrap();
@@ -400,6 +431,11 @@ async fn postgres_http_permissions_replication_and_signaling() {
         StatusCode::UNAUTHORIZED
     );
     state.hub.remove_daemon(machine_id, "fixture").await;
+    let renewed_login = state.store.new_session(&user.id).await.unwrap();
+    let renewed_token = renewed_login["token"].as_str().unwrap();
+    let usage: Value =
+        test::read_body_json(call!(get, &usage_path, renewed_token, &json!({}))).await;
+    assert_eq!(usage["activeSessionCount"], 1);
     // Persistent schedule intent survives a login ending, but not Team membership removal.
     assert_eq!(
         call!(
@@ -420,6 +456,9 @@ async fn postgres_http_permissions_replication_and_signaling() {
         call!(get, &usage_path, teammate_token, &json!({})).status(),
         StatusCode::FORBIDDEN
     );
+    let usage: Value =
+        test::read_body_json(call!(get, &usage_path, renewed_token, &json!({}))).await;
+    assert_eq!(usage["memberCount"], 1);
     assert_eq!(
         call!(
             post,
@@ -435,6 +474,12 @@ async fn postgres_http_permissions_replication_and_signaling() {
         .revoke_machine(&user.id, machine_id)
         .await
         .unwrap();
+    let usage: Value =
+        test::read_body_json(call!(get, &usage_path, renewed_token, &json!({}))).await;
+    assert_eq!(
+        usage,
+        json!({"relayedBytes": "18446744073709551614", "activeSessionCount": 0, "memberCount": 1})
+    );
     assert_eq!(
         call!(
             post,
