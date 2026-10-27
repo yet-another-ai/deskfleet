@@ -1,17 +1,42 @@
 <script setup lang="ts">
 import { X } from "@lucide/vue"
+import { useEventListener } from "@vueuse/core"
+import { storeToRefs } from "pinia"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
-import { computed } from "vue"
+import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouteWorktree } from "../../composables/useRouteWorktree.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
-import { activeDetailsTab, closeMermaidSidebarTab, mermaidSidebarTabs } from "../../stores/layout.ts"
+import { activeDetailsTab, closeMermaidSidebarTab, mermaidSidebarTabs, useLayoutStore } from "../../stores/layout.ts"
 import MermaidViewer from "../session/MermaidViewer.vue"
 import GitChanges from "./GitChanges.vue"
 
 const { t } = useI18n()
 const worktree = useRouteWorktree()
 const agents = useAgentSessionsStore()
+const { detailsWidth } = storeToRefs(useLayoutStore())
+const minimum = 220
+const maximum = 520
+const clamp = (width: number) => Math.round(Math.min(Math.max(width, minimum), maximum))
+const width = computed(() => clamp(detailsWidth.value))
+const resizing = ref<{ startX: number; startWidth: number } | null>(null)
+
+function startResize(event: PointerEvent): void {
+  resizing.value = { startX: event.clientX, startWidth: width.value }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+useEventListener("pointermove", (event: PointerEvent) => {
+  if (resizing.value) detailsWidth.value = clamp(resizing.value.startWidth + resizing.value.startX - event.clientX)
+})
+useEventListener(["pointerup", "pointercancel"], () => { resizing.value = null })
+function keyResize(event: KeyboardEvent): void {
+  const step = event.shiftKey ? 64 : 16
+  if (event.key === "ArrowLeft") detailsWidth.value = clamp(width.value + step)
+  else if (event.key === "ArrowRight") detailsWidth.value = clamp(width.value - step)
+  else return
+  event.preventDefault()
+}
+
 const unavailable = computed(() => {
   const session = worktree.value && agents.sessions[worktree.value.session.id]
   const archiveState = session?.archiveState ?? worktree.value?.session.archiveState
@@ -26,7 +51,24 @@ const tabTitle = (index: number) => mermaidSidebarTabs.value.length > 1 ? `${t("
 </script>
 
 <template>
-  <aside :aria-label="t('panel.changes')" class="flex shrink-0 flex-col border-l border-ui-border bg-ui-canvas" :class="currentTab !== 'changes' ? 'w-80' : 'w-72'">
+  <aside
+    :aria-label="t('panel.changes')"
+    class="relative flex shrink-0 flex-col border-l border-ui-border bg-ui-canvas"
+    :style="{ width: `${width}px` }"
+  >
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      tabindex="0"
+      :aria-label="t('toolbar.resizePanel')"
+      :aria-valuenow="width"
+      :aria-valuemin="minimum"
+      :aria-valuemax="maximum"
+      class="app-no-drag absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize after:pointer-events-none after:absolute after:inset-y-0 after:left-3.5px after:w-0.5 after:bg-transparent after:transition-colors after:duration-125 after:ease-out after:content-[''] hover:after:bg-ui-focus/50 focus-visible:after:bg-ui-focus/50"
+      :class="resizing && 'after:!bg-ui-focus/50'"
+      @pointerdown="startResize"
+      @keydown="keyResize"
+    />
     <TabsRoot v-if="mermaidSidebarTabs.length" :model-value="currentTab" class="flex min-h-0 flex-1 flex-col" @update:model-value="activeDetailsTab = String($event)">
       <div class="titlebar-overlay-inset app-drag flex h-12 shrink-0 items-center border-b border-ui-border px-2">
         <TabsList :aria-label="t('panel.changes')" class="app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto" loop>

@@ -95,7 +95,9 @@ export function listenMermaidLocate(handler: (code: string, source?: MermaidSour
 export const useLayoutStore = defineStore("layout", () => {
   // Per-device preferences; they fall back to the defaults when storage is unavailable.
   const sidebarOpen = useLocalStorage("deskfleet.sidebar-open", true)
+  const sidebarWidth = useLocalStorage("deskfleet.sidebar-width", 260)
   const detailsOpen = useLocalStorage("deskfleet.details-open", true)
+  const detailsWidth = useLocalStorage("deskfleet.details-width", 288)
   /** Last Conversations destination; survives sidebar remounts (hide/show, Settings). */
   const conversationPath = useLocalStorage("deskfleet.conversation-path", "/")
   /** The execution context a new Session uses; the last choice is remembered. */
@@ -113,7 +115,9 @@ export const useLayoutStore = defineStore("layout", () => {
 
   return {
     sidebarOpen,
+    sidebarWidth,
     detailsOpen,
+    detailsWidth,
     conversationPath,
     sessionContext,
     terminalPanelOpen,

@@ -1,4 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils"
+import { createPinia, disposePinia } from "pinia"
 import { reactive, ref } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
@@ -20,7 +21,10 @@ const service = reactive({
 vi.mock("../../composables/useRouteWorktree.ts", () => ({ useRouteWorktree: () => context }))
 vi.mock("../../stores/agent-sessions.ts", () => ({ useAgentSessionsStore: () => service }))
 let unmount: (() => void) | undefined
+let pinia: ReturnType<typeof createPinia> | undefined
 beforeEach(() => {
+  window.localStorage.clear()
+  pinia = createPinia()
   resetMermaidSidebarTabs()
   service.sessions["30"] = agentSnapshot().session
   service.gitStatus.mockClear()
@@ -30,12 +34,14 @@ beforeEach(() => {
 afterEach(() => {
   unmount?.()
   unmount = undefined
+  if (pinia) disposePinia(pinia)
+  pinia = undefined
   resetMermaidSidebarTabs()
   vi.restoreAllMocks()
 })
 
 test("archiving and restoring the same Session release and recreate Git observation", async () => {
-  const wrapper = mount(ChangesPanel, { global: { plugins: [i18n] } })
+  const wrapper = mount(ChangesPanel, { global: { plugins: [pinia!, i18n] } })
   unmount = () => wrapper.unmount()
   await flushPromises()
   expect(service.watchGit).toHaveBeenCalledOnce()
@@ -54,7 +60,7 @@ test("archiving and restoring the same Session release and recreate Git observat
 
 test("only ready execution contexts attach Git observation", async () => {
   service.sessions["30"].lifecycle = "provisioning"
-  const wrapper = mount(ChangesPanel, { global: { plugins: [i18n] } })
+  const wrapper = mount(ChangesPanel, { global: { plugins: [pinia!, i18n] } })
   unmount = () => wrapper.unmount()
   await flushPromises()
   expect(service.watchGit).not.toHaveBeenCalled()
@@ -77,7 +83,7 @@ test("displays opened Mermaid diagrams in a dedicated right sidebar tab, locates
   messageEntry.appendChild(inlineMermaid)
   document.body.appendChild(messageEntry)
 
-  const wrapper = mount(ChangesPanel, { attachTo: document.body, global: { plugins: [i18n, router] } })
+  const wrapper = mount(ChangesPanel, { attachTo: document.body, global: { plugins: [pinia!, i18n, router] } })
   unmount = () => {
     wrapper.unmount()
     messageEntry.remove()

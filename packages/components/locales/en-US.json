@@ -52,7 +52,11 @@
     "prompt": "Task instructions",
     "promptHint": "What should the agent do on every run? For example: review yesterday’s commits and summarize anything that looks risky.",
     "runIn": "Run in",
-    "destination": { "worktree": "New worktree", "directory": "Working directory", "existing": "Existing session" },
+    "destination": {
+      "worktree": "New worktree",
+      "directory": "Working directory",
+      "existing": "Existing session"
+    },
     "destinationHint": {
       "worktree": "Each run starts a new session in its own Git worktree.",
       "directory": "Each run starts a new session in the workspace’s directories.",
@@ -66,11 +70,19 @@
     "noProvider": "Select an available agent. Configure agents in Settings if none are available.",
     "when": "When",
     "repeat": "Trigger",
-    "trigger": { "manual": "Manual", "daily": "Daily", "weekly": "Weekly", "interval": "Interval" },
+    "trigger": {
+      "manual": "Manual",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "interval": "Interval"
+    },
     "manualHint": "Runs only when you choose Run now.",
     "every": "Every",
     "intervalUnit": "Interval unit",
-    "unit": { "minutes": "minute | minutes", "hours": "hour | hours" },
+    "unit": {
+      "minutes": "minute | minutes",
+      "hours": "hour | hours"
+    },
     "at": "At",
     "timeZone": "Time zone",
     "days": "Days",
@@ -91,7 +103,11 @@
     "automaticNamed": "Automatic runs for {title}",
     "pause": "Pause",
     "resume": "Resume",
-    "status": { "active": "Active", "paused": "Paused", "onDemand": "On demand" },
+    "status": {
+      "active": "Active",
+      "paused": "Paused",
+      "onDemand": "On demand"
+    },
     "paused": "Paused",
     "onDemand": "On demand",
     "nextRelative": "Next run {time}",
@@ -104,7 +120,14 @@
     "noRuns": "No runs yet. Use Run now to try this task.",
     "noRunsShort": "No runs yet",
     "openSession": "Open session",
-    "runState": { "claimed": "Starting", "running": "Queued or running", "completed": "Completed", "failed": "Failed", "interrupted": "Interrupted", "skipped": "Skipped" },
+    "runState": {
+      "claimed": "Starting",
+      "running": "Queued or running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "interrupted": "Interrupted",
+      "skipped": "Skipped"
+    },
     "loading": "Loading schedules…",
     "empty": "No scheduled tasks yet",
     "emptyHint": "Create a task to run an agent at set times, at an interval, or on demand.",
@@ -125,10 +148,12 @@
   "toolbar": {
     "showSidebar": "Show sidebar",
     "hideSidebar": "Hide sidebar",
+    "resizeSidebar": "Resize sidebar",
     "back": "Back",
     "forward": "Forward",
     "showPanel": "Show changes panel",
-    "hidePanel": "Hide changes panel"
+    "hidePanel": "Hide changes panel",
+    "resizePanel": "Resize changes panel"
   },
   "nav": {
     "label": "Navigation",

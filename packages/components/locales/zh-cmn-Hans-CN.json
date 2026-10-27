@@ -52,7 +52,11 @@
     "prompt": "任务指令",
     "promptHint": "希望 Agent 每次执行什么？例如：检查昨天的提交，并总结可能存在的风险。",
     "runIn": "运行位置",
-    "destination": { "worktree": "新 worktree", "directory": "工作目录", "existing": "已有会话" },
+    "destination": {
+      "worktree": "新 worktree",
+      "directory": "工作目录",
+      "existing": "已有会话"
+    },
     "destinationHint": {
       "worktree": "每次运行都在独立的 Git worktree 中新建会话。",
       "directory": "每次运行都在工作区目录中新建会话。",
@@ -66,11 +70,19 @@
     "noProvider": "请选择可用的 Agent。如果没有可用选项，请在设置中配置 Agent。",
     "when": "运行时间",
     "repeat": "触发方式",
-    "trigger": { "manual": "手动", "daily": "每天", "weekly": "每周", "interval": "间隔" },
+    "trigger": {
+      "manual": "手动",
+      "daily": "每天",
+      "weekly": "每周",
+      "interval": "间隔"
+    },
     "manualHint": "仅在选择“立即运行”时运行。",
     "every": "每",
     "intervalUnit": "间隔单位",
-    "unit": { "minutes": "分钟", "hours": "小时" },
+    "unit": {
+      "minutes": "分钟",
+      "hours": "小时"
+    },
     "at": "时间",
     "timeZone": "时区",
     "days": "星期",
@@ -91,7 +103,11 @@
     "automaticNamed": "“{title}”的自动运行",
     "pause": "暂停",
     "resume": "恢复",
-    "status": { "active": "运行中", "paused": "已暂停", "onDemand": "按需" },
+    "status": {
+      "active": "运行中",
+      "paused": "已暂停",
+      "onDemand": "按需"
+    },
     "paused": "已暂停",
     "onDemand": "按需",
     "nextRelative": "下次运行：{time}",
@@ -104,7 +120,14 @@
     "noRuns": "尚无运行记录。可使用“立即运行”试运行此任务。",
     "noRunsShort": "尚无运行",
     "openSession": "打开会话",
-    "runState": { "claimed": "正在启动", "running": "排队或运行中", "completed": "已完成", "failed": "失败", "interrupted": "已中断", "skipped": "已跳过" },
+    "runState": {
+      "claimed": "正在启动",
+      "running": "排队或运行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "interrupted": "已中断",
+      "skipped": "已跳过"
+    },
     "loading": "正在加载计划任务…",
     "empty": "还没有计划任务",
     "emptyHint": "创建任务，让 Agent 定时、按间隔或按需运行。",
@@ -125,10 +148,12 @@
   "toolbar": {
     "showSidebar": "显示侧边栏",
     "hideSidebar": "隐藏侧边栏",
+    "resizeSidebar": "调整侧边栏宽度",
     "back": "后退",
     "forward": "前进",
     "showPanel": "显示变更面板",
-    "hidePanel": "隐藏变更面板"
+    "hidePanel": "隐藏变更面板",
+    "resizePanel": "调整变更面板宽度"
   },
   "nav": {
     "label": "导航",
