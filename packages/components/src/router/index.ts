@@ -106,14 +106,21 @@ export const router = createRouter({
           name: "settings-mcp-servers",
           component: () => import("../components/settings/McpServersSettings.vue"),
         },
+      ],
+    },
+    {
+      path: "/team/settings",
+      component: () => import("../views/TeamSettingsView.vue"),
+      meta: { fullWindow: true },
+      children: [
         {
-          path: "team",
-          name: "settings-team",
+          path: "",
+          name: "team-settings",
           component: () => import("../components/team/TeamSettings.vue"),
         },
         {
           path: "plans",
-          name: "settings-plans",
+          name: "team-settings-plans",
           component: () => import("../components/settings/PlansUsageSettings.vue"),
         },
       ],

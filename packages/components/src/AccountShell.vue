@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import UiButton from "./components/common/UiButton.vue"
-import { Bell, CreditCard, Palette, SlidersHorizontal, Users } from "@lucide/vue"
 import { defineAsyncComponent, onBeforeUnmount, provide, ref, watch } from "vue"
 import { useEventListener, useStorage, useTitle } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
+import { RouterView } from "vue-router"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { OnboardingState } from "@deskfleet/client/onboarding"
 import { getBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
@@ -14,18 +14,11 @@ import WelcomePage from "./components/account/WelcomePage.vue"
 import BrandLogo from "./components/common/BrandLogo.vue"
 import TeamAccessDialog from "./components/account/TeamAccessDialog.vue"
 import TeamOnboarding from "./components/account/TeamOnboarding.vue"
-import PreferencesSettings from "./components/settings/PreferencesSettings.vue"
-import AppearanceSettings from "./components/settings/AppearanceSettings.vue"
-import NotificationsSettings from "./components/settings/NotificationsSettings.vue"
-import PlansUsageSettings from "./components/settings/PlansUsageSettings.vue"
-import SettingsLayout from "./components/settings/SettingsLayout.vue"
 import AccountFooter from "./components/sidebar/AccountFooter.vue"
 import AccountNotices from "./components/sidebar/AccountNotices.vue"
 import TeamSwitcher from "./components/sidebar/TeamSwitcher.vue"
-import TeamSettings from "./components/team/TeamSettings.vue"
-import SiteAdminView from "./views/SiteAdminView.vue"
 import { router } from "./router/index.ts"
-import { accountSessionKey, createAccountSession, type AccountSettingsSection } from "./composables/useAccountSession.ts"
+import { accountSessionKey, createAccountSession } from "./composables/useAccountSession.ts"
 import { useBrowserNotifications } from "./composables/useBrowserNotifications.ts"
 
 const loadMachineSurface = () => import("./components/account/MachineSurface.vue")
@@ -41,7 +34,7 @@ const browserNotificationOnboardingComplete = props.host.platform === "web"
 const browserNotificationPermission = ref(props.host.platform === "web" ? getBrowserNotificationPermission() : undefined)
 const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
-const { ready, account, site, teams, team, machine, dialog, shellSettings } = session
+const { ready, account, site, teams, team, machine, dialog } = session
 const route = router.currentRoute
 const returnParams = new URLSearchParams(location.search)
 let billingReturnPending = props.host.platform === "web" && returnParams.get("settings") === "plans"
@@ -78,10 +71,6 @@ async function loadOnboarding(): Promise<void> {
   catch (reason) { onboardingError.value = reason instanceof Error ? reason.message : String(reason) }
 }
 if (props.host.onboarding) void loadOnboarding()
-const section = (value: AccountSettingsSection) => [
-  "ui-nav-item w-full cursor-pointer px-2.5 text-left",
-  shellSettings.value === value && "ui-nav-active",
-]
 </script>
 
 <template>
@@ -92,21 +81,7 @@ const section = (value: AccountSettingsSection) => [
       <WelcomePage v-else-if="onboarding.step !== 'complete' || !account.user" :host="host" :state="onboarding" @change="onboarding = $event" />
       <!-- Each selected machine runs in its own application scope; see MachineSurface. -->
       <MachineSurface v-else-if="machine" :key="machine.id" :host="host" :session="session" :machine="machine" @ready="finishBillingReturn" />
-      <SiteAdminView v-else-if="host.platform === 'web' && route.name === 'site-admin'" />
-      <SettingsLayout v-else-if="shellSettings" @back="shellSettings = undefined">
-        <template #nav>
-          <button type="button" :class="section('preferences')" @click="shellSettings = 'preferences'"><SlidersHorizontal :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.preferences") }}</button>
-          <button type="button" :class="section('appearance')" @click="shellSettings = 'appearance'"><Palette :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.appearance") }}</button>
-          <button type="button" :class="section('notifications')" @click="shellSettings = 'notifications'"><Bell :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("settings.notifications") }}</button>
-          <button v-if="team" type="button" :class="section('team')" @click="shellSettings = 'team'"><Users :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("team.settings") }}</button>
-          <button v-if="team" type="button" :class="section('plans')" @click="shellSettings = 'plans'"><CreditCard :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("team.plansUsage") }}</button>
-        </template>
-        <TeamSettings v-if="shellSettings === 'team'" />
-        <PlansUsageSettings v-else-if="shellSettings === 'plans'" />
-        <NotificationsSettings v-else-if="shellSettings === 'notifications'" />
-        <AppearanceSettings v-else-if="shellSettings === 'appearance'" />
-        <PreferencesSettings v-else />
-      </SettingsLayout>
+      <RouterView v-else-if="route.meta.fullWindow" />
       <div v-else class="flex min-h-0 flex-1">
         <aside class="flex w-65 shrink-0 flex-col border-r border-ui-border bg-ui-sidebar">
           <div class="app-drag h-12 shrink-0" />

@@ -1,14 +1,15 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import type { AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
 import { i18n } from "../../i18n/index.ts"
+import { router } from "../../router/index.ts"
 import { billingFixture, fakeCentral } from "../../test/central.ts"
 import SessionAllowance from "./SessionAllowance.vue"
 
 let view: VueWrapper | undefined
 let session: AccountSession | undefined
-afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined })
+afterEach(async () => { view?.unmount(); view = undefined; session?.dispose(); session = undefined; await router.replace("/") })
 
 async function mountWith(maxTurnsPerSession: number | null, inheritedTurnCount: number, consumed: number, turnLimitReason?: string) {
   const fake = fakeCentral()
@@ -31,7 +32,7 @@ test("the last few turns warn and link to the Team's plans", async () => {
   expect(view!.get('[role="status"]').text()).toContain("1 turn left of 30 in this Session")
   expect(view!.get("button").text()).toBe("View plans")
   await view!.get("button").trigger("click")
-  expect(session!.shellSettings.value).toBe("plans")
+  await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/team/settings/plans"))
 })
 
 test("a paused Session shows the daemon's reason and that queued input is kept", async () => {
@@ -39,7 +40,7 @@ test("a paused Session shows the daemon's reason and that queued input is kept",
   expect(view!.get('[role="status"]').text()).toContain("This Session has used its 30 Free turns.")
   expect(view!.text()).toContain("Queued input is kept.")
   await view!.get("button").trigger("click")
-  expect(session!.shellSettings.value).toBe("plans")
+  await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/team/settings/plans"))
 })
 
 test("unlimited plans show nothing", async () => {
