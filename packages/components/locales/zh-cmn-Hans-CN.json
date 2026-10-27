@@ -177,13 +177,16 @@
     "followSystem": "跟随系统",
     "light": "浅色",
     "dark": "深色",
-    "fonts": "字体",
+    "preview": "实时预览",
+    "defaultFont": "系统默认",
     "interfaceFont": "界面字体",
     "terminalFont": "终端字体",
-    "fontHint": "输入字体名称或用逗号分隔的回退字体列表。留空使用默认字体。",
-    "terminalFontHint": "使用等宽字体或 CSS 回退字体列表，例如 \"Cascadia Code\", \"Noto Sans Mono CJK SC\", monospace。留空使用默认字体。",
-    "interfacePreview": "你好，世界。The quick brown fox jumps over the lazy dog. 0123456789",
-    "terminalPreview": "$ echo \"你好，世界。Hello, world!\"\n0123456789  [] () => !="
+    "fontHint": "使用已安装的字体，留空恢复默认。",
+    "terminalFontHint": "支持 CSS 回退列表，如 \"Cascadia Code\", monospace。留空恢复默认。",
+    "interfacePreview": "你好，世界。The quick brown fox.",
+    "terminalPreview": "终端字体预览",
+    "ligatures": "字体连字",
+    "ligaturesHint": "在终端字体支持时，将 =>、!= 等字符组合显示为连字。"
   },
   "settings": {
     "preferences": "偏好设置",

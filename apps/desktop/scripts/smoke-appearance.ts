@@ -63,7 +63,7 @@ try {
   assert.deepEqual(restored.settings, changed.settings)
   const results = { changed, restored }
   await writeFile(join(outputDirectory, "results.json"), JSON.stringify(results, null, 2) + "\n")
-  console.log("Production Electron Appearance: Settings navigation, Chinese language, Light/Dark/Follow System, native theme, CSS interface/terminal fallback stacks, and app restart persistence passed", results)
+  console.log("Production Electron Appearance: theme thumbnails, language, native theme, CSS fonts, live xterm font/ligature preview, restart persistence, and minimum window layout passed", results)
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error

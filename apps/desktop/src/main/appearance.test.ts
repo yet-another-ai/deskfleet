@@ -49,7 +49,7 @@ test("saved appearance applies before windows and updates native language, theme
   attachAppearance(main.window)
   attachAppearance(auxiliary.window)
   expect(invoke(auxiliary.event, "get")).toEqual({ ok: true, value: saved })
-  const changed: AppearanceSettings = { ...saved, language: "system", theme: "light" }
+  const changed: AppearanceSettings = { ...saved, language: "system", theme: "light", terminalLigatures: true }
   expect(invoke(main.event, "set", changed)).toEqual({ ok: true, value: changed })
   expect(nativeTheme.themeSource).toBe("light")
   expect(getMainLocale()).toBe("en-US")
@@ -72,7 +72,7 @@ test("appearance validates writes and restricts IPC to registered application ma
   sender.mainFrame.url = "https://example.com/"
   expect(() => invoke(event, "get")).toThrow("restricted")
   sender.mainFrame.url = url
-  for (const value of [null, {}, { ...DEFAULT_APPEARANCE_SETTINGS, language: "fr" }, { ...DEFAULT_APPEARANCE_SETTINGS, theme: "sepia" }, { ...DEFAULT_APPEARANCE_SETTINGS, terminalFont: [] }]) {
+  for (const value of [null, {}, { ...DEFAULT_APPEARANCE_SETTINGS, language: "fr" }, { ...DEFAULT_APPEARANCE_SETTINGS, theme: "sepia" }, { ...DEFAULT_APPEARANCE_SETTINGS, terminalFont: [] }, { ...DEFAULT_APPEARANCE_SETTINGS, terminalLigatures: "true" }]) {
     expect(invoke(event, "set", value)).toEqual({ ok: false, error: "Invalid appearance settings" })
   }
   expect(controller.set).not.toHaveBeenCalled()

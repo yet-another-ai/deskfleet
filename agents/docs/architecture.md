@@ -258,7 +258,10 @@ theme, interface font, and terminal font are saved in the desktop profile's
 selected machine or synchronize through the backend. Changes apply to existing
 client windows, including native desktop chrome and menus; new windows load the
 saved preferences before mounting their UI. Font fields accept CSS `font-family`
-lists, with an empty value restoring the application default.
+lists, with an empty value restoring the application default. Theme cards preview
+the application palette. The terminal font editor uses the same xterm surface as
+live terminals, and its ligature preference updates both the preview and existing
+terminals without recreating them.
 
 The daemon runs as the OS user whose files, credentials, and tools the agents
 use. Closing a window or losing a connection must leave ongoing work running.

@@ -177,13 +177,16 @@
     "followSystem": "Follow system",
     "light": "Light",
     "dark": "Dark",
-    "fonts": "Fonts",
+    "preview": "Live preview",
+    "defaultFont": "System default",
     "interfaceFont": "Interface font",
     "terminalFont": "Terminal font",
-    "fontHint": "Enter a font name or a comma-separated fallback list. Leave blank to use the default.",
-    "terminalFontHint": "Use a monospace font or a CSS fallback list, such as \"Cascadia Code\", \"Noto Sans Mono CJK SC\", monospace. Leave blank to use the default.",
-    "interfacePreview": "The quick brown fox jumps over the lazy dog. 0123456789 你好，世界。",
-    "terminalPreview": "$ echo \"Hello, world! 你好，世界。\"\n0123456789  [] () => !="
+    "fontHint": "Use an installed font. Leave blank for the default.",
+    "terminalFontHint": "CSS fallbacks supported, e.g. \"Cascadia Code\", monospace. Leave blank for the default.",
+    "interfacePreview": "The quick brown fox. 你好，世界。",
+    "terminalPreview": "Terminal font preview",
+    "ligatures": "Font ligatures",
+    "ligaturesHint": "Combine characters like => and != when the terminal font supports it."
   },
   "settings": {
     "preferences": "Preferences",

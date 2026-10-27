@@ -32,6 +32,7 @@ const defineAppearanceStore = defineStore("appearance", () => {
   const isDark = computed(() => settings.value.theme === "system" ? preferredDark.value : settings.value.theme === "dark")
   const interfaceFont = computed(() => settings.value.interfaceFont.trim() || DEFAULT_INTERFACE_FONT)
   const terminalFont = computed(() => settings.value.terminalFont.trim() || DEFAULT_TERMINAL_FONT)
+  const terminalLigatures = computed(() => settings.value.terminalLigatures)
   const locale = computed(() => settings.value.language === "system"
     ? (host.platform === "web" ? resolveAppLocale(languages.value) : host.locale)
     : settings.value.language)
@@ -81,7 +82,7 @@ const defineAppearanceStore = defineStore("appearance", () => {
   }
 
   onScopeDispose(() => { disposed = true; unsubscribe?.(); stopApplying?.() })
-  return { settings, ready, saving, error, isDark, interfaceFont, terminalFont, initialize, set }
+  return { settings, ready, saving, error, isDark, interfaceFont, terminalFont, terminalLigatures, initialize, set }
 })
 
 type AppearanceStore = ReturnType<typeof defineAppearanceStore>

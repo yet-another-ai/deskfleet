@@ -9,10 +9,11 @@ export interface AppearanceSettings {
   /** Empty uses the application default; otherwise a CSS font-family list. */
   interfaceFont: string
   terminalFont: string
+  terminalLigatures: boolean
 }
 
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
-  language: "system", theme: "system", interfaceFont: "", terminalFont: "",
+  language: "system", theme: "system", interfaceFont: "", terminalFont: "", terminalLigatures: false,
 }
 
 export const DEFAULT_INTERFACE_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif'
@@ -29,8 +30,12 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
     || !("language" in value) || (value.language !== "system" && !isAppLocale(value.language))
     || !("theme" in value) || (value.theme !== "system" && value.theme !== "light" && value.theme !== "dark")
     || !("interfaceFont" in value) || typeof value.interfaceFont !== "string"
-    || !("terminalFont" in value) || typeof value.terminalFont !== "string") {
+    || !("terminalFont" in value) || typeof value.terminalFont !== "string"
+    || ("terminalLigatures" in value && typeof value.terminalLigatures !== "boolean")) {
     throw new Error("Invalid appearance settings")
   }
-  return { language: value.language, theme: value.theme, interfaceFont: value.interfaceFont, terminalFont: value.terminalFont }
+  return {
+    language: value.language, theme: value.theme, interfaceFont: value.interfaceFont, terminalFont: value.terminalFont,
+    terminalLigatures: "terminalLigatures" in value && value.terminalLigatures === true,
+  }
 }

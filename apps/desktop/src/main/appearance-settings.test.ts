@@ -21,6 +21,7 @@ test("appearance defaults follow the system and preserves CSS fallback stacks ac
   const selected: AppearanceSettings = {
     language: "zh-cmn-Hans-CN", theme: "dark", interfaceFont: '"Segoe UI", sans-serif',
     terminalFont: '"Cascadia Code", "Noto Sans Mono CJK SC", monospace',
+    terminalLigatures: true,
   }
   expect(controller.set(selected)).toEqual(selected)
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(selected)
@@ -39,6 +40,13 @@ test("failed persistence leaves the active appearance unchanged", () => {
   mkdirSync(`${path}.tmp`)
   expect(() => controller.set({ ...previous, theme: "light" })).toThrow()
   expect(controller.get()).toEqual(previous)
+})
+
+test("existing desktop preferences keep their selected fonts and theme with ligatures disabled", () => {
+  const { path, controller } = fixture()
+  const saved = { language: "zh-cmn-Hans-CN", theme: "dark", interfaceFont: "Arial, sans-serif", terminalFont: '"Cascadia Code", monospace' }
+  writeFileSync(path, JSON.stringify(saved))
+  expect(controller.get()).toEqual({ ...saved, terminalLigatures: false })
 })
 
 test("invalid saved appearance is reported and can be overwritten with valid preferences", () => {

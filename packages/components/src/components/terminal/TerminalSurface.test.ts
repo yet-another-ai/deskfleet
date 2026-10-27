@@ -10,8 +10,10 @@ afterEach(() => { disposePinia(pinia); localStorage.removeItem(APPEARANCE_STORAG
 
 const terminals: FakeTerminal[] = []
 const fits: { fit: ReturnType<typeof vi.fn> }[] = []
+const ligatureAddons: { dispose: ReturnType<typeof vi.fn> }[] = []
 
 class FakeTerminal {
+  element: HTMLElement | undefined
   options: Record<string, unknown>
   cols = 100
   rows = 30
@@ -22,7 +24,8 @@ class FakeTerminal {
   onData = vi.fn((listener: typeof this.input) => { this.input = listener; return this.subscription })
   onResize = vi.fn((listener: typeof this.resized) => { this.resized = listener; return this.subscription })
   onTitleChange = vi.fn((listener: typeof this.titled) => { this.titled = listener; return this.subscription })
-  open = vi.fn()
+  open = vi.fn((element: HTMLElement) => { this.element = element })
+  refresh = vi.fn()
   write = vi.fn()
   focus = vi.fn()
   reset = vi.fn()
@@ -41,6 +44,12 @@ vi.mock("@xterm/addon-fit", () => ({
     constructor() {
       fits.push(this)
     }
+  },
+}))
+vi.mock("@xterm/addon-ligatures", () => ({
+  LigaturesAddon: class {
+    dispose = vi.fn()
+    constructor() { ligatureAddons.push(this) }
   },
 }))
 
@@ -107,5 +116,56 @@ test("applies the terminal font fallback list to existing terminals and refits t
   await nextTick()
   expect(terminal.options.fontFamily).toBe(defaultFont)
   expect(fit.fit).toHaveBeenCalledTimes(2)
+  wrapper.unmount()
+})
+
+test("enables and disables the official ligatures addon on existing session terminals", async () => {
+  const appearance = useAppearanceStore()
+  const initialAddons = ligatureAddons.length
+  const wrapper = mount(TerminalSurface)
+  const terminal = terminals.at(-1)!
+  expect(terminal.options.allowProposedApi).toBe(true)
+  expect(ligatureAddons).toHaveLength(initialAddons)
+  expect(terminal.element!.style.fontFeatureSettings).toBe('"calt" off, "liga" off')
+  terminal.refresh.mockClear()
+
+  appearance.settings.terminalLigatures = true
+  await nextTick()
+  const addon = ligatureAddons.at(-1)!
+  expect(ligatureAddons).toHaveLength(initialAddons + 1)
+  expect(terminal.loadAddon).toHaveBeenLastCalledWith(addon)
+  expect(terminal.refresh).toHaveBeenCalledWith(0, terminal.rows - 1)
+
+  appearance.settings.terminalLigatures = false
+  await nextTick()
+  expect(addon.dispose).toHaveBeenCalledOnce()
+  expect(terminal.element!.style.fontFeatureSettings).toBe('"calt" off, "liga" off')
+  appearance.settings.terminalLigatures = true
+  await nextTick()
+  expect(ligatureAddons).toHaveLength(initialAddons + 2)
+  expect(terminal.open).toHaveBeenCalledOnce()
+  wrapper.unmount()
+})
+
+test("previews font and ligature drafts independently of saved terminal preferences", async () => {
+  const appearance = useAppearanceStore()
+  appearance.settings.terminalFont = '"Saved Font", monospace'
+  appearance.settings.terminalLigatures = true
+  const initialAddons = ligatureAddons.length
+  const wrapper = mount(TerminalSurface, { props: { fontFamily: '"Draft Font", monospace', ligatures: false } })
+  const terminal = terminals.at(-1)!
+  expect(terminal.options.fontFamily).toBe('"Draft Font", monospace')
+  expect(ligatureAddons).toHaveLength(initialAddons)
+  await wrapper.setProps({ ligatures: true })
+  expect(ligatureAddons).toHaveLength(initialAddons + 1)
+
+  appearance.settings.terminalFont = "serif"
+  appearance.settings.terminalLigatures = false
+  await nextTick()
+  expect(terminal.options.fontFamily).toBe('"Draft Font", monospace')
+  expect(ligatureAddons.at(-1)!.dispose).not.toHaveBeenCalled()
+  await wrapper.setProps({ fontFamily: undefined, ligatures: undefined })
+  expect(terminal.options.fontFamily).toBe("serif")
+  expect(ligatureAddons.at(-1)!.dispose).toHaveBeenCalledOnce()
   wrapper.unmount()
 })

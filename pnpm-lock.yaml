@@ -9,6 +9,7 @@ overrides:
 
 patchedDependencies:
   '@agentclientprotocol/codex-acp@2.2.2': f5323730c3149760f65cfda76fe250dcd268a75aa56be01c71dfd8de5b60252c
+  '@xterm/addon-ligatures@0.10.0': fa45e6baf79dcd885c76ac00ddc39740210fcaadc91ce8473481e5e443bf98f2
   pi-acp@0.0.34: 36d9ab123339167dca1f08a507a15cd2e0d55d6bf92d164e13f7bcb0d01d09fb
 
 importers:
@@ -268,6 +269,9 @@ importers:
       '@xterm/addon-fit':
         specifier: 0.11.0
         version: 0.11.0
+      '@xterm/addon-ligatures':
+        specifier: 0.10.0
+        version: 0.10.0(patch_hash=fa45e6baf79dcd885c76ac00ddc39740210fcaadc91ce8473481e5e443bf98f2)
       '@xterm/xterm':
         specifier: 6.0.0
         version: 6.0.0
@@ -2710,6 +2714,10 @@ packages:
   '@xterm/addon-fit@0.11.0':
     resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
 
+  '@xterm/addon-ligatures@0.10.0':
+    resolution: {integrity: sha512-/Few8ZSHMib7sGjRJoc5l7bCtEB9XJfkNofvPpOcWADxKaUl8og8P172j67OoACSNJAXqeCLIuvj8WFCBkcTxg==}
+    engines: {node: '>8.0.0'}
+
   '@xterm/xterm@6.0.0':
     resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
 
@@ -3542,6 +3550,14 @@ packages:
   focus-trap@8.2.3:
     resolution: {integrity: sha512-LTNHZwcFM7bSdU1cG1ExoaTEzoGmdjw+EzDotolZmLTCbm0ll2k6J3NL+WfqP14nGLxAp+XDJgwlT2DtNhcukA==}
 
+  font-finder@1.1.0:
+    resolution: {integrity: sha512-wpCL2uIbi6GurJbU7ZlQ3nGd61Ho+dSU6U83/xJT5UPFfN35EeCW/rOtS+5k+IuEZu2SYmHzDIPL9eA5tSYRAw==}
+    engines: {node: '>8.0.0'}
+
+  font-ligatures@1.4.1:
+    resolution: {integrity: sha512-7W6zlfyhvCqShZ5ReUWqmSd9vBaUudW0Hxis+tqUjtHhsPU+L3Grf8mcZAtCiXHTzorhwdRTId2WeH/88gdFkw==}
+    engines: {node: '>8.0.0'}
+
   form-data@4.0.6:
     resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
     engines: {node: '>= 6'}
@@ -3607,6 +3623,10 @@ packages:
   get-stream@5.2.0:
     resolution: {integrity: sha512-nBF+F1rAZVCu/p7rjzgA+Yb4lfYXrpl7a6VmJrU8wF9I1CKvP/QwPNZHnOlwbTkY6dvtFIzFMSyQXbLoTQPRpA==}
     engines: {node: '>=8'}
+
+  get-system-fonts@2.0.2:
+    resolution: {integrity: sha512-zzlgaYnHMIEgHRrfC7x0Qp0Ylhw/sHpM6MHXeVBTYIsvGf5GpbnClB+Q6rAPdn+0gd2oZZIo6Tj3EaWrt4VhDQ==}
+    engines: {node: '>8.0.0'}
 
   glob@13.0.6:
     resolution: {integrity: sha512-Wjlyrolmm8uDpm/ogGyXZXb1Z+Ca2B8NbJwqBVg0axK9GbBeoS7yGV6vjXnYdGm6X53iehEuxxbyiKp8QmN4Vw==}
@@ -4204,6 +4224,10 @@ packages:
     resolution: {integrity: sha512-++Zlftm0kVLPmzC06t6epuWmcRMDbI4z5P3NNX979WA/k23+NtSOynEGzsVfZwguKw2mi5umVgnBlJQMwRz4Pg==}
     engines: {node: '>=20'}
 
+  opentype.js@0.8.0:
+    resolution: {integrity: sha512-FQHR4oGP+a0m/f6yHoRpBOIbn/5ZWxKd4D/djHVJu8+KpBTYrJda0b7mLcgDEMWXE9xBCJm+qb0yv6FcvPjukg==}
+    hasBin: true
+
   oxc-parser@0.153.0:
     resolution: {integrity: sha512-cEnpyyV1OJRXv++SFNw0z8i+2o/cr88rVLaOYJafELDoHM5yHvCAbwGRLvxuany6SNLcbblSMUyZaGzH+quSYg==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -4346,6 +4370,10 @@ packages:
   promise-retry@2.0.1:
     resolution: {integrity: sha512-y+WKFlBR8BGXnsNlIHFGPZmyDf3DFMoLhaflAnyZgV6rG6xu+JwesTo2Q9R6XwYmtmwAFCkAk3e35jEdoeh/3g==}
     engines: {node: '>=10'}
+
+  promise-stream-reader@1.0.1:
+    resolution: {integrity: sha512-Tnxit5trUjBAqqZCGWwjyxhmgMN4hGrtpW3Oc/tRI4bpm/O2+ej72BB08l6JBnGQgVDGCLvHFGjGgQS6vzhwXg==}
+    engines: {node: '>8.0.0'}
 
   proper-lockfile@4.1.2:
     resolution: {integrity: sha512-TjNPblN4BwAWMXU8s9AEz4JmQxnD1NNL7bNOY/AKUzyamc379FWASUhc/K1pL2noVb+XmZKLL68cjzLsiOAMaA==}
@@ -4655,6 +4683,9 @@ packages:
 
   tiny-async-pool@1.3.0:
     resolution: {integrity: sha512-01EAw5EDrcVrdgyCLgoSPvqznC0sVxDSVeiOz09FUpjh71G79VCqneOr+xvt7T1r76CF6ZZfPjHorN2+d+3mqA==}
+
+  tiny-inflate@1.0.3:
+    resolution: {integrity: sha512-pkY1fj1cKHb2seWDy0B16HeWyczlJA9/WW3u3c4z/NiWDsO3DOU5D7nhTLE9CF0yXv/QZFY7sEJmj24dK+Rrqw==}
 
   tinybench@6.2.2:
     resolution: {integrity: sha512-nIZ2N2dFpjBsg2hgitKu7mA+FvsIJuGJOwysRngmVRRmWgR/UyPjwJj8c/fT/dhm8EkHnF5EOogRf+0Z2qrimA==}
@@ -7213,6 +7244,11 @@ snapshots:
 
   '@xterm/addon-fit@0.11.0': {}
 
+  '@xterm/addon-ligatures@0.10.0(patch_hash=fa45e6baf79dcd885c76ac00ddc39740210fcaadc91ce8473481e5e443bf98f2)':
+    dependencies:
+      font-finder: 1.1.0
+      font-ligatures: 1.4.1
+
   '@xterm/xterm@6.0.0': {}
 
   abbrev@4.0.0: {}
@@ -8172,6 +8208,17 @@ snapshots:
     dependencies:
       tabbable: 6.5.0
 
+  font-finder@1.1.0:
+    dependencies:
+      get-system-fonts: 2.0.2
+      promise-stream-reader: 1.0.1
+
+  font-ligatures@1.4.1:
+    dependencies:
+      font-finder: 1.1.0
+      lru-cache: 6.0.0
+      opentype.js: 0.8.0
+
   form-data@4.0.6:
     dependencies:
       asynckit: 0.4.0
@@ -8253,6 +8300,8 @@ snapshots:
   get-stream@5.2.0:
     dependencies:
       pump: 3.0.4
+
+  get-system-fonts@2.0.2: {}
 
   glob@13.0.6:
     dependencies:
@@ -8849,6 +8898,10 @@ snapshots:
       powershell-utils: 0.2.1
       wsl-utils: 1.0.1
 
+  opentype.js@0.8.0:
+    dependencies:
+      tiny-inflate: 1.0.3
+
   oxc-parser@0.153.0:
     dependencies:
       '@oxc-project/types': 0.153.0
@@ -8988,6 +9041,8 @@ snapshots:
     dependencies:
       err-code: 2.0.3
       retry: 0.12.0
+
+  promise-stream-reader@1.0.1: {}
 
   proper-lockfile@4.1.2:
     dependencies:
@@ -9376,6 +9431,8 @@ snapshots:
   tiny-async-pool@1.3.0:
     dependencies:
       semver: 5.7.2
+
+  tiny-inflate@1.0.3: {}
 
   tinybench@6.2.2: {}
 

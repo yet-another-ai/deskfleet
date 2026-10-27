@@ -2,6 +2,7 @@ import { configureClient, getClient } from "@deskfleet/client/platform"
 import { DEFAULT_APPEARANCE_SETTINGS, DEFAULT_INTERFACE_FONT, DEFAULT_TERMINAL_FONT, type AppearanceSettings } from "@deskfleet/client/appearance"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
+import { defineComponent } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import AccountShell from "../../AccountShell.vue"
 import { i18n } from "../../i18n/index.ts"
@@ -16,6 +17,12 @@ let pinia: ReturnType<typeof createPinia>
 let view: VueWrapper | undefined
 const get = vi.fn(async (): Promise<AppearanceSettings> => ({ ...DEFAULT_APPEARANCE_SETTINGS }))
 const set = vi.fn(async (value: AppearanceSettings): Promise<AppearanceSettings> => ({ ...value }))
+const TerminalSurfaceStub = defineComponent({
+  name: "TerminalSurface",
+  props: { fontFamily: String, ligatures: Boolean, banner: String, scrollback: Number },
+  template: '<div data-terminal-surface-stub />',
+})
+const stubs = { TerminalSurface: TerminalSurfaceStub }
 
 beforeEach(() => {
   localStorage.clear()
@@ -38,23 +45,40 @@ afterEach(async () => {
 })
 
 async function render() {
-  view = mount(AppearanceSettingsView, { attachTo: document.body, global: { plugins: [pinia, i18n] } })
+  view = mount(AppearanceSettingsView, { attachTo: document.body, global: { plugins: [pinia, i18n], stubs } })
   await flushPromises()
   return view
 }
 
-test("changes theme and language through the visible selectors", async () => {
+test("changes theme through preview radios and translates their labels live", async () => {
   const wrapper = await render()
-  await selectOption(wrapper, '[data-control-name="appearance-theme"]', "Dark")
+  const theme = (value: string) => wrapper.get(`[data-appearance-theme="${value}"]`)
+  expect(theme("system").attributes("role")).toBe("radio")
+  expect(theme("system").attributes("aria-checked")).toBe("true")
+  expect(theme("light").attributes("aria-checked")).toBe("false")
+  await theme("dark").trigger("click")
+  await flushPromises()
   expect(set).toHaveBeenLastCalledWith({ ...DEFAULT_APPEARANCE_SETTINGS, theme: "dark" })
+  expect(theme("dark").attributes("aria-checked")).toBe("true")
+  expect(theme("system").attributes("aria-checked")).toBe("false")
   expect(document.documentElement.style.colorScheme).toBe("dark")
   await selectOption(wrapper, '[data-control-name="appearance-language"]', "简体中文")
   expect(wrapper.get("h1").text()).toBe("外观")
-  expect(wrapper.get('[data-control-name="appearance-theme"]').text()).toBe("深色")
-  await selectOption(wrapper, '[data-control-name="appearance-theme"]', "跟随系统")
+  expect(theme("dark").text()).toBe("深色")
+  expect(theme("dark").attributes("aria-label")).toBe("深色")
+  expect(theme("system").attributes("aria-label")).toBe("跟随系统")
+  await theme("system").trigger("click")
+  await flushPromises()
+  expect(theme("system").attributes("aria-checked")).toBe("true")
   expect(document.documentElement.style.colorScheme).toBe("light dark")
+  await theme("light").trigger("click")
+  await flushPromises()
+  expect(theme("light").attributes("aria-checked")).toBe("true")
+  expect(theme("system").attributes("aria-checked")).toBe("false")
+  expect(document.documentElement.style.colorScheme).toBe("light")
   await selectOption(wrapper, '[data-control-name="appearance-language"]', "English")
   expect(wrapper.get("h1").text()).toBe("Appearance")
+  expect(theme("light").text()).toBe("Light")
 })
 
 test("previews font drafts and saves full CSS fallback lists on commit", async () => {
@@ -64,7 +88,8 @@ test("previews font drafts and saves full CSS fallback lists on commit", async (
   input.element.value = font
   await input.trigger("input")
   expect(set).not.toHaveBeenCalled()
-  expect(wrapper.get<HTMLElement>('[data-terminal-font-preview]').element.style.fontFamily).toBe(font)
+  expect(wrapper.getComponent(TerminalSurfaceStub).props("fontFamily")).toBe(font)
+  expect(useAppearanceStore(pinia).settings.terminalFont).toBe("")
   await input.trigger("keydown", { key: "Enter" })
   await flushPromises()
   expect(set).toHaveBeenLastCalledWith({ ...DEFAULT_APPEARANCE_SETTINGS, terminalFont: font })
@@ -77,6 +102,25 @@ test("previews font drafts and saves full CSS fallback lists on commit", async (
   await flushPromises()
   expect(useAppearanceStore(pinia).terminalFont).toBe(DEFAULT_TERMINAL_FONT)
   expect(useAppearanceStore(pinia).interfaceFont).toBe(DEFAULT_INTERFACE_FONT)
+  expect(wrapper.getComponent(TerminalSurfaceStub).props("fontFamily")).toBe(DEFAULT_TERMINAL_FONT)
+})
+
+test("ligature switch updates the saved setting and terminal preview", async () => {
+  const wrapper = await render()
+  const toggle = wrapper.get('[role="switch"][aria-labelledby="appearance-terminal-ligatures-label"]')
+  expect(toggle.attributes("aria-checked")).toBe("false")
+  expect(wrapper.getComponent(TerminalSurfaceStub).props("ligatures")).toBe(false)
+  await toggle.trigger("click")
+  await flushPromises()
+  expect(set).toHaveBeenLastCalledWith({ ...DEFAULT_APPEARANCE_SETTINGS, terminalLigatures: true })
+  expect(useAppearanceStore(pinia).settings.terminalLigatures).toBe(true)
+  expect(toggle.attributes("aria-checked")).toBe("true")
+  expect(wrapper.getComponent(TerminalSurfaceStub).props("ligatures")).toBe(true)
+  await toggle.trigger("click")
+  await flushPromises()
+  expect(set).toHaveBeenLastCalledWith(DEFAULT_APPEARANCE_SETTINGS)
+  expect(useAppearanceStore(pinia).settings.terminalLigatures).toBe(false)
+  expect(wrapper.getComponent(TerminalSurfaceStub).props("ligatures")).toBe(false)
 })
 
 test("keeps a failed font edit available to retry", async () => {
@@ -98,7 +142,7 @@ test.each(["win32", "web"] as const)("appearance is available without a machine 
   const { central } = fakeCentral()
   const api = { ...getClient(), platform, central }
   configureClient(api)
-  view = mount(AccountShell, { props: { host: api }, attachTo: document.body, global: { plugins: [pinia, i18n] } })
+  view = mount(AccountShell, { props: { host: api }, attachTo: document.body, global: { plugins: [pinia, i18n], stubs } })
   await flushPromises()
   await view.get('button[aria-label="Settings"]').trigger("click")
   await flushPromises()

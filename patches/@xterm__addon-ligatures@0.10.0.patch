@@ -1,0 +1,13 @@
+diff --git a/package.json b/package.json
+index 539bf9138f31b25413b7753b9ffb9e224702b5c2..d050d3d11d588fe29ccf857d7b808bcab026a925 100644
+--- a/package.json
++++ b/package.json
+@@ -6,7 +6,7 @@
+     "name": "The xterm.js authors",
+     "url": "https://xtermjs.org/"
+   },
+-  "main": "lib/addon-ligatures.js",
++  "main": "lib/addon-ligatures.mjs",
+   "module": "lib/addon-ligatures.mjs",
+   "types": "typings/addon-ligatures.d.ts",
+   "repository": "https://github.com/xtermjs/xterm.js/tree/master/addons/addon-ligatures",

@@ -27,6 +27,7 @@ test("restores browser preferences before mounting and persists CSS fallback lis
   const saved: AppearanceSettings = {
     language: "zh-cmn-Hans-CN", theme: "dark", interfaceFont: '"Noto Sans", sans-serif',
     terminalFont: '"Cascadia Code", "Noto Sans Mono CJK SC", monospace',
+    terminalLigatures: true,
   }
   localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(saved))
   const appearance = useAppearanceStore(pinia)
@@ -36,6 +37,7 @@ test("restores browser preferences before mounting and persists CSS fallback lis
   expect(document.documentElement.style.colorScheme).toBe("dark")
   expect(document.documentElement.style.getPropertyValue("--ui-font-interface")).toBe(saved.interfaceFont)
   expect(appearance.terminalFont).toBe(saved.terminalFont)
+  expect(appearance.terminalLigatures).toBe(true)
   await appearance.set({ theme: "light" })
   expect(document.documentElement.style.colorScheme).toBe("light")
   expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toEqual({ ...saved, theme: "light" })
@@ -61,6 +63,17 @@ test("explicit theme overrides OS changes and Follow System resumes tracking the
   await appearance.set({ theme: "system" })
   expect(appearance.isDark).toBe(true)
   expect(document.documentElement.style.colorScheme).toBe("light dark")
+})
+
+test("existing browser preferences retain their values when the ligatures setting is introduced", async () => {
+  const saved = { language: "zh-cmn-Hans-CN", theme: "dark", interfaceFont: "Arial, sans-serif", terminalFont: '"Cascadia Code", monospace' }
+  localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(saved))
+  const appearance = useAppearanceStore(pinia)
+  await appearance.initialize()
+  expect(appearance.settings).toEqual({ ...saved, terminalLigatures: false })
+  expect(appearance.terminalLigatures).toBe(false)
+  await appearance.set({ terminalLigatures: true })
+  expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toEqual({ ...saved, terminalLigatures: true })
 })
 
 test("browser preferences synchronize with another tab", async () => {

@@ -25,13 +25,15 @@ export interface AppearanceSmokeResult {
   background: string
   interfaceFont: string
   terminalFont: string
+  terminalLigatures: boolean
+  joinedOperators: string[]
   language: string
   nativeTheme: string
   screenshots: string[]
 }
 
 // Exercises controls inside the built renderer with the real appearance preload.
-async function exerciseAppearance(phase: "change" | "restore", theme?: "light" | "dark" | "system") {
+async function exerciseAppearance(phase: "change" | "restore", theme?: "light" | "dark" | "system", ligatures?: boolean) {
   const api = (window as unknown as { deskfleet: DeskfleetDesktopApi }).deskfleet
   const appearance = api.appearance!
   function require(condition: unknown, message: string): asserts condition {
@@ -45,7 +47,7 @@ async function exerciseAppearance(phase: "change" | "restore", theme?: "light" |
     }
   }
   const control = (name: string) => document.querySelector<HTMLButtonElement>(`[data-control-name="appearance-${name}"]`)
-  async function select(name: "language" | "theme", label: string): Promise<void> {
+  async function select(name: "language", label: string): Promise<void> {
     await until(() => !!control(name) && !control(name)!.disabled, `${name} control`)
     const trigger = control(name)!
     trigger.focus()
@@ -56,10 +58,41 @@ async function exerciseAppearance(phase: "change" | "restore", theme?: "light" |
     option()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
     await until(() => !document.querySelector('[role="listbox"]') && !control(name)?.disabled, `${label} selection`)
   }
+  async function selectTheme(value: "light" | "dark" | "system"): Promise<void> {
+    const choice = () => document.querySelector<HTMLButtonElement>(`[data-appearance-theme="${value}"]`)
+    await until(() => !!choice() && !choice()!.disabled, `${value} theme thumbnail`)
+    require(choice()!.getAttribute("role") === "radio", "Theme thumbnails must be radio choices")
+    choice()!.click()
+    await until(async () => (await appearance.get()).theme === value && choice()!.getAttribute("aria-checked") === "true" && !choice()!.disabled, `${value} theme selection`)
+  }
+  const terminal = () => document.querySelector<HTMLElement>("[data-terminal-font-preview] .xterm")
+  const rows = () => document.querySelector<HTMLElement>("[data-terminal-font-preview] .xterm-rows")
+  const joinedOperators = () => [...document.querySelectorAll<HTMLElement>("[data-terminal-font-preview] .xterm-rows span")]
+    .map(span => span.textContent ?? "").filter(text => ["=>", "->", "===", "!=="].includes(text))
+  async function toggleLigatures(enabled: boolean): Promise<void> {
+    const toggle = () => document.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="appearance-terminal-ligatures-label"]')
+    await until(() => !!toggle() && !toggle()!.disabled, "Terminal ligature switch")
+    const original = terminal()
+    if ((toggle()!.getAttribute("aria-checked") === "true") !== enabled) toggle()!.click()
+    await until(async () => (await appearance.get()).terminalLigatures === enabled && !toggle()!.disabled, "Saved terminal ligatures")
+    await until(() => {
+      const features = terminal()?.style.fontFeatureSettings ?? ""
+      return enabled ? features.includes('"calt"') && !/"calt"\s+(?:0|off)/u.test(features) && joinedOperators().length > 0
+        : /"calt"\s+(?:0|off)/u.test(features) && /"liga"\s+(?:0|off)/u.test(features) && joinedOperators().length === 0
+    }, "Live terminal ligature rendering")
+    require(terminal() === original, "Ligature changes must update the existing terminal preview")
+  }
   async function font(name: "interface" | "terminal", value: string): Promise<void> {
     const input = document.querySelector<HTMLInputElement>(`#appearance-${name}-font`)!
+    const saved = await appearance.get()
+    const original = terminal()
     input.value = value
     input.dispatchEvent(new Event("input", { bubbles: true }))
+    if (name === "terminal") {
+      await until(() => !!rows() && getComputedStyle(rows()!).fontFamily === value, "Draft terminal font preview")
+      require((await appearance.get()).terminalFont === saved.terminalFont, "Terminal preview must update before committing the font")
+      require(terminal() === original, "Font changes must update the existing terminal preview")
+    }
     input.dispatchEvent(new Event("change", { bubbles: true }))
     await until(async () => (await appearance.get())[name === "interface" ? "interfaceFont" : "terminalFont"] === value && !input.disabled, `${name} font saved`)
   }
@@ -68,27 +101,34 @@ async function exerciseAppearance(phase: "change" | "restore", theme?: "light" |
   await until(() => !!control("language") && !control("language")!.disabled, "Appearance page")
   require(document.querySelector("h1")?.textContent === ((await appearance.get()).language === "zh-cmn-Hans-CN" ? "外观" : "Appearance"), "Appearance title must use selected language")
 
-  if (phase === "change" && !theme) {
+  if (phase === "change" && !theme && ligatures === undefined) {
     await select("language", "简体中文")
     await until(() => document.querySelector("h1")?.textContent === "外观", "Chinese translation")
     require(document.documentElement.lang === "zh-Hans-CN", "Document language must update")
-    await select("theme", "深色")
+    await selectTheme("dark")
+    await until(() => !!terminal() && !!rows() && !!rows()!.textContent?.includes("==="), "Real terminal preview")
+    require(!(await appearance.get()).terminalLigatures, "Terminal ligatures must default off")
     await font("interface", '"Segoe UI", "Microsoft YaHei", sans-serif')
     await font("terminal", '"Cascadia Code", "Noto Sans Mono CJK SC", monospace')
+    await toggleLigatures(true)
+    await toggleLigatures(false)
+    await toggleLigatures(true)
   }
-  if (theme) {
-    const labels = { light: "浅色", dark: "深色", system: "跟随系统" }
-    await select("theme", labels[theme])
-  }
+  if (theme) await selectTheme(theme)
+  if (ligatures !== undefined) await toggleLigatures(ligatures)
   const settings = await appearance.get()
   await until(() => document.documentElement.style.colorScheme === (settings.theme === "system" ? "light dark" : settings.theme), "Applied color scheme")
   const interfaceFont = getComputedStyle(document.body).fontFamily
-  const terminalFont = getComputedStyle(document.querySelector<HTMLElement>("[data-terminal-font-preview]")!).fontFamily
+  await until(() => !!rows() && (settings.terminalLigatures ? joinedOperators().length > 0 : joinedOperators().length === 0), "Restored terminal rendering")
+  const terminalFont = getComputedStyle(rows()!).fontFamily
   require(interfaceFont.includes('"Segoe UI"') && interfaceFont.includes('"Microsoft YaHei"') && interfaceFont.includes("sans-serif"), "Interface font CSS fallback must apply")
   require(terminalFont.includes('"Cascadia Code"') && terminalFont.includes('"Noto Sans Mono CJK SC"') && terminalFont.includes("monospace"), "Terminal font CSS fallback must apply")
+  const preview = document.querySelector<HTMLElement>("[data-terminal-font-preview]")!.getBoundingClientRect()
+  const screen = document.querySelector<HTMLElement>("[data-terminal-font-preview] .xterm-screen")!.getBoundingClientRect()
+  require(screen.width > 0 && screen.height > 0 && screen.right <= preview.right + 1 && screen.bottom <= preview.bottom + 1, "Actual terminal must fit inside its preview")
   require(!document.querySelector('[role="alert"]'), "Appearance must not show a save error")
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-  return { settings, background: getComputedStyle(document.body).backgroundColor, interfaceFont, terminalFont, language: document.documentElement.lang }
+  return { settings, background: getComputedStyle(document.body).backgroundColor, interfaceFont, terminalFont, terminalLigatures: settings.terminalLigatures, joinedOperators: joinedOperators(), language: document.documentElement.lang }
 }
 
 registerRendererScheme()
@@ -108,7 +148,7 @@ void app.whenReady().then(async () => {
     assert.equal(getMainLocale(), "zh-cmn-Hans-CN", "Native language must restore before window creation")
   }
   const window = new BrowserWindow({
-    show: false, width: 1200, height: 800,
+    show: false, width: 1200, height: 900,
     ...windowChromeOptions(process.platform),
     webPreferences: { preload: context.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true, additionalArguments: ["--deskfleet-locale=en-US"] },
   })
@@ -118,7 +158,7 @@ void app.whenReady().then(async () => {
   process.on("disconnect", () => app.quit())
   window.webContents.on("render-process-gone", (_event, details) => process.send?.({ error: `Renderer exited: ${details.reason}` }))
   await window.loadURL(`${BUNDLED_RENDERER_URL}#/settings`)
-  const run = (theme?: "light" | "dark" | "system") => window.webContents.executeJavaScript(`(${exerciseAppearance.toString()})(${JSON.stringify(context.phase)}, ${JSON.stringify(theme)})`) as Promise<Omit<AppearanceSmokeResult, "nativeTheme" | "screenshots">>
+  const run = (theme?: "light" | "dark" | "system", ligatures?: boolean) => window.webContents.executeJavaScript(`(${exerciseAppearance.toString()})(${JSON.stringify(context.phase)}, ${JSON.stringify(theme)}, ${JSON.stringify(ligatures)})`) as Promise<Omit<AppearanceSmokeResult, "nativeTheme" | "screenshots">>
   const screenshots: string[] = []
   async function screenshot(name: string): Promise<void> {
     const path = join(context.outputDirectory, `${name}.png`)
@@ -140,6 +180,9 @@ void app.whenReady().then(async () => {
   assert.equal(getMainLocale(), "zh-cmn-Hans-CN")
   await screenshot(context.phase === "change" ? "appearance-dark" : "appearance-restored")
   if (context.phase === "change") {
+    await run(undefined, false)
+    await screenshot("appearance-ligatures-disabled")
+    await run(undefined, true)
     result = await run("light")
     assert.equal(nativeTheme.themeSource, "light")
     assert.equal(result.background, "rgb(251, 251, 253)")
@@ -148,6 +191,19 @@ void app.whenReady().then(async () => {
     assert.equal(nativeTheme.themeSource, "system")
     assert.equal(result.background, nativeTheme.shouldUseDarkColors ? "rgb(23, 25, 31)" : "rgb(251, 251, 253)")
     result = await run("dark")
+    window.setSize(960, 700)
+    await window.webContents.executeJavaScript(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`)
+    const overflow = await window.webContents.executeJavaScript(`document.documentElement.scrollWidth > document.documentElement.clientWidth`)
+    assert.equal(overflow, false, "Appearance must fit the minimum window width")
+    const terminalFits = await window.webContents.executeJavaScript(`(() => {
+      const preview = document.querySelector('[data-terminal-font-preview]').getBoundingClientRect()
+      const screen = document.querySelector('[data-terminal-font-preview] .xterm-screen').getBoundingClientRect()
+      return screen.width > 0 && screen.right <= preview.right + 1 && screen.bottom <= preview.bottom + 1
+    })()`)
+    assert.equal(terminalFits, true, "The actual terminal must refit at minimum window width")
+    await screenshot("appearance-minimum")
+    await window.webContents.executeJavaScript(`document.querySelector('[data-terminal-font-preview]').parentElement.scrollIntoView({ block: 'end' })`)
+    await screenshot("appearance-minimum-terminal")
   }
   process.send?.({ result: { ...result, nativeTheme: nativeTheme.themeSource, screenshots } satisfies AppearanceSmokeResult })
 }).catch(error => { process.send?.({ error: String(error) }); app.quit() })
