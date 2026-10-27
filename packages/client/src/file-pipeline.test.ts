@@ -105,6 +105,27 @@ test("cancellation drains issued writes without starting another window or advan
   expect(close).toHaveBeenCalledOnce()
 })
 
+test.each(["read", "write", "cancel"] as const)("preserves the %s failure when source cleanup also rejects", async stage => {
+  const original = new Error(`${stage} failed`)
+  const { endpoint: source, close } = readingEndpoint(async ({ length }) => {
+    if (stage === "read") throw original
+    return { value: { bytes: length }, data: new Uint8Array(length) }
+  })
+  close.mockRejectedValue(new Error("closeRead failed"))
+  const destination = {
+    async call(_method: string, _params: unknown, data: Uint8Array) {
+      if (stage === "write") throw original
+      return { value: { bytes: data.length } }
+    },
+  } as unknown as FileEndpoint
+  let checks = 0
+  await expect(copyFileChunks({
+    source, destination, file: { ...file, size: 1 }, transferId: "copy", path: "",
+    check() { if (++checks === 2 && stage === "cancel") throw original }, progress() {},
+  })).rejects.toBe(original)
+  expect(close).toHaveBeenCalledOnce()
+})
+
 test("final source validation failure rejects a fully acknowledged copy", async () => {
   const { endpoint: source, close } = readingEndpoint(async ({ length }) => ({ value: { bytes: length }, data: new Uint8Array(length) }))
   close.mockRejectedValue(new Error("Source changed before close"))

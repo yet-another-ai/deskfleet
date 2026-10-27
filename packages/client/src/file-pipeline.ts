@@ -58,9 +58,13 @@ export async function copyFileChunks(options: {
     } while (offset < file.size)
     await Promise.all(active)
     check()
+  } catch (error) {
+    fail(error)
+    throw error
   } finally {
     // No finish/commit/next item may race requests from this file, even on error.
     await Promise.all(active)
-    await source.call("closeRead", { readId })
+    try { await source.call("closeRead", { readId }) }
+    catch (error) { if (!failure) throw error }
   }
 }

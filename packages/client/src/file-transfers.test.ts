@@ -165,6 +165,29 @@ test.each([
   expect(result).toEqual({ name, mimeType, data: new Uint8Array(bytes) })
 })
 
+test.each([true, false])("preview cleanup preserves a prior read failure: %s", async readFails => {
+  const directory = await mkdtemp(join(tmpdir(), "deskfleet-preview-cleanup-"))
+  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  await writeFile(join(directory, "preview.txt"), "preview")
+  const service = new FilesService(async () => directory)
+  const readError = Object.assign(new Error("Source read failed"), { code: "EIO" })
+  const closeError = new Error("Source close validation failed")
+  const released = vi.fn()
+  const endpoint: FileEndpoint = {
+    async call(method, params, data) {
+      const result = await service.call(method, params, data)
+      if (method === "read" && readFails) throw readError
+      if (method === "closeRead") { released(); throw closeError }
+      return result
+    },
+    close: () => service.close(),
+  }
+  const manager = new FileTransferManager({ endpoint: async () => endpoint, chooseLocalDirectory: async () => null })
+  cleanups.push(() => manager.close())
+  await expect(manager.readResource({ target: remote, sessionId: "12", uri: "preview.txt" })).rejects.toBe(readFails ? readError : closeError)
+  expect(released).toHaveBeenCalledOnce()
+})
+
 test("closing the account interrupts pending file calls before waiting for the queue", async () => {
   const directory = await mkdtemp(join(tmpdir(), "deskfleet-close-copy-"))
   cleanups.push(() => rm(directory, { recursive: true, force: true }))
