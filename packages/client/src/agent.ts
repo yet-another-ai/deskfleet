@@ -4,6 +4,8 @@ import type { DesktopEvent, IceCandidate, TerminalOffer } from "../../../apps/da
 /** IPC only negotiates the peer; agent operations and history use its ACP DataChannel. */
 export interface AgentSignalingApi {
   prepare?(sessionId: string): Promise<RTCIceServer[]>
+  /** Additional context for a transport failure, without masking authorization errors. */
+  connectionFailure?(sessionId: string): string | undefined
   control?<M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]): Promise<AgentMethods[M]["result"]> | undefined
   history?: {
     available(): boolean

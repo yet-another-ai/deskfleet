@@ -3,6 +3,7 @@ import type { AccountState, AccountUser, CentralApi, CentralEvent, Machine, Peer
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
+import type { TeamBilling, AdminTeamBilling } from "./billing.ts"
 
 export interface SavedAccount { serverUrl: string; token?: string; user?: AccountUser }
 export interface HttpCentralOptions {
@@ -11,6 +12,8 @@ export interface HttpCentralOptions {
   authorize(client: HttpCentralClient): Promise<void>
   fetch?: typeof fetch
   socket?: (url: string) => WebSocket
+  cookieAuth?: boolean
+  openExternal?: (url: string) => Promise<unknown>
 }
 
 export function serverAddress(input: string): string {
@@ -30,10 +33,11 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   #socket: WebSocket | undefined
   #retry: ReturnType<typeof setTimeout> | undefined
   #disposed = false
+  #csrf: string | undefined
   constructor(options: HttpCentralOptions) { this.#options = options; this.#account = options.account }
   async status(): Promise<AccountState> {
     let siteAdmin = false
-    if (this.#account.token) {
+    if (this.#account.token || this.#options.cookieAuth) {
       try {
         const result = await this.request<{ user: AccountUser; siteAdmin: boolean }>("GET", "/api/me")
         this.#account.user = result.user
@@ -41,9 +45,10 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
         this.#connect()
       } catch (error) {
         if (!(error instanceof HttpError) || error.status !== 401) throw error
+        const wasSignedIn = !!(this.#account.user || this.#account.token)
         this.#disconnect()
         await this.#save({ serverUrl: this.#account.serverUrl })
-        this.#emit({ type: "accountChanged" })
+        if (wasSignedIn) this.#emit({ type: "accountChanged" })
       }
     }
     return { serverUrl: this.#account.serverUrl, user: this.#account.user, siteAdmin }
@@ -52,6 +57,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     const serverUrl = serverAddress(address)
     if (serverUrl !== this.#account.serverUrl) {
       this.#disconnect()
+      this.#csrf = undefined
       await this.#save({ serverUrl })
       this.#emit({ type: "accountChanged" })
     }
@@ -68,21 +74,58 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     this.#connect(); this.#emit({ type: "accountChanged" })
   }
   async logout(): Promise<void> {
-    try { if (this.#account.token) await this.request("POST", "/api/auth/logout") }
-    finally { this.#disconnect(); await this.#save({ serverUrl: this.#account.serverUrl }); this.#emit({ type: "accountChanged" }) }
+    if (this.#options.cookieAuth) {
+      // Only the server can remove an HttpOnly cookie; a failed logout stays visible.
+      await this.request("POST", "/api/auth/logout")
+      this.#disconnect(); await this.#save({ serverUrl: this.#account.serverUrl }); this.#emit({ type: "accountChanged" })
+    } else {
+      try { if (this.#account.token) await this.request("POST", "/api/auth/logout") }
+      finally { this.#disconnect(); await this.#save({ serverUrl: this.#account.serverUrl }); this.#emit({ type: "accountChanged" }) }
+    }
   }
   async #save(account: SavedAccount): Promise<void> { await this.#options.persist(account); this.#account = account }
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    if (this.#options.cookieAuth && !["GET", "HEAD"].includes(method) && !this.#csrf) {
+      await this.request("GET", "/api/auth/config")
+    }
     const response = await (this.#options.fetch ?? fetch)(`${this.#account.serverUrl}${path}`, {
-      method, headers: { ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      method, credentials: this.#options.cookieAuth ? "include" : "omit",
+      headers: { ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(this.#options.cookieAuth && this.#csrf ? { "X-CSRF-Token": this.#csrf } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     if (!response.ok) {
       const error = await response.json().catch(() => ({})) as { error?: { code: string; message: string; reason?: string } }
-      throw new HttpError(response.status, error.error?.message ?? response.statusText, error.error?.reason === "encoder" ? "encoder" : undefined)
+      throw new HttpError(response.status, error.error?.message ?? response.statusText, error.error?.reason === "encoder" ? "encoder" : undefined, error.error?.code)
     }
-    return response.status === 204 ? undefined as T : await response.json() as T
+    const result = response.status === 204 ? undefined : await response.json() as { csrfToken?: string }
+    if (result?.csrfToken) this.#csrf = result.csrfToken
+    return result as T
   }
+  async #open(url: string) {
+    const parsed = new URL(url)
+    serverAddress(parsed.origin)
+    if (!this.#options.openExternal) throw new Error("This host cannot open external pages")
+    await this.#options.openExternal(parsed.toString())
+  }
+  async openAccountSettings() {
+    const { webUrl } = await this.request<{ webUrl: string }>("GET", "/api/auth/config")
+    await this.#open(`${webUrl}/auth/account`)
+  }
+  billing(teamId: string) { return this.request<TeamBilling>("GET", `/api/teams/${encodeURIComponent(teamId)}/billing`) }
+  async checkout(teamId: string, plan: "go" | "pro", requestId: string) {
+    const { url } = await this.request<{ url: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/billing/checkout`, { plan, requestId })
+    await this.#open(url)
+  }
+  async billingPortal(teamId: string) {
+    const { url } = await this.request<{ url: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/billing/portal`, {})
+    await this.#open(url)
+  }
+  billingTeams() { return this.request<AdminTeamBilling[]>("GET", "/api/admin/teams") }
+  registrationPolicy() { return this.request<{ registrationEnabled: boolean }>("GET", "/api/auth/config") }
+  async updateRegistration(enabled: boolean) { await this.request("PATCH", "/api/auth/registration", { enabled }) }
+  users(query: string) { return this.request<Array<{ id: string; name: string; email: string; disabled: boolean }>>("GET", `/api/admin/users?query=${encodeURIComponent(query)}`) }
+  async disableUser(userId: string, disabled: boolean) { await this.request("PATCH", `/api/admin/users/${encodeURIComponent(userId)}/disabled`, { disabled }) }
+  async setEnterprise(teamId: string, enabled: boolean) { await this.request("PUT", `/api/admin/teams/${encodeURIComponent(teamId)}/enterprise`, { enabled }) }
   site() { return this.request<SiteSettings>("GET", "/api/site") }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }
   updateSiteSettings(settings: SiteSettings) { return this.request<SiteSettings>("PATCH", "/api/admin/site-settings", settings) }
@@ -121,11 +164,11 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   onEvent(listener: (event: CentralEvent) => void): () => void { this.#listeners.add(listener); this.#connect(); return () => this.#listeners.delete(listener) }
   #emit(event: CentralEvent): void { for (const listener of this.#listeners) listener(event) }
   #connect(): void {
-    if (this.#disposed || !this.#account.token || this.#socket || this.#retry) return
+    if (this.#disposed || !(this.#account.token || (this.#options.cookieAuth && this.#account.user)) || this.#socket || this.#retry) return
     const url = new URL(`${this.#account.serverUrl}/api/client/ws`); url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
     const socket = (this.#options.socket ?? (url => new WebSocket(url)))(url.toString())
     this.#socket = socket
-    socket.onopen = () => socket.send(JSON.stringify({ type: "authenticate", token: this.#account.token }))
+    socket.onopen = () => { if (!this.#options.cookieAuth) socket.send(JSON.stringify({ type: "authenticate", token: this.#account.token })) }
     socket.onmessage = ({ data }) => {
       let event: CentralEvent | { type: "ready" }
       try { event = JSON.parse(String(data)) as typeof event } catch { return }
@@ -133,12 +176,14 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       else this.#emit(event)
     }
     socket.onerror = () => socket.close()
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (this.#socket !== socket) return
       this.#socket = undefined
       // A signaling outage is not a peer revocation. Existing DataChannels keep running.
       this.#emit({ type: "connection", connected: false })
-      if (!this.#disposed && this.#account.token) this.#retry = setTimeout(() => { this.#retry = undefined; this.#connect() }, 2_000)
+      if (event.code === 4401) {
+        void this.#save({ serverUrl: this.#account.serverUrl }).then(() => this.#emit({ type: "accountChanged" }))
+      } else if (!this.#disposed && (this.#account.token || (this.#options.cookieAuth && this.#account.user))) this.#retry = setTimeout(() => { this.#retry = undefined; this.#connect() }, 2_000)
     }
   }
   #disconnect(): void {
@@ -150,5 +195,6 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
 export class HttpError extends Error {
   readonly status: number
   readonly reason?: "encoder"
-  constructor(status: number, message: string, reason?: "encoder") { super(message); this.status = status; this.reason = reason }
+  readonly code?: string
+  constructor(status: number, message: string, reason?: "encoder", code?: string) { super(message); this.status = status; this.reason = reason; this.code = code }
 }

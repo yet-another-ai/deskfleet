@@ -12,6 +12,7 @@ import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import WindowToolbar from "../components/chrome/WindowToolbar.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
+import SessionAllowance from "../components/session/SessionAllowance.vue"
 import AgentBacklog from "../components/session/AgentBacklog.vue"
 import AgentConversation from "../components/session/AgentConversation.vue"
 import AgentNotice from "../components/session/AgentNotice.vue"
@@ -180,6 +181,7 @@ async function checkOperation(operationId: string): Promise<void> {
       <AgentNotice v-if="run && ['starting', 'stopping'].includes(run.state)" tone="progress" :text="t(`agent.runState.${run.state}`)" />
       <AgentNotice v-else-if="resumeUnavailable" :text="t('agent.resumeUnavailable')" />
       <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
+      <SessionAllowance :snapshot="snapshot" />
       <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!active || !connected || busy" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
     </template>
   </div>

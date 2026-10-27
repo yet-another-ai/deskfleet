@@ -75,7 +75,7 @@ export class AgentClient {
         channel.bufferedAmountLowThreshold = 64 * 1024
         const session: PeerSession = {
           id, peer, channel, unsubscribe: () => {}, resolve, reject,
-          timeout: setTimeout(() => this.#fail(session, new Error("Agent connection timed out")), 20_000),
+          timeout: setTimeout(() => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection timed out")), 20_000),
           offered: false, remoteReady: false, localCandidates: [], remoteCandidates: [],
           localSending: Promise.resolve(), remoteAdding: Promise.resolve(), sending: Promise.resolve(), queuedBytes: 0,
           decoder: new AgentMessageDecoder(message => this.#message(session, message)),
@@ -87,7 +87,7 @@ export class AgentClient {
             session.remoteCandidates.push(event.candidate)
             this.#addCandidates(session)
           } else if (event.kind === "error") this.#fail(session, new Error(event.error))
-          else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) this.#fail(session, new Error("Agent connection closed"))
+          else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
         })
         peer.onicecandidate = ({ candidate }) => {
           if (!candidate || this.#current !== session) return
@@ -101,10 +101,10 @@ export class AgentClient {
           this.#sendCandidates(session)
         }
         peer.onconnectionstatechange = () => {
-          if (["failed", "closed", "disconnected"].includes(peer.connectionState)) this.#fail(session, new Error("Agent connection closed"))
+          if (["failed", "closed", "disconnected"].includes(peer.connectionState)) this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
         }
         channel.onopen = () => this.#ready(session)
-        channel.onclose = () => this.#fail(session, new Error("Agent connection closed"))
+        channel.onclose = () => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
         channel.onerror = () => this.#fail(session, new Error("Agent DataChannel failed"))
         channel.onmessage = ({ data }) => {
           if (this.#current !== session) return

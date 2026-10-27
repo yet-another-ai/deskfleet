@@ -71,3 +71,18 @@ test("desktop control is requested explicitly when starting its authorized peer"
   await f.remote.api.desktop.start({ sessionId: "desktop", displayId: 2, control: true })
   expect(f.central.startPeer).toHaveBeenLastCalledWith("peer1", { displayId: 2, control: true })
 })
+
+test.each([
+  ["free_plan", "Free plan does not include TURN relay"],
+  ["turn_quota_exhausted", "monthly TURN relay allowance"],
+] as const)("preserves direct ICE and explains a later failure for %s", async (reason, message) => {
+  const f = fixture()
+  const grant = await f.central.createPeer("team2", "central7", "agent")
+  vi.mocked(f.central.createPeer).mockResolvedValue({ ...grant, iceServers: [{ urls: ["stun:example.test"] }], relayDeniedReason: reason })
+  expect(await f.remote.api.agent.prepare!("direct")).toEqual([{ urls: ["stun:example.test"] }])
+  expect(f.remote.api.agent.connectionFailure!("direct")).toContain(message)
+  expect(f.remote.api.terminal.connectionFailure!("direct")).toContain(message)
+  expect(f.remote.api.desktop.connectionFailure!("direct")).toContain(message)
+  await f.remote.api.agent.close("direct")
+  expect(f.remote.api.agent.connectionFailure!("direct")).toBeUndefined()
+})

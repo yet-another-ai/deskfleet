@@ -1,5 +1,10 @@
 import { vi } from "vitest"
+import type { TeamBilling } from "../../../client/src/billing.ts"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "../../../client/src/central.ts"
+
+export function billingFixture(usage = { relayedBytes: "0", activeSessionCount: 0, memberCount: 1 }): TeamBilling {
+  return { plan: "selfHosted", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: null }, usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false }
+}
 
 export interface FakeCentralOptions {
   signedIn?: boolean
@@ -40,6 +45,16 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     site: vi.fn(async () => ({ ...state.site })),
     siteSettings: vi.fn(async () => ({ ...state.site })),
     updateSiteSettings: vi.fn(async (settings: SiteSettings) => { state.site = { ...settings }; return { ...state.site } }),
+    openAccountSettings: vi.fn(async () => {}),
+    billing: vi.fn(async (_teamId: string) => billingFixture({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
+    checkout: vi.fn(async (_teamId: string, _plan: "go" | "pro", _requestId: string) => {}),
+    billingPortal: vi.fn(async (_teamId: string) => {}),
+    billingTeams: vi.fn(async () => []),
+    setEnterprise: vi.fn(async (_teamId: string, _enabled: boolean) => {}),
+    registrationPolicy: vi.fn(async () => ({ registrationEnabled: true })),
+    updateRegistration: vi.fn(async (_enabled: boolean) => {}),
+    users: vi.fn(async (_query: string) => []),
+    disableUser: vi.fn(async (_userId: string, _disabled: boolean) => {}),
     teams: vi.fn(async () => state.teams.map(team => ({ ...team }))),
     createTeam: vi.fn(async (name: string) => {
       const team = { id: `team-${state.teams.length + 1}`, name, role: "admin" as const }

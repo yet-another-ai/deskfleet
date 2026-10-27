@@ -171,7 +171,7 @@ onBeforeUnmount(() => { unsubscribe?.() })
           <p v-else class="m-0 break-words text-sm text-ui-text-muted">{{ session.account.value.serverUrl }}</p>
           <p v-if="error" role="alert" class="m-0 break-words text-sm text-ui-danger">{{ error }}</p>
           <UiButton variant="primary" class="min-h-9 text-sm" type="submit" :disabled="pending">
-            {{ step === "server" ? t(pending ? "welcome.savingServer" : "welcome.continue") : session.account.value.user ? t("welcome.continueAs", { name: session.account.value.user.name }) : t(pending ? "account.signingIn" : "account.continueOidc") }}
+            {{ step === "server" ? t(pending ? "welcome.savingServer" : "welcome.continue") : session.account.value.user ? t("welcome.continueAs", { name: session.account.value.user.name }) : t(pending ? "account.signingIn" : "account.continueSignIn") }}
           </UiButton>
         </form>
       </section>

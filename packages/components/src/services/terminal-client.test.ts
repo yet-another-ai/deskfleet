@@ -175,3 +175,16 @@ test("a cancelled offer is closed again if the daemon finishes it late", async (
   expect(api.close).toHaveBeenNthCalledWith(1, id)
   expect(api.close).toHaveBeenNthCalledWith(2, id)
 })
+
+test("surfaces the saved relay denial only for transport failure", async () => {
+  const { client, api, state } = setup()
+  const detail = "Direct connection failed. The Free plan does not include TURN relay."
+  Object.assign(api, { connectionFailure: () => detail })
+  const pending = client.connect()
+  const rejected = expect(pending).rejects.toThrow(detail)
+  await flushPromises()
+  const peer = TestPeer.instances.at(-1)!
+  peer.channel.onclose?.()
+  await rejected
+  expect(state).toHaveBeenLastCalledWith("error", detail)
+})

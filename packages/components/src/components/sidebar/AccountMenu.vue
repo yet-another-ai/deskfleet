@@ -11,6 +11,10 @@ import UserAvatar from "../common/UserAvatar.vue"
 const session = useAccountSession()
 const { t } = useI18n()
 
+function security(): void {
+  session!.central.openAccountSettings().catch((reason: unknown) => { session!.notice.value = reason instanceof Error ? reason.message : String(reason) })
+}
+
 function signOut(): void {
   session!.signOut().catch((reason: unknown) => { session!.notice.value = reason instanceof Error ? reason.message : String(reason) })
 }
@@ -31,6 +35,7 @@ function signOut(): void {
         <div v-if="session.site.value" class="mt-0.5 truncate text-xs text-ui-text-muted">{{ session.site.value.siteName }}</div>
       </div>
       <DropdownMenuItem v-if="client.platform === 'web' && client.siteAdministration && session.account.value.siteAdmin" as="button" type="button" class="ui-menu-item mt-1" @select="router.push({ name: 'site-admin' })"><ShieldCheck :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("siteAdmin.title") }}</DropdownMenuItem>
+      <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-1" @select="security"><ShieldCheck :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("auth.security") }}</DropdownMenuItem>
       <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-1" @select="signOut"><LogOut :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.signOut") }}</DropdownMenuItem>
     </template>
   </MenuPopover>

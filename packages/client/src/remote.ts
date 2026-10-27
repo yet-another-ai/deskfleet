@@ -1,3 +1,4 @@
+import { relayFailureMessage, type RelayDeniedReason } from "./relay.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import type { CentralApi, CentralEvent, Machine } from "./central.ts"
 import type { DesktopEvent, DesktopOffer, DesktopStart, IceCandidate } from "./desktop-media.ts"
@@ -5,7 +6,7 @@ import type { TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts
 import type { AgentMethod, AgentMethods } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { TerminalSummary } from "./terminal.ts"
 
-interface Peer { id: string; timer: ReturnType<typeof setTimeout> }
+interface Peer { id: string; relayDeniedReason?: RelayDeniedReason | null; timer: ReturnType<typeof setTimeout> }
 const management = new Set<string>([
   "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure",
   "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/command/get",
@@ -47,9 +48,10 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         throw new Error("Peer authorization has expired")
       }
       const timer = setTimeout(() => emit({ sessionId, kind: "error", error: "Peer authorization has expired. Reconnect to continue." }), expiresAt - Date.now())
-      peers.set(sessionId, { id: grant.peerId, timer })
+      peers.set(sessionId, { id: grant.peerId, timer, relayDeniedReason: grant.relayDeniedReason })
       return grant.iceServers
     },
+    connectionFailure: (sessionId: string) => relayFailureMessage(peers.get(sessionId)?.relayDeniedReason),
     async offer(options: TerminalOffer | DesktopOffer): Promise<{ sdp: string }> {
       const peer = peers.get(options.sessionId)
       if (!peer) throw new Error("Peer authorization is missing")

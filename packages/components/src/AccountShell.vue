@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiButton from "./components/common/UiButton.vue"
 import { Bell, Palette, SlidersHorizontal, Users } from "@lucide/vue"
-import { defineAsyncComponent, onBeforeUnmount, provide, ref } from "vue"
+import { defineAsyncComponent, onBeforeUnmount, provide, ref, watch } from "vue"
 import { useEventListener, useTitle } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
@@ -34,6 +34,18 @@ const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
 const { ready, account, site, teams, team, machine, dialog, shellSettings } = session
 const route = router.currentRoute
+const returnParams = new URLSearchParams(location.search)
+let billingReturnPending = props.host.platform === "web" && returnParams.get("settings") === "plans"
+watch([ready, account], async () => {
+  if (!billingReturnPending || !ready.value || !account.value.user) return
+  billingReturnPending = false
+  const selected = returnParams.get("team")
+  if (selected && teams.value.some(value => value.id === selected)) await session.selectTeam(selected)
+  session.openSettings("team")
+  returnParams.delete("team"); returnParams.delete("settings")
+  const search = returnParams.toString()
+  history.replaceState(null, "", location.pathname + (search ? `?${search}` : "") + location.hash)
+}, { immediate: true })
 useTitle(() => site.value?.siteName ?? "deskfleet")
 useEventListener(window, "focus", () => {
   void session.reload().catch((reason: unknown) => { session.notice.value = reason instanceof Error ? reason.message : String(reason) })

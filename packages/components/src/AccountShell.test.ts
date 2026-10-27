@@ -48,7 +48,8 @@ test("browses synchronized history with the machine offline and isolates equal l
   } as unknown as CentralApi
   view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [pinia, i18n] }, attachTo: document.body })
   await flushPromises()
-  await vi.waitFor(() => expect(view!.text()).toContain("Workspace 101"))
+  // The first mount also loads the workspace bundle while full checks build in parallel.
+  await vi.waitFor(() => expect(view!.text()).toContain("Workspace 101"), { timeout: 5_000 })
   expect(view.text()).toContain("Conversation 101")
   await router.push("/sessions/30"); await flushPromises()
   await vi.waitFor(() => expect(view!.text()).toContain("Message from 101"))

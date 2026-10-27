@@ -1,3 +1,4 @@
+import { relayFailureMessage } from "./relay.ts"
 import type { CentralApi } from "./central.ts"
 import type { IceCandidate } from "./desktop-media.ts"
 import type { FileTarget } from "./files.ts"
@@ -40,7 +41,7 @@ export async function connectFilePeer(
   void ready.catch(() => {})
   let unsubscribe = () => {}
   let lifetime: ReturnType<typeof setTimeout> | undefined
-  const setup = setTimeout(() => fail(new Error("File connection timed out")), 20_000)
+  const setup = setTimeout(() => connectionFailed(new Error("File connection timed out")), 20_000)
   async function close(): Promise<void> {
     if (closed) return
     closed = true; clearTimeout(setup); clearTimeout(lifetime); unsubscribe()
@@ -51,6 +52,10 @@ export async function connectFilePeer(
     if (closed) return
     rejectReady(error); failed(error)
     void close()
+  }
+  function connectionFailed(error: Error): void {
+    const detail = relayFailureMessage(grant.relayDeniedReason)
+    fail(detail ? new Error(detail) : error)
   }
   function checkReady(): void {
     if (opened && remoteReady && !closed) { clearTimeout(setup); resolveReady() }
@@ -82,7 +87,7 @@ export async function connectFilePeer(
     const value = event.event
     if (value.kind === "iceCandidate" && "candidate" in value) { remoteCandidates.push(value.candidate as IceCandidate); flushRemote() }
     else if (value.kind === "error") fail(new Error("error" in value ? String(value.error) : "File peer failed"))
-    else if (value.kind === "stateChanged" && "state" in value && ["failed", "closed"].includes(String(value.state))) fail(new Error("File peer closed"))
+    else if (value.kind === "stateChanged" && "state" in value && ["failed", "closed"].includes(String(value.state))) connectionFailed(new Error("File peer closed"))
   })
   async function negotiate(): Promise<void> {
     const expires = Date.parse(grant.authorization.expiresAt)
@@ -91,7 +96,7 @@ export async function connectFilePeer(
     peer = await factory(grant.iceServers, {
       data: bytes => { if (!closed) receive(bytes) },
       candidate: candidate => { localCandidates.push(candidate); flushLocal() },
-      open: () => { opened = true; checkReady() }, fail,
+      open: () => { opened = true; checkReady() }, fail: connectionFailed,
     })
     if (closed) { await peer.close(); throw new Error("File connection was cancelled") }
     localSdp = await peer.offer()

@@ -7,7 +7,7 @@ class Socket {
   onopen?: () => void
   onmessage?: (event: { data: string }) => void
   onerror?: () => void
-  onclose?: () => void
+  onclose?: (event: { code: number }) => void
   send = vi.fn()
   close = vi.fn()
 }
@@ -39,7 +39,7 @@ test("authenticates the WebSocket in its first message and reports signaling los
   f.sockets[0]!.onopen!()
   expect(f.sockets[0]!.send).toHaveBeenCalledWith(JSON.stringify({ type: "authenticate", token: "application-token" }))
   f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
-  f.sockets[0]!.onclose!()
+  f.sockets[0]!.onclose!({ code: 1006 })
   expect(events.mock.calls.map(([event]) => event)).toEqual([{ type: "connection", connected: true }, { type: "connection", connected: false }])
   await vi.advanceTimersByTimeAsync(2_000)
   expect(f.sockets).toHaveLength(2)
@@ -108,4 +108,47 @@ test("loads public settings and saves site settings through the admin endpoint",
   expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/site", expect.objectContaining({ method: "GET" }))
   expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/site-settings", expect.objectContaining({ method: "GET" }))
   expect(f.fetch).toHaveBeenNthCalledWith(3, "https://fleet.example/api/admin/site-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(settings) }))
+})
+
+
+test("browser requests use cookie authentication and CSRF, with no bearer WebSocket frame", async () => {
+  const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ user: { id: "u1", name: "Ada" }, csrfToken: "csrf-token", siteAdmin: false }), { status: 200 }))
+  const socket = new Socket()
+  const persist = vi.fn(async () => {})
+  const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example" }, cookieAuth: true, persist, authorize: async () => {}, fetch: fetch as typeof globalThis.fetch, socket: () => socket as unknown as WebSocket })
+  clients.push(client)
+  await client.status()
+  socket.onopen!()
+  expect(socket.send).not.toHaveBeenCalled()
+  await client.createTeam("Team")
+  expect(fetch).toHaveBeenLastCalledWith("https://fleet.example/api/teams", expect.objectContaining({ credentials: "include", headers: { "X-CSRF-Token": "csrf-token", "Content-Type": "application/json" } }))
+  expect(persist).not.toHaveBeenCalled()
+})
+
+test("browser public mutations obtain a CSRF token before posting", async () => {
+  const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ csrfToken: "first-csrf" }), { status: 200 }))
+  const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example" }, cookieAuth: true, persist: async () => {}, authorize: async () => {}, fetch: fetch as typeof globalThis.fetch })
+  clients.push(client)
+  await client.request("POST", "/api/auth/register", { email: "ada@example.test" })
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(["https://fleet.example/api/auth/config", "https://fleet.example/api/auth/register"])
+  expect(fetch.mock.calls[1]![1].headers).toMatchObject({ "X-CSRF-Token": "first-csrf" })
+})
+
+test("failed browser logout keeps the authenticated connection until its cookie is revoked", async () => {
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ user: { id: "u1", name: "Ada" }, csrfToken: "csrf" }), { status: 200 }))
+  const socket = new Socket()
+  const persist = vi.fn(async () => {})
+  const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example" }, cookieAuth: true, persist, authorize: async () => {}, fetch, socket: () => socket as unknown as WebSocket })
+  clients.push(client)
+  const events = vi.fn(); client.onEvent(events)
+  await client.status()
+  fetch.mockRejectedValueOnce(new Error("Network unavailable"))
+  await expect(client.logout()).rejects.toThrow("Network unavailable")
+  expect(persist).not.toHaveBeenCalled()
+  expect(socket.close).not.toHaveBeenCalled()
+  expect(events).not.toHaveBeenCalled()
+  fetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
+  await client.logout()
+  expect(socket.close).toHaveBeenCalledOnce()
+  expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
 })

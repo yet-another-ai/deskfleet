@@ -89,3 +89,16 @@ test("releasing an in-flight offer closes a late peer answer too", async () => {
   await flushPromises(); client.close(); await rejected; answer.resolve({ sdp: "late" }); await flushPromises()
   expect(api.close).toHaveBeenCalledTimes(2)
 })
+
+test("surfaces the saved relay denial only for transport failure", async () => {
+  const { client, api, state } = setup()
+  const detail = "Direct connection failed. The Free plan does not include TURN relay."
+  Object.assign(api, { connectionFailure: () => detail })
+  const pending = client.connect()
+  const rejected = expect(pending).rejects.toThrow(detail)
+  await flushPromises()
+  const peer = TestPeer.instances.at(-1)!
+  peer.channel.onclose?.()
+  await rejected
+  expect(state).toHaveBeenLastCalledWith("error", detail)
+})
