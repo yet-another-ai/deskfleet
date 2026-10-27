@@ -61,8 +61,7 @@ impl LocalCatalog {
             self.catalog.database(),
             "SELECT a.record_json FROM agent_sessions a \
              JOIN workspace_sessions s ON s.id = a.session_id \
-             JOIN workspaces w ON w.id = s.workspace_id \
-             WHERE w.machine_id = ? ORDER BY a.session_id",
+             WHERE s.machine_id = ? ORDER BY a.session_id",
             vec![self.machine.id.as_i64().into()],
         )
         .await
@@ -186,7 +185,9 @@ impl LocalCatalog {
         request: AgentCreateSession,
     ) -> Result<AgentCreatedSession, StoreError> {
         let db = self.catalog.database().begin().await?;
-        require_workspace(&db, self.machine.id, request.workspace_id).await?;
+        if let Some(workspace_id) = request.workspace_id {
+            require_workspace(&db, self.machine.id, workspace_id).await?;
+        }
         if !request.command.is_canonical
             || request.command.status != CommandStatus::Accepted
             || request.command.session_id.is_some()
@@ -208,7 +209,8 @@ impl LocalCatalog {
             ));
         }
         let row = workspace_session::ActiveModel {
-            workspace_id: Set(request.workspace_id.as_i64()),
+            machine_id: Set(self.machine.id.as_i64()),
+            workspace_id: Set(request.workspace_id.map(|id| id.as_i64())),
             ..Default::default()
         }
         .insert(&db)
@@ -230,7 +232,7 @@ impl LocalCatalog {
         };
         let mut command = request.command;
         command.session_id = Some(session.id);
-        command.workspace_id = Some(session.workspace_id);
+        command.workspace_id = session.workspace_id;
         command.result = Some(serde_json::json!({"sessionId": session.id}));
         commit::save_command(&db, &command).await?;
         commit::save_session(&db, &session).await?;
@@ -248,8 +250,7 @@ async fn scoped_session(
         db,
         "SELECT a.record_json FROM agent_sessions a \
          JOIN workspace_sessions s ON s.id = a.session_id \
-         JOIN workspaces w ON w.id = s.workspace_id \
-         WHERE a.session_id = ? AND w.machine_id = ?",
+         WHERE a.session_id = ? AND s.machine_id = ?",
         vec![id.as_i64().into(), machine_id.into()],
     )
     .await

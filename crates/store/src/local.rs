@@ -24,6 +24,8 @@ pub struct LocalSnapshot {
     pub machine_id: MachineId,
     pub machine_name: String,
     pub workspaces: Vec<CatalogWorkspace>,
+    /// Session-owned worktrees that are not nested under a Workspace.
+    pub sessions: Vec<Worktree>,
 }
 
 /// Catalog access bound to the machine in a dedicated daemon database.
@@ -123,6 +125,10 @@ impl LocalCatalog {
             machine_id: self.machine.id,
             machine_name: self.machine.name.clone(),
             workspaces: self.catalog.workspaces(self.machine.id).await?,
+            sessions: self
+                .catalog
+                .machine_session_worktrees(self.machine.id)
+                .await?,
         })
     }
 
@@ -158,6 +164,10 @@ impl LocalCatalog {
         self.catalog
             .create_workspace_session(self.machine.id, workspace_id)
             .await
+    }
+
+    pub async fn create_machine_session(&self) -> Result<WorkspaceSession, StoreError> {
+        self.catalog.create_machine_session(self.machine.id).await
     }
 
     pub async fn attach_session_worktree(

@@ -50,7 +50,7 @@ async fn create(local: &LocalCatalog) -> AgentCreatedSession {
     local
         .agent_create_session(AgentCreateSession {
             command,
-            workspace_id: workspace.workspace.id,
+            workspace_id: Some(workspace.workspace.id),
             provider: "codex".into(),
             title: "Test".into(),
             context: SessionContext::Worktree,
@@ -164,7 +164,7 @@ async fn identity_allocator_and_atomic_creation_survive_restart() {
         .await
         .unwrap();
     local
-        .delete_workspace(created.session.workspace_id)
+        .delete_workspace(created.session.workspace_id.unwrap())
         .await
         .unwrap();
     local.close().await.unwrap();
@@ -336,7 +336,7 @@ async fn deletion_cascades_domain_records_but_preserves_audit_targets() {
         .await
         .unwrap();
     local
-        .delete_workspace(created.session.workspace_id)
+        .delete_workspace(created.session.workspace_id.unwrap())
         .await
         .unwrap();
     assert_eq!(
@@ -652,7 +652,7 @@ async fn archive_state_and_browser_audit_persist_without_losing_the_owned_contex
             .is_none()
     );
     assert!(matches!(
-        local.delete_workspace(session.workspace_id).await,
+        local.delete_workspace(session.workspace_id.unwrap()).await,
         Err(StoreError::WorkspaceHasSessions { .. })
     ));
     local.close().await.unwrap();

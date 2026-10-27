@@ -22,7 +22,7 @@ async function setup(machine: Partial<MachineSummary> = {}) {
   const wrapper = mount(MachineSection, {
     props: { machine: {
       id: "local-daemon", name: "host", local: true, online: true, desktop: false,
-      terminals: [{ id: "shell", title: "Machine shell", cwd: "/home/user" }], workspaces: [], ...machine,
+      terminals: [{ id: "shell", title: "Machine shell", cwd: "/home/user" }], sessions: [], workspaces: [], ...machine,
     } },
     global: { plugins: [pinia, router, i18n] },
   })
@@ -46,7 +46,7 @@ test("machine tool consolidation preserves Workspace and Session navigation", as
     desktop: true,
     workspaces: [{
       id: "workspace", name: "Project", directories: [{ path: "/project" }],
-      terminals: [{ id: "workspace-shell", title: "Workspace shell", cwd: "/project" }],
+      sessions: [], terminals: [{ id: "workspace-shell", title: "Workspace shell", cwd: "/project" }],
       sessions: [{ id: "session", title: "Implement feature", provider: "Codex" }],
     }],
   })

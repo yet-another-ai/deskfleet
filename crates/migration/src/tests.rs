@@ -32,7 +32,7 @@ async fn upgrade_baseline<M: MigratorTrait>() {
     M::up(&db, None).await.unwrap();
     assert_eq!(
         Migrator::get_pending_migrations(&db).await.unwrap().len(),
-        1
+        2
     );
 
     Migrator::up(&db, None).await.unwrap();
@@ -45,6 +45,12 @@ async fn upgrade_baseline<M: MigratorTrait>() {
             .unwrap()
     );
     assert!(
+        schema
+            .has_column("workspace_sessions", "machine_id")
+            .await
+            .unwrap()
+    );
+    assert!(
         Migrator::get_pending_migrations(&db)
             .await
             .unwrap()
@@ -52,7 +58,7 @@ async fn upgrade_baseline<M: MigratorTrait>() {
     );
     assert_eq!(
         Migrator::get_applied_migrations(&db).await.unwrap().len(),
-        4
+        5
     );
 
     Migrator::down(&db, None).await.unwrap();

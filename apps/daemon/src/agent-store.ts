@@ -89,8 +89,10 @@ export class AgentJournal {
     }
     return result.events
   }
-  async create(command: AgentCommand, workspaceId: string, title: string, context: AgentSessionContext, provider: string): Promise<AgentSessionRecord> {
-    const result = JSON.parse(await this.native.agentCreateSession(JSON.stringify({ command, workspaceId, provider, title, context }))) as { session: AgentSessionRecord }
+  async create(command: AgentCommand, workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string): Promise<AgentSessionRecord> {
+    const result = JSON.parse(await this.native.agentCreateSession(JSON.stringify({
+      command, provider, title, context, ...(workspaceId ? { workspaceId } : {}),
+    }))) as { session: AgentSessionRecord }
     return result.session
   }
 }

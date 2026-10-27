@@ -84,6 +84,7 @@ existing local assumptions, delivery order, and acceptance criteria.
 Team
   Machine
     TerminalSessions [machine scope]
+    AgentSessions [optional machine scope; no Workspace]
     Workspace
       Ordered directory paths [one or more; first is default]
       AgentSessions
@@ -98,7 +99,7 @@ Team
 | Workspace | A named, machine-local configuration of one or more ordered directory paths |
 | Worktree | An execution context owned by one Session; the catalog also keeps an internal main context for Workspace directories |
 | Directory binding | An unnamed path with a stable position; position zero is the default directory |
-| AgentSession | A workspace session with its captured execution context and provider identity |
+| AgentSession | A session with its captured execution context and provider identity; ordinarily owned by a Workspace, or machine-scoped when started without one |
 | TerminalSession | A terminal owned by one Machine, Workspace, or Worktree, with a separate cwd |
 
 A Workspace must be created with at least one existing directory. Its paths are

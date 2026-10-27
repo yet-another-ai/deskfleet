@@ -94,7 +94,29 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
           :depth="0"
         />
       </li>
-      <li v-if="machine.workspaces.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
+      <li v-for="session in machine.sessions" :key="session.id">
+        <TreeLink
+          :to="{ name: 'session', params: { sessionId: session.id } }"
+          :icon="Bot"
+          :label="sessionLabel(session)"
+          :depth="0"
+        >
+          <template #icon>
+            <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+            <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
+          </template>
+          <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
+            <IconButton
+              :icon="Archive"
+              :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
+              :disabled="!machine.online || archiving.has(session.id)"
+              @click="archiveSession(session.id)"
+            />
+          </template>
+        </TreeLink>
+        <p v-if="archiveErrors[session.id]" role="alert" class="m-0 px-2.5 pb-1 pl-6 text-xs text-ui-danger break-words">{{ archiveErrors[session.id] }}</p>
+      </li>
+      <li v-if="machine.workspaces.length === 0 && machine.sessions.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
         {{ t("machine.noWorkspaces") }}
       </li>
       <li v-for="workspace in machine.workspaces" :key="workspace.id">

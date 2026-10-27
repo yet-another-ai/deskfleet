@@ -138,6 +138,7 @@ export class ManagedSessionWorktrees {
    * context without generating checkouts; the agent works in those directories.
    */
   async useDirectories(allocated: CatalogWorkspaceSession): Promise<ManagedWorkspaceSession> {
+    if (!allocated.workspaceId) throw new Error("Session has no workspace")
     const workspace = (await this.#catalog.snapshot()).workspaces.find(value => value.id === allocated.workspaceId)
     const main = workspace?.worktrees.find(worktree => !worktree.sessionId)
     if (!main || main.directories.length === 0) throw new Error("Workspace has no main directories")

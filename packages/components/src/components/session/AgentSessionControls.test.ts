@@ -47,7 +47,7 @@ test("only pending permissions are actionable and an answer is recorded on its t
   expect(conversation.findAll("button").some(item => item.text() === "Reject")).toBe(false)
 })
 test("composer uses explicit submit and steer and protects IME composition", async () => {
-  const location = { machine: { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], terminals: [] }, workspace: { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] } }
+  const location = { machine: { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], sessions: [], terminals: [] }, workspace: { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] } }
   const view = mount(SessionComposer, { props: { location, modelValue: "Draft", activeTurn: true, canSteer: true }, global: { plugins: [i18n] } }); wrappers.push(view)
   await view.get("textarea").trigger("keydown", { key: "Enter", isComposing: true }); expect(view.emitted("submit")).toBeUndefined()
   await view.get("textarea").trigger("keydown", { key: "Enter", shiftKey: true }); expect(view.emitted("submit")).toBeUndefined()
@@ -57,7 +57,7 @@ test("composer uses explicit submit and steer and protects IME composition", asy
   await view.setProps({ submitting: true }); await view.get("textarea").trigger("keydown", { key: "Enter" }); expect(view.emitted("submit")).toHaveLength(2)
 })
 test("an empty composer offers to cancel the active turn instead of sending", async () => {
-  const location = { machine: { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], terminals: [] }, workspace: { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] } }
+  const location = { machine: { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], sessions: [], terminals: [] }, workspace: { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] } }
   const view = mount(SessionComposer, { props: { location, modelValue: "", activeTurn: true, canCancel: true }, global: { plugins: [i18n] } }); wrappers.push(view)
   await button(view, "Cancel turn").trigger("click"); expect(view.emitted("cancel")).toHaveLength(1)
   expect(view.find('[aria-label="Add to backlog"]').exists()).toBe(false)
@@ -95,7 +95,7 @@ test("a finished turn folds its work behind a duration and keeps the final answe
 })
 
 test("only a new Session offers its context, and an existing directory Session is labelled as such", async () => {
-  const machine = { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], terminals: [] }
+  const machine = { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], sessions: [], terminals: [] }
   const workspace = { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] }
   const fresh = mount(SessionComposer, { attachTo: document.body, props: { location: { machine, workspace }, showTarget: true, context: "worktree" }, global: { plugins: [i18n] } }); wrappers.push(fresh)
   await button(fresh, "Session context: New worktree").trigger("click")

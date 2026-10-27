@@ -77,5 +77,7 @@ export interface MachineSummary {
   /** Whether the machine has a graphical session to share; headless machines do not. */
   desktop: boolean
   terminals: TerminalSessionSummary[]
+  /** Sessions started without a Workspace, scoped to this machine. */
+  sessions: AgentSessionSummary[]
   workspaces: WorkspaceSummary[]
 }

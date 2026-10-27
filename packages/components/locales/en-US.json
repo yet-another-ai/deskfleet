@@ -239,7 +239,7 @@
   },
   "newSession": {
     "heading": "Start an agent session",
-    "noTarget": "Choose a workspace to start a session in."
+    "noTarget": "Connect to a machine to start a session."
   },
   "worktree": {
     "notFound": "This worktree does not exist.",

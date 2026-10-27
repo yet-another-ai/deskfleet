@@ -21,7 +21,7 @@ function render() {
   return wrapper
 }
 beforeEach(() => {
-  fleet.machines = [{ id: "local-daemon", name: "my-machine", local: true, online: true, desktop: true, workspaces: [], terminals: [] }]
+  fleet.machines = [{ id: "local-daemon", name: "my-machine", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] }]
   snapshot = { revision: "test-settings", templates: [...AGENT_PROVIDER_TEMPLATES], providers: [structuredClone(provider)] }
   vi.spyOn(platformClient.providers, "list").mockImplementation(async () => structuredClone(snapshot))
   vi.spyOn(platformClient.providers, "onChanged").mockImplementation(listener => { changed = listener; return unsubscribe })

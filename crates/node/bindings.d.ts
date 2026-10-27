@@ -62,6 +62,7 @@ export interface CatalogSnapshot {
   machineId: string
   machineName: string
   workspaces: Array<CatalogWorkspace>
+  sessions: Array<CatalogWorktree>
 }
 
 export interface CatalogWorkspace {
@@ -72,12 +73,13 @@ export interface CatalogWorkspace {
 
 export interface CatalogWorkspaceSession {
   id: string
-  workspaceId: string
+  machineId: string
+  workspaceId?: string
 }
 
 export interface CatalogWorktree {
   id: string
-  workspaceId: string
+  workspaceId?: string
   sessionId?: string
   directories: Array<CatalogDirectory>
 }

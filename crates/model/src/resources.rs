@@ -30,24 +30,30 @@ pub struct Workspace {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Worktree {
     pub id: WorktreeId,
-    pub workspace_id: WorkspaceId,
+    /// Absent for machine-scoped Sessions that have no Workspace.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<WorkspaceId>,
     /// Absent only for the workspace's automatic main worktree.
     pub session_id: Option<AgentSessionId>,
     pub directories: DirectoryBindings,
 }
 
-/// The minimal persisted lifecycle record for a session in a workspace.
+/// The minimal persisted lifecycle record for a Session.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WorkspaceSession {
     pub id: AgentSessionId,
-    pub workspace_id: WorkspaceId,
+    pub machine_id: MachineId,
+    /// Absent for machine-scoped Sessions started without a Workspace.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<WorkspaceId>,
 }
 
 /// An agent session's workspace ownership and startup directory context.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AgentSession {
     pub id: AgentSessionId,
-    pub workspace_id: WorkspaceId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<WorkspaceId>,
     /// Optional managed worktree owned by this session.
     pub worktree_id: Option<WorktreeId>,
     pub provider: String,

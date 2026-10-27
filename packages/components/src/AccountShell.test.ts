@@ -35,6 +35,7 @@ test("browses synchronized history with the machine offline and isolates equal l
     catalog: vi.fn(async (machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", providers: { providers: [{ id: "codex", name: "Codex", template: "codex" }] }, snapshot: {
       teamId: "1", machineId: "1", machineName: machines.find(machine => machine.id === machineId)!.name,
       workspaces: [{ id: "20", name: `Workspace ${machineId}`, worktrees: [{ id: "21", workspaceId: "20", directories: [{ path: "/code" }] }, { id: "31", workspaceId: "20", sessionId: "30", directories: [{ path: "/worktree" }] }] }],
+      sessions: [],
     } })),
     sessions: vi.fn(async (machineId: string) => [snapshot(machineId)]),
     session: vi.fn(async (machineId: string) => ({ snapshot: snapshot(machineId), lastEventSeq: "1", lastObservedAt: "2026-10-25T00:00:00Z" })),
@@ -76,7 +77,7 @@ const buttonText = (text: string) => page().findAll("button").find(button => but
  */
 function withEmptyCatalogs({ central, state }: ReturnType<typeof fakeCentral>): void {
   Object.assign(central, {
-    catalog: vi.fn(async (machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", snapshot: { teamId: "team-1", machineId, machineName: state.machines.find(machine => machine.id === machineId)?.name ?? "hostname", workspaces: [] } })),
+    catalog: vi.fn(async (machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", snapshot: { teamId: "team-1", machineId, machineName: state.machines.find(machine => machine.id === machineId)?.name ?? "hostname", workspaces: [], sessions: [] } })),
     sessions: vi.fn(async () => []),
     rpc: vi.fn(async () => { throw new Error("Offline") }),
   })

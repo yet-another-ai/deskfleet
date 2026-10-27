@@ -239,7 +239,7 @@
   },
   "newSession": {
     "heading": "开始智能体会话",
-    "noTarget": "选择要在其中启动会话的工作区。"
+    "noTarget": "连接到一台机器以启动会话。"
   },
   "worktree": {
     "notFound": "该工作树不存在。",

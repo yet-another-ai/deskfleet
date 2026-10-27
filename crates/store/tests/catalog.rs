@@ -41,7 +41,7 @@ async fn workspace_creation_always_includes_one_main_with_ordered_actual_directo
     assert!(workspace.workspace.id.as_i64() > 0);
     assert_eq!(workspace.worktrees.len(), 1);
     let main = &workspace.worktrees[0];
-    assert_eq!(main.workspace_id, workspace.workspace.id);
+    assert_eq!(main.workspace_id, Some(workspace.workspace.id));
     assert!(main.session_id.is_none());
     assert_eq!(main.directories.default_directory().path, r"C:\code\web");
     assert_eq!(main.directories.as_slice()[1].path, "/services/api");
@@ -176,7 +176,7 @@ async fn schema_rejects_second_main_cross_workspace_session_and_orphan_directori
         .unwrap();
     assert!(
         worktree::ActiveModel {
-            workspace_id: Set(first.workspace.id.as_i64()),
+            workspace_id: Set(Some(first.workspace.id.as_i64())),
             session_id: Set(None),
             ..Default::default()
         }
@@ -184,9 +184,15 @@ async fn schema_rejects_second_main_cross_workspace_session_and_orphan_directori
         .await
         .is_err()
     );
+    // A Session owns at most one worktree; workspace matching is enforced by attach.
+    let attached = catalog
+        .attach_session_worktree(machine.id, session.id, directories(&["/session"]))
+        .await
+        .unwrap();
+    assert_eq!(attached.workspace_id, Some(first.workspace.id));
     assert!(
         worktree::ActiveModel {
-            workspace_id: Set(second.workspace.id.as_i64()),
+            workspace_id: Set(Some(second.workspace.id.as_i64())),
             session_id: Set(Some(session.id.as_i64())),
             ..Default::default()
         }
@@ -221,9 +227,12 @@ async fn schema_rejects_second_main_cross_workspace_session_and_orphan_directori
             .await
             .is_err()
     );
+    let workspace_id = first.workspace.id;
+    let mut expected = first;
+    expected.worktrees.push(attached);
     assert_eq!(
-        catalog.workspace(first.workspace.id).await.unwrap(),
-        Some(first)
+        catalog.workspace(workspace_id).await.unwrap(),
+        Some(expected)
     );
 }
 

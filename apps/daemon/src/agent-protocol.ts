@@ -18,7 +18,8 @@ export type AgentSessionContext = "worktree" | "directory"
 
 export interface AgentSessionRecord {
   id: string
-  workspaceId: string
+  /** Absent for machine-scoped Sessions started without a Workspace. */
+  workspaceId?: string
   /** Stable ID of the configured provider on the executing machine. */
   provider: string
   providerSessionId?: string
@@ -168,7 +169,7 @@ export interface AgentMethods {
   "_deskfleet/session/configuration": { params: { sessionId: string }; result: AgentConfiguration }
   "_deskfleet/session/configure": { params: AgentMutation & AgentConfigurationSelection; result: AgentConfiguration }
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
-  "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider: string; context: AgentSessionContext } & AgentConfigurationSelection; result: AgentSnapshot }
+  "_deskfleet/session/create": { params: { workspaceId?: string; operationId: string; title?: string; provider: string; context: AgentSessionContext } & AgentConfigurationSelection; result: AgentSnapshot }
   "_deskfleet/session/fork": { params: AgentMutation & { context: AgentSessionContext; title?: string }; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }

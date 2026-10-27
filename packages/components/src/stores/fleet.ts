@@ -12,12 +12,21 @@ export interface WorkspaceLocation {
   machine: MachineSummary
   workspace: WorkspaceSummary
 }
-export interface SessionLocation extends WorkspaceLocation {
-  session: AgentSessionSummary
+/** A new or existing Session target; workspace is absent for machine-scoped chat. */
+export interface SessionTarget {
+  machine: MachineSummary
+  workspace?: WorkspaceSummary
+  session?: AgentSessionSummary
   worktree?: WorktreeSummary
 }
+export interface SessionLocation extends SessionTarget {
+  session: AgentSessionSummary
+}
 /** Every worktree exposed by the client belongs to a Session. */
-export interface WorktreeLocation extends SessionLocation { worktree: WorktreeSummary }
+export interface WorktreeLocation extends SessionLocation {
+  workspace: WorkspaceSummary
+  worktree: WorktreeSummary
+}
 /** Ownership is explicit; a terminal's working directory never determines its scope. */
 export interface TerminalLocation {
   machine: MachineSummary
@@ -35,6 +44,9 @@ function* worktreeLocations(machines: MachineSummary[]): Generator<WorktreeLocat
 function* terminalLocations(machines: MachineSummary[]): Generator<TerminalLocation> {
   for (const machine of machines) {
     for (const terminal of machine.terminals) yield { machine, terminal }
+    for (const session of machine.sessions) {
+      for (const terminal of session.worktree?.terminals ?? []) yield { machine, session, worktree: session.worktree, terminal }
+    }
     for (const workspace of machine.workspaces) {
       for (const terminal of workspace.terminals) yield { machine, workspace, terminal }
       for (const session of workspace.sessions) {
@@ -92,10 +104,33 @@ export const useFleetStore = defineStore("fleet", () => {
     }
     return workspace
   }))
+  const machineSessions = computed(() => {
+    const summaries = new Map<string, AgentSessionSummary>()
+    for (const worktree of catalog.value?.sessions ?? []) {
+      if (!worktree.sessionId) continue
+      summaries.set(worktree.sessionId, { id: worktree.sessionId, worktree: worktreeSummary(worktree) })
+    }
+    for (const metadata of Object.values(agents.sessions)) {
+      if (metadata.workspaceId) continue
+      const provider = providers.providers.find(provider => provider.id === metadata.provider)
+      summaries.set(metadata.id, {
+        ...summaries.get(metadata.id), id: metadata.id,
+        title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
+        providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
+        context: metadata.context, archiveState: metadata.archiveState,
+      })
+    }
+    const values = [...summaries.values()]
+    for (const session of values) {
+      if (session.worktree) session.worktree.terminals = terminals.sessions.filter(terminal => terminal.worktreeId === session.worktree!.id)
+    }
+    return values
+  })
   const machines = computed<MachineSummary[]>(() => [{
     id: targetId, name: localDesktopTarget.value.name, online: localDesktopTarget.value.online,
     desktop: localDesktopTarget.value.desktop, local: target?.local ?? true, lastSeen: target?.lastSeen,
     terminals: terminals.sessions.filter(terminal => terminal.worktreeId === undefined),
+    sessions: machineSessions.value,
     workspaces: workspaces.value,
   }])
   let refreshingTarget: Promise<LocalDesktopTarget> | null = null
@@ -203,9 +238,13 @@ export const useFleetStore = defineStore("fleet", () => {
     reconcileTarget()
   }
   function findSession(sessionId: string): SessionLocation | null {
-    for (const machine of machines.value) for (const workspace of machine.workspaces) {
-      const session = workspace.sessions.find(session => session.id === sessionId)
-      if (session) return { machine, workspace, session, worktree: session.worktree }
+    for (const machine of machines.value) {
+      const orphan = machine.sessions.find(session => session.id === sessionId)
+      if (orphan) return { machine, session: orphan, worktree: orphan.worktree }
+      for (const workspace of machine.workspaces) {
+        const session = workspace.sessions.find(session => session.id === sessionId)
+        if (session) return { machine, workspace, session, worktree: session.worktree }
+      }
     }
     return null
   }
@@ -216,7 +255,11 @@ export const useFleetStore = defineStore("fleet", () => {
   function isCollapsed(id: string): boolean { return collapsedMachineIds.value.has(id) }
   function toggleMachine(id: string): void { if (!collapsedMachineIds.value.delete(id)) collapsedMachineIds.value.add(id) }
   function targetWorkspace(id: string): void { targetWorkspaceId.value = id }
-  const newSessionTarget = computed(() => targetWorkspaceId.value ? findWorkspace(targetWorkspaceId.value) : null)
+  const newSessionTarget = computed<SessionTarget | null>(() => {
+    if (targetWorkspaceId.value) return findWorkspace(targetWorkspaceId.value)
+    const machine = findMachine(targetId)
+    return machine ? { machine } : null
+  })
 
   return {
     targetId, machines, catalog, catalogIdentity, catalogError, catalogLoading, catalogReady, canManageCatalog,

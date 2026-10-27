@@ -22,16 +22,19 @@ flowchart LR
     S -.->|Future history synchronization| C[Central server]
 ```
 
-A managed Session belongs to one Workspace and records an immutable `context`.
-A `worktree` Session owns generated checkouts; a `directory` Session uses the
-Workspace's own directories in place. Its captured ordered directories are the
-execution context; the first supplies `cwd`. Later Workspace edits do not
-retarget existing Sessions. Session creation also retains a failed provisioning
-record when Git setup fails or a directory is missing. Stopping a provider
-preserves the Session and its files. The current deletion path removes a worktree
-Session's disposable checkouts before deleting the catalog resource; a directory
-Session's files are never removed. The new-session composer offers both contexts
-and remembers the last choice on that device.
+A managed Session ordinarily belongs to one Workspace and records an immutable
+`context`. A Session can also be machine-scoped with no Workspace: creation then
+uses directory context in the machine user's home directory. A `worktree`
+Session owns generated checkouts; a `directory` Session uses the Workspace's own
+directories in place, or the home directory when no Workspace is selected. Its
+captured ordered directories are the execution context; the first supplies `cwd`.
+Later Workspace edits do not retarget existing Sessions. Session creation also
+retains a failed provisioning record when Git setup fails or a directory is
+missing. Stopping a provider preserves the Session and its files. The current
+deletion path removes a worktree Session's disposable checkouts before deleting
+the catalog resource; a directory Session's files are never removed. The
+new-session composer offers both contexts when a Workspace is selected and
+remembers the last choice on that device.
 
 ### Forking a conversation
 
@@ -510,7 +513,8 @@ conversation API. Remote authenticated signaling can reuse this facade.
 ACP notifications, including provider Session IDs, are carried in journal
 events and projected once by the renderer. Mode metadata is normalized as
 described below. The facade advertises only supported
-methods. Managed creation takes a Workspace whose directories determine `cwd`.
+methods. Managed creation may omit a Workspace; directory context then uses the home
+directory as `cwd`. Otherwise a Workspace's directories determine `cwd`.
 
 Git reads require a ready Session and resolve its owned Worktree through the
 catalog, including captured paths for directory Sessions. They do not accept

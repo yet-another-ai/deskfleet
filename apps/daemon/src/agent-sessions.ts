@@ -289,7 +289,9 @@ export class AgentSessions {
     const command: AgentCommand = {
       id: await this.journal.id(), operationId, actor, method, params: auditParams,
       isCanonical: true, status: "accepted", receivedAt: timestamp(),
-      ...(method === "_deskfleet/session/create" ? { workspaceId: id(params.workspaceId, "Workspace ID") } : { sessionId: id(params.sessionId, "Session ID") }),
+      ...(method === "_deskfleet/session/create"
+        ? (params.workspaceId === undefined ? {} : { workspaceId: id(params.workspaceId, "Workspace ID") })
+        : { sessionId: id(params.sessionId, "Session ID") }),
     }
     try {
       if (method === "_deskfleet/session/create") return await this.#create(command)
@@ -350,8 +352,9 @@ export class AgentSessions {
     validateAgentConfigurationSelection(command.params)
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
+    if (!command.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
     const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : ""
-    const session = await this.journal.create(command, command.workspaceId!, title, context, provider)
+    const session = await this.journal.create(command, command.workspaceId, title, context, provider)
     command.sessionId = session.id
     try {
       await this.#catalog.provisionSession(session.id, session.workspaceId, context)

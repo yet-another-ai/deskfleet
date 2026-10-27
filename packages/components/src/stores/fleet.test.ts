@@ -25,7 +25,7 @@ function setup() { const store = useFleetStore(); stores.push(store); return sto
 test("maps configured directories onto the workspace and exposes only Session-owned worktrees", async () => {
   const store = setup()
   expect(store.machines).toHaveLength(1)
-  expect(store.newSessionTarget).toBeNull()
+  expect(store.newSessionTarget?.workspace).toBeUndefined()
   await store.refreshLocalCatalog()
   expect(store.catalogIdentity).toEqual({ teamId: "1", machineId: "9007199254740999" })
   expect(store.machines[0]!.id).toBe("local-daemon")
@@ -137,7 +137,8 @@ test("Session removal keeps the workspace selected and workspace deletion reconc
   expect(store.newSessionTarget?.workspace.id).toBe(workspaceId)
   await store.deleteWorkspace(workspaceId)
   expect(remove).toHaveBeenCalledWith(workspaceId)
-  expect(store.newSessionTarget).toBeNull()
+  expect(store.newSessionTarget?.workspace).toBeUndefined()
+  expect(store.newSessionTarget?.machine.id).toBe("local-daemon")
 })
 
 test("catalog notifications reconcile a selected workspace removed by another client", async () => {
@@ -282,7 +283,7 @@ test("selecting a different machine starts with its own initial loading state an
     expect(next.catalogIdentity).toBeNull()
     expect(next.findWorkspace(workspaceId)).toBeNull()
     expect(first.findWorkspace(workspaceId)?.workspace.name).toBe("storefront")
-    initial.resolve({ teamId: "2", machineId: "3", machineName: "another", workspaces: [] })
+    initial.resolve({ teamId: "2", machineId: "3", machineName: "another", workspaces: [], sessions: [] })
     await loading
     expect(next.catalogLoading).toBe(false)
     expect(next.catalogIdentity).toEqual({ teamId: "2", machineId: "3" })

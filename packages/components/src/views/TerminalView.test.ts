@@ -11,7 +11,7 @@ import TerminalView from "./TerminalView.vue"
 const terminal = { id: "shell", title: "zsh", cwd: "/workspace" }
 const workspace = { id: "workspace", name: "workspace", directories: [{ path: terminal.cwd }], terminals: [], sessions: [] }
 const worktree = { id: "worktree", directories: workspace.directories, terminals: [terminal] }
-const machine = { id: "local-daemon", name: "host", local: true, online: true, desktop: false, terminals: [terminal], workspaces: [workspace] }
+const machine = { id: "local-daemon", name: "host", local: true, online: true, desktop: false, terminals: [terminal], sessions: [], workspaces: [workspace] }
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const stop of cleanup.splice(0)) stop(); vi.restoreAllMocks() })
 

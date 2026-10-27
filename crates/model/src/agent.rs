@@ -147,7 +147,9 @@ pub struct AgentCapabilities {
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionRecord {
     pub id: AgentSessionId,
-    pub workspace_id: WorkspaceId,
+    /// Absent for machine-scoped Sessions started without a Workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<WorkspaceId>,
     pub provider: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_session_id: Option<String>,
@@ -371,7 +373,9 @@ pub struct AgentCommitResult {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentCreateSession {
     pub command: AgentCommand,
-    pub workspace_id: WorkspaceId,
+    /// Omit to create a machine-scoped Session without a Workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<WorkspaceId>,
     pub provider: String,
     pub title: String,
     pub context: SessionContext,

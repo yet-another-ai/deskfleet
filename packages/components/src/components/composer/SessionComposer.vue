@@ -7,14 +7,13 @@ import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import type { AgentSessionSummary, WorktreeSummary } from "../../stores/fleet-types.ts"
-import type { WorkspaceLocation } from "../../stores/fleet.ts"
+import type { SessionTarget } from "../../stores/fleet.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import AgentUsage from "./AgentUsage.vue"
 import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
 const configurationLoading = ref(false)
 const props = defineProps<{
-  location: (WorkspaceLocation & { session?: AgentSessionSummary; worktree?: WorktreeSummary }) | null
+  location: SessionTarget | null
   showTarget?: boolean
   disabled?: boolean
   submitting?: boolean
@@ -53,9 +52,11 @@ function keydown(event: KeyboardEvent): void {
   <div class="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-5">
     <div v-if="location" class="flex h-9 min-w-0 items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
       <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Monitor :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="showTarget && location.machine.local" class="ui-badge">{{ t("machine.local") }}</span></span>
-      <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
-      <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
-      <template v-if="showTarget">
+      <template v-if="location.workspace">
+        <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
+        <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
+      </template>
+      <template v-if="showTarget && location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
         <DropdownMenuRoot :modal="false">
           <DropdownMenuTrigger class="inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :aria-label="t('composer.contextChoice', { context: t(`composer.contextOption.${selected.id}`) })" data-composer-context>
@@ -88,7 +89,7 @@ function keydown(event: KeyboardEvent): void {
       <span v-if="showTarget && submitting" class="composer-creation-beam" aria-hidden="true" />
       <textarea ref="textarea" v-model="draft" rows="2" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @keydown="keydown" />
       <div class="flex items-center gap-2 px-3 pb-2.5">
-        <AgentConfigurationSelector v-if="location" :workspace-id="location.workspace.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" />
+        <AgentConfigurationSelector v-if="location" :workspace-id="location.workspace?.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" />
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
           <UiButton variant="ghost" size="sm" v-if="canSteer && !empty" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>

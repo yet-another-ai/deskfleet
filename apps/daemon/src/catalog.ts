@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises"
-import { hostname } from "node:os"
+import { homedir, hostname } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { openCatalog, type NativeCatalog } from "@deskfleet/native"
 import type { AgentSessionContext } from "./agent-protocol.ts"
@@ -40,7 +40,9 @@ export class DaemonCatalog {
 
   /** The Worktree a Session owns, if its context was provisioned. */
   async sessionWorktree(sessionId: string) {
-    return (await this.native.snapshot()).workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === sessionId)
+    const snapshot = await this.native.snapshot()
+    return snapshot.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === sessionId)
+      ?? snapshot.sessions.find(worktree => worktree.sessionId === sessionId)
   }
 
   get native(): NativeCatalog {
@@ -48,9 +50,12 @@ export class DaemonCatalog {
     return this.#catalog
   }
 
-  async provisionSession(id: string, workspaceId: string, context: AgentSessionContext): Promise<void> {
+  async provisionSession(id: string, workspaceId: string | undefined, context: AgentSessionContext): Promise<void> {
     if (!this.#sessions) throw new Error("Local catalog is not available")
-    if (context === "directory") await this.#sessions.useDirectories({ id, workspaceId })
+    if (!workspaceId) {
+      if (context !== "directory") throw new Error("Sessions without a workspace use the home directory")
+      await this.native.attachSessionWorktree(id, [{ path: homedir() }])
+    } else if (context === "directory") await this.#sessions.useDirectories({ id, workspaceId })
     else await this.#sessions.create(workspaceId, { id, workspaceId })
     this.changed()
   }

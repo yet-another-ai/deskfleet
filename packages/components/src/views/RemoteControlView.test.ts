@@ -48,7 +48,7 @@ async function setup(options: { desktop?: boolean; machineId?: string; query?: L
   const terminals = useTerminalsStore()
   fleet.localDesktopTarget.desktop = options.desktop ?? false
   fleet.localDesktopTarget.online = true
-  const other = { id: "other", name: "Other machine", local: false, online: true, desktop: false, terminals: [], workspaces: [] }
+  const other = { id: "other", name: "Other machine", local: false, online: true, desktop: false, terminals: [], sessions: [], workspaces: [] }
   const findMachine = fleet.findMachine
   vi.spyOn(fleet, "findMachine").mockImplementation(id => id === other.id ? other : findMachine(id))
   terminals.sessions = options.sessions ?? [shell]

@@ -15,7 +15,7 @@ pub struct CatalogDirectory {
 #[napi(object)]
 pub struct CatalogWorktree {
     pub id: String,
-    pub workspace_id: String,
+    pub workspace_id: Option<String>,
     pub session_id: Option<String>,
     pub directories: Vec<CatalogDirectory>,
 }
@@ -30,7 +30,8 @@ pub struct CatalogWorkspace {
 #[napi(object)]
 pub struct CatalogWorkspaceSession {
     pub id: String,
-    pub workspace_id: String,
+    pub machine_id: String,
+    pub workspace_id: Option<String>,
 }
 
 #[napi(object)]
@@ -39,13 +40,14 @@ pub struct CatalogSnapshot {
     pub machine_id: String,
     pub machine_name: String,
     pub workspaces: Vec<CatalogWorkspace>,
+    pub sessions: Vec<CatalogWorktree>,
 }
 
 impl From<Worktree> for CatalogWorktree {
     fn from(worktree: Worktree) -> Self {
         Self {
             id: worktree.id.to_string(),
-            workspace_id: worktree.workspace_id.to_string(),
+            workspace_id: worktree.workspace_id.map(|id| id.to_string()),
             session_id: worktree.session_id.map(|id| id.to_string()),
             directories: Vec::<DirectoryBinding>::from(worktree.directories)
                 .into_iter()
@@ -71,7 +73,8 @@ impl From<WorkspaceSession> for CatalogWorkspaceSession {
     fn from(session: WorkspaceSession) -> Self {
         Self {
             id: session.id.to_string(),
-            workspace_id: session.workspace_id.to_string(),
+            machine_id: session.machine_id.to_string(),
+            workspace_id: session.workspace_id.map(|id| id.to_string()),
         }
     }
 }
@@ -83,6 +86,7 @@ impl From<LocalSnapshot> for CatalogSnapshot {
             machine_id: snapshot.machine_id.to_string(),
             machine_name: snapshot.machine_name,
             workspaces: snapshot.workspaces.into_iter().map(Into::into).collect(),
+            sessions: snapshot.sessions.into_iter().map(Into::into).collect(),
         }
     }
 }

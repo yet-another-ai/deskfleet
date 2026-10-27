@@ -254,7 +254,7 @@ test("keeps confirmed choices after rejected changes and allows retry", async ()
 test("keyboard navigation, Escape and outside clicks preserve the draft and selection", async () => {
   const view = mount(SessionComposer, {
     attachTo: document.body,
-    props: { location: { machine: { id: "1", name: "Machine", local: true, online: true, desktop: false, terminals: [], workspaces: [] }, workspace: { id: "11", name: "Workspace", directories: [], sessions: [], terminals: [] } } },
+    props: { location: { machine: { id: "1", name: "Machine", local: true, online: true, desktop: false, terminals: [], sessions: [], workspaces: [] }, workspace: { id: "11", name: "Workspace", directories: [], sessions: [], terminals: [] } } },
     global: { plugins: [i18n, pinia] },
   }); wrappers.push(view)
   await view.get("textarea").setValue("Keep this unfinished task")
@@ -494,7 +494,7 @@ test("coalesces rapid model choices while keeping dependent controls and sending
   const api = vi.mocked(agents.agentConfiguration).mockResolvedValueOnce(initial)
   const view = mount(SessionComposer, {
     attachTo: document.body,
-    props: { location: { machine: { id: "1", name: "Machine", local: true, online: true, desktop: false, terminals: [], workspaces: [] }, workspace: { id: "11", name: "Workspace", directories: [], sessions: [], terminals: [] } } },
+    props: { location: { machine: { id: "1", name: "Machine", local: true, online: true, desktop: false, terminals: [], sessions: [], workspaces: [] }, workspace: { id: "11", name: "Workspace", directories: [], sessions: [], terminals: [] } } },
     global: { plugins: [i18n, pinia] },
   }); wrappers.push(view)
   await view.get("textarea").setValue("Keep my draft")

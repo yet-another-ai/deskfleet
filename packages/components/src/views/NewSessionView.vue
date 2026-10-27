@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia"
-import { computed, ref } from "vue"
+import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
@@ -14,25 +14,38 @@ const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
 const providers = useProvidersStore()
 const router = useRouter()
-const { sessionContext } = storeToRefs(useLayoutStore())
+const layout = useLayoutStore()
+const { sessionContext } = storeToRefs(layout)
 const { newSessionTarget } = storeToRefs(fleet)
-const draft = computed({ get: () => agents.drafts[`workspace:${newSessionTarget.value?.workspace.id}`] ?? "", set: value => { agents.drafts[`workspace:${newSessionTarget.value?.workspace.id}`] = value } })
+const draftKey = computed(() => {
+  const target = newSessionTarget.value
+  if (!target) return "draft"
+  return target.workspace ? `workspace:${target.workspace.id}` : `machine:${target.machine.id}`
+})
+const draft = computed({ get: () => agents.drafts[draftKey.value] ?? "", set: value => { agents.drafts[draftKey.value] = value } })
 const submitting = ref(false)
 const error = ref<string | null>(null)
+// Machine-scoped chat has no Workspace directories to check out.
+watch(() => newSessionTarget.value?.workspace?.id, id => {
+  if (!id && sessionContext.value !== "directory") sessionContext.value = "directory"
+}, { immediate: true })
 async function submit(): Promise<void> {
   const target = newSessionTarget.value
   const text = draft.value
-  const draftKey = `workspace:${target?.workspace.id}`
+  const key = draftKey.value
   if (!target || submitting.value || !text.trim() || !providers.ready || !providers.selectedId) return
+  const context = target.workspace ? sessionContext.value : "directory"
   submitting.value = true
   error.value = null
   try {
-    const snapshot = await agents.create(target.workspace.id, text.trim().split("\n")[0]!.slice(0, 100), sessionContext.value, providers.selectedId)
+    const snapshot = await agents.create(target.workspace?.id, text.trim().split("\n")[0]!.slice(0, 100), context, providers.selectedId)
     const id = snapshot.session.id
     agents.drafts[id] = text
-    if (agents.drafts[draftKey] === text) agents.drafts[draftKey] = ""
+    if (agents.drafts[key] === text) agents.drafts[key] = ""
     await fleet.refreshLocalCatalog()
-    if (router.currentRoute.value.name === "new-session" && newSessionTarget.value?.workspace.id === target.workspace.id) await router.push({ name: "session", params: { sessionId: id } })
+    const sameTarget = newSessionTarget.value?.workspace?.id === target.workspace?.id
+      && newSessionTarget.value?.machine.id === target.machine.id
+    if (router.currentRoute.value.name === "new-session" && sameTarget) await router.push({ name: "session", params: { sessionId: id } })
     // A rejected or disconnected submission remains in the Session draft for reconciliation.
     if (snapshot.session.lifecycle === "ready") await agents.submit(id, text, "backlog").catch(() => {})
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }

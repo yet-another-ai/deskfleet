@@ -40,7 +40,7 @@ function catalogFixture(directories: CatalogDirectory[]) {
   let failAttachment = false
   const catalog: ManagedSessionCatalog = {
     async snapshot() {
-      return { teamId: "1", machineId: "1", machineName: "test", workspaces: [{
+      return { teamId: "1", machineId: "1", machineName: "test", sessions: [], workspaces: [{
         id: "1", name: "workspace", worktrees: [
           { id: "1", workspaceId: "1", directories },
           ...worktrees.values(),

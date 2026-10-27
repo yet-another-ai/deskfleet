@@ -7,7 +7,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub workspace_id: i64,
+    pub workspace_id: Option<i64>,
     pub session_id: Option<i64>,
 }
 
@@ -22,8 +22,8 @@ pub enum Relation {
     Workspace,
     #[sea_orm(
         belongs_to = "super::workspace_session::Entity",
-        from = "(Column::SessionId, Column::WorkspaceId)",
-        to = "(super::workspace_session::Column::Id, super::workspace_session::Column::WorkspaceId)",
+        from = "Column::SessionId",
+        to = "super::workspace_session::Column::Id",
         on_delete = "Cascade"
     )]
     WorkspaceSession,

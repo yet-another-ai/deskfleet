@@ -77,7 +77,7 @@ impl Catalog {
         }
         .insert(&transaction)
         .await?;
-        let main = insert_worktree(&transaction, row.id.into(), None, directories).await?;
+        let main = insert_worktree(&transaction, Some(row.id.into()), None, directories).await?;
         transaction.commit().await?;
         Ok(CatalogWorkspace {
             workspace: workspace_model(row),
@@ -181,7 +181,8 @@ impl Catalog {
         let transaction = self.database.begin().await?;
         require_workspace(&transaction, machine_id, workspace_id).await?;
         let row = workspace_session::ActiveModel {
-            workspace_id: Set(workspace_id.as_i64()),
+            machine_id: Set(machine_id.as_i64()),
+            workspace_id: Set(Some(workspace_id.as_i64())),
             ..Default::default()
         }
         .insert(&transaction)
@@ -189,7 +190,29 @@ impl Catalog {
         transaction.commit().await?;
         Ok(WorkspaceSession {
             id: row.id.into(),
-            workspace_id,
+            machine_id,
+            workspace_id: Some(workspace_id),
+        })
+    }
+
+    /// Allocate a machine-scoped session that is not owned by a Workspace.
+    pub async fn create_machine_session(
+        &self,
+        machine_id: MachineId,
+    ) -> Result<WorkspaceSession, StoreError> {
+        let transaction = self.database.begin().await?;
+        let row = workspace_session::ActiveModel {
+            machine_id: Set(machine_id.as_i64()),
+            workspace_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(WorkspaceSession {
+            id: row.id.into(),
+            machine_id,
+            workspace_id: None,
         })
     }
 
@@ -204,13 +227,39 @@ impl Catalog {
         let session = require_session(&transaction, machine_id, session_id).await?;
         let worktree = insert_worktree(
             &transaction,
-            session.workspace_id.into(),
+            session.workspace_id.map(Into::into),
             Some(session_id),
             directories,
         )
         .await?;
         transaction.commit().await?;
         Ok(worktree)
+    }
+
+    /// Session-owned worktrees that are not nested under a Workspace.
+    pub async fn machine_session_worktrees(
+        &self,
+        machine_id: MachineId,
+    ) -> Result<Vec<Worktree>, StoreError> {
+        let transaction = self.database.begin().await?;
+        let sessions = workspace_session::Entity::find()
+            .filter(workspace_session::Column::MachineId.eq(machine_id.as_i64()))
+            .filter(workspace_session::Column::WorkspaceId.is_null())
+            .all(&transaction)
+            .await?;
+        if sessions.is_empty() {
+            transaction.commit().await?;
+            return Ok(Vec::new());
+        }
+        let worktrees = load_worktrees(
+            &transaction,
+            worktree::Entity::find().filter(
+                worktree::Column::SessionId.is_in(sessions.iter().map(|session| session.id)),
+            ),
+        )
+        .await?;
+        transaction.commit().await?;
+        Ok(worktrees)
     }
 
     /// End a session; its owned worktree and directory rows cascade, preserving main.
@@ -250,8 +299,7 @@ pub(crate) async fn require_session(
     id: AgentSessionId,
 ) -> Result<workspace_session::Model, StoreError> {
     workspace_session::Entity::find_by_id(id.as_i64())
-        .inner_join(workspace::Entity)
-        .filter(workspace::Column::MachineId.eq(machine_id.as_i64()))
+        .filter(workspace_session::Column::MachineId.eq(machine_id.as_i64()))
         .one(database)
         .await?
         .ok_or(StoreError::NotFound {
@@ -279,8 +327,11 @@ async fn load_workspaces(
     .await?;
     let mut children = std::collections::BTreeMap::<i64, Vec<Worktree>>::new();
     for worktree in worktrees {
+        let Some(workspace_id) = worktree.workspace_id else {
+            continue;
+        };
         children
-            .entry(worktree.workspace_id.as_i64())
+            .entry(workspace_id.as_i64())
             .or_default()
             .push(worktree);
     }
@@ -319,7 +370,7 @@ async fn load_worktrees(
         .map(|(row, directories)| {
             Ok(Worktree {
                 id: row.id.into(),
-                workspace_id: row.workspace_id.into(),
+                workspace_id: row.workspace_id.map(Into::into),
                 session_id: row.session_id.map(Into::into),
                 directories: DirectoryBindings::new(
                     directories
@@ -344,12 +395,12 @@ fn workspace_model(row: workspace::Model) -> Workspace {
 
 async fn insert_worktree(
     transaction: &DatabaseTransaction,
-    workspace_id: WorkspaceId,
+    workspace_id: Option<WorkspaceId>,
     session_id: Option<AgentSessionId>,
     directories: DirectoryBindings,
 ) -> Result<Worktree, StoreError> {
     let row = worktree::ActiveModel {
-        workspace_id: Set(workspace_id.as_i64()),
+        workspace_id: Set(workspace_id.map(|id| id.as_i64())),
         session_id: Set(session_id.map(|id| id.as_i64())),
         ..Default::default()
     }
