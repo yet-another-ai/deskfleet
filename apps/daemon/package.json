@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@deskfleet/mcp": "workspace:*",
-    "@agentclientprotocol/claude-agent-acp": "0.95.0",
-    "@agentclientprotocol/codex-acp": "2.2.2",
+    "@agentclientprotocol/claude-agent-acp": "0.97.0",
+    "@agentclientprotocol/codex-acp": "2.3.0",
     "@agentclientprotocol/sdk": "2.0.2",
     "@deskfleet/native": "workspace:*",
     "pi-acp": "0.0.34"

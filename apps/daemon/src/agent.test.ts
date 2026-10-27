@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { randomUUID } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -258,6 +259,7 @@ function patchedMethod(name: string): (this: unknown, params: unknown) => unknow
   assert.ok(match, `Pinned adapter method ${name} exists`)
   return runInNewContext(`(${match[0].trimStart().replace(name, `function ${name}`)})`, {
     logger: { log() {} },
+    randomUUID5: randomUUID,
   }) as (this: unknown, params: unknown) => unknown
 }
 

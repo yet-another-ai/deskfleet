@@ -14,13 +14,15 @@ allowBuilds:
   esbuild: true
 
 minimumReleaseAgeExclude:
-  - '@lobehub/icons-static-svg@1.99.0'
+  - '@intlify/bundle-utils@11.2.8'
+  - '@intlify/unplugin-vue-i18n@11.2.8'
+  - '@lucide/vue@1.62.0'
 
 overrides:
   # The docs render the same Vue components as the desktop and Web clients.
   'vitepress>vue': '3.6.0-rc.13'
 
 patchedDependencies:
-  '@agentclientprotocol/codex-acp@2.2.2': patches/@agentclientprotocol__codex-acp@2.2.2.patch
+  '@agentclientprotocol/codex-acp@2.3.0': patches/@agentclientprotocol__codex-acp@2.3.0.patch
   '@xterm/addon-ligatures@0.10.0': patches/@xterm__addon-ligatures@0.10.0.patch
   pi-acp@0.0.34: patches/pi-acp@0.0.34.patch
