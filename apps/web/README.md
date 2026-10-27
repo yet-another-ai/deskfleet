@@ -13,23 +13,31 @@ mise exec -- pnpm --filter @deskfleet/web typecheck
 mise exec -- pnpm --filter @deskfleet/web build
 ```
 
-Vite listens at `http://127.0.0.1:5174`. The development API defaults to
-`http://127.0.0.1:8080`. Set `VITE_DESKFLEET_SERVER_URL` at build time for a
+Open Vite at `http://localhost:5174` (its listener binds to loopback). The
+development API defaults to `http://localhost:8080`. WebAuthn requires a DNS
+hostname, including localhost for development. Set `VITE_DESKFLEET_SERVER_URL` at build time for a
 separately hosted API; production otherwise uses the page's origin. Deploy
-`dist/` on a static host. Configure the backend's allowed CORS origins and OIDC
-return URLs to include the application's origin and exact entry URL.
+`dist/` on a static host with an `index.html` fallback for `/auth/*`. Configure
+`DESKFLEET_AUTH_WEB_URL` and explicit CORS origins for this application. Web and API
+must share a site for SameSite cookies; unrelated cross-site hosting is unsupported.
 
-Sign in through the configured OIDC provider, select a team and a machine, and
+Register and verify your email, or sign in using your password or Passkey.
+Select a team and a machine, and
 use its synchronized resource catalog. An administrator can create a team,
 manage members, generate an invitation code, and enroll a headless machine.
 The enrollment dialog accepts the identity reported by `deskfleet-daemon status`
 and displays a credential for import through the daemon's enrollment command.
 That credential is displayed only in the dialog and is not saved by the client.
 
-The browser keeps its application login in session storage. The OIDC callback
-code is exchanged together with the verifier saved for that login attempt, then
-removed from the address. Electron instead holds account traffic and encrypted
-credentials in its main process and opens the system browser for OIDC.
+The browser uses HttpOnly login cookies, CSRF headers on mutations, and Origin
+validation for WebSockets. Session storage keeps only the selected server address.
+Email links open verification/recovery pages; `/auth/account` manages credentials
+and login sessions. Electron keeps an encrypted application token in its main
+process and uses the system browser with a one-use code/verifier exchange.
+
+Team settings show the effective plan, current usage, and Stripe subscription
+management. Only Team admins can purchase or manage subscriptions. Site admins
+manage Enterprise overrides and account policies in the Web administration page.
 
 Management operations use authenticated HTTP. Agent commands, terminal I/O, and
 Git reads use WebRTC after the backend authorizes the target peer and supplies

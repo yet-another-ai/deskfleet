@@ -52,13 +52,14 @@ and protocol types remain independent of Actix Web and Node-API.
 
 ## Identity and team access
 
-The target identity design prioritizes the officially hosted service and uses
+The identity design supports the hosted service and self-hosted installations with
 deskfleet-owned accounts with public email/password registration and Passkeys.
 [Identity and billing requirements](identity-billing.md) define the accepted
-plan model, account flows, enforcement boundaries, and remaining decisions.
-The current implementation still uses OIDC; these requirements describe its
-replacement, not completed functionality. Existing databases are disposable
-development data, so this change needs no legacy account or data migration.
+plan model, account flows, and enforcement boundaries. Web sessions use HttpOnly
+cookies; Electron exchanges a browser authorization for a secure main-process
+credential. Stripe subscriptions belong to Teams; Enterprise is a separate
+Site Admin override. Existing development databases must be rebuilt for this
+schema; legacy identity/data migration is not supported.
 
 The Rust backend is API-only. An independently hosted Vue
 Web client and the Electron client share a common UI component package.

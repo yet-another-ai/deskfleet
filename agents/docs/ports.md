@@ -91,7 +91,7 @@ cleanup of active and pending forwards. Signaling tests cover early ICE,
 revocation, expiry, account changes, setup cancellation, and signaling outages.
 
 The existing backend smoke workflow also exercises port forwarding through the
-real OIDC/PostgreSQL backend and daemon, with concurrent binary streams, a
+real owned-account/PostgreSQL backend and daemon, with concurrent binary streams, a
 response after TCP half-close, explicit stop, and server revocation. Run it
 directly and with a configured TURN service:
 

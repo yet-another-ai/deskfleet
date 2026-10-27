@@ -52,20 +52,6 @@ services:
       timeout: 5s
       retries: 30
 
-  oidc:
-    image: ghcr.io/dexidp/dex:v2.46.1@sha256:65b72ca0f4b0bf6d4ada84ec21da8851782563404ac7b8f926923d27ceced9ab
-    command: ["dex", "serve", "/etc/dex/deskfleet.yaml"]
-    ports:
-      - "127.0.0.1:5556:5556"
-    volumes:
-      - ./.config/development/dex.yaml:/etc/dex/deskfleet.yaml:ro
-      - oidc-data:/var/dex
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/healthz"]
-      interval: 2s
-      timeout: 5s
-      retries: 30
-
   turn:
     image: coturn/coturn:4.18.0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
     depends_on:
@@ -99,4 +85,3 @@ services:
 
 volumes:
   postgres-18-data:
-  oidc-data:

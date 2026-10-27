@@ -17,7 +17,7 @@ possesses the private key for the certificate identified by that SDP.
 This uses the trusted-signaling model described in
 [RFC 8827, sections 4.1 and 4.3](https://www.rfc-editor.org/rfc/rfc8827.html#section-4.1).
 
-OIDC establishes the application's user login; it does not automatically bind
+deskfleet-owned account sessions establish the application's user login; it does not automatically bind
 that user to a DTLS certificate. deskfleet's authenticated signaling supplies
 that binding. The first release does not use the browser WebRTC identity-provider
 API, manual fingerprint pairing, or an additional device-signature protocol.

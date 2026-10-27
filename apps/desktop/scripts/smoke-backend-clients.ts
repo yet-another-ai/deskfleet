@@ -24,7 +24,21 @@ const execute = promisify(execFile)
 const webDirectory = join(root, "apps/web/dist")
 const web = createServer((request, response) => {
   const path = new URL(request.url!, "http://fixture").pathname
-  const file = path === "/" ? "/index.html" : path
+  if (path.startsWith("/api/")) {
+    void (async () => {
+      const chunks: Buffer[] = []
+      for await (const chunk of request) chunks.push(Buffer.from(chunk))
+      const upstream = await fetch(`${fixture.backend}${request.url}`, {
+        method: request.method, headers: request.headers as Record<string, string>,
+        ...(chunks.length ? { body: Buffer.concat(chunks) } : {}),
+      })
+      const headers = Object.fromEntries(upstream.headers)
+      response.writeHead(upstream.status, { ...headers, "set-cookie": upstream.headers.getSetCookie() })
+      response.end(Buffer.from(await upstream.arrayBuffer()))
+    })().catch(() => response.writeHead(502).end())
+    return
+  }
+  const file = path === "/" || path.startsWith("/auth/") ? "/index.html" : path
   if (file.includes("..")) { response.writeHead(400).end(); return }
   void readFile(join(webDirectory, file)).then(bytes => {
     response.writeHead(200, { "content-type": ({ ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml" } as Record<string, string>)[extname(file)] ?? "application/octet-stream" })
@@ -32,16 +46,15 @@ const web = createServer((request, response) => {
   }, () => response.writeHead(404).end())
 }).listen(0, "127.0.0.1")
 await once(web, "listening")
-const webUrl = `http://127.0.0.1:${(web.address() as AddressInfo).port}/`
+const webUrl = `http://localhost:${(web.address() as AddressInfo).port}/`
 const fixture = await startBackendFixture({ returnTo: [webUrl, "http://127.0.0.1:*/auth/callback"], allowedOrigins: [webUrl.slice(0, -1)] })
 const identity = { subject: `client-${randomUUID()}`, name: "Client smoke", email: "client@example.invalid" }
-fixture.oidc.useIdentity(identity)
-const login = await fixture.oidc.login(fixture.backend, identity)
+const login = await fixture.auth.login(fixture.backend, identity)
 async function request<T>(path: string, body?: unknown, method = body === undefined ? "GET" : "POST"): Promise<T> {
   const response = await fetch(`${fixture.backend}/api${path}`, { method, headers: { authorization: `Bearer ${login.token}`, "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
   const text = await response.text()
   if (!response.ok) throw new Error(`${path}: ${response.status} ${text}`)
-  return JSON.parse(text) as T
+  return (text ? JSON.parse(text) : undefined) as T
 }
 const rpc = <T>(machine: string, method: string, params: unknown) => request<T>(`/machines/${machine}/rpc`, { method, params })
 const daemons: Awaited<ReturnType<typeof startDaemon>>[] = []
@@ -60,7 +73,7 @@ async function stopClient(): Promise<void> {
 }
 async function launch(mode: BackendClientsContext["mode"]): Promise<void> {
   const context: BackendClientsContext = {
-    mode, backend: fixture.backend, webUrl, rendererDirectory: join(root, "apps/desktop/out/renderer"), preloadPath: join(root, "apps/desktop/out/preload/index.cjs"),
+    mode, backend: fixture.backend, webUrl, credentials: fixture.auth.credentials(identity), rendererDirectory: join(root, "apps/desktop/out/renderer"), preloadPath: join(root, "apps/desktop/out/preload/index.cjs"),
     daemonDirectory: join(directory, "daemon-0"), profileDirectory: join(directory, `profile-${mode}`), machines, sessionId: sessions[0]!, forceRelay: process.env.DESKFLEET_SMOKE_FORCE_RELAY === "1",
   }
   await mkdir(context.profileDirectory, { recursive: true })
@@ -76,7 +89,7 @@ async function launch(mode: BackendClientsContext["mode"]): Promise<void> {
       electron!.once("error", fail)
       electron!.once("exit", code => fail(new Error(`${mode} client exited: ${code}`)))
       electron!.on("message", (message: { phase?: string; result?: unknown; error?: string }) => {
-        if (message.error) fail(new Error(message.error))
+        if (message.error) fail(new Error(`${mode}: ${message.error}`))
         else if (message.phase === "online") {
           void (async () => {
             const snapshot = await until(() => request<{ snapshot: AgentSnapshot }>(`/machines/${machines[0]}/sessions/${sessions[0]}`), value => value.snapshot.session.archiveState === "active" && value.snapshot.inputs.some(input => input.content.some(block => block.type === "text" && block.text === `Prompt from ${mode}`)), "central archive/restore synchronization")
@@ -115,7 +128,7 @@ try {
   await until(() => daemons[0]!.central.status(), status => status.connected, "daemon restart")
   await launch("electron")
   assert.deepEqual(providers[0]!.prompts, ["Prompt from web", "Prompt from electron"])
-  console.log("Production Web and Electron: real OIDC, team/machine selection, Agent and terminal WebRTC, streaming/tool events, PTY output, archive/restore, equal-local-ID isolation and offline central history passed")
+  console.log("Production Web and Electron: owned email/password authentication, team/machine selection, Agent and terminal WebRTC, streaming/tool events, PTY output, archive/restore, equal-local-ID isolation and offline central history passed")
 } catch (error) { console.error(diagnostics); console.error(fixture.diagnostics()); throw error }
 finally {
   await stopClient(); await Promise.allSettled(daemons.map(daemon => daemon.close()))

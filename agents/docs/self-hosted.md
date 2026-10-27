@@ -1,7 +1,7 @@
 # Self-hosted backend
 
 This guide is the production deployment of deskfleet's central API. It covers
-the `deskfleet-server` process, PostgreSQL, an OIDC provider, a TLS reverse
+the `deskfleet-server` process, PostgreSQL, an SMTP relay, a TLS reverse
 proxy, an optional TURN relay, and the separately hosted Web client.
 
 The [server guide](../../apps/server/README.md) owns the HTTP API and local
@@ -31,7 +31,7 @@ the listener opens.
 
 | Stored on the API's PostgreSQL database | Stays on the enrolled machine |
 | --- | --- |
-| OIDC user profile (`issuer`, `subject`, name, email) | Agent CLI credentials and provider environment values |
+| Verified user profiles, password hashes, and Passkey public credentials | Agent CLI credentials and provider environment values |
 | Login-session, machine, invitation, and exchange-token hashes | Plaintext machine credential (`central.json`) |
 | Teams, roles, and invitations | Workspace files, Git worktrees, and terminal transcripts |
 | Machine enrollment, catalog snapshot, and display metadata for providers | Provider binary paths |
@@ -45,7 +45,7 @@ directories, shells, or provider secrets.
 `GET /healthz` is unauthenticated process liveness. The JSON body is
 `status` (`ok`), `version` (the server package version), and
 `protocol_version` (currently `1`, snake_case). It does not query PostgreSQL.
-Migrations and OIDC discovery have already succeeded if the process is
+Migrations and authentication configuration validation have already succeeded if the process is
 listening; a later database outage leaves `/healthz` green while API calls fail.
 
 `PROTOCOL_VERSION` is still provisional. Contracts evolve in place at version
@@ -54,13 +54,12 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
 ## Explicitly unsupported
 
 - More than one API process. In-memory routing is not shared.
-- A production Compose file or container image for the API. `compose.yaml` is
-  the local development dependency stack only.
+- A production Compose file. `compose.yaml` is the local development dependency
+  stack only; the server container image is described in the server guide.
 - TLS inside `deskfleet-server`. The listener is HTTP. The binary does not read
   `X-Forwarded-*` or a certificate path.
-- Password login, a built-in user directory, or an authentication bypass.
-  Leaving `DESKFLEET_OIDC_ISSUER` unset starts the process and rejects login
-  with `OIDC login is not configured`.
+- Cross-site browser/API hosting on unrelated domains. Cookies use SameSite=Lax.
+- An authentication bypass or automatic first-user administrator grant.
 - SQLite, or any `DATABASE_URL` that does not start with `postgres://` or
   `postgresql://`.
 - Serving the Web UI from the API process.
@@ -77,9 +76,7 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
 - PostgreSQL 17 or later, the version used by development and CI. The server
   does not probe the major version. The connected role needs to create and
   modify tables in its search path.
-- An OIDC provider that can serve discovery, sign ID tokens, and allow the
-  authorization-code grant with PKCE S256. The API asks for `openid`,
-  `profile`, and `email`.
+- An SMTP relay with STARTTLS and credentials, for verification and recovery mail.
 - A TLS reverse proxy that can upgrade WebSockets, accept request bodies of at
   least 64 MiB, and keep a connection idle for more than 60 seconds.
 - A TURN server that implements the REST credential mechanism, when peers
@@ -87,8 +84,7 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
 - The `deskfleet-server` binary for the host, and a static build of the Web
   client if browsers will use it. Build the daemon and Electron for the
   computers that execute agents; they do not run on the API host.
-- The API host's clock must satisfy the OIDC library's ID-token expiry checks.
-  The server does not expose a clock-skew setting.
+- An accurate API host clock for session, challenge and entitlement deadlines.
 
 Build the API from this repository. CI compiles the same server and daemon
 binaries for Linux x64, Linux arm64, macOS arm64, and Windows x64, and the
@@ -113,7 +109,7 @@ TLS reverse proxy
         |-- everything else   --> apps/web/dist   (omit this if the Web app has its own origin)
         |
         +--> PostgreSQL (read-write URL in DATABASE_URL)
-        +--> outbound HTTPS to the OIDC issuer (discovery, token, JWKS)
+        +--> outbound STARTTLS to the configured SMTP relay
 
 browsers and daemons  --UDP/TCP-->  TURN listening port and relay range
 ```
@@ -122,11 +118,10 @@ Two public shapes work:
 
 | Shape | API origin | Web origin | What to set |
 | --- | --- | --- | --- |
-| One hostname | `https://fleet.example.com` | same | Leave `VITE_DESKFLEET_SERVER_URL` unset. `DESKFLEET_WEB_ORIGINS` can stay empty. Return URL is `https://fleet.example.com/`. |
-| Split hosts | `https://api.example.com` | `https://app.example.com` | Build the Web client with `VITE_DESKFLEET_SERVER_URL=https://api.example.com`. Set `DESKFLEET_WEB_ORIGINS=https://app.example.com` and `DESKFLEET_OIDC_RETURN_TO=https://app.example.com/,http://127.0.0.1:*/auth/callback`. |
+| One hostname | `https://fleet.example.com` | same | Leave `VITE_DESKFLEET_SERVER_URL` unset. `DESKFLEET_WEB_ORIGINS` can stay empty. Set `DESKFLEET_AUTH_WEB_URL=https://fleet.example.com`. |
+| Split hosts | `https://api.example.com` | `https://app.example.com` | Build the Web client with `VITE_DESKFLEET_SERVER_URL=https://api.example.com`. Set `DESKFLEET_WEB_ORIGINS=https://app.example.com` and `DESKFLEET_AUTH_WEB_URL=https://app.example.com`. |
 
-Electron always needs the loopback return entry, including in the one-hostname
-shape. The daemon's `--server-url` is the API origin, with no path.
+Electron uses the built-in `127.0.0.1` loopback callback allowlist. The daemon's `--server-url` is the API origin, with no path.
 
 A process supervisor should restart the API on failure and inject the
 environment from the host's secret store. The binary has no working-directory
@@ -172,10 +167,14 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | `DATABASE_URL` | yes |  | `postgres://` or `postgresql://` URL, including credentials, database name, and any driver options such as `sslmode`. Empty is rejected. Other schemes are rejected. There is no separate pool-size or database-TLS variable. |
 | `DESKFLEET_BIND_ADDR` | no | `127.0.0.1:8080` | `IP:port` of the plain HTTP listener. A hostname is invalid. |
 | `DESKFLEET_PUBLIC_URL` | no | `http://127.0.0.1:8080` | External origin and the server identity (`serverId`). Use an `https` origin with no path and no trailing slash. The raw string is what daemons store. |
-| `DESKFLEET_OIDC_ISSUER` | for login | unset | Issuer URL. Discovery runs at startup. Unset disables login. An empty value is not "unset": the process still requires a client id and then fails discovery. |
-| `DESKFLEET_OIDC_CLIENT_ID` | when an issuer is set |  | OIDC client id. Empty is rejected. |
-| `DESKFLEET_OIDC_CLIENT_SECRET` | when the IdP requires a confidential client | unset | Sent on the token request when the variable is present, including when it is empty. Omit the variable for a public client that uses PKCE only. |
-| `DESKFLEET_OIDC_RETURN_TO` | for login | empty | Comma-separated final application URLs. See below. |
+| `DESKFLEET_TRUSTED_PROXY_IPS` | behind a proxy | empty | Comma-separated exact proxy IPs allowed to supply `X-Real-IP` for authentication rate limits. |
+| `DESKFLEET_AUTH_WEB_URL` | for split hosts | first Web origin or API origin | Trusted origin serving `/auth/*`, verification links and Passkeys. |
+| `DESKFLEET_WEBAUTHN_RP_ID` | no | Web hostname | Stable Passkey relying-party ID. |
+| `DESKFLEET_SMTP_HOST` | outside localhost | unset | Mandatory STARTTLS mail relay. |
+| `DESKFLEET_SMTP_PORT` | no | 587 | SMTP submission port. |
+| `DESKFLEET_SMTP_USERNAME`, `DESKFLEET_SMTP_PASSWORD`, `DESKFLEET_MAIL_FROM` | with SMTP | unset | Relay credentials and sender. |
+| `DESKFLEET_MAIL_DIRECTORY` | local only | `.local/mail` | Development mail-file sink. |
+| `DESKFLEET_DEPLOYMENT_MODE` | no | `self-hosted` | Self-hosted installations have unlimited allowances and no payment integration. |
 | `DESKFLEET_WEB_ORIGINS` | for cross-origin browsers | empty | Comma-separated exact origins (`https://app.example.com`, with port if it is not the default). |
 | `DESKFLEET_STUN_URLS` | no | empty | Comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Invalid schemes fail startup. Empty means no STUN; deskfleet does not ship a public STUN default. |
 | `DESKFLEET_TURN_URLS` | no | empty | Comma-separated `turn:`/`turns:` URLs advertised on peer grants. Invalid schemes fail startup. Setting any URL requires a secret. |
@@ -183,21 +182,12 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | no | unset | `redis://` or `rediss://` URL for [Team TURN usage collection](#team-turn-usage-collection). Empty disables collection. Invalid URLs fail startup; unavailable Redis is retried in the background. |
 | `RUST_LOG` | no | `info` | `tracing` `EnvFilter`. A missing or invalid value falls back to `info`. |
 
-The OIDC redirect URI is derived, not configured separately:
+`DESKFLEET_PUBLIC_URL` is also the `serverId` in `/api/daemon/me`, the
+WebSocket ready message, and peer grants. Keep it stable.
 
-```text
-{DESKFLEET_PUBLIC_URL without trailing slashes}/api/auth/callback
-```
-
-Register that exact string on the identity provider. The server also uses
-`DESKFLEET_PUBLIC_URL` unchanged as `serverId` in `/api/daemon/me`, the
-WebSocket `ready` message, and every peer grant.
-
-Startup order is environment, PostgreSQL connection and migrations, OIDC
-discovery, then the HTTP bind. A database, migration, or discovery failure
-exits before `/healthz` exists. The OIDC client waits at most 15 seconds and
-does not follow redirects. A callback whose signing key is missing refreshes
-JWKS once.
+Startup validates origins, WebAuthn and SMTP configuration and applies
+PostgreSQL migrations before binding HTTP. SMTP delivery failures are logged
+without secrets; users can request a fresh verification or recovery link.
 
 Example, with secrets supplied by the supervisor rather than a shell history:
 
@@ -205,10 +195,12 @@ Example, with secrets supplied by the supervisor rather than a shell history:
 DATABASE_URL='postgres://deskfleet:password@127.0.0.1:5432/deskfleet?sslmode=require' \
 DESKFLEET_BIND_ADDR='127.0.0.1:8080' \
 DESKFLEET_PUBLIC_URL='https://api.example.com' \
-DESKFLEET_OIDC_ISSUER='https://identity.example.com' \
-DESKFLEET_OIDC_CLIENT_ID='deskfleet' \
-DESKFLEET_OIDC_CLIENT_SECRET='from-your-identity-provider' \
-DESKFLEET_OIDC_RETURN_TO='https://app.example.com/,http://127.0.0.1:*/auth/callback' \
+DESKFLEET_AUTH_WEB_URL='https://app.example.com' \
+DESKFLEET_SMTP_HOST='smtp.example.com' \
+DESKFLEET_SMTP_USERNAME='mailer' \
+DESKFLEET_SMTP_PASSWORD='from-your-secret-store' \
+DESKFLEET_MAIL_FROM='deskfleet@example.com' \
+DESKFLEET_DEPLOYMENT_MODE='self-hosted' \
 DESKFLEET_WEB_ORIGINS='https://app.example.com' \
 DESKFLEET_STUN_URLS='stun:turn.example.com:3478' \
 DESKFLEET_TURN_URLS='turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp' \
@@ -219,53 +211,47 @@ deskfleet-server
 `sslmode` in that URL is a PostgreSQL driver option on `DATABASE_URL`, not a
 deskfleet setting. Use the mode your database requires.
 
-## Identity provider
+## Accounts and mail
 
-The API implements the authorization-code flow with PKCE S256, `state`, and
-`nonce`. It requires an ID token and checks the signature, issuer, audience,
-and expiration. Access-token hashes inside the ID token are checked when the
-token contains one. Users are uniquely `(issuer, subject)`. A later login
-updates that user's name and email. A different issuer string, including a
-trailing-slash change, creates a new user with no team membership.
+The server owns verified email accounts, Argon2id passwords, Passkeys and opaque
+30-day login sessions. Registration emails a one-hour verification link; the
+mailbox owner chooses the first password after opening it. Recovery uses a
+separate one-hour, one-use proof. User IDs remain stable when email changes.
+Matching trims whitespace and lowercases ASCII email, preserving plus tags.
 
-The browser or Electron opens the provider. The provider redirects to
-`/api/auth/callback`. The API then redirects to the allowlisted application URL
-with a one-use fragment `#loginCode=...`. The client exchanges that code with
-the `loginVerifier` it received from `POST /api/auth/start`. Application
-sessions last 30 days. The exchange code lasts 60 seconds. The OIDC attempt
-itself lasts 10 minutes. Logout revokes that application session and its peer
-grants. There are no session cookies; clients send `Authorization: Bearer`.
+Browsers send HttpOnly session cookies. Mutations require the exact allowed
+Origin and the CSRF token from `/api/auth/config` in `X-CSRF-Token`. WebSocket
+upgrades using cookies also validate Origin. Use same-site HTTPS origins for
+Web and API. Web stores only its API origin preference in sessionStorage.
 
-`DESKFLEET_OIDC_RETURN_TO` is an exact-string allowlist, plus one wildcard:
+Electron opens the trusted Web authentication page in the system browser. An
+explicit approval returns a 60-second code to a temporary
+`http://127.0.0.1:<port>/auth/callback`; the main process exchanges its private
+verifier and persists the resulting opaque token using platform secure storage.
+The renderer never receives the token. Desktop attempts expire in ten minutes.
 
-- A Web entry must match `location.origin + location.pathname` of the page that
-  starts login. The default static site at `/` produces
-  `https://app.example.com/`, including the trailing slash. Hash routes are
-  not part of this string.
-- `http://127.0.0.1:*/auth/callback` allows Electron's ephemeral loopback port.
-  It accepts any port on `127.0.0.1` with path `/auth/callback` and no query or
-  fragment. `localhost` does not match it. No other wildcard is implemented.
-- URLs with a username, password, query, or fragment are rejected.
+Password/email changes and recovery revoke login sessions and existing peer
+grants atomically. They preserve Machine registration and accepted work.
+Ordinary password recovery retains Passkeys. Adding/removing credentials and
+changing security settings require recent password or Passkey authentication
+within ten minutes. Site administrators can close public registration separately
+from Team creation, search account metadata, and disable an account. Disablement
+blocks later delegated work as well as current interactive access.
 
-The Web client stores its login in `sessionStorage`. Closing the tab drops it
-even though the server session has time left. Electron keeps the account on
-disk, encrypts the token when OS safe storage is available, and opens the
-system browser for the OIDC redirect.
+Team membership and Site Admin grants remain separate. The creator of a Team
+is its administrator; other accounts join through invitations matching their
+verified email. Operators explicitly grant Site Admin through the server CLI.
 
-Team roles are deskfleet data. The OIDC account does not select them. The
-person who creates a team is its admin. Invitations last 7 days. Machine
-credentials last until an administrator removes the machine.
-
-The development Dex service in `compose.yaml` is a local fixture with published
-passwords. Point a production API at your own issuer. The issuer must be
-reachable from the API host for discovery and token requests, and from browsers
-for the authorization page.
+Local development writes `.eml` files to `.local/mail/`. Production requires
+SMTP; neither SMTP credentials nor raw challenge tokens enter logs. A failed
+send does not create an authenticated account, and another request sends a new
+link. Retain mail delivery diagnostics when operating the service.
 
 ## Reverse proxy
 
 Proxy `/api` (HTTP and WebSocket) and `/healthz` to `DESKFLEET_BIND_ADDR`.
-WebSocket routes are `/api/client/ws` and `/api/daemon/ws`. The first client
-message is `{"type":"authenticate","token":"..."}` and must arrive within 10
+WebSocket routes are `/api/client/ws` and `/api/daemon/ws`. Browser sockets authenticate from their cookie and Origin during the upgrade.
+Native/daemon sockets send `{"type":"authenticate","token":"..."}` within ten
 seconds. Tokens are not placed in the URL.
 
 The server sends a WebSocket ping every 20 seconds and closes a socket that has
@@ -282,6 +268,12 @@ CORS allows `GET`, `POST`, `PATCH`, and `DELETE`, and the headers
 CORS headers are omitted and the browser rejects the response. Daemons and
 Electron's main process are not affected. Same-origin Web hosting does not need
 its own origin listed. There is no `*` origin. Credentialed CORS is not enabled.
+
+Configure `DESKFLEET_TRUSTED_PROXY_IPS` with the proxy's actual TCP source IP
+(`127.0.0.1` for the same-host example). The proxy must overwrite `X-Real-IP`
+with the client address. Only these exact peers are trusted; all other forwarded
+headers are ignored. This keeps authentication IP limits per client instead of
+sharing one bucket across the proxy.
 
 The proxy terminates TLS. `DESKFLEET_PUBLIC_URL` must be the `https` origin
 clients use. The API will not reconstruct that origin from `Host` or
@@ -307,6 +299,7 @@ server {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
         proxy_read_timeout 120s;
@@ -316,11 +309,9 @@ server {
 ```
 
 For one hostname, serve `apps/web/dist` at `/` and proxy only `/api` and
-`/healthz`. The client uses hash URLs, so application routes do not need a
-server-side fallback. Keep the document path at `/` so the return URL stays
-`https://fleet.example.com/`. Redirecting `/` to `/index.html` changes the
-return URL to `https://fleet.example.com/index.html`, which then has to be the
-allowlist entry.
+`/healthz`. Main application routes use hashes. Authentication uses `/auth/*`
+paths, which must fall back to `index.html`; for nginx, use
+`try_files $uri $uri/ /index.html` in the static location.
 
 ## TURN and STUN
 
@@ -409,9 +400,14 @@ also require restarting coturn. The event format is defined in the
 ## Database, backup, and upgrade
 
 Create an empty database and a role, and put that URL in `DATABASE_URL`. The
-first start creates `cp_migrations` and applies schema versions `1` (central
-records) and `2` (TURN usage) under the transaction advisory lock `761946021`.
+first start creates `cp_migrations` and applies schema versions `1` (owned identity
+and central records), `2` (TURN usage), `3` (site administration), and `4` (Team
+entitlements and subscriptions) under the transaction advisory lock `761946021`.
 Later starts take the same lock and apply any migration that is not recorded.
+
+The provisional OIDC database is not compatible with this schema. That database
+contained development data and must be rebuilt; see the
+[development reset](environment.md#fresh-development-database-and-reset).
 
 From a source checkout, the same database can be inspected with:
 
@@ -499,8 +495,8 @@ online and a path or TURN relay exists.
 
 1. `curl https://api.example.com/healthz` returns
    `{"status":"ok","version":"...","protocol_version":1}`.
-2. The identity provider lists the derived `/api/auth/callback` redirect.
-3. The Web welcome page or Electron completes OIDC and can create a team.
+2. Registration sends a verification email through your SMTP relay.
+3. Verify the mailbox, sign in through Web and Electron, and create a Team.
 4. A daemon enrolls and the client shows it online. The API log includes the
    bind address at startup (`deskfleet server listening`).
 5. An Agent or terminal session connects directly, and again with a forced
@@ -510,29 +506,23 @@ online and a path or TURN relay exists.
 
 ## Pitfalls
 
-- `compose.yaml` published ports and the accounts `alice@example.test` /
-  `bob@example.test` exist only for local development.
+- `compose.yaml` published ports and mail-file delivery are local development fixtures.
 - `DESKFLEET_PUBLIC_URL` changing after enrollment makes daemons reject the
   control socket with `Control identity mismatch`. Peer grants also carry that
   string. Keep the value stable, including whether it has a trailing slash.
-- The callback strips trailing slashes from the public URL. The server identity
-  does not. Set the origin once, without a path or trailing slash.
+- Set the public origin once, without a path or trailing slash.
 - `DESKFLEET_BIND_ADDR=localhost:8080` fails. The value is an IP and port.
 - Binding a public interface without the TLS proxy exposes session tokens.
   Bearer tokens travel in `Authorization` and in the first WebSocket message.
-- An OIDC issuer that is down, or whose discovery document redirects, prevents
-  the process from listening.
-- Reusing a development issuer URL, or editing the issuer string, orphans
-  existing memberships because users are keyed by issuer and subject.
-- `DESKFLEET_WEB_ORIGINS` entries are origins, not pages. A trailing path does
-  not match the browser `Origin` header. The Web return URL is a separate
-  setting and includes the path.
+- SMTP delivery problems prevent new mailbox verification and recovery. Existing
+  sessions keep working. Fix delivery and request a new link.
+- Changing the WebAuthn RP ID or Web hostname can make existing Passkeys unusable.
+- `DESKFLEET_WEB_ORIGINS` entries are exact origins, not pages.
 - Building the Web client without `VITE_DESKFLEET_SERVER_URL` makes it call the
   page origin. That is correct for one hostname and wrong for a split host.
 - A proxy timeout at or below 60 seconds drops daemons that are only sending
   heartbeats. A body limit under 64 MiB rejects large history uploads.
-- `/healthz` staying green does not mean PostgreSQL or the identity provider is
-  healthy after startup.
+- `/healthz` staying green does not mean PostgreSQL or SMTP is healthy after startup.
 - Two API replicas split presence and signaling. Clients of one replica cannot
   reach a daemon connected to the other.
 - Restoring a database dump without the matching machine credentials leaves

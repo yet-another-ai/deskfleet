@@ -43,7 +43,7 @@ Each process has its own Vite configuration (`vite.main.config.ts`,
 
 ## Interface layout
 
-The production client signs in to a configured backend through OIDC and selects
+The production client signs in to a configured backend through its owned account system and selects
 a team and an enrolled machine. The Electron main process owns account HTTP and
 WebSocket connections and stores the application token using Electron safeStorage.
 A narrow preload adapter exposes operations and events without exposing that token

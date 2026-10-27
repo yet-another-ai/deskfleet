@@ -182,7 +182,7 @@ try {
   await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
   await screenshot("welcome-server")
 
-  // Exercise the production form and IPC, without needing an OIDC server.
+  // Exercise the production form and IPC, without contacting the account service.
   await evaluate(`(() => {
     const input = document.querySelector('input[name="server-url"]');
     input.value = "https://deskfleet.example.com";
@@ -209,7 +209,7 @@ try {
   assert.equal(await evaluate("document.querySelector('input[name=server-url]').value"), "https://deskfleet.example.com")
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   await screenshot("welcome-account")
-  // The UI completes this after OIDC; exercise persisted host progress here.
+  // The UI completes this after browser authentication; exercise persisted host progress here.
   assert.deepEqual(await evaluate("window.deskfleet.onboarding.complete()"), { step: "complete" })
   await evaluate("window.deskfleet.settings.setLocalAgentEnabled(false)")
   await stop()

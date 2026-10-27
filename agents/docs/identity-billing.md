@@ -1,10 +1,8 @@
 # Identity, subscriptions, and usage requirements
 
-Status: agreed product direction and implementation specification, prepared on
-2026-10-27. This document does not claim these capabilities are implemented.
-The current server still uses OIDC and displays unlimited usage allowances.
-Items marked **proposed** or listed under **Open decisions** need resolution
-before the affected behavior ships.
+Status: implemented product contract, updated 2026-10-28. The first payment
+integration is Stripe subscriptions. Prices and currency are operator-configured;
+no live payment credentials are stored in the repository.
 
 This document owns account and commercial requirements. [Architecture](architecture.md)
 owns component boundaries; [Agent Sessions](agent-sessions.md) owns execution,
@@ -41,7 +39,8 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 
 One GiB is 1,073,741,824 bytes. Go allows 2,147,483,648 bytes and Pro allows
 21,474,836,480 bytes per period. Compare integer bytes; round only for display.
-Prices, currency, and sale intervals are not yet selected.
+The first release supports monthly subscriptions only. Prices and currency come
+from the two configured Stripe Prices. No paid trial or wallet is offered.
 
 Free has the four restrictions above; no additional feature exclusions have been
 selected. Direct connectivity remains available. Plans never confer Team
@@ -87,8 +86,11 @@ open decisions, not an implicit cascading deletion.
 ### Security and clients
 
 - Use a maintained Argon2id implementation for passwords. Bound hashing
-  concurrency and run it outside the async request executor. Set password and
-  common-password screening policies before release.
+  concurrency and run it outside the async request executor. Passwords contain
+  15–128 characters, with a small local denylist and repeated-character rejection.
+  Login sessions last 30 days; recent authentication lasts 10 minutes. Mail links
+  expire after one hour and Passkey ceremonies after five minutes. Recovery
+  retains Passkeys and revokes all login sessions and peer grants.
 - Passkey ceremonies use server-side, expiring, single-use challenge state.
   Validate RP ID, allowed origins, and user verification. Store public credential
   material, not private keys.
@@ -102,9 +104,10 @@ open decisions, not an implicit cascading deletion.
 - Electron uses the system browser and the existing short-lived, one-use
   code/verifier exchange. Keep credentials in the main process and secure
   platform storage, outside the renderer.
-- **Proposed Web transport:** Secure, HttpOnly cookies with CSRF protection and
-  WebSocket Origin validation. Current Web uses sessionStorage bearer tokens.
-  Resolve Web/API origin layouts and cross-site hosting before changing transport.
+- Web uses Secure, HttpOnly, SameSite=Lax cookies (Secure is disabled for local
+  HTTP development), CSRF tokens, and WebSocket Origin validation. Serve Web/API
+  on the same site with explicit allowed origins; unrelated cross-site origins
+  are unsupported. Browser storage retains only the selected server address.
 - Site administration remains separate from Team data access. Ordinary logout
   does not automatically cancel scheduled work; account disablement must be
   checked when authorizing its next execution.
@@ -121,7 +124,7 @@ The Team owns its billing profile and provider customer/subscription mappings.
 Changing a payment contact or removing the purchaser does not transfer or erase
 the subscription.
 
-**Proposed permission mapping:** Team administrators manage purchases, plan
+**Permission mapping:** Team administrators manage purchases, plan
 changes, cancellation, payment methods, and invoices. Members see the effective
 plan and usage. Delegated Agent/MCP credentials cannot perform billing changes.
 A separate billing role has not been requested.
@@ -131,14 +134,14 @@ A separate billing role has not been requested.
 TURN periods are calendar months anchored to the subscription's effective date,
 not fixed-duration day counts or the first of every calendar month.
 
-**Proposed month-end convention:** when the original day is absent, use that
+**Month-end convention:** when the original day is absent, use that
 month's last day and retain the original anchor for later months. A January 31
 anchor would reset on February 28 in 2027, then March 31 and April 30.
 
 Store explicit period start/end instants and assign usage to `[start, end)`.
 A new period starts with zero usage. Login, reconnection, and duplicate payment
-notifications never reset usage. Timezone and boundary time remain open; UTC
-with the original subscription time is the proposed convention.
+notifications never reset usage. Boundaries use UTC
+and retain the original subscription time of day.
 
 ### Payment coverage and expiry
 
@@ -153,10 +156,12 @@ with the original subscription time is the proposed convention.
   unverified checkout or renewal cannot extend coverage.
 - Accepted work and issued relay access retain the lifetimes specified below.
   This continuation is not a billing grace period.
-- Plan-change timing, proration, reactivation, and refund/dispute treatment remain
-  open decisions; do not silently adopt payment-provider defaults.
+- Stripe Portal invoices upgrades immediately; new limits require the paid
+  invoice. Downgrades and cancellation take effect at period end. Usage is
+  preserved within the existing period. Refunds/disputes are operator-managed
+  in this release and do not introduce a wallet or automatic credit mechanism.
 
-**Proposed over-limit fallback:** preserve existing members, Sessions, files, and
+**Over-limit fallback:** preserve existing members, Sessions, files, and
 history after a smaller allowance takes effect. Block growth while the relevant
 count is at or above its limit, and apply Free turn limits to subsequent starts.
 Allow reading, archiving, member removal, and billing recovery. Do not remove
@@ -223,7 +228,7 @@ full total, including inherited usage. A source at 24 leaves its child with
 6 Free turns; a source at 30 leaves none. Inherited display history must not
 become executable input or synthetic local turn records.
 
-**Proposed consumption definition:**
+**Consumption definition:**
 
 - Queued inputs, tools, permission decisions, and steering injected into the
   current turn do not consume another turn.
@@ -233,9 +238,10 @@ become executable input or synthetic local turn records.
   cancelled/interrupted attempts and uncertain delivery consume one. Idempotent
   request retries never double-count; explicit new attempts are evaluated again.
 
-Failure accounting needs confirmation. Current code creates a turn record before
-preparing attachments/contacting the provider, so a count of all turn rows is
-not equivalent to this proposed definition.
+A turn record alone does not count. The daemon persists its monotonic `consumed`
+marker immediately before dispatch, after attachment preparation and a fresh
+central entitlement lookup. Authority failure pauses new dispatch; accepted
+provider work can finish.
 
 The owning daemon checks/commits consumption at its shared new-turn boundary,
 covering interactive input, backlog, steering fallback, and scheduled inputs.
@@ -244,8 +250,8 @@ Session has one owning daemon, so a cross-machine turn allocator is unnecessary.
 
 An accepted 30th turn can finish. Further starts pause with an explicit limit
 reason; preserve pending inputs for withdrawal or later execution after upgrade.
-Automatic backlog resumption after upgrade remains an open UX decision. A plan
-update cannot fabricate or duplicate a submission.
+After upgrading or restoring connectivity, users explicitly retry the preserved
+input. Plan changes never automatically resume queued execution.
 
 ### TURN relay allowance
 
@@ -263,10 +269,10 @@ lifetime after exhaustion or paid expiry; reconnect does not extend it. Actual
 usage may exceed the allowance. This is an admission threshold, not a hard byte
 cutoff. This release includes no automatic overage charge.
 
-**Proposed meter:** retain the current sum of TURN sent bytes across client-facing
+**Meter:** retain the current sum of TURN sent bytes across client-facing
 and peer-facing sockets, attributed to the Team on the saved peer grant. Do not
 add received bytes to this sum. It measures relay protocol traffic, not file
-payload size. Final metering semantics remain an open decision.
+payload size. Period totals remain exact decimal integer strings in the API.
 
 Current coturn Redis Pub/Sub collection cannot replay missing events and
 accumulates each notification independently. Production quota collection needs
@@ -275,9 +281,11 @@ and reporting of gaps/freshness. Do not promise exact accounting or treat missin
 events as proof of zero usage. Recovery of every lost byte is not an agreed
 first-release requirement.
 
-Continue recording during Enterprise. Whether this traffic consumes the restored
-paid allowance after revocation remains open. Do not silently clear usage or
-move the period anchor on plan changes before that policy is defined.
+Continue recording during Enterprise. Revoking the override retains the period
+and usage, so Enterprise-period traffic consumes any restored paid allowance.
+The collector has a database lease and reports freshness/gaps; stale collection
+denies new metered Go/Pro relay grants. Enterprise and self-hosted grants remain
+unlimited. Redis Pub/Sub loss is still not reconstructable.
 
 ### Effective policy and accepted work
 
@@ -359,7 +367,7 @@ names remain implementation details. Separate microservices are not required.
 7. Free gets direct connectivity but no relay credentials. Go/Pro enforce exact
    integer-byte limits for new authorization on both endpoints while preserving
    the original lifetime of existing access.
-8. With the proposed month-end convention, January 31 anchors clamp in February
+8. With the month-end convention, January 31 anchors clamp in February
    and return to March 31. Boundary assignment and repeated notifications never
    reset or double usage.
 9. Unrenewed coverage ends at its deadline without a webhook or grace period.
@@ -373,31 +381,30 @@ names remain implementation details. Separate microservices are not required.
 12. Self-hosted accounts and enrollment work without payment configuration;
     allowances are unlimited and TURN remains operator-configured.
 
-## Open decisions
+## Deployment and release choices
 
-| Decision | Proposed default or clarification |
-| --- | --- |
-| Offers | Go/Pro price, currency, and monthly-only versus other sale intervals. No paid trial has been selected. |
-| Plan changes | Effective dates and proration. Proposed: paid upgrades after payment confirmation; downgrades at period end. |
-| Usage continuity | Proposed: retain usage/anchor on in-period changes; Go with 1.5 GiB used becomes Pro with 18.5 GiB remaining. Define reactivation and Enterprise-period accounting. |
-| Period boundaries | Confirm month-end clamping while preserving the original day. Choose timezone/time-of-day; UTC with the original subscription time is proposed. |
-| Free fallback with excess | Confirm preserving resources and blocking growth as described above. |
-| Turn consumption | Confirm unsent failures, cancellation/interruption/uncertain delivery, and backlog resumption after upgrade. |
-| TURN meter | Confirm byte accounting and behavior during stale/unavailable collection; keep the agreed new-authorization/existing-access distinction. |
-| Account security | Set password/session/challenge policies, recent-authentication methods/window, and whether password recovery retains Passkeys. |
-| Account closure | Define closure, resource/billing handoff, and retention instead of cascading Team deletion. |
-| Deployment/payments | Resolve cookie/origin support; Stripe subscriptions are selected. Define refunds/disputes and Team-closure billing before live sales. |
+The implementation uses monthly Go/Pro Stripe Prices, UTC month-end clamping,
+paid upgrades, period-end downgrades, resource-preserving Free fallback, durable
+turn consumption, explicit backlog retry, and retained usage under Enterprise.
+[Stripe operations](stripe.md) documents the exact Portal configuration, webhook,
+reconciliation, and test/live setup.
 
-## Delivery boundaries
+Prices and currency must be selected when creating Stripe offers. Account closure,
+Team closure while subscribed, retention, and automated refund/dispute policies
+are outside this first release. Existing account disablement and Team resource
+permissions remain separate from subscription payment state.
 
-1. Implement accounts and clients. Remove OIDC dependencies/routes/config, Dex
-   infrastructure, and OIDC fixtures/smoke assumptions; replace with real owned
-   authentication tests. Rebuild development databases and re-enroll Machines
-   without reusing old credentials.
-2. Implement effective entitlements, Team admission, per-Session turn limits and
-   fork inheritance, monthly TURN authorization, and usage display.
-3. Integrate payment coverage/expiry, reconciliation, Enterprise administration,
-   and agreed plan changes. Verify concurrency and failure at central-store,
-   daemon, and real-client boundaries.
-4. Update server, environment, CI, and self-hosting guides with implementation.
-   Until then, their OIDC setup describes current code, not this target design.
+## Delivery and verification
+
+- Owned email/password and Passkey APIs replace OIDC, including real software
+  authenticator, cookie/Origin/CSRF, recovery, revocation, and desktop exchange tests.
+- Central PostgreSQL transactions reserve Team capacity. Daemons retain unknown
+  outcomes and reconcile durable creation, archive, restoration, and deletion.
+- Provider dispatch checks fresh Team authority. Fork inheritance and consumed
+  markers survive retries, restarts, and plan changes.
+- Stripe webhook signatures, durable inboxes, operation leases, verified paid
+  invoices, deadlines, Enterprise overrides, and monthly usage have focused tests.
+- Web and Electron share account security, plan/usage, and administrative UI.
+  Development smoke tests use local verification mail rather than Dex.
+- Rebuild disposable central and local development data and re-enroll Machines.
+  Old schemas and credentials are intentionally not migrated.

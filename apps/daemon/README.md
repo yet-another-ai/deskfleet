@@ -19,7 +19,7 @@ mise run daemon:dev
 This builds the addon and starts a loopback health listener. A ready event prints
 its address; `GET /healthz` reports the loaded native version and platform.
 `--port 8081` selects a port, and `--info` prints native/runtime information and
-exits. Configure PostgreSQL and OIDC through the [server guide](../server/README.md).
+exits. Configure PostgreSQL and owned account authentication through the [server guide](../server/README.md).
 Both Electron and Web require login and Team selection before resource creation.
 
 Electron can enroll the daemon it hosts. For a headless machine, first start its

@@ -232,7 +232,7 @@ those inputs for steering are recorded separately. Default backlog dispatch is
 a system action. The target machine is the daemon's catalog identity.
 
 Central signaling binds peers to verified users and login/device identities.
-Resource creation requires OIDC login and Team enrollment. A Web client can
+Resource creation requires a verified deskfleet account and Team enrollment. A Web client can
 have no enrolled source Machine; `sourceMachine` is then absent. The target
 machine is never assigned as the browser's identity. Local discovery credentials
 permit host setup; `local_token` actors remain only in explicit in-process test

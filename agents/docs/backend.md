@@ -8,10 +8,12 @@ points are the [server guide](../../apps/server/README.md),
 [daemon guide](../../apps/daemon/README.md), and shared Vue packages.
 
 [Identity and billing requirements](identity-billing.md) supersede the original
-OIDC-only identity decision and define the next account/subscription delivery.
-They distinguish agreed product rules from proposed defaults and open decisions.
-The existing OIDC and unlimited-usage implementation remains in place until
-that work lands; this document describes the target capabilities.
+OIDC-only identity decision and define the implemented account/subscription
+contract. Stripe is the first payment provider; [operations](stripe.md) describes
+the required offers, Portal, and webhook configuration.
+The server now owns verified accounts, password/Passkey authentication, and
+browser/native sessions. The implementation preserves the existing resource
+ownership and explicit Site Admin boundary.
 
 ## Confirmed product decisions
 
