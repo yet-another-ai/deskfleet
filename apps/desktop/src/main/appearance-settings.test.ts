@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test } from "vitest"
@@ -49,10 +49,26 @@ test("existing desktop preferences keep their selected fonts and theme with liga
   expect(controller.get()).toEqual({ ...saved, terminalLigatures: false })
 })
 
-test("invalid saved appearance is reported and can be overwritten with valid preferences", () => {
+test.each([
+  ["malformed JSON", '{"theme":'],
+  ["invalid schema", JSON.stringify({ ...DEFAULT_APPEARANCE_SETTINGS, theme: "sepia" })],
+])("%s falls back to usable defaults without changing the saved file until the user saves", (_name, original) => {
   const { path, controller } = fixture()
-  writeFileSync(path, JSON.stringify({ ...DEFAULT_APPEARANCE_SETTINGS, theme: "sepia" }))
-  expect(() => controller.get()).toThrow("Invalid appearance")
-  controller.set({ ...DEFAULT_APPEARANCE_SETTINGS, theme: "dark" })
-  expect(new AppearanceSettingsController(path).get().theme).toBe("dark")
+  writeFileSync(path, original)
+  expect(controller.get()).toEqual(DEFAULT_APPEARANCE_SETTINGS)
+  expect(readFileSync(path, "utf8")).toBe(original)
+  const selected: AppearanceSettings = { ...controller.get(), theme: "dark", terminalLigatures: true }
+  expect(controller.set(selected)).toEqual(selected)
+  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(selected)
+  expect(new AppearanceSettingsController(path).get()).toEqual(selected)
+})
+
+test("filesystem read failures remain actionable and can be retried after repair", () => {
+  const { path, controller } = fixture()
+  mkdirSync(path)
+  expect(() => controller.get()).toThrow()
+  rmdirSync(path)
+  const saved = { ...DEFAULT_APPEARANCE_SETTINGS, theme: "dark" }
+  writeFileSync(path, JSON.stringify(saved))
+  expect(controller.get()).toEqual(saved)
 })

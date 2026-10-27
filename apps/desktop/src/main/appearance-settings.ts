@@ -11,10 +11,18 @@ export class AppearanceSettingsController {
 
   get(): AppearanceSettings {
     if (!this.#settings) {
+      let stored: string | undefined
       try {
-        this.#settings = validateAppearanceSettings(JSON.parse(readFileSync(this.#path, "utf8")))
+        stored = readFileSync(this.#path, "utf8")
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
+      }
+      try {
+        this.#settings = stored === undefined
+          ? { ...DEFAULT_APPEARANCE_SETTINGS }
+          : validateAppearanceSettings(JSON.parse(stored))
+      } catch {
+        // Keep corrupt bytes untouched until the user saves a valid preference.
         this.#settings = { ...DEFAULT_APPEARANCE_SETTINGS }
       }
     }

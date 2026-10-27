@@ -262,6 +262,8 @@ lists, with an empty value restoring the application default. Theme cards previe
 the application palette. The terminal font editor uses the same xterm surface as
 live terminals, and its ligature preference updates both the preview and existing
 terminals without recreating them.
+Malformed or invalid saved desktop appearance uses defaults without rewriting
+the file until a successful edit. Filesystem read errors remain visible errors.
 
 The daemon runs as the OS user whose files, credentials, and tools the agents
 use. Closing a window or losing a connection must leave ongoing work running.

@@ -52,6 +52,8 @@ async function launch(phase: AppearanceSmokeContext["phase"]): Promise<Appearanc
 try {
   await stat(join(rendererDirectory, "index.html"))
   await mkdir(profileDirectory)
+  // A damaged profile must still let the user edit Appearance and repair it through a normal save.
+  await writeFile(join(profileDirectory, "appearance.json"), '{"theme":')
   await Promise.all([
     build({ entryPoints: [join(import.meta.dirname, "fixtures/appearance-preload.ts")], outfile: preloadPath, bundle: true, platform: "node", format: "cjs", external: ["electron"], target: "node24" }),
     build({ entryPoints: [join(import.meta.dirname, "fixtures/appearance-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" }),
@@ -63,7 +65,7 @@ try {
   assert.deepEqual(restored.settings, changed.settings)
   const results = { changed, restored }
   await writeFile(join(outputDirectory, "results.json"), JSON.stringify(results, null, 2) + "\n")
-  console.log("Production Electron Appearance: theme thumbnails, language, native theme, CSS fonts, live xterm font/ligature preview, restart persistence, and minimum window layout passed", results)
+  console.log("Production Electron Appearance: corrupt profile recovery, theme thumbnails, language, native theme, CSS fonts, live xterm font/ligature preview, restart persistence, and minimum window layout passed", results)
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error
