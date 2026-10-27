@@ -1,15 +1,16 @@
 import { flushPromises, mount } from "@vue/test-utils"
+import { client as platformClient } from "@deskfleet/client/platform"
 import { createPinia, setActivePinia } from "pinia"
 import { defineComponent, onMounted } from "vue"
 import { expect, test, vi } from "vitest"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
 import { i18n } from "../../i18n/index.ts"
-import type { TerminalListener } from "../../services/terminal-client.ts"
+import { TerminalClient, type TerminalListener } from "../../services/terminal-client.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import { deferred } from "../../test/desktop-media.ts"
 import LiveTerminal from "./LiveTerminal.vue"
 
-function setup(readOnly = false) {
+function setup(readOnly = false, independent = false) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const terminals = useTerminalsStore()
@@ -37,10 +38,10 @@ function setup(readOnly = false) {
     template: '<div data-surface :data-interactive="interactive" />',
   })
   const wrapper = mount(LiveTerminal, {
-    props: { terminalId: "terminal-1", readOnly },
+    props: { terminalId: "terminal-1", readOnly, independent },
     global: { plugins: [pinia, i18n], stubs: { TerminalSurface: surface } },
   })
-  const resolve = (status: TerminalSummary["status"] = "running") => pending.resolve({ id: "terminal-1", title: "zsh", cwd: "/home/user", cols: 80, rows: 24, status })
+  const resolve = (status: TerminalSummary["status"] = "running", kind?: "acp") => pending.resolve({ id: "terminal-1", title: "zsh", cwd: "/home/user", cols: 80, rows: 24, status, ...(kind ? { kind } : {}) })
   const connection = () => wrapper.emitted("connection")?.at(-1)
   return { wrapper, terminals, detach, write, reset, focus, resolve, connection, emit: (...args: Parameters<TerminalListener>) => listener(...args) }
 }
@@ -97,6 +98,60 @@ test("an archived context replays retained output without resizing or accepting 
   expect(fixture.terminals.input).not.toHaveBeenCalled()
   expect(fixture.wrapper.get("[data-surface]").attributes("data-interactive")).toBe("false")
   fixture.wrapper.unmount()
+})
+
+test("an ACP terminal remains read only even when its enclosing panel is interactive", async () => {
+  const fixture = setup()
+  fixture.resolve("running", "acp")
+  await flushPromises()
+  fixture.emit({ kind: "ready", sessionId: "terminal-1" }, () => {})
+  await flushPromises()
+  const surface = fixture.wrapper.getComponent({ name: "TerminalSurface" })
+  surface.vm.$emit("input", "pasted command\r")
+  surface.vm.$emit("resize", { cols: 120, rows: 40 })
+  expect(fixture.terminals.resize).not.toHaveBeenCalled()
+  expect(fixture.terminals.input).not.toHaveBeenCalled()
+  expect(surface.props("interactive")).toBe(false)
+  fixture.wrapper.unmount()
+})
+
+test("embedded views of the same ACP terminal use independent peers and leave its process running", async () => {
+  const summary: TerminalSummary = { id: "terminal-1", title: "command", cwd: "/code", cols: 80, rows: 24, status: "running", kind: "acp" }
+  vi.spyOn(platformClient.terminal, "dial").mockResolvedValue(summary)
+  const call = vi.spyOn(TerminalClient.prototype, "call").mockResolvedValue(summary)
+  const listeners = new Map<TerminalClient, TerminalListener>()
+  const detach = vi.fn()
+  vi.spyOn(TerminalClient.prototype, "subscribe").mockImplementation(function (this: TerminalClient, _id, listener) {
+    listeners.set(this, listener)
+    return detach
+  })
+  const close = vi.spyOn(TerminalClient.prototype, "close")
+  const first = setup(true, true)
+  const second = setup(true, true)
+  await flushPromises()
+  expect(listeners.size).toBe(2)
+  expect(first.terminals.attach).not.toHaveBeenCalled()
+  expect(second.terminals.attach).not.toHaveBeenCalled()
+  const firstReceive = [...listeners.values()][0]!
+  const acknowledge = vi.fn()
+  firstReceive({ kind: "output", sessionId: "terminal-1", data: "aGk=", offset: 2 }, acknowledge)
+  expect(first.write).toHaveBeenCalledOnce()
+  expect(second.write).not.toHaveBeenCalled()
+  first.write.mock.calls[0]![1]()
+  expect(acknowledge).toHaveBeenCalledOnce()
+  for (const receive of listeners.values()) {
+    receive({ kind: "ready", sessionId: "terminal-1" }, () => {})
+    receive({ kind: "exit", sessionId: "terminal-1", exitCode: 0 }, () => {})
+  }
+  await flushPromises()
+  expect(first.connection()).toEqual(["ended", "Process exited (0)"])
+  expect(second.connection()).toEqual(["ended", "Process exited (0)"])
+  expect(call.mock.calls.map(([method]) => method)).toEqual(["attach", "attach"])
+  first.wrapper.unmount()
+  second.wrapper.unmount()
+  expect(close).toHaveBeenCalledTimes(2)
+  expect(detach).toHaveBeenCalledTimes(2)
+  expect(first.terminals.hangup).not.toHaveBeenCalled()
 })
 
 test("an unknown exit code stays unknown and interrupted history is read-only", async () => {

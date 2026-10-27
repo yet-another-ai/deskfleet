@@ -11,6 +11,8 @@ export interface TerminalSummary {
   rows: number
   status: "running" | "exited" | "interrupted"
   exitCode?: number
+  /** Agent-created terminals expose output only; viewers cannot control their process. */
+  kind?: "acp"
   /** The Session Worktree that owns this terminal; absent for machine terminals. */
   worktreeId?: string
 }

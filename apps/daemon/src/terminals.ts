@@ -17,6 +17,8 @@ export interface TerminalRun {
   cwd?: string
   cols: number
   rows: number
+  worktreeId?: string
+  kind?: "acp"
 }
 
 interface Session {
@@ -50,7 +52,7 @@ function sessionId(id: string): void {
   if (!/^[A-Za-z0-9_-]{1,128}$/u.test(id)) throw new Error("Invalid terminal session ID")
 }
 
-/** Machine-scoped PTYs and transcripts belong to the daemon until explicit hangup. */
+/** PTYs and transcripts belong to the daemon independently of their viewers. */
 export class TerminalSessions {
   readonly #directory: string
   readonly #factory: TerminalFactory
@@ -112,7 +114,7 @@ export class TerminalSessions {
     return { ...this.#session(options.terminalId).summary }
   }
 
-  /** Run an installer or login program with normal terminal input, history and exit events. */
+  /** Run a setup or Agent command with shared history and exit events. */
   async run(options: TerminalRun): Promise<TerminalSummary> {
     if (!options.command || options.command.includes("\0")) throw new Error("Invalid terminal command")
     if (options.args?.some(argument => argument.includes("\0"))) throw new Error("Invalid terminal argument")
@@ -126,7 +128,7 @@ export class TerminalSessions {
 
   async #create(options: {
     terminalId: string; cols: number; rows: number; cwd?: string; worktreeId?: string
-    title?: string; command?: string; args?: string[]; env?: Record<string, string>
+    title?: string; command?: string; args?: string[]; env?: Record<string, string>; kind?: "acp"
   }): Promise<TerminalSummary> {
     if (this.#closed) throw new Error("Terminal sessions are closed")
     await this.init()
@@ -145,15 +147,15 @@ export class TerminalSessions {
       config.args = options.args
       config.env = options.env
     }
-    const spawning = this.#spawn(options.terminalId, config, options.worktreeId, options.title)
+    const spawning = this.#spawn(options.terminalId, config, options.worktreeId, options.title, options.kind)
     this.#spawning.set(options.terminalId, spawning)
     try { return await spawning }
     finally { this.#spawning.delete(options.terminalId) }
   }
 
-  async #spawn(id: string, config: TerminalConfig, worktreeId?: string, title?: string): Promise<TerminalSummary> {
+  async #spawn(id: string, config: TerminalConfig, worktreeId?: string, title?: string, kind?: "acp"): Promise<TerminalSummary> {
     const { cwd, cols, rows } = config
-    const summary: TerminalSummary = { id, title: title || basename(cwd) || cwd, cwd, cols, rows, status: "running", ...(worktreeId ? { worktreeId } : {}) }
+    const summary: TerminalSummary = { id, title: title || basename(cwd) || cwd, cwd, cols, rows, status: "running", ...(worktreeId ? { worktreeId } : {}), ...(kind ? { kind } : {}) }
     const history = await TerminalHistory.create(this.#directory, summary)
     let native: NativeTerminal
     try { native = await this.#factory(config) }
@@ -180,6 +182,19 @@ export class TerminalSessions {
     return this.#session(id).history.read(offset, length)
   }
 
+  /** Process completion includes draining and persisting its final output. */
+  async waitForExit(id: string): Promise<void> {
+    const session = this.#session(id)
+    await session.drained
+    await session.stopping
+    if (session.error) throw new Error(session.error)
+  }
+
+  /** Agent process control retains the transcript for existing tool-call references. */
+  stop(id: string): Promise<void> {
+    return this.#stop(this.#session(id))
+  }
+
   subscribe(id: string, listener: (change: TerminalChange) => void): () => void {
     const session = this.#session(id)
     session.listeners.add(listener)
@@ -199,10 +214,12 @@ export class TerminalSessions {
   }
 
   async input(id: string, data: Buffer): Promise<void> {
+    this.#requireInteractive(id)
     await this.#running(id).native!.write(data)
   }
 
   async resize(id: string, cols: number, rows: number): Promise<void> {
+    this.#requireInteractive(id)
     terminalSize(cols, rows)
     const session = this.#running(id)
     await session.native!.resize(cols, rows)
@@ -213,6 +230,13 @@ export class TerminalSessions {
   }
 
   async hangup(id: string): Promise<void> {
+    await this.init()
+    await this.#spawning.get(id)
+    this.#requireInteractive(id)
+    return this.#hangup(id)
+  }
+
+  async #hangup(id: string): Promise<void> {
     if (this.#closed) throw new Error("Terminal sessions are closed")
     await this.init()
     const pending = this.#spawning.get(id)
@@ -241,7 +265,7 @@ export class TerminalSessions {
     await this.init()
     await Promise.allSettled(this.#spawning.values())
     const owned = [...this.#sessions.values()].filter(session => session.summary.worktreeId === worktreeId)
-    await Promise.all(owned.map(session => this.hangup(session.summary.id)))
+    await Promise.all(owned.map(session => this.#hangup(session.summary.id)))
   }
 
   /** Stop Session-owned PTYs, retaining their final bytes, identity, and metadata. */
@@ -275,6 +299,10 @@ export class TerminalSessions {
     const session = this.#sessions.get(id)
     if (!session) throw new Error("Unknown terminal session")
     return session
+  }
+
+  #requireInteractive(id: string): void {
+    if (this.#sessions.get(id)?.summary.kind === "acp") throw new Error("ACP terminals are read-only")
   }
 
   #running(id: string): Session {
@@ -312,7 +340,7 @@ export class TerminalSessions {
         if (event.kind === "data" && event.data) {
           await session.history.append(event.data)
           for (const listener of session.listeners) listener("output")
-        } else if (event.kind === "exit" && !session.stopRequested) {
+        } else if (event.kind === "exit" && (!session.stopRequested || session.summary.kind === "acp")) {
           session.summary.status = "exited"
           session.summary.exitCode = event.exitCode
           await session.history.save(session.summary, session.error)

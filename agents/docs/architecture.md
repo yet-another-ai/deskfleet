@@ -372,7 +372,11 @@ IDs. The CLI forwards ACP updates without converting them into a history schema.
 Permission requests require a client callback; without one they are cancelled.
 The CLI cancels them explicitly. The ACP client advertises UTF-8 text-file reads
 and writes on the executing machine, scoped to its open provider Session. It does
-not advertise terminal capabilities.
+not advertise terminal capabilities. Managed Agent Sessions additionally provide
+ACP v1 terminal callbacks using the daemon's terminal service. Those command
+terminals belong to the Session's Worktree, retain their transcripts after ACP
+release, and expose only read-only output to human viewers. The terminal
+DataChannel carries their output without copying it into conversation history.
 
 ACP capability negotiation determines which operations an adapter supports.
 Pi is a further integration candidate. Managed

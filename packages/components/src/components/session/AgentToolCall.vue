@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRightLeft, Brain, ChevronRight, CircleX, FilePen, FileText, Globe, LoaderCircle, Repeat, Search, SquareTerminal, Trash2, Wrench } from "@lucide/vue"
+import { ArrowRightLeft, Bot, Brain, ChevronRight, CircleX, FilePen, FileText, Globe, LoaderCircle, Repeat, Search, SquareTerminal, Trash2, Wrench } from "@lucide/vue"
 import { computed, ref, type Component } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
@@ -8,11 +8,12 @@ import type { ConversationTool } from "../../services/agent-conversation.ts"
 import { readableValue } from "../../services/agent-conversation.ts"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
+import AgentTerminal from "./AgentTerminal.vue"
 const props = defineProps<{ tool: ConversationTool; permission?: AgentPermission; live?: boolean }>()
 const { t } = useI18n()
 const open = ref(false)
 const icons: Record<string, Component> = { read: FileText, edit: FilePen, delete: Trash2, move: ArrowRightLeft, search: Search, execute: SquareTerminal, think: Brain, fetch: Globe, switch_mode: Repeat }
-const icon = computed(() => icons[props.tool.kind ?? ""] ?? Wrench)
+const icon = computed(() => props.tool.content?.some(block => block.type === "terminal") ? Bot : icons[props.tool.kind ?? ""] ?? Wrench)
 // A finished turn leaves no tool running, even when the provider never reported completion.
 const running = computed(() => props.live && (props.tool.status === "pending" || props.tool.status === "in_progress"))
 const decision = computed(() => props.permission?.state === "resolved" ? props.permission.request.options.find(option => option.optionId === props.permission!.optionId)?.name ?? props.permission.optionId : undefined)
@@ -35,6 +36,7 @@ const hasDetails = computed(() => !!props.tool.locations?.length || props.tool.r
       <pre v-if="tool.rawInput != null" class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono select-text">{{ readableValue(tool.rawInput) }}</pre>
       <template v-for="(block, index) in tool.content" :key="index">
         <AgentContent v-if="block.type === 'content'" :content="[block.content]" class="text-xs" />
+        <AgentTerminal v-else-if="block.type === 'terminal'" :key="block.terminalId" :terminal-id="block.terminalId" />
         <div v-else-if="block.type === 'diff'" class="overflow-hidden rounded-md border border-ui-border font-mono select-text">
           <div class="truncate border-b border-ui-border px-2 py-1 text-ui-text-muted">{{ block.path }}</div>
           <div class="max-h-80 overflow-auto">

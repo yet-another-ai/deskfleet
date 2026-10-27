@@ -46,6 +46,8 @@ test("opens a read-only xterm.js terminal that fits its container", () => {
 
   // Input stays disabled until a session transport exists.
   expect(terminal!.options.disableStdin).toBe(true)
+  terminal!.input("pasted command\r")
+  expect(wrapper.emitted("input")).toBeUndefined()
   expect(terminal!.loadAddon).toHaveBeenCalledWith(fit)
   expect(terminal!.open).toHaveBeenCalledWith(wrapper.element)
   expect(fit!.fit).toHaveBeenCalled()

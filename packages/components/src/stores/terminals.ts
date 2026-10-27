@@ -85,7 +85,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     const operation = (async () => {
       await refresh()
       if (error.value) throw new Error(error.value)
-      return sessions.value.find(terminal => terminal.worktreeId === worktreeId) ?? create({ worktreeId })
+      return sessions.value.find(terminal => terminal.worktreeId === worktreeId && terminal.kind !== "acp") ?? create({ worktreeId })
     })().finally(() => { opening.delete(worktreeId) })
     opening.set(worktreeId, operation)
     return operation

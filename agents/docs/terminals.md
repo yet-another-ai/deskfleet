@@ -85,6 +85,41 @@ terminal IDs. It does not accept arbitrary command, argument, or environment
 fields. Provider operations own their setup commands; the terminal service only
 owns the resulting process and transcript.
 
+## ACP command terminals
+
+Managed Agent Sessions advertise ACP v1 `clientCapabilities.terminal` and implement
+`terminal/create`, `terminal/output`, `terminal/wait_for_exit`, `terminal/kill`, and
+`terminal/release`. Configuration probes and standalone ACP clients without a
+terminal service do not advertise that capability. Each handle belongs to its
+provider connection and ACP Session; another Session cannot operate on it.
+
+Creation runs the requested program and argument vector directly, with environment
+overrides, in the requested absolute cwd or the Session's first directory. The
+resulting terminal belongs to the Session's Worktree regardless of cwd. Its
+durable metadata marks it as `kind: "acp"`. ACP handles use the daemon terminal ID,
+so a tool call's `{type: "terminal", terminalId}` references the same transcript.
+
+`terminal/output` returns a UTF-8 snapshot, retaining the requested
+`outputByteLimit` tail on character boundaries and reporting truncation. That
+limit applies to the ACP response, not the durable transcript. Waiting for exit
+also waits for final output persistence. Cancelling that wait leaves the command
+running. Kill stops the command while keeping its ACP handle valid; release
+stops it if necessary and invalidates the handle. Both retain the daemon record
+and output for tool-call replay. Closing the provider or failing Session setup
+stops its outstanding commands, including launches still in progress.
+
+ACP terminals have a distinct Agent icon and a read-only label in tool calls and
+terminal tabs. Viewers may select and copy output, reconnect, and read exit status.
+They cannot send keys or paste, resize the process terminal, or hang it up.
+The daemon enforces these restrictions as well as the UI. Multiple viewers may
+attach concurrently without claiming the interactive controller. Ordinary shells
+and setup terminals retain their existing interactive behavior.
+
+Output uses the existing terminal DataChannel and daemon-local history files;
+it is not copied into the Agent event journal or synchronized to central history.
+Release, Session archive, and daemon restart retain read-only replay while the
+machine is available. Session restoration does not restart these commands.
+
 ## Wire contract and flow control
 
 `apps/daemon/src/terminal-protocol.ts` owns the provisional TypeScript contract.

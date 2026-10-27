@@ -13,6 +13,7 @@ import { copyForkHistory } from "./agent-fork-history.ts"
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
 import type { AgentProviders } from "./agent-providers.ts"
 import type { AgentMcp } from "./agent-mcp.ts"
+import type { TerminalSessions } from "./terminals.ts"
 import { GitInspection } from "./git-inspection.ts"
 import type {
   AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentReceipt, AgentSnapshot,
@@ -53,6 +54,7 @@ export class AgentSessions {
   readonly #catalog: DaemonCatalog
   readonly #resolveProvider: ResolveAgentProvider
   readonly #mcp?: AgentMcp
+  readonly #terminals?: TerminalSessions
   readonly #git = new GitInspection()
   readonly #runtimes = new Map<string, AgentRuntime>()
   readonly #operations = new Map<string, Promise<unknown>>()
@@ -64,10 +66,11 @@ export class AgentSessions {
   readonly #closing = new AbortController()
   #closed = false
 
-  constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider, providers?: AgentProviders, mcp?: AgentMcp) {
+  constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider, providers?: AgentProviders, mcp?: AgentMcp, terminals?: TerminalSessions) {
     this.#catalog = catalog
     this.journal = new AgentJournal(native)
     this.#mcp = mcp
+    this.#terminals = terminals
     this.#resolveProvider = providers ? id => providers.resolve(id) : id => {
       if (id !== "codex") throw new Error("Agent provider is unavailable")
       return { provider, config: { name: "Codex" } }
@@ -177,7 +180,7 @@ export class AgentSessions {
     let runtime = this.#runtimes.get(sessionId)
     if (!runtime) {
       if (this.#closed) throw new Error("Agent service is stopping")
-      runtime = new AgentRuntime(this.journal, this.#catalog, this.#resolveProvider, sessionId, this.#mcp)
+      runtime = new AgentRuntime(this.journal, this.#catalog, this.#resolveProvider, sessionId, this.#mcp, this.#terminals)
       this.#runtimes.set(sessionId, runtime)
     }
     return runtime

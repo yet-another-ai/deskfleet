@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import { mkdtemp, mkdir, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
@@ -76,6 +77,18 @@ class ScriptedProvider implements AgentProvider {
         this.promptConfigurations.push({ model, reasoningEffort, launch: structuredClone(config) })
         if (text === "Smoke first prompt") {
           const done = new Promise<PromptResponse>(resolve => { active = resolve })
+          assert.ok(client.terminals?.worktreeId, "The provider must receive its Session-owned terminal context")
+          const terminal = await client.terminals.sessions.run({
+            terminalId: randomUUID(), title: "Smoke Agent command", kind: "acp", worktreeId: client.terminals.worktreeId,
+            cwd: client.terminals.cwd, command: process.execPath,
+            args: ["-e", "process.stdout.write('ACP_SMOKE_OUTPUT:终端\\n'); process.exitCode = 7"], cols: 80, rows: 24,
+          })
+          await client.onUpdate({ sessionId: params.sessionId, update: {
+            sessionUpdate: "tool_call", toolCallId: "smoke-terminal", title: "Run smoke terminal", kind: "execute", status: "in_progress",
+            content: [{ type: "terminal", terminalId: terminal.id }],
+          } })
+          await client.terminals.sessions.waitForExit(terminal.id)
+          await client.onUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "tool_call_update", toolCallId: "smoke-terminal", status: "completed" } })
           await update("stream one 中文\n")
           await delay(75)
           await update("stream two\n")
@@ -186,7 +199,7 @@ try {
   assert.deepEqual(restored, first)
   assert.equal(provider.connections, connections, "Reconnecting must not restart the provider")
   assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate", "Smoke changed model prompt"])
-  console.log("Production Electron Agent: configured providers, dynamic configuration, streaming, backlog, steering, permissions, user question forms, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath, questionScreenshotPath })
+  console.log("Production Electron Agent: configured providers, dynamic configuration, streaming, backlog, steering, permissions, user question forms, read-only ACP terminal output, simultaneous terminal viewers, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath, questionScreenshotPath })
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   if (provider.failures.length) console.error(provider.failures)

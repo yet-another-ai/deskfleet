@@ -38,7 +38,7 @@ const terminal = new Terminal({
   theme,
 })
 terminal.loadAddon(fit)
-const input = terminal.onData((data) => emit("input", data))
+const input = terminal.onData((data) => { if (props.interactive) emit("input", data) })
 const resize = terminal.onResize((size) => emit("resize", size))
 const title = terminal.onTitleChange((value) => emit("title", value))
 watch(() => props.interactive, (interactive) => {

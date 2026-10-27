@@ -93,6 +93,17 @@ test("an unavailable terminal list leaves panel creation retryable without spawn
   expect(dial).not.toHaveBeenCalled()
 })
 
+test("opening a user shell does not reuse an agent-owned terminal in the same Worktree", async () => {
+  const agentTerminal: TerminalSummary = { ...shell, id: "agent-command", worktreeId: "31", kind: "acp" }
+  vi.spyOn(platformClient.terminal, "list").mockResolvedValue([agentTerminal])
+  const dial = vi.spyOn(platformClient.terminal, "dial").mockImplementation(async options => ({ ...shell, id: options.terminalId, worktreeId: "31" }))
+  const store = setup()
+  const opened = await store.ensureWorktreeTerminal("31")
+  expect(opened.id).not.toBe(agentTerminal.id)
+  expect(dial).toHaveBeenCalledWith(expect.objectContaining({ mode: "create", worktreeId: "31" }))
+  expect(store.sessions).toContainEqual(agentTerminal)
+})
+
 test("a shell announced during a shared list request prevents automatic duplicate creation", async () => {
   const listed = deferred<TerminalSummary[]>()
   const list = vi.spyOn(platformClient.terminal, "list").mockReturnValue(listed.promise)

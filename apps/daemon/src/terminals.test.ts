@@ -125,11 +125,69 @@ test("public terminal dial cannot select the internal setup command fields", asy
   const f = await fixture(context)
   const params = {
     mode: "create" as const, terminalId: randomUUID(), cols: 80, rows: 24,
-    command: "/tools/not-a-shell", args: ["login"], env: { API_KEY: "not-an-override" }, title: "Not a shell",
+    command: "/tools/not-a-shell", args: ["login"], env: { API_KEY: "not-an-override" }, title: "Not a shell", kind: "acp" as const,
   }
   const terminal = await f.sessions.dial(params)
   assert.deepEqual(f.configs, [{ cwd: homedir(), cols: 80, rows: 24 }])
   assert.notEqual(terminal.title, params.title)
+  assert.equal(terminal.kind, undefined)
+})
+
+test("ACP terminals allow concurrent viewers but reject every human control path", async context => {
+  const f = await fixture(context)
+  const terminal = await f.sessions.run({
+    terminalId: randomUUID(), title: "Agent tests", command: "test-runner", cols: 80, rows: 24,
+    worktreeId: "40", kind: "acp",
+  })
+  const first = f.client()
+  const second = f.client()
+  for (const viewer of [first, second]) {
+    viewer.dialed.add(terminal.id)
+    assert.equal((await viewer.request("attach", { sessionId: terminal.id }) as { kind: string }).kind, "acp")
+    await assert.rejects(viewer.request("input", { sessionId: terminal.id, data: Buffer.from("\x03").toString("base64") }), /read-only/u)
+    await assert.rejects(viewer.request("resize", { sessionId: terminal.id, cols: 100, rows: 40 }), /read-only/u)
+  }
+  await assert.rejects(f.sessions.input(terminal.id, Buffer.from("paste\r")), /read-only/u)
+  await assert.rejects(f.sessions.hangup(terminal.id), /read-only/u)
+  const bytes = Buffer.from("\x1b[32mAgent output 你好\x1b[0m\r\n")
+  f.spawned[0]!.emit({ kind: "data", data: bytes })
+  assert.deepEqual(await receiveAll(first, terminal.id, bytes.length), bytes)
+  assert.deepEqual(await receiveAll(second, terminal.id, bytes.length), bytes)
+  first.channel.close()
+  second.channel.close()
+  assert.equal(f.spawned[0]!.closed, false)
+  assert.deepEqual(f.spawned[0]!.writes, [])
+  assert.deepEqual(f.spawned[0]!.sizes, [])
+  await f.sessions.stop(terminal.id)
+  await f.sessions.waitForExit(terminal.id)
+  assert.equal(f.spawned[0]!.closed, true)
+  assert.equal(f.sessions.snapshot(terminal.id).summary.status, "exited")
+  assert.deepEqual(await f.sessions.read(terminal.id, 0, bytes.length), bytes)
+  await f.sessions.close()
+  const restored = new TerminalSessions({ directory: f.directory, factory: async () => { throw new Error("Replay must not spawn") } })
+  context.after(() => restored.close())
+  await restored.init()
+  assert.equal(restored.snapshot(terminal.id).summary.kind, "acp")
+  assert.equal(restored.snapshot(terminal.id).summary.worktreeId, "40")
+  await assert.rejects(restored.hangup(terminal.id), /read-only/u)
+  await restored.hangupOwned("40")
+  assert.equal(restored.list().length, 0)
+})
+
+test("waitForExit includes final output after an exit notification", async context => {
+  const f = await fixture(context)
+  const terminal = await f.dial()
+  let completed = false
+  const waiting = f.sessions.waitForExit(terminal.id).then(() => { completed = true })
+  f.spawned[0]!.emit({ kind: "exit", exitCode: 7 })
+  await until(() => f.sessions.snapshot(terminal.id).summary.status === "exited")
+  assert.equal(completed, false)
+  const bytes = Buffer.from("final buffered bytes\r\n")
+  f.spawned[0]!.emit({ kind: "data", data: bytes })
+  f.spawned[0]!.emit(null)
+  await waiting
+  assert.equal(completed, true)
+  assert.deepEqual(await f.sessions.read(terminal.id, 0, bytes.length), bytes)
 })
 
 test("archiving stops only owned PTYs and retains their final output and identity across restart", async context => {

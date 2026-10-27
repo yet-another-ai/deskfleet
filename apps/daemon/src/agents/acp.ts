@@ -7,6 +7,7 @@ import { AcpModelReasoning } from "./reasoning-effort.ts"
 import { AcpSessionModes } from "./session-modes.ts"
 import { createAcpFilesystem } from "./filesystem.ts"
 import { AcpSessionScope } from "./session-scope.ts"
+import { AcpTerminals, type AgentTerminalContext } from "./terminals.ts"
 
 export interface AgentConfig {
   name: string
@@ -29,6 +30,7 @@ export interface AgentProcess {
 
 export interface AgentClient {
   signal?: AbortSignal
+  terminals?: AgentTerminalContext
   onUpdate(notification: acp.SessionNotification): void | Promise<void>
   onClose?(reason: Error): void
   requestPermission?(
@@ -104,6 +106,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   let providerSessionId: string | undefined
   const sessionScope = new AcpSessionScope()
   const filesystem = createAcpFilesystem(id => sessionScope.require(id))
+  const terminals = client.terminals ? new AcpTerminals(client.terminals, id => sessionScope.require(id)) : undefined
   const rememberSession = (sessionId: string | undefined) => { if (sessionId) providerSessionId = sessionId }
   let clientApp = acp.client({ name: "deskfleet" })
     .onNotification(acp.methods.client.session.update, async ({ params }) => {
@@ -150,6 +153,14 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         throw error
       }
     })
+  if (terminals) {
+    clientApp = clientApp
+      .onRequest(acp.methods.client.terminal.create, ({ params, signal }) => terminals.create(params, signal))
+      .onRequest(acp.methods.client.terminal.output, ({ params, signal }) => terminals.output(params, signal))
+      .onRequest(acp.methods.client.terminal.waitForExit, ({ params, signal }) => terminals.waitForExit(params, signal))
+      .onRequest(acp.methods.client.terminal.kill, ({ params, signal }) => terminals.kill(params, signal))
+      .onRequest(acp.methods.client.terminal.release, ({ params, signal }) => terminals.release(params, signal))
+  }
   if (client.requestElicitation) {
     const requestElicitation = client.requestElicitation
     for (const method of VENDOR_QUESTION_METHODS) {
@@ -194,20 +205,25 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     // Give adapters time to stop their own agent subprocesses after stdin EOF.
     const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000)
     timeout.unref()
-    closing = exited.finally(() => clearTimeout(timeout))
+    closing = Promise.allSettled([exited.finally(() => clearTimeout(timeout)), terminals?.close()]).then(results => {
+      for (const result of results) if (result.status === "rejected") throw result.reason
+    })
     sessionScope.clear()
     return closing
   }
-  const abort = () => { connection.close(client.signal?.reason); void close() }
+  const abort = () => {
+    connection.close(client.signal?.reason)
+    void close().catch(error => console.error("ACP close failed", error))
+  }
   client.signal?.addEventListener("abort", abort, { once: true })
   if (client.signal?.aborted) abort()
-  void connection.closed.then(() => {
+  void connection.closed.then(async () => {
     sessionScope.clear()
     const reason: unknown = connection.signal.reason
     try {
       client.onClose?.(reason instanceof Error ? reason : new Error("ACP connection closed", { cause: reason }))
     } finally {
-      void close()
+      await close()
     }
   }).catch(error => console.error("ACP close callback failed", error))
 
@@ -222,6 +238,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       clientCapabilities: {
         ...options.clientCapabilities,
         fs: { readTextFile: true, writeTextFile: true },
+        ...(terminals ? { terminal: true } : { terminal: false }),
         ...(client.requestElicitation ? { elicitation: { form: {}, ...(client.completeElicitation ? { url: {} } : {}) } } : {}),
       },
     })
@@ -239,23 +256,33 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       initialization,
       async newSession(params) {
         sessionScope.begin()
+        const checkpoint = terminals?.checkpoint()
         try {
           const created = await connection.agent.request(acp.methods.agent.session.new, params)
           sessionScope.complete(created.sessionId)
           rememberSession(created.sessionId)
           return present(created.sessionId, created)
-        } catch (error) { sessionScope.fail(); throw error }
+        } catch (error) {
+          sessionScope.fail()
+          if (checkpoint) await terminals!.rollback(checkpoint)
+          throw error
+        }
       },
       async forkSession(params) {
         if (!initialization.agentCapabilities?.sessionCapabilities?.fork) throw new Error("The agent does not support session fork")
         sessionScope.begin()
+        const checkpoint = terminals?.checkpoint()
         try {
           const forked = await connection.agent.request(acp.methods.agent.session.fork, params)
           if (forked.sessionId === params.sessionId) throw new Error("The agent returned the source session instead of a fork")
           sessionScope.complete(forked.sessionId)
           rememberSession(forked.sessionId)
           return present(forked.sessionId, forked)
-        } catch (error) { sessionScope.fail(); throw error }
+        } catch (error) {
+          sessionScope.fail()
+          if (checkpoint) await terminals!.rollback(checkpoint)
+          throw error
+        }
       },
       async setConfigOption(params, knownOptions) {
         const current = reasoning.listed(knownOptions) ?? []
@@ -291,6 +318,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       },
       async resume(params) {
         sessionScope.begin(params.sessionId)
+        const checkpoint = terminals?.checkpoint()
         try {
           rememberSession(params.sessionId)
           const capabilities = initialization.agentCapabilities
@@ -313,7 +341,11 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
           } finally {
             replayingHistory = false
           }
-        } catch (error) { sessionScope.fail(); throw error }
+        } catch (error) {
+          sessionScope.fail()
+          if (checkpoint) await terminals!.rollback(checkpoint)
+          throw error
+        }
       },
       async prompt(params) {
         rememberSession(params.sessionId)

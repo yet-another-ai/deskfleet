@@ -452,6 +452,14 @@ preserving line endings. Writes replace UTF-8 content and create missing parent
 directories. Filesystem failures return request errors without terminating the
 provider connection. These callbacks do not allocate TerminalSessions.
 
+Managed Sessions also provide ACP v1 `terminal/*` callbacks through the executing
+daemon's terminal service. Commands are owned by the Session's Worktree and are
+read-only to human viewers, with a distinct Agent icon in tool calls and terminal
+tabs. Handles are bound to the active provider Session, and provider shutdown
+stops outstanding commands while retaining their output. See
+[ACP command terminals](terminals.md#acp-command-terminals) for lifecycle and
+output retention semantics.
+
 ## ACP over DataChannel
 
 Each client initializes an independent JSON-RPC connection over one reliable,

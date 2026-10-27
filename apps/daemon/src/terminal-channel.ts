@@ -147,7 +147,8 @@ export class TerminalChannel {
         if (!this.#authorized(sessionId)) throw new Error("Dial the terminal through signaling before attaching")
         const snapshot = this.#sessions.snapshot(sessionId)
         if (this.#attached.has(sessionId)) return snapshot.summary
-        this.#sessions.claim(sessionId, this)
+        // ACP viewers only replay output, so they never acquire the interactive controller.
+        if (snapshot.summary.kind !== "acp") this.#sessions.claim(sessionId, this)
         const attachment: Attachment = {
           cursor: 0, replayEnd: snapshot.end, ready: false, reset: true, exited: false, pumping: false, unsubscribe: () => {},
         }

@@ -23,6 +23,7 @@ export interface TerminalSessionSummary {
   id: string
   title: string
   cwd: string
+  kind?: "acp"
 }
 
 export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "untracked"

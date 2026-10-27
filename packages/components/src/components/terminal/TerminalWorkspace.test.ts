@@ -34,7 +34,7 @@ function setup(activeId?: string) {
     },
     global: {
       plugins: [pinia, i18n],
-      stubs: { LiveTerminal: { name: "LiveTerminal", props: ["terminalId"], emits: ["connection", "title"], template: '<div data-shell :data-id="terminalId" />' } },
+      stubs: { LiveTerminal: { name: "LiveTerminal", props: ["terminalId", "readOnly"], emits: ["connection", "title"], template: '<div data-shell :data-id="terminalId" />' } },
     },
   })
   // The parent passes the owner's current list; follow the store as it changes.
@@ -117,6 +117,22 @@ test("an empty archived context never creates a terminal on mount", async () => 
     attachTo: document.body, props: { terminals: [], readOnly: true, create: ensure, ensureTerminal: ensure }, global: { plugins: [pinia, i18n] } })
   await flushPromises()
   expect(ensure).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+test("agent terminal tabs are visibly read only and expose neither hangup nor Delete", async () => {
+  const { wrapper, terminals, hangup, sync } = setup("first")
+  terminals.sessions = [{ ...first, kind: "acp" }, second]
+  await sync()
+  const tab = wrapper.get('[data-terminal-id="first"]')
+  expect(tab.text()).toBe("Agent terminalRead only")
+  expect(wrapper.getComponent({ name: "LiveTerminal" }).props("readOnly")).toBe(true)
+  expect(wrapper.find('[aria-label="Hang up Agent terminal"]').exists()).toBe(false)
+  await tab.trigger("keydown", { key: "Delete" })
+  expect(hangup).not.toHaveBeenCalled()
+  await wrapper.get('[data-terminal-id="second"]').trigger("mousedown", { button: 0 })
+  expect(wrapper.getComponent({ name: "LiveTerminal" }).props("readOnly")).toBe(false)
+  expect(wrapper.find('[aria-label="Hang up Shell 2"]').exists()).toBe(true)
   wrapper.unmount()
 })
 

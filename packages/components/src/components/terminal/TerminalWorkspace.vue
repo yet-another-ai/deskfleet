@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
-import { Circle, CircleAlert, CircleStop, LoaderCircle, Plus, Unplug, X } from "@lucide/vue"
+import { Bot, Circle, CircleAlert, CircleStop, LoaderCircle, Plus, SquareTerminal, Unplug, X } from "@lucide/vue"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
 import { onMounted, ref, watch, type Component } from "vue"
 import { useI18n } from "vue-i18n"
@@ -10,7 +10,7 @@ import LiveTerminal, { type TerminalConnection } from "./LiveTerminal.vue"
 
 /** Tabs over one owner's shells; the parent decides how the active tab is stored. */
 const props = defineProps<{
-  terminals: Pick<TerminalSummary, "id" | "cwd">[]
+  terminals: Pick<TerminalSummary, "id" | "cwd" | "kind">[]
   create: () => Promise<Pick<TerminalSummary, "id">>
   ensureTerminal?: () => Promise<Pick<TerminalSummary, "id">>
   readOnly?: boolean
@@ -22,7 +22,8 @@ const creating = ref(false)
 const closing = ref(new Set<string>())
 const error = ref<string | null>(null)
 // The running program's reported title, or a numbered shell until one arrives.
-const tabName = (id: string, index: number) => store.titles[id]?.trim() || t("terminal.tab", { number: index + 1 })
+const tabName = (id: string, index: number) => store.titles[id]?.trim() || (props.terminals[index]?.kind === "acp" ? t("terminal.agent") : t("terminal.tab", { number: index + 1 }))
+const agentTerminal = (id: string) => props.terminals.find(terminal => terminal.id === id)?.kind === "acp"
 const connection = ref<{ state: TerminalConnection; label: string }>({ state: "connecting", label: "" })
 // Remounting the live view reattaches it, replaying history from the daemon.
 const attempt = ref(0)
@@ -58,7 +59,7 @@ async function create(start = props.create): Promise<void> {
 }
 
 async function hangup(id: string): Promise<void> {
-  if (props.readOnly || closing.value.has(id)) return
+  if (props.readOnly || agentTerminal(id) || closing.value.has(id)) return
   closing.value.add(id)
   error.value = null
   try { await store.hangup(id) }
@@ -80,7 +81,7 @@ watch(ids, (next, previous) => follow(next, previous))
 // The parent's model listener is attached once mounted.
 onMounted(() => {
   follow(ids(), [])
-  if (!props.readOnly && !props.terminals.length && props.ensureTerminal) void create(props.ensureTerminal)
+  if (!props.readOnly && !props.terminals.some(terminal => terminal.kind !== "acp") && props.ensureTerminal) void create(props.ensureTerminal)
 })
 </script>
 
@@ -110,11 +111,16 @@ onMounted(() => {
             :value="terminal.id"
             :data-terminal-id="terminal.id"
             :title="`${tabName(terminal.id, index)} — ${terminal.cwd}`"
-            class="h-full min-w-0 cursor-pointer truncate pr-1 text-[13px]"
+            class="inline-flex h-full min-w-0 cursor-pointer items-center gap-1.5 pr-1 text-[13px]"
             :class="activeId === terminal.id ? 'pl-1.5' : 'pl-3'"
             @keydown.delete.prevent="hangup(terminal.id)"
-          >{{ tabName(terminal.id, index) }}</TabsTrigger>
+          >
+            <component :is="terminal.kind === 'acp' ? Bot : SquareTerminal" :size="13" class="shrink-0" aria-hidden="true" />
+            <span class="truncate">{{ tabName(terminal.id, index) }}</span>
+            <span v-if="terminal.kind === 'acp'" class="shrink-0 text-[10px] text-ui-text-muted">{{ t('terminal.readOnly') }}</span>
+          </TabsTrigger>
           <button
+            v-if="terminal.kind !== 'acp'"
             type="button"
             :aria-label="t('terminal.hangupTab', { name: tabName(terminal.id, index) })"
             :title="t('terminal.hangupHint')"
@@ -144,7 +150,7 @@ onMounted(() => {
     ><LiveTerminal
       :key="`${activeId}:${attempt}`"
       :terminal-id="activeId"
-      :read-only="readOnly"
+      :read-only="readOnly || agentTerminal(activeId)"
       @connection="(state, label) => { connection = { state, label } }"
       @title="title => { store.titles[activeId!] = title }"
     /></TabsContent>

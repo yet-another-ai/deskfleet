@@ -41,8 +41,10 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   let closing: Promise<void> | undefined
   const stop = () => stopping ??= (async () => {
     // Providers must close before awaiting a create/configure RPC they can unblock.
-    const results = await Promise.allSettled([schedules?.close(), mcp?.close(), central?.stop(), agents?.close(), terminals.close()])
-    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    const results = await Promise.allSettled([schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
+    // Provider shutdown releases its ACP handles through the still-live terminal registry.
+    const terminalResults = await Promise.allSettled([terminals.close()])
+    const failures = [...results, ...terminalResults].flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (failures.length) throw new AggregateError(failures, "Failed to stop machine resources")
   })()
   const close = () => closing ??= (async () => {
@@ -68,7 +70,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
       dispatch: (method, params, actor, scope) => dispatchMcp(operations, method, params, actor, scope),
     })
     await mcp.init()
-    agents = new AgentSessions(catalog, catalog.native, options.agentProvider, providers, mcp)
+    agents = new AgentSessions(catalog, catalog.native, options.agentProvider, providers, mcp, terminals)
     await agents.init()
     await terminals.init()
     agents.onSessionArchive(worktreeId => terminals.stopOwned(worktreeId))

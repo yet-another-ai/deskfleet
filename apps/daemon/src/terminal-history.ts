@@ -24,6 +24,7 @@ function metadata(value: unknown, id: string): Metadata {
     || !Number.isInteger(terminal.rows) || terminal.rows < 1 || terminal.rows > 1000
     || (terminal.exitCode !== undefined && (!Number.isInteger(terminal.exitCode) || terminal.exitCode < 0))
     || (terminal.worktreeId !== undefined && (typeof terminal.worktreeId !== "string" || !/^[1-9][0-9]*$/u.test(terminal.worktreeId)))
+    || (terminal.kind !== undefined && terminal.kind !== "acp")
     || (record.error !== undefined && typeof record.error !== "string")) {
     throw new Error(`Invalid terminal history metadata: ${id}`)
   }

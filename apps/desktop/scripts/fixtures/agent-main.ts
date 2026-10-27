@@ -20,6 +20,7 @@ export interface AgentSmokeContext {
   workspaceId?: string
   worktreeId?: string
   providerId?: string
+  agentTerminalId?: string
 }
 export interface AgentSmokeResult {
   sessionId: string
@@ -28,6 +29,7 @@ export interface AgentSmokeResult {
   providerId: string
   conversationEntries: number
   permissionId: string
+  agentTerminalId: string
 }
 
 const execute = promisify(execFile)
@@ -289,7 +291,24 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   }
   await until(() => ![...document.querySelectorAll('[role="status"]')].some(element => element.textContent?.includes("Restoring conversation")), "History replay completed")
   await verifyConversation()
+  await click("Run smoke terminal", () => conversation()!)
+  const agentTerminal = () => conversation()?.querySelector<HTMLElement>("[data-agent-terminal]")
+  await until(() => !!agentTerminal(), "Expanded ACP terminal viewer")
+  // xterm defers painting while the terminal is outside the conversation viewport.
+  agentTerminal()!.scrollIntoView({ block: "center" })
+  await until(() => !!agentTerminal()?.querySelector('[data-connection="ended"]') && !!agentTerminal()?.querySelector(".xterm-rows")?.textContent?.includes("ACP_SMOKE_OUTPUT:终端"), "Read-only ACP terminal output over WebRTC")
+  require(agentTerminal()!.querySelector(".lucide-bot") && agentTerminal()!.innerText.includes("Read only") && agentTerminal()!.innerText.includes("Process exited (7)"), "ACP terminal must have an Agent icon, read-only label, and exit status")
+  require(agentTerminal()!.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")?.readOnly, "ACP xterm input must be disabled")
+  require(!agentTerminal()!.querySelector('button[aria-label^="Hang up"]'), "ACP output must not offer user process control")
+  const agentTerminals = (await api.terminal.list()).filter(terminal => terminal.kind === "acp")
+  require(agentTerminals.length === 1 && agentTerminals[0]!.worktreeId === worktreeId && agentTerminals[0]!.status === "exited", "ACP terminal must retain its transcript and Session ownership after exit")
+  const agentTerminalId = agentTerminals[0]!.id
+  require(context.agentTerminalId === undefined || context.agentTerminalId === agentTerminalId, "Restart must retain the ACP terminal identity")
   if (context.phase === "restore") {
+    agentTerminal()!.scrollIntoView({ block: "center" })
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    console.info("deskfleet-agent-terminal-preview")
+    await until(() => (window as unknown as { agentTerminalPreviewCaptured?: boolean }).agentTerminalPreviewCaptured === true, "ACP terminal screenshot captured")
     // A Session shell opens in the bottom panel, in the Session's own Worktree.
     await click("Show terminal")
     const panel = () => document.querySelector<HTMLElement>('[aria-label="Session terminals"]')
@@ -301,30 +320,42 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     const input = panel()!.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")!
     for (const key of "pwd\r") input.dispatchEvent(new KeyboardEvent("keypress", { key, charCode: key.charCodeAt(0), bubbles: true }))
     await until(() => screen().includes("session-worktrees"), "Session shell runs in the Session's Worktree")
-    const shells = await api.terminal.list()
+    const shells = (await api.terminal.list()).filter(terminal => terminal.kind !== "acp")
     require(shells.length === 1 && shells[0]!.worktreeId === worktreeId, "The Session shell must belong to the Session's Worktree")
     require(!document.querySelector('aside a[href^="#/terminals/"]'), "Session shells must stay out of the sidebar")
+    const agentTab = panel()!.querySelector<HTMLButtonElement>(`[data-terminal-id="${agentTerminalId}"]`)!
+    agentTab.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true }))
+    await until(() => !!panel()?.querySelector('[data-connection="ended"]') && screen().includes("ACP_SMOKE_OUTPUT:终端"), "Same ACP terminal in panel and inline viewers")
+    require(agentTab.querySelector(".lucide-bot") && agentTab.textContent?.includes("Read only"), "The ACP tab must be distinct from ordinary shell tabs")
+    require(panel()!.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")?.readOnly, "The ACP panel must remain read only")
+    require(agentTerminal()!.querySelector('[data-connection="ended"]') && agentTerminal()!.querySelector(".xterm-rows")?.textContent?.includes("ACP_SMOKE_OUTPUT:终端"), "Opening the panel must not replace the inline terminal subscription")
+    const shellTab = panel()!.querySelector<HTMLButtonElement>(`[data-terminal-id="${shells[0]!.id}"]`)!
+    require(shellTab.querySelector(".lucide-square-terminal"), "User shells must keep their terminal icon")
+    shellTab.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true }))
+    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Return to ordinary interactive shell")
     await click("Hide terminal", () => panel()!)
     await until(() => !panel(), "Hidden Session terminal panel")
     await click("Show terminal")
     await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Reattached Session shell")
-    const reattached = await api.terminal.list()
+    const reattached = (await api.terminal.list()).filter(terminal => terminal.kind !== "acp")
     require(reattached.length === 1 && reattached[0]!.id === shells[0]!.id, "Reopening the panel must reuse its existing shell")
     const hangup = panel()!.querySelector<HTMLButtonElement>('button[aria-label^="Hang up "]')
     require(hangup, "Session shell close button was missing")
     hangup.click()
-    await until(() => !panel() && !!button("Show terminal"), "Closing the last shell hides the panel")
-    require((await api.terminal.list()).length === 0, "Closing the last tab must hang up the shell")
+    await until(() => !!panel()?.querySelector('[data-connection="ended"]') && !panel()?.querySelector('button[aria-label^="Hang up "]'), "Closing the user shell retains ACP output")
+    require((await api.terminal.list()).every(terminal => terminal.kind === "acp"), "Closing the shell must preserve only the Agent transcript")
+    await click("Hide terminal", () => panel()!)
+    await until(() => !panel(), "Hide retained ACP panel")
     await click("Show terminal")
     await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Reopening the empty panel creates a shell")
-    const recreated = await api.terminal.list()
+    const recreated = (await api.terminal.list()).filter(terminal => terminal.kind !== "acp")
     require(recreated.length === 1 && recreated[0]!.id !== shells[0]!.id && recreated[0]!.worktreeId === worktreeId, "The reopened panel must create exactly one new shell in the same Session Worktree")
   }
   require(sessionId && workspaceId && worktreeId && providerId, "Session resource identities were missing")
   require(await selectedConfiguration("model") === "balanced", "The Session's selected model must survive history replay")
   require(configurationControl("agent")?.dataset.value === providerId && configurationControl("agent")?.textContent?.includes("Smoke Codex"), "The Session's configured provider must survive history replay")
   const permissionId = conversation()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id")!
-  return { sessionId, workspaceId, worktreeId, providerId, permissionId, conversationEntries: conversation()!.querySelectorAll("[data-conversation-entry]").length }
+  return { sessionId, workspaceId, worktreeId, providerId, permissionId, agentTerminalId, conversationEntries: conversation()!.querySelectorAll("[data-conversation-entry]").length }
 }
 
 registerRendererScheme()
@@ -344,13 +375,14 @@ void app.whenReady().then(async () => {
     webPreferences: { preload: context.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, additionalArguments: ["--deskfleet-locale=en-US"] },
   })
   attachDesktopMedia(window)
-  let questionCaptured = false
+  let previewCaptured = false
   window.webContents.on("console-message", event => {
-    if (event.message !== "deskfleet-elicitation-preview") return
+    const question = event.message === "deskfleet-elicitation-preview"
+    if (!question && event.message !== "deskfleet-agent-terminal-preview") return
     void (async () => {
-      await writeFile(context.questionScreenshotPath, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
-      questionCaptured = true
-      await window.webContents.executeJavaScript("window.elicitationPreviewCaptured = true")
+      await writeFile(question ? context.questionScreenshotPath : context.screenshotPath, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+      previewCaptured = true
+      await window.webContents.executeJavaScript(question ? "window.elicitationPreviewCaptured = true" : "window.agentTerminalPreviewCaptured = true")
     })().catch(error => process.send?.({ error: String(error) }))
   })
   window.webContents.on("render-process-gone", (_event, details) => process.send?.({ error: `Renderer exited: ${details.reason}` }))
@@ -377,9 +409,9 @@ void app.whenReady().then(async () => {
     }
   } finally {
     // Keep one capture per hidden window: the first phase previews the question;
-    // the restore phase captures the final Git view. Repeated hidden-window
+    // the restore phase previews ACP output. Repeated hidden-window
     // captures can stall the compositor on Wayland.
-    if (!questionCaptured) await writeFile(context.screenshotPath, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
+    if (!previewCaptured) await writeFile(context.screenshotPath, (await window.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
   }
   process.send?.({ result })
 }).catch(error => { process.send?.({ error: String(error) }); app.quit() })

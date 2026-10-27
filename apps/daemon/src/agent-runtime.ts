@@ -11,6 +11,7 @@ import { savedAgentConfiguration } from "./agent-session-configuration.ts"
 import { withRestoredSessionMode } from "./agents/session-modes.ts"
 import { AgentElicitations } from "./agent-elicitations.ts"
 import type { AgentMcp, AgentMcpLease } from "./agent-mcp.ts"
+import type { TerminalSessions } from "./terminals.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
 export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
@@ -28,6 +29,7 @@ export class AgentRuntime {
   readonly #catalog: DaemonCatalog
   readonly #resolveProvider: ResolveAgentProvider
   readonly #mcp?: AgentMcp
+  readonly #terminals?: TerminalSessions
   #mcpLease?: AgentMcpLease
   #providerName?: string
   #configuration?: acp.SessionConfigOption[]
@@ -50,11 +52,12 @@ export class AgentRuntime {
   readonly #permissions = new Map<string, (response: acp.RequestPermissionResponse) => void>()
   readonly #discoveries = new Set<{ controller: AbortController; signal: AbortSignal; pending: Promise<AgentConfiguration> }>()
 
-  constructor(journal: AgentJournal, catalog: DaemonCatalog, resolveProvider: ResolveAgentProvider, sessionId: string, mcp?: AgentMcp) {
+  constructor(journal: AgentJournal, catalog: DaemonCatalog, resolveProvider: ResolveAgentProvider, sessionId: string, mcp?: AgentMcp, terminals?: TerminalSessions) {
     this.journal = journal
     this.#catalog = catalog
     this.#resolveProvider = resolveProvider
     this.#mcp = mcp
+    this.#terminals = terminals
     this.sessionId = sessionId
     this.elicitations = new AgentElicitations(journal, sessionId, () => ({
       generation: this.#run?.generation, turnId: this.#active?.turn.id,
@@ -217,6 +220,7 @@ export class AgentRuntime {
       const { provider, config } = this.#resolveProvider(snapshot.session.provider)
       this.#providerName = config.name
       const connection = await provider.connect(config, {
+        ...(this.#terminals ? { terminals: { sessions: this.#terminals, cwd: worktree.directories[0].path, worktreeId: worktree.id } } : {}),
         onUpdate: params => this.#update(params, run.generation),
         requestPermission: (params, signal) => this.#permission(params, signal, run.generation),
         requestElicitation: (params, signal) => this.elicitations.request(params, signal, run.generation),
