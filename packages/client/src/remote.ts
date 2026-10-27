@@ -113,7 +113,15 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     },
     desktop: {
       ...signaling("desktop"),
-      target: async () => ({ id: machine.id, name, online, desktop: machine.capabilities?.desktop === true }),
+      target: async () => {
+        // Enrollment precedes the daemon's first capability report. Read the
+        // current record so discovery also sees later capture-permission changes.
+        const current = (await central.machines(machine.teamId)).find(value => value.id === machine.id)
+        if (!current) throw new Error("Machine is no longer available in this team")
+        name = current.name
+        online = current.online
+        return { id: current.id, name, online, desktop: current.capabilities.desktop === true }
+      },
       capabilities: () => rpc("capabilities"),
       start: (options: DesktopStart) => {
         const peer = peers.get(options.sessionId)

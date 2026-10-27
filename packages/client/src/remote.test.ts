@@ -72,6 +72,24 @@ test("desktop control is requested explicitly when starting its authorized peer"
   expect(f.central.startPeer).toHaveBeenLastCalledWith("peer1", { displayId: 2, control: true })
 })
 
+test("desktop discovery reads capabilities published after enrollment and later permission changes", async () => {
+  const f = fixture()
+  const current: Machine = { id: "central7", teamId: "team2", name: "Renamed", originId: "origin", localMachineId: "1", capabilities: {}, online: true }
+  f.central.machines = vi.fn(async () => [structuredClone(current)])
+  expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Renamed", online: true, desktop: false })
+  current.capabilities = { desktop: true }
+  expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Renamed", online: true, desktop: true })
+  current.capabilities = { desktop: false }
+  expect((await f.remote.api.desktop.target()).desktop).toBe(false)
+  expect(f.central.machines).toHaveBeenLastCalledWith("team2")
+})
+
+test("desktop discovery does not reuse capabilities after the machine is removed", async () => {
+  const f = fixture()
+  f.central.machines = vi.fn(async () => [])
+  await expect(f.remote.api.desktop.target()).rejects.toThrow("Machine is no longer available in this team")
+})
+
 test.each([
   ["free_plan", "Free plan does not include TURN relay"],
   ["turn_quota_exhausted", "monthly TURN relay allowance"],
