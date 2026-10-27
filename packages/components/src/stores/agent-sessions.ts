@@ -367,7 +367,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const pending = operations.value[operationId]
     if (!pending) return
     const received = (result: unknown): unknown => {
-      if (pending.method === "_deskfleet/session/fork") snapshotReceived(result as AgentSnapshot)
+      if (pending.method === "_deskfleet/session/fork" || pending.method === "_deskfleet/session/rename") snapshotReceived(result as AgentSnapshot)
       completeOperation(operationId)
       return result
     }
@@ -472,6 +472,15 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   async function stop(sessionId: string): Promise<void> { snapshotReceived(await mutation("_deskfleet/session/stop", { sessionId })) }
+  async function rename(sessionId: string, title: string): Promise<void> {
+    const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/rename"
+      && operation.sessionId === sessionId && operation.params.title === title)
+    if (pending) {
+      await checkOperation(pending.operationId)
+      return
+    }
+    snapshotReceived(await mutation("_deskfleet/session/rename", { sessionId, title }))
+  }
   async function archive(sessionId: string): Promise<void> {
     snapshotReceived(await mutation("_deskfleet/session/archive", { sessionId }))
   }
@@ -504,5 +513,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); client.close() })
-  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, archive, restore, composerReferences, resolveComposerReferences, gitStatus, gitDiff, watchGit }
+  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, composerReferences, resolveComposerReferences, gitStatus, gitDiff, watchGit }
 })

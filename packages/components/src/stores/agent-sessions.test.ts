@@ -27,6 +27,59 @@ beforeEach(() => {
 afterEach(() => disposePinia(pinia))
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
 
+test("rename updates the session list and open view without changing its conversation or draft", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  store.drafts["30"] = "Unsent follow-up"
+  const snapshot = agentSnapshot()
+  snapshot.session = { ...snapshot.session, title: "Payment investigation", titleCustomized: true, lastEventSeq: "1" }
+  snapshot.inputs = [agentInput()]
+  mock.call.mockResolvedValueOnce(snapshot)
+  await store.rename("30", "Payment investigation")
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/session/rename", {
+    sessionId: "30", title: "Payment investigation", operationId: expect.any(String),
+  })
+  expect(store.sessions["30"]?.title).toBe("Payment investigation")
+  expect(store.views["30"]?.snapshot).toEqual(snapshot)
+  expect(store.drafts["30"]).toBe("Unsent follow-up")
+  expect(store.operations).toEqual({})
+})
+
+test("a rename response cannot replace a newer title received from another viewer", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const snapshot = agentSnapshot()
+  snapshot.session = { ...snapshot.session, title: "First rename", titleCustomized: true, lastEventSeq: "1" }
+  const response = deferred<typeof snapshot>()
+  mock.call.mockReturnValueOnce(response.promise)
+  const renaming = store.rename("30", "First rename")
+  await flushPromises()
+  receive(agentEvent(1, "session", snapshot.session))
+  receive(agentEvent(2, "session", { ...snapshot.session, title: "Newer shared title", lastEventSeq: "2" }))
+  response.resolve(snapshot); await renaming
+  expect(store.sessions["30"]?.title).toBe("Newer shared title")
+  expect(store.views["30"]?.snapshot?.session.title).toBe("Newer shared title")
+})
+
+test.each([false, true])("retrying a lost rename response reuses its operation and updates an idle view (completed: %s)", async completed => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  mock.call.mockRejectedValueOnce(new Error("Lost rename response"))
+  await expect(store.rename("30", "Payment investigation")).rejects.toThrow("Lost rename response")
+  const original = mock.call.mock.lastCall!
+  const operation = Object.values(store.operations)[0]!
+  const snapshot = agentSnapshot()
+  snapshot.session = { ...snapshot.session, title: "Payment investigation", titleCustomized: true, lastEventSeq: "1" }
+  if (completed) {
+    mock.call.mockResolvedValueOnce({ id: "50", operationId: operation.operationId, actor, sessionId: "30",
+      method: operation.method, params: operation.params, isCanonical: true, status: "completed", result: snapshot, receivedAt: "now" } satisfies AgentCommand)
+  } else mock.call.mockResolvedValueOnce(null).mockResolvedValueOnce(snapshot)
+  expect(store.state).toBe("idle")
+  await store.rename("30", "Payment investigation")
+  expect(mock.call).toHaveBeenCalledWith("_deskfleet/command/get", { operationId: operation.operationId })
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/rename")).toEqual(completed ? [original] : [original, original])
+  expect(store.sessions["30"]?.title).toBe("Payment investigation")
+  expect(store.views["30"]?.snapshot?.session.title).toBe("Payment investigation")
+  expect(store.operations).toEqual({})
+})
+
 test("command updates replace catalogs without losing configuration and outrank stale reads", async () => {
   useProvidersStore().providers = [{ id: "codex", name: "Codex", template: "codex", icon: "codex" }]
   const store = useAgentSessionsStore(); await store.open("30")

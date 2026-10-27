@@ -25,6 +25,8 @@ export interface AgentSessionRecord {
   provider: string
   providerSessionId?: string
   title: string
+  /** A user rename takes precedence over later provider title updates. */
+  titleCustomized?: boolean
   /** A generated worktree, or the Workspace's own directories used in place. */
   context: AgentSessionContext
   lifecycle: "provisioning" | "ready" | "provision_failed" | "deleting"
@@ -198,6 +200,7 @@ export interface AgentMethods {
   "_deskfleet/session/stop": { params: AgentMutation; result: AgentSnapshot }
   "_deskfleet/session/archive": { params: AgentMutation; result: AgentSnapshot }
   "_deskfleet/session/restore": { params: AgentMutation; result: AgentSnapshot }
+  "_deskfleet/session/rename": { params: AgentMutation & { title: string }; result: AgentSnapshot }
   /** Internal maintenance only; not exposed by the client DataChannel facade. */
   "_deskfleet/session/delete": { params: AgentMutation; result: null }
   "_deskfleet/command/get": { params: { operationId: string }; result: AgentCommand | null }

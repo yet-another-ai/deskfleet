@@ -369,6 +369,7 @@ export class AgentSessions {
     try {
       if (method === "_deskfleet/session/create") return await this.#create(command)
       if (method === "_deskfleet/session/fork") return await this.#fork(command)
+      if (method === "_deskfleet/session/rename") return await this.#rename(command)
       await this.journal.saveCommand(command)
       const sessionId = command.sessionId!
       const session = (await this.journal.read(sessionId)).session
@@ -413,6 +414,26 @@ export class AgentSessions {
 
   async #complete(command: AgentCommand, result: unknown): Promise<void> {
     await this.journal.saveCommand({ ...command, status: "completed", result, completedAt: timestamp() })
+  }
+
+  async #rename(command: AgentCommand): Promise<AgentSnapshot> {
+    const title = string(command.params.title, "Session title").trim()
+    if (!title || title.length > 200 || title.includes("\0")) throw new Error("Session titles must contain between 1 and 200 characters")
+    const sessionId = command.sessionId!
+    return this.journal.serial(sessionId, async () => {
+      const snapshot = await this.journal.read(sessionId)
+      if (this.#closed) throw new Error("Agent service is stopping")
+      if (snapshot.session.lifecycle === "deleting") throw new Error("Session deletion is in progress")
+      const session = { ...snapshot.session, title, titleCustomized: true, updatedAt: timestamp(),
+        lastEventSeq: String(BigInt(snapshot.session.lastEventSeq) + 1n) }
+      const result = { ...snapshot, session }
+      await this.journal.commit(snapshot, {
+        session,
+        command: { ...command, status: "completed", result, completedAt: timestamp() },
+        events: [this.journal.event(sessionId, "session", session, { commandId: command.id })],
+      })
+      return result
+    })
   }
 
   #receipt(command: AgentCommand, inputId?: string): AgentReceipt {

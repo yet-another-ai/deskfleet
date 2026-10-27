@@ -18,6 +18,7 @@ import AgentConversation from "../components/session/AgentConversation.vue"
 import AgentNotice from "../components/session/AgentNotice.vue"
 import AgentPermissions from "../components/session/AgentPermissions.vue"
 import AgentSessionMenu from "../components/session/AgentSessionMenu.vue"
+import RenameSessionDialog from "../components/session/RenameSessionDialog.vue"
 import ForkSessionDialog from "../components/session/ForkSessionDialog.vue"
 import MermaidViewer from "../components/session/MermaidViewer.vue"
 import IconButton from "../components/common/IconButton.vue"
@@ -83,6 +84,7 @@ const terminalWorktree = computed(() => (location.value?.machine.online || termi
 const empty = computed(() => !view.value?.loading && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
 const busy = ref(false)
 const forkOpen = ref(false)
+const renameOpen = ref(false)
 const actionError = ref<string | null>(null)
 const draftError = computed(() => actionError.value ?? agents.draftErrors[props.sessionId])
 const scroller = ref<HTMLElement | null>(null)
@@ -91,6 +93,7 @@ const scroll = () => { const el = scroller.value; if (el) followBottom.value = e
 watchImmediate(() => props.sessionId, id => {
   busy.value = false
   forkOpen.value = false
+  renameOpen.value = false
   actionError.value = null
   followBottom.value = !pendingMermaidLocate.value || (!!pendingMermaidLocate.value.sessionId && pendingMermaidLocate.value.sessionId !== id)
   void agents.open(id)
@@ -155,7 +158,7 @@ async function checkOperation(operationId: string): Promise<void> {
 <template>
   <PaneHeader>
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, ...(location.workspace ? [location.workspace.name] : [])]" /></template>
-    <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" /></template>
+    <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" /></template>
   </PaneHeader>
   <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @scroll="scroll">
     <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
@@ -187,6 +190,7 @@ async function checkOperation(operationId: string): Promise<void> {
   </div>
   <SessionComposer v-if="location" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
   <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
+  <RenameSessionDialog v-if="renameOpen && snapshot" :key="sessionId" :title="snapshot.session.title" :disabled="!location?.machine.online" :confirm="title => agents.rename(sessionId, title)" @close="renameOpen = false" />
   <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
   <div v-if="focusedMermaid" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">
     <div v-if="!sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pl-20 pr-3">

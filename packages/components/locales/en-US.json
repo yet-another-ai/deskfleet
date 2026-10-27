@@ -696,6 +696,9 @@
       "other": "Used {n} tool | Used {n} tools"
     },
     "sessionActions": "Session actions",
+    "rename": "Rename session",
+    "sessionName": "Session name",
+    "renaming": "Saving…",
     "fork": "Fork session",
     "forkDescription": "Continue this conversation in a new session with the same agent. The conversation is copied; files follow the selected workspace context.",
     "forking": "Forking session…",

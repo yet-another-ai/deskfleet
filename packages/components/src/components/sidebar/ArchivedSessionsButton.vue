@@ -7,6 +7,7 @@ import { useRouter } from "vue-router"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
+import SessionContextMenu from "../session/SessionContextMenu.vue"
 import IconButton from "../common/IconButton.vue"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
@@ -95,28 +96,32 @@ async function confirmRestore(): Promise<void> {
       <li
         v-for="(item, index) in archived"
         :key="item.session.id"
-        class="flex items-center gap-3 px-4 py-3"
+        class="px-4 py-3"
         :class="index > 0 && 'border-t border-ui-border'"
         :data-archived-session="item.session.id"
       >
-        <button
-          type="button"
-          class="min-w-0 flex-1 cursor-pointer rounded-md text-left hover:text-ui-accent"
-          :aria-label="t('archivedSessions.openLabel', { title: item.title })"
-          @click="openSession(item.session.id)"
-        >
-          <span class="block truncate text-sm">{{ item.title }}</span>
-          <span v-if="item.machine && item.workspace" class="block truncate text-[13px] text-ui-text-muted">
-            {{ t("archivedSessions.location", { machine: item.machine.name, workspace: item.workspace.name }) }}
-          </span>
-        </button>
-        <IconButton
-          :icon="ArchiveRestore"
-          :label="t('archivedSessions.restoreLabel', { title: item.title })"
-          :disabled="!item.online || restoringId === item.session.id"
-          :data-restore-session="item.session.id"
-          @click="requestRestore(item.session.id)"
-        />
+        <SessionContextMenu :session-id="item.session.id" :title="item.session.title" :archive-state="item.session.archiveState" :disabled="!item.online || busy">
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              class="min-w-0 flex-1 cursor-pointer rounded-md text-left hover:text-ui-accent"
+              :aria-label="t('archivedSessions.openLabel', { title: item.title })"
+              @click="openSession(item.session.id)"
+            >
+              <span class="block truncate text-sm">{{ item.title }}</span>
+              <span v-if="item.machine && item.workspace" class="block truncate text-[13px] text-ui-text-muted">
+                {{ t("archivedSessions.location", { machine: item.machine.name, workspace: item.workspace.name }) }}
+              </span>
+            </button>
+            <IconButton
+              :icon="ArchiveRestore"
+              :label="t('archivedSessions.restoreLabel', { title: item.title })"
+              :disabled="!item.online || restoringId === item.session.id"
+              :data-restore-session="item.session.id"
+              @click="requestRestore(item.session.id)"
+            />
+          </div>
+        </SessionContextMenu>
       </li>
     </ul>
     <p v-if="error && !confirming" role="alert" class="m-0 mt-3 text-sm text-ui-danger">{{ error }}</p>

@@ -15,8 +15,9 @@ import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from ".
 import { AgentProviders } from "./agent-providers.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
+import { CentralSync } from "./central-sync.ts"
 import type { AgentConfiguration, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
-import type { AgentActor, AgentElicitation, AgentReceipt, AgentSnapshot } from "./agent-protocol.ts"
+import type { AgentActor, AgentCommand, AgentElicitation, AgentEvent, AgentReceipt, AgentSnapshot } from "./agent-protocol.ts"
 import type { ComposerReferenceResult } from "./composer-reference-protocol.ts"
 import type { GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 
@@ -170,6 +171,82 @@ test("local composer without MCP finds files and returns no Session candidates w
     }] }, viewer), /require the built-in MCP server and an authenticated user/u)
   }
   await assert.rejects(f.service.handle("_deskfleet/composer/references", { sessionId: f.sessionId, workspaceId: "9223372036854775807", kind: "session", query: "" }, actor), /outside the reference Workspace/u)
+})
+
+test("rename preserves running work, synchronizes its audited title, and takes precedence over provider updates", async t => {
+  const f = await setup(t)
+  await f.submit("hold").result
+  await until(f.read, snapshot => snapshot.turns.some(turn => turn.state === "running"))
+  await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: { sessionUpdate: "session_info_update", title: "Provider title" } })
+  const before = await f.read()
+  assert.equal(before.session.title, "Provider title")
+  const uploads: { snapshot: AgentSnapshot; commands: AgentCommand[]; events: AgentEvent[] }[] = []
+  const sync = new CentralSync(f.service, f.catalog, f.providers, async (path, body) => {
+    if (path.endsWith("catalog")) return {}
+    const upload = body as typeof uploads[number]
+    uploads.push(upload)
+    return { lastEventSeq: upload.snapshot.session.lastEventSeq }
+  }, async () => false)
+  t.after(() => sync.close())
+  sync.enable()
+  await sync.flush()
+  const params = { sessionId: f.sessionId, operationId: randomUUID(), title: "  Investigate payment errors  " }
+  const renamed = await f.service.handle("_deskfleet/session/rename", params, f.bob) as AgentSnapshot
+  assert.equal(renamed.session.title, "Investigate payment errors")
+  assert.equal(renamed.session.titleCustomized, true)
+  assert.deepEqual(renamed.runs, before.runs)
+  assert.deepEqual(renamed.inputs, before.inputs)
+  assert.deepEqual(renamed.turns, before.turns)
+  assert.deepEqual(renamed.session, { ...before.session, title: renamed.session.title, titleCustomized: true,
+    lastEventSeq: renamed.session.lastEventSeq, updatedAt: renamed.session.updatedAt })
+  assert.deepEqual(await f.read(), renamed)
+  await sync.flush()
+  const upload = uploads.at(-1)!
+  assert.deepEqual(upload.snapshot, renamed)
+  assert.ok(upload.events.some(event => event.kind === "session" && (event.payload as AgentSnapshot["session"]).title === renamed.session.title))
+  const receipt = upload.commands.find(command => command.operationId === params.operationId)!
+  assert.equal(receipt.actor.userId, "bob")
+  assert.equal(receipt.status, "completed")
+  assert.deepEqual(receipt.result, renamed)
+  assert.deepEqual(upload.events.filter(event => event.commandId === receipt.id).map(event => event.kind), ["session"], "rename has no separately accepted intermediate command")
+  assert.deepEqual(await f.service.handle("_deskfleet/session/rename", params, f.bob), renamed)
+  assert.deepEqual(await f.read(), renamed, "a retry does not emit another event")
+  await assert.rejects(f.service.handle("_deskfleet/session/rename", params, f.actor), /reused/u)
+  await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: { sessionUpdate: "session_info_update", title: "Later provider title" } })
+  assert.equal((await f.read()).session.title, renamed.session.title)
+  assert.equal(f.provider.clients.length, 1)
+  assert.equal(f.provider.cancelCount, 0)
+})
+
+test("rename validates titles and persists customization for archived and machine-scoped Sessions", async t => {
+  const f = await setup(t)
+  const rename = (sessionId: string, title: unknown) => f.service.handle("_deskfleet/session/rename", {
+    sessionId, title, operationId: randomUUID(),
+  }, f.actor) as Promise<AgentSnapshot>
+  for (const title of [undefined, 42, "", " \t\n ", "invalid\0title", "x".repeat(201)]) {
+    await assert.rejects(rename(f.sessionId, title), /Session titles?/u)
+  }
+  assert.equal((await f.read()).session.title, f.snapshot.session.title)
+  const archived = await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor) as AgentSnapshot
+  const renamed = await rename(f.sessionId, "Archived investigation")
+  assert.equal(renamed.session.archiveState, "archived")
+  assert.deepEqual(renamed.runs, archived.runs)
+  assert.equal(f.provider.clients.length, 1)
+  const home = await f.service.handle("_deskfleet/session/create", { operationId: randomUUID(), provider: "codex", context: "directory" }, f.actor) as AgentSnapshot
+  const renamedHome = await rename(home.session.id, "Home investigation")
+  assert.equal(renamedHome.session.workspaceId, undefined)
+  assert.equal(renamedHome.session.title, "Home investigation")
+  await f.service.close()
+  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
+  await restarted.init()
+  try {
+    assert.equal((await restarted.journal.read(f.sessionId)).session.titleCustomized, true)
+    assert.equal((await restarted.journal.read(f.sessionId)).session.title, "Archived investigation")
+    await restarted.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+    await restarted.handle("_deskfleet/session/resume", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+    await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: { sessionUpdate: "session_info_update", title: "Resumed provider title" } })
+    assert.equal((await restarted.journal.read(f.sessionId)).session.title, "Archived investigation")
+  } finally { await restarted.close() }
 })
 
 test("archive retains files and history, cancels approval and questions, and restore waits for explicit input", async t => {

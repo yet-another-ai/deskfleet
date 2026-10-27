@@ -27,7 +27,7 @@ const METHODS = new Set<AgentMethod>([
   "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
   "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
   "_deskfleet/elicitation/respond",
-  "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/command/get",
+  "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/command/get",
   "_deskfleet/git/status", "_deskfleet/git/diff", "_deskfleet/git/subscribe", "_deskfleet/git/unsubscribe",
 ])
 const MAX_PENDING_REQUESTS = 128

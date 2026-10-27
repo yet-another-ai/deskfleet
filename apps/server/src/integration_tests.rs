@@ -351,6 +351,11 @@ async fn postgres_http_permissions_replication_and_signaling() {
             {
                 let result = if method == "peer.offer" {
                     json!({"sdp":crate::peers::tests::sdp()})
+                } else if method == "_deskfleet/session/rename" {
+                    assert_eq!(params["sessionId"], "1");
+                    assert_eq!(params["title"], "Renamed investigation");
+                    assert!(actor.is_some());
+                    json!({"title":"Renamed investigation"})
                 } else {
                     assert_eq!(method, "_deskfleet/session/archive");
                     assert_eq!(params["sessionId"], "1");
@@ -489,6 +494,27 @@ async fn postgres_http_permissions_replication_and_signaling() {
         StatusCode::BAD_REQUEST
     );
     assert_eq!(call!(post,&format!("/api/machines/{machine_id}/rpc"),token,&json!({"method":"_deskfleet/session/archive","params":{"sessionId":"1","operationId":"fixture"}})).status(),StatusCode::OK);
+    let rename = json!({"method":"_deskfleet/session/rename","params":{"sessionId":"1","operationId":"rename-fixture","title":"Renamed investigation"}});
+    assert_eq!(
+        call!(
+            post,
+            &format!("/api/machines/{machine_id}/rpc"),
+            outside_token,
+            &rename
+        )
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call!(
+            post,
+            &format!("/api/machines/{machine_id}/rpc"),
+            token,
+            &rename
+        )
+        .status(),
+        StatusCode::OK
+    );
     assert_eq!(
         call!(post, "/api/auth/logout", token, &json!({})).status(),
         StatusCode::NO_CONTENT

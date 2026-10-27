@@ -20,6 +20,7 @@ import { useFleetStore } from "../../stores/fleet.ts"
 import IconButton from "../common/IconButton.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
+import SessionContextMenu from "../session/SessionContextMenu.vue"
 import TreeLink from "./TreeLink.vue"
 
 const props = defineProps<{ machine: MachineSummary }>()
@@ -96,25 +97,27 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
         />
       </li>
       <li v-for="session in machine.sessions" :key="session.id">
-        <TreeLink
-          :to="{ name: 'session', params: { sessionId: session.id } }"
-          :icon="Bot"
-          :label="sessionLabel(session)"
-          :depth="0"
-        >
-          <template #icon>
-            <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
-            <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
-          </template>
-          <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
-            <IconButton
-              :icon="Archive"
-              :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
-              :disabled="!machine.online || archiving.has(session.id)"
-              @click="archiveSession(session.id)"
-            />
-          </template>
-        </TreeLink>
+        <SessionContextMenu :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
+          <TreeLink
+            :to="{ name: 'session', params: { sessionId: session.id } }"
+            :icon="Bot"
+            :label="sessionLabel(session)"
+            :depth="0"
+          >
+            <template #icon>
+              <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+              <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
+            </template>
+            <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
+              <IconButton
+                :icon="Archive"
+                :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
+                :disabled="!machine.online || archiving.has(session.id)"
+                @click="archiveSession(session.id)"
+              />
+            </template>
+          </TreeLink>
+        </SessionContextMenu>
         <p v-if="archiveErrors[session.id]" role="alert" class="m-0 px-2.5 pb-1 pl-6 text-xs text-ui-danger break-words">{{ archiveErrors[session.id] }}</p>
       </li>
       <li v-if="machine.workspaces.length === 0 && machine.sessions.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
@@ -130,26 +133,28 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
             <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
           </li>
           <li v-for="session in workspace.sessions" :key="session.id">
-            <!-- A Session's shells open in its bottom panel, not the sidebar. -->
-            <TreeLink
-              :to="{ name: 'session', params: { sessionId: session.id } }"
-              :icon="Bot"
-              :label="sessionLabel(session)"
-              :depth="1"
-            >
-              <template #icon>
-                <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
-                <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
-              </template>
-              <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
-                <IconButton
-                  :icon="Archive"
-                  :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
-                  :disabled="!machine.online || archiving.has(session.id)"
-                  @click="archiveSession(session.id)"
-                />
-              </template>
-            </TreeLink>
+            <SessionContextMenu :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
+              <!-- A Session's shells open in its bottom panel, not the sidebar. -->
+              <TreeLink
+                :to="{ name: 'session', params: { sessionId: session.id } }"
+                :icon="Bot"
+                :label="sessionLabel(session)"
+                :depth="1"
+              >
+                <template #icon>
+                  <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+                  <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
+                </template>
+                <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
+                  <IconButton
+                    :icon="Archive"
+                    :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
+                    :disabled="!machine.online || archiving.has(session.id)"
+                    @click="archiveSession(session.id)"
+                  />
+                </template>
+              </TreeLink>
+            </SessionContextMenu>
             <p v-if="archiveErrors[session.id]" role="alert" class="m-0 px-2.5 pb-1 pl-6 text-xs text-ui-danger break-words">{{ archiveErrors[session.id] }}</p>
           </li>
         </ul>

@@ -362,7 +362,7 @@ export class AgentRuntime {
       }
       const snapshot = await this.journal.read(this.sessionId)
       const turnId = this.#active?.turn.id
-      const session = params.update.sessionUpdate === "session_info_update" && params.update.title
+      const session = params.update.sessionUpdate === "session_info_update" && params.update.title && !snapshot.session.titleCustomized
         ? { ...snapshot.session, title: params.update.title, updatedAt: timestamp() } : undefined
       const events = [this.journal.event(this.sessionId, "acp", params, { runGeneration: generation, turnId })]
       if (session) events.push(this.journal.event(this.sessionId, "session", session))
