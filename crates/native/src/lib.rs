@@ -3,6 +3,7 @@
 pub mod desktop_access;
 pub mod filesystem_permissions;
 pub mod input;
+pub mod local_applications;
 pub mod media;
 #[cfg(target_os = "macos")]
 mod permission_settings;

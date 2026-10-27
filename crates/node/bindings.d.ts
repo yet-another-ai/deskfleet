@@ -149,6 +149,14 @@ export interface IceServer {
   credential?: string
 }
 
+export interface LocalApplication {
+  id: string
+  name: string
+  kind: LocalApplicationKind
+}
+
+export type LocalApplicationKind = 'editor' | 'terminal' | 'fileManager'
+
 /** The capture worker's latest media failure, if `startDesktop` observed it first. */
 export interface MediaFailure {
   message: string
@@ -168,6 +176,8 @@ export interface NativeInfo {
 export declare function openCatalog(databasePath: string, machineName: string): Promise<NativeCatalog>
 
 export declare function openInMemoryCatalog(machineName: string): Promise<NativeCatalog>
+
+export declare function openLocalApplication(applicationId: string, directory: string): Promise<void>
 
 export interface PeerConfig {
   iceServers?: Array<IceServer>
@@ -209,6 +219,8 @@ export declare function requestScreenCaptureAccess(): Promise<boolean | null>
 
 /** Authorize screen and input together, persisting restoration under the daemon directory. */
 export declare function requestWaylandDesktopAccess(directory: string): Promise<WaylandDesktopAccess>
+
+export declare function scanLocalApplications(): Promise<Array<LocalApplication>>
 
 /** Probe the selected display's encoders on a worker thread. */
 export declare function supportedVideoCodecs(displayId: number): Promise<Array<string>>

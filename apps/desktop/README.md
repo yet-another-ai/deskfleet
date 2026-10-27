@@ -71,6 +71,22 @@ at its original paths; the new registration can join the same Team again.
 
 Workspace creation and editing use the target daemon's filesystem browser through
 central management APIs.
+
+On this client's local machine, a Workspace's **Open with** menu opens its default
+directory in VS Code, Cursor, VSCodium, Zed, an external Terminal, or the system
+file manager. Additional directories have their own menu. Only installed
+applications appear; opening the menu or choosing **Rescan** scans
+again. The existing terminal actions continue to open deskfleet's integrated
+terminal. Remote machines and Web clients do not expose these local launchers.
+
+The maintained discovery list lives in
+[`crates/native/src/local_applications/registry.rs`](../../crates/native/src/local_applications/registry.rs).
+It checks platform installation locations and executable search paths without
+running applications during discovery. Launches resolve the selected application
+again and pass the directory as an argument or working directory, without shell
+interpolation. The preload bridge accepts application and resource IDs; the main
+process verifies local enrollment and resolves paths from the authorized catalog.
+
 Management uses authenticated HTTP; live Agent, Git, terminal, and desktop traffic
 uses an authorized WebRTC peer with server-provided STUN/TURN settings. Offline
 machines retain their synchronized catalog and readable conversation history.

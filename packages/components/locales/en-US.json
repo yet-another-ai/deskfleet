@@ -516,6 +516,18 @@
     "newSession": "New session",
     "noSessions": "No sessions yet."
   },
+  "applications": {
+    "openWith": "Open with",
+    "openDefault": "Open default directory with",
+    "openDirectory": "Open {path} with",
+    "scanning": "Scanning installed apps…",
+    "empty": "No supported apps found.",
+    "rescan": "Rescan",
+    "scanFailed": "Could not scan apps: {message}",
+    "launchFailed": "Could not open {name}: {message}",
+    "terminal": "Terminal",
+    "fileManager": "File manager"
+  },
   "folderPicker": {
     "title": "Choose a folder",
     "locations": "Folder locations",

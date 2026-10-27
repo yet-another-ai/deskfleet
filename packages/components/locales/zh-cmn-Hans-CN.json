@@ -516,6 +516,18 @@
     "newSession": "新建会话",
     "noSessions": "尚无会话。"
   },
+  "applications": {
+    "openWith": "打开方式",
+    "openDefault": "选择默认目录的打开方式",
+    "openDirectory": "选择 {path} 的打开方式",
+    "scanning": "正在扫描已安装的应用…",
+    "empty": "未找到支持的应用。",
+    "rescan": "重新扫描",
+    "scanFailed": "无法扫描应用：{message}",
+    "launchFailed": "无法打开 {name}：{message}",
+    "terminal": "终端",
+    "fileManager": "文件管理器"
+  },
   "folderPicker": {
     "title": "选择文件夹",
     "locations": "文件夹位置",

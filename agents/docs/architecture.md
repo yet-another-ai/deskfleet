@@ -154,6 +154,17 @@ The first path is the Session's default working directory. Workspace paths may
 be non-Git for main-context terminals and directory Sessions; creating a worktree
 Session requires Git-backed paths with a commit.
 
+The Electron client can open its local Workspace directories in an installed
+editor, external terminal, or system file manager. The default action opens the
+first directory; each additional directory has its own action. Discovery and
+launching belong to the client's native platform integration, with a maintained
+application registry. The main process verifies that the requested Machine is
+its daemon's active registration on the signed-in server, then resolves the
+Workspace directory from the authenticated catalog. The renderer supplies
+resource IDs and a directory position, never an executable or filesystem path.
+This integration is unavailable for remote Machines and Web clients; it does not
+start an editor on a remote daemon or create a forwarding connection.
+
 Archiving is the normal way to finish using a Session. It closes the provider
 and Session-owned terminals while retaining the Session, its Worktree and files,
 queued inputs, conversation/tool history, terminal transcripts, and audit.
