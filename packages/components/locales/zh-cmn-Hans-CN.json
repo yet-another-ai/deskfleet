@@ -777,7 +777,7 @@
   },
   "account": {
     "signIn": "登录 deskfleet",
-    "signInDescription": "使用团队的 deskfleet 服务器和身份提供商登录。",
+    "signInDescription": "使用你的账号登录 deskfleet 服务器，然后选择团队。",
     "server": "服务器地址",
     "signingIn": "正在登录…",
     "signOut": "退出登录",

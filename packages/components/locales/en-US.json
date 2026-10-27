@@ -777,7 +777,7 @@
   },
   "account": {
     "signIn": "Sign in to deskfleet",
-    "signInDescription": "Use your team’s deskfleet server and identity provider.",
+    "signInDescription": "Sign in to your deskfleet server with your account, then choose a team.",
     "server": "Server address",
     "signingIn": "Signing in…",
     "signOut": "Sign out",
