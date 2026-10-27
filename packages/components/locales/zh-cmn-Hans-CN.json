@@ -265,6 +265,7 @@
     "addWorkspace": "添加工作区",
     "noWorkspaces": "没有工作区",
     "remoteControl": "远程控制",
+    "localControl": "本机控制",
     "online": "在线"
   },
   "newSession": {

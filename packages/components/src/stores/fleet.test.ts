@@ -1,6 +1,8 @@
 import { client as platformClient, configureClient, getClient } from "@deskfleet/client/platform"
 import type { CatalogSnapshot } from "../../../client/src/catalog.ts"
-import { createPinia, setActivePinia } from "pinia"
+import type { LocalEnrollment } from "../../../client/src/central.ts"
+import { createPinia, getActivePinia, setActivePinia } from "pinia"
+import { createApp } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { catalogFixture, sessionId, sessionWorktreeId, mainWorktreeId, workspaceId } from "../test/catalog.ts"
 import { useFleetStore } from "./fleet.ts"
@@ -8,8 +10,12 @@ import { useAgentSessionsStore } from "./agent-sessions.ts"
 import { useProvidersStore } from "./providers.ts"
 import { useTerminalsStore } from "./terminals.ts"
 import { agentSnapshot } from "../test/agent.ts"
+import { fakeCentral } from "../test/central.ts"
+import { accountSessionKey, createAccountSession, type AccountSession } from "../composables/useAccountSession.ts"
 
 const stores: ReturnType<typeof useFleetStore>[] = []
+const accounts: AccountSession[] = []
+const originalClient = getClient()
 let changed: () => void
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -18,13 +24,72 @@ beforeEach(() => {
 })
 afterEach(() => {
   for (const store of stores.splice(0)) store.$dispose()
+  for (const account of accounts.splice(0)) account.dispose()
+  configureClient(originalClient)
   vi.restoreAllMocks()
 })
 function setup() { const store = useFleetStore(); stores.push(store); return store }
 
+const localEnrollment = (): LocalEnrollment => ({
+  configured: true, connected: true, revoked: false,
+  serverUrl: "https://fleet.example", teamId: "team-1", machineId: "central-machine",
+  identity: { originId: "local-origin", machineId: "1" }, machineName: "This computer",
+})
+async function setupAccount(targetId: string, enrollment?: LocalEnrollment) {
+  configureClient({ ...getClient(), target: { id: targetId, local: false } })
+  const fake = fakeCentral({ enrollment })
+  const account = createAccountSession(fake.central)
+  accounts.push(account)
+  await vi.waitFor(() => expect(account.ready.value).toBe(true))
+  const app = createApp({}).provide(accountSessionKey, account).use(getActivePinia()!)
+  return { store: app.runWithContext(setup), account, fake }
+}
+
+test.each([
+  { targetId: "central-machine", local: true },
+  { targetId: "remote-machine", local: false },
+  { targetId: "1", local: false },
+])("identifies $targetId as local=$local using this client's central registration", async ({ targetId, local }) => {
+  const { store } = await setupAccount(targetId, localEnrollment())
+  expect(store.findMachine(targetId)?.local).toBe(local)
+})
+
+test("a browser account without a hosted daemon has no local machine", async () => {
+  configureClient({ ...getClient(), platform: "web" })
+  const { store } = await setupAccount("central-machine")
+  expect(store.machines[0]?.local).toBe(false)
+})
+
+test("local identity follows enrollment refreshes and is independent of daemon presence", async () => {
+  const { store, account, fake } = await setupAccount("central-machine", { ...localEnrollment(), configured: false })
+  const machine = () => store.findMachine("central-machine")!
+  expect(machine().local).toBe(false)
+
+  fake.state.enrollment = localEnrollment()
+  await account.refreshMachines()
+  expect(machine().local).toBe(true)
+
+  fake.state.enrollment.connected = false
+  await account.refreshMachines()
+  expect(machine().local).toBe(true)
+
+  fake.state.enrollment.revoked = true
+  await account.refreshMachines()
+  expect(machine().local).toBe(false)
+
+  fake.state.enrollment = { ...localEnrollment(), serverUrl: "https://another.example" }
+  await account.refreshMachines()
+  expect(machine().local).toBe(false)
+
+  fake.state.enrollment = localEnrollment()
+  await account.refreshMachines()
+  expect(machine().local).toBe(true)
+})
+
 test("maps configured directories onto the workspace and exposes only Session-owned worktrees", async () => {
   const store = setup()
   expect(store.machines).toHaveLength(1)
+  expect(store.machines[0]?.local).toBe(true)
   expect(store.newSessionTarget?.workspace).toBeUndefined()
   await store.refreshLocalCatalog()
   expect(store.catalogIdentity).toEqual({ teamId: "1", machineId: "9007199254740999" })

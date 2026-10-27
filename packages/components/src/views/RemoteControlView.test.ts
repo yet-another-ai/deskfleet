@@ -1,7 +1,7 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
-import { defineComponent } from "vue"
+import { defineComponent, reactive } from "vue"
 import { createMemoryHistory, createRouter, type LocationQueryRaw } from "vue-router"
 import { afterEach, expect, test, vi } from "vitest"
 import type { FilesApi } from "../../../client/src/files.ts"
@@ -24,16 +24,18 @@ const SystemStub = defineComponent({ name: "SystemStatusPanel", props: ["machine
 const shell: TerminalSummary = { id: "shell", title: "zsh", cwd: "/workspace", cols: 80, rows: 24, status: "running" }
 const originalFiles = platformClient.files
 const originalDesktop = platformClient.desktop
+const originalTarget = platformClient.target
 const cleanup: (() => void)[] = []
 afterEach(() => {
   for (const stop of cleanup.splice(0)) stop()
   platformClient.files = originalFiles
   platformClient.desktop = originalDesktop
+  platformClient.target = originalTarget
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
-async function setup(options: { desktop?: boolean; machineId?: string; query?: LocationQueryRaw; sessions?: TerminalSummary[]; realDesktop?: boolean } = {}) {
+async function setup(options: { local?: boolean; desktop?: boolean; machineId?: string; query?: LocationQueryRaw; sessions?: TerminalSummary[]; realDesktop?: boolean; legacyDesktop?: boolean } = {}) {
   const files: FilesApi = {
     list: vi.fn(async () => { throw new Error("Unexpected file listing") }),
     chooseLocalDirectory: vi.fn(async () => null), enqueue: vi.fn(async () => "transfer"), transfers: vi.fn(async () => []),
@@ -42,6 +44,7 @@ async function setup(options: { desktop?: boolean; machineId?: string; query?: L
     readResource: vi.fn(async () => { throw new Error("Unexpected resource read") }), saveResource: vi.fn(async () => null),
   }
   platformClient.files = files
+  platformClient.target = reactive({ id: "local-daemon", local: options.local ?? false })
   const pinia = createPinia()
   setActivePinia(pinia)
   const fleet = useFleetStore()
@@ -55,8 +58,11 @@ async function setup(options: { desktop?: boolean; machineId?: string; query?: L
   const create = vi.spyOn(terminals, "create")
   const router = createRouter({ history: createMemoryHistory(), routes: [{
     path: "/machines/:machineId/control", name: "machine-control", component: RemoteControlView, props: true,
+  }, {
+    path: "/machines/:machineId/desktop", name: "machine-desktop",
+    redirect: to => ({ name: "machine-control", params: { machineId: to.params.machineId }, query: { tab: "desktop" } }),
   }] })
-  await router.push({ name: "machine-control", params: { machineId: options.machineId ?? fleet.targetId }, query: options.query })
+  await router.push({ name: options.legacyDesktop ? "machine-desktop" : "machine-control", params: { machineId: options.machineId ?? fleet.targetId }, query: options.query })
   const host = defineComponent({ setup: () => ({ worktree: useRouteWorktree() }), template: "<RouterView />" })
   const wrapper = mount(host, {
     attachTo: document.body,
@@ -103,6 +109,48 @@ test("a headless machine defaults to Terminal without mounting other tools", asy
   expect(wrapper.findComponent(FilesStub).exists()).toBe(false)
   expect(wrapper.findComponent(SystemStub).exists()).toBe(false)
   expect(create).not.toHaveBeenCalled()
+})
+
+test.each([
+  { name: "the default route" },
+  { name: "a desktop query", query: { tab: "desktop" } },
+  { name: "the legacy desktop route", legacyDesktop: true },
+])("the local machine hides Desktop and opens Terminal through $name", async options => {
+  const { api } = mockDesktop()
+  const { wrapper } = await setup({ ...options, local: true, desktop: true, realDesktop: true })
+  expect(wrapper.text()).toContain("Local control")
+  expect(tabs(wrapper).map(tab => tab.text())).toEqual(["Terminal", "File transfer", "System status"])
+  expect(tabs(wrapper)[0]!.attributes("aria-selected")).toBe("true")
+  expect(wrapper.getComponent(TerminalStub).props("terminals")).toEqual([shell])
+  expect(wrapper.find("[data-desktop-stage]").exists()).toBe(false)
+  expect(api.target).not.toHaveBeenCalled()
+  expect(api.capabilities).not.toHaveBeenCalled()
+  expect(api.offer).not.toHaveBeenCalled()
+})
+
+test("the local machine retains Terminal, File transfer, and System status", async () => {
+  const { wrapper, router, fleet } = await setup({ local: true, desktop: true, query: { tab: "terminal", terminal: shell.id } })
+  const terminal = wrapper.getComponent(TerminalStub)
+  expect(terminal.props("activeId")).toBe(shell.id)
+  await select(wrapper, 1)
+  expect(router.currentRoute.value.query.tab).toBe("files")
+  expect(wrapper.getComponent(FilesStub).isVisible()).toBe(true)
+  await select(wrapper, 2)
+  expect(wrapper.getComponent(SystemStub).props()).toMatchObject({ machineId: fleet.targetId, active: true, online: true })
+  await select(wrapper, 0)
+  expect(wrapper.getComponent(TerminalStub).vm).toBe(terminal.vm)
+  expect(terminal.isVisible()).toBe(true)
+  expect(wrapper.findComponent(DesktopStub).exists()).toBe(false)
+})
+
+test("recognizing the current target as local removes its visited Desktop and selects Terminal", async () => {
+  const { wrapper } = await setup({ desktop: true, query: { tab: "desktop" } })
+  expect(wrapper.findComponent(DesktopStub).exists()).toBe(true)
+  platformClient.target!.local = true
+  await flushPromises()
+  expect(wrapper.findComponent(DesktopStub).exists()).toBe(false)
+  expect(wrapper.getComponent(TerminalStub).isVisible()).toBe(true)
+  expect(tabs(wrapper).map(tab => tab.text())).toEqual(["Terminal", "File transfer", "System status"])
 })
 
 test("tools mount only when first visited and keep the same instances across tab switches", async () => {

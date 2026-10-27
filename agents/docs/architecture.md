@@ -560,7 +560,12 @@ Session provisioning still owns creation
 and deletion of managed worktrees.
 
 The machine's Remote control page groups Terminal, Desktop, File transfer, and
-System status.
+System status. The current Electron client's own daemon is identified by its
+active registration with the signed-in server and marked as the local machine.
+Its Local control page omits Desktop and defaults to Terminal, retaining File
+transfer and System status. Locality is client-relative; the machine's advertised
+desktop capability remains available to other clients. Web clients have no local
+daemon, so their machine controls remain remote.
 Tools mount when first visited and retain their connections while switching tabs.
 Machine-owned shells live here; Session-owned shells stay in the Session panel.
 System status reads CPU usage, physical memory, swap, and machine details from

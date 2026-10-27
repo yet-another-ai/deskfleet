@@ -70,6 +70,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
         class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[13px] font-medium text-ui-text-muted hover:text-ui-text"
       >
         <span class="truncate">{{ machine.name }}</span>
+        <span v-if="machine.local" class="ui-badge shrink-0 rounded-full font-normal">{{ t("machine.local") }}</span>
         <span
           v-if="!machine.online"
           class="ui-badge shrink-0 rounded-full font-normal"
@@ -89,8 +90,8 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
       <li>
         <TreeLink
           :to="{ name: 'machine-control', params: { machineId: machine.id } }"
-          :icon="MonitorPlay"
-          :label="t('machine.remoteControl')"
+          :icon="machine.local ? SquareTerminal : MonitorPlay"
+          :label="t(machine.local ? 'machine.localControl' : 'machine.remoteControl')"
           :depth="0"
         />
       </li>

@@ -265,6 +265,7 @@
     "addWorkspace": "Add workspace",
     "noWorkspaces": "No workspaces",
     "remoteControl": "Remote control",
+    "localControl": "Local control",
     "online": "Online"
   },
   "newSession": {

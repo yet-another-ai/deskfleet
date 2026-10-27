@@ -1,9 +1,10 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { defineStore } from "pinia"
-import { computed, onScopeDispose, ref } from "vue"
+import { computed, hasInjectionContext, onScopeDispose, ref } from "vue"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspace } from "../../../client/src/catalog.ts"
 import type { LocalDesktopTarget } from "../../../client/src/desktop-media.ts"
 import type { AgentSessionSummary, MachineSummary, TerminalSessionSummary, WorkspaceSummary, WorktreeSummary } from "./fleet-types.ts"
+import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useTerminalsStore } from "./terminals.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
 import { useProvidersStore } from "./providers.ts"
@@ -71,8 +72,9 @@ function workspaceSummary(value: CatalogWorkspace): WorkspaceSummary {
   }
 }
 
-/** Local daemon resources; database IDs and connection targets have separate identities. */
+/** Selected machine resources; database IDs and connection targets have separate identities. */
 export const useFleetStore = defineStore("fleet", () => {
+  const account = hasInjectionContext() ? useAccountSession() : undefined
   const target = platformClient.target
   const targetId = target?.id ?? "local-daemon"
   const localDesktopTarget = ref<LocalDesktopTarget>({ id: targetId, name: "localhost", online: false, desktop: false })
@@ -130,7 +132,10 @@ export const useFleetStore = defineStore("fleet", () => {
   })
   const machines = computed<MachineSummary[]>(() => [{
     id: targetId, name: localDesktopTarget.value.name, online: localDesktopTarget.value.online,
-    desktop: localDesktopTarget.value.desktop, local: target?.local ?? true, lastSeen: target?.lastSeen,
+    desktop: localDesktopTarget.value.desktop,
+    // The server transport also connects this client's own daemon.
+    local: account ? account.localMachineId.value === targetId : target?.local ?? true,
+    lastSeen: target?.lastSeen,
     terminals: terminals.sessions.filter(terminal => terminal.worktreeId === undefined),
     sessions: machineSessions.value,
     workspaces: workspaces.value,

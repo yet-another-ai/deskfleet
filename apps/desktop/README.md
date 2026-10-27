@@ -97,9 +97,14 @@ rightmost header reserves with `.titlebar-overlay-inset`
 
 The tree follows the resource model: machines contain workspaces, and workspaces
 list their Sessions. Each Session exposes its associated Worktree. Each machine has
-one **Remote control** entry with Terminal, Desktop, and File transfer tabs.
+one **Remote control** entry with Terminal, Desktop, File transfer, and System
+status tabs. This client's own daemon is marked **This machine** and uses a
+**Local control** entry with Terminal, File transfer, and System status; it does
+not expose its own Desktop tab.
 Machine terminals live there; a Session's terminals stay in its bottom panel.
-Headless machines default to Terminal, and graphical machines default to Desktop.
+The local machine and headless remote machines default to Terminal; graphical
+remote machines default to Desktop. Desktop links targeting the local machine
+also open Terminal. Other clients can still access this machine's desktop.
 Switching tabs preserves mounted tools and their connections. Offline
 machines start collapsed and report when they were last seen.
 
@@ -110,9 +115,9 @@ machines start collapsed and report when they were last seen.
 | `/worktrees/:worktreeId` | Directory bindings and the owning Session of a session Worktree |
 | `/sessions/:sessionId` | Conversation, tools, permissions, candidate backlog, composer, and agent lifecycle |
 | `/terminals/:terminalId` | Redirects machine terminals to Remote control and Session terminals to their Session's panel |
-| `/machines/:machineId/control` | Machine tools selected by `tab=terminal`, `tab=desktop`, or `tab=files`; `terminal` selects a shell |
+| `/machines/:machineId/control` | Machine tools selected by `tab=terminal`, `tab=desktop`, `tab=files`, or `tab=system`; local machines omit Desktop; `terminal` selects a shell |
 | `/machines/:machineId/terminals` | Redirects to the Terminal tab in Remote control |
-| `/machines/:machineId/desktop` | Redirects to the Desktop tab in Remote control |
+| `/machines/:machineId/desktop` | Redirects to Desktop for remote machines or Terminal for this client's local machine |
 | `/settings/preferences` | Preferences, including launch at startup and the local Agent under This computer |
 
 A Workspace page's New session action makes that Workspace the composer's target.
