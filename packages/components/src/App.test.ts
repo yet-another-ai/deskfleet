@@ -66,6 +66,22 @@ test("Pinned sessions appear above Workspaces while retaining their workspace en
   expect(sidebar.findAll("a").find(element => element.text() === `Session ${sessionId}`)!.attributes("href")).toBe(`#/sessions/${sessionId}`)
 })
 
+test("the archive route retains the sidebar and hides resource details without changing their preference", async () => {
+  const pinia = createPinia()
+  vi.spyOn(useAgentSessionsStore(pinia), "refresh").mockResolvedValue()
+  const wrapper = await mountApp("/sessions/archived", pinia)
+  expect(router.currentRoute.value.name).toBe("archived-sessions")
+  expect(wrapper.get("main h1").text()).toBe("Archived sessions")
+  expect(wrapper.get("aside").text()).toContain("Workspaces")
+  expect(wrapper.get('[data-archived-sessions]').attributes("aria-current")).toBe("page")
+  expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Show changes panel"]').exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Hide changes panel"]').exists()).toBe(false)
+  expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  await router.push("/"); await flushPromises()
+  expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(true)
+})
+
 test("workspace creation opens a dialog, requires paths, supports choosing the first path by reordering, and retains input after failure", async () => {
   const create = vi.spyOn(platformClient.catalog, "createWorkspace").mockRejectedValueOnce(new Error("Directory does not exist"))
   const wrapper = await mountApp()

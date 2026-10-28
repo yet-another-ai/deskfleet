@@ -188,6 +188,8 @@
   },
   "archivedSessions": {
     "title": "Archived sessions",
+    "machine": "Machine",
+    "loading": "Loading archived sessions…",
     "description": "Restore a session to continue working, or open it to review its conversation.",
     "empty": "No archived sessions",
     "emptyDescription": "Archive a session to keep its conversation and working context without active execution.",

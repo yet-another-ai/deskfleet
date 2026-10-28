@@ -97,6 +97,39 @@ function withEmptyCatalogs({ central, state }: ReturnType<typeof fakeCentral>): 
   })
 }
 
+test("opens the archived list directly and keeps it scoped to the selected machine without resource details", async () => {
+  const fake = fakeCentral({ machines: [
+    machineFixture("m1", "team-1", "Build server", false),
+    machineFixture("m2", "team-1", "Laptop", false),
+  ] })
+  withEmptyCatalogs(fake)
+  Object.assign(fake.central, {
+    sessions: vi.fn(async (machineId: string) => {
+      const archived = agentSnapshot()
+      archived.session.title = `Archived conversation ${machineId}`
+      archived.session.archiveState = "archived"
+      return [archived]
+    }),
+  })
+  localStorage.setItem("deskfleet.details-open", "true")
+  await router.push("/sessions/archived")
+  mountShell(fake.central, "web")
+  await flushPromises()
+  await vi.waitFor(() => expect(page().get("main").text()).toContain("Archived conversation m1"), { timeout: 5_000 })
+  expect(router.currentRoute.value.name).toBe("archived-sessions")
+  expect(router.currentRoute.value.path).toBe("/sessions/archived")
+  expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
+
+  await page().get('aside button[data-machine-id="m2"]').trigger("click")
+  await flushPromises()
+  await vi.waitFor(() => expect(page().get("main").text()).toContain("Archived conversation m2"))
+  expect(page().get("main").text()).not.toContain("Archived conversation m1")
+  expect(router.currentRoute.value.name).toBe("archived-sessions")
+  expect(router.currentRoute.value.path).toBe("/sessions/archived")
+  expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
+  expect(localStorage.getItem("deskfleet.details-open")).toBe("true")
+})
+
 test("a user without a Team creates one from onboarding and is asked to add a machine", async () => {
   const fake = fakeCentral({ teams: [] })
   mountShell(fake.central, "web")

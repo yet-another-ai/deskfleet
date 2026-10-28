@@ -109,6 +109,16 @@ error on retry. The UI refreshes the catalog and opens the resulting Session.
 
 ## Archive and restore in the backend release
 
+The sidebar footer links to `/sessions/archived`, a dedicated page for the selected
+machine's archived Sessions. The page supports direct navigation and browser history;
+changing machines keeps the archive route and loads the new machine's list. It hides
+the resource details panel and retains the last Conversations destination. Reading a
+Session opens its history without restoring it. The restore action confirms before
+restoring and opening the Session; failures retain the confirmation for retry.
+Rows keep the Session context menu, including Pin/Unpin and Rename. Offline history
+remains readable, while restoration and other daemon mutations require the machine
+online. The page shows loading, empty, and retry states for list reads.
+
 Archive is the normal user action for ending active use of a Session. It is
 reversible and preserves the Session identity, execution context, Worktree files
 (including uncommitted changes and untracked files), queued inputs, configuration,

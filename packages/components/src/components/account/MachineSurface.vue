@@ -29,9 +29,12 @@ onMounted(async () => {
   configureClient(remote.api)
   const route = router.currentRoute.value
   const destination = props.session.takeSessionDestination(props.machine.id)
-  // Account-wide settings survive machine initialization; resource routes belong to the new scope.
+  // Settings and management lists survive initialization; selected resources belong to the new scope.
   if (destination) await router.replace({ name: "session", params: { sessionId: destination } })
-  else if (!route.meta.fullWindow) await router.replace(route.name === "schedules" ? "/schedules" : "/")
+  else if (!route.meta.fullWindow) {
+    const path = route.name === "schedules" ? "/schedules" : route.name === "archived-sessions" ? "/sessions/archived" : "/"
+    await router.replace(path)
+  }
   if (disposed || !root.value) return
   state = createPinia()
   app = createApp(App).provide(accountSessionKey, props.session).provide(appearanceStoreKey, appearance).use(state).use(router).use(i18n)

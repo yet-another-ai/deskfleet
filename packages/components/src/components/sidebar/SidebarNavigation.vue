@@ -19,7 +19,8 @@ const sections = [
 type Section = typeof sections[number]
 /** Named routes that belong under Conversations; Settings and Schedules are excluded. */
 const conversationRouteNames = new Set(["new-session", "session", "workspace", "worktree", "machine-control", "terminal"])
-const activeSection = computed(() => sections.find(section => section.routeName === route.name) ?? sections[0])
+const activeSection = computed(() => sections.find(section => section.routeName === route.name)
+  ?? (conversationRouteNames.has(String(route.name)) ? sections[0] : undefined))
 
 watch(() => route.fullPath, () => {
   // Skip transient unmatched routes during remount (name is briefly undefined at "/").
