@@ -87,7 +87,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
     </div>
     <WorkspaceCreateDialog v-if="addingWorkspace" @created="workspaceCreated" @cancel="addingWorkspace = false" />
 
-    <CollapsibleContent as="ul">
+    <CollapsibleContent as="ul" class="mt-1 flex flex-col gap-1">
       <li>
         <TreeLink
           :to="{ name: 'machine-control', params: { machineId: machine.id } }"
@@ -123,12 +123,19 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
       <li v-if="machine.workspaces.length === 0 && machine.sessions.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
         {{ t("machine.noWorkspaces") }}
       </li>
-      <li v-for="workspace in machine.workspaces" :key="workspace.id">
-        <div class="group flex h-8 items-center gap-2.5 pl-2.5 pr-1 text-ui-text-muted">
-          <Folder :size="16" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
-          <RouterLink :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" class="min-w-0 flex-1 truncate hover:text-ui-text" active-class="text-ui-accent">{{ workspace.name }}</RouterLink>
-        </div>
-        <ul>
+      <CollapsibleRoot v-for="workspace in machine.workspaces" :key="workspace.id" v-slot="{ open }" as="li" default-open class="flex flex-col gap-1">
+        <RouterLink v-slot="{ href, navigate, isActive, isExactActive }" :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" custom>
+          <div class="group/workspace ui-nav-item relative" :class="isActive && 'ui-nav-active'">
+            <a :href="href" :aria-current="isExactActive ? 'page' : undefined" class="flex h-full min-w-0 flex-1 items-center gap-2.5 px-2.5" @click="navigate">
+              <Folder :size="15" :stroke-width="1.75" class="shrink-0 group-hover/workspace:invisible group-focus-within/workspace:invisible" aria-hidden="true" />
+              <span class="truncate">{{ workspace.name }}</span>
+            </a>
+            <CollapsibleTrigger type="button" :aria-label="workspace.name" class="absolute left-1.5 top-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md opacity-0 group-hover/workspace:opacity-100 group-focus-within/workspace:opacity-100">
+              <ChevronRight :size="15" :stroke-width="1.75" class="shrink-0" :class="open && 'rotate-90'" aria-hidden="true" />
+            </CollapsibleTrigger>
+          </div>
+        </RouterLink>
+        <CollapsibleContent as="ul" class="flex flex-col gap-1 empty:hidden">
           <li v-for="terminal in workspace.terminals" :key="terminal.id">
             <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
           </li>
@@ -157,8 +164,8 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
             </SessionContextMenu>
             <p v-if="archiveErrors[session.id]" role="alert" class="m-0 px-2.5 pb-1 pl-6 text-xs text-ui-danger break-words">{{ archiveErrors[session.id] }}</p>
           </li>
-        </ul>
-      </li>
+        </CollapsibleContent>
+      </CollapsibleRoot>
     </CollapsibleContent>
   </CollapsibleRoot>
 </template>

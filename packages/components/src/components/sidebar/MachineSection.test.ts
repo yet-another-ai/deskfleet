@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils"
+import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
 import { expect, test } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
@@ -47,8 +47,8 @@ test.each([
   wrapper.unmount()
 })
 
-test("machine tool consolidation preserves Workspace and Session navigation", async () => {
-  const { wrapper } = await setup({
+test("workspace rows navigate while their icon buttons fold terminals and sessions", async () => {
+  const { wrapper, router } = await setup({
     desktop: true,
     workspaces: [{
       id: "workspace", name: "Project", directories: [{ path: "/project" }],
@@ -62,6 +62,22 @@ test("machine tool consolidation preserves Workspace and Session navigation", as
     ["Workspace shell", "/terminals/workspace-shell"],
     ["Implement feature", "/sessions/session"],
   ])
+  const folder = wrapper.get('button[aria-label="Project"]')
+  await wrapper.get('a[href="/workspaces/workspace"]').trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.name).toBe("workspace")
+  expect(folder.attributes("aria-expanded")).toBe("true")
+  const path = router.currentRoute.value.fullPath
+  expect(folder.attributes("aria-expanded")).toBe("true")
+  await folder.trigger("click")
+  expect(folder.attributes("aria-expanded")).toBe("false")
+  expect(wrapper.find('a[href="/sessions/session"]').exists()).toBe(false)
+  expect(wrapper.find('a[href="/terminals/workspace-shell"]').exists()).toBe(false)
+  expect(router.currentRoute.value.fullPath).toBe(path)
+  await folder.trigger("click")
+  expect(folder.attributes("aria-expanded")).toBe("true")
+  expect(wrapper.get('a[href="/sessions/session"]').text()).toBe("Implement feature")
+  expect(wrapper.get('a[href="/terminals/workspace-shell"]').text()).toBe("Workspace shell")
   expect(wrapper.text()).not.toContain("Machine shell")
   wrapper.unmount()
 })
