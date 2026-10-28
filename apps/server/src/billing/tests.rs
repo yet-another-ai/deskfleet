@@ -115,7 +115,8 @@ async fn checkout_recovery_and_verified_payment_projection() {
         pro_price_id: Some("price_pro".into()),
         go_yearly_price_id: Some("price_go_year".into()),
         pro_yearly_price_id: Some("price_pro_year".into()),
-        portal_configuration_id: Some("bpc_fixture".into()),
+        portal_configuration_id: Some("bpc_month".into()),
+        yearly_portal_configuration_id: Some("bpc_year".into()),
         enterprise_contact_email: None,
     };
     let mut service = BillingService::new(config, "https://web.example.test".into()).unwrap();

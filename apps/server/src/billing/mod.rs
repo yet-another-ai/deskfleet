@@ -292,12 +292,14 @@ impl BillingService {
         let profile = store.billing_profile(team).await?;
         let customer = profile
             .customer_id
-            .ok_or_else(|| ApiError::bad("This Team has no billing account"))?;
-        self.validate_portal().await?;
+            .as_deref()
+            .ok_or_else(|| ApiError::bad("This Team has no billing account"))?
+            .to_owned();
+        let interval = self.subscription_interval(&profile).await?;
+        self.validate_portal(interval).await?;
         let configuration = self
             .config
-            .portal_configuration_id
-            .as_deref()
+            .portal_configuration(interval)
             .ok_or_else(ApiError::internal)?;
         let session = self
             .stripe(
@@ -314,11 +316,36 @@ impl BillingService {
         hosted_url(&session)
     }
 
-    async fn validate_portal(&self) -> Result<()> {
+    /// Portal price changes must stay on one billing interval so Stripe's
+    /// `decreasing_item_amount` schedule compares Go vs Pro amounts only.
+    async fn subscription_interval(
+        &self,
+        profile: &deskfleet_control_store::billing::BillingProfile,
+    ) -> Result<&'static str> {
+        let Some(subscription_id) = profile.subscription_id.as_deref() else {
+            return Ok("month");
+        };
+        let subscription = self
+            .stripe(
+                Method::GET,
+                &format!("subscriptions/{subscription_id}"),
+                vec![],
+                None,
+            )
+            .await?;
+        let price_id = subscription["items"]["data"]
+            .as_array()
+            .and_then(|items| items.first())
+            .and_then(|item| stripe_id(&item["price"]));
+        Ok(price_id
+            .and_then(|id| self.config.interval_for_price(id))
+            .unwrap_or("month"))
+    }
+
+    async fn validate_portal(&self, interval: &str) -> Result<()> {
         let id = self
             .config
-            .portal_configuration_id
-            .as_deref()
+            .portal_configuration(interval)
             .ok_or_else(ApiError::internal)?;
         let config = self
             .stripe(
@@ -328,63 +355,116 @@ impl BillingService {
                 None,
             )
             .await?;
-        let go = self.approved_price("go", "month").await?;
-        let pro = self.approved_price("pro", "month").await?;
-        let go_year = self.approved_price("go", "year").await?;
-        let pro_year = self.approved_price("pro", "year").await?;
-        let updates = &config["features"]["subscription_update"];
-        let allowed = updates["default_allowed_updates"]
-            .as_array()
-            .is_some_and(|items| items.len() == 1 && items[0] == "price");
-        let prices: Vec<&str> = updates["products"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .flat_map(|product| {
-                product["prices"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-            })
-            .collect();
-        let scheduled = updates["schedule_at_period_end"]["conditions"]
-            .as_array()
-            .is_some_and(|conditions| {
-                conditions
-                    .iter()
-                    .any(|c| c["type"] == "decreasing_item_amount")
-            });
-        let shared_product = stripe_id(&go["product"]);
-        let valid = config["active"] == true
-            && updates["enabled"] == true
-            && allowed
-            && updates["proration_behavior"] == "always_invoice"
-            && scheduled
-            && config["features"]["subscription_cancel"]["enabled"] == true
-            && config["features"]["subscription_cancel"]["mode"] == "at_period_end"
-            && config["features"]["invoice_history"]["enabled"] == true
-            && config["features"]["payment_method_update"]["enabled"] == true
-            && go["currency"] == pro["currency"]
-            && go["currency"] == go_year["currency"]
-            && go["currency"] == pro_year["currency"]
-            && shared_product == stripe_id(&pro["product"])
-            && shared_product == stripe_id(&go_year["product"])
-            && shared_product == stripe_id(&pro_year["product"])
-            && go["unit_amount"].as_i64() < pro["unit_amount"].as_i64()
-            && go_year["unit_amount"].as_i64() < pro_year["unit_amount"].as_i64()
-            && prices.len() == 4
-            && prices.contains(&stripe_id(&go).ok_or_else(ApiError::internal)?)
-            && prices.contains(&stripe_id(&pro).ok_or_else(ApiError::internal)?)
-            && prices.contains(&stripe_id(&go_year).ok_or_else(ApiError::internal)?)
-            && prices.contains(&stripe_id(&pro_year).ok_or_else(ApiError::internal)?);
-        if valid {
+        let go = self.approved_price("go", interval).await?;
+        let pro = self.approved_price("pro", interval).await?;
+        if same_interval_portal_valid(&config, &go, &pro) {
             Ok(())
         } else {
             Err(billing_error(
                 "invalid_portal_configuration",
-                "Billing Portal must restrict changes to Go/Pro monthly and yearly Prices, invoice upgrades immediately, and schedule downgrades and cancellation at period end",
+                "Billing Portal must restrict changes to the same-interval Go/Pro Prices, invoice upgrades immediately, and schedule downgrades and cancellation at period end",
             ))
         }
+    }
+}
+
+/// Stripe schedules or invoices Portal price changes from raw `unit_amount`.
+/// Each Portal configuration therefore exposes only one interval's Go and Pro.
+fn same_interval_portal_valid(config: &Value, go: &Value, pro: &Value) -> bool {
+    let updates = &config["features"]["subscription_update"];
+    let allowed = updates["default_allowed_updates"]
+        .as_array()
+        .is_some_and(|items| items.len() == 1 && items[0] == "price");
+    let prices: Vec<&str> = updates["products"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|product| {
+            product["prices"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+        })
+        .collect();
+    let scheduled = updates["schedule_at_period_end"]["conditions"]
+        .as_array()
+        .is_some_and(|conditions| {
+            conditions
+                .iter()
+                .any(|c| c["type"] == "decreasing_item_amount")
+        });
+    let Some(go_id) = stripe_id(go) else {
+        return false;
+    };
+    let Some(pro_id) = stripe_id(pro) else {
+        return false;
+    };
+    config["active"] == true
+        && updates["enabled"] == true
+        && allowed
+        && updates["proration_behavior"] == "always_invoice"
+        && scheduled
+        && config["features"]["subscription_cancel"]["enabled"] == true
+        && config["features"]["subscription_cancel"]["mode"] == "at_period_end"
+        && config["features"]["invoice_history"]["enabled"] == true
+        && config["features"]["payment_method_update"]["enabled"] == true
+        && go["currency"] == pro["currency"]
+        && stripe_id(&go["product"]) == stripe_id(&pro["product"])
+        && go["unit_amount"].as_i64().is_some_and(|go_amount| {
+            pro["unit_amount"]
+                .as_i64()
+                .is_some_and(|pro_amount| go_amount < pro_amount)
+        })
+        && prices.len() == 2
+        && prices.contains(&go_id)
+        && prices.contains(&pro_id)
+}
+
+#[cfg(test)]
+mod portal_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn portal_config(prices: &[&str]) -> Value {
+        json!({
+            "active": true,
+            "features": {
+                "subscription_update": {
+                    "enabled": true,
+                    "default_allowed_updates": ["price"],
+                    "proration_behavior": "always_invoice",
+                    "schedule_at_period_end": {"conditions": [{"type": "decreasing_item_amount"}]},
+                    "products": [{"prices": prices}]
+                },
+                "subscription_cancel": {"enabled": true, "mode": "at_period_end"},
+                "invoice_history": {"enabled": true},
+                "payment_method_update": {"enabled": true}
+            }
+        })
+    }
+
+    #[test]
+    fn portal_accepts_same_interval_go_and_pro_only() {
+        let go = json!({"id":"price_go","currency":"usd","product":"prod","unit_amount":500});
+        let pro = json!({"id":"price_pro","currency":"usd","product":"prod","unit_amount":1500});
+        assert!(same_interval_portal_valid(
+            &portal_config(&["price_go", "price_pro"]),
+            &go,
+            &pro
+        ));
+    }
+
+    #[test]
+    fn portal_rejects_cross_interval_price_lists() {
+        let go = json!({"id":"price_go","currency":"usd","product":"prod","unit_amount":500});
+        let pro = json!({"id":"price_pro","currency":"usd","product":"prod","unit_amount":1500});
+        // Yearly Go is usually a larger unit_amount than monthly Pro; mixing intervals
+        // would invert upgrade/downgrade scheduling under decreasing_item_amount.
+        assert!(!same_interval_portal_valid(
+            &portal_config(&["price_go", "price_pro", "price_go_year", "price_pro_year"]),
+            &go,
+            &pro
+        ));
     }
 }

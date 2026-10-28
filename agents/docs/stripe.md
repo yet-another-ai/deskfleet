@@ -19,16 +19,18 @@ payments, configure all of:
 | `DESKFLEET_STRIPE_PRO_PRICE_ID` | Active monthly recurring Price for Pro |
 | `DESKFLEET_STRIPE_GO_YEARLY_PRICE_ID` | Active yearly recurring Price for Go |
 | `DESKFLEET_STRIPE_PRO_YEARLY_PRICE_ID` | Active yearly recurring Price for Pro |
-| `DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID` | Billing Portal configuration described below |
+| `DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID` | Billing Portal configuration for monthly Go/Pro only |
+| `DESKFLEET_STRIPE_YEARLY_PORTAL_CONFIGURATION_ID` | Billing Portal configuration for yearly Go/Pro only |
 
 All four Prices must belong to the same Product, share the same currency, use
 quantity one, and have a positive fixed amount. Go must be cheaper than Pro for
-each interval. The four Price IDs must be distinct. Go includes 2 GiB and Pro
-20 GiB of TURN per monthly usage period (anchored to the subscription); neither
-limits members, Sessions, or turns. Checkout accepts `interval` of `month` or
-`year` and selects the matching Price. No trials, quantity-based seat charges, or
-metered overage are exposed. Create and validate these objects separately in test
-mode before providing live configuration.
+each interval. The four Price IDs must be distinct, and the two Portal
+configuration IDs must be distinct. Go includes 2 GiB and Pro 20 GiB of TURN per
+monthly usage period (anchored to the subscription); neither limits members,
+Sessions, or turns. Checkout accepts `interval` of `month` or `year` and selects
+the matching Price. No trials, quantity-based seat charges, or metered overage
+are exposed. Create and validate these objects separately in test mode before
+providing live configuration.
 
 Optional Enterprise sales contact (independent of Stripe; works for self-hosters
 too):
@@ -43,18 +45,27 @@ no entitlements; only a server-verified paid invoice can establish paid coverage
 
 ## Billing Portal
 
-Configure the Portal with:
+Create two Portal configurations—one monthly and one yearly—each with:
 
 - `subscription_update.enabled=true` and `default_allowed_updates=["price"]`.
-- Exactly the four configured Go/Pro monthly and yearly Prices on their shared Product.
+- Exactly the two configured Prices for that interval on their shared Product
+  (monthly Go/Pro, or yearly Go/Pro). Do not mix intervals in one configuration:
+  Stripe schedules or invoices using raw `unit_amount`, so a yearly Price is
+  usually larger than a monthly Price and would invert Go↔Pro upgrade/downgrade
+  timing across intervals.
 - `subscription_update.proration_behavior="always_invoice"`.
 - `subscription_update.schedule_at_period_end.conditions` containing
   `{ "type": "decreasing_item_amount" }`.
 - `subscription_cancel.enabled=true` and `mode="at_period_end"`.
 - `invoice_history.enabled=true` and `payment_method_update.enabled=true`.
 
-The server validates this configuration before issuing a Portal session. Stripe
-only supports scheduled price downgrades on the same Product; see
+When opening the Portal, the server selects the configuration that matches the
+Team's current subscription interval. Plan changes inside the Portal therefore
+stay on the same monthly or yearly cadence. Changing billing interval requires
+cancelling (at period end) and starting a new Checkout for the other interval.
+
+The server validates the selected configuration before issuing a Portal session.
+Stripe only supports scheduled price downgrades on the same Product; see
 [Portal configuration](https://docs.stripe.com/customer-management/configure-portal).
 Paid upgrades can take effect after invoice confirmation; downgrades and
 cancellation retain the current paid plan until period end. A failed payment must

@@ -191,7 +191,9 @@ and retain the original subscription time of day.
 - Accepted work and issued relay access retain the lifetimes specified below.
   This continuation is not a billing grace period.
 - Stripe Portal invoices upgrades immediately; new limits require the paid
-  invoice. Downgrades and cancellation take effect at period end. Usage is
+  invoice. Downgrades and cancellation take effect at period end. Portal price
+  changes stay on the subscription's current monthly or yearly interval; changing
+  interval requires cancelling at period end and a new Checkout. Usage is
   preserved within the existing period. Refunds/disputes are operator-managed
   in this release and do not introduce a wallet or automatic credit mechanism.
 
