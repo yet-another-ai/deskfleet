@@ -181,10 +181,7 @@ mod tests {
     }
     #[test]
     fn enterprise_contact_email_is_optional_and_normalized() {
-        assert_eq!(
-            contact_email("DESKFLEET_MISSING_CONTACT").unwrap(),
-            None
-        );
+        assert_eq!(contact_email("DESKFLEET_MISSING_CONTACT").unwrap(), None);
         let email = deskfleet_control_store::normalize_email("Sales@Example.COM").unwrap();
         assert_eq!(email, "sales@example.com");
         assert!(deskfleet_control_store::normalize_email("not-an-email").is_err());
