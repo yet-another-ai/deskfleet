@@ -118,7 +118,8 @@ platform selects the binary. On a Linux build host, for example:
 
 ```sh
 mkdir -p dist/server-image/arm64
-cp target/release/deskfleet-server dist/server-image/arm64/
+host_target=$(mise exec -- rustc --print host-tuple)
+cp "target/$host_target/release/deskfleet-server" dist/server-image/arm64/
 docker build --platform linux/arm64 -f apps/server/Dockerfile \
   --tag deskfleet-server:local dist/server-image
 mise exec -- node scripts/smoke-server-image.ts deskfleet-server:local

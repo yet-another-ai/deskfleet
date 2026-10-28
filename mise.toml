@@ -105,12 +105,24 @@ depends = ["check:scripts", "check:daemon", "check:desktop", "check:rust-tests"]
 
 [tasks.build]
 description = "Build the release server and standalone daemon"
-depends = ["rust:release", "daemon:pack", "web:build"]
+depends = ["rust:release", "web:build"]
+run = "node scripts/build-sea.ts"
 
 [tasks."rust:release"]
 hide = true
-wait_for = ["native:release"]
-run = "cargo build --workspace --release --locked"
+depends = ["install"]
+# napi selects the host target and emits the addon/bindings after Cargo finishes.
+# Build the server in that same invocation instead of a second target tree.
+run = "pnpm --filter @deskfleet/native exec napi build --release --no-js --no-const-enum --dts bindings.d.ts -- --workspace --locked"
+
+[tasks."ci:build"]
+hide = true
+depends = ["build", "ci:desktop-build"]
+
+[tasks."ci:desktop-build"]
+hide = true
+depends = ["rust:release"]
+run = "pnpm --filter @deskfleet/desktop build"
 
 [tasks."native:debug"]
 hide = true

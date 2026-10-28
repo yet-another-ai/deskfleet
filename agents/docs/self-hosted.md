@@ -175,7 +175,8 @@ mise run build
 
 `mise run build` produces:
 
-- `target/release/deskfleet-server` (`.exe` on Windows)
+- `target/<host-triple>/release/deskfleet-server` (`.exe` on Windows; obtain the
+  triple with `mise exec -- rustc --print host-tuple`)
 - `apps/daemon/dist/deskfleet-daemon` (`.exe` on Windows)
 - `apps/web/dist/` for the static Web client
 

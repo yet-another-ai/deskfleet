@@ -24,7 +24,12 @@ a stable `Gate` result for branch protection.
   It installs Electron's Linux sandbox helper with root ownership and mode 4755
   before launching the clients.
 - `.github/workflows/build.yml` builds release artifacts using
-  `mise run build ::: desktop:release-build`, then packages Electron installers.
+  `mise run ci:build`, then packages Electron installers. Its shared Rust task
+  runs one napi-driven Cargo workspace build for the server and native addon,
+  using the host target for both. SEA and Electron bundling consume that addon
+  without compiling it again. The server is read from
+  `target/<host-triple>/release/`, where `rustc --print host-tuple` identifies the
+  native runner's triple.
   Pull requests use a Linux x64 smoke build; main and manual runs use the full
   platform matrix. Packaging keeps Cargo's parallel release codegen: 16 units,
   LTO off, no debug info, and stripped symbols. Each target packages and verifies

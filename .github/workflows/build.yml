@@ -70,8 +70,7 @@ jobs:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
 
       - name: Build the server, daemon, Web client, and Electron bundles
-        # mise treats tokens after the first task as that task's args; use ::: for a second task.
-        run: "mise run build ::: desktop:release-build"
+        run: mise run ci:build
 
       - name: Package unsigned desktop installers
         if: ${{ runner.os != 'macOS' || !inputs.sign_macos }}
@@ -125,7 +124,8 @@ jobs:
             ARM64) arch=arm64 ;;
           esac
           mkdir -p "image-context/$arch"
-          cp target/release/deskfleet-server "image-context/$arch/"
+          host_target=$(mise exec -- rustc --print host-tuple)
+          cp "target/$host_target/release/deskfleet-server" "image-context/$arch/"
           docker build --platform "linux/$arch" -f apps/server/Dockerfile -t deskfleet-server:smoke image-context
           mise exec -- node scripts/smoke-server-image.ts deskfleet-server:smoke
 
@@ -142,7 +142,8 @@ jobs:
             Windows) extension=.exe ;;
             *) extension= ;;
           esac
-          cp "target/release/deskfleet-server$extension" dist/
+          host_target=$(mise exec -- rustc --print host-tuple)
+          cp "target/$host_target/release/deskfleet-server$extension" dist/
           cp "apps/daemon/dist/deskfleet-daemon$extension" dist/
           tar -czf "deskfleet-$PLATFORM.tar.gz" -C dist .
 

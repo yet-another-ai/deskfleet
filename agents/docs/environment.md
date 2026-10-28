@@ -266,6 +266,7 @@ then include the configuration and lockfile changes together.
 | `mise run check-fast` | Run Rust formatting, dependency usage, Clippy, and tests |
 | `mise run test` | Run repository script, daemon, desktop, and Rust tests |
 | `mise run build` | Build the release server and standalone SEA daemon |
+| `mise run ci:build` | Build all release bundles with one shared Rust workspace build |
 | `mise run daemon:pack` | Package the daemon as a standalone SEA executable |
 | `mise run daemon:smoke` | Run the SEA executable alone with no Node on PATH |
 | `mise run native:debug` / `native:release` | Build the napi-rs addon and regenerate TypeScript declarations |
@@ -277,6 +278,13 @@ then include the configuration and lockfile changes together.
 Public tasks compose focused tasks in `mise.toml`. Independent checks can run in
 parallel. Cargo operations sharing `target/` use mise's `wait_for` ordering when
 they appear in the same run, avoiding repeated builds and lock contention.
+
+The full release build uses napi to compile the Cargo workspace once with an
+explicit host target, then emit the addon and its TypeScript declarations.
+`build` and the CI desktop bundle share this preparation task. The server is in
+`target/<host-triple>/release/`; obtain the triple with
+`mise exec -- rustc --print host-tuple`. Standalone `native:release`,
+`daemon:pack`, and `desktop:release-build` keep their addon-only Rust build.
 
 The pnpm workspace contains `apps/daemon`, `apps/desktop`, `apps/web`,
 `packages/client`, `packages/components`, and `crates/node`.
