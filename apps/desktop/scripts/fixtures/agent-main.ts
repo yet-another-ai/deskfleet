@@ -45,48 +45,75 @@ async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promis
     }
   }
   const diff = () => document.querySelector<HTMLElement>("[data-git-diff]")
+  const changes = () => document.querySelector<HTMLElement>('aside[aria-label="Changes"]')
   async function open(path: string, kind: string, expected: string): Promise<void> {
     const row = () => [...document.querySelectorAll<HTMLButtonElement>("button[data-git-path][data-git-kind]")]
       .find(element => element.dataset.gitPath === path && element.dataset.gitKind === kind)
     await until(() => !!row() && !row()!.disabled, `Git ${kind} ${path}`)
     row()!.click()
     await until(() => !!diff()?.innerText.includes(expected), `Git ${kind} preview`)
-    const dialog = diff()!
-    const style = getComputedStyle(dialog)
-    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
-    const width = Math.min(70 * rem, innerWidth - 2 * rem)
-    if (Math.abs(dialog.getBoundingClientRect().width - width) > 1 || style.padding !== "0px" || style.display !== "flex" || style.flexDirection !== "column") {
-      throw new Error(`Git diff layout must be wide, unpadded, and column flex; got ${style.width}, padding ${style.padding}, ${style.display}/${style.flexDirection}`)
+    const view = diff()!
+    const aside = changes()
+    const style = getComputedStyle(view)
+    if (!aside?.contains(view) || view.closest("[role=dialog]") || view.getAttribute("role") === "dialog" || style.display !== "flex" || style.flexDirection !== "column") {
+      throw new Error(`Git diff must render inline in the Changes panel as a column; got ${style.display}/${style.flexDirection}`)
+    }
+    const viewBox = view.getBoundingClientRect()
+    const asideBox = aside.getBoundingClientRect()
+    if (viewBox.left < asideBox.left - 1 || viewBox.right > asideBox.right + 1) {
+      throw new Error("Inline Git diff must stay within the Changes panel width")
     }
   }
   async function close(): Promise<void> {
-    const dialog = document.querySelector<HTMLElement>("[role=dialog][data-state=open]")
-    if (!dialog) throw new Error("Git diff dialog was missing")
-    const closeButton = dialog.querySelector<HTMLButtonElement>('button[aria-label="Close diff"]')
+    const view = diff()
+    if (!view) throw new Error("Git diff was missing")
+    const closeButton = view.querySelector<HTMLButtonElement>('button[aria-label="Close diff"]')
     if (!closeButton) throw new Error("Git diff close button was missing")
     closeButton.click()
-    await until(() => !diff(), "Git diff dialog close")
+    await until(() => !diff(), "Git diff close")
+  }
+  async function setTree(open: boolean): Promise<void> {
+    const toggle = () => document.querySelector<HTMLButtonElement>("[data-git-tree-toggle]")
+    await until(() => !!toggle() && toggle()!.getAttribute("aria-disabled") !== "true", "Git file tree toggle")
+    if ((toggle()!.getAttribute("aria-pressed") === "true") === open) return
+    toggle()!.click()
+    await until(() => (toggle()!.getAttribute("aria-pressed") === "true") === open && !!document.querySelector("[data-git-tree]") === open, open ? "Git file tree open" : "Git file tree closed")
   }
 
   if (phase !== "live") {
-    if (!document.querySelector('aside[aria-label="Changes"]')) throw new Error("Changes panel was missing")
+    if (!changes()) throw new Error("Changes panel was missing")
     if (phase === "initial") {
+      if (document.querySelector("[data-git-tree]")) throw new Error("File tree must stay hidden until the toggle opens it")
       await open("README.md", "staged", "+Smoke staged baseline")
       await close()
       await open("new-file.txt", "untracked", "+Smoke untracked file")
       await close()
     }
     await open("README.md", "unstaged", phase === "initial" ? "+Smoke diff first version" : "+Smoke diff live version")
+    if (phase === "initial") {
+      await setTree(true)
+      const split = document.querySelector<HTMLElement>("[data-git-split]")
+      const tree = document.querySelector<HTMLElement>("[data-git-tree]")
+      const view = diff()
+      const splitStyle = split ? getComputedStyle(split) : undefined
+      if (!split || !tree || !view || splitStyle!.display !== "flex" || splitStyle!.flexDirection !== "row" || tree.getBoundingClientRect().right > view.getBoundingClientRect().left + 1) {
+        throw new Error("Open file tree must sit to the left of the inline diff")
+      }
+      await open("new-file.txt", "untracked", "+Smoke untracked file")
+      await open("README.md", "unstaged", "+Smoke diff first version")
+      await setTree(false)
+    }
   } else {
     await until(() => !!diff()?.innerText.includes("+Smoke diff live version") && !diff()!.innerText.includes("+Smoke diff first version"), "Live Git diff refresh without agent events")
   }
-  const dialog = diff()!
-  const content = dialog.querySelector<HTMLElement>(".git-diff-content")!
-  const header = dialog.querySelector("header")!
+  const view = diff()!
+  const aside = changes()!
+  const content = view.querySelector<HTMLElement>(".git-diff-content")!
+  const header = view.querySelector("header")!
   const headerTop = header.getBoundingClientRect().top
   content.scrollTop = 100
-  if (content.scrollTop !== 100 || dialog.scrollHeight > dialog.clientHeight + 1 || Math.abs(header.getBoundingClientRect().top - headerTop) > 1 || dialog.getBoundingClientRect().height > innerHeight - 32 + 1) {
-    throw new Error("Long Git diffs must scroll inside the patch while the header stays visible within the viewport")
+  if (content.scrollTop !== 100 || view.scrollHeight > view.clientHeight + 1 || Math.abs(header.getBoundingClientRect().top - headerTop) > 1 || view.getBoundingClientRect().bottom > aside.getBoundingClientRect().bottom + 1) {
+    throw new Error("Long Git diffs must scroll inside the patch while the header stays visible within the Changes panel")
   }
   content.scrollTop = 0
 }

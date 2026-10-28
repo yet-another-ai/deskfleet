@@ -79,9 +79,9 @@ const tabTitle = (index: number) => mermaidSidebarTabs.value.length > 1 ? `${t("
           </div>
         </TabsList>
       </div>
-      <TabsContent value="changes" class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
-        <GitChanges v-if="worktree && !unavailable" :key="worktree.session.id" :session-id="worktree.session.id" :enabled="worktree.machine.online" />
-        <p v-else class="m-0 text-[13px] text-ui-text-muted">{{ unavailable ?? t('panel.noWorktree') }}</p>
+      <TabsContent value="changes" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <GitChanges v-if="worktree && !unavailable" :key="worktree.session.id" class="min-h-0 min-w-0 flex-1" :session-id="worktree.session.id" :enabled="worktree.machine.online" />
+        <p v-else class="m-0 px-4 pt-3 text-[13px] text-ui-text-muted">{{ unavailable ?? t('panel.noWorktree') }}</p>
       </TabsContent>
       <TabsContent v-for="tab in mermaidSidebarTabs" :key="tab.id" :value="tab.id" data-mermaid-sidebar-view class="flex min-h-0 flex-1 flex-col p-2">
         <MermaidViewer :code="tab.code" :source="tab.source" mode="sidebar" class="min-h-0 flex-1" />
@@ -91,9 +91,9 @@ const tabTitle = (index: number) => mermaidSidebarTabs.value.length > 1 ? `${t("
       <div class="titlebar-overlay-inset app-drag flex h-12 shrink-0 items-center pl-4">
         <h2 class="m-0 text-[13px] font-medium">{{ t('panel.changes') }}</h2>
       </div>
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1">
-        <GitChanges v-if="worktree && !unavailable" :key="worktree.session.id" :session-id="worktree.session.id" :enabled="worktree.machine.online" />
-        <p v-else class="m-0 text-[13px] text-ui-text-muted">{{ unavailable ?? t('panel.noWorktree') }}</p>
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <GitChanges v-if="worktree && !unavailable" :key="worktree.session.id" class="min-h-0 min-w-0 flex-1" :session-id="worktree.session.id" :enabled="worktree.machine.online" />
+        <p v-else class="m-0 px-4 pt-1 text-[13px] text-ui-text-muted">{{ unavailable ?? t('panel.noWorktree') }}</p>
       </div>
     </template>
   </aside>
