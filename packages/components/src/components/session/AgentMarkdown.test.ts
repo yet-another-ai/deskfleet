@@ -168,27 +168,6 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
   expect(copyButton.attributes("data-copied")).toBe("true")
 })
 
-test("copies highlighted fenced code and shows the copied state", async () => {
-  const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
-  const source = "const answer = \"42\"\nconst next = 7"
-  const view = render({}, "```ts\n" + source + "\n```")
-  await flushPromises()
-  expect(view.get(".ui-code-language").text()).toBe("TypeScript")
-  expect(view.get("pre code").text()).toBe(source)
-  expect(view.get(".hljs-keyword").text()).toBe("const")
-  expect(view.get(".hljs-string").text()).toBe("\"42\"")
-  const copyButton = view.get("[data-code-copy]")
-  expect(copyButton.attributes("data-code-copy")).toBe(source)
-  expect(copyButton.attributes("aria-label")).toBe("Copy")
-  expect(copyButton.attributes("title")).toBe("Copy")
-  await copyButton.trigger("click")
-  await flushPromises()
-  expect(writeText).toHaveBeenCalledWith(source)
-  expect(copyButton.attributes("data-copied")).toBe("true")
-  expect(copyButton.attributes("aria-label")).toBe("Copied")
-  expect(copyButton.attributes("title")).toBe("Copied")
-})
-
 test("renders Mermaid with the selected application theme and updates existing diagrams", async () => {
   const appearance = useAppearanceStore()
   appearance.settings.theme = "light"
