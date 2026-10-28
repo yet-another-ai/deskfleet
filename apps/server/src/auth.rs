@@ -275,8 +275,8 @@ pub async fn logout(req: HttpRequest, state: web::Data<AppState>) -> Result<Http
         .store
         .revoke_user_sessions(&auth.user.id, Some(&auth.id))
         .await?;
-    state.hub.revoke(peers, "logout").await;
-    state.hub.disconnect_login(&auth.id).await;
+    state.hub.revoke(peers, "logout").await?;
+    state.hub.disconnect_login(&auth.id).await?;
     Ok(cleared(&state))
 }
 

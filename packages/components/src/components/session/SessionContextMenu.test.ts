@@ -5,6 +5,7 @@ import { h } from "vue"
 import { createMemoryHistory, createRouter, RouterLink } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
+import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
 import SessionContextMenu from "./SessionContextMenu.vue"
 
 let wrapper: VueWrapper | undefined
@@ -41,23 +42,47 @@ test.each([false, true])("right-click opens a session menu without navigating (s
   const { router, row } = await render(selected)
   await row.trigger("contextmenu", { button: 2, clientX: 30, clientY: 40 }); await flushPromises()
   expect(page().get('[role="menu"]').attributes("aria-label")).toBe("Session actions")
-  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Rename session", "Archive session"])
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Pin session", "Rename session", "Archive session"])
   expect(router.currentRoute.value.params.sessionId).toBe(selected ? "30" : "31")
   await page().get('[role="menu"]').trigger("keydown", { key: "Escape" }); await flushPromises()
   expect(page().find('[role="menu"]').exists()).toBe(false)
   await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
 })
 
-test("offline sessions expose disabled actions without opening dialogs", async () => {
+test("offline sessions can be pinned while session mutations remain disabled", async () => {
   const { row, rename, archive } = await render(false, true)
   await row.trigger("contextmenu", { button: 2 }); await flushPromises()
-  for (const action of page().findAll('[role="menuitem"]')) {
+  expect(item("Pin session").attributes("data-disabled")).toBeUndefined()
+  for (const action of [item("Rename session"), item("Archive session")]) {
     expect(action.attributes("data-disabled")).toBeDefined()
     await action.trigger("click")
   }
   expect(page().find('[role="dialog"]').exists()).toBe(false)
   expect(rename).not.toHaveBeenCalled()
   expect(archive).not.toHaveBeenCalled()
+  await item("Pin session").trigger("click"); await flushPromises()
+  expect(usePinnedSessionsStore().isPinned("local-daemon", "30")).toBe(true)
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+})
+
+test("pinning and unpinning target the clicked session without navigation or confirmation", async () => {
+  const { router, row } = await render()
+  const pins = usePinnedSessionsStore()
+  const pin = vi.spyOn(pins, "pin")
+  const unpin = vi.spyOn(pins, "unpin")
+  await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  await item("Pin session").trigger("click"); await flushPromises()
+  expect(pin).toHaveBeenCalledExactlyOnceWith("local-daemon", "30", "Investigate failing checks")
+  expect(pins.isPinned("local-daemon", "30")).toBe(true)
+  expect(page().find('[role="menu"]').exists()).toBe(false)
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  expect(router.currentRoute.value.params.sessionId).toBe("31")
+  await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toContain("Unpin session")
+  await item("Unpin session").trigger("click"); await flushPromises()
+  expect(unpin).toHaveBeenCalledExactlyOnceWith("local-daemon", "30")
+  expect(pins.isPinned("local-daemon", "30")).toBe(false)
+  expect(router.currentRoute.value.params.sessionId).toBe("31")
 })
 
 test.each([{ key: "F10", shiftKey: true }, { key: "ContextMenu" }])("keyboard context menu supports $key and Escape returns focus", async keys => {

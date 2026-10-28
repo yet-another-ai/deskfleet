@@ -155,6 +155,10 @@ closes windows to the tray; quitting the application stops its daemon. Standalon
 SEA installations run independently. SIGINT/SIGTERM close listeners, providers,
 peers, and PTYs, preserve history, and release discovery after cleanup.
 
+Local IPC clients treat an end-of-stream as a disconnect even when outgoing
+writes are still pending, and reject unanswered requests. A shutdown response
+acknowledges the request; discovery remains owned until cleanup completes.
+
 ## Workspace and Session management
 
 Backend machine RPC authorizes `catalogList`, `directoryList`,

@@ -56,6 +56,22 @@ normal journal synchronization updates other clients and retained central histor
 The persisted `titleCustomized` flag makes a user rename take precedence over later
 ACP `session_info_update` titles, including after daemon restart or restore.
 
+### Pinned Sessions
+
+The Session context menu offers Pin and Unpin, including for archived Sessions and
+offline machines. Pinned Sessions appear together above Workspaces in the sidebar;
+their original Workspace or machine association is unchanged. The section is hidden
+when there are no visible pins. Opening a pin switches to its owning machine when
+needed, then opens that Session in the machine's isolated application scope.
+
+Pins are personal preferences stored on the current device, scoped by server,
+account, and Team. Each entry uses the central machine ID together with the local
+Session ID, so equal Session IDs on different machines remain distinct. Pinning
+does not mutate the daemon or synchronize preferences between devices. The active
+machine supplies live titles; other machines use retained central Session metadata
+with a cached title while history is unavailable. Removed machines are not shown.
+Embedded demos keep their pins in memory so separate demonstrations stay independent.
+
 ### Forking a conversation
 
 The Session menu offers Fork when the provider advertises `session/fork`. Forking
@@ -92,6 +108,17 @@ fall back to a blank conversation. A rejection before allocation remains an
 error on retry. The UI refreshes the catalog and opens the resulting Session.
 
 ## Archive and restore in the backend release
+
+The sidebar footer links to `/sessions/archived`, a dedicated page for the selected
+machine's archived Sessions. The page supports direct navigation and browser history;
+changing machines keeps the archive route and loads the new machine's list. It hides
+the resource details panel and retains the last Conversations destination within the
+mounted machine scope. A fresh machine scope resets that destination to New session.
+Reading a Session opens its history without restoring it. The restore action confirms
+before restoring and opening the Session; failures retain the confirmation for retry.
+Rows keep the Session context menu, including Pin/Unpin and Rename. Offline history
+remains readable, while restoration and other daemon mutations require the machine
+online. The page shows loading, empty, and retry states for list reads.
 
 Archive is the normal user action for ending active use of a Session. It is
 reversible and preserves the Session identity, execution context, Worktree files
@@ -289,7 +316,7 @@ ownership, lookup, and active-resource constraints.
 | `agent_runs` | `(session_id, generation)` | Provider process state and start/end timestamps/error |
 | `agent_commands` | `id`; canonical `operation_id` | Immutable request audit and mutable receipt/outcome |
 | `agent_inputs` | `id` | Content/author, submission command, acceptance sequence, requested and actual delivery, dispatch command/actor |
-| `agent_turns` | `id` | Initial input/dispatch command, run generation, execution state, stop reason |
+| `agent_turns` | `id` | Initial input/dispatch command, run generation, execution state, stop reason, provider-reported token usage |
 | `agent_permissions` | `id` | Original ACP request/options, run/turn, winning decision command/actor |
 | `agent_events` | `(session_id, seq)` | Ordered domain transitions and original ACP notifications |
 
@@ -315,6 +342,15 @@ Turns are `starting`, `running`, `cancelling`, `completed`, `cancelled`,
 `interrupted`, or `failed`. Permissions are `pending`, `resolved`, or `cancelled`.
 Selecting a reject option is a resolved decision; cancellation means the request
 is no longer live.
+
+When an ACP `session/prompt` response includes `usage`, the daemon saves that
+original object on the turn, including input/output totals, optional cache and
+reasoning counts, and metadata. Usage commits with the turn's terminal state and
+matching event, including when the provider returns `cancelled`. An omitted or
+null usage object remains absent rather than becoming zero; reported zero counts
+are preserved. Turn usage survives snapshot reads, history replay, daemon restart,
+and central replication through the existing JSON records. Context-window
+`usage_update` snapshots do not supply turn consumption or fill missing counts.
 
 ### Transaction boundaries
 

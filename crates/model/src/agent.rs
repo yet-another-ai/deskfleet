@@ -268,6 +268,9 @@ pub struct AgentTurn {
     pub ended_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_reason: Option<String>,
+    /// Original ACP prompt-response token usage for this turn, when reported.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }

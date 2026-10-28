@@ -10,6 +10,7 @@ import { accountSessionKey, type AccountSession } from "../../composables/useAcc
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { appearanceStoreKey, useAppearanceStore } from "../../stores/appearance.ts"
+import { useLayoutStore } from "../../stores/layout.ts"
 
 // The parent keys this component by machine, so each machine gets a fresh mount.
 const props = defineProps<{ host: DeskfleetDesktopApi; session: AccountSession; machine: Machine }>()
@@ -24,13 +25,21 @@ let disposed = false
 // Every store and cache is scoped to one machine so equal local IDs on two machines never meet.
 onMounted(async () => {
   await router.isReady()
-  const route = router.currentRoute.value
-  // Account-wide settings survive machine initialization; resource routes belong to the new scope.
-  if (!route.meta.fullWindow) await router.replace(route.name === "schedules" ? "/schedules" : "/")
-  if (disposed || !root.value) return
+  if (disposed || !root.value || props.session.machineId.value !== props.machine.id) return
   remote = remoteMachineClient(props.host, props.session.central, props.machine)
   configureClient(remote.api)
+  const route = router.currentRoute.value
+  const destination = props.session.takeSessionDestination(props.machine.id)
+  // Settings and management lists survive initialization; selected resources belong to the new scope.
+  if (destination) await router.replace({ name: "session", params: { sessionId: destination } })
+  else if (!route.meta.fullWindow) {
+    const path = route.name === "schedules" ? "/schedules" : route.name === "archived-sessions" ? "/sessions/archived" : "/"
+    await router.replace(path)
+  }
+  if (disposed || !root.value) return
   state = createPinia()
+  // Management lists preserve their route, but cannot reuse another machine's resource destination.
+  useLayoutStore(state).conversationPath = "/"
   app = createApp(App).provide(accountSessionKey, props.session).provide(appearanceStoreKey, appearance).use(state).use(router).use(i18n)
   if (vaporInteropPlugin) app.use(vaporInteropPlugin)
   app.mount(root.value)

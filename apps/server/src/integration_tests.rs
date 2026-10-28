@@ -126,7 +126,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
             send,
             shutdown,
         )
-        .await;
+        .await
+        .unwrap();
     let (send, mut outside_roster) = tokio::sync::mpsc::channel(128);
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
@@ -138,7 +139,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
             send,
             shutdown,
         )
-        .await;
+        .await
+        .unwrap();
     let path = format!("/api/teams/{team_id}/machines");
     assert_eq!(
         call!(get, &path, outside_token, &json!({})).status(),
@@ -337,7 +339,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
     state
         .hub
         .add_daemon(machine_id, "fixture", send, shutdown)
-        .await;
+        .await
+        .unwrap();
     let hub = state.hub.clone();
     let machine = machine_id.to_owned();
     let worker = actix_web::rt::spawn(async move {

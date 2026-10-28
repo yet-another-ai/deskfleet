@@ -50,6 +50,8 @@ export class DaemonClient {
     this.#socket = createConnection(discovery.endpoint)
     this.#socket.setEncoding("utf8")
     this.#socket.on("data", (chunk: string) => this.#receive(chunk))
+    // EOF ends responses even while buffered writes delay the socket's close.
+    this.#socket.on("end", () => this.#end(new Error("The local daemon disconnected")))
     this.#socket.on("error", (error: NodeJS.ErrnoException) => this.#end(disconnectError(error)))
     this.#socket.on("close", () => this.#end(new Error("The local daemon disconnected")))
   }

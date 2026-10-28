@@ -17,6 +17,7 @@ async function setup(path = "/") {
     routes: [
       { path: "/", name: "new-session", component: {} },
       { path: "/schedules/:scheduleId?", name: "schedules", component: {} },
+      { path: "/sessions/archived", name: "archived-sessions", component: {}, meta: { hideDetails: true } },
       { path: "/sessions/:sessionId", name: "session", component: {} },
       { path: "/workspaces/:workspaceId", name: "workspace", component: {} },
       { path: "/worktrees/:worktreeId", name: "worktree", component: {} },
@@ -93,6 +94,26 @@ test("falls back to New session when opened directly on a schedule", async () =>
   await sectionLink("Conversations").trigger("click")
   await flushPromises()
   expect(router.currentRoute.value.fullPath).toBe("/")
+})
+
+test("Archived sessions has no active capsule and preserves the previous conversation destination", async () => {
+  const conversation = "/sessions/session-42?tab=changes#reply-7"
+  const router = await setup(conversation)
+  await router.push("/sessions/archived"); await flushPromises()
+  expect(sectionLink("Conversations").attributes("aria-current")).toBeUndefined()
+  expect(sectionLink("Schedules").attributes("aria-current")).toBeUndefined()
+  expect(sectionLink("Conversations").attributes("href")).toBe(conversation)
+  expect(window.localStorage.getItem("deskfleet.conversation-path")).toBe(conversation)
+  await sectionLink("Conversations").trigger("click"); await flushPromises()
+  expect(router.currentRoute.value.fullPath).toBe(conversation)
+})
+
+test("opening Archived sessions directly returns Conversations to New session", async () => {
+  const router = await setup("/sessions/archived")
+  expect(sectionLink("Conversations").attributes("aria-current")).toBeUndefined()
+  expect(sectionLink("Conversations").attributes("href")).toBe("/")
+  await sectionLink("Conversations").trigger("click"); await flushPromises()
+  expect(router.currentRoute.value.name).toBe("new-session")
 })
 
 test.each([

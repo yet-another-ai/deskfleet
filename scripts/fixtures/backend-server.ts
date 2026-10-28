@@ -10,7 +10,7 @@ import { createAuthFixture } from "./backend-auth.ts"
 import { until } from "./backend-peer.ts"
 
 /** Starts the shipped server binary against the supplied test database, without resetting it. */
-export async function startBackendFixture(options: { databaseUrl?: string; binary?: string; returnTo?: string[]; allowedOrigins?: string[] } = {}) {
+export async function startBackendFixture(options: { databaseUrl?: string; binary?: string; publicUrl?: string; returnTo?: string[]; allowedOrigins?: string[] } = {}) {
   const databaseUrl = options.databaseUrl ?? process.env.TEST_DATABASE_URL
   assert.ok(databaseUrl, "Set TEST_DATABASE_URL to an isolated PostgreSQL test database")
   const root = fileURLToPath(new URL("../../", import.meta.url))
@@ -20,14 +20,15 @@ export async function startBackendFixture(options: { databaseUrl?: string; binar
   const port = (probe.address() as AddressInfo).port
   await new Promise<void>((resolve, reject) => probe.close(error => error ? reject(error) : resolve()))
   const backend = `http://localhost:${port}`
+  const publicUrl = options.publicUrl ?? backend
   const mailDirectory = await mkdtemp(join(tmpdir(), "deskfleet-auth-smoke-"))
-  const webOrigin = options.allowedOrigins?.[0] ?? backend
+  const webOrigin = options.allowedOrigins?.[0] ?? publicUrl
   const auth = createAuthFixture(mailDirectory, webOrigin)
   let diagnostics = ""
   function launch() {
     const child = spawn(binary, [], {
       cwd: root, stdio: ["ignore", "pipe", "pipe"], env: {
-        ...process.env, DATABASE_URL: databaseUrl, DESKFLEET_BIND_ADDR: `127.0.0.1:${port}`, DESKFLEET_PUBLIC_URL: backend,
+        ...process.env, DATABASE_URL: databaseUrl, DESKFLEET_BIND_ADDR: `127.0.0.1:${port}`, DESKFLEET_PUBLIC_URL: publicUrl,
         DESKFLEET_AUTH_WEB_URL: webOrigin, DESKFLEET_MAIL_DIRECTORY: mailDirectory, DESKFLEET_SMTP_HOST: undefined,
         DESKFLEET_DEPLOYMENT_MODE: "self-hosted", DESKFLEET_STRIPE_SECRET_KEY: undefined, DESKFLEET_STRIPE_WEBHOOK_SECRET: undefined,
         DESKFLEET_STRIPE_GO_PRICE_ID: undefined, DESKFLEET_STRIPE_PRO_PRICE_ID: undefined, DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID: undefined,

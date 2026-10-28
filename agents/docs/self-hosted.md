@@ -3,6 +3,8 @@
 This guide is the production deployment of deskfleet's central API. It covers
 the `deskfleet-server` process, PostgreSQL, an SMTP relay, a TLS reverse
 proxy, an optional TURN relay, and the separately hosted Web client.
+For hosted plan enforcement and the official v0.1.0 trial, see the
+[hosted deployment checklist](hosted-deployment.md).
 
 The [server guide](../../apps/server/README.md) owns the HTTP API and local
 configuration. The [development environment](environment.md#local-docker-compose)
@@ -12,12 +14,30 @@ credentials, and the API process is not one of the containers.
 
 ## What this release runs
 
-One operating-system process of `deskfleet-server` speaks plain HTTP. Actix
-workers inside that process share one in-memory socket router and one pending
-SDP table. A second process, container replica, or host does not share that
-state. Live socket routing and unfinished SDP exchanges are process-local, so
-this release runs a single API instance. More instances need shared routing
-first.
+One or more `deskfleet-server` processes speak plain HTTP behind the same
+reverse proxy or load balancer. Each process owns its WebSockets. PostgreSQL
+shares machine-route ownership, cross-instance requests/responses, client events,
+revocations, and SDP negotiation state. HTTP requests and WebSockets do not need
+to reach the same instance; sticky sessions are not required.
+
+Use the same read-write `DATABASE_URL`, stable `DESKFLEET_PUBLIC_URL`, and
+authentication, billing, and ICE configuration on every instance. Each process
+generates its own internal routing identity, so no replica-ID environment
+variable or additional broker is needed. PostgreSQL process leases expire after
+30 seconds; expired owners are no longer advertised as online. A replacement
+daemon connection fences the previous socket's responses and cleanup.
+
+Routing messages expire after 120 seconds and are consumed at most once. An API
+crash can interrupt a pending RPC even after the daemon accepted its command;
+inspect the operation receipt before retrying. PostgreSQL outages stop routing
+and close signaling sockets for reconnect. They do not revoke established
+WebRTC grants or stop agents and terminals on the daemon.
+
+Daemon sockets reconcile peer grants from PostgreSQL every 20 seconds. A
+revocation whose broadcast was lost is applied at the next successful
+reconciliation; active grants are retained. This recovery requires a working
+database and signaling connection. Reconnecting daemons also receive a fresh
+reconciliation at connection setup.
 
 The process does not terminate TLS, serve the Vue application, store files, or
 run agents. Daemons stay on the computers they enroll. The API authorizes
@@ -29,18 +49,25 @@ notifications. There is no object store. The tables are the `cp_*` schema create
 in the connection's search path (normally `public`). Startup applies them before
 the listener opens.
 
-| Stored on the API's PostgreSQL database | Stays on the enrolled machine |
+| Durable central records | Machine-owned execution data |
 | --- | --- |
-| Verified user profiles, password hashes, and Passkey public credentials | Agent CLI credentials and provider environment values |
+| Verified user profiles, password hashes, and Passkey public credentials | Agent CLI credential files |
 | Login-session, machine, invitation, and exchange-token hashes | Plaintext machine credential (`central.json`) |
 | Teams, roles, and invitations | Workspace files, Git worktrees, and terminal transcripts |
-| Machine enrollment, catalog snapshot, and display metadata for providers | Provider binary paths |
+| Machine enrollment, catalog snapshot, and display metadata for providers | Provider executable paths and environment configuration |
 | Agent session snapshots, event pages, and command audit | Desktop media |
 
-Stored provider rows keep id, template, name, and icon. Template rows keep id
-and name. Binary paths and environment values are dropped. Terminal output is
-never uploaded. A central backup therefore cannot rebuild a machine's working
-directories, shells, or provider secrets.
+Synchronized provider rows keep id, template, name, and icon. Template rows keep
+id and name. These catalog rows omit binary paths and environment values.
+Cross-instance management RPCs still carry operation parameters and results,
+including provider environment values, through `cp_realtime_messages`. Those
+payloads have a 120-second expiry and are deleted on consumption or periodic
+expiry cleanup; the router does not log them. Database snapshots and backups can
+retain those payloads beyond their live-table lifetime and must be treated as
+containing sensitive operation data.
+
+Terminal output is never uploaded. A central backup cannot reconstruct a
+machine's complete working directories, shells, or provider configuration.
 
 `GET /healthz` is unauthenticated process liveness. The JSON body is
 `status` (`ok`), `version` (the server package version), and
@@ -53,7 +80,8 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
 
 ## Explicitly unsupported
 
-- More than one API process. In-memory routing is not shared.
+- API instances using different databases or public service identities for one
+  installation.
 - A production Compose file. `compose.yaml` is the local development dependency
   stack only; the server container image is described in the server guide.
 - TLS inside `deskfleet-server`. The listener is HTTP. The binary does not read
@@ -73,7 +101,7 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
 
 ## Prerequisites
 
-- PostgreSQL 17 or later, the version used by development and CI. The server
+- PostgreSQL 17 or later; development and CI currently use 18.6. The server
   does not probe the major version. The connected role needs to create and
   modify tables in its search path.
 - An SMTP relay with STARTTLS and credentials, for verification and recovery mail.
@@ -82,16 +110,18 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
 - A TURN server that implements the REST credential mechanism, when peers
   cannot connect directly. STUN is optional.
 - The `deskfleet-server` binary for the host, and a static build of the Web
-  client if browsers will use it. Build the daemon and Electron for the
-  computers that execute agents; they do not run on the API host.
+  client for browser use and Electron authentication. Build the daemon and
+  Electron for the computers that execute agents; they do not run on the API host.
 - An accurate API host clock for session, challenge and entitlement deadlines.
 
 Build the API from this repository. CI compiles the same server and daemon
 binaries for Linux x64, Linux arm64, macOS arm64, and Windows x64, and the
 Linux x64 job also uploads a Web client built without
 `VITE_DESKFLEET_SERVER_URL` (that build calls the origin that serves the page).
-Those uploads are workflow artifacts kept for 14 days. They are not a hosted
-release of the API.
+Those uploads are workflow artifacts kept for 14 days. Version-tag builds also
+publish an API container image and draft release archives; the Web build remains
+a workflow artifact. Neither workflow deploys the API or Web application. See
+[tagged releases](ci.md#tagged-releases).
 
 ## Recommended layout
 
@@ -105,7 +135,7 @@ browsers, Electron, daemons
         |  HTTPS and WSS
         v
 TLS reverse proxy
-        |-- /api and /healthz --> 127.0.0.1:8080  deskfleet-server (one process)
+        |-- /api and /healthz --> deskfleet-server instance(s)
         |-- everything else   --> apps/web/dist   (omit this if the Web app has its own origin)
         |
         +--> PostgreSQL (read-write URL in DATABASE_URL)
@@ -129,7 +159,8 @@ requirement and does not need Node, mise, or a source checkout at runtime.
 Stopping it with SIGINT or SIGTERM uses Actix Web's graceful shutdown. Daemons
 reconnect and receive peer grants that are still valid in PostgreSQL.
 Established WebRTC keeps working until revocation or the grant's original
-24-hour deadline. A negotiation that was only in memory has to be started again.
+24-hour deadline. Completed SDP answers are shared between instances. A crash
+during an unfinished exchange can still require a new peer authorization.
 
 ## Build
 
@@ -170,7 +201,7 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes |  | `postgres://` or `postgresql://` URL, including credentials, database name, and any driver options such as `sslmode`. Empty is rejected. Other schemes are rejected. There is no separate pool-size or database-TLS variable. |
 | `DESKFLEET_BIND_ADDR` | no | `127.0.0.1:8080` | `IP:port` of the plain HTTP listener. A hostname is invalid. |
-| `DESKFLEET_PUBLIC_URL` | no | `http://127.0.0.1:8080` | External origin and the server identity (`serverId`). Use an `https` origin with no path and no trailing slash. The raw string is what daemons store. |
+| `DESKFLEET_PUBLIC_URL` | no | `http://localhost:8080` | External origin and the server identity (`serverId`). Use an `https` origin with no path and no trailing slash. The raw string is what daemons store. |
 | `DESKFLEET_TRUSTED_PROXY_IPS` | behind a proxy | empty | Comma-separated exact proxy IPs allowed to supply `X-Real-IP` for authentication rate limits. |
 | `DESKFLEET_AUTH_WEB_URL` | for split hosts | first Web origin or API origin | Trusted origin serving `/auth/*`, verification links and Passkeys. |
 | `DESKFLEET_WEBAUTHN_RP_ID` | no | Web hostname | Stable Passkey relying-party ID. |
@@ -267,12 +298,13 @@ proxy's read and idle timeouts above 60 seconds.
 JSON bodies and WebSocket frames are limited to 64 MiB. Set the proxy's request
 body limit to at least 64 MiB. History uploads use `POST /api/daemon/history`.
 
-CORS allows `GET`, `POST`, `PATCH`, and `DELETE`, and the headers
-`authorization` and `content-type`. Preflight caching is 3600 seconds. An
-`Origin` that is not in `DESKFLEET_WEB_ORIGINS` is not refused by the API; the
-CORS headers are omitted and the browser rejects the response. Daemons and
-Electron's main process are not affected. Same-origin Web hosting does not need
-its own origin listed. There is no `*` origin. Credentialed CORS is not enabled.
+CORS allows `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`, and the headers
+`authorization`, `content-type`, and `x-csrf-token`. Preflight caching is 3600
+seconds. Cross-origin browser access requires the Web origin in
+`DESKFLEET_WEB_ORIGINS`. Daemons and Electron's main process do not depend on
+browser CORS permission. Same-origin Web hosting does not need its own origin
+listed. There is no `*` origin. Credentialed CORS is enabled for the configured
+origins.
 
 Configure `DESKFLEET_TRUSTED_PROXY_IPS` with the proxy's actual TCP source IP
 (`127.0.0.1` for the same-host example). The proxy must overwrite `X-Real-IP`
@@ -362,9 +394,10 @@ Set `DESKFLEET_TURN_USAGE_REDIS_URL` on the backend to the same Redis service,
 for example `redis://:<redis-password>@redis.internal:6379/0` (URL-encode the
 password), then restart the backend. Keep the existing TURN REST authentication
 settings. Restrict Redis access to the TURN publishers and backend subscriber.
-Run one backend collector per statistics stream to avoid counting broadcasts
-multiple times. Pub/Sub channels span database indices; use separate Redis
-services to isolate environments.
+Configure every API replica against the same statistics stream. A PostgreSQL
+lease selects one active subscriber and allows another replica to take over;
+replicas do not count each broadcast independently. Pub/Sub channels span
+database indices; use separate Redis services to isolate environments.
 
 Saved peer grants map TURN usernames to Teams. The `cp_turn_usage` table stores
 interval byte deltas with separate client-side and peer-side counters. Unknown
@@ -406,8 +439,9 @@ also require restarting coturn. The event format is defined in the
 
 Create an empty database and a role, and put that URL in `DATABASE_URL`. The
 first start creates `cp_migrations` and applies schema versions `1` (owned identity
-and central records), `2` (TURN usage), `3` (site administration), and `4` (Team
-entitlements and subscriptions) under the transaction advisory lock `761946021`.
+and central records), `2` (TURN usage), `3` (site administration), `4` (Team
+entitlements and subscriptions), and `5` (multi-instance routing and shared
+signaling) under the transaction advisory lock `761946021`.
 Later starts take the same lock and apply any migration that is not recorded.
 
 The provisional OIDC database is not compatible with this schema. That database
@@ -442,9 +476,9 @@ Application sessions missing from the restored database simply sign in again.
 To upgrade the API:
 
 1. Dump PostgreSQL.
-2. Stop the one server process.
+2. Stop the API instances.
 3. Replace `deskfleet-server` with the new release binary.
-4. Start it with the same `DATABASE_URL` and the same `DESKFLEET_PUBLIC_URL`.
+4. Start the instances with the same `DATABASE_URL` and the same `DESKFLEET_PUBLIC_URL`.
 5. Confirm `GET /healthz` returns `"status":"ok"` and the expected
    `protocol_version`.
 
@@ -462,8 +496,8 @@ x64. The daemon's SQLite catalog, provider configuration, and terminal history
 stay in its data directory (`~/.deskfleet`, or `DESKFLEET_DAEMON_DIRECTORY`).
 
 Build the clients for the API origin (`https://api.example.com` or the shared
-hostname) as described above. On the welcome screen, sign in through the identity
-provider, create a team, and enroll the local daemon from the desktop app when
+hostname) as described above. On the welcome screen, sign in with a verified deskfleet
+account, create a team, and enroll the local daemon from the desktop app when
 the app and the daemon are on the same computer.
 
 For a headless machine, start `deskfleet-daemon`, then on that machine:
@@ -527,8 +561,8 @@ online and a path or TURN relay exists.
 - A proxy timeout at or below 60 seconds drops daemons that are only sending
   heartbeats. A body limit under 64 MiB rejects large history uploads.
 - `/healthz` staying green does not mean PostgreSQL or SMTP is healthy after startup.
-- Two API replicas split presence and signaling. Clients of one replica cannot
-  reach a daemon connected to the other.
+- Replicas must share PostgreSQL and use the same public origin and service
+  configuration. A healthy HTTP listener alone does not prove routing is available.
 - Restoring a database dump without the matching machine credentials leaves
   those daemons unable to sign in. There is no in-place token rewrite.
 - `migrate -- down` deletes the central database contents.

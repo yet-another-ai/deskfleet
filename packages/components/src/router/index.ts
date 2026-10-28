@@ -48,6 +48,12 @@ export const router = createRouter({
       props: true,
     },
     {
+      path: "/sessions/archived",
+      name: "archived-sessions",
+      component: () => import("../views/ArchivedSessionsView.vue"),
+      meta: { hideDetails: true },
+    },
+    {
       path: "/sessions/:sessionId",
       name: "session",
       component: () => import("../views/SessionView.vue"),

@@ -5,6 +5,7 @@ import { configureClient, getClient } from "@deskfleet/client/platform"
 import type { CentralApi, CentralEvent, Machine } from "@deskfleet/client/central"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
+import type { AccountSession } from "./composables/useAccountSession.ts"
 import AccountShell from "./AccountShell.vue"
 import { agentEvent, agentInput, agentSnapshot } from "./test/agent.ts"
 import { fakeCentral, machineFixture } from "./test/central.ts"
@@ -62,6 +63,14 @@ test("browses synchronized history with the machine offline and isolates equal l
   await vi.waitFor(() => expect(view!.text()).toContain("Message from 102"))
   expect(view.text()).not.toContain("Message from 101")
   expect(central.createPeer).not.toHaveBeenCalled()
+  // An explicit Session destination survives the fresh Machine mount, even when
+  // both machines use the same local Session ID and synchronized offline history.
+  const account = view.getComponent({ name: "MachineSurface" }).props("session") as AccountSession
+  account.openSession("101", "30")
+  await flushPromises()
+  await vi.waitFor(() => expect(view!.text()).toContain("Message from 101"))
+  expect(router.currentRoute.value.path).toBe("/sessions/30")
+  expect(view.text()).not.toContain("Message from 102")
   await page().get('button[aria-label="Ada"]').trigger("click")
   await page().findAll('button[role="menuitem"]').find(button => button.text() === "Sign out")!.trigger("click")
   await flushPromises()
@@ -87,6 +96,58 @@ function withEmptyCatalogs({ central, state }: ReturnType<typeof fakeCentral>): 
     rpc: vi.fn(async () => { throw new Error("Offline") }),
   })
 }
+
+test("keeps archived lists and their Conversations return path scoped to the selected machine", async () => {
+  const fake = fakeCentral({ machines: [
+    machineFixture("m1", "team-1", "Build server", false),
+    machineFixture("m2", "team-1", "Laptop", false),
+  ] })
+  withEmptyCatalogs(fake)
+  const snapshot = (machineId: string) => {
+    const archived = agentSnapshot()
+    archived.session.title = `Archived conversation ${machineId}`
+    archived.session.archiveState = "archived"
+    return archived
+  }
+  Object.assign(fake.central, {
+    sessions: vi.fn(async (machineId: string) => [snapshot(machineId)]),
+    session: vi.fn(async (machineId: string) => ({ snapshot: snapshot(machineId), lastEventSeq: "0", lastObservedAt: "2026-10-25T00:00:00Z" })),
+    events: vi.fn(async () => ({ events: [], lastEventSeq: "0" })),
+  })
+  localStorage.setItem("deskfleet.details-open", "true")
+  await router.push("/sessions/archived")
+  mountShell(fake.central, "web")
+  await flushPromises()
+  await vi.waitFor(() => expect(page().get("main").text()).toContain("Archived conversation m1"), { timeout: 5_000 })
+  expect(router.currentRoute.value.name).toBe("archived-sessions")
+  expect(router.currentRoute.value.path).toBe("/sessions/archived")
+  expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
+
+  // Returning from the archive on the same machine retains its selected Session.
+  const conversations = () => page().get('a[aria-label="Conversations"]')
+  await router.push("/sessions/30"); await flushPromises()
+  await vi.waitFor(() => expect(fake.central.session).toHaveBeenCalledWith("m1", "30"))
+  await router.push("/sessions/archived"); await flushPromises()
+  expect(conversations().attributes("href")).toBe("#/sessions/30")
+  await conversations().trigger("click"); await flushPromises()
+  expect(router.currentRoute.value.path).toBe("/sessions/30")
+  await router.push("/sessions/archived"); await flushPromises()
+
+  await page().get('aside button[data-machine-id="m2"]').trigger("click")
+  await flushPromises()
+  await vi.waitFor(() => expect(page().get("main").text()).toContain("Archived conversation m2"))
+  expect(page().get("main").text()).not.toContain("Archived conversation m1")
+  expect(router.currentRoute.value.name).toBe("archived-sessions")
+  expect(router.currentRoute.value.path).toBe("/sessions/archived")
+  expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
+  expect(localStorage.getItem("deskfleet.details-open")).toBe("true")
+  // The second machine also has Session 30, but it must not inherit the first
+  // machine's selection when leaving this management list.
+  expect(conversations().attributes("href")).toBe("#/")
+  await conversations().trigger("click"); await flushPromises()
+  expect(router.currentRoute.value.path).toBe("/")
+  expect(fake.central.session).not.toHaveBeenCalledWith("m2", "30")
+})
 
 test("a user without a Team creates one from onboarding and is asked to add a machine", async () => {
   const fake = fakeCentral({ teams: [] })

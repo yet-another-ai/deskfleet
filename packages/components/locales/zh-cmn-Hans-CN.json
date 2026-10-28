@@ -188,6 +188,8 @@
   },
   "archivedSessions": {
     "title": "已归档会话",
+    "machine": "机器",
+    "loading": "正在加载已归档会话…",
     "description": "恢复会话以继续工作，或打开查看其对话记录。",
     "empty": "没有已归档的会话",
     "emptyDescription": "归档会话可保留对话和工作环境，同时停止执行。",
@@ -302,6 +304,9 @@
     "openTerminal": "打开终端",
     "openTerminalAt": "在 {path} 中打开终端",
     "session": "会话"
+  },
+  "pinnedSessions": {
+    "title": "已置顶"
   },
   "session": {
     "notFound": "该会话不存在。",
@@ -697,6 +702,8 @@
       "search": "进行了 {n} 次搜索",
       "other": "使用了 {n} 个工具"
     },
+    "pin": "置顶会话",
+    "unpin": "取消置顶",
     "sessionActions": "会话操作",
     "rename": "重命名会话",
     "sessionName": "会话名称",

@@ -13,42 +13,12 @@ use sdp::description::{common::Attribute, session::SessionDescription};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha1::Sha1;
-use std::{collections::HashMap, io::Cursor, sync::Arc};
-use tokio::sync::Mutex;
+use std::io::Cursor;
 
-type NegotiationHandle = Arc<Mutex<Negotiation>>;
-#[derive(Default)]
-pub struct Negotiations {
-    records: Mutex<HashMap<String, (i64, NegotiationHandle)>>,
-}
-#[derive(Default)]
-struct Negotiation {
-    offer: Option<String>,
-    answer: Option<String>,
-    options: Value,
-    pending: Vec<Value>,
-}
-impl Negotiations {
-    async fn get(&self, id: &str) -> Result<NegotiationHandle> {
-        self.records
-            .lock()
-            .await
-            .get(id)
-            .map(|(_, record)| record.clone())
-            .ok_or_else(|| ApiError::bad("peer negotiation is unavailable; create a new peer"))
-    }
-    async fn insert(&self, id: &str, expires: i64) {
-        let mut records = self.records.lock().await;
-        records.retain(|_, (expiry, _)| *expiry > now_ms());
-        records.insert(
-            id.into(),
-            (expires, Arc::new(Mutex::new(Negotiation::default()))),
-        );
-    }
-    pub async fn remove(&self, id: &str) {
-        self.records.lock().await.remove(id);
-    }
-}
+mod signaling;
+pub(crate) use signaling::daemon_event;
+pub use signaling::{candidate, offer};
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Create {
@@ -102,7 +72,6 @@ pub async fn create(
     let relay_allowed = relay_denied_reason.is_none();
     s.store.save_peer(&authorization, &a.id, expires).await?;
     s.store.save_peer_relay_decision(&id, relay_allowed).await?;
-    s.peers.insert(&id, expires).await;
     Ok(web::Json(
         json!({"peerId":id,"authorization":authorization,"iceServers":grant_ice_servers(&s.config,&id,expires,relay_allowed)?,"relayAllowed":relay_allowed,"relayDeniedReason":relay_denied_reason}),
     ))
@@ -154,107 +123,6 @@ async fn authorize(req: &HttpRequest, s: &AppState, id: &str) -> Result<PeerAuth
     Ok(p)
 }
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Offer {
-    sdp: String,
-    #[serde(default)]
-    options: Value,
-}
-pub async fn offer(
-    req: HttpRequest,
-    s: web::Data<AppState>,
-    p: web::Path<String>,
-    b: web::Json<Offer>,
-) -> Result<web::Json<Value>> {
-    let authorization = authorize(&req, &s, &p).await?;
-    binding(&b.sdp)?;
-    let record = s.peers.get(&p).await?;
-    let mut record = record.lock().await;
-    if let Some(old) = &record.offer {
-        if old != &b.sdp || record.options != b.options {
-            return Err(ApiError::bad("peer descriptions and options are immutable"));
-        }
-        return record
-            .answer
-            .as_ref()
-            .map(|answer| web::Json(json!({"sdp":answer})))
-            .ok_or_else(|| ApiError::bad("previous negotiation failed; create a new peer"));
-    }
-    record.offer = Some(b.sdp.clone());
-    record.options = b.options.clone();
-    let expires = chrono::DateTime::parse_from_rfc3339(&authorization.expires_at)
-        .map_err(|_| ApiError::internal())?
-        .timestamp_millis();
-    let relay_allowed = s.store.peer_relay_decision(&p).await?;
-    let result=s.hub.request(&authorization.target_machine.id,"peer.offer",json!({"peerId":p.as_str(),"sdp":b.sdp,"authorization":authorization,"iceServers":grant_ice_servers(&s.config,&p,expires,relay_allowed)?,"options":b.options}),Some(authorization.actor.clone())).await;
-    let result = match result {
-        Ok(result) => result,
-        Err(error) => {
-            let peers = s.store.revoke_peer(&p).await?;
-            s.hub.revoke(peers, "negotiation_failed").await;
-            return Err(error);
-        }
-    };
-    let answer = result["sdp"].as_str();
-    let validation = answer
-        .ok_or_else(|| ApiError::bad("daemon returned no SDP answer"))
-        .and_then(|answer| binding(answer).map(|_| answer));
-    let answer = match validation {
-        Ok(answer) => answer,
-        Err(error) => {
-            let peers = s.store.revoke_peer(&p).await?;
-            s.hub.revoke(peers, "invalid_answer").await;
-            return Err(error);
-        }
-    };
-    record.answer = Some(answer.into());
-    let pending = std::mem::take(&mut record.pending);
-    for candidate in pending {
-        let candidate = normalize_candidate(&b.sdp, candidate)?;
-        s.hub
-            .request(
-                &authorization.target_machine.id,
-                "peer.candidate",
-                json!({"peerId":p.as_str(),"candidate":candidate}),
-                None,
-            )
-            .await?;
-    }
-    Ok(web::Json(json!({"sdp":answer})))
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Candidate {
-    candidate: Value,
-}
-pub async fn candidate(
-    req: HttpRequest,
-    s: web::Data<AppState>,
-    p: web::Path<String>,
-    b: web::Json<Candidate>,
-) -> Result<web::Json<Value>> {
-    let authorization = authorize(&req, &s, &p).await?;
-    let record = s.peers.get(&p).await?;
-    let mut record = record.lock().await;
-    let Some(offer) = &record.offer else {
-        if record.pending.len() >= 256 {
-            return Err(ApiError::bad("too many pending candidates"));
-        }
-        record.pending.push(b.candidate.clone());
-        return Ok(web::Json(json!({})));
-    };
-    let candidate = normalize_candidate(offer, b.candidate.clone())?;
-    s.hub
-        .request(
-            &authorization.target_machine.id,
-            "peer.candidate",
-            json!({"peerId":p.as_str(),"candidate":candidate}),
-            None,
-        )
-        .await?;
-    Ok(web::Json(json!({})))
-}
-#[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Start {
     display_id: Value,
@@ -302,8 +170,7 @@ pub async fn close(
         )
         .await?;
     let peers = s.store.revoke_peer(&p).await?;
-    s.hub.revoke(peers, "closed").await;
-    s.peers.remove(&p).await;
+    s.hub.revoke(peers, "closed").await?;
     // Desktop reconnects can acquire exclusive native input. Revocation delivery
     // alone does not acknowledge that the previous controller released its keys.
     if authorization.purpose == "desktop" {
@@ -444,49 +311,6 @@ pub(crate) fn normalize_candidate(sdp: &str, mut candidate: Value) -> Result<Val
         obj.insert("usernameFragment".into(), json!(section.ufrag));
     }
     Ok(candidate)
-}
-
-/// Process candidate events away from the socket reader: negotiation awaits a
-/// response on that reader, so holding its lock inline would deadlock signaling.
-pub(crate) async fn daemon_event(
-    s: &AppState,
-    machine: &str,
-    connection: &str,
-    peer_id: String,
-    mut event: Value,
-) -> Result<()> {
-    s.store.peer_login(&peer_id, machine).await?;
-    if event["kind"] == "iceCandidate" {
-        let record = s.peers.get(&peer_id).await?;
-        let record = record.lock().await;
-        let answer = record
-            .answer
-            .as_ref()
-            .ok_or_else(|| ApiError::bad("peer answer unavailable"))?;
-        event["candidate"] = normalize_candidate(answer, event["candidate"].take())?;
-    }
-    if !s.hub.is_current(machine, connection).await {
-        return Err(ApiError::unavailable());
-    }
-    // Recheck after waiting for negotiation, which may have failed or been revoked.
-    let login = s.store.peer_login(&peer_id, machine).await?;
-    s.hub
-        .send_client(
-            &login,
-            deskfleet_protocol::control::ControlMessage::PeerEvent {
-                peer_id: peer_id.clone(),
-                event: event.clone(),
-            },
-        )
-        .await;
-    if event["kind"] == "stateChanged"
-        && matches!(event["state"].as_str(), Some("closed" | "failed"))
-    {
-        let peers = s.store.revoke_peer(&peer_id).await?;
-        s.hub.revoke(peers, "peer_closed").await;
-        s.peers.remove(&peer_id).await;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

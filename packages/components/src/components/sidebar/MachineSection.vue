@@ -97,7 +97,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
         />
       </li>
       <li v-for="session in machine.sessions" :key="session.id">
-        <SessionContextMenu :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
+        <SessionContextMenu :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
           <TreeLink
             :to="{ name: 'session', params: { sessionId: session.id } }"
             :icon="Bot"
@@ -133,7 +133,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
             <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
           </li>
           <li v-for="session in workspace.sessions" :key="session.id">
-            <SessionContextMenu :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
+            <SessionContextMenu :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
               <!-- A Session's shells open in its bottom panel, not the sidebar. -->
               <TreeLink
                 :to="{ name: 'session', params: { sessionId: session.id } }"

@@ -6,6 +6,7 @@ import App from "./App.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
+import { usePinnedSessionsStore } from "./stores/pinned-sessions.ts"
 import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
 import type { LocalAgentState } from "../../client/src/local-agent.ts"
 
@@ -50,6 +51,35 @@ test("the app targets a workspace and lists its sessions without exposing an int
   expect(wrapper.find('a[href*="/worktrees/"]').exists()).toBe(false)
   expect(wrapper.text()).not.toContain("Main worktree")
   expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
+})
+
+test("Pinned sessions appear above Workspaces while retaining their workspace entry", async () => {
+  const pinia = createPinia()
+  const wrapper = await mountApp("/", pinia)
+  usePinnedSessionsStore(pinia).pin("local-daemon", sessionId, "Pinned investigation")
+  await flushPromises()
+  const sidebar = wrapper.get("aside")
+  const pinned = sidebar.get("[data-pinned-sessions]")
+  const workspaces = sidebar.findAll("span").find(element => element.text() === "Workspaces")!
+  expect(pinned.element.compareDocumentPosition(workspaces.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(pinned.text()).toContain("Pinned investigation")
+  expect(sidebar.findAll("a").find(element => element.text() === `Session ${sessionId}`)!.attributes("href")).toBe(`#/sessions/${sessionId}`)
+})
+
+test("the archive route retains the sidebar and hides resource details without changing their preference", async () => {
+  const pinia = createPinia()
+  vi.spyOn(useAgentSessionsStore(pinia), "refresh").mockResolvedValue()
+  const wrapper = await mountApp("/sessions/archived", pinia)
+  expect(router.currentRoute.value.name).toBe("archived-sessions")
+  expect(wrapper.get("main h1").text()).toBe("Archived sessions")
+  expect(wrapper.get("aside").text()).toContain("Workspaces")
+  expect(wrapper.get('[data-archived-sessions]').attributes("aria-current")).toBe("page")
+  expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Show changes panel"]').exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Hide changes panel"]').exists()).toBe(false)
+  expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  await router.push("/"); await flushPromises()
+  expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(true)
 })
 
 test("workspace creation opens a dialog, requires paths, supports choosing the first path by reordering, and retains input after failure", async () => {
