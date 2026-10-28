@@ -1,9 +1,12 @@
 # Terminals over WebRTC
 
 The shared Electron/Web terminal uses xterm.js and a reliable, ordered WebRTC DataChannel.
-It negotiates a data-only peer: no video/audio tracks, capture devices, codec
-selection, or screen-recording permission are involved. SDP and ICE reuse the
-authenticated central signaling service used by desktop streaming.
+`TerminalSurface` prefers the `@xterm/addon-webgl` renderer after the terminal opens
+and falls back to xterm's default canvas renderer when WebGL2 is unavailable,
+fails to create a context, or reports context loss. It negotiates a data-only peer:
+no video/audio tracks, capture devices, codec selection, or screen-recording
+permission are involved. SDP and ICE reuse the authenticated central signaling
+service used by desktop streaming.
 
 ## Ownership and lifecycle
 

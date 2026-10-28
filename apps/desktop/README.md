@@ -239,16 +239,19 @@ submission is confirmed. `AgentClient` carries ACP JSON-RPC over the ordered
 
 ## Terminal
 
-`TerminalSurface` wraps xterm.js and its fit addon. It fits the terminal to its
-container on resize and disposes of it on unmount. The terminal view remounts it
-for each terminal session. The real local machine lists its machine-scoped
-sessions in tabs and supports dialing new or existing shells, live input/output, resize,
-reattachment, and explicit hangup. Switching tabs, leaving the view or closing
-the window leaves shells running. Closing a tab hangs up only its shell and removes
-its daemon history. Daemon shutdown terminates processes while preserving their
-history; after restart they appear interrupted and read-only. xterm.js uses an injected
-stylesheet, which the renderer CSP's `style-src 'unsafe-inline'` permits. It
-loads only with the terminal route's chunk.
+`TerminalSurface` wraps xterm.js with its fit, ligatures, and WebGL addons. It
+attaches `@xterm/addon-webgl` after open when WebGL2 is available, and falls back
+to the default canvas renderer when WebGL is missing, fails to initialize, or
+loses its context. It fits the terminal to its container on resize and disposes
+of it on unmount. The terminal view remounts it for each terminal session. The
+real local machine lists its machine-scoped sessions in tabs and supports dialing
+new or existing shells, live input/output, resize, reattachment, and explicit
+hangup. Switching tabs, leaving the view or closing the window leaves shells
+running. Closing a tab hangs up only its shell and removes its daemon history.
+Daemon shutdown terminates processes while preserving their history; after restart
+they appear interrupted and read-only. xterm.js uses an injected stylesheet, which
+the renderer CSP's `style-src 'unsafe-inline'` permits. It loads only with the
+terminal route's chunk.
 
 The data-only connection reuses authenticated SDP/ICE signaling without media
 tracks or screen capture. Dial/hangup uses signaling and remains available without
