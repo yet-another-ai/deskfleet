@@ -44,10 +44,12 @@ process and uses the system browser with a one-use code/verifier exchange.
 
 The Team menu opens `/team/settings`, independently of application settings at
 `/settings`. Its Plans & Usages section at `/team/settings/plans` shows the
-effective plan, current usage, and Stripe subscription management. Both areas
-remain available without an enrolled machine. Only Team admins can purchase or
-manage subscriptions. Site admins manage Enterprise overrides and account
-policies in the Web administration page.
+effective plan, current usage, monthly/annual Checkout offers when payments are
+configured, and an optional Enterprise Contact us mailbox when
+`DESKFLEET_ENTERPRISE_CONTACT_EMAIL` is set. Both areas remain available without
+an enrolled machine. Only Team admins can purchase or manage subscriptions. Site
+admins manage Enterprise overrides and account policies in the Web administration
+page.
 
 Management operations use authenticated HTTP. Agent commands, terminal I/O, and
 Git reads use WebRTC after the backend authorizes the target peer and supplies

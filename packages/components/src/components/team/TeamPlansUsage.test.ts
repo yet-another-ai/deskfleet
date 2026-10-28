@@ -127,11 +127,13 @@ test("Team admins choose an offer and reuse its checkout request id when retryin
     fake.central.checkout.mockRejectedValue(new Error("Try checkout again"))
   })
   expect(usage().findAll("[data-billing-offer]").map(offer => offer.attributes("data-billing-offer"))).toEqual(["go", "pro"])
+  expect(usage().get("[data-billing-interval-option='month']").attributes("aria-pressed")).toBe("true")
   await button("Upgrade to Go")!.trigger("click"); await flushPromises()
   expect(usage().get('[role="alert"]').text()).toBe("Try checkout again")
   await button("Upgrade to Go")!.trigger("click"); await flushPromises()
   expect(fake.central.checkout).toHaveBeenCalledTimes(2)
   expect(fake.central.checkout.mock.calls[1]).toEqual(fake.central.checkout.mock.calls[0])
+  expect(fake.central.checkout.mock.calls[0]).toEqual(["team-1", "go", expect.any(String), "month"])
 })
 
 test.each([false, true])("returning to an earlier offer creates a new checkout after its replacement (first result uncertain: %s)", async uncertain => {
@@ -160,6 +162,44 @@ test("an explicitly finished checkout gets a new request id on the next attempt"
   const calls = fake.central.checkout.mock.calls
   expect(calls[1]).toEqual(calls[0])
   expect(calls[2]![2]).not.toBe(calls[1]![2])
+})
+
+test("annual billing creates a yearly checkout and keeps monthly request ids separate", async () => {
+  const fake = await setup(fake => {
+    fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true })
+    fake.central.checkout.mockRejectedValue(new Error("Try checkout again"))
+  })
+  await usage().get("[data-billing-interval-option='year']").trigger("click")
+  expect(usage().get("[data-billing-interval-option='year']").attributes("aria-pressed")).toBe("true")
+  expect(usage().text()).toContain("Billed annually")
+  await button("Upgrade to Go")!.trigger("click"); await flushPromises()
+  expect(fake.central.checkout.mock.calls[0]).toEqual(["team-1", "go", expect.any(String), "year"])
+  const yearlyId = fake.central.checkout.mock.calls[0]![2]
+  await usage().get("[data-billing-interval-option='month']").trigger("click")
+  await button("Upgrade to Go")!.trigger("click"); await flushPromises()
+  expect(fake.central.checkout.mock.calls[1]).toEqual(["team-1", "go", expect.any(String), "month"])
+  expect(fake.central.checkout.mock.calls[1]![2]).not.toBe(yearlyId)
+})
+
+test("configured Enterprise contact is offered without checkout", async () => {
+  await setup(fake => fake.central.billing.mockResolvedValue({
+    ...free(), canManageBilling: true, enterpriseContactEmail: "sales@example.test",
+  }))
+  const offer = usage().get('[data-billing-offer="enterprise"]')
+  expect(offer.text()).toContain("Enterprise")
+  expect(offer.get("a").attributes("href")).toBe("mailto:sales@example.test")
+  expect(offer.get("a").text()).toContain("Contact us")
+})
+
+test("Enterprise contact is hidden when unset or already granted", async () => {
+  await setup(fake => fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true }))
+  expect(usage().find('[data-billing-offer="enterprise"]').exists()).toBe(false)
+  await setup(fake => fake.central.billing.mockResolvedValue({
+    ...billingFixture(), plan: "enterprise", enterpriseOverride: true, paymentsAvailable: true, canManageBilling: true,
+    enterpriseContactEmail: "sales@example.test",
+  }))
+  expect(usage().find('[data-billing-offer="enterprise"]').exists()).toBe(false)
+  expect(usage().find("[data-billing-offer]").exists()).toBe(false)
 })
 
 test("a failed renewal offers billing admins the payment recovery action", async () => {

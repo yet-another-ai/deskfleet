@@ -125,24 +125,29 @@ is not a supported retargeting procedure.
 
 ### Stripe test-mode environment
 
-Leave all five variables unset during the initial Free/Enterprise pass. To test
-payments, configure all five from the same Stripe test environment:
+Leave all Stripe payment variables unset during the initial Free/Enterprise pass.
+To test payments, configure all seven from the same Stripe test environment:
 
 ```dotenv
 DESKFLEET_STRIPE_SECRET_KEY=REPLACE_STRIPE_TEST_SECRET_KEY
 DESKFLEET_STRIPE_WEBHOOK_SECRET=REPLACE_STRIPE_TEST_WEBHOOK_SECRET
 DESKFLEET_STRIPE_GO_PRICE_ID=REPLACE_GO_MONTHLY_PRICE_ID
 DESKFLEET_STRIPE_PRO_PRICE_ID=REPLACE_PRO_MONTHLY_PRICE_ID
+DESKFLEET_STRIPE_GO_YEARLY_PRICE_ID=REPLACE_GO_YEARLY_PRICE_ID
+DESKFLEET_STRIPE_PRO_YEARLY_PRICE_ID=REPLACE_PRO_YEARLY_PRICE_ID
 DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID=REPLACE_PORTAL_CONFIGURATION_ID
+# Optional Enterprise sales mailbox on Plans & Usage:
+# DESKFLEET_ENTERPRISE_CONTACT_EMAIL=sales@example.com
 ```
 
-Partial Stripe configuration fails startup. The two Prices must be distinct,
-monthly, positive fixed amounts, on the same Product and currency, with Go
-cheaper than Pro. Configure Portal price changes and cancellation according to
-[Stripe operations](stripe.md#billing-portal). Register
-`https://fleet.example.com/api/billing/stripe/webhook` using the supported events
-in [the webhook handler](../../apps/server/src/billing/webhook.rs). There is no
-frontend Stripe publishable-key environment variable in this Checkout flow.
+Partial Stripe configuration fails startup. The four Prices must be distinct,
+positive fixed amounts (monthly and yearly recurring), on the same Product and
+currency, with Go cheaper than Pro in each interval. Configure Portal price
+changes and cancellation according to [Stripe operations](stripe.md#billing-portal).
+Register `https://fleet.example.com/api/billing/stripe/webhook` using the
+supported events in [the webhook handler](../../apps/server/src/billing/webhook.rs).
+There is no frontend Stripe publishable-key environment variable in this Checkout
+flow.
 
 ### Configuration owned by other services
 
@@ -262,8 +267,9 @@ Before tagging, account for these current behaviors:
    operations only after checking their receipts. Temporarily deny an instance's
    database access and confirm it closes signaling rather than continuing to
    trust local routes; restore access and confirm recovery.
-9. Enable the five Stripe test settings. Complete Checkout, confirm the webhook
-   and paid entitlement, then test Portal upgrade, downgrade, and cancellation.
+9. Enable the seven Stripe test settings. Complete monthly and yearly Checkout,
+   confirm the webhook and paid entitlement, then test Portal upgrade, downgrade,
+   and cancellation across intervals.
    Use a Go/Pro Team to verify relay and usage. Missing/stale metering must deny
    new metered relay credentials (`metering_unavailable`); exhausting allowance
    must deny new relay (`turn_quota_exhausted`). Existing grants retain their

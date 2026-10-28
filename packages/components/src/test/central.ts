@@ -4,7 +4,7 @@ import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../cl
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "../../../client/src/central.ts"
 
 export function billingFixture(usage = { relayedBytes: "0", activeSessionCount: 0, memberCount: 1 }): TeamBilling {
-  return { plan: "selfHosted", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: null }, usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false }
+  return { plan: "selfHosted", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: null }, usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false, enterpriseContactEmail: null }
 }
 
 export function aiUsageFixture(query: AiUsageQuery = { period: "30d", timeZone: "UTC" }): TeamAiUsage {
@@ -55,7 +55,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     updateSiteSettings: vi.fn(async (settings: SiteSettings) => { state.site = { ...settings }; return { ...state.site } }),
     openAccountSettings: vi.fn(async () => {}),
     billing: vi.fn(async (_teamId: string) => billingFixture({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
-    checkout: vi.fn(async (_teamId: string, _plan: "go" | "pro", _requestId: string) => {}),
+    checkout: vi.fn(async (_teamId: string, _plan: "go" | "pro", _requestId: string, _interval?: "month" | "year") => {}),
     billingPortal: vi.fn(async (_teamId: string) => {}),
     billingTeams: vi.fn(async () => []),
     setEnterprise: vi.fn(async (_teamId: string, _enabled: boolean) => {}),

@@ -46,6 +46,7 @@ async fn summary(
     let mut summary = s.store.billing_summary(&team).await?;
     summary["paymentsAvailable"] = json!(s.billing.enabled());
     summary["canManageBilling"] = json!(role == "admin");
+    summary["enterpriseContactEmail"] = json!(s.billing.enterprise_contact_email());
     Ok(web::Json(summary))
 }
 #[derive(Deserialize)]
@@ -53,6 +54,11 @@ async fn summary(
 struct Checkout {
     plan: String,
     request_id: String,
+    #[serde(default = "default_interval")]
+    interval: String,
+}
+fn default_interval() -> String {
+    "month".into()
 }
 async fn checkout(
     req: HttpRequest,
@@ -63,7 +69,7 @@ async fn checkout(
     let user = auth::user(&req, &s).await?;
     s.store.require_admin(&user.user.id, &team).await?;
     Ok(web::Json(
-        json!({"url":s.billing.checkout(&s.store,&team,&body.plan,&body.request_id).await?}),
+        json!({"url":s.billing.checkout(&s.store,&team,&body.plan,&body.interval,&body.request_id).await?}),
     ))
 }
 async fn portal(

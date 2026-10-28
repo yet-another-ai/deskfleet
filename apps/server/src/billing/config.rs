@@ -7,7 +7,11 @@ pub struct BillingConfig {
     pub stripe_webhook_secret: Option<String>,
     pub go_price_id: Option<String>,
     pub pro_price_id: Option<String>,
+    pub go_yearly_price_id: Option<String>,
+    pub pro_yearly_price_id: Option<String>,
     pub portal_configuration_id: Option<String>,
+    /// Optional sales contact for Enterprise. Independent of Stripe configuration.
+    pub enterprise_contact_email: Option<String>,
 }
 impl BillingConfig {
     pub fn from_env() -> io::Result<Self> {
@@ -27,7 +31,10 @@ impl BillingConfig {
             stripe_webhook_secret: optional("DESKFLEET_STRIPE_WEBHOOK_SECRET"),
             go_price_id: optional("DESKFLEET_STRIPE_GO_PRICE_ID"),
             pro_price_id: optional("DESKFLEET_STRIPE_PRO_PRICE_ID"),
+            go_yearly_price_id: optional("DESKFLEET_STRIPE_GO_YEARLY_PRICE_ID"),
+            pro_yearly_price_id: optional("DESKFLEET_STRIPE_PRO_YEARLY_PRICE_ID"),
             portal_configuration_id: optional("DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID"),
+            enterprise_contact_email: contact_email("DESKFLEET_ENTERPRISE_CONTACT_EMAIL")?,
         };
         config.validate()?;
         Ok(config)
@@ -38,6 +45,8 @@ impl BillingConfig {
             && self.stripe_webhook_secret.is_some()
             && self.go_price_id.is_some()
             && self.pro_price_id.is_some()
+            && self.go_yearly_price_id.is_some()
+            && self.pro_yearly_price_id.is_some()
             && self.portal_configuration_id.is_some()
     }
     pub fn validate(&self) -> io::Result<()> {
@@ -46,35 +55,81 @@ impl BillingConfig {
             &self.stripe_webhook_secret,
             &self.go_price_id,
             &self.pro_price_id,
+            &self.go_yearly_price_id,
+            &self.pro_yearly_price_id,
             &self.portal_configuration_id,
         ]
         .iter()
         .filter(|value| value.is_some())
         .count();
-        if configured > 0 && (!self.hosted || configured != 5) {
+        if configured > 0 && (!self.hosted || configured != 7) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Stripe requires hosted mode and all five Stripe settings",
+                "Stripe requires hosted mode and all seven Stripe settings",
             ));
         }
-        if self.go_price_id.is_some() && self.go_price_id == self.pro_price_id {
+        let prices = [
+            self.go_price_id.as_deref(),
+            self.pro_price_id.as_deref(),
+            self.go_yearly_price_id.as_deref(),
+            self.pro_yearly_price_id.as_deref(),
+        ];
+        let mut unique = prices.iter().flatten().collect::<Vec<_>>();
+        unique.sort_unstable();
+        if unique.windows(2).any(|pair| pair[0] == pair[1]) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Go and Pro require different Stripe Prices",
+                "Go and Pro monthly and yearly Stripe Prices must all be distinct",
             ));
         }
         Ok(())
     }
-    pub(super) fn price(&self, plan: &str) -> Option<&str> {
-        match plan {
-            "go" => self.go_price_id.as_deref(),
-            "pro" => self.pro_price_id.as_deref(),
+    pub(super) fn price(&self, plan: &str, interval: &str) -> Option<&str> {
+        match (plan, interval) {
+            ("go", "month") => self.go_price_id.as_deref(),
+            ("pro", "month") => self.pro_price_id.as_deref(),
+            ("go", "year") => self.go_yearly_price_id.as_deref(),
+            ("pro", "year") => self.pro_yearly_price_id.as_deref(),
             _ => None,
+        }
+    }
+    pub(super) fn plan_for_price(&self, price_id: &str) -> Option<&'static str> {
+        if self.go_price_id.as_deref() == Some(price_id)
+            || self.go_yearly_price_id.as_deref() == Some(price_id)
+        {
+            Some("go")
+        } else if self.pro_price_id.as_deref() == Some(price_id)
+            || self.pro_yearly_price_id.as_deref() == Some(price_id)
+        {
+            Some("pro")
+        } else {
+            None
+        }
+    }
+    pub(super) fn interval_for_price(&self, price_id: &str) -> Option<&'static str> {
+        if self.go_price_id.as_deref() == Some(price_id)
+            || self.pro_price_id.as_deref() == Some(price_id)
+        {
+            Some("month")
+        } else if self.go_yearly_price_id.as_deref() == Some(price_id)
+            || self.pro_yearly_price_id.as_deref() == Some(price_id)
+        {
+            Some("year")
+        } else {
+            None
         }
     }
 }
 fn optional(key: &str) -> Option<String> {
     env::var(key).ok().filter(|value| !value.is_empty())
+}
+fn contact_email(key: &str) -> io::Result<Option<String>> {
+    match optional(key) {
+        None => Ok(None),
+        Some(value) => deskfleet_control_store::normalize_email(&value)
+            .map(Some)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string())),
+    }
 }
 
 #[cfg(test)]
@@ -89,5 +144,49 @@ mod tests {
         assert!(config.validate().is_err());
         config.hosted = true;
         assert!(config.validate().is_err());
+    }
+    #[test]
+    fn payments_require_monthly_and_yearly_prices() {
+        let mut config = BillingConfig {
+            hosted: true,
+            stripe_secret_key: Some("sk".into()),
+            stripe_webhook_secret: Some("whsec".into()),
+            go_price_id: Some("price_go".into()),
+            pro_price_id: Some("price_pro".into()),
+            go_yearly_price_id: Some("price_go_year".into()),
+            pro_yearly_price_id: Some("price_pro_year".into()),
+            portal_configuration_id: Some("bpc".into()),
+            enterprise_contact_email: None,
+        };
+        assert!(config.validate().is_ok());
+        assert!(config.enabled());
+        config.pro_yearly_price_id = None;
+        assert!(config.validate().is_err());
+        assert!(!config.enabled());
+    }
+    #[test]
+    fn duplicate_price_ids_are_rejected() {
+        let config = BillingConfig {
+            hosted: true,
+            stripe_secret_key: Some("sk".into()),
+            stripe_webhook_secret: Some("whsec".into()),
+            go_price_id: Some("price_go".into()),
+            pro_price_id: Some("price_pro".into()),
+            go_yearly_price_id: Some("price_go".into()),
+            pro_yearly_price_id: Some("price_pro_year".into()),
+            portal_configuration_id: Some("bpc".into()),
+            enterprise_contact_email: None,
+        };
+        assert!(config.validate().is_err());
+    }
+    #[test]
+    fn enterprise_contact_email_is_optional_and_normalized() {
+        assert_eq!(
+            contact_email("DESKFLEET_MISSING_CONTACT").unwrap(),
+            None
+        );
+        let email = deskfleet_control_store::normalize_email("Sales@Example.COM").unwrap();
+        assert_eq!(email, "sales@example.com");
+        assert!(deskfleet_control_store::normalize_email("not-an-email").is_err());
     }
 }

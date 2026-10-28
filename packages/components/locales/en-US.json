@@ -1207,8 +1207,19 @@
     },
     "offer": {
       "go": "2 GiB TURN relay / month · unlimited Sessions, turns, and members",
-      "pro": "20 GiB TURN relay / month · unlimited Sessions, turns, and members"
+      "pro": "20 GiB TURN relay / month · unlimited Sessions, turns, and members",
+      "enterprise": "Unlimited allowances with operator-managed deployment support. Contact sales to discuss Enterprise."
     },
+    "offerInterval": {
+      "month": "Billed monthly",
+      "year": "Billed annually"
+    },
+    "interval": {
+      "month": "Monthly",
+      "year": "Annually"
+    },
+    "chooseInterval": "Billing period",
+    "contactEnterprise": "Contact us",
     "upgradeTo": "Upgrade to {plan}",
     "askAdmin": "A Team admin can upgrade this Team.",
     "checkoutOpened": "Finish checkout in the page that opened. This plan updates once payment is confirmed.",

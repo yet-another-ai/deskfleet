@@ -154,17 +154,19 @@ impl BillingService {
                 .filter(|v| v.len() == 1)
                 .and_then(|v| stripe_id(&v[0]["price"]))
                 .ok_or_else(ApiError::internal)?;
-            let plan = if self.config.go_price_id.as_deref() == Some(price_id) {
-                "go"
-            } else if self.config.pro_price_id.as_deref() == Some(price_id) {
-                "pro"
-            } else {
-                return Err(billing_error(
+            let plan = self.config.plan_for_price(price_id).ok_or_else(|| {
+                billing_error(
                     "unknown_subscription_price",
                     "The subscription price is not configured",
-                ));
-            };
-            let price = self.configured_price(plan).await?;
+                )
+            })?;
+            let interval = self.config.interval_for_price(price_id).ok_or_else(|| {
+                billing_error(
+                    "unknown_subscription_price",
+                    "The subscription price is not configured",
+                )
+            })?;
+            let price = self.configured_price(plan, interval).await?;
             let mut invoice = subscription["latest_invoice"].clone();
             if let Some(id) = invoice.as_str() {
                 invoice = self

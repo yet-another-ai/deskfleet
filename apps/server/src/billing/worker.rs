@@ -163,7 +163,10 @@ mod tests {
                 stripe_webhook_secret: Some("whsec_fixture".into()),
                 go_price_id: Some("price_go".into()),
                 pro_price_id: Some("price_pro".into()),
+                go_yearly_price_id: Some("price_go_year".into()),
+                pro_yearly_price_id: Some("price_pro_year".into()),
                 portal_configuration_id: Some("bpc_fixture".into()),
+                enterprise_contact_email: None,
             },
             "https://web.test".into(),
         )

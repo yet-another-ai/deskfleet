@@ -3,7 +3,7 @@ import type { AccountState, AccountUser, AgentSessionSummary, CentralApi, Centra
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
-import type { TeamBilling, AdminTeamBilling } from "./billing.ts"
+import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import { authenticatePasskey } from "./passkeys.ts"
 
@@ -104,8 +104,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     await this.#open(`${webUrl}/auth/account`)
   }
   billing(teamId: string) { return this.request<TeamBilling>("GET", `/api/teams/${encodeURIComponent(teamId)}/billing`) }
-  async checkout(teamId: string, plan: "go" | "pro", requestId: string) {
-    const { url } = await this.request<{ url: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/billing/checkout`, { plan, requestId })
+  async checkout(teamId: string, plan: "go" | "pro", requestId: string, interval: BillingInterval = "month") {
+    const { url } = await this.request<{ url: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/billing/checkout`, { plan, requestId, interval })
     await this.#open(url)
   }
   async billingPortal(teamId: string) {

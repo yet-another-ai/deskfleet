@@ -24,7 +24,9 @@ async fn provider(
     let path = req.path();
     let mut state = state.lock().unwrap();
     let value = if let Some(plan) = path.strip_prefix("/v1/prices/price_") {
-        json!({"id":format!("price_{plan}"),"active":true,"type":"recurring","recurring":{"interval":"month","interval_count":1},"unit_amount":if plan=="go"{500}else{1500},"currency":"usd","product":format!("prod_{plan}")})
+        let yearly = plan.ends_with("_year");
+        let base = plan.trim_end_matches("_year");
+        json!({"id":format!("price_{plan}"),"active":true,"type":"recurring","recurring":{"interval":if yearly{"year"}else{"month"},"interval_count":1},"unit_amount":if base=="go"{if yearly{5000}else{500}}else{if yearly{15000}else{1500}},"currency":"usd","product":"prod_deskfleet"})
     } else if path == "/v1/customers" {
         state.team = fields["metadata[deskfleet_team_id]"].clone();
         if state.customer.is_empty() {
@@ -111,19 +113,22 @@ async fn checkout_recovery_and_verified_payment_projection() {
         stripe_webhook_secret: Some("whsec_fixture".into()),
         go_price_id: Some("price_go".into()),
         pro_price_id: Some("price_pro".into()),
+        go_yearly_price_id: Some("price_go_year".into()),
+        pro_yearly_price_id: Some("price_pro_year".into()),
         portal_configuration_id: Some("bpc_fixture".into()),
+        enterprise_contact_email: None,
     };
     let mut service = BillingService::new(config, "https://web.example.test".into()).unwrap();
     service.api_base = format!("http://{address}/v1");
     let first = uuid::Uuid::new_v4().to_string();
     let second = uuid::Uuid::new_v4().to_string();
     let url = service
-        .checkout(&store, &team.id, "go", &first)
+        .checkout(&store, &team.id, "go", "month", &first)
         .await
         .unwrap();
     assert_eq!(
         service
-            .checkout(&store, &team.id, "go", &first)
+            .checkout(&store, &team.id, "go", "month", &first)
             .await
             .unwrap(),
         url
@@ -141,7 +146,7 @@ async fn checkout_recovery_and_verified_payment_projection() {
         .await
         .unwrap();
     service
-        .checkout(&store, &team.id, "go", &second)
+        .checkout(&store, &team.id, "go", "month", &second)
         .await
         .unwrap();
     assert_eq!(provider_state.lock().unwrap().created, 2);
@@ -165,7 +170,13 @@ async fn checkout_recovery_and_verified_payment_projection() {
     }
     assert!(
         service
-            .checkout(&store, &team.id, "go", &uuid::Uuid::new_v4().to_string())
+            .checkout(
+                &store,
+                &team.id,
+                "go",
+                "month",
+                &uuid::Uuid::new_v4().to_string()
+            )
             .await
             .is_err(),
         "completed-but-unsynchronized payment cannot create a second subscription"

@@ -16,11 +16,15 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
   Team; membership in several Teams does not combine their plans.
 - Sell platform subscriptions. AI credentials and execution remain on user
   machines. AI token resale, credit purchases, and wallets are outside this release.
-- Offer Free, Go, Pro, and manually assigned Enterprise on the hosted service.
-  Go and Pro differ only in monthly TURN allowance.
+- Offer Free, Go, Pro, and Enterprise on the hosted service. Go and Pro differ
+  only in monthly TURN allowance and are sold as monthly or yearly Stripe
+  subscriptions. Enterprise remains a Site Admin grant; Plans & Usage can also
+  show a configurable Contact us mailbox (`DESKFLEET_ENTERPRISE_CONTACT_EMAIL`)
+  when operators want inbound sales mail.
 - Self-hosted installations use the same account system, unlimited product
   allowances, and no payment integration. Operators supply their own TURN when
   needed. Self-hosting is a deployment setting, not a hosted client's plan choice.
+  Self-hosters may still set the Enterprise contact mailbox for their own UI.
 - Existing databases contain development data and can be rebuilt during
   implementation. No legacy account linking, OIDC account/data migration, or
   compatibility with the previous provisional schema is required.
@@ -38,9 +42,11 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 | Assignment | Default | Paid subscription | Paid subscription | Site Admin only | Deployment configuration |
 
 One GiB is 1,073,741,824 bytes. Go allows 2,147,483,648 bytes and Pro allows
-21,474,836,480 bytes per period. Compare integer bytes; round only for display.
-The first release supports monthly subscriptions only. Prices and currency come
-from the two configured Stripe Prices. No paid trial or wallet is offered.
+21,474,836,480 bytes per monthly usage period. Compare integer bytes; round only
+for display. Checkout sells monthly and yearly recurring Prices for Go and Pro.
+TURN usage periods remain calendar months anchored to the subscription even when
+the Stripe billing interval is yearly. Prices and currency come from the four
+configured Stripe Prices. No paid trial or wallet is offered.
 
 Free has the four restrictions above; no additional feature exclusions have been
 selected. Direct connectivity remains available. Plans never confer Team
@@ -192,7 +198,10 @@ members or archive Sessions automatically.
 
 Only a current Site Admin can grant/revoke Enterprise for a hosted Team.
 Enterprise unlocks every product allowance, including TURN. It is not sold via
-Checkout or selectable by Team administrators.
+Checkout or selectable by Team administrators. When
+`DESKFLEET_ENTERPRISE_CONTACT_EMAIL` is set, Plans & Usage shows a Contact us
+mailto action for Teams that are not already on Enterprise; when unset, that
+offer is omitted.
 
 Store the manual grant separately from the underlying subscription. Effective
 hosted-plan precedence is Enterprise, then an eligible Go/Pro subscription, then

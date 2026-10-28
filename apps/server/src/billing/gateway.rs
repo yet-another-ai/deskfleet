@@ -52,8 +52,8 @@ impl BillingService {
         response.json().await.map_err(|_| ApiError::internal())
     }
 
-    pub(super) async fn approved_price(&self, plan: &str) -> Result<Value> {
-        let price = self.configured_price(plan).await?;
+    pub(super) async fn approved_price(&self, plan: &str, interval: &str) -> Result<Value> {
+        let price = self.configured_price(plan, interval).await?;
         if price["active"] != true {
             return Err(billing_error(
                 "offer_unavailable",
@@ -63,17 +63,23 @@ impl BillingService {
         Ok(price)
     }
 
-    pub(super) async fn configured_price(&self, plan: &str) -> Result<Value> {
+    pub(super) async fn configured_price(&self, plan: &str, interval: &str) -> Result<Value> {
         let id = self
             .config
-            .price(plan)
-            .ok_or_else(|| ApiError::bad("unknown subscription plan"))?;
+            .price(plan, interval)
+            .ok_or_else(|| ApiError::bad("unknown subscription plan or interval"))?;
         let price = self
             .stripe(Method::GET, &format!("prices/{id}"), vec![], None)
             .await?;
+        let expected_interval = match interval {
+            "month" | "year" => interval,
+            _ => {
+                return Err(ApiError::bad("interval must be month or year"));
+            }
+        };
         if price["id"] != id
             || price["type"] != "recurring"
-            || price["recurring"]["interval"] != "month"
+            || price["recurring"]["interval"] != expected_interval
             || price["recurring"]["interval_count"] != 1
             || !price["unit_amount"].as_i64().is_some_and(|v| v > 0)
             || price["currency"].as_str().is_none()
@@ -81,7 +87,7 @@ impl BillingService {
         {
             return Err(billing_error(
                 "invalid_price_configuration",
-                "The configured offer is not a monthly subscription",
+                "The configured offer is not a matching subscription Price",
             ));
         }
         Ok(price)

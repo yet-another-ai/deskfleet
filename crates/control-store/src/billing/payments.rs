@@ -7,6 +7,7 @@ pub struct CheckoutAttempt {
     pub request_id: String,
     pub team_id: String,
     pub plan: String,
+    pub billing_interval: String,
     pub session_id: Option<String>,
     pub status: String,
     pub created_at: i64,
@@ -32,10 +33,17 @@ fn checkout(row: sea_orm::QueryResult) -> Result<CheckoutAttempt> {
         request_id: row.try_get("", "request_id")?,
         team_id: row.try_get::<i64>("", "team_id")?.to_string(),
         plan: row.try_get("", "plan")?,
+        billing_interval: row.try_get("", "billing_interval")?,
         session_id: row.try_get("", "session_id")?,
         status: row.try_get("", "status")?,
         created_at: row.try_get("", "created_at")?,
     })
+}
+fn parse_interval(interval: &str) -> Result<&str> {
+    match interval {
+        "month" | "year" => Ok(interval),
+        _ => Err(Error::Invalid("interval must be month or year")),
+    }
 }
 
 impl ControlStore {
@@ -136,11 +144,13 @@ impl ControlStore {
         token: &str,
         request_id: &str,
         plan: &str,
+        interval: &str,
     ) -> Result<CheckoutAttempt> {
         Plan::paid(plan)?;
+        let interval = parse_interval(interval)?;
         uuid::Uuid::parse_str(request_id)
             .map_err(|_| Error::Invalid("requestId must be a UUID"))?;
-        one(&self.db,"INSERT INTO cp_checkout_attempts(request_id,team_id,plan,status,created_at) SELECT $3,team_id,$4,'pending',$5 FROM cp_billing_profiles WHERE team_id=$1 AND lease_token=$2 AND lease_until>$5 RETURNING *",vec![resource_id(team_id)?.into(),token.into(),request_id.into(),plan.into(),now_ms().into()]).await.and_then(checkout)
+        one(&self.db,"INSERT INTO cp_checkout_attempts(request_id,team_id,plan,billing_interval,status,created_at) SELECT $3,team_id,$4,$5,'pending',$6 FROM cp_billing_profiles WHERE team_id=$1 AND lease_token=$2 AND lease_until>$6 RETURNING *",vec![resource_id(team_id)?.into(),token.into(),request_id.into(),plan.into(),interval.into(),now_ms().into()]).await.and_then(checkout)
     }
     pub async fn update_checkout_attempt(
         &self,

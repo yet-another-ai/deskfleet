@@ -67,6 +67,9 @@ impl BillingService {
     pub fn enabled(&self) -> bool {
         self.config.enabled()
     }
+    pub fn enterprise_contact_email(&self) -> Option<&str> {
+        self.config.enterprise_contact_email.as_deref()
+    }
     fn return_url(&self, team: &str) -> String {
         format!("{}/?team={team}&settings=plans", self.web_url)
     }
@@ -85,10 +88,14 @@ impl BillingService {
         store: &ControlStore,
         team: &str,
         plan: &str,
+        interval: &str,
         request_id: &str,
     ) -> Result<String> {
         self.require_enabled()?;
         deskfleet_control_store::billing::Plan::paid(plan)?;
+        if !matches!(interval, "month" | "year") {
+            return Err(ApiError::bad("interval must be month or year"));
+        }
         uuid::Uuid::parse_str(request_id).map_err(|_| ApiError::bad("requestId must be a UUID"))?;
         let lease = store.claim_billing_operation(team).await?.ok_or_else(|| {
             ApiError::new(
@@ -98,7 +105,7 @@ impl BillingService {
             )
         })?;
         let result = self
-            .checkout_locked(store, team, plan, request_id, &lease)
+            .checkout_locked(store, team, plan, interval, request_id, &lease)
             .await;
         store.release_billing_operation(team, &lease).await?;
         result
@@ -108,6 +115,7 @@ impl BillingService {
         store: &ControlStore,
         team: &str,
         plan: &str,
+        interval: &str,
         request_id: &str,
         lease: &str,
     ) -> Result<String> {
@@ -127,9 +135,12 @@ impl BillingService {
                 "Manage the existing subscription in billing",
             ));
         }
-        let price = self.approved_price(plan).await?;
+        let price = self.approved_price(plan, interval).await?;
         if let Some(attempt) = store.checkout_attempt(request_id).await? {
-            if attempt.team_id != team || attempt.plan != plan {
+            if attempt.team_id != team
+                || attempt.plan != plan
+                || attempt.billing_interval != interval
+            {
                 return Err(ApiError::bad("requestId belongs to a different checkout"));
             }
             if !matches!(attempt.status.as_str(), "pending" | "open") {
@@ -145,7 +156,9 @@ impl BillingService {
         }
         if let Some(mut old) = store.open_checkout(team).await? {
             if old.session_id.is_none() {
-                let old_price = self.approved_price(&old.plan).await?;
+                let old_price = self
+                    .approved_price(&old.plan, &old.billing_interval)
+                    .await?;
                 self.complete_checkout(store, team, lease, &old, &old_price)
                     .await?;
                 old = store
@@ -185,7 +198,7 @@ impl BillingService {
                 .await?;
         }
         let attempt = store
-            .create_checkout_attempt(team, lease, request_id, plan)
+            .create_checkout_attempt(team, lease, request_id, plan, interval)
             .await?;
         self.complete_checkout(store, team, lease, &attempt, &price)
             .await
@@ -315,8 +328,10 @@ impl BillingService {
                 None,
             )
             .await?;
-        let go = self.approved_price("go").await?;
-        let pro = self.approved_price("pro").await?;
+        let go = self.approved_price("go", "month").await?;
+        let pro = self.approved_price("pro", "month").await?;
+        let go_year = self.approved_price("go", "year").await?;
+        let pro_year = self.approved_price("pro", "year").await?;
         let updates = &config["features"]["subscription_update"];
         let allowed = updates["default_allowed_updates"]
             .as_array()
@@ -340,6 +355,7 @@ impl BillingService {
                     .iter()
                     .any(|c| c["type"] == "decreasing_item_amount")
             });
+        let shared_product = stripe_id(&go["product"]);
         let valid = config["active"] == true
             && updates["enabled"] == true
             && allowed
@@ -350,17 +366,24 @@ impl BillingService {
             && config["features"]["invoice_history"]["enabled"] == true
             && config["features"]["payment_method_update"]["enabled"] == true
             && go["currency"] == pro["currency"]
-            && stripe_id(&go["product"]) == stripe_id(&pro["product"])
+            && go["currency"] == go_year["currency"]
+            && go["currency"] == pro_year["currency"]
+            && shared_product == stripe_id(&pro["product"])
+            && shared_product == stripe_id(&go_year["product"])
+            && shared_product == stripe_id(&pro_year["product"])
             && go["unit_amount"].as_i64() < pro["unit_amount"].as_i64()
-            && prices.len() == 2
+            && go_year["unit_amount"].as_i64() < pro_year["unit_amount"].as_i64()
+            && prices.len() == 4
             && prices.contains(&stripe_id(&go).ok_or_else(ApiError::internal)?)
-            && prices.contains(&stripe_id(&pro).ok_or_else(ApiError::internal)?);
+            && prices.contains(&stripe_id(&pro).ok_or_else(ApiError::internal)?)
+            && prices.contains(&stripe_id(&go_year).ok_or_else(ApiError::internal)?)
+            && prices.contains(&stripe_id(&pro_year).ok_or_else(ApiError::internal)?);
         if valid {
             Ok(())
         } else {
             Err(billing_error(
                 "invalid_portal_configuration",
-                "Billing Portal must restrict changes to Go/Pro, invoice upgrades immediately, and schedule downgrades and cancellation at period end",
+                "Billing Portal must restrict changes to Go/Pro monthly and yearly Prices, invoice upgrades immediately, and schedule downgrades and cancellation at period end",
             ))
         }
     }

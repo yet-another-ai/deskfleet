@@ -1207,8 +1207,19 @@
     },
     "offer": {
       "go": "每月 2 GiB TURN 中继 · Session、轮数和成员不限",
-      "pro": "每月 20 GiB TURN 中继 · Session、轮数和成员不限"
+      "pro": "每月 20 GiB TURN 中继 · Session、轮数和成员不限",
+      "enterprise": "额度不限，并由运营方提供部署支持。联系我们了解 Enterprise。"
     },
+    "offerInterval": {
+      "month": "按月计费",
+      "year": "按年计费"
+    },
+    "interval": {
+      "month": "月付",
+      "year": "年付"
+    },
+    "chooseInterval": "计费周期",
+    "contactEnterprise": "联系我们",
     "upgradeTo": "升级到 {plan}",
     "askAdmin": "Team 管理员可以为此 Team 升级套餐。",
     "checkoutOpened": "请在新打开的页面完成付款。付款确认后，套餐会自动更新。",
