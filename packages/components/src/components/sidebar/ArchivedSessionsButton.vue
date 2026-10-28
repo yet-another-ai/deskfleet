@@ -100,7 +100,7 @@ async function confirmRestore(): Promise<void> {
         :class="index > 0 && 'border-t border-ui-border'"
         :data-archived-session="item.session.id"
       >
-        <SessionContextMenu :session-id="item.session.id" :title="item.session.title" :archive-state="item.session.archiveState" :disabled="!item.online || busy">
+        <SessionContextMenu :machine-id="item.machine?.id" :session-id="item.session.id" :title="item.session.title" :archive-state="item.session.archiveState" :disabled="!item.online || busy">
           <div class="flex items-center gap-3">
             <button
               type="button"

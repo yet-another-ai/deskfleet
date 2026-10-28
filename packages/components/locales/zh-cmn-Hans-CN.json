@@ -303,6 +303,9 @@
     "openTerminalAt": "在 {path} 中打开终端",
     "session": "会话"
   },
+  "pinnedSessions": {
+    "title": "已置顶"
+  },
   "session": {
     "notFound": "该会话不存在。",
     "label": "会话 {id}",
@@ -695,6 +698,8 @@
       "search": "进行了 {n} 次搜索",
       "other": "使用了 {n} 个工具"
     },
+    "pin": "置顶会话",
+    "unpin": "取消置顶",
     "sessionActions": "会话操作",
     "rename": "重命名会话",
     "sessionName": "会话名称",

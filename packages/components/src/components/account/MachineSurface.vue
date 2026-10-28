@@ -24,12 +24,15 @@ let disposed = false
 // Every store and cache is scoped to one machine so equal local IDs on two machines never meet.
 onMounted(async () => {
   await router.isReady()
-  const route = router.currentRoute.value
-  // Account-wide settings survive machine initialization; resource routes belong to the new scope.
-  if (!route.meta.fullWindow) await router.replace(route.name === "schedules" ? "/schedules" : "/")
-  if (disposed || !root.value) return
+  if (disposed || !root.value || props.session.machineId.value !== props.machine.id) return
   remote = remoteMachineClient(props.host, props.session.central, props.machine)
   configureClient(remote.api)
+  const route = router.currentRoute.value
+  const destination = props.session.takeSessionDestination(props.machine.id)
+  // Account-wide settings survive machine initialization; resource routes belong to the new scope.
+  if (destination) await router.replace({ name: "session", params: { sessionId: destination } })
+  else if (!route.meta.fullWindow) await router.replace(route.name === "schedules" ? "/schedules" : "/")
+  if (disposed || !root.value) return
   state = createPinia()
   app = createApp(App).provide(accountSessionKey, props.session).provide(appearanceStoreKey, appearance).use(state).use(router).use(i18n)
   if (vaporInteropPlugin) app.use(vaporInteropPlugin)

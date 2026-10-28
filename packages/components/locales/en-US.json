@@ -303,6 +303,9 @@
     "openTerminalAt": "Open terminal in {path}",
     "session": "Session"
   },
+  "pinnedSessions": {
+    "title": "Pinned"
+  },
   "session": {
     "notFound": "This session does not exist.",
     "label": "Session {id}",
@@ -695,6 +698,8 @@
       "search": "Ran {n} search | Ran {n} searches",
       "other": "Used {n} tool | Used {n} tools"
     },
+    "pin": "Pin session",
+    "unpin": "Unpin session",
     "sessionActions": "Session actions",
     "rename": "Rename session",
     "sessionName": "Session name",

@@ -5,6 +5,7 @@ import { configureClient, getClient } from "@deskfleet/client/platform"
 import type { CentralApi, CentralEvent, Machine } from "@deskfleet/client/central"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
+import type { AccountSession } from "./composables/useAccountSession.ts"
 import AccountShell from "./AccountShell.vue"
 import { agentEvent, agentInput, agentSnapshot } from "./test/agent.ts"
 import { fakeCentral, machineFixture } from "./test/central.ts"
@@ -62,6 +63,14 @@ test("browses synchronized history with the machine offline and isolates equal l
   await vi.waitFor(() => expect(view!.text()).toContain("Message from 102"))
   expect(view.text()).not.toContain("Message from 101")
   expect(central.createPeer).not.toHaveBeenCalled()
+  // An explicit Session destination survives the fresh Machine mount, even when
+  // both machines use the same local Session ID and synchronized offline history.
+  const account = view.getComponent({ name: "MachineSurface" }).props("session") as AccountSession
+  account.openSession("101", "30")
+  await flushPromises()
+  await vi.waitFor(() => expect(view!.text()).toContain("Message from 101"))
+  expect(router.currentRoute.value.path).toBe("/sessions/30")
+  expect(view.text()).not.toContain("Message from 102")
   await page().get('button[aria-label="Ada"]').trigger("click")
   await page().findAll('button[role="menuitem"]').find(button => button.text() === "Sign out")!.trigger("click")
   await flushPromises()

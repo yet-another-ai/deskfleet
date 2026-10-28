@@ -13,6 +13,7 @@ import WindowToolbar from "../chrome/WindowToolbar.vue"
 import IconButton from "../common/IconButton.vue"
 import AccountNotices from "./AccountNotices.vue"
 import MachineSection from "./MachineSection.vue"
+import PinnedSessions from "./PinnedSessions.vue"
 import SidebarFooter from "./SidebarFooter.vue"
 import SidebarNavigation from "./SidebarNavigation.vue"
 import TeamMachineRow from "./TeamMachineRow.vue"
@@ -85,6 +86,7 @@ function refresh(): void {
     <SidebarNavigation />
 
     <div class="mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <PinnedSessions />
       <div class="mb-2 flex items-center justify-between gap-2 px-2.5 text-xs text-ui-text-faint">
         <span>{{ catalogLoading ? t("catalog.loading") : t("catalog.workspaces") }}</span>
         <div class="-mr-1.5 flex items-center">

@@ -72,7 +72,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   const buildWorkspaces = data.machine.workspaces.filter(workspace => workspace.id === "202")
   data.machine.workspaces = data.machine.workspaces.filter(workspace => workspace.id !== "202")
   // The embedded demo owns its sample resource tree and the selectors that read it.
-  Reflect.set(fleet, "machines", ref([data.machine, { id: "demo-build", name: "Build server", local: false, online: true, desktop: false, terminals: [], workspaces: buildWorkspaces }]))
+  Reflect.set(fleet, "machines", ref([data.machine, { id: "demo-build", name: "Build server", local: false, online: true, desktop: false, terminals: [], sessions: [], workspaces: buildWorkspaces }]))
   const workspaces = computed(() => fleet.machines.flatMap(machine => machine.workspaces.map(workspace => ({ machine, workspace }))))
   const sessions = computed(() => workspaces.value.flatMap(location => location.workspace.sessions.map(session => ({ ...location, session, worktree: session.worktree }))))
   const terminalLocations = computed<TerminalLocation[]>(() => [

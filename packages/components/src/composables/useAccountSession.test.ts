@@ -1,11 +1,12 @@
 import { flushPromises } from "@vue/test-utils"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import type { LocalEnrollment } from "@deskfleet/client/central"
 import { fakeCentral, machineFixture } from "../test/central.ts"
+import { router } from "../router/index.ts"
 import { createAccountSession, type AccountSession } from "./useAccountSession.ts"
 
 let session: AccountSession | undefined
-afterEach(() => { session?.dispose(); session = undefined })
+afterEach(() => { session?.dispose(); session = undefined; vi.restoreAllMocks() })
 const enrollment = (value: Partial<LocalEnrollment> = {}): LocalEnrollment => ({
   configured: false, connected: false, revoked: false, identity: { originId: "local-origin", machineId: "1" }, machineName: "This Mac", ...value,
 })
@@ -31,6 +32,70 @@ test("otherwise opens a reachable machine, and presence updates it in place", as
   expect(session.machineId.value).toBe("b")
   fake.emit({ type: "presence", machineId: "a", online: true } as never)
   expect(session.machines.value.find(machine => machine.id === "a")?.online).toBe(true)
+})
+
+test("opening a Session on the selected Machine navigates without replacing its scope", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("a", "team-1", "First")] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const push = vi.spyOn(router, "push").mockResolvedValue(undefined)
+  session.openSession("a", "30")
+  expect(push).toHaveBeenCalledExactlyOnceWith({ name: "session", params: { sessionId: "30" } })
+  expect(session.machineId.value).toBe("a")
+  expect(session.takeSessionDestination("a")).toBeUndefined()
+  session.openSession("unknown", "30")
+  expect(push).toHaveBeenCalledTimes(1)
+})
+
+test("opening another Machine's Session hands its destination only to the selected new scope", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("a", "team-1", "First"), machineFixture("b", "team-1", "Second", false)] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const push = vi.spyOn(router, "push").mockResolvedValue(undefined)
+  session.openSession("b", "30")
+  expect(session.machineId.value).toBe("b")
+  expect(push).not.toHaveBeenCalled()
+  expect(session.takeSessionDestination("a")).toBeUndefined()
+  expect(session.takeSessionDestination("b")).toBe("30")
+  expect(session.takeSessionDestination("b")).toBeUndefined()
+})
+
+test("a newer Session selection replaces the destination of a Machine still mounting", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("a", "team-1", "First"), machineFixture("b", "team-1", "Second")] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const push = vi.spyOn(router, "push").mockResolvedValue(undefined)
+  session.openSession("b", "30")
+  session.openSession("b", "31")
+  expect(push).toHaveBeenCalledExactlyOnceWith({ name: "session", params: { sessionId: "31" } })
+  expect(session.takeSessionDestination("b")).toBe("31")
+})
+
+test.each(["machine", "same team", "other team", "sign out"] as const)("ordinary %s selection clears a queued Session destination", async action => {
+  const fake = fakeCentral({
+    teams: [{ id: "team-1", name: "First", role: "member" }, { id: "team-2", name: "Second", role: "member" }],
+    machines: [machineFixture("a", "team-1", "First"), machineFixture("b", "team-1", "Second"), machineFixture("c", "team-2", "Third")],
+  })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  session.openSession("b", "30")
+  if (action === "machine") session.selectMachine("b")
+  else if (action === "same team") await session.selectTeam("team-1")
+  else if (action === "other team") await session.selectTeam("team-2")
+  else await session.signOut()
+  expect(session.takeSessionDestination("b")).toBeUndefined()
+})
+
+test("a removed Machine's queued destination is discarded when the roster selects another Machine", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("a", "team-1", "First"), machineFixture("b", "team-1", "Second")] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  session.openSession("b", "30")
+  fake.state.machines = [fake.state.machines[0]!]
+  await session.refreshMachines()
+  expect(session.machineId.value).toBe("a")
+  expect(session.takeSessionDestination("a")).toBeUndefined()
+  expect(session.takeSessionDestination("b")).toBeUndefined()
 })
 
 test("Team roster notifications add, rename and remove machines without replacing a valid selection", async () => {

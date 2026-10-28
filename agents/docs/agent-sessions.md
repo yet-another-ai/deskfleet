@@ -56,6 +56,22 @@ normal journal synchronization updates other clients and retained central histor
 The persisted `titleCustomized` flag makes a user rename take precedence over later
 ACP `session_info_update` titles, including after daemon restart or restore.
 
+### Pinned Sessions
+
+The Session context menu offers Pin and Unpin, including for archived Sessions and
+offline machines. Pinned Sessions appear together above Workspaces in the sidebar;
+their original Workspace or machine association is unchanged. The section is hidden
+when there are no visible pins. Opening a pin switches to its owning machine when
+needed, then opens that Session in the machine's isolated application scope.
+
+Pins are personal preferences stored on the current device, scoped by server,
+account, and Team. Each entry uses the central machine ID together with the local
+Session ID, so equal Session IDs on different machines remain distinct. Pinning
+does not mutate the daemon or synchronize preferences between devices. The active
+machine supplies live titles; other machines use retained central Session metadata
+with a cached title while history is unavailable. Removed machines are not shown.
+Embedded demos keep their pins in memory so separate demonstrations stay independent.
+
 ### Forking a conversation
 
 The Session menu offers Fork when the provider advertises `session/fork`. Forking
