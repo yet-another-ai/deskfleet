@@ -4,10 +4,12 @@ use super::*;
 use crate::{config::ServerConfig, peers};
 use actix_web::{http::StatusCode, test};
 use deskfleet_control_store::{PeerCandidateState, PeerOfferState, now_ms};
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
 use tokio::sync::{mpsc, watch};
 
 struct Fixture {
+    admin: DatabaseConnection,
+    schema: String,
     a: web::Data<AppState>,
     b: web::Data<AppState>,
     machine: String,
@@ -20,9 +22,19 @@ struct Fixture {
 
 impl Fixture {
     async fn new() -> Self {
+        let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
+        let admin = Database::connect(&url).await.unwrap();
+        // Fault-injection triggers must not affect concurrently running cases.
+        // Both API instances still share this test's database tables and inboxes.
+        let schema = format!("signaling_test_{}", uuid::Uuid::new_v4().simple());
+        admin
+            .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
+            .await
+            .unwrap();
+        let separator = if url.contains('?') { '&' } else { '?' };
         let config = ServerConfig {
             bind_addr: "127.0.0.1:0".parse().unwrap(),
-            database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
+            database_url: format!("{url}{separator}options=-csearch_path%3D{schema}"),
             public_url: "https://shared-control.test".into(),
             web_origins: vec![],
             auth: crate::auth::config::AuthConfig::development("https://shared-control.test"),
@@ -74,6 +86,8 @@ impl Fixture {
             .add_client(&login, &user.id, "client-a", send, shutdown)
             .await;
         Self {
+            admin,
+            schema,
             a,
             b,
             machine: machine.id,
@@ -129,8 +143,17 @@ impl Fixture {
     async fn close(self) {
         self.b.hub.remove_daemon(&self.machine, "daemon-b").await;
         self.a.hub.remove_client(&self.login, "client-a").await;
-        self.a.store.close().await.unwrap();
-        self.b.store.close().await.unwrap();
+        let a = self.a.store.clone();
+        let b = self.b.store.clone();
+        drop(self.a);
+        drop(self.b);
+        a.close().await.unwrap();
+        b.close().await.unwrap();
+        self.admin
+            .execute_unprepared(&format!("DROP SCHEMA {} CASCADE", self.schema))
+            .await
+            .unwrap();
+        self.admin.close().await.unwrap();
     }
 }
 
