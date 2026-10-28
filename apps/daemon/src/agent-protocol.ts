@@ -1,4 +1,4 @@
-import type { ContentBlock, CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest, SessionNotification } from "@agentclientprotocol/sdk/unstable"
+import type { ContentBlock, CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest, SessionNotification, Usage } from "@agentclientprotocol/sdk/unstable"
 import type { GitDiffRequest, GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 import type { ComposerReferenceResolve, ComposerReferenceResult, ComposerReferenceSearch } from "./composer-reference-protocol.ts"
 
@@ -100,6 +100,8 @@ export interface AgentTurn {
   startedAt: string
   endedAt?: string
   stopReason?: string
+  /** Provider-reported token usage for this turn; absent when not reported. */
+  usage?: Usage
   error?: string
 }
 

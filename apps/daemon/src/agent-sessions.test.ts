@@ -100,8 +100,8 @@ class Provider implements AgentProvider {
       close: async () => { this.closeCount++; this.resumeWait?.reject(new Error("Provider connection closed")); this.finish("cancelled"); await this.closeBarrier },
     }
   }
-  finish(stopReason: acp.PromptResponse["stopReason"] = "end_turn"): void {
-    const active = this.active; this.active = undefined; active?.resolve({ stopReason })
+  finish(stopReason: acp.PromptResponse["stopReason"] = "end_turn", usage?: acp.Usage | null): void {
+    const active = this.active; this.active = undefined; active?.resolve({ stopReason, usage })
   }
   askPermission(): Promise<acp.RequestPermissionResponse> {
     return this.client.requestPermission!({
@@ -156,6 +156,47 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   }
   return { catalog, service, provider, providers, actor, bob, create, snapshot, sessionId, read, submit, directory, repository }
 }
+
+test("prompt token usage is persisted per turn and replayed independently from context usage", async t => {
+  const f = await setup(t)
+  const responses: acp.PromptResponse[] = [
+    { stopReason: "end_turn", usage: { totalTokens: 140, inputTokens: 100, outputTokens: 40,
+      thoughtTokens: 10, cachedReadTokens: 60, cachedWriteTokens: 0, _meta: { provider: { model: "fixture" } } } },
+    { stopReason: "cancelled", usage: { totalTokens: 37, inputTokens: 25, outputTokens: 12, thoughtTokens: null } },
+    { stopReason: "end_turn", usage: { totalTokens: 0, inputTokens: 0, outputTokens: 0 } },
+    { stopReason: "end_turn" },
+    { stopReason: "end_turn", usage: null },
+  ]
+  const finishedTurns: AgentSnapshot["turns"] = []
+  for (const [index, response] of responses.entries()) {
+    await f.submit(`turn ${index}`).result
+    await until(f.read, () => f.provider.prompts.length === index + 1)
+    await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: {
+      sessionUpdate: "usage_update", used: 8_000, size: 128_000, cost: { amount: 0.25, currency: "USD" },
+    } })
+    f.provider.finish(response.stopReason, response.usage)
+    const snapshot = await until(f.read, value => value.turns.length === index + 1
+      && value.turns[index].state === (response.stopReason === "cancelled" ? "cancelled" : "completed"))
+    const turn = snapshot.turns[index]
+    assert.deepEqual(turn.usage, response.usage ?? undefined)
+    if (response.usage == null) assert.equal("usage" in turn, false, "missing usage is unknown, not zero or context usage")
+    finishedTurns.push(turn)
+  }
+  assert.deepEqual((await f.read()).turns, finishedTurns, "later turns do not overwrite earlier usage")
+  const history = await f.service.journal.history(f.sessionId, "0", 200)
+  for (const turn of finishedTurns) {
+    const completed = history.filter(event => event.kind === "turn" && "id" in event.payload && event.payload.id === turn.id).at(-1)
+    assert.deepEqual(completed?.payload, turn, "the committed turn event contains the same usage as the snapshot")
+  }
+  await f.service.close()
+  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
+  await restarted.init()
+  try {
+    assert.deepEqual((await restarted.journal.read(f.sessionId)).turns, finishedTurns)
+    const replayed = await restarted.journal.history(f.sessionId, "0", 200)
+    assert.deepEqual(replayed.filter(event => event.kind === "turn"), history.filter(event => event.kind === "turn"))
+  } finally { await restarted.close() }
+})
 
 test("local composer without MCP finds files and returns no Session candidates while still rejecting selected Session references", async t => {
   const f = await setup(t)

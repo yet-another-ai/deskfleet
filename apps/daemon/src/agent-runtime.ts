@@ -615,6 +615,7 @@ export class AgentRuntime {
       const finished: AgentTurn = {
         ...current, state: error ? "interrupted" : result?.stopReason === "cancelled" ? "cancelled" : "completed",
         endedAt: timestamp(), stopReason: result?.stopReason, error: error ? errorMessage(error) : undefined,
+        usage: result?.usage ?? undefined,
       }
       await this.journal.commit(snapshot, { turns: [finished], events: [this.journal.event(this.sessionId, "turn", finished)] })
     })

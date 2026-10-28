@@ -289,7 +289,7 @@ ownership, lookup, and active-resource constraints.
 | `agent_runs` | `(session_id, generation)` | Provider process state and start/end timestamps/error |
 | `agent_commands` | `id`; canonical `operation_id` | Immutable request audit and mutable receipt/outcome |
 | `agent_inputs` | `id` | Content/author, submission command, acceptance sequence, requested and actual delivery, dispatch command/actor |
-| `agent_turns` | `id` | Initial input/dispatch command, run generation, execution state, stop reason |
+| `agent_turns` | `id` | Initial input/dispatch command, run generation, execution state, stop reason, provider-reported token usage |
 | `agent_permissions` | `id` | Original ACP request/options, run/turn, winning decision command/actor |
 | `agent_events` | `(session_id, seq)` | Ordered domain transitions and original ACP notifications |
 
@@ -315,6 +315,15 @@ Turns are `starting`, `running`, `cancelling`, `completed`, `cancelled`,
 `interrupted`, or `failed`. Permissions are `pending`, `resolved`, or `cancelled`.
 Selecting a reject option is a resolved decision; cancellation means the request
 is no longer live.
+
+When an ACP `session/prompt` response includes `usage`, the daemon saves that
+original object on the turn, including input/output totals, optional cache and
+reasoning counts, and metadata. Usage commits with the turn's terminal state and
+matching event, including when the provider returns `cancelled`. An omitted or
+null usage object remains absent rather than becoming zero; reported zero counts
+are preserved. Turn usage survives snapshot reads, history replay, daemon restart,
+and central replication through the existing JSON records. Context-window
+`usage_update` snapshots do not supply turn consumption or fill missing counts.
 
 ### Transaction boundaries
 
