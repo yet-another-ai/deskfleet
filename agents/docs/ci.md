@@ -23,9 +23,11 @@ a stable `Gate` result for branch protection.
   actual login, remote execution, archive/restore, and offline history flows.
   It installs Electron's Linux sandbox helper with root ownership and mode 4755
   before launching the clients.
-- `.github/workflows/build.yml` builds release artifacts using
-  `mise run ci:build`, then packages Electron installers. Its shared Rust task
-  runs one napi-driven Cargo workspace build for the server and native addon,
+- `.github/workflows/build.yml` builds artifacts, then packages Electron
+  installers. Ordinary CI runs use `mise run ci:build`; tagged releases build
+  Web and Electron separately to give only Electron a fixed API origin.
+  Its shared Rust task runs one napi-driven Cargo workspace build for the server
+  and native addon,
   using the host target for both. SEA and Electron bundling consume that addon
   without compiling it again. The server is read from
   `target/<host-triple>/release/`, where `rustc --print host-tuple` identifies the
@@ -35,8 +37,10 @@ a stable `Gate` result for branch protection.
   LTO off, no debug info, and stripped symbols. Each target packages and verifies
   the standalone SEA daemon.
   The same matrix packages Electron installers and smoke-tests the backend
-  container on each native Linux runner. macOS signing is enabled only by the
-  Publish caller. It supports reusable calls and manual runs.
+  container on each native Linux runner. The Publish caller enables production
+  configuration and macOS signing. PR, main, and manual Build runs do not bind
+  the production environment: Statsig stays disabled, and Electron defaults to
+  `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
   creates a draft GitHub Release and pushes the backend image to GHCR after
   both workflows succeed.
@@ -48,8 +52,9 @@ contains `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
 Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
 Linux x64/arm64 AppImage installers. PRs exercise packaging on Linux x64.
 The Linux x64 job also uploads `deskfleet-web` with the static Vue application.
-Its default API origin is the hosting origin; deployments with a separate API
-origin build with `VITE_DESKFLEET_SERVER_URL` as described in the Web guide.
+Its API origin is the hosting origin, including tagged release artifacts;
+deployments with a separate API origin build with `VITE_DESKFLEET_SERVER_URL`
+as described in the Web guide.
 
 Smoke tests copy the daemon executable alone to an unrelated temporary directory,
 clear Node's environment overrides and PATH, then check native information,
@@ -87,7 +92,27 @@ before publishing. The Build workflow keeps read-only repository access;
 only the release job receives `contents: write`, and only the image job receives
 `packages: write`.
 
-Configure these GitHub Actions repository secrets before the first tag:
+Before the first tag, create the `production` environment under Repository
+Settings → Environments. Set its deployment branch and tag policy to
+**Selected branches and tags**, add a **Tag** rule matching `v*`, and allow no
+branches. Store production values in this environment, removing any copies from
+repository or organization variables and secrets.
+
+Configure these environment variables:
+
+| Variable | Value |
+| --- | --- |
+| `VITE_DESKFLEET_SERVER_URL` | Required official API origin for Electron, such as `https://fleet.example.com`. A missing or empty value fails the release build. |
+| `VITE_STATSIG_CLIENT_KEY` | Optional Statsig client-public SDK key for Web and Electron. Missing or blank disables analytics. |
+| `VITE_STATSIG_ENVIRONMENT` | Optional Statsig environment for both clients; defaults to the Vite mode, `production`. |
+
+The reusable Build workflow binds its packaging job to `production` only when
+Publish requests a production release. The caller passes the signing secret
+names explicitly; the bound environment supplies their values. The official
+API origin is injected only into Electron's build, so the Web artifact stays
+same-origin.
+
+Configure these secrets in the same environment:
 
 | Secret | Value |
 | --- | --- |

@@ -9,8 +9,8 @@ on:
         type: boolean
         required: false
         default: false
-      sign_macos:
-        description: Sign and notarize macOS installers for a validated tag release.
+      production_release:
+        description: Use the production environment and sign macOS installers for a validated tag release.
         type: boolean
         required: false
         default: false
@@ -43,6 +43,7 @@ jobs:
   package:
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
+    environment: ${{ inputs.production_release && 'production' || '' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -70,20 +71,34 @@ jobs:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
 
       - name: Build the server, daemon, Web client, and Electron bundles
-        env:
-          VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
-          VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
+        if: ${{ !inputs.production_release }}
         run: mise run ci:build
 
+      - name: Build production release bundles
+        if: ${{ inputs.production_release }}
+        shell: bash
+        env:
+          DESKTOP_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
+          VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
+          VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
+        run: |
+          if [[ -z "$DESKTOP_SERVER_URL" ]]; then
+            echo "::error::Set VITE_DESKFLEET_SERVER_URL in the production environment before publishing."
+            exit 1
+          fi
+          mise run build
+          # Keep Web same-origin; reuse the release addon for Electron's API-specific build.
+          VITE_DESKFLEET_SERVER_URL="$DESKTOP_SERVER_URL" mise exec -- pnpm --filter @deskfleet/desktop build
+
       - name: Package unsigned desktop installers
-        if: ${{ runner.os != 'macOS' || !inputs.sign_macos }}
+        if: ${{ runner.os != 'macOS' || !inputs.production_release }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: mise exec -- pnpm --filter @deskfleet/desktop run package
 
       - name: Prepare macOS notarization key
         id: macos_credentials
-        if: ${{ runner.os == 'macOS' && inputs.sign_macos }}
+        if: ${{ runner.os == 'macOS' && inputs.production_release }}
         shell: bash
         env:
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -104,7 +119,7 @@ jobs:
           EOF
 
       - name: Sign and notarize macOS desktop installers
-        if: ${{ runner.os == 'macOS' && inputs.sign_macos }}
+        if: ${{ runner.os == 'macOS' && inputs.production_release }}
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
@@ -114,7 +129,7 @@ jobs:
         run: mise exec -- pnpm --filter @deskfleet/desktop exec electron-builder --config electron-builder.release.yml --publish never
 
       - name: Remove macOS notarization key
-        if: ${{ always() && runner.os == 'macOS' && inputs.sign_macos }}
+        if: ${{ always() && runner.os == 'macOS' && inputs.production_release }}
         shell: bash
         run: rm -f "$RUNNER_TEMP/deskfleet-notarization.p8"
 

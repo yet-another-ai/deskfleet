@@ -31,8 +31,13 @@ Vite also reads the app's environment files: `apps/web/.env*` for Web and
 variables in the invoking shell works for both. Changing the deployed server's
 runtime environment does not modify a compiled frontend.
 
-The build workflow accepts optional GitHub repository variables with these same
-names. Leave the key unset for builds that should not collect analytics.
+For tagged releases, configure these optional variables in the GitHub
+`production` environment. The build workflow supplies them to Web and Electron
+only for production releases. PR, main, and manual Build runs do not bind that
+environment and leave Statsig disabled. Keep production values out of repository
+and organization variables; see [release configuration](ci.md#tagged-releases)
+for the environment's tag restrictions. Leave the key unset for releases that
+should not collect analytics.
 
 Initialization runs in the background with a one-second async timeout. Product
 startup does not await it. The SDK uses available cached/default evaluations

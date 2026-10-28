@@ -176,14 +176,24 @@ it unset for the same-origin production Web layout above. For split hosts, build
 `DESKFLEET_AUTH_WEB_URL=https://app.example.com` and
 `DESKFLEET_WEB_ORIGINS=https://app.example.com`. Changing the static host's runtime
 environment does not rewrite an existing bundle. Electron defaults to
-`http://localhost:8080`; build the official desktop artifacts with
-`VITE_DESKFLEET_SERVER_URL=https://fleet.example.com`. Neither client exposes
-a backend-address setting. Changing a compiled API origin requires rebuilding
-that client; an unset production Web build follows the origin serving its page.
+`http://localhost:8080`. Set `VITE_DESKFLEET_SERVER_URL=https://fleet.example.com`
+in the GitHub `production` environment for official desktop artifacts; the tag
+build rejects a missing or empty value and injects it only into Electron. The
+tagged Web artifact stays same-origin. Neither client exposes a backend-address
+setting. Changing a compiled API origin requires rebuilding that client; an
+unset production Web build follows the origin serving its page.
+
+Create the `production` environment under Repository Settings → Environments.
+Use **Selected branches and tags** with a **Tag** rule matching `v*` and no
+allowed branches. Store production variables and secrets only in this
+environment, removing repository and organization copies. PR, main, and manual
+Build runs do not bind it: Statsig stays disabled, and Electron retains its
+localhost backend. See [tagged releases](ci.md#tagged-releases) for the complete
+configuration.
 
 Statsig is optional and configured at build time for both Web and Electron. The
-build workflow reads the GitHub repository variables `VITE_STATSIG_CLIENT_KEY`
-and `VITE_STATSIG_ENVIRONMENT`; neither is a required release secret. Use a
+tag build workflow reads the `production` environment variables
+`VITE_STATSIG_CLIENT_KEY` and `VITE_STATSIG_ENVIRONMENT`; neither is required. Use a
 Statsig client-public SDK key, which is included in the distributed JavaScript,
 never a server secret key. An unset or blank key disables the integration. The
 environment defaults to the Vite mode when its value is absent or blank; set it
@@ -206,7 +216,8 @@ analytics and frontend experiments; API/daemon authorization and quota admission
 remain authoritative. See the [Web](../../apps/web/README.md) and
 [desktop](../../apps/desktop/README.md) guides for environment-file locations.
 
-The tag workflow requires these GitHub Actions secrets, separate from API secrets:
+The tag workflow requires these secrets in the GitHub `production` environment,
+separate from API secrets:
 
 | Secret | Purpose |
 | --- | --- |
@@ -237,12 +248,7 @@ Before tagging, account for these current behaviors:
    assets. It does not deploy the API or Web application. `deskfleet-web` is a
    same-origin Actions artifact retained for 14 days, not a GitHub Release asset;
    retain and deploy the build from the selected tag.
-4. The tag build workflow currently does not supply `VITE_DESKFLEET_SERVER_URL`.
-   Before tagging, configure its Electron build steps with the official API
-   origin. Without that change, desktop artifacts target `http://localhost:8080`,
-   and testers cannot change that address in the welcome screen. Keep the Web
-   build variable unset if its artifact should remain same-origin.
-5. The repository has no production Compose stack. The server image contains
+4. The repository has no production Compose stack. The server image contains
    only the API, runs as UID/GID `10001:10001`, and needs no application data
    volume. PostgreSQL and execution-machine data need persistent storage.
 

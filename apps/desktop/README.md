@@ -528,7 +528,20 @@ and fuses, with the final Developer ID signature applied after the fuse changes.
 The app and helpers receive the V8 JIT entitlement. The bundled native addon is
 signed with the app; loading it does not require disabling library validation.
 
-Configure these GitHub Actions secrets before pushing a release tag:
+Before pushing a release tag, create the GitHub `production` environment with
+deployment access restricted to tags matching `v*` and no branches. Set its
+`VITE_DESKFLEET_SERVER_URL` variable to the official API origin; a missing or
+empty value fails the release build. Optional `VITE_STATSIG_CLIENT_KEY` and
+`VITE_STATSIG_ENVIRONMENT` variables configure analytics. The workflow supplies
+the API origin only to Electron; the Web artifact stays same-origin.
+
+PR, main, and manual Build runs do not bind this environment: their installers
+use the localhost backend, leave Statsig disabled, and skip release signing.
+Keep production values out of repository and organization variables and secrets.
+See [release configuration](../../agents/docs/ci.md#tagged-releases) for the
+environment settings.
+
+Configure these secrets in the same environment:
 
 | Secret | Value |
 | --- | --- |
