@@ -352,6 +352,14 @@ are preserved. Turn usage survives snapshot reads, history replay, daemon restar
 and central replication through the existing JSON records. Context-window
 `usage_update` snapshots do not supply turn consumption or fill missing counts.
 
+At dispatch, a turn also captures the confirmed ACP model selection as optional
+`model: { id, name }`. Later configuration changes do not rewrite that snapshot.
+This identifies the configured model, not any internal model routing performed
+by the provider. Missing model selections and older turns remain unattributed.
+
+Team AI usage in [the backend](backend.md#team-ai-usage) aggregates these persisted
+turns without replaying events or interpreting context-window updates as spend.
+
 ### Transaction boundaries
 
 - Native constraints allow only one live run and one live turn per Session.

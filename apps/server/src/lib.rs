@@ -1,4 +1,5 @@
 //! API-only control plane: trusted identity/signaling and PostgreSQL read replicas.
+mod ai_usage;
 mod api;
 pub mod auth;
 pub mod billing;
@@ -84,6 +85,11 @@ pub fn configure(config: &mut ServiceConfig) {
             .route("/teams/{teamId}", web::patch().to(api::rename_team))
             .route("/teams/{teamId}", web::delete().to(api::delete_team))
             .route("/teams/{teamId}/usage", web::get().to(api::team_usage))
+            .route("/teams/{teamId}/ai-usage", web::get().to(ai_usage::summary))
+            .route(
+                "/teams/{teamId}/ai-usage/sessions",
+                web::get().to(ai_usage::sessions),
+            )
             .route("/teams/{teamId}/members", web::get().to(api::members))
             .route(
                 "/teams/{teamId}/members/{userId}",

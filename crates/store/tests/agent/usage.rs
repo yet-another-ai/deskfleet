@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn turn_usage_and_matching_events_survive_catalog_restart() {
+async fn turn_usage_models_and_matching_events_survive_catalog_restart() {
     let file = File::new();
     let local = LocalCatalog::open(&file.0, "host").await.unwrap();
     let mut session = create(&local).await.session;
@@ -18,12 +18,23 @@ async fn turn_usage_and_matching_events_survive_catalog_restart() {
         Some(json!({"totalTokens": 0, "inputTokens": 0, "outputTokens": 0})),
         None,
     ];
+    let models = [
+        Some(AgentTurnModel {
+            id: "first".into(),
+            name: "First model".into(),
+        }),
+        Some(AgentTurnModel {
+            id: "second".into(),
+            name: "Second model".into(),
+        }),
+        None,
+    ];
     let mut turns = Vec::new();
     let mut events = Vec::new();
-    for usage in usages {
+    for (usage, model) in usages.into_iter().zip(models) {
         let submission = command(&local, Some(session.id)).await;
         let input = input(&local, &submission, session.last_event_seq.as_i64() + 1).await;
-        let running: AgentTurn = parse(json!({
+        let mut running: AgentTurn = parse(json!({
             "id": local.agent_allocate_id().await.unwrap().to_string(),
             "sessionId": session.id,
             "initialInputId": input.id,
@@ -34,6 +45,8 @@ async fn turn_usage_and_matching_events_survive_catalog_restart() {
             "startedAt": TIME
         }));
         assert_eq!(running.usage, None);
+        assert_eq!(running.model, None);
+        running.model = model.clone();
         let mut changes = transaction(&session);
         changes.command = Some(submission);
         changes.runs = vec![run(session.id, 1)];
@@ -41,6 +54,10 @@ async fn turn_usage_and_matching_events_survive_catalog_restart() {
         changes.turns = vec![running.clone()];
         changes.events = vec![event(session.id, EventKind::Turn, &running)];
         let started = local.agent_commit(changes).await.unwrap();
+        assert_eq!(
+            started.events[0].event.payload.get("model"),
+            model.as_ref().map(|model| json!(model)).as_ref()
+        );
         session = started.session.unwrap();
         events.extend(started.events);
 
@@ -58,6 +75,10 @@ async fn turn_usage_and_matching_events_survive_catalog_restart() {
         assert_eq!(
             finished.events[0].event.payload.get("usage"),
             usage.as_ref()
+        );
+        assert_eq!(
+            finished.events[0].event.payload.get("model"),
+            model.as_ref().map(|model| json!(model)).as_ref()
         );
         session = finished.session.unwrap();
         events.extend(finished.events);

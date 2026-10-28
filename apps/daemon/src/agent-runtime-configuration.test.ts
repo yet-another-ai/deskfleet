@@ -10,7 +10,7 @@ import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { openInMemoryCatalog } from "@deskfleet/native"
 import type { AgentClient, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import type { AgentConfiguration, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
-import type { AgentSnapshot } from "./agent-protocol.ts"
+import type { AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import { DaemonCatalog } from "./catalog.ts"
 
@@ -496,3 +496,53 @@ test("mode and model changes wait for the current turn", async t => {
   await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
   assert.equal((await f.configure({ mode: "full-access" })).modes?.currentValue, "full-access")
 })
+
+test("turns retain their configured model across later updates and daemon restart", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  let release!: () => void
+  provider.promptWait = new Promise<void>(resolve => { release = resolve })
+  try {
+    await f.submit()
+    const running = await until(f.read, () => provider.prompts.length === 1)
+    assert.deepEqual(running.turns[0]?.model, { id: "first", name: "first" })
+    provider.model = "second"
+    await provider.notify(options("second", "high"))
+  } finally { release() }
+  await until(f.read, state => state.turns[0]?.state === "completed")
+  await f.configure({ model: "second" })
+  await f.submit()
+  const completed = await until(f.read, state => state.turns.length === 2 && state.turns.every(turn => turn.state === "completed"))
+  assert.deepEqual(completed.turns.map(turn => turn.model), [
+    { id: "first", name: "first" }, { id: "second", name: "second" },
+  ])
+  const history = await f.service.journal.history(f.sessionId, "0", 200)
+  for (const event of history.filter(event => event.kind === "turn")) {
+    const payload = event.payload as AgentTurn
+    const turn = completed.turns.find(turn => turn.id === payload.id)
+    assert.deepEqual(payload.model, turn?.model)
+  }
+  await f.service.close()
+  const restarted = new AgentSessions(f.catalog, f.catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
+  try {
+    await restarted.init()
+    assert.deepEqual((await restarted.journal.read(f.sessionId)).turns, completed.turns)
+    const replayed = await restarted.journal.history(f.sessionId, "0", 200)
+    assert.deepEqual(replayed.filter(event => event.kind === "turn"), history.filter(event => event.kind === "turn"))
+  } finally { await restarted.close() }
+})
+
+for (const response of ["missing", "empty"] as const) {
+  test(`turns omit model snapshots when the provider reports ${response} configOptions`, async t => {
+    const provider = new ConfigurationProvider()
+    provider.newSessionOptions = response
+    const f = await setup(t, provider)
+    await f.submit()
+    const snapshot = await until(f.read, state => state.turns[0]?.state === "completed")
+    assert.equal(Object.hasOwn(snapshot.turns[0]!, "model"), false)
+    const history = await f.service.journal.history(f.sessionId, "0", 200)
+    for (const event of history.filter(event => event.kind === "turn")) {
+      assert.equal(Object.hasOwn(event.payload, "model"), false)
+    }
+  })
+}

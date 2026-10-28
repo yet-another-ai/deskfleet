@@ -1,4 +1,5 @@
 //! PostgreSQL control-plane storage. Independent from each daemon's SQLite catalog.
+mod ai_usage;
 pub mod billing;
 mod history;
 mod identity;

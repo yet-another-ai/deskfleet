@@ -4,6 +4,7 @@ import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
 import type { TeamBilling, AdminTeamBilling } from "./billing.ts"
+import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import { authenticatePasskey } from "./passkeys.ts"
 
 export interface SavedAccount { serverUrl: string; token?: string; user?: AccountUser }
@@ -129,6 +130,12 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string }) { return this.request<{ machine: Machine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine) }
   members(teamId: string) { return this.request<TeamMember[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/members`) }
   teamUsage(teamId: string) { return this.request<TeamUsage>("GET", `/api/teams/${encodeURIComponent(teamId)}/usage`) }
+  aiUsage(teamId: string, query: AiUsageQuery) {
+    return this.request<TeamAiUsage>("GET", `/api/teams/${encodeURIComponent(teamId)}/ai-usage?${new URLSearchParams({ period: query.period, timeZone: query.timeZone })}`)
+  }
+  aiUsageSessions(teamId: string, query: { date: string; timeZone: string }) {
+    return this.request<TeamAiUsageSessions>("GET", `/api/teams/${encodeURIComponent(teamId)}/ai-usage/sessions?${new URLSearchParams(query)}`)
+  }
   renameTeam(teamId: string, name: string) { return this.request<Team>("PATCH", `/api/teams/${encodeURIComponent(teamId)}`, { name }) }
   invite(teamId: string, email: string, role: "admin" | "member") { return this.request<{ token: string; expiresAt: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/invites`, { email, role }) }
   acceptInvite(token: string) { return this.request<Team>("POST", "/api/invites/accept", { token }) }

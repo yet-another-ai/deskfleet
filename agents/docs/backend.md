@@ -178,6 +178,39 @@ content embedded in central command parameters/results as well as event history,
 retain metadata-only central audit, and prevent stale uploads from restoring
 deleted content. This permanent-deletion work is outside the first release.
 
+## Team AI usage
+
+Team settings expose AI usage to both administrators and members through the
+existing `ReadUsage` policy. `GET /api/teams/{teamId}/ai-usage` accepts `period`
+(`24h`, `7d`, `30d`, or `all`) and an IANA `timeZone`. It returns token totals,
+reporting coverage, model/member distributions, trend buckets, the last 53 weeks
+of daily heatmap values, and the latest history synchronization time.
+`GET /api/teams/{teamId}/ai-usage/sessions` accepts a local `date` and the same
+timezone, returning up to 100 Sessions ordered by reported tokens with a
+truncation indicator. Neither endpoint returns conversations or event payloads.
+
+The source is the current synchronized Session snapshot for each machine in the
+Team, including archived Sessions and removed machines' retained history. Count
+each terminal turn once, excluding explicitly unconsumed attempts. Replayed
+events and repeated synchronization do not add usage. Attribute a turn to its
+initial input's user and its model snapshot at dispatch; missing attribution is
+shown as unknown. Steering inputs do not redistribute a turn among members.
+
+Aggregate provider-reported `totalTokens` directly. Input/output and cache
+categories are shown separately and are not added to that total. The API also
+retains the optional reasoning-token subtotal.
+Missing usage is distinct from an explicit zero; coverage reports the number of
+turns with usage against all eligible turns. Optional categories stay unknown
+when no turn reports them. The dashboard reflects synchronized, reported data,
+not provider billing: offline or unsupported providers can leave gaps, and
+historical records are not reconstructed from current configuration.
+
+Turn completion time determines the bucket. The 24-hour period is rolling with
+hourly buckets; 7- and 30-day periods include today and use local calendar-day
+boundaries, including daylight-saving changes. All-time uses daily buckets.
+Empty buckets are retained, and the heatmap always covers the last 53 weeks
+independently of the selected period. Costs and pricing are outside this panel.
+
 ## Session archive and restore
 
 Archive is a durable Session state, distinct from a stopped provider process.

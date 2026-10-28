@@ -251,6 +251,14 @@ pub struct AgentInput {
     pub error: Option<String>,
 }
 
+/// The configured model at turn creation, rather than individual provider calls.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTurnModel {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTurn {
@@ -268,6 +276,9 @@ pub struct AgentTurn {
     pub ended_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_reason: Option<String>,
+    /// Snapshot of the confirmed model selection when this turn started.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<AgentTurnModel>,
     /// Original ACP prompt-response token usage for this turn, when reported.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Value>,

@@ -530,9 +530,15 @@ export class AgentRuntime {
   async #launch(inputId: string, command: AgentCommand, alreadyClaimed = false): Promise<void> {
     if (!this.running || !this.#connection || !this.#run || this.#active) throw new Error("Agent is not ready for a new turn")
     const connection = this.#connection
+    const turnId = await this.journal.id()
+    const models = agentConfiguration(this.#configuration ?? []).models
     const turn: AgentTurn = {
-      id: await this.journal.id(), sessionId: this.sessionId, initialInputId: inputId, dispatchCommandId: command.id,
+      id: turnId, sessionId: this.sessionId, initialInputId: inputId, dispatchCommandId: command.id,
       runGeneration: this.#run.generation, state: "running", consumed: false, startedAt: timestamp(),
+      ...(models?.currentValue ? { model: {
+        id: models.currentValue,
+        name: models.options.find(option => option.id === models.currentValue)?.name ?? models.currentValue,
+      } } : {}),
     }
     const input = await this.journal.serial(this.sessionId, async () => {
       const snapshot = await this.journal.read(this.sessionId)

@@ -100,6 +100,8 @@ export interface AgentTurn {
   startedAt: string
   endedAt?: string
   stopReason?: string
+  /** Configured model when the turn started; not a breakdown of provider calls. */
+  model?: { id: string; name: string }
   /** Provider-reported token usage for this turn; absent when not reported. */
   usage?: Usage
   error?: string

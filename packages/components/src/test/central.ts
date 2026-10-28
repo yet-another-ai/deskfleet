@@ -1,9 +1,18 @@
 import { vi } from "vitest"
 import type { TeamBilling } from "../../../client/src/billing.ts"
+import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "../../../client/src/central.ts"
 
 export function billingFixture(usage = { relayedBytes: "0", activeSessionCount: 0, memberCount: 1 }): TeamBilling {
   return { plan: "selfHosted", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: null }, usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false }
+}
+
+export function aiUsageFixture(query: AiUsageQuery = { period: "30d", timeZone: "UTC" }): TeamAiUsage {
+  return {
+    ...query, from: "2026-09-29T00:00:00Z", to: "2026-10-28T12:00:00Z", lastSyncedAt: null,
+    totals: { totalTokens: 0, inputTokens: 0, outputTokens: 0, cachedReadTokens: null, cachedWriteTokens: null, thoughtTokens: null, turnCount: 0, reportedTurnCount: 0 },
+    buckets: [], heatmap: [], models: [], members: [],
+  }
 }
 
 export interface FakeCentralOptions {
@@ -73,6 +82,8 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     }),
     members: vi.fn(async (_teamId: string) => state.members.map(member => ({ ...member }))),
     teamUsage: vi.fn(async (_teamId: string) => ({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
+    aiUsage: vi.fn(async (_teamId: string, query: AiUsageQuery) => aiUsageFixture(query)),
+    aiUsageSessions: vi.fn(async (_teamId: string, query: { date: string; timeZone: string }): Promise<TeamAiUsageSessions> => ({ ...query, sessions: [], truncated: false })),
     setMemberRole: vi.fn(async (_teamId: string, userId: string, role: TeamMember["role"]) => {
       state.members.find(member => member.userId === userId)!.role = role
     }),

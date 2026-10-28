@@ -52,6 +52,17 @@ test("collects Session summary pages without merging equal IDs from another mach
   expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/machines/remote7/sessions?after=1&limit=200", expect.anything())
 })
 
+test("loads team AI usage and day details with explicit timezone and encoded team identity", async () => {
+  const f = setup()
+  const summary = { period: "30d", timeZone: "Asia/Shanghai", totals: { totalTokens: 123 } }
+  const details = { date: "2026-10-28", timeZone: "Asia/Shanghai", sessions: [], truncated: false }
+  f.responses.push(summary, details)
+  expect(await f.client.aiUsage("team/1", { period: "30d", timeZone: "Asia/Shanghai" })).toEqual(summary)
+  expect(await f.client.aiUsageSessions("team/1", { date: "2026-10-28", timeZone: "Asia/Shanghai" })).toEqual(details)
+  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/teams/team%2F1/ai-usage?period=30d&timeZone=Asia%2FShanghai", expect.objectContaining({ method: "GET" }))
+  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team%2F1/ai-usage/sessions?date=2026-10-28&timeZone=Asia%2FShanghai", expect.objectContaining({ method: "GET" }))
+})
+
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {
   const f = setup()
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))

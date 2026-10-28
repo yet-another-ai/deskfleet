@@ -6,7 +6,7 @@ import { ArrowLeft } from "@lucide/vue"
 import { useEventListener } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
 
-defineProps<{ stackOnSmallScreens?: boolean }>()
+defineProps<{ stackOnSmallScreens?: boolean; wide?: boolean }>()
 const emit = defineEmits<{ back: [] }>()
 const { t } = useI18n()
 const platform = platformClient.platform
@@ -36,7 +36,7 @@ useEventListener(window, "keydown", leaveOnEscape)
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <div class="app-drag titlebar-overlay-inset h-12 shrink-0" :class="stackOnSmallScreens && 'hidden md:block'" />
       <div class="min-h-0 flex-1 overflow-y-auto pb-10" :class="stackOnSmallScreens ? 'px-5 pt-6 md:px-8 md:pt-0 lg:px-14' : 'px-14'">
-        <div class="mx-auto max-w-3xl">
+        <div class="mx-auto" :class="wide ? 'max-w-6xl' : 'max-w-3xl'">
           <slot />
         </div>
       </div>

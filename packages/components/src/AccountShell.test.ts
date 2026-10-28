@@ -252,7 +252,7 @@ test.each([
   await vi.waitFor(() => expect(page().get("h1").text()).toBe("Design team"))
   expect(router.currentRoute.value.path).toBe("/team/settings")
   const settingsLinks = () => page().findAll('nav[aria-label="Settings sections"] a')
-  expect(settingsLinks().map(link => link.text())).toEqual(["Team settings", "Plans & Usages"])
+  expect(settingsLinks().map(link => link.text())).toEqual(["Team settings", "Plans & Usages", "AI usage"])
   expect(page().find("[data-team-plan]").exists()).toBe(false)
   expect(fake.central.billing).not.toHaveBeenCalled()
   const navItem = (label: string) => settingsLinks().find(item => item.text() === label)!
@@ -263,6 +263,12 @@ test.each([
   expect(page().find("[data-member-id]").exists()).toBe(false)
   expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith("team-1")
   expect(router.currentRoute.value.path).toBe("/team/settings/plans")
+  await navItem("AI usage").trigger("click")
+  await flushPromises()
+  await vi.waitFor(() => expect(page().get("h1").text()).toBe("AI usage"))
+  expect(router.currentRoute.value.path).toBe("/team/settings/ai-usage")
+  expect(fake.central.aiUsage).toHaveBeenCalledExactlyOnceWith("team-1", { period: "30d", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+  expect(page().find("[data-team-plan]").exists()).toBe(false)
   await navItem("Team settings").trigger("click")
   await flushPromises()
   expect(page().get("h1").text()).toBe("Design team")
@@ -288,6 +294,8 @@ test.each([
   ["darwin", false, "/team/settings/plans", "Plans & Usages"],
   ["web", true, "/team/settings/plans", "Plans & Usages"],
   ["darwin", true, "/team/settings", "Design team"],
+  ["web", false, "/team/settings/ai-usage", "AI usage"],
+  ["darwin", true, "/team/settings/ai-usage", "AI usage"],
 ] as const)("%s opens direct Team settings (machine: %s, route: %s)", async (platform, hasMachine, path, title) => {
   const fake = fakeCentral({ machines: hasMachine ? [machineFixture("m1", "team-1", "Build server")] : [] })
   withEmptyCatalogs(fake)
@@ -296,7 +304,8 @@ test.each([
   await flushPromises()
   await vi.waitFor(() => expect(page().get("h1").text()).toBe(title))
   expect(router.currentRoute.value.path).toBe(path)
-  expect(page().findAll('nav[aria-label="Settings sections"] a').map(link => link.text())).toEqual(["Team settings", "Plans & Usages"])
+  expect(page().findAll('nav[aria-label="Settings sections"] a').map(link => link.text())).toEqual(["Team settings", "Plans & Usages", "AI usage"])
+  if (path === "/team/settings/ai-usage") expect(fake.central.aiUsage).toHaveBeenCalledExactlyOnceWith("team-1", { period: "30d", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
 })
 
 test.each([

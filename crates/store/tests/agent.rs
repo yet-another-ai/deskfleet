@@ -456,6 +456,7 @@ async fn failed_input_can_have_another_turn_attempt_but_only_one_active_turn() {
         started_at: TIME.into(),
         ended_at: None,
         stop_reason: None,
+        model: None,
         usage: None,
         error: None,
     };
