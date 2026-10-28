@@ -7,6 +7,7 @@ import type { FilesApi } from "../../../../client/src/files.ts"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { agentResourceContextKey, type AgentResourceContext } from "../../services/agent-resources.ts"
+import * as codeHighlight from "../../services/code-highlight.ts"
 import * as mermaidService from "../../services/mermaid.ts"
 import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appearance.ts"
 import { mermaidSidebarTabs, resetMermaidSidebarTabs } from "../../stores/layout.ts"
@@ -166,6 +167,40 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
   await flushPromises()
   expect(writeText).toHaveBeenCalledWith("\\int_0^1 x^2 \\, dx = \\frac{1}{3}")
   expect(copyButton.attributes("data-copied")).toBe("true")
+})
+
+test("highlights fenced code, shows the language, and copies source text", async () => {
+  const highlight = vi.spyOn(codeHighlight, "highlightCode").mockResolvedValue(
+    '<pre class="shiki"><code><span style="--shiki-light:#0550AE;--shiki-dark:#79C0FF">const</span> value = 1</code></pre>',
+  )
+  const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
+  const view = render({}, '```TypeScript\nconst value = 1\n```')
+  await flushPromises()
+
+  const block = view.get("[data-code-block]")
+  expect(block.attributes("data-code-lang")).toBe("typescript")
+  expect(block.get(".ui-code-lang").text()).toBe("TypeScript")
+  expect(highlight).toHaveBeenCalledWith("const value = 1", "typescript")
+  expect(block.get("pre.shiki code").text()).toBe("const value = 1")
+  expect(block.attributes("data-highlighted")).toBe("true")
+
+  const copyButton = block.get("[data-code-copy]")
+  expect(copyButton.attributes("aria-label")).toBe("Copy")
+  await copyButton.trigger("click")
+  await flushPromises()
+  expect(writeText).toHaveBeenCalledWith("const value = 1")
+  expect(copyButton.attributes("data-copied")).toBe("true")
+  expect(copyButton.attributes("aria-label")).toBe("Copied")
+})
+
+test("keeps an unhighlighted fallback when Shiki cannot highlight a block", async () => {
+  vi.spyOn(codeHighlight, "highlightCode").mockResolvedValue(undefined)
+  const view = render({}, "```python\nprint(1)\n```")
+  await flushPromises()
+  const block = view.get("[data-code-block]")
+  expect(block.find("pre.shiki").exists()).toBe(false)
+  expect(block.get("code").text()).toBe("print(1)")
+  expect(block.attributes("data-highlighted")).toBeUndefined()
 })
 
 test("renders Mermaid with the selected application theme and updates existing diagrams", async () => {

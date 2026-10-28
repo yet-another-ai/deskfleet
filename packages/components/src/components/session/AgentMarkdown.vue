@@ -4,6 +4,7 @@ import { watchImmediate } from "@vueuse/core"
 import { computed, inject, nextTick, onBeforeUnmount, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
+import { highlightCode } from "../../services/code-highlight.ts"
 import { renderResourceMarkdown, type MarkdownDiagram } from "../../services/markdown.ts"
 import MermaidViewer from "./MermaidViewer.vue"
 
@@ -61,11 +62,35 @@ function hydrate(): void {
       holder.replaceChildren(loading)
     }
   }
-  for (const button of surface.value?.querySelectorAll<HTMLButtonElement>("[data-math-copy]") ?? []) {
+  for (const button of surface.value?.querySelectorAll<HTMLButtonElement>("[data-math-copy], [data-code-copy]") ?? []) {
     const label = t(button.dataset.copied === "true" ? "common.copied" : "common.copy")
     button.setAttribute("aria-label", label)
     button.title = label
   }
+}
+function setCopyState(button: HTMLButtonElement, copied: boolean): void {
+  if (copied) button.dataset.copied = "true"
+  else delete button.dataset.copied
+  const label = t(copied ? "common.copied" : "common.copy")
+  button.setAttribute("aria-label", label)
+  button.title = label
+}
+async function highlightBlocks(version: number): Promise<void> {
+  const blocks = [...surface.value?.querySelectorAll<HTMLElement>("[data-code-block]") ?? []]
+  await Promise.all(blocks.map(async block => {
+    if (disposed || version !== generation || block.dataset.highlighted === "true") return
+    const codeElement = block.querySelector("code")
+    if (!codeElement) return
+    const html = await highlightCode(codeElement.textContent ?? "", block.dataset.codeLang ?? "")
+    if (disposed || version !== generation || !html) return
+    const template = document.createElement("template")
+    template.innerHTML = html.trim()
+    const highlighted = template.content.querySelector("pre")
+    const existing = block.querySelector("pre")
+    if (!highlighted || !existing) return
+    existing.replaceWith(highlighted)
+    block.dataset.highlighted = "true"
+  }))
 }
 function load(uri: string): void {
   const value: LoadedImage = {}
@@ -92,7 +117,9 @@ watchImmediate([rendered, context, locale], async () => {
   for (const uri of images.keys()) if (!used.has(uri)) release(uri)
   for (const uri of used) if (!images.has(uri)) load(uri)
   await nextTick()
-  if (!disposed && version === generation) hydrate()
+  if (disposed || version !== generation) return
+  hydrate()
+  await highlightBlocks(version)
 }, { flush: "post" })
 
 async function click(event: MouseEvent): Promise<void> {
@@ -101,13 +128,17 @@ async function click(event: MouseEvent): Promise<void> {
   if (mathCopy) {
     event.preventDefault()
     try { await navigator.clipboard.writeText(mathCopy.dataset.mathCopy ?? "") } catch { return }
-    const setCopied = (copied: boolean) => {
-      if (copied) mathCopy.dataset.copied = "true"; else delete mathCopy.dataset.copied
-      const label = t(copied ? "common.copied" : "common.copy")
-      mathCopy.setAttribute("aria-label", label); mathCopy.title = label
-    }
-    setCopied(true)
-    setTimeout(() => { if (!disposed) setCopied(false) }, 1500)
+    setCopyState(mathCopy, true)
+    setTimeout(() => { if (!disposed) setCopyState(mathCopy, false) }, 1500)
+    return
+  }
+  const codeCopy = target?.closest<HTMLButtonElement>("[data-code-copy]")
+  if (codeCopy) {
+    event.preventDefault()
+    const code = codeCopy.closest("[data-code-block]")?.querySelector("code")?.textContent ?? ""
+    try { await navigator.clipboard.writeText(code) } catch { return }
+    setCopyState(codeCopy, true)
+    setTimeout(() => { if (!disposed) setCopyState(codeCopy, false) }, 1500)
     return
   }
   const retry = target?.closest<HTMLButtonElement>("[data-resource-retry]")

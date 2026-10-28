@@ -26,6 +26,11 @@ export const clientCodeSplitting = {
       priority: 30,
     },
     {
+      name: "shiki",
+      test: /[\\/]node_modules[\\/](?:shiki|@shikijs)[\\/]/,
+      priority: 30,
+    },
+    {
       // Keep Vue out of this chunk. vue-i18n depends on it.
       name: "vue-i18n",
       test: /[\\/]node_modules[\\/](?:vue-i18n|@intlify)[\\/]/,

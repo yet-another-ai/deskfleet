@@ -72,3 +72,16 @@ test("extracts mermaid code blocks with escaped source fallback", () => {
   expect(result.html).not.toContain("<script>")
   expect(result.html).toContain("&lt;script&gt;")
 })
+
+test("fenced code blocks include language label, copy control, and escaped source", () => {
+  const result = renderResourceMarkdown('```TypeScript\nconst value = "<script>"\n```\n\n```\nplain\n```')
+  expect(result.html).toContain('data-code-block')
+  expect(result.html).toContain('data-code-lang="typescript"')
+  expect(result.html).toContain('class="ui-code-lang">TypeScript</span>')
+  expect(result.html).toContain("data-code-copy")
+  expect(result.html).toContain('class="language-typescript"')
+  expect(result.html).toContain("const value = &quot;&lt;script&gt;&quot;")
+  expect(result.html).not.toContain("<script>")
+  expect(result.html).toContain('class="ui-code-lang"></span>')
+  expect(result.html).toContain(">plain</code>")
+})

@@ -94,6 +94,11 @@ Top-level application and authentication mounts install `nativeDragPolicy` from
 inside `.ui-markdown` or `.select-text`, and explicit `draggable="true"` sources,
 retain native dragging. Keep incoming file drops and pointer-based interactions
 separate from this policy; nested machine applications inherit the document listener.
+Agent Markdown fences render through `packages/components/src/services/markdown.ts`
+with a language label and copy control; `code-highlight.ts` lazy-loads Shiki and
+language grammars so highlighting stays off the critical path. Dual github-light /
+github-dark tokens follow the root `color-scheme` via `light-dark()` in
+`styles.css`, matching `theme-tokens.css`.
 `UiButton`, `IconButton`, and `UiTooltip` deliberately use normal Vue scripts:
 Reka's `useForwardExpose` and `as-child` composition require a VDOM component
 instance and VNode slots. Vapor callers should use `:as="IconButton"` for menu

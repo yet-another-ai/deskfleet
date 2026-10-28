@@ -91,8 +91,19 @@ markdown.renderer.rules.link_open = (tokens, index, options, _environment, rende
   }
   return renderer.renderToken(tokens, index, options)
 }
-const fence = markdown.renderer.rules.fence!
-markdown.renderer.rules.fence = (tokens, index, options, environment, renderer) => {
+function renderCodeBlock(content: string, info: string): string {
+  const label = info.trim().split(/\s+/u)[0] ?? ""
+  const lang = label.toLowerCase()
+  const code = content.replace(/\n$/u, "")
+  const escaped = escapeHtml(code)
+  const langAttr = lang ? ` data-code-lang="${escapeHtml(lang)}"` : ""
+  const langClass = lang ? ` class="language-${escapeHtml(lang)}"` : ""
+  const langSpan = `<span class="ui-code-lang">${escapeHtml(label)}</span>`
+  const button = `<button type="button" class="ui-button-ghost ui-code-copy h-7 w-7 shrink-0 p-0" data-code-copy aria-label="Copy" title="Copy">${COPY_ICONS}</button>`
+  return `<div class="ui-code-block"${langAttr} data-code-block><div class="ui-code-toolbar">${langSpan}${button}</div><pre><code${langClass}>${escaped}</code></pre></div>\n`
+}
+
+markdown.renderer.rules.fence = (tokens, index, _options, environment) => {
   const token = tokens[index]!
   const lang = token.info.trim().split(/\s+/u)[0]?.toLowerCase()
   if (lang === "mermaid") {
@@ -102,7 +113,7 @@ markdown.renderer.rules.fence = (tokens, index, options, environment, renderer) 
     return `<div class="ui-mermaid" data-mermaid="${id}"><pre><code>${escapeHtml(token.content)}</code></pre></div>\n`
   }
   if (lang === "math" || lang === "latex" || lang === "tex" || lang === "katex") return renderMathBlock(token.content)
-  return fence(tokens, index, options, environment, renderer)
+  return renderCodeBlock(token.content, token.info)
 }
 
 export function renderResourceMarkdown(text: string): { html: string; resources: MarkdownResource[]; diagrams: MarkdownDiagram[] } {
