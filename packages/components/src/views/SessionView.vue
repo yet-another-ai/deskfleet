@@ -16,6 +16,7 @@ import SessionAllowance from "../components/session/SessionAllowance.vue"
 import AgentBacklog from "../components/session/AgentBacklog.vue"
 import AgentConversation from "../components/session/AgentConversation.vue"
 import AgentNotice from "../components/session/AgentNotice.vue"
+import AgentOutline from "../components/session/AgentOutline.vue"
 import AgentPermissions from "../components/session/AgentPermissions.vue"
 import AgentSessionMenu from "../components/session/AgentSessionMenu.vue"
 import RenameSessionDialog from "../components/session/RenameSessionDialog.vue"
@@ -89,17 +90,48 @@ const actionError = ref<string | null>(null)
 const draftError = computed(() => actionError.value ?? agents.draftErrors[props.sessionId])
 const scroller = ref<HTMLElement | null>(null)
 const followBottom = ref(true)
-const scroll = () => { const el = scroller.value; if (el) followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 100 }
+const activeEntry = ref<string>()
+
+function updateOutline(): void {
+  const el = scroller.value
+  if (!el) return
+  const entries = Array.from(el.querySelectorAll<HTMLElement>("ol > li[data-conversation-entry]"))
+  if (followBottom.value) {
+    activeEntry.value = entries.at(-1)?.dataset.conversationEntry
+    return
+  }
+  const threshold = el.getBoundingClientRect().top + 80
+  const current = entries.findLast(entry => entry.getBoundingClientRect().top <= threshold) ?? entries[0]
+  activeEntry.value = current?.dataset.conversationEntry
+}
+
+function scroll(): void {
+  const el = scroller.value
+  if (!el) return
+  followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 100
+  updateOutline()
+}
+
+function locateEntry(id: string): void {
+  const entry = scroller.value?.querySelector<HTMLElement>(`[data-conversation-entry=${JSON.stringify(id)}]`)
+  if (!entry) return
+  followBottom.value = false
+  entry.scrollIntoView({ block: "start", behavior: "instant" })
+  activeEntry.value = id
+}
+
 watchImmediate(() => props.sessionId, id => {
   busy.value = false
   forkOpen.value = false
   renameOpen.value = false
   actionError.value = null
+  activeEntry.value = undefined
   followBottom.value = !pendingMermaidLocate.value || (!!pendingMermaidLocate.value.sessionId && pendingMermaidLocate.value.sessionId !== id)
   void agents.open(id)
 })
 watch(() => [view.value?.events.length, view.value?.loading], () => {
   if (!view.value?.loading && followBottom.value && !pendingMermaidLocate.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
+  if (followBottom.value || !activeEntry.value) updateOutline()
 }, { flush: "post" })
 watch([pendingMermaidLocate, () => view.value?.loading, () => view.value?.events.length, focusedMermaid], async ([target, loading, , focused]) => {
   if (!target || loading || focused) return
@@ -160,13 +192,23 @@ async function checkOperation(operationId: string): Promise<void> {
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, ...(location.workspace ? [location.workspace.name] : [])]" /></template>
     <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" /></template>
   </PaneHeader>
-  <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @scroll="scroll">
-    <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
-      <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
-      <template v-else-if="snapshot">
-        <AgentConversation :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" />
-        <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
-      </template>
+  <div class="relative flex min-h-0 flex-1">
+    <AgentOutline
+      v-if="snapshot && !view?.loading"
+      :events="view!.events"
+      :snapshot="snapshot"
+      :active="activeEntry"
+      class="absolute left-1 top-1/2 z-10 max-h-[calc(100%-2rem)] -translate-y-1/2"
+      @select="locateEntry"
+    />
+    <div ref="scroller" class="min-h-0 min-w-0 flex-1 overflow-y-auto pl-8" @scroll="scroll">
+      <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
+        <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
+        <template v-else-if="snapshot">
+          <AgentConversation :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" />
+          <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
+        </template>
+      </div>
     </div>
   </div>
   <div v-if="location" class="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-2 empty:hidden">
