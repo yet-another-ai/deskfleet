@@ -11,6 +11,14 @@ authenticated central signaling service used by desktop streaming.
 backend uses `portable-pty`, exposed through the thin `NativeTerminal` napi-rs
 binding. Spawn, write, resize, wait, and termination run outside Node's event
 loop. The daemon continuously consumes native output even with no viewer.
+On Unix, nonblocking PTY descriptors are registered with Tokio for read/write
+readiness. Separate async read and write tasks preserve bounded output
+backpressure and serialized input without a dedicated I/O thread or periodic
+readiness timeout. One blocking waiter observes child exit without reaping it,
+then serializes reaping with termination requests so a reused PID cannot be
+signalled. Exit wakes the reader to drain available bytes even when a descendant
+keeps the slave open; the exit event follows the final output. Explicit close
+cancels pending I/O and drops PTY handles before waiting for termination.
 On Windows, portable-pty asks ConPTY to inherit the cursor. ConPTY writes
 `ESC[6n` when the child connects and will not let that process run until the
 host reports a cursor position. The PTY reader answers that startup query with
