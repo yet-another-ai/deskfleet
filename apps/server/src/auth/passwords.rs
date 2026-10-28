@@ -226,8 +226,8 @@ pub(super) async fn recover(
     limit(&req, &state, "recovery", None).await?;
     let hash = hash(&state, body.password.clone()).await?;
     let (user_id, peers) = state.store.recover_password(&body.token, &hash).await?;
-    state.hub.revoke(peers, "password_reset").await;
-    state.hub.disconnect_user(&user_id).await;
+    state.hub.revoke(peers, "password_reset").await?;
+    state.hub.disconnect_user(&user_id).await?;
     Ok(cleared(&state))
 }
 pub(super) async fn reauthenticate(

@@ -379,6 +379,22 @@ test("reconciliation never extends an existing peer grant", async () => {
   assert.equal(f.closed(), true)
 })
 
+test("periodic reconciliation preserves active peers and closes missing grants once", async context => {
+  const active = fixture(), revoked = fixture()
+  context.after(async () => { await active.peers.closeAll(); await revoked.peers.closeAll() })
+  const activeGrant = grant(), revokedGrant = { ...grant(), peerId: "revoked" }
+  await active.peers.offer({ peerId: activeGrant.peerId, sdp, authorization: activeGrant, iceServers: [] })
+  await revoked.peers.offer({ peerId: revokedGrant.peerId, sdp, authorization: revokedGrant, iceServers: [] })
+  for (const peers of [active.peers, revoked.peers]) await peers.reconcile([activeGrant, revokedGrant])
+  for (let heartbeat = 0; heartbeat < 2; heartbeat++) {
+    for (const peers of [active.peers, revoked.peers]) await peers.reconcile([activeGrant])
+    assert.equal(active.closed(), false)
+    assert.equal(active.closeCalls(), 0)
+    assert.equal(revoked.closed(), true)
+    assert.equal(revoked.closeCalls(), 1)
+  }
+})
+
 test("native ICE without ufrag or mid binds through its SDP media index", () => {
   assert.deepEqual(normalizeCandidate({ candidate: "candidate:1", sdpMid: "", sdpMlineIndex: 0 }, sdp), { candidate: "candidate:1", sdpMid: "0", sdpMlineIndex: 0 })
   assert.throws(() => normalizeCandidate({ candidate: "candidate:1", sdpMid: "wrong", sdpMlineIndex: 0 }, sdp), /media binding/)

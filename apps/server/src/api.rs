@@ -97,7 +97,7 @@ pub async fn remove_member(
     let a = auth::user(&req, &s).await?;
     s.store.change_member(&a.user.id, &p.0, &p.1, None).await?;
     let peers = s.store.revoke_member_peers(&p.0, &p.1).await?;
-    s.hub.revoke(peers, "membership_removed").await;
+    s.hub.revoke(peers, "membership_removed").await?;
     Ok(web::Json(json!({})))
 }
 #[derive(Deserialize)]
@@ -160,13 +160,18 @@ pub async fn enroll(
             b.capabilities,
         )
         .await?;
-    s.notify_team(
+    if s.notify_team(
         &m.team_id,
         ControlMessage::MachinesChanged {
             team_id: m.team_id.clone(),
         },
     )
-    .await;
+    .await
+    .is_err()
+    {
+        // Enrollment committed; its plaintext credential is only returned here.
+        tracing::warn!("machine enrolled but roster notification failed");
+    }
     Ok(web::Json(json!({"machine":m,"token":t})))
 }
 pub async fn machines(
@@ -198,14 +203,14 @@ pub async fn rename_machine(
             session_id: None,
         },
     )
-    .await;
+    .await?;
     s.notify_team(
         &m.team_id,
         ControlMessage::MachinesChanged {
             team_id: m.team_id.clone(),
         },
     )
-    .await;
+    .await?;
     Ok(web::Json(json!(m)))
 }
 pub async fn remove_machine(
@@ -217,15 +222,15 @@ pub async fn remove_machine(
     let machine = s.store.machine(&p).await?;
     s.store.revoke_machine(&a.user.id, &p).await?;
     let peers = s.store.revoke_machine_peers(&p).await?;
-    s.hub.revoke(peers, "machine_removed").await;
-    s.hub.disconnect_machine(&p).await;
+    s.hub.revoke(peers, "machine_removed").await?;
+    s.hub.disconnect_machine(&p).await?;
     s.notify_team(
         &machine.team_id,
         ControlMessage::MachinesChanged {
             team_id: machine.team_id.clone(),
         },
     )
-    .await;
+    .await?;
     Ok(web::Json(json!({})))
 }
 #[derive(Deserialize)]
@@ -445,7 +450,7 @@ pub async fn sync_catalog(
             session_id: None,
         },
     )
-    .await;
+    .await?;
     Ok(web::Json(json!({})))
 }
 #[derive(Deserialize)]
@@ -481,7 +486,7 @@ pub async fn sync_history(
             session_id: Some(b.session_id),
         },
     )
-    .await;
+    .await?;
     Ok(web::Json(json!({"lastEventSeq":seq})))
 }
 

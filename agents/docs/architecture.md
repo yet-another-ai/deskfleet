@@ -50,6 +50,51 @@ offline; clients show when that data was last observed.
 The backend is open source in this repository under Apache-2.0. Shared resource
 and protocol types remain independent of Actix Web and Node-API.
 
+### Multiple API instances
+
+API instances share one PostgreSQL database and the same public service origin.
+Each process owns its open WebSockets, while PostgreSQL owns expiring process
+leases and the current process/connection identity for each machine. Management
+requests reach that owner through a short-lived PostgreSQL inbox; responses,
+client events, and revocation notices use the same routing. An HTTP request and
+the daemon or client socket it addresses can land on different instances, without
+load-balancer affinity or a separate message broker.
+
+Machine reconnection atomically replaces the route. Connection identities fence
+late responses and disconnect cleanup from the old socket. A database failure
+or expired process lease stops that process from using its local sockets as
+authority. Closing signaling for recovery does not revoke an already authorized
+WebRTC connection or stop the daemon's execution.
+
+Each daemon signaling socket also reconciles its peer grants from PostgreSQL at
+its 20-second heartbeat. If a revocation commits but its broadcast is lost, the
+next successful reconciliation closes the revoked peers while retaining active
+ones. Snapshot reads and daemon request enqueueing share the local connection
+gate, so a snapshot taken before a new peer's grant is enqueued before that
+peer's offer and cannot close the new peer.
+
+PostgreSQL also stores each peer's immutable SDP offer/options, completed answer,
+and bounded early ICE candidates, so signaling HTTP calls can use any instance.
+The daemon remains the owner of the actual WebRTC peer. Inbox delivery is
+at-most-once with expiry; an API crash can interrupt an RPC or negotiation.
+Callers check operation receipts before retrying commands and create a new peer
+after a failed negotiation. These routing records are transient coordination
+state, separate from durable conversation history.
+
+The cross-instance inbox stores RPC parameters and results, including provider
+environment values when a management operation carries them. Synchronized
+provider catalog rows continue to omit those values. Inbox payloads expire after
+120 seconds and are deleted on consumption or expiry cleanup, without being
+logged by the router. Database backups can retain these operation payloads after
+the inbox rows expire; the central database and its backups therefore remain
+inside the trust boundary for that sensitive data.
+
+Instances use the existing database configuration; process identities are
+generated at startup. Redis remains specific to coturn statistics. The existing
+PostgreSQL collector lease selects one TURN subscriber, and billing work uses
+its existing database claims. See [deployment operations](self-hosted.md) for
+replica configuration and failure behavior.
+
 ## Identity and team access
 
 The identity design supports the hosted service and self-hosted installations with
@@ -575,7 +620,7 @@ trickle ICE, reliable ordered DataChannels, RTP media tracks, and RTCP feedback.
 `PeerSessions` gives the daemon ownership of peer creation and shutdown. These
 are exposed to the local Electron client over authenticated Unix-domain sockets
 or Windows named pipes. Central server signaling, remote enrollment, and remote
-operation routing remain to be connected. Chromium receives the media into a
+operation routing use the authenticated control plane. Chromium receives the media into a
 standard HTML video element; a separate native GPU rendering window is deferred.
 See [native media](media.md) for codec support, capture lifecycle, and validation.
 

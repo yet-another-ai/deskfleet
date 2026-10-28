@@ -1,13 +1,14 @@
 //! Stable API failures; internal storage and credential details are never returned.
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use serde_json::json;
+use std::borrow::Cow;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[error("{message}")]
 pub struct ApiError {
     pub status: StatusCode,
-    pub code: &'static str,
+    pub code: Cow<'static, str>,
     pub message: String,
     pub reason: Option<String>,
 }
@@ -16,7 +17,7 @@ impl ApiError {
     pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
         Self {
             status,
-            code,
+            code: code.into(),
             message: message.into(),
             reason: None,
         }
