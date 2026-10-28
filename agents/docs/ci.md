@@ -50,7 +50,8 @@ a stable `Gate` result for branch protection.
 The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each archive
 contains `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
 Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
-Linux x64/arm64 AppImage installers. PRs exercise packaging on Linux x64.
+Linux x64/arm64 AppImage installers, plus updater YAML and blockmaps. PRs
+exercise packaging on Linux x64.
 The Linux x64 job also uploads `deskfleet-web` with the static Vue application.
 Its API origin is the hosting origin, including tagged release artifacts;
 deployments with a separate API origin build with `VITE_DESKFLEET_SERVER_URL`
@@ -132,16 +133,41 @@ failure prevents publication. PR, main, and manual Build runs package without
 those credentials. Windows installers are unsigned in this initial pipeline.
 
 Each tag produces a **draft** GitHub Release containing the five desktop
-installers and four server/daemon archives. Review its generated notes and
-assets, then publish it in GitHub. Prerelease tags create prerelease drafts.
+installers, four server/daemon archives, updater metadata and blockmaps. Review
+its generated notes and assets, then publish it in GitHub. Prerelease tags create
+prerelease drafts.
 Reruns can replace assets on a draft; they refuse to modify an already published
-release. There is no client auto-updater in this pipeline.
+release.
 
 The website reads GitHub's public `releases/latest` API in the browser and selects
 the matching published stable release asset for the chosen platform and
 architecture. Publishing a stable release makes it discoverable without another
 Pages build. Drafts and prereleases do not replace the website's stable downloads;
 failed requests and unavailable assets retain a link to GitHub Releases.
+
+### Desktop updates
+
+Electron uses `electron-updater` with the public GitHub provider for
+`yet-another-ai/deskfleet`. Packaging generates `latest.yml`, `latest-mac.yml`,
+`latest-linux.yml` and `latest-linux-arm64.yml`; the release job requires all four,
+the macOS update ZIP and the Windows/ZIP blockmaps before creating its draft.
+Each release carries its own metadata, including prereleases. GitHub's release
+status controls discovery, so a draft cannot trigger an update and stable clients
+do not receive prereleases. Publish complete releases with a higher version;
+never replace assets on an existing published release.
+
+The Electron main process checks for updates on startup and every 30 minutes.
+An available update appears at the bottom left; clicking it downloads the update,
+stops the embedded daemon, then installs and restarts the app. Automatic checks
+do not download or install, and ordinary app exit does not install an update.
+Windows uses NSIS, macOS uses the signed update ZIP, and Linux requires running
+the AppImage. Development runs do not check for updates.
+
+Installed upgrades still need platform release testing: metadata generation and
+unit tests do not demonstrate a successful installation on Windows, signed macOS
+or either Linux architecture.
+
+### Backend image
 
 The same successful tag build pushes
 `ghcr.io/yet-another-ai/deskfleet-server:<version>` as one Linux amd64/arm64 image.

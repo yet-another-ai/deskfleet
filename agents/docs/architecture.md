@@ -479,6 +479,19 @@ Windows notification area), so its daemon and notifications stay available.
 Closing its window or using an ordinary quit command hides it. The tray menu,
 OS session end, or a termination signal quits the app and its hosted daemon.
 
+Packaged Electron clients check the public GitHub release feed at startup and
+every 30 minutes, including while hidden in the tray. The main process owns
+the updater and its state; the sandboxed renderer reads snapshots and subscribes
+through a narrow preload API. The lower-left sidebar offers an update only when
+a newer stable version is available. Clicking downloads the update, reports
+progress, closes the hosted daemon and peer services, and then lets the updater
+install and restart the app. Failed downloads or installation preparation can
+be retried. If installation fails after services have stopped, retry the update
+or quit and reopen the app before continuing work. Ordinary app shutdown never
+installs a downloaded update. Web clients
+and development launches do not check for desktop updates. Release artifacts and
+feed metadata are described in [CI notes](ci.md#tagged-releases).
+
 Web clients use the browser Notifications API for task completion and pending
 input alerts while the page is running. Web and Electron share the account-wide
 task monitor, including its history baseline and event deduplication. The Web

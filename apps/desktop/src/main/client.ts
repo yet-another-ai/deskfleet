@@ -26,6 +26,7 @@ import {
   registerRendererScheme,
 } from "./renderer-protocol.ts"
 import { createTray } from "./tray.ts"
+import { installUpdates } from "./updates.ts"
 import { hideMainWindow, showMainWindow } from "./windows.ts"
 
 function start(): void {
@@ -74,11 +75,25 @@ function start(): void {
     // The hosted daemon outlives windows but not the app. Exit once it has
     // released its sessions, terminals, and discovery.
     let closing: Promise<void> | undefined
-    app.on("will-quit", (event) => {
-      event.preventDefault()
+    let servicesClosed = false
+    const closeServices = (): Promise<void> => {
       notificationMonitor.close()
       notifications.close()
-      closing ??= Promise.all([localAgent.close(), files.close(), ports.close()]).finally(() => keepAwake.close()).then(
+      closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close()]).then(results => {
+        const failure = results.find(result => result.status === "rejected")
+        if (failure?.status === "rejected") throw failure.reason
+        servicesClosed = true
+      }).finally(() => keepAwake.close()).catch((error: unknown) => { closing = undefined; throw error })
+      return closing
+    }
+    const updates = await installUpdates(lifecycle, closeServices)
+    app.on("will-quit", (event) => {
+      updates.close()
+      // Let the updater's own quit/relaunch finish once the same shutdown barrier
+      // has already completed. Ordinary exits still wait for hosted services.
+      if (servicesClosed) return
+      event.preventDefault()
+      void closeServices().then(
         () => app.exit(0),
         (error: unknown) => { console.error(error); app.exit(1) },
       )
@@ -87,6 +102,7 @@ function start(): void {
     await localAgent.initialize()
     try { await onboarding.get() } catch (error) { console.error(error) }
     if (lifecycle.quitting) return
+    updates.start()
     createTray({ show, quit: () => lifecycle.quit() })
     show()
     app.on("activate", show)

@@ -1,4 +1,13 @@
 {
+  "updates": {
+    "available": "新版本 {version} 已可用",
+    "install": "更新并重启",
+    "retry": "重试更新",
+    "checking": "正在检查更新…",
+    "downloading": "正在下载 {percent}%",
+    "installing": "正在重启…",
+    "failed": "更新失败，请重试，或退出并重新打开 DeskFleet。"
+  },
   "aiUsage": {
     "title": "AI 用量",
     "period": "统计时段",

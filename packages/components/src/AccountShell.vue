@@ -16,6 +16,7 @@ import TeamAccessDialog from "./components/account/TeamAccessDialog.vue"
 import TeamOnboarding from "./components/account/TeamOnboarding.vue"
 import AccountFooter from "./components/sidebar/AccountFooter.vue"
 import AccountNotices from "./components/sidebar/AccountNotices.vue"
+import AppUpdateNotice from "./components/sidebar/AppUpdateNotice.vue"
 import TeamSwitcher from "./components/sidebar/TeamSwitcher.vue"
 import { router } from "./router/index.ts"
 import { accountSessionKey, createAccountSession } from "./composables/useAccountSession.ts"
@@ -95,6 +96,7 @@ if (props.host.onboarding) void loadOnboarding()
           <TeamSwitcher v-if="teams.length" />
           <div class="flex-1" />
           <AccountNotices />
+          <AppUpdateNotice />
           <AccountFooter />
         </aside>
         <main class="flex min-w-0 flex-1 flex-col">

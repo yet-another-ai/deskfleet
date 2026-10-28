@@ -28,21 +28,43 @@ test("download selection distinguishes installers, archives, and Linux architect
   }
 })
 
-test("release verification accepts the installer names produced by packaging", { skip: process.platform === "win32" }, context => {
-  const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/publish.yml"), "utf8")
+test("release verification requires installers and update metadata for stable and prerelease builds", context => {
+  const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/publish.yml"), "utf8").replace(/\r\n/g, "\n")
   const block = yaml.match(/^      - name: Verify release assets\n[\s\S]*?^        run: \|\n((?:          .*\n)+)/m)?.[1]
   assert.ok(block, "Missing release asset verification step")
   const directory = mkdtempSync(join(tmpdir(), "deskfleet-release-assets-"))
   context.after(() => rmSync(directory, { recursive: true, force: true }))
   mkdirSync(join(directory, "release-assets"))
-  for (const name of assetNames) writeFileSync(join(directory, "release-assets", name), "fixture")
-  const verify = () => spawnSync("bash", ["-eo", "pipefail", "-c", block.replace(/^ {10}/gm, "")], {
-    cwd: directory, env: { ...process.env, VERSION: release.version }, encoding: "utf8",
+  const updaterAssets = [
+    "latest.yml", "latest-mac.yml", "latest-linux.yml", "latest-linux-arm64.yml",
+    "deskfleet-0.2.0-mac-arm64.zip.blockmap", "deskfleet-0.2.0-win-x64.exe.blockmap",
+  ]
+  const bash = process.platform === "win32"
+    ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+    : "bash"
+  const verify = (version: string) => spawnSync(bash, ["-eo", "pipefail", "-c", block.replace(/^ {10}/gm, "")], {
+    cwd: directory, env: { ...process.env, VERSION: version }, encoding: "utf8",
   })
-  const result = verify()
-  assert.equal(result.status, 0, result.stderr)
-  unlinkSync(join(directory, "release-assets", "deskfleet-0.2.0-linux-x86_64.AppImage"))
-  assert.notEqual(verify().status, 0, "A missing x86_64 installer must prevent publication")
+  for (const version of [release.version, "0.2.0-beta.1"]) {
+    const names = [...assetNames, ...updaterAssets].map(name => name.replace("0.2.0", version))
+    for (const name of names) writeFileSync(join(directory, "release-assets", name), "fixture")
+    const result = verify(version)
+    assert.ifError(result.error)
+    assert.equal(result.status, 0, result.stderr)
+    for (const required of [`deskfleet-${version}-linux-x86_64.AppImage`, "latest-linux-arm64.yml", `deskfleet-${version}-mac-arm64.zip.blockmap`]) {
+      const path = join(directory, "release-assets", required)
+      unlinkSync(path)
+      assert.notEqual(verify(version).status, 0, `Missing ${required} must prevent publication`)
+      writeFileSync(path, "")
+      assert.notEqual(verify(version).status, 0, `Empty ${required} must prevent publication`)
+      writeFileSync(path, "fixture")
+    }
+    const dmgBlockmap = join(directory, "release-assets", `deskfleet-${version}-mac-arm64.dmg.blockmap`)
+    writeFileSync(dmgBlockmap, "fixture")
+    assert.equal(verify(version).status, 0, "A DMG blockmap may accompany the ZIP update target")
+    unlinkSync(dmgBlockmap)
+    for (const name of names) unlinkSync(join(directory, "release-assets", name))
+  }
 })
 
 test("missing packages fall back to the release page without selecting another architecture", () => {

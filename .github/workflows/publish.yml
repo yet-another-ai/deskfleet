@@ -92,13 +92,23 @@ jobs:
             "deskfleet-$VERSION-win-x64.exe"
             "deskfleet-$VERSION-linux-x86_64.AppImage"
             "deskfleet-$VERSION-linux-arm64.AppImage"
+            "deskfleet-$VERSION-mac-arm64.zip.blockmap"
+            "deskfleet-$VERSION-win-x64.exe.blockmap"
+            latest.yml
+            latest-mac.yml
+            latest-linux.yml
+            latest-linux-arm64.yml
             deskfleet-linux-x64.tar.gz
             deskfleet-linux-arm64.tar.gz
             deskfleet-macos-arm64.tar.gz
             deskfleet-windows-x64.tar.gz
           )
+          # DMG blockmaps can be generated alongside the ZIP used by the updater.
+          if [[ -f "release-assets/deskfleet-$VERSION-mac-arm64.dmg.blockmap" ]]; then
+            assets+=("deskfleet-$VERSION-mac-arm64.dmg.blockmap")
+          fi
           for asset in "${assets[@]}"; do
-            test -f "release-assets/$asset"
+            test -s "release-assets/$asset"
           done
           test "$(find release-assets -mindepth 1 -maxdepth 1 | wc -l)" -eq "${#assets[@]}"
 

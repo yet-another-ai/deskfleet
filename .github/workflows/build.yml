@@ -194,6 +194,8 @@ jobs:
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
             apps/desktop/release/*.AppImage
+            apps/desktop/release/latest*.yml
+            apps/desktop/release/*.blockmap
           if-no-files-found: error
           retention-days: 14
 

@@ -1,4 +1,13 @@
 {
+  "updates": {
+    "available": "Version {version} is available",
+    "install": "Update and restart",
+    "retry": "Retry update",
+    "checking": "Checking for updates…",
+    "downloading": "Downloading {percent}%",
+    "installing": "Restarting…",
+    "failed": "Update failed. Retry, or quit and reopen DeskFleet."
+  },
   "aiUsage": {
     "title": "AI usage",
     "period": "Usage period",

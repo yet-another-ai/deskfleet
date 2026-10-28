@@ -6,6 +6,7 @@ import { attachDesktopMedia } from "./desktop-media.ts"
 import { attachSettings } from "./settings.ts"
 import { attachExternalLinks, isAuxiliaryRendererUrl } from "./external-links.ts"
 import { attachAppearance } from "./appearance.ts"
+import { attachUpdates } from "./updates.ts"
 import type { BackgroundLifecycle } from "./lifecycle.ts"
 import { buildResourcePath } from "./paths.ts"
 import { followSystemTheme, windowChromeOptions } from "./window-chrome.ts"
@@ -54,6 +55,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
   attachDesktopMedia(window)
   attachSettings(window)
   attachAppearance(window)
+  attachUpdates(window)
   followSystemTheme(window, process.platform)
   window.once("closed", () => {
     if (mainWindow === window) mainWindow = null

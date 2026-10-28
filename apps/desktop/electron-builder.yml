@@ -26,6 +26,14 @@ directories:
 
 artifactName: "deskfleet-${version}-${os}-${arch}.${ext}"
 
+# Generate updater metadata without publishing from individual build jobs.
+# GitHub's published/prerelease status selects releases; each release owns its feed.
+publish:
+  provider: github
+  owner: yet-another-ai
+  repo: deskfleet
+  channel: latest
+
 files:
   - out/**/*
   - "!out/**/*.map"
