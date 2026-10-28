@@ -96,10 +96,15 @@ async fn connect(
         let (send, mut receive) = tokio::sync::mpsc::channel(128);
         let (shutdown, mut shutdown_rx) = tokio::sync::watch::channel(None);
         if let Some(user) = &user {
-            state
+            if state
                 .hub
                 .add_client(&id, user, &connection_id, send, shutdown)
-                .await;
+                .await
+                .is_err()
+            {
+                let _ = session.close(Some(close_reason(1012))).await;
+                return;
+            }
         } else {
             if state
                 .hub
@@ -126,8 +131,8 @@ async fn connect(
                     .reconcile_daemon(&id, &connection_id)
                     .await
                     .map_err(|_| ())?;
-                if let Some(team) = &team {
-                    state
+                if let Some(team) = &team
+                    && state
                         .notify_team(
                             team,
                             ControlMessage::Presence {
@@ -136,7 +141,10 @@ async fn connect(
                             },
                         )
                         .await
-                        .map_err(|_| ())?;
+                        .is_err()
+                {
+                    // Registration already committed; match enrollment's non-fatal roster notify.
+                    tracing::warn!("daemon registered but presence notification failed");
                 }
             }
             Ok::<_, ()>(())

@@ -27,6 +27,9 @@ impl Cluster {
             Err(ApiError::unavailable())
         }
     }
+    pub(super) fn mark_unhealthy(&self) {
+        self.healthy.store(false, Ordering::Release);
+    }
 }
 pub(crate) struct Router(JoinHandle<()>);
 impl Drop for Router {

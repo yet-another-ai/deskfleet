@@ -161,13 +161,28 @@ impl Hub {
     }
     pub(crate) async fn remove_daemon(&self, machine_id: &str, connection_id: &str) -> bool {
         let removed = self.remove_local_daemon(machine_id, connection_id).await;
-        match &self.cluster {
-            Some(cluster) => cluster
-                .store
-                .release_machine_route(machine_id, &cluster.id, connection_id)
-                .await
-                .unwrap_or(false),
-            None => removed,
+        let Some(cluster) = &self.cluster else {
+            return removed;
+        };
+        match cluster
+            .store
+            .release_machine_route(machine_id, &cluster.id, connection_id)
+            .await
+        {
+            Ok(released) => released,
+            Err(error) => {
+                // Local socket is already gone; swallowing this leaves the row
+                // advertised while this process keeps renewing its node lease.
+                tracing::warn!(
+                    error = %error,
+                    machine_id,
+                    "failed to release machine route; marking realtime routing unhealthy"
+                );
+                cluster.mark_unhealthy();
+                let _registration = self.registration.lock().await;
+                self.fail_local().await;
+                removed
+            }
         }
     }
     pub(crate) async fn add_client(
@@ -177,11 +192,10 @@ impl Hub {
         connection_id: &str,
         sender: Sender,
         shutdown: watch::Sender<Option<u16>>,
-    ) {
+    ) -> Result<()> {
         let _registration = self.registration.lock().await;
-        if self.cluster.as_ref().is_some_and(|c| !c.ready()) {
-            let _ = shutdown.send(Some(1012));
-            return;
+        if let Some(cluster) = &self.cluster {
+            cluster.ensure_ready()?;
         }
         self.inner
             .lock()
@@ -197,6 +211,7 @@ impl Hub {
                     shutdown,
                 },
             );
+        Ok(())
     }
     pub(crate) async fn remove_client(&self, login_id: &str, connection_id: &str) {
         let mut routes = self.inner.lock().await;
@@ -389,5 +404,17 @@ mod tests {
         hub.disconnect_machine("1").await.unwrap();
         assert_eq!(*stopped.borrow(), Some(4403));
         assert!(hub.remove_daemon("1", "new").await);
+    }
+
+    #[tokio::test]
+    async fn add_client_stores_socket_when_routing_is_local_only() {
+        let hub = Hub::default();
+        let (send, _receive) = mpsc::channel(1);
+        let (shutdown, stopped) = watch::channel(None);
+        hub.add_client("login", "user", "connection", send, shutdown)
+            .await
+            .unwrap();
+        assert!(stopped.borrow().is_none());
+        hub.remove_client("login", "connection").await;
     }
 }

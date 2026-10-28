@@ -126,7 +126,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
             send,
             shutdown,
         )
-        .await;
+        .await
+        .unwrap();
     let (send, mut outside_roster) = tokio::sync::mpsc::channel(128);
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
@@ -138,7 +139,8 @@ async fn postgres_http_permissions_replication_and_signaling() {
             send,
             shutdown,
         )
-        .await;
+        .await
+        .unwrap();
     let path = format!("/api/teams/{team_id}/machines");
     assert_eq!(
         call!(get, &path, outside_token, &json!({})).status(),

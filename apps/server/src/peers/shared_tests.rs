@@ -84,7 +84,8 @@ impl Fixture {
         let (shutdown, _shutdown) = watch::channel(None);
         a.hub
             .add_client(&login, &user.id, "client-a", send, shutdown)
-            .await;
+            .await
+            .unwrap();
         Self {
             admin,
             schema,

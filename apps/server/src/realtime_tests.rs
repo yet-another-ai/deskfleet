@@ -138,7 +138,8 @@ impl Socket {
                 sender,
                 shutdown,
             )
-            .await;
+            .await
+            .unwrap();
         Self {
             messages,
             shutdown: stopped,
