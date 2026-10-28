@@ -52,6 +52,7 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
     writeCards(new Map())
   }
 
+  /** One generation per open card, so a late response cannot fill a card that was collapsed or replaced. */
   function readCard(key: string, fresh = false): Promise<void> {
     const card = cards.value.get(key)
     if (!card || !active()) return Promise.resolve()

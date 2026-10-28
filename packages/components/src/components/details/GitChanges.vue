@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ChevronRight, GitBranch, ListTree, LoaderCircle, RefreshCw } from "@lucide/vue"
-import { computed, nextTick, reactive, ref } from "vue"
+import { ChevronRight, ListTree, LoaderCircle, RefreshCw } from "@lucide/vue"
+import { computed, reactive, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { GitChangeKind, GitFileChange } from "../../../../../apps/daemon/src/git-protocol.ts"
 import { useSessionGit } from "../../composables/useSessionGit.ts"
 import { gitDiffCardKey } from "./git-diff-card.ts"
 import IconButton from "../common/IconButton.vue"
 import GitChangeFile from "./GitChangeFile.vue"
+import GitCheckout from "./GitCheckout.vue"
 import GitDiffCard from "./GitDiffCard.vue"
 import { buildChangeTree, flattenChangeTree, type ChangeTree, type ChangeTreeRow } from "./git-change-tree.ts"
 
@@ -17,8 +18,7 @@ const groups: GitChangeKind[] = ["staged", "unstaged", "untracked"]
 const treeOpen = ref(false)
 const collapsedDirectories = reactive<Record<string, true>>({})
 const expanded = reactive<Record<string, true>>({})
-const focused = ref<string | null>(null)
-const cardsPane = ref<HTMLElement | null>(null)
+const cardElements = new Map<string, HTMLElement>()
 const repositories = computed(() => snapshot.value?.repositories.map(repository => ({
   ...repository,
   groups: groups.map(kind => ({ kind, changes: repository.changes.filter(change => change.kind === kind) })).filter(group => group.changes.length),
@@ -49,6 +49,15 @@ function toggleDirectory(key: string): void {
 function cardKey(repositoryId: string, change: GitFileChange): string {
   return gitDiffCardKey(repositoryId, change.path, change.kind)
 }
+function rememberCard(key: string, instance: { element: HTMLElement | null } | null): void {
+  const element = instance?.element
+  if (element) cardElements.set(key, element)
+  else cardElements.delete(key)
+}
+function openCard(repositoryId: string, change: GitFileChange): void {
+  expanded[cardKey(repositoryId, change)] = true
+  expand(repositoryId, change)
+}
 function toggleCard(repositoryId: string, change: GitFileChange): void {
   const key = cardKey(repositoryId, change)
   if (expanded[key]) {
@@ -56,19 +65,11 @@ function toggleCard(repositoryId: string, change: GitFileChange): void {
     collapse(repositoryId, change.path, change.kind)
     return
   }
-  expanded[key] = true
-  focused.value = key
-  expand(repositoryId, change)
+  openCard(repositoryId, change)
 }
 function reveal(repositoryId: string, change: GitFileChange): void {
-  const key = cardKey(repositoryId, change)
-  expanded[key] = true
-  focused.value = key
-  expand(repositoryId, change)
-  void nextTick(() => {
-    const card = [...cardsPane.value?.querySelectorAll<HTMLElement>("[data-git-card]") ?? []].find(element => element.getAttribute("data-git-card") === key)
-    card?.scrollIntoView({ block: "start" })
-  })
+  openCard(repositoryId, change)
+  cardElements.get(cardKey(repositoryId, change))?.scrollIntoView({ block: "start" })
 }
 </script>
 
@@ -102,13 +103,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
           data-git-tree
         >
           <section v-for="repository in repositories" :key="repository.id" class="min-w-0">
-            <h3 class="m-0 truncate text-[13px] font-medium" :title="repository.root">{{ repository.root }}</h3>
-            <div class="mb-2 mt-1 flex min-w-0 items-center gap-1 text-xs text-ui-text-muted">
-              <GitBranch :size="13" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
-              <span class="truncate font-mono" :title="repository.head ?? undefined">{{ repository.branch ?? t('panel.detachedHead') }}</span>
-              <span v-if="!repository.head" class="shrink-0">· {{ t('panel.noCommits') }}</span>
-              <span v-else-if="!repository.branch" class="shrink-0 font-mono">{{ repository.head.slice(0, 8) }}</span>
-            </div>
+            <GitCheckout :root="repository.root" :branch="repository.branch" :head="repository.head" />
             <p v-if="repository.error" class="m-0 break-words text-[13px] text-ui-danger" role="alert">{{ repository.error }}</p>
             <p v-else-if="!repository.changes.length" class="m-0 text-[13px] text-ui-text-faint">{{ t('panel.clean') }}</p>
             <div v-for="group in repository.groups" :key="group.kind" class="mt-3" :data-kind="group.kind">
@@ -134,7 +129,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
                     :change="row.change"
                     :repository-id="repository.id"
                     :depth="row.depth"
-                    :selected="focused === cardKey(repository.id, row.change)"
+                    :selected="!!expanded[cardKey(repository.id, row.change)]"
                     :disabled="!connected"
                     @select="reveal(repository.id, row.change)"
                   />
@@ -148,15 +143,9 @@ function reveal(repositoryId: string, change: GitFileChange): void {
             <p v-else class="m-0 text-[13px] text-ui-text-faint">{{ t('panel.notGit') }}</p>
           </section>
         </div>
-        <div ref="cardsPane" data-git-cards class="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-4">
+        <div data-git-cards class="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-4">
           <section v-for="repository in repositories" :key="repository.id" :data-repository="repository.id" class="min-w-0">
-            <h3 class="m-0 truncate text-[13px] font-medium" :title="repository.root">{{ repository.root }}</h3>
-            <div class="mb-2 mt-1 flex min-w-0 items-center gap-1 text-xs text-ui-text-muted">
-              <GitBranch :size="13" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
-              <span class="truncate font-mono" :title="repository.head ?? undefined">{{ repository.branch ?? t('panel.detachedHead') }}</span>
-              <span v-if="!repository.head" class="shrink-0">· {{ t('panel.noCommits') }}</span>
-              <span v-else-if="!repository.branch" class="shrink-0 font-mono">{{ repository.head.slice(0, 8) }}</span>
-            </div>
+            <GitCheckout :root="repository.root" :branch="repository.branch" :head="repository.head" />
             <p v-if="repository.error" class="m-0 break-words text-[13px] text-ui-danger" role="alert">{{ repository.error }}</p>
             <p v-else-if="!repository.changes.length" class="m-0 text-[13px] text-ui-text-faint">{{ t('panel.clean') }}</p>
             <div v-for="group in repository.groups" :key="group.kind" class="mt-3" :data-kind="group.kind">
@@ -164,10 +153,10 @@ function reveal(repositoryId: string, change: GitFileChange): void {
               <GitDiffCard
                 v-for="change in group.changes"
                 :key="cardKey(repository.id, change)"
+                :ref="(instance) => rememberCard(cardKey(repository.id, change), instance as { element: HTMLElement | null } | null)"
                 :change="change"
                 :repository-id="repository.id"
                 :expanded="!!expanded[cardKey(repository.id, change)]"
-                :focused="focused === cardKey(repository.id, change)"
                 :card="cards.get(cardKey(repository.id, change))"
                 :connected="connected && enabled"
                 :panel-error="error"
