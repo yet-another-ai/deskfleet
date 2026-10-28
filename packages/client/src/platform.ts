@@ -5,7 +5,7 @@ let configured: DeskfleetDesktopApi | undefined
 /** Hosts install their transport before mounting the shared application. */
 export function configureClient(api: DeskfleetDesktopApi): void { configured = api }
 export function getClient(): DeskfleetDesktopApi {
-  if (!configured) throw new Error("The deskfleet platform adapter has not been configured")
+  if (!configured) throw new Error("The DeskFleet platform adapter has not been configured")
   return configured
 }
 

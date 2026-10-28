@@ -10,7 +10,7 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 
 ## Agreed scope
 
-- Replace OIDC with deskfleet-owned accounts, public registration, email/password
+- Replace OIDC with DeskFleet-owned accounts, public registration, email/password
   login, and Passkeys. Web and Electron use the same account authority.
 - Subscriptions and usage belong to a Team. A person can use a single-member
   Team; membership in several Teams does not combine their plans.
@@ -72,7 +72,7 @@ membership, resource access, or Site Admin authority.
 7. Support account disablement, revoking existing login sessions/peer access and
    preventing new sessions and authorization of later delegated work.
 
-deskfleet owns email verification. Invitation acceptance still requires a
+DeskFleet owns email verification. Invitation acceptance still requires a
 verified email matching the invitation. Stable user IDs identify membership and
 resource ownership across email changes. Registration, login, email changes, and
 invitations need one consistent email matching/uniqueness policy.
@@ -84,6 +84,13 @@ available so the user can complete account setup.
 Public registration and Team creation are separate site policies. Site Admin
 grants remain explicit operator actions on an existing account; the first user
 or a special email address does not automatically receive that authority.
+
+Site administrators may configure Terms of Service and Privacy Terms URLs
+independently in runtime site settings. When either is present, registration
+requires an initially unchecked agreement checkbox with links to the configured
+documents. The server checks acceptance before sending the verification link,
+including resends. With both URLs empty, registration has no agreement checkbox
+or acceptance requirement. Password recovery remains available without it.
 
 Account closure must preserve the final-Team-administrator invariant and resolve
 machine ownership and billing responsibilities. Closure and retention policy are

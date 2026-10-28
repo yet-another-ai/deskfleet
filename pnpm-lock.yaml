@@ -272,6 +272,9 @@ importers:
       '@xterm/addon-ligatures':
         specifier: 0.10.0
         version: 0.10.0(patch_hash=fa45e6baf79dcd885c76ac00ddc39740210fcaadc91ce8473481e5e443bf98f2)
+      '@xterm/addon-webgl':
+        specifier: 0.19.0
+        version: 0.19.0
       '@xterm/xterm':
         specifier: 6.0.0
         version: 6.0.0
@@ -2697,6 +2700,9 @@ packages:
   '@xterm/addon-ligatures@0.10.0':
     resolution: {integrity: sha512-/Few8ZSHMib7sGjRJoc5l7bCtEB9XJfkNofvPpOcWADxKaUl8og8P172j67OoACSNJAXqeCLIuvj8WFCBkcTxg==}
     engines: {node: '>8.0.0'}
+
+  '@xterm/addon-webgl@0.19.0':
+    resolution: {integrity: sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A==}
 
   '@xterm/xterm@6.0.0':
     resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
@@ -7185,6 +7191,8 @@ snapshots:
     dependencies:
       font-finder: 1.1.0
       font-ligatures: 1.4.1
+
+  '@xterm/addon-webgl@0.19.0': {}
 
   '@xterm/xterm@6.0.0': {}
 

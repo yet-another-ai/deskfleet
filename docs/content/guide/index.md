@@ -1,6 +1,6 @@
-# Welcome to deskfleet
+# Welcome to DeskFleet
 
-deskfleet brings the agents running on your team's computers into a shared place to work. Use the agents you already know, participate in the same session with teammates, and keep the working environment close at hand.
+DeskFleet brings the agents running on your team's computers into a shared place to work. Use the agents you already know, participate in the same session with teammates, and keep the working environment close at hand.
 
 ## Explore the workspace
 
@@ -16,7 +16,7 @@ Members of a team can participate in the same agent session. Read the conversati
 
 ## Start here
 
-- [Set up deskfleet](./getting-started)
+- [Set up DeskFleet](./getting-started)
 - [Understand agents and collaboration](./agents)
 - [Read our privacy and data promise](/privacy)
 

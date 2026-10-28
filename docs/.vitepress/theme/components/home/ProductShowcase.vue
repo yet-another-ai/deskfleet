@@ -95,7 +95,7 @@ function show(key: string) {
 </script>
 
 <template>
-  <section id="explore" class="showcase" :aria-label="chinese ? '探索 deskfleet' : 'Explore deskfleet'">
+  <section id="explore" class="showcase" :aria-label="chinese ? '探索 DeskFleet' : 'Explore DeskFleet'">
     <header ref="intro" class="showcase__intro reveal" :class="{ 'is-shown': shown }">
       <p class="home-kicker reveal-line" style="--line: 0">{{ chinese ? '现在，就试试看' : 'Make yourself at home' }}</p>
       <h2 class="home-heading reveal-line" style="--line: 1">{{ chinese ? '所有的工作，都能亲手参与。' : 'Get a feel for working together.' }}</h2>

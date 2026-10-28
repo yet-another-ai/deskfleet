@@ -48,7 +48,7 @@ async function copy() {
       <h2 class="home-heading reveal-line" style="--line: 2">{{ chinese ? '让它们，一起工作。' : 'Bring your agents together.' }}</h2>
       <p class="install__lead reveal-line" style="--line: 3">{{ chinese ? '从你的电脑开始，再连接团队的其他机器。' : 'Start with your computer. Bring the rest of your team along.' }}</p>
       <div class="install__controls reveal-line" style="--line: 4">
-        <SegmentedControl v-model="mode" :options="modes" :label="chinese ? '运行方式' : 'How to run deskfleet'" />
+        <SegmentedControl v-model="mode" :options="modes" :label="chinese ? '运行方式' : 'How to run DeskFleet'" />
         <SegmentedControl v-model="platform" :options="platforms" size="small" :label="chinese ? '操作系统' : 'Operating system'" />
         <SegmentedControl v-if="platform === 'linux'" v-model="linuxArchitecture" :options="linuxArchitectures" size="small" :label="chinese ? '处理器架构' : 'Processor architecture'" />
       </div>
@@ -57,7 +57,7 @@ async function copy() {
         <div :key="`${mode}-${platform}`" class="install__target">
           <a class="install__download" :href="download?.url ?? releasesPage">
             <span class="install__download-icon"><Download :size="24" aria-hidden="true" /></span>
-            <span><strong>{{ mode === 'desktop' ? 'deskfleet' : 'deskfleet daemon' }} · {{ download ? (chinese ? '下载' : 'Download') : (chinese ? '查看发布版本' : 'View releases') }}</strong><small>{{ platforms.find(item => item.value === platform)?.label }} · {{ architecture }}</small><small v-if="download" class="install__file">{{ download.name }} · {{ formatSize(download.size, locale) }}</small></span>
+            <span><strong>{{ mode === 'desktop' ? 'DeskFleet' : 'DeskFleet daemon' }} · {{ download ? (chinese ? '下载' : 'Download') : (chinese ? '查看发布版本' : 'View releases') }}</strong><small>{{ platforms.find(item => item.value === platform)?.label }} · {{ architecture }}</small><small v-if="download" class="install__file">{{ download.name }} · {{ formatSize(download.size, locale) }}</small></span>
             <ArrowUpRight :size="20" aria-hidden="true" />
           </a>
           <div class="install__command">

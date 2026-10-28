@@ -182,7 +182,7 @@ the installed [Grok CLI](https://docs.x.ai/build/cli/headless-scripting) directl
 as `grok agent stdio`; its default binary is `grok`. After initialization it
 calls `authenticate` with `xai.api_key` when `XAI_API_KEY` is set and that method
 is advertised, and otherwise with `cached_token` from `grok login`. Interactive
-methods are not passed to `authenticate`. Deskfleet does not add
+methods are not passed to `authenticate`. DeskFleet does not add
 `--always-approve`, so tool approval stays on the existing permission UI.
 `x.ai/ask_user_question` and `_x.ai/ask_user_question` use the same question form.
 The Pi Coding Agent template runs the installed `pi` CLI through the bundled
@@ -274,7 +274,7 @@ those inputs for steering are recorded separately. Default backlog dispatch is
 a system action. The target machine is the daemon's catalog identity.
 
 Central signaling binds peers to verified users and login/device identities.
-Resource creation requires a verified deskfleet account and Team enrollment. A Web client can
+Resource creation requires a verified DeskFleet account and Team enrollment. A Web client can
 have no enrolled source Machine; `sourceMachine` is then absent. The target
 machine is never assigned as the browser's identity. Local discovery credentials
 permit host setup; `local_token` actors remain only in explicit in-process test
@@ -502,7 +502,7 @@ input available for explicit retry.
 The pinned `@agentclientprotocol/codex-acp` 2.2.2 package has a repository patch
 for strict steering. It advertises both `_meta.steering.supported` and
 `_meta.steering.supportsPromptRequired`. The request is `_session/steering` with
-`_meta.steering.idleBehavior: "promptRequired"`; deskfleet also includes its
+`_meta.steering.idleBehavior: "promptRequired"`; DeskFleet also includes its
 delivery command ID under `_meta.deskfleet`.
 
 The adapter returns `injected` if it accepted the input into the active turn.
@@ -771,7 +771,7 @@ same option when it advertises one (`reasoning_effort`, `effort`,
 Older Grok sessions omit config options and report levels on
 `models.availableModels` (`supportsReasoningEffort` and `reasoningEfforts`, or
 the thinking-intensity aliases) or on `x.ai/sessionConfig` rows whose category
-is `mode`. Deskfleet projects those levels into the reasoning control. A
+is `mode`. DeskFleet projects those levels into the reasoning control. A
 projected effort change calls `session/set_mode`; a projected model change
 calls `session/set_model`. Those metadata rows are not permission modes. An
 advertised reasoning option that already uses category `mode` is presented as
@@ -871,7 +871,7 @@ only subscribes and replays: it never starts or resumes a provider.
 Resume uses the saved provider Session ID and captured directories. Agents that
 advertise `session/resume` continue with that method. Agents that instead
 advertise `loadSession`, including Cursor CLI and Grok, continue with `session/load`.
-That method replays the provider's history as session updates. Deskfleet already
+That method replays the provider's history as session updates. DeskFleet already
 keeps the journal, so it retains configuration updates from the replay and does
 not record the rest. The stored `resume` capability means either method was
 negotiated. Providers that advertise neither cannot resume.

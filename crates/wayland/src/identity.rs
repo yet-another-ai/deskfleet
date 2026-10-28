@@ -73,7 +73,7 @@ fn ensure_entry(
 
 fn fallback(exec: &str) -> String {
     format!(
-        "[Desktop Entry]\nType=Application\nName=deskfleet\nExec={exec}\nX-Deskfleet-Generated-Exec={exec}\nNoDisplay=true\nTerminal=false\n"
+        "[Desktop Entry]\nType=Application\nName=DeskFleet\nExec={exec}\nX-Deskfleet-Generated-Exec={exec}\nNoDisplay=true\nTerminal=false\n"
     )
 }
 
@@ -82,7 +82,11 @@ fn is_generated(contents: &str) -> bool {
         || contents
             .lines()
             .find_map(|line| line.strip_prefix("Exec="))
-            .is_some_and(|exec| contents == fallback(exec))
+            .is_some_and(|exec| {
+                let generated = fallback(exec);
+                contents == generated
+                    || contents == generated.replace("\nName=DeskFleet\n", "\nName=deskfleet\n")
+            })
 }
 
 fn exec_value(executable: &Path) -> Result<String> {
@@ -185,8 +189,11 @@ mod tests {
         assert!(is_generated(LEGACY_FALLBACK));
         let owned = fallback("\"/old/deskfleet\"");
         assert!(is_generated(&owned));
+        assert!(is_generated(
+            &owned.replace("Name=DeskFleet", "Name=deskfleet")
+        ));
         assert!(!is_generated(
-            &owned.replace("Name=deskfleet", "Name=Custom deskfleet")
+            &owned.replace("Name=DeskFleet", "Name=Custom DeskFleet")
         ));
         assert!(!is_generated(&owned.replacen(
             "Exec=\"/old/deskfleet\"",

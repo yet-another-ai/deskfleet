@@ -1,4 +1,4 @@
-# 运行 deskfleet
+# 运行 DeskFleet
 
 打包版本请查看 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases)。也可以从源码运行当前开发版本。
 

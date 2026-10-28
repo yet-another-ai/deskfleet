@@ -1,6 +1,6 @@
 # Continuous integration
 
-deskfleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
+DeskFleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
 one orchestrator, reusable Test and Build workflows, a shared setup action, and
 a stable `Gate` result for branch protection.
 
@@ -208,18 +208,16 @@ restores `@electron/get`'s default cache, and the PostgreSQL job saves it after
 `install-electron` on main and tags. Installed `node_modules` directories are
 rebuilt from the lockfile.
 
-All jobs use sccache 0.19.0 through the pinned `sccache-action` release and share
-its GitHub Actions cache namespace. The tool version stays pinned because it
-participates in that cache version. Main and tag runs can write that cache;
-pull requests and other branches read it. A miss compiles normally. Service
-errors are written to a runner log and `SCCACHE_LOG` is `warn`. Dependency and
-tool caches follow the same producer policy, with Cargo target caches saved
-from main only.
+All jobs use sccache 0.19.0 through the pinned `sccache-action` release.
+Its directory is local to the job and is not stored in the GitHub Actions
+cache. One Actions object per compilation filled the repository quota and
+evicted the Windows Cargo target cache. `SCCACHE_LOG` is `warn`. Cargo target
+caches are still saved from main only.
 
 `mise run ci:report:sccache` reports cache hit, miss, write, and error counters.
 
 Heron's Nix, coverage upload, Playwright, plug-in SDK, signing, and symbol-upload
-jobs are not part of this workflow. Deskfleet keeps the orchestrator, the reusable
+jobs are not part of this workflow. DeskFleet keeps the orchestrator, the reusable
 Test and Build workflows, and this cache policy.
 
 ## Local validation

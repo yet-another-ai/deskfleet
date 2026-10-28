@@ -105,7 +105,7 @@ onBeforeUnmount(() => { unsubscribe?.() })
 
 <template>
   <div class="app-drag titlebar-overlay-inset flex h-12 shrink-0 items-center gap-2 px-5 text-[13px] font-medium" :class="host.platform === 'darwin' && 'pl-20'">
-    <BrandLogo :size="24" decorative />{{ session.site.value?.siteName ?? 'deskfleet' }}
+    <BrandLogo :size="24" decorative />{{ session.site.value?.siteName ?? 'DeskFleet' }}
   </div>
   <main class="flex min-h-0 flex-1 justify-center overflow-y-auto p-5 sm:p-8">
     <div class="ui-card my-auto grid w-full max-w-4xl overflow-hidden shadow-ui-card md:grid-cols-[0.9fr_1.1fr]">

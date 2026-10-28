@@ -38,7 +38,7 @@ export function mcpServerInput(value: unknown): McpServerInput {
   const input = object(value)
   const name = text(input.name, "server name")
   if (name.length > 128) throw new Error("MCP server names must have at most 128 characters")
-  if (name.toLowerCase() === "deskfleet") throw new Error("The built-in deskfleet MCP server is always enabled and cannot be replaced")
+  if (name.toLowerCase() === "deskfleet") throw new Error("The built-in DeskFleet MCP server is always enabled and cannot be replaced")
   if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("Invalid MCP enabled setting")
   const enabled = input.enabled !== false
   if (input.transport === "stdio") {

@@ -1,4 +1,12 @@
-# deskfleet desktop
+# DeskFleet desktop
+
+The desktop display name is **DeskFleet**, configured in `electron-builder.yml`
+and the native window, menu, and About labels. The runtime `productName` in
+`package.json` remains `deskfleet`: Electron uses it for the default profile
+directory and macOS/Linux secure-storage identity. Keeping that internal name
+preserves existing settings, encrypted sign-in tokens, and explicit
+`--user-data-dir` overrides. Release artifact filenames retain the `deskfleet-`
+prefix.
 
 `@deskfleet/desktop` is the Electron client for the machine daemon, which it hosts
 in its main process. Closing the window leaves the app in the tray with the daemon
@@ -93,7 +101,7 @@ On this client's local machine, a Workspace's **Open with** menu opens its defau
 directory in VS Code, Cursor, VSCodium, Zed, an external Terminal, or the system
 file manager. Additional directories have their own menu. Only installed
 applications appear; opening the menu or choosing **Rescan** scans
-again. The existing terminal actions continue to open deskfleet's integrated
+again. The existing terminal actions continue to open DeskFleet's integrated
 terminal. Remote machines and Web clients do not expose these local launchers.
 
 The maintained discovery list lives in
@@ -239,16 +247,20 @@ submission is confirmed. `AgentClient` carries ACP JSON-RPC over the ordered
 
 ## Terminal
 
-`TerminalSurface` wraps xterm.js and its fit addon. It fits the terminal to its
-container on resize and disposes of it on unmount. The terminal view remounts it
-for each terminal session. The real local machine lists its machine-scoped
-sessions in tabs and supports dialing new or existing shells, live input/output, resize,
-reattachment, and explicit hangup. Switching tabs, leaving the view or closing
-the window leaves shells running. Closing a tab hangs up only its shell and removes
-its daemon history. Daemon shutdown terminates processes while preserving their
-history; after restart they appear interrupted and read-only. xterm.js uses an injected
-stylesheet, which the renderer CSP's `style-src 'unsafe-inline'` permits. It
-loads only with the terminal route's chunk.
+`TerminalSurface` wraps xterm.js with its fit, ligatures, and WebGL addons. It
+attaches `@xterm/addon-webgl` after open when WebGL2 is available, and falls back
+to the default canvas renderer when WebGL is missing, fails to initialize, or
+loses its context. Unmount force-releases the WebGL2 context so tab remounts do
+not accumulate GPU contexts past Chromium's limit. It fits the terminal to its
+container on resize and disposes of it on unmount. The terminal view remounts it for each terminal session. The
+real local machine lists its machine-scoped sessions in tabs and supports dialing
+new or existing shells, live input/output, resize, reattachment, and explicit
+hangup. Switching tabs, leaving the view or closing the window leaves shells
+running. Closing a tab hangs up only its shell and removes its daemon history.
+Daemon shutdown terminates processes while preserving their history; after restart
+they appear interrupted and read-only. xterm.js uses an injected stylesheet, which
+the renderer CSP's `style-src 'unsafe-inline'` permits. It loads only with the
+terminal route's chunk.
 
 The data-only connection reuses authenticated SDP/ICE signaling without media
 tracks or screen capture. Dial/hangup uses signaling and remains available without
@@ -298,7 +310,7 @@ only while the window is.
 
 The process exits only through:
 
-- **Quit deskfleet** in the tray menu;
+- **Quit DeskFleet** in the tray menu;
 - OS logout or shutdown (`powerMonitor` `shutdown` on macOS and Linux, window
   `session-end` on Windows);
 - SIGINT or SIGTERM.
@@ -315,7 +327,7 @@ user logs in. Packaged macOS and Windows apps use Electron's
 preference, and Settings reads it again after each change. Windows also honors
 startup entries disabled in Task Manager. The switch is unavailable on Linux
 and in development runs, which use Electron's executable instead of an installed
-deskfleet app. macOS login items require a signed and notarized app to work
+DeskFleet app. macOS login items require a signed and notarized app to work
 reliably; see [Electron's login item documentation](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings-macos-windows).
 
 This launches the client with its normal window and respects the separate

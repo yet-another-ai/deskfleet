@@ -8,7 +8,7 @@ pub struct IceServer {
     pub credential: String,
 }
 
-/// Video profiles produced by deskfleet's encoders.
+/// Video profiles produced by DeskFleet's encoders.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VideoCodec {
     H264,

@@ -1,6 +1,6 @@
 # Development environment
 
-deskfleet follows [Heron's development workflow](https://github.com/minori-live/heron/blob/main/AGENTS.md):
+DeskFleet follows [Heron's development workflow](https://github.com/minori-live/heron/blob/main/AGENTS.md):
 mise owns tool versions and the task graph, APM owns repository-local skills,
 and local validation uses the same tasks as CI.
 
@@ -105,7 +105,9 @@ peer streaming recorded product screens (`demo-desktop-light.png` and
 `demo-desktop-dark.png`). These screenshots are media fixtures, not a separate
 implementation of the application UI.
 
-The supplied brand master lives in `packages/components/src/assets/deskfleet.png`;
+Use **DeskFleet** for the product's display name; package names, commands, URLs,
+and other technical identifiers remain lowercase. The supplied Arctic fox brand
+master lives in `packages/components/src/assets/deskfleet.png`;
 `mise exec -- pnpm --filter @deskfleet/desktop icons` regenerates the application,
 tray, Web favicon, and website assets from it.
 
@@ -374,5 +376,5 @@ hand.
 
 The Rust skill includes an upstream example crate and its own toolchain file.
 Those files are preserved as dependency content. The example crate is excluded
-from the deskfleet Cargo workspace, and the static checks verify that boundary;
-deskfleet builds use the root mise toolchain.
+from the DeskFleet Cargo workspace, and the static checks verify that boundary;
+DeskFleet builds use the root mise toolchain.

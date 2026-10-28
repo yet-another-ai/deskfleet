@@ -38,7 +38,7 @@ test("waits for the OS setting before enabling changes and reflects the saved re
   await flushPromises()
   expect(toggle.attributes("disabled")).toBeUndefined()
   expect(view.get(`#${toggle.attributes("aria-labelledby")}`).text()).toBe("Launch at startup")
-  expect(view.get(`#${toggle.attributes("aria-describedby")}`).text()).toBe("Open deskfleet automatically when you log in.")
+  expect(view.get(`#${toggle.attributes("aria-describedby")}`).text()).toBe("Open DeskFleet automatically when you log in.")
   await toggle.trigger("click")
   expect(save).toHaveBeenCalledExactlyOnceWith(true)
   expect(toggle.attributes("disabled")).toBeDefined()

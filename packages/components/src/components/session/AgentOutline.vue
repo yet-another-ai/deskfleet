@@ -14,7 +14,7 @@ interface OutlineItem {
 const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; active?: string }>()
 const emit = defineEmits<{ select: [id: string] }>()
 
-const list = useTemplateRef<HTMLOListElement>("list")
+const rows = useTemplateRef<HTMLLIElement[]>("rows")
 const hovered = ref<string>()
 
 const items = computed<OutlineItem[]>(() => {
@@ -52,16 +52,17 @@ function tickWidth(index: number, baseline: number): number {
   return distance <= 3 ? 32 - distance * 5 : baseline
 }
 
-watch(() => props.active, () => {
-  list.value?.querySelector('[aria-current="location"]')?.scrollIntoView({ block: "nearest" })
+watch(() => props.active, id => {
+  const index = items.value.findIndex(item => item.id === id)
+  rows.value?.[index]?.scrollIntoView({ block: "nearest" })
 }, { flush: "post" })
 </script>
 
 <template>
   <nav v-if="items.length" class="flex max-h-full w-8 flex-col">
     <TooltipProvider :delay-duration="250">
-      <ol ref="list" class="min-h-0 overflow-y-auto [scrollbar-width:none]">
-        <li v-for="(item, index) in items" :key="item.id">
+      <ol class="min-h-0 overflow-y-auto [scrollbar-width:none]">
+        <li v-for="(item, index) in items" :key="item.id" ref="rows">
           <TooltipRoot>
             <TooltipTrigger
               type="button"

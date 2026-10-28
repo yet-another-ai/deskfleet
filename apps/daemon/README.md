@@ -1,4 +1,4 @@
-# deskfleet daemon
+# DeskFleet daemon
 
 `@deskfleet/daemon` is a TypeScript library, hosted inside Electron's main process
 or packaged as a standalone SEA executable for headless machines. It owns local
@@ -237,7 +237,7 @@ back to the SDK's optional bundled binary. Cursor is not an adapter: the daemon
 runs `` `<binary> acp` `` and then `authenticate` with `cursor_login` when that method
 is advertised. `CURSOR_API_KEY` and `CURSOR_AUTH_TOKEN` are ordinary environment
 overrides; root CLI flags, if required, belong before the `acp` argument and are
-not added by deskfleet. Cursor continues a saved conversation with `session/load`.
+not added by DeskFleet. Cursor continues a saved conversation with `session/load`.
 Grok is also native ACP: the daemon runs `` `<binary> agent stdio` ``. It then
 calls `authenticate` with `xai.api_key` when `XAI_API_KEY` is set and advertised,
 and otherwise with `cached_token`. `grok login` caches that token. Interactive

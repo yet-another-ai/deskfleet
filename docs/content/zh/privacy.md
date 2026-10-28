@@ -1,15 +1,15 @@
 ---
 title: 隐私与数据承诺
-description: deskfleet 前后端完全开源。官方服务不会使用你的工作数据训练模型。
+description: DeskFleet 前后端完全开源。官方服务不会使用你的工作数据训练模型。
 ---
 
 # 你的工作数据，不用于训练
 
-**deskfleet 官方服务不会使用你的代码、对话和工作记录训练模型。**
+**DeskFleet 官方服务不会使用你的代码、对话和工作记录训练模型。**
 
 ## 从客户端到服务端，完整开源
 
-[deskfleet 完整源码](https://github.com/yet-another-ai/deskfleet)以 Apache-2.0 协议公开，包括桌面客户端、Web 客户端、机器服务与中央后端。你可以审查数据如何流转、如何处理，也可以自行部署。
+[DeskFleet 完整源码](https://github.com/yet-another-ai/deskfleet)以 Apache-2.0 协议公开，包括桌面客户端、Web 客户端、机器服务与中央后端。你可以审查数据如何流转、如何处理，也可以自行部署。
 
 ## 数据存在哪里
 
@@ -19,7 +19,7 @@ Agent、Git、终端与桌面的实时连接通过经过身份验证的 WebRTC �
 
 ## 你接入的 Agent
 
-你选择的 Agent 和模型提供方有各自的数据政策与账号设置。deskfleet 的承诺针对官方 deskfleet 服务，不改变这些提供方处理其请求的方式。
+你选择的 Agent 和模型提供方有各自的数据政策与账号设置。DeskFleet 的承诺针对官方 DeskFleet 服务，不改变这些提供方处理其请求的方式。
 
 ## 官网演示
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { FitAddon } from "@xterm/addon-fit"
 import { LigaturesAddon } from "@xterm/addon-ligatures"
+import { WebglAddon } from "@xterm/addon-webgl"
 import { Terminal, type ITheme } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
 import { useResizeObserver } from "@vueuse/core"
@@ -50,7 +51,41 @@ const terminal = new Terminal({
   theme,
 })
 terminal.loadAddon(fit)
+let webglAddon: WebglAddon | undefined
 let ligaturesAddon: LigaturesAddon | undefined
+/** `@xterm/addon-webgl@0.19.0` keeps the GL context private; dispose alone does not free it (xtermjs/xterm.js#6068). */
+type WebglAddonInternals = { _renderer?: { _gl?: WebGL2RenderingContext } }
+function webglRenderingContext(addon: WebglAddon): WebGL2RenderingContext | undefined {
+  try {
+    return (addon as unknown as WebglAddonInternals)._renderer?._gl
+  } catch {
+    return undefined
+  }
+}
+/**
+ * Detach the WebGL renderer and force-release its GPU context.
+ * Order is dispose first, then `loseContext`, so the addon's own `webglcontextlost`
+ * listener is gone before we drop the context (0.19.0 does not clear its restoration timeout).
+ */
+function releaseWebglRenderer(addon: WebglAddon | undefined = webglAddon): void {
+  if (!addon) return
+  if (webglAddon === addon) webglAddon = undefined
+  const gl = webglRenderingContext(addon)
+  try { addon.dispose() } catch { /* already disposed */ }
+  try { gl?.getExtension("WEBGL_lose_context")?.loseContext() } catch { /* ignore host / shape changes */ }
+}
+/** Prefer WebGL when the environment can create a context; otherwise keep the default canvas renderer. */
+function attachWebglRenderer(): void {
+  let addon: WebglAddon | undefined
+  try {
+    addon = new WebglAddon()
+    addon.onContextLoss(() => { releaseWebglRenderer(addon) })
+    terminal.loadAddon(addon)
+    webglAddon = addon
+  } catch {
+    releaseWebglRenderer(addon)
+  }
+}
 function updateLigatures(): void {
   if (!terminal.element) return
   if (ligatures.value && !ligaturesAddon) {
@@ -87,6 +122,8 @@ watch(ligatures, updateLigatures)
 
 onMounted(() => {
   terminal.open(container.value!)
+  // WebGL needs the opened terminal element; attach before ligatures so joiners bind to the active renderer.
+  attachWebglRenderer()
   updateLigatures()
   fit.fit()
   if (props.banner && !props.interactive) terminal.write("\x1b[?25l")
@@ -94,7 +131,14 @@ onMounted(() => {
   emit("ready", { cols: terminal.cols, rows: terminal.rows })
 })
 useResizeObserver(container, () => fit.fit())
-onBeforeUnmount(() => { input.dispose(); resize.dispose(); title.dispose(); terminal.dispose() })
+onBeforeUnmount(() => {
+  // TerminalWorkspace remounts this surface on tab switches; release the GPU slot before GC.
+  releaseWebglRenderer()
+  input.dispose()
+  resize.dispose()
+  title.dispose()
+  terminal.dispose()
+})
 
 defineExpose({
   terminal,

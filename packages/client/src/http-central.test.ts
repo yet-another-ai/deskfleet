@@ -120,7 +120,7 @@ test("site administrator capabilities are refreshed from the server without pers
 
 test("loads public settings and saves site settings through the admin endpoint", async () => {
   const f = setup()
-  const settings = { siteName: "Studio fleet", announcement: "News", allowTeamCreation: false }
+  const settings = { siteName: "Studio fleet", announcement: "News", allowTeamCreation: false, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy" }
   f.responses.push(settings, settings, settings)
   expect(await f.client.site()).toEqual(settings)
   expect(await f.client.siteSettings()).toEqual(settings)

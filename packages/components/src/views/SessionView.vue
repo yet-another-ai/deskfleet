@@ -3,8 +3,8 @@ import { client } from "@deskfleet/client/platform"
 import UiButton from "../components/common/UiButton.vue"
 import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
-import { watchImmediate } from "@vueuse/core"
-import { computed, defineAsyncComponent, nextTick, ref, watch } from "vue"
+import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
+import { computed, defineAsyncComponent, nextTick, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
@@ -88,35 +88,39 @@ const forkOpen = ref(false)
 const renameOpen = ref(false)
 const actionError = ref<string | null>(null)
 const draftError = computed(() => actionError.value ?? agents.draftErrors[props.sessionId])
-const scroller = ref<HTMLElement | null>(null)
+const scroller = useTemplateRef<HTMLElement>("scroller")
+const overlay = useTemplateRef<HTMLElement>("overlay")
+const conversation = useTemplateRef<InstanceType<typeof AgentConversation>>("conversation")
+const { height: overlayHeight } = useElementSize(overlay, { width: 0, height: 140 }, { box: "border-box" })
 const followBottom = ref(true)
 const activeEntry = ref<string>()
 
+const { arrivedState } = useScroll(scroller, {
+  offset: { bottom: 100 },
+  onScroll() {
+    followBottom.value = arrivedState.bottom
+    updateOutline()
+  },
+})
+
 function updateOutline(): void {
   const el = scroller.value
-  if (!el) return
-  const entries = Array.from(el.querySelectorAll<HTMLElement>("ol > li[data-conversation-entry]"))
+  const entries = conversation.value?.items?.filter(item => item.dataset.conversationEntry)
+  if (!el || !entries?.length) return
   if (followBottom.value) {
     activeEntry.value = entries.at(-1)?.dataset.conversationEntry
     return
   }
   const threshold = el.getBoundingClientRect().top + 80
-  const current = entries.findLast(entry => entry.getBoundingClientRect().top <= threshold) ?? entries[0]
+  const current = entries.findLast(item => item.getBoundingClientRect().top <= threshold) ?? entries[0]
   activeEntry.value = current?.dataset.conversationEntry
 }
 
-function scroll(): void {
-  const el = scroller.value
-  if (!el) return
-  followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 100
-  updateOutline()
-}
-
 function locateEntry(id: string): void {
-  const entry = scroller.value?.querySelector<HTMLElement>(`[data-conversation-entry=${JSON.stringify(id)}]`)
-  if (!entry) return
+  const target = conversation.value?.items?.find(item => item.dataset.conversationEntry === id)
+  if (!target) return
   followBottom.value = false
-  entry.scrollIntoView({ block: "start", behavior: "instant" })
+  target.scrollIntoView({ block: "start", behavior: "instant" })
   activeEntry.value = id
 }
 
@@ -193,44 +197,56 @@ async function checkOperation(operationId: string): Promise<void> {
     <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" /></template>
   </PaneHeader>
   <div class="relative flex min-h-0 flex-1">
+    <div
+      aria-hidden="true"
+      class="pointer-events-none absolute inset-x-0 top-0 z-10 mx-auto h-6 w-full max-w-3xl [background:linear-gradient(to_top,transparent,var(--ui-color-canvas))]"
+    />
+    <div ref="scroller" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
+        <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
+        <template v-else-if="snapshot">
+          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" />
+          <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
+        </template>
+      </div>
+    </div>
     <AgentOutline
       v-if="snapshot && !view?.loading"
       :events="view!.events"
       :snapshot="snapshot"
       :active="activeEntry"
-      class="absolute left-1 top-1/2 z-10 max-h-[calc(100%-2rem)] -translate-y-1/2"
+      class="absolute left-1 top-1/2 z-20 max-h-[calc(100%-2rem)] -translate-y-1/2"
       @select="locateEntry"
     />
-    <div ref="scroller" class="min-h-0 min-w-0 flex-1 overflow-y-auto pl-8" @scroll="scroll">
-      <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
-        <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
-        <template v-else-if="snapshot">
-          <AgentConversation :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" />
-          <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
-        </template>
+    <div v-if="location" ref="overlay" class="pointer-events-none absolute inset-x-0 bottom-0 z-10">
+      <div class="pointer-events-auto relative mx-auto flex w-full max-w-3xl flex-col bg-ui-canvas">
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-x-0 -top-6 h-6 [background:linear-gradient(to_bottom,transparent,var(--ui-color-canvas))]"
+        />
+        <div class="flex w-full shrink-0 flex-col gap-2 px-6 pb-2 empty:hidden">
+          <AgentNotice v-if="!view?.loading && (!connected || view?.error)" tone="warning" :text="t('agent.disconnected')" :detail="view?.error || agents.error">
+            <UiButton type="button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</UiButton>
+          </AgentNotice>
+          <AgentNotice v-for="operation in pending" :key="operation.operationId" tone="warning" :text="t('agent.operationPending')" :detail="operation.error">
+            <UiButton type="button" :disabled="busy" @click="action(() => checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</UiButton>
+          </AgentNotice>
+          <AgentNotice v-if="draftError && !pending.some(operation => operation.error === draftError)" tone="danger" :text="draftError" />
+          <template v-if="snapshot">
+            <AgentNotice v-if="!active" :text="t(snapshot.session.archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')" />
+            <AgentNotice v-if="snapshot.session.lifecycle !== 'ready'" :tone="snapshot.session.lifecycle === 'provision_failed' ? 'danger' : 'progress'" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
+            <AgentNotice v-else-if="snapshot.session.error" tone="danger" :text="snapshot.session.error" />
+            <AgentNotice v-if="run && ['starting', 'stopping'].includes(run.state)" tone="progress" :text="t(`agent.runState.${run.state}`)" />
+            <AgentNotice v-else-if="resumeUnavailable" :text="t('agent.resumeUnavailable')" />
+            <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
+            <SessionAllowance :snapshot="snapshot" />
+            <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!active || !connected || busy" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
+          </template>
+        </div>
+        <SessionComposer v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
       </div>
     </div>
   </div>
-  <div v-if="location" class="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-2 empty:hidden">
-    <AgentNotice v-if="!view?.loading && (!connected || view?.error)" tone="warning" :text="t('agent.disconnected')" :detail="view?.error || agents.error">
-      <UiButton type="button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</UiButton>
-    </AgentNotice>
-    <AgentNotice v-for="operation in pending" :key="operation.operationId" tone="warning" :text="t('agent.operationPending')" :detail="operation.error">
-      <UiButton type="button" :disabled="busy" @click="action(() => checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</UiButton>
-    </AgentNotice>
-    <AgentNotice v-if="draftError && !pending.some(operation => operation.error === draftError)" tone="danger" :text="draftError" />
-    <template v-if="snapshot">
-      <AgentNotice v-if="!active" :text="t(snapshot.session.archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')" />
-      <AgentNotice v-if="snapshot.session.lifecycle !== 'ready'" :tone="snapshot.session.lifecycle === 'provision_failed' ? 'danger' : 'progress'" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
-      <AgentNotice v-else-if="snapshot.session.error" tone="danger" :text="snapshot.session.error" />
-      <AgentNotice v-if="run && ['starting', 'stopping'].includes(run.state)" tone="progress" :text="t(`agent.runState.${run.state}`)" />
-      <AgentNotice v-else-if="resumeUnavailable" :text="t('agent.resumeUnavailable')" />
-      <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
-      <SessionAllowance :snapshot="snapshot" />
-      <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!active || !connected || busy" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
-    </template>
-  </div>
-  <SessionComposer v-if="location" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
   <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
   <RenameSessionDialog v-if="renameOpen && snapshot" :key="sessionId" :title="snapshot.session.title" :disabled="!location?.machine.online" :confirm="title => agents.rename(sessionId, title)" @close="renameOpen = false" />
   <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />

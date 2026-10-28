@@ -86,8 +86,8 @@ export default defineConfig({
     "ui-notice": "flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px]",
 
     // Navigation
-    "ui-nav-item": "flex h-8 items-center gap-2.5 rounded-lg text-ui-text transition-colors hover:bg-ui-hover",
-    "ui-nav-active": "bg-ui-accent/12 text-ui-accent hover:bg-ui-accent/12",
+    "ui-nav-item": "flex h-8 items-center gap-2.5 rounded-lg text-ui-text transition-colors [&:not(.ui-nav-active):hover]:bg-ui-hover",
+    "ui-nav-active": "bg-ui-accent/12 text-ui-accent hover:bg-ui-accent/20",
     "ui-avatar": "inline-flex shrink-0 items-center justify-center bg-ui-avatar text-xs font-semibold text-ui-avatar-text",
   },
   rules: [

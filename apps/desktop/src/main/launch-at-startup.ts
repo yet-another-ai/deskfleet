@@ -2,7 +2,7 @@ import { app } from "electron"
 import type { LaunchAtStartupState } from "../../../../packages/client/src/settings.ts"
 
 function available(): boolean {
-  // Development runs use Electron's executable, not the installed deskfleet app.
+  // Development runs use Electron's executable, not the installed DeskFleet app.
   return app.isPackaged && (process.platform === "darwin" || process.platform === "win32")
 }
 

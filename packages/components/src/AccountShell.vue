@@ -56,7 +56,7 @@ watch([ready, account], async () => {
   // A Machine surface initializes its own route before it signals readiness.
   if (!machine.value) finishBillingReturn()
 }, { immediate: true })
-useTitle(() => site.value?.siteName ?? "deskfleet")
+useTitle(() => site.value?.siteName ?? "DeskFleet")
 useEventListener(window, "focus", () => {
   if (props.host.platform === "web") browserNotificationPermission.value = getBrowserNotificationPermission()
   void session.reload().catch((reason: unknown) => { session.notice.value = reason instanceof Error ? reason.message : String(reason) })
@@ -77,7 +77,7 @@ if (props.host.onboarding) void loadOnboarding()
   <div class="flex h-full flex-col overflow-hidden bg-ui-canvas text-ui-text">
     <p v-if="site?.announcement" role="status" class="m-0 max-h-32 shrink-0 overflow-y-auto whitespace-pre-wrap break-words border-b border-ui-border bg-ui-surface px-5 py-2 text-sm">{{ site.announcement }}</p>
     <template v-if="ready && onboarding">
-      <BrowserNotificationOnboarding v-if="!browserNotificationOnboardingComplete && browserNotificationPermission === 'default'" :site-name="site?.siteName ?? 'deskfleet'" @complete="browserNotificationOnboardingComplete = true" />
+      <BrowserNotificationOnboarding v-if="!browserNotificationOnboardingComplete && browserNotificationPermission === 'default'" :site-name="site?.siteName ?? 'DeskFleet'" @complete="browserNotificationOnboardingComplete = true" />
       <WelcomePage v-else-if="onboarding.step !== 'complete' || !account.user" :host="host" :state="onboarding" @change="onboarding = $event" />
       <!-- Each selected machine runs in its own application scope; see MachineSurface. -->
       <MachineSurface v-else-if="machine" :key="machine.id" :host="host" :session="session" :machine="machine" @ready="finishBillingReturn" />

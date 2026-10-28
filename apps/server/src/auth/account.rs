@@ -64,7 +64,7 @@ pub(super) async fn email(
     passwords::send_link(
         &state,
         &email,
-        "Verify your new deskfleet email",
+        "Verify your new DeskFleet email",
         "email/verify",
         &token,
     )
@@ -83,7 +83,7 @@ pub(super) async fn verify_email(
         .await?;
     state.hub.revoke(peers, "email_changed").await?;
     state.hub.disconnect_user(&auth.user.id).await?;
-    if state.auth.mail.send(&previous,"Your deskfleet email changed","Your account email address was changed. If you did not authorize this, contact the installation operator immediately.").await.is_err(){tracing::warn!("account email change notification delivery failed");}
+    if state.auth.mail.send(&previous,"Your DeskFleet email changed","Your account email address was changed. If you did not authorize this, contact the installation operator immediately.").await.is_err(){tracing::warn!("account email change notification delivery failed");}
     Ok(cleared(&state))
 }
 pub(super) async fn sessions(

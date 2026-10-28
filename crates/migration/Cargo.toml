@@ -1,6 +1,6 @@
 [package]
 name = "deskfleet-migration"
-description = "Database migrations for the deskfleet resource catalog"
+description = "Database migrations for the DeskFleet resource catalog"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -11,7 +11,7 @@ CREATE TABLE cp_site_settings (
  allow_team_creation BOOLEAN NOT NULL
 );
 INSERT INTO cp_site_settings(singleton, site_name, announcement, allow_team_creation)
-VALUES (TRUE, 'deskfleet', '', TRUE);
+VALUES (TRUE, 'DeskFleet', '', TRUE);
 CREATE TABLE cp_site_audit (
  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  actor_user_id TEXT REFERENCES cp_users(id),

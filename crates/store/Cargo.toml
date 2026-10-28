@@ -1,6 +1,6 @@
 [package]
 name = "deskfleet-store"
-description = "SeaORM persistence for the deskfleet resource catalog"
+description = "SeaORM persistence for the DeskFleet resource catalog"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

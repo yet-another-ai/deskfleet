@@ -1,6 +1,6 @@
 [package]
 name = "deskfleet-protocol"
-description = "Versioned wire contracts for deskfleet clients, daemons, and servers"
+description = "Versioned wire contracts for DeskFleet clients, daemons, and servers"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -59,7 +59,7 @@ function profileEndpoint(endpoint: FileEndpoint, name: string): FileEndpoint {
     close: () => endpoint.close(),
   }
 }
-// The loader is lazy. Intercept only deskfleet's addon before either endpoint
+// The loader is lazy. Intercept only DeskFleet's addon before either endpoint
 // initializes it; both native peers then share the explicitly selected build.
 const originalDlopen = process.dlopen
 if (values.addon || values.profile) {

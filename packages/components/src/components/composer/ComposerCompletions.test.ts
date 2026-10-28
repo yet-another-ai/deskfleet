@@ -22,7 +22,7 @@ afterEach(() => {
 
 const location: WorkspaceLocation = {
   machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] },
-  workspace: { id: "1", name: "Deskfleet", directories: [{ path: "/repo" }], sessions: [], terminals: [] },
+  workspace: { id: "1", name: "DeskFleet", directories: [{ path: "/repo" }], sessions: [], terminals: [] },
 }
 const fileResult: ComposerReferenceResult = { items: [{ name: "README.md", description: "/repo/README.md", reference: { kind: "file", originId: "origin", workspaceId: "1", directoryIndex: 0, sourceDirectory: "/repo", relativePath: "README.md" } }], truncated: false }
 const sessionResult: ComposerReferenceResult = { items: [{ name: "Earlier design", description: "Archived session", archived: true, reference: { kind: "session", originId: "origin", workspaceId: "1", sessionId: "30" } }], truncated: false }

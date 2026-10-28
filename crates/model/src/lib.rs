@@ -1,4 +1,4 @@
-//! Shared resources for deskfleet, independent of HTTP, Node.js, and persistence.
+//! Shared resources for DeskFleet, independent of HTTP, Node.js, and persistence.
 //!
 //! Filesystem paths are strings interpreted by the owning machine. Deserializing
 //! a record preserves them without accessing the filesystem.
