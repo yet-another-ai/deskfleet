@@ -19,9 +19,12 @@ const files = client.files
 interface LoadedImage { url?: string; error?: string }
 interface MarkdownSegment { key: string; html?: string; diagram?: MarkdownDiagram }
 const images = new Map<string, LoadedImage>()
+/** Keep highlighted HTML across streamed Markdown re-renders so completed fences do not flash. */
+const highlights = new Map<string, string>()
 let contextKey = ""
 let generation = 0
 let disposed = false
+const highlightKey = (lang: string, code: string) => `${lang}\0${code}`
 
 const segments = computed<MarkdownSegment[]>(() => {
   const { html, diagrams } = rendered.value
@@ -75,21 +78,43 @@ function setCopyState(button: HTMLButtonElement, copied: boolean): void {
   button.setAttribute("aria-label", label)
   button.title = label
 }
+function applyHighlight(block: HTMLElement, html: string): void {
+  const template = document.createElement("template")
+  template.innerHTML = html.trim()
+  const highlighted = template.content.querySelector("pre")
+  const existing = block.querySelector("pre")
+  if (!highlighted || !existing) return
+  existing.replaceWith(highlighted)
+  block.dataset.highlighted = "true"
+}
 async function highlightBlocks(version: number): Promise<void> {
   const blocks = [...surface.value?.querySelectorAll<HTMLElement>("[data-code-block]") ?? []]
-  await Promise.all(blocks.map(async block => {
+  const used = new Set<string>()
+  const pending: HTMLElement[] = []
+  // Restore cached highlights synchronously before any await so streamed text updates do not flash.
+  for (const block of blocks) {
+    if (disposed || version !== generation || block.dataset.highlighted === "true") continue
+    const codeElement = block.querySelector("code")
+    if (!codeElement) continue
+    const code = codeElement.textContent ?? ""
+    const lang = block.dataset.codeLang ?? ""
+    const key = highlightKey(lang, code)
+    used.add(key)
+    const cached = highlights.get(key)
+    if (cached) applyHighlight(block, cached)
+    else pending.push(block)
+  }
+  for (const key of highlights.keys()) if (!used.has(key)) highlights.delete(key)
+  await Promise.all(pending.map(async block => {
     if (disposed || version !== generation || block.dataset.highlighted === "true") return
     const codeElement = block.querySelector("code")
     if (!codeElement) return
-    const html = await highlightCode(codeElement.textContent ?? "", block.dataset.codeLang ?? "")
+    const code = codeElement.textContent ?? ""
+    const lang = block.dataset.codeLang ?? ""
+    const html = await highlightCode(code, lang)
     if (disposed || version !== generation || !html) return
-    const template = document.createElement("template")
-    template.innerHTML = html.trim()
-    const highlighted = template.content.querySelector("pre")
-    const existing = block.querySelector("pre")
-    if (!highlighted || !existing) return
-    existing.replaceWith(highlighted)
-    block.dataset.highlighted = "true"
+    highlights.set(highlightKey(lang, code), html)
+    applyHighlight(block, html)
   }))
 }
 function load(uri: string): void {
@@ -161,6 +186,7 @@ async function click(event: MouseEvent): Promise<void> {
 onBeforeUnmount(() => {
   disposed = true
   ++generation
+  highlights.clear()
   for (const uri of images.keys()) release(uri)
 })
 </script>

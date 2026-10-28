@@ -203,6 +203,31 @@ test("keeps an unhighlighted fallback when Shiki cannot highlight a block", asyn
   expect(block.attributes("data-highlighted")).toBeUndefined()
 })
 
+test("streamed text updates restore completed highlights from cache without waiting on Shiki", async () => {
+  let resolveHighlight!: (value: string) => void
+  const highlight = vi.spyOn(codeHighlight, "highlightCode").mockImplementation(
+    () => new Promise<string>(resolve => { resolveHighlight = resolve }),
+  )
+  const view = render({}, "```TypeScript\nconst value = 1\n```")
+  await flushPromises()
+  resolveHighlight('<pre class="shiki"><code>const value = 1</code></pre>')
+  await flushPromises()
+  expect(view.get("[data-code-block] pre.shiki").exists()).toBe(true)
+  expect(highlight).toHaveBeenCalledTimes(1)
+
+  let secondHighlight = false
+  highlight.mockImplementation(async () => {
+    secondHighlight = true
+    return '<pre class="shiki"><code>should not replace cache</code></pre>'
+  })
+  await view.setProps({ text: "```TypeScript\nconst value = 1\n```\n\nTrailing stream chunk." })
+  await flushPromises()
+  expect(view.get("[data-code-block] pre.shiki code").text()).toBe("const value = 1")
+  expect(view.get("[data-code-block]").attributes("data-highlighted")).toBe("true")
+  expect(secondHighlight).toBe(false)
+  expect(highlight).toHaveBeenCalledTimes(1)
+})
+
 test("renders Mermaid with the selected application theme and updates existing diagrams", async () => {
   const appearance = useAppearanceStore()
   appearance.settings.theme = "light"
