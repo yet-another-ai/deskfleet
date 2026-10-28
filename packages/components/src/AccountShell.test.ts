@@ -97,19 +97,22 @@ function withEmptyCatalogs({ central, state }: ReturnType<typeof fakeCentral>): 
   })
 }
 
-test("opens the archived list directly and keeps it scoped to the selected machine without resource details", async () => {
+test("keeps archived lists and their Conversations return path scoped to the selected machine", async () => {
   const fake = fakeCentral({ machines: [
     machineFixture("m1", "team-1", "Build server", false),
     machineFixture("m2", "team-1", "Laptop", false),
   ] })
   withEmptyCatalogs(fake)
+  const snapshot = (machineId: string) => {
+    const archived = agentSnapshot()
+    archived.session.title = `Archived conversation ${machineId}`
+    archived.session.archiveState = "archived"
+    return archived
+  }
   Object.assign(fake.central, {
-    sessions: vi.fn(async (machineId: string) => {
-      const archived = agentSnapshot()
-      archived.session.title = `Archived conversation ${machineId}`
-      archived.session.archiveState = "archived"
-      return [archived]
-    }),
+    sessions: vi.fn(async (machineId: string) => [snapshot(machineId)]),
+    session: vi.fn(async (machineId: string) => ({ snapshot: snapshot(machineId), lastEventSeq: "0", lastObservedAt: "2026-10-25T00:00:00Z" })),
+    events: vi.fn(async () => ({ events: [], lastEventSeq: "0" })),
   })
   localStorage.setItem("deskfleet.details-open", "true")
   await router.push("/sessions/archived")
@@ -120,6 +123,16 @@ test("opens the archived list directly and keeps it scoped to the selected machi
   expect(router.currentRoute.value.path).toBe("/sessions/archived")
   expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
 
+  // Returning from the archive on the same machine retains its selected Session.
+  const conversations = () => page().get('a[aria-label="Conversations"]')
+  await router.push("/sessions/30"); await flushPromises()
+  await vi.waitFor(() => expect(fake.central.session).toHaveBeenCalledWith("m1", "30"))
+  await router.push("/sessions/archived"); await flushPromises()
+  expect(conversations().attributes("href")).toBe("#/sessions/30")
+  await conversations().trigger("click"); await flushPromises()
+  expect(router.currentRoute.value.path).toBe("/sessions/30")
+  await router.push("/sessions/archived"); await flushPromises()
+
   await page().get('aside button[data-machine-id="m2"]').trigger("click")
   await flushPromises()
   await vi.waitFor(() => expect(page().get("main").text()).toContain("Archived conversation m2"))
@@ -128,6 +141,12 @@ test("opens the archived list directly and keeps it scoped to the selected machi
   expect(router.currentRoute.value.path).toBe("/sessions/archived")
   expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
   expect(localStorage.getItem("deskfleet.details-open")).toBe("true")
+  // The second machine also has Session 30, but it must not inherit the first
+  // machine's selection when leaving this management list.
+  expect(conversations().attributes("href")).toBe("#/")
+  await conversations().trigger("click"); await flushPromises()
+  expect(router.currentRoute.value.path).toBe("/")
+  expect(fake.central.session).not.toHaveBeenCalledWith("m2", "30")
 })
 
 test("a user without a Team creates one from onboarding and is asked to add a machine", async () => {

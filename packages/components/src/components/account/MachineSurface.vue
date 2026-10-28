@@ -10,6 +10,7 @@ import { accountSessionKey, type AccountSession } from "../../composables/useAcc
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { appearanceStoreKey, useAppearanceStore } from "../../stores/appearance.ts"
+import { useLayoutStore } from "../../stores/layout.ts"
 
 // The parent keys this component by machine, so each machine gets a fresh mount.
 const props = defineProps<{ host: DeskfleetDesktopApi; session: AccountSession; machine: Machine }>()
@@ -37,6 +38,8 @@ onMounted(async () => {
   }
   if (disposed || !root.value) return
   state = createPinia()
+  // Management lists preserve their route, but cannot reuse another machine's resource destination.
+  useLayoutStore(state).conversationPath = "/"
   app = createApp(App).provide(accountSessionKey, props.session).provide(appearanceStoreKey, appearance).use(state).use(router).use(i18n)
   if (vaporInteropPlugin) app.use(vaporInteropPlugin)
   app.mount(root.value)

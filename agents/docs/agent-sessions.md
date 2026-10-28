@@ -112,9 +112,10 @@ error on retry. The UI refreshes the catalog and opens the resulting Session.
 The sidebar footer links to `/sessions/archived`, a dedicated page for the selected
 machine's archived Sessions. The page supports direct navigation and browser history;
 changing machines keeps the archive route and loads the new machine's list. It hides
-the resource details panel and retains the last Conversations destination. Reading a
-Session opens its history without restoring it. The restore action confirms before
-restoring and opening the Session; failures retain the confirmation for retry.
+the resource details panel and retains the last Conversations destination within the
+mounted machine scope. A fresh machine scope resets that destination to New session.
+Reading a Session opens its history without restoring it. The restore action confirms
+before restoring and opening the Session; failures retain the confirmation for retry.
 Rows keep the Session context menu, including Pin/Unpin and Rename. Offline history
 remains readable, while restoration and other daemon mutations require the machine
 online. The page shows loading, empty, and retry states for list reads.
