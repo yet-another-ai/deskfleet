@@ -149,7 +149,7 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
       journal: {
         identity: { originId: "origin", machineId: "local" },
         list: async () => hasSession ? [snapshot().session] : [], read: async () => snapshot(),
-        commands: async () => [], serial: async (_id: string, action: () => Promise<unknown>) => action(),
+        commandsSince: async () => ({ commands: [], revision: "-1" }), serial: async (_id: string, action: () => Promise<unknown>) => action(),
         history: async () => [{ sessionId: "session", seq: "1" }],
       },
     },

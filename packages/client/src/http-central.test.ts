@@ -63,6 +63,25 @@ test("loads team AI usage and day details with explicit timezone and encoded tea
   expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team%2F1/ai-usage/sessions?date=2026-10-28&timeZone=Asia%2FShanghai", expect.objectContaining({ method: "GET" }))
 })
 
+test("loads a targeted Session summary using the indexed collection filter", async () => {
+  const f = setup()
+  const summary = { session: { id: "7", title: "Task" }, turns: [], permissions: [], elicitations: [] }
+  f.responses.push({ sessions: [summary] })
+  expect(await f.client.sessions("remote/7", "7")).toEqual([summary])
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(
+    "https://fleet.example/api/machines/remote%2F7/sessions?after=0&limit=200&sessionId=7", expect.anything(),
+  )
+})
+
+test("collects paginated billing Teams while retaining the administration array API", async () => {
+  const f = setup()
+  const first = { id: "first", name: "First Team" }, second = { id: "second", name: "Second Team" }
+  f.responses.push({ teams: [first], nextCursor: "team/a?b" }, { teams: [second], nextCursor: null })
+  expect(await f.client.billingTeams()).toEqual([first, second])
+  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/admin/teams?limit=100", expect.anything())
+  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/teams?limit=100&cursor=team%2Fa%3Fb", expect.anything())
+})
+
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {
   const f = setup()
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))

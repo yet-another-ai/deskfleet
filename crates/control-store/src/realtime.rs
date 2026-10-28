@@ -20,6 +20,24 @@ impl RealtimeRoute {
 }
 
 impl ControlStore {
+    /// Resolve a collection's presence in one indexed query, including lease and
+    /// machine revocation checks used by individual route lookups.
+    pub async fn online_machines(
+        &self,
+        machines: &[String],
+    ) -> Result<std::collections::HashSet<String>> {
+        let ids = machines
+            .iter()
+            .map(|id| resource_id(id))
+            .collect::<Result<Vec<_>>>()?;
+        if ids.is_empty() {
+            return Ok(Default::default());
+        }
+        self.db.query_all_raw(sql(
+            "SELECT r.machine_id FROM jsonb_array_elements_text($1::jsonb) target(id) JOIN cp_realtime_routes r ON r.machine_id=target.id::bigint JOIN cp_realtime_nodes n ON n.id=r.node_id JOIN cp_machines m ON m.id=r.machine_id WHERE n.lease_until>statement_timestamp() AND NOT m.revoked",
+            vec![serde_json::json!(ids).into()],
+        )).await?.into_iter().map(|row| Ok(row.try_get::<i64>("", "machine_id")?.to_string())).collect()
+    }
     /// Register an API process using its newly generated UUID.
     pub async fn register_node(&self, node: &str) -> Result<()> {
         uuid::Uuid::parse_str(node)
@@ -153,14 +171,16 @@ impl ControlStore {
     /// queued messages for a live process whose consumer has stopped advancing.
     pub async fn prune_realtime(&self) -> Result<()> {
         let tx = self.db.begin().await?;
-        tx.execute_unprepared("DELETE FROM cp_realtime_nodes WHERE lease_until<=clock_timestamp()")
+        // Match renewal's parent-before-child locks while removing expired owners.
+        tx.execute_unprepared(
+            "DELETE FROM cp_realtime_nodes WHERE id IN (SELECT id FROM cp_realtime_nodes WHERE lease_until<=statement_timestamp() LIMIT 100 FOR UPDATE SKIP LOCKED)",
+        )
             .await?;
         tx.execute_unprepared(
-            "DELETE FROM cp_realtime_messages WHERE expires_at<=clock_timestamp()",
-        )
-        .await?;
+            "DELETE FROM cp_realtime_messages WHERE id IN (SELECT id FROM cp_realtime_messages WHERE expires_at<=statement_timestamp() ORDER BY expires_at LIMIT 1000 FOR UPDATE SKIP LOCKED)",
+        ).await?;
         tx.execute_unprepared(
-            "DELETE FROM cp_peer_negotiations n USING cp_peers p WHERE n.peer_id=p.id AND (p.revoked OR p.expires_at<=(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint)",
+            "DELETE FROM cp_peer_negotiations WHERE peer_id IN (SELECT n.peer_id FROM cp_peer_negotiations n JOIN cp_peers p ON p.id=n.peer_id WHERE p.revoked OR p.expires_at<=(EXTRACT(EPOCH FROM statement_timestamp())*1000)::bigint LIMIT 1000 FOR UPDATE OF n SKIP LOCKED)",
         )
         .await?;
         tx.commit().await?;

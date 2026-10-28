@@ -80,7 +80,6 @@ async fn run(hub: Hub) {
     let mut interval = tokio::time::interval(POLL);
     interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
     let mut heartbeat = Instant::now();
-    let mut pruning = Instant::now();
     loop {
         interval.tick().await;
         let step = async {
@@ -105,10 +104,6 @@ async fn run(hub: Hub) {
             for message in messages {
                 let envelope = serde_json::from_value(message).map_err(|_| ApiError::internal())?;
                 hub.dispatch(envelope).await?;
-            }
-            if pruning.elapsed() >= Duration::from_secs(30) {
-                cluster.store.prune_realtime().await?;
-                pruning = Instant::now();
             }
             Ok::<_, ApiError>(())
         };

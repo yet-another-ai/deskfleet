@@ -12,11 +12,13 @@ export declare class NativeCatalog {
   agentIdentity(): Promise<string>
   agentAllocateId(): Promise<string>
   agentList(): Promise<string>
+  agentSession(sessionId: string): Promise<string>
   agentSnapshot(sessionId: string): Promise<string>
   agentHistory(sessionId: string, afterSeq: string, limit: number): Promise<string>
   agentCommand(operationId: string): Promise<string>
   agentAdmissionDeleted(operationId: string): Promise<boolean>
   agentCommands(sessionId: string): Promise<string>
+  agentCommandsSince(sessionId: string, afterRevision: string): Promise<string>
   agentCommit(transaction: string): Promise<string>
   agentCreateSession(request: string): Promise<string>
   close(): Promise<void>

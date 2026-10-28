@@ -215,6 +215,16 @@ impl NativeCatalog {
     }
 
     #[napi]
+    pub async fn agent_session(&self, session_id: String) -> Result<String> {
+        json(
+            self.catalog
+                .agent_session(parse_id(session_id)?)
+                .await
+                .map_err(native_error)?,
+        )
+    }
+
+    #[napi]
     pub async fn agent_snapshot(&self, session_id: String) -> Result<String> {
         json(
             self.catalog
@@ -265,6 +275,20 @@ impl NativeCatalog {
                 .await
                 .map_err(native_error)?,
         )
+    }
+
+    #[napi]
+    pub async fn agent_commands_since(
+        &self,
+        session_id: String,
+        after_revision: String,
+    ) -> Result<String> {
+        let (commands, revision) = self
+            .catalog
+            .agent_commands_since(parse_id(session_id)?, parse_id::<i64>(after_revision)?)
+            .await
+            .map_err(native_error)?;
+        json(serde_json::json!({ "commands": commands, "revision": revision.to_string() }))
     }
 
     #[napi]

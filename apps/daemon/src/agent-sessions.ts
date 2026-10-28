@@ -162,7 +162,7 @@ export class AgentSessions {
   reconcileAdmissions(): Promise<void> { return this.#admissions.reconcile() }
 
   async #gitDirectories(sessionId: string): Promise<string[]> {
-    const { session } = await this.journal.read(id(sessionId, "Session ID"))
+    const session = await this.journal.session(id(sessionId, "Session ID"))
     if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
     const worktree = await this.#catalog.sessionWorktree(sessionId)
     if (!worktree?.directories.length) throw new Error("Session worktree is unavailable")
@@ -191,7 +191,7 @@ export class AgentSessions {
     this.#closing.signal.addEventListener("abort", stop, { once: true })
     try {
       const directories = await this.#gitDirectories(sessionId)
-      const { session } = await this.journal.read(sessionId)
+      const session = await this.journal.session(sessionId)
       if (session.archiveState !== "active") throw new Error("This Session has no active Git observation")
       stopWatch = await this.#git.watch(directories, error => { if (!stopped) listener(error) })
       if (stopped) { stopWatch(); throw new Error("Git observation was cancelled") }
@@ -200,7 +200,7 @@ export class AgentSessions {
   }
 
   async sessionDirectory(sessionId: string): Promise<string> {
-    const { session } = await this.journal.read(id(sessionId, "Session ID"))
+    const session = await this.journal.session(id(sessionId, "Session ID"))
     if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
     const worktree = await this.#catalog.sessionWorktree(sessionId)
     const directory = worktree?.directories[0]?.path
@@ -208,7 +208,7 @@ export class AgentSessions {
     return directory
   }
   async sessionAttachmentDirectory(sessionId: string): Promise<string> {
-    const { session } = await this.journal.read(id(sessionId, "Session ID"))
+    const session = await this.journal.session(id(sessionId, "Session ID"))
     requireActiveSession(session)
     if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
     return this.#catalog.attachments.directory(sessionId)
@@ -269,7 +269,7 @@ export class AgentSessions {
     if (method === "_deskfleet/session/configuration") {
       const sessionId = id(params.sessionId, "Session ID")
       if (params.composer !== undefined && typeof params.composer !== "boolean") throw new Error("Invalid composer discovery flag")
-      await this.journal.read(sessionId)
+      await this.journal.session(sessionId)
       const pending = this.#runtime(sessionId).configuration(this.#closing.signal, params.composer === true)
       this.#discovery.add(pending)
       try { return await pending } finally { this.#discovery.delete(pending) }
@@ -298,7 +298,6 @@ export class AgentSessions {
       const cursor = string(params.afterSeq, "history cursor")
       if (!/^[0-9]+$/u.test(cursor)) throw new Error("Invalid history cursor")
       if (params.limit !== undefined && (!Number.isSafeInteger(params.limit) || Number(params.limit) <= 0)) throw new Error("Invalid history page size")
-      await this.journal.read(sessionId)
       return this.journal.history(sessionId, cursor, params.limit as number | undefined)
     }
     if (method === "_deskfleet/command/get") {
@@ -379,7 +378,7 @@ export class AgentSessions {
       if (method === "_deskfleet/session/rename") return await this.#rename(command)
       await this.journal.saveCommand(command)
       const sessionId = command.sessionId!
-      const session = (await this.journal.read(sessionId)).session
+      const session = await this.journal.session(sessionId)
       if (this.#closed) throw new Error("Agent service is stopping")
       if (session.lifecycle === "deleting" && method !== "_deskfleet/session/delete") throw new Error("Session deletion is in progress")
       if (method === "_deskfleet/session/archive" || method === "_deskfleet/session/restore") return await this.#transition(command)
@@ -486,7 +485,7 @@ export class AgentSessions {
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     const sourceId = command.sessionId!
-    const sourceSession = (await this.journal.read(sourceId)).session
+    const sourceSession = await this.journal.session(sourceId)
     if (!sourceSession.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
     return this.#runtime(sourceId).withFork(async source => {
       this.#resolveProvider(source.session.provider)
@@ -707,7 +706,7 @@ export class AgentSessions {
       await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
     })
     await this.#runtime(sessionId).stop()
-    const deleted = (await this.journal.read(sessionId)).session
+    const deleted = await this.journal.session(sessionId)
     await this.#catalog.handle({ method: "workspaceSessionDestroy", params: { sessionId } })
     await this.#admissions.releaseDeleted(deleted)
     this.#runtimes.delete(sessionId)

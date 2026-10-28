@@ -13,6 +13,20 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         let machine_id = resource_id(&auth.target_machine.id)?;
         let team_id = resource_id(&auth.team_id)?;
+        // Lock FK parents before membership/login rows: revocation locks those
+        // parents first, and INSERT otherwise acquires their FK locks last.
+        one(
+            &tx,
+            "SELECT id FROM cp_users WHERE id=$1 AND NOT disabled AND email_verified FOR SHARE",
+            vec![auth.actor.user_id.clone().into()],
+        )
+        .await?;
+        one(
+            &tx,
+            "SELECT id FROM cp_teams WHERE id=$1 FOR SHARE",
+            vec![team_id.into()],
+        )
+        .await?;
         let membership = one(&tx, "SELECT member.role FROM cp_machines m JOIN cp_members member ON member.team_id=m.team_id JOIN cp_login_sessions login ON login.user_id=member.user_id WHERE m.id=$1 AND m.team_id=$2 AND member.user_id=$3 AND login.id=$4 AND NOT m.revoked AND NOT login.revoked AND login.expires_at>$5 FOR SHARE OF m,member,login", vec![machine_id.into(),team_id.into(),auth.actor.user_id.clone().into(),login_id.into(),now_ms().into()]).await?;
         let role = membership.try_get::<String>("", "role")?.parse()?;
         authorize(&MachinePolicy::new(Some(role)), MachineAction::Connect)?;

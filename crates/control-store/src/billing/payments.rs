@@ -73,8 +73,27 @@ impl ControlStore {
             .await?,
         )
     }
-    pub async fn billing_profiles_to_reconcile(&self) -> Result<Vec<BillingProfile>> {
-        self.db.query_all_raw(sql("SELECT * FROM cp_billing_profiles WHERE customer_id IS NOT NULL ORDER BY reconciled_at NULLS FIRST,team_id",vec![])).await?.into_iter().map(profile).collect()
+    /// Claim one due customer without retaining SQL locks during provider I/O.
+    pub async fn claim_billing_reconciliation(&self) -> Result<Option<(String, String)>> {
+        let token = uuid::Uuid::new_v4().to_string();
+        let row = self.db.query_one_raw(sql(
+            "UPDATE cp_billing_profiles b SET lease_token=$2,lease_until=$1+180000,reconcile_after=$1+180000 FROM (SELECT team_id FROM cp_billing_profiles WHERE customer_id IS NOT NULL AND reconcile_after<=$1 AND (lease_until IS NULL OR lease_until<$1) ORDER BY reconcile_after,team_id FOR UPDATE SKIP LOCKED LIMIT 1) candidate WHERE b.team_id=candidate.team_id RETURNING b.team_id",
+            vec![now_ms().into(),token.clone().into()],
+        )).await?;
+        row.map(|row| Ok((row.try_get::<i64>("", "team_id")?.to_string(), token)))
+            .transpose()
+    }
+    pub async fn finish_billing_reconciliation(
+        &self,
+        team_id: &str,
+        token: &str,
+        success: bool,
+    ) -> Result<()> {
+        self.db.execute_raw(sql(
+            "UPDATE cp_billing_profiles SET lease_token=NULL,lease_until=NULL,reconcile_after=$3 WHERE team_id=$1 AND lease_token=$2",
+            vec![resource_id(team_id)?.into(),token.into(),(now_ms()+if success {60_000} else {300_000}).into()],
+        )).await?;
+        Ok(())
     }
     pub async fn apply_subscription(
         &self,

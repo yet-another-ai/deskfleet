@@ -13,6 +13,8 @@ export class CentralSync {
   readonly #providers: AgentProviders
   readonly #desktopSupported: () => Promise<boolean>
   readonly #cursors = new Map<string, string>()
+  readonly #commandCursors = new Map<string, string>()
+  readonly #pendingSessions = new Set<string>()
   readonly #unsubscribe: (() => void)[]
   #running: Promise<void> | undefined
   #dirty = false
@@ -34,6 +36,7 @@ export class CentralSync {
   changed(sessionId?: string): void {
     this.#dirty = true
     if (!sessionId) this.#catalogDirty = true
+    else this.#pendingSessions.add(sessionId)
     this.#schedule()
   }
 
@@ -65,21 +68,10 @@ export class CentralSync {
       for (const session of await this.#agents.journal.list()) {
         if (!this.#enabled || this.#closed) return
         const acknowledged = this.#cursors.get(session.id)
-        if (acknowledged !== undefined && BigInt(session.lastEventSeq) <= BigInt(acknowledged)) continue
-        const { snapshot, commands } = await this.#agents.journal.serial(session.id, async () => ({
-          snapshot: await this.#agents.journal.read(session.id), commands: await this.#agents.journal.commands(session.id),
-        }))
-        let cursor = this.#cursors.get(session.id) ?? "0"
-        do {
-          const events = (await this.#agents.journal.history(session.id, cursor, 200)).filter(event => BigInt(event.seq) <= BigInt(snapshot.session.lastEventSeq))
-          const response = await this.#post("/api/daemon/history", { sessionId: session.id, snapshot, commands, events }) as { lastEventSeq: string }
-          const next = response.lastEventSeq
-          if (!/^\d+$/u.test(next) || BigInt(next) < BigInt(cursor)) throw new Error("Backend returned an invalid history acknowledgement")
-          this.#cursors.set(session.id, next)
-          if (BigInt(next) >= BigInt(snapshot.session.lastEventSeq)) break
-          if (next === cursor) throw new Error("Backend did not acknowledge history progress")
-          cursor = next
-        } while (this.#enabled && !this.#closed)
+        if (acknowledged !== undefined && BigInt(session.lastEventSeq) <= BigInt(acknowledged) && !this.#pendingSessions.has(session.id)) continue
+        this.#pendingSessions.delete(session.id)
+        try { await this.#syncSession(session.id) }
+        catch (error) { this.#pendingSessions.add(session.id); throw error }
       }
     } catch (error) {
       this.#dirty = true
@@ -90,6 +82,37 @@ export class CentralSync {
       }
       throw error
     }
+  }
+
+  async #syncSession(sessionId: string): Promise<void> {
+    const { snapshot, receipts } = await this.#agents.journal.serial(sessionId, async () => ({
+      snapshot: await this.#agents.journal.read(sessionId),
+      receipts: await this.#agents.journal.commandsSince(sessionId, this.#commandCursors.get(sessionId) ?? "-1"),
+    }))
+    let cursor = this.#cursors.get(sessionId) ?? "0"
+    let commandOffset = 0
+    let first = true
+    do {
+      const events = (await this.#agents.journal.history(sessionId, cursor, 200)).filter(event => BigInt(event.seq) <= BigInt(snapshot.session.lastEventSeq))
+      const commands = receipts.commands.slice(commandOffset, commandOffset + 200)
+      const response = await this.#post("/api/daemon/history", {
+        sessionId, ...(first ? { snapshot } : { snapshotSeq: snapshot.session.lastEventSeq }), commands, events,
+      }) as { lastEventSeq: string }
+      const next = response.lastEventSeq
+      if (!/^\d+$/u.test(next) || BigInt(next) < BigInt(cursor)) throw new Error("Backend returned an invalid history acknowledgement")
+      this.#cursors.set(sessionId, next)
+      commandOffset += commands.length
+      first = false
+      if (BigInt(next) >= BigInt(snapshot.session.lastEventSeq) && commandOffset >= receipts.commands.length) {
+        // Receipts can change without advancing the event sequence. A lost
+        // response must replay every unacknowledged receipt revision.
+        this.#commandCursors.set(sessionId, receipts.revision)
+        return
+      }
+      if (next === cursor && BigInt(next) < BigInt(snapshot.session.lastEventSeq)) throw new Error("Backend did not acknowledge history progress")
+      cursor = next
+    } while (this.#enabled && !this.#closed)
+    this.#pendingSessions.add(sessionId)
   }
 
   async close(flush = false): Promise<void> {

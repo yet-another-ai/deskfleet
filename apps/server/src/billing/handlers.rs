@@ -77,19 +77,26 @@ async fn portal(
         json!({"url":s.billing.portal(&s.store,&team).await?}),
     ))
 }
-async fn admin_teams(req: HttpRequest, s: web::Data<AppState>) -> Result<web::Json<Value>> {
+#[derive(Deserialize)]
+struct AdminTeamsQuery {
+    cursor: Option<String>,
+    limit: Option<usize>,
+}
+async fn admin_teams(
+    req: HttpRequest,
+    s: web::Data<AppState>,
+    query: web::Query<AdminTeamsQuery>,
+) -> Result<web::Json<Value>> {
     let user = auth::user(&req, &s).await?;
-    let teams = s.store.admin_billing_teams(&user.user.id).await?;
-    let mut result = Vec::with_capacity(teams.len());
-    for team in teams {
-        let id = team["id"]
-            .as_str()
-            .ok_or_else(crate::error::ApiError::internal)?;
-        result.push(
-            json!({"id":id,"name":team["name"],"billing":s.store.billing_summary(id).await?}),
-        );
-    }
-    Ok(web::Json(json!(result)))
+    Ok(web::Json(json!(
+        s.store
+            .admin_billing_teams(
+                &user.user.id,
+                query.cursor.as_deref(),
+                query.limit.unwrap_or(100)
+            )
+            .await?
+    )))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

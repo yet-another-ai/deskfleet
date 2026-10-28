@@ -30,7 +30,7 @@ test("history retries replay durable events while snapshot and audit may lead th
     onEvent: () => () => {},
     journal: {
       list: async () => [snapshot().session], read: async () => snapshot(),
-      commands: async () => [{ operationId: "command", status: "completed" }],
+      commandsSince: async (_id: string, after: string) => ({ commands: after === "-1" ? [{ id: "1", operationId: "command", status: "completed" }] : [], revision: "1" }),
       serial: async (_id: string, action: () => Promise<unknown>) => action(),
       history: async (_id: string, after: string, limit: number) => Array.from({ length: Math.min(limit, Number(lastEventSeq) - Number(after)) }, (_, offset) => ({ sessionId: "session", seq: String(Number(after) + offset + 1) })),
     },
@@ -38,11 +38,12 @@ test("history retries replay durable events while snapshot and audit may lead th
   const catalog = { native: { snapshot: async () => ({ workspaces: [] }) }, onChange: () => () => {} } as unknown as DaemonCatalog
   const providers = { metadata: () => ({ providers: [{ id: "codex", name: "Codex", template: "codex" }] }), onChanged: () => () => {} } as unknown as AgentProviders
   const batches: number[][] = []
+  const snapshots: boolean[] = [], receiptCounts: number[] = []
   const post = async (path: string, body: unknown) => {
     if (path.endsWith("catalog")) return {}
-    const value = body as { snapshot: ReturnType<typeof snapshot>; events: { seq: string }[]; commands: unknown[] }
-    assert.equal(value.snapshot.session.lastEventSeq, lastEventSeq)
-    assert.equal(value.commands.length, 1)
+    const value = body as { snapshot?: ReturnType<typeof snapshot>; snapshotSeq?: string; events: { seq: string }[]; commands: unknown[] }
+    assert.equal(value.snapshot?.session.lastEventSeq ?? value.snapshotSeq, lastEventSeq)
+    snapshots.push(!!value.snapshot); receiptCounts.push(value.commands.length)
     batches.push(value.events.map(event => Number(event.seq)))
     for (const event of value.events) {
       const seq = Number(event.seq)
@@ -60,10 +61,13 @@ test("history retries replay durable events while snapshot and audit may lead th
   await sync.flush()
   assert.equal(acknowledged, 251)
   assert.deepEqual(batches.map(batch => [batch[0], batch.at(-1)]), [[1, 200], [1, 200], [201, 251]])
+  assert.deepEqual(snapshots, [true, true, false])
+  assert.deepEqual(receiptCounts, [1, 1, 0])
   lastEventSeq = "252"
   sync.changed("session")
   await sync.flush()
   assert.deepEqual(batches.at(-1), [252])
+  assert.equal(receiptCounts.at(-1), 0, "Previously acknowledged receipts are not uploaded again")
   const count = batches.length
   sync.changed()
   await sync.flush()
@@ -84,7 +88,7 @@ test("shutdown flush reads final producer state even after live synchronization 
     onEvent: () => () => { subscribed = false },
     journal: {
       list: async () => [snapshot().session], read: async () => snapshot(),
-      commands: async () => [{ status: state }], serial: async (_id: string, action: () => Promise<unknown>) => action(),
+      commandsSince: async () => ({ commands: [{ status: state }], revision: String(seq) }), serial: async (_id: string, action: () => Promise<unknown>) => action(),
       history: async (_id: string, after: string) => Array.from({ length: seq - Number(after) }, (_, index) => ({ seq: String(Number(after) + index + 1) })),
     },
   } as unknown as AgentSessions
@@ -105,4 +109,43 @@ test("shutdown flush reads final producer state even after live synchronization 
   assert.deepEqual(sent.map(value => [value.snapshot.session.lastEventSeq, value.snapshot.runs[0]!.state, value.commands[0]!.status]), [
     ["1", "running", "running"], ["2", "cancelled", "cancelled"],
   ])
+})
+
+test("receipt-only changes paginate independently and survive a lost response after the event ACK", async context => {
+  let revision = "1", fail = true
+  const snapshot = { session: { id: "session", lastEventSeq: "0" } }
+  const cursors: string[] = []
+  const agents = {
+    onEvent: () => () => {},
+    journal: {
+      list: async () => [snapshot.session], read: async () => snapshot, history: async () => [],
+      serial: async (_id: string, action: () => Promise<unknown>) => action(),
+      commandsSince: async (_id: string, after: string) => {
+        cursors.push(after)
+        return { commands: Array.from({ length: revision === "1" ? 251 : 1 }, (_, id) => ({ id: String(id + 1), status: revision === "1" ? "accepted" : "completed" })), revision }
+      },
+    },
+  } as unknown as AgentSessions
+  const catalog = { native: { snapshot: async () => ({}) }, onChange: () => () => {} } as unknown as DaemonCatalog
+  const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
+  const batches: { snapshot?: unknown; snapshotSeq?: string; commands: { id: string; status: string }[] }[] = []
+  const sync = new CentralSync(agents, catalog, providers, async (path, body) => {
+    if (path.endsWith("catalog")) return {}
+    const value = body as typeof batches[number]
+    batches.push(value)
+    if (!value.snapshot && fail) { fail = false; throw new Error("response lost") }
+    return { lastEventSeq: "0" }
+  }, async () => false)
+  context.after(() => sync.close())
+  sync.enable()
+  await assert.rejects(sync.flush(), /response lost/)
+  await sync.flush()
+  assert.deepEqual(batches.map(batch => batch.commands.length), [200, 51, 200, 51])
+  assert.deepEqual(cursors, ["-1", "-1"], "A completed event ACK does not discard pending receipt pages")
+  assert.deepEqual(batches.map(batch => !!batch.snapshot), [true, false, true, false])
+  revision = "2"
+  sync.changed("session")
+  await sync.flush()
+  assert.equal(cursors.at(-1), "1")
+  assert.equal(batches.at(-1)?.commands[0]?.status, "completed")
 })

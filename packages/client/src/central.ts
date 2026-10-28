@@ -19,6 +19,13 @@ export interface LocalEnrollment {
   identity: { originId: string; machineId: string }; machineName: string
 }
 export interface PeerGrant { peerId: string; authorization: PeerAuthorization; iceServers: RTCIceServer[]; relayDeniedReason?: RelayDeniedReason | null }
+/** List and notification state without conversation content or request payloads. */
+export interface AgentSessionSummary {
+  session: AgentSnapshot["session"]
+  turns: Array<Pick<AgentSnapshot["turns"][number], "id" | "state" | "endedAt">>
+  permissions: Array<Pick<AgentSnapshot["permissions"][number], "id" | "state" | "createdAt">>
+  elicitations: Array<Pick<AgentSnapshot["elicitations"][number], "id" | "state" | "createdAt">>
+}
 export type CentralEvent =
   | { type: "peerEvent"; peerId: string; event: Omit<DesktopEvent, "sessionId"> }
   | Extract<ControlMessage, { type: "peerRevoked" | "catalogChanged" | "machinesChanged" | "presence" }>
@@ -70,7 +77,7 @@ export interface CentralApi {
   /** The name defaults to this computer's hostname. */
   enrollLocal?(teamId: string, name?: string): Promise<LocalEnrollment>
   catalog(machineId: string): Promise<{ machineId: string; snapshot: CatalogSnapshot; lastObservedAt: string; providers?: ProviderDisplaySnapshot }>
-  sessions(machineId: string): Promise<AgentSnapshot[]>
+  sessions(machineId: string, sessionId?: string): Promise<AgentSessionSummary[]>
   session(machineId: string, sessionId: string): Promise<{ snapshot: AgentSnapshot; lastEventSeq: string; lastObservedAt: string }>
   events(machineId: string, sessionId: string, after: string, limit: number): Promise<{ events: AgentEvent[]; lastEventSeq: string }>
   rpc<T = unknown>(machineId: string, method: string, params: unknown): Promise<T>

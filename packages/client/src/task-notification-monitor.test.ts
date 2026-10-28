@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { AccountState, CentralEvent, Machine, Team } from "./central.ts"
+import type { AccountState, AgentSessionSummary, CentralEvent, Machine, Team } from "./central.ts"
 import type { AgentElicitation, AgentPermission, AgentSnapshot, AgentTurn } from "../../../apps/daemon/src/agent-protocol.ts"
 import { TaskNotificationMonitor } from "./task-notification-monitor.ts"
 
@@ -32,18 +32,20 @@ function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done })
   return { promise, resolve }
 }
-function setup(initial: AgentSnapshot[] = [snapshot()]) {
+function setup(initial: AgentSessionSummary[] = [snapshot()]) {
   const listeners = new Set<(event: CentralEvent) => void>()
   const state = {
     account: { siteAdmin: false, serverUrl: "https://deskfleet.example", user: { id: "user", name: "Ada" } } as AccountState,
     teams: [team], machines: [machine("local"), machine("remote")],
-    snapshots: new Map<string, AgentSnapshot[]>([["local", initial], ["remote", []]]),
+    snapshots: new Map<string, AgentSessionSummary[]>([["local", initial], ["remote", []]]),
   }
   const source = {
     status: vi.fn(async () => structuredClone(state.account)),
     teams: vi.fn(async () => structuredClone(state.teams)),
     machines: vi.fn(async (id: string) => structuredClone(state.machines.filter(value => value.teamId === id))),
-    sessions: vi.fn(async (id: string) => structuredClone(state.snapshots.get(id) ?? [])),
+    sessions: vi.fn(async (id: string, sessionId?: string) => structuredClone(
+      (state.snapshots.get(id) ?? []).filter(value => sessionId === undefined || value.session.id === sessionId),
+    )),
     onEvent(listener: (event: CentralEvent) => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
   const notify = vi.fn()
@@ -92,6 +94,83 @@ test("remote machines and new sessions notify without a renderer subscription", 
   f.state.snapshots.set("remote", [updated])
   await f.refresh("remote")
   expect(f.notify).toHaveBeenCalledExactlyOnceWith({ kind: "taskCompleted", machineId: "remote", sessionId: "remote-task", title: "Task remote-task" })
+  f.monitor.close()
+})
+
+test("session changes read only the affected lightweight summary and retain notice deduplication", async () => {
+  const f = setup([snapshot("1"), snapshot("2")])
+  await f.monitor.start()
+  f.source.sessions.mockClear()
+  const updated: AgentSessionSummary = {
+    session: snapshot("1", 2).session,
+    turns: [{ id: "completed", state: "completed", endedAt: timestamp }],
+    permissions: [{ id: "approval", state: "pending", createdAt: timestamp }],
+    elicitations: [],
+  }
+  const other: AgentSessionSummary = {
+    session: snapshot("2", 2).session, turns: [{ id: "other", state: "completed", endedAt: timestamp }],
+    permissions: [], elicitations: [],
+  }
+  f.state.snapshots.set("local", [updated, other])
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "1" })
+  await vi.waitFor(() => expect(f.notify).toHaveBeenCalledTimes(2))
+  expect(f.source.sessions).toHaveBeenCalledExactlyOnceWith("local", "1")
+  expect(f.notify.mock.calls.map(([notice]) => [notice.sessionId, notice.kind])).toEqual([
+    ["1", "taskCompleted"], ["1", "taskNeedsInput"],
+  ])
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "1" })
+  await vi.waitFor(() => expect(f.source.sessions).toHaveBeenCalledTimes(2))
+  expect(f.notify).toHaveBeenCalledTimes(2)
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "2" })
+  await vi.waitFor(() => expect(f.notify).toHaveBeenCalledTimes(3))
+  expect(f.source.sessions).toHaveBeenLastCalledWith("local", "2")
+  f.monitor.close()
+})
+
+test("queued session changes coalesce and a full machine refresh supersedes targeted reads", async () => {
+  const f = setup([snapshot("1"), snapshot("2"), snapshot("3")])
+  await f.monitor.start()
+  f.source.sessions.mockClear()
+  const reading = deferred<AgentSessionSummary[]>()
+  f.source.sessions.mockImplementationOnce(() => reading.promise)
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "1" })
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "2" })
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "2" })
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "3" })
+  reading.resolve([snapshot("1", 2)])
+  await vi.waitFor(() => expect(f.source.sessions).toHaveBeenCalledTimes(3))
+  expect(f.source.sessions.mock.calls).toEqual([["local", "1"], ["local", "2"], ["local", "3"]])
+
+  const next = deferred<AgentSessionSummary[]>()
+  f.source.sessions.mockImplementationOnce(() => next.promise)
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "1" })
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "2" })
+  f.emit({ type: "catalogChanged", machineId: "local" })
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "3" })
+  next.resolve([snapshot("1", 3)])
+  await vi.waitFor(() => expect(f.source.sessions).toHaveBeenCalledTimes(5))
+  expect(f.source.sessions).toHaveBeenLastCalledWith("local")
+  f.monitor.close()
+})
+
+test("a failed targeted read recovers all missed sessions on the next change", async () => {
+  const f = setup([snapshot("1"), snapshot("2")])
+  await f.monitor.start()
+  f.source.sessions.mockClear()
+  const failure = new Error("Lost targeted response")
+  f.source.sessions.mockRejectedValueOnce(failure)
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "1" })
+  await vi.waitFor(() => expect(f.onError).toHaveBeenCalledWith(failure))
+  const first = snapshot("1", 2), second = snapshot("2", 2)
+  first.turns = [turn("first")]; second.turns = [turn("second")]
+  f.state.snapshots.set("local", [first, second])
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "2" })
+  await vi.waitFor(() => expect(f.notify).toHaveBeenCalledTimes(2))
+  expect(f.source.sessions.mock.calls).toEqual([["local", "1"], ["local"]])
+  f.emit({ type: "catalogChanged", machineId: "local", sessionId: "1" })
+  await vi.waitFor(() => expect(f.source.sessions).toHaveBeenCalledTimes(3))
+  expect(f.source.sessions).toHaveBeenLastCalledWith("local", "1")
+  expect(f.notify).toHaveBeenCalledTimes(2)
   f.monitor.close()
 })
 

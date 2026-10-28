@@ -6,6 +6,7 @@ pub mod billing;
 pub mod config;
 pub mod error;
 mod hub;
+mod maintenance;
 mod peers;
 mod site;
 mod turn_usage;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub billing: billing::BillingService,
     hub: hub::Hub,
     _routing: hub::Router,
+    _maintenance: maintenance::Maintenance,
     _turn_usage: Option<turn_usage::Collector>,
     _billing_worker: billing::BillingWorker,
 }
@@ -43,6 +45,7 @@ impl AppState {
             .transpose()
             .map_err(|error| error::ApiError::bad(error.to_string()))?;
         let (hub, routing) = hub::Hub::connect(store.clone()).await?;
+        let maintenance = maintenance::Maintenance::start(store.clone());
         Ok(Self {
             store,
             config,
@@ -50,6 +53,7 @@ impl AppState {
             billing,
             hub,
             _routing: routing,
+            _maintenance: maintenance,
             _turn_usage: turn_usage,
             _billing_worker: billing_worker,
         })

@@ -50,8 +50,19 @@ impl BillingService {
                 "Billing synchronization is in progress",
             ));
         };
-        let result = self.reconcile_locked(store, team, &lease).await;
-        store.release_billing_operation(team, &lease).await?;
+        self.reconcile_claimed(store, team, &lease).await
+    }
+
+    pub(super) async fn reconcile_claimed(
+        &self,
+        store: &ControlStore,
+        team: &str,
+        lease: &str,
+    ) -> Result<()> {
+        let result = self.reconcile_locked(store, team, lease).await;
+        store
+            .finish_billing_reconciliation(team, lease, result.is_ok())
+            .await?;
         result
     }
     async fn reconcile_locked(&self, store: &ControlStore, team: &str, lease: &str) -> Result<()> {

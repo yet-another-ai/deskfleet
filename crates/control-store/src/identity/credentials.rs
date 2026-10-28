@@ -12,8 +12,16 @@ impl ControlStore {
         password_hash: &str,
     ) -> Result<(String, Vec<PeerAuthorization>)> {
         let tx = self.db.begin().await?;
+        // Discover the owner without locking the challenge, then serialize with
+        // credential changes and revocation before consuming any child record.
+        let user_id: String = one(&tx,"SELECT user_id FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='recovery' AND expires_at>$2",vec![secret_hash(token).into(),now_ms().into()]).await.map_err(unauthorized_if_missing)?.try_get("", "user_id")?;
+        one(
+            &tx,
+            "SELECT id FROM cp_users WHERE id=$1 FOR UPDATE",
+            vec![user_id.clone().into()],
+        )
+        .await?;
         let challenge=one(&tx,"DELETE FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='recovery' AND expires_at>$2 RETURNING user_id,record",vec![secret_hash(token).into(),now_ms().into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
-        let user_id: String = challenge.try_get("", "user_id")?;
         let record: Value = challenge.try_get("", "record")?;
         let version = record["version"].as_i64().ok_or(Error::Unauthorized)?;
         let updated=tx.execute_raw(sql("UPDATE cp_users SET password_hash=$1,credential_version=credential_version+1 WHERE id=$2 AND NOT disabled AND credential_version=$3",vec![password_hash.into(),user_id.clone().into(),version.into()])).await?;
@@ -46,15 +54,15 @@ impl ControlStore {
         user_id: &str,
     ) -> Result<(String, Vec<PeerAuthorization>)> {
         let tx = self.db.begin().await?;
-        let challenge=one(&tx,"DELETE FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='email' AND user_id=$2 AND expires_at>$3 RETURNING email,record",vec![secret_hash(token).into(),user_id.into(),now_ms().into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
-        let email: String = challenge.try_get("", "email")?;
-        let record: Value = challenge.try_get("", "record")?;
         let row = one(
             &tx,
             "SELECT email,credential_version FROM cp_users WHERE id=$1 AND NOT disabled FOR UPDATE",
             vec![user_id.into()],
         )
         .await?;
+        let challenge=one(&tx,"DELETE FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='email' AND user_id=$2 AND expires_at>$3 RETURNING email,record",vec![secret_hash(token).into(),user_id.into(),now_ms().into()]).await.map_err(unauthorized_if_missing)?;
+        let email: String = challenge.try_get("", "email")?;
+        let record: Value = challenge.try_get("", "record")?;
         if record["version"].as_i64() != Some(row.try_get("", "credential_version")?) {
             return Err(Error::Unauthorized);
         }
@@ -195,9 +203,16 @@ impl ControlStore {
         Ok(())
     }
 }
+fn unauthorized_if_missing(error: Error) -> Error {
+    if matches!(error, Error::NotFound) {
+        Error::Unauthorized
+    } else {
+        error
+    }
+}
 async fn revoke(db: &impl ConnectionTrait, user_id: &str) -> Result<Vec<PeerAuthorization>> {
     db.execute_raw(sql(
-        "UPDATE cp_login_sessions SET revoked=TRUE WHERE user_id=$1",
+        "UPDATE cp_login_sessions SET revoked=TRUE WHERE user_id=$1 AND NOT revoked",
         vec![user_id.into()],
     ))
     .await?;

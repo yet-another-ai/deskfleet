@@ -1,5 +1,5 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { AccountState, AccountUser, CentralApi, CentralEvent, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, Team, TeamMember, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, AgentSessionSummary, CentralApi, CentralEvent, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, Team, TeamMember, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -112,7 +112,17 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     const { url } = await this.request<{ url: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/billing/portal`, {})
     await this.#open(url)
   }
-  billingTeams() { return this.request<AdminTeamBilling[]>("GET", "/api/admin/teams") }
+  async billingTeams(): Promise<AdminTeamBilling[]> {
+    const teams: AdminTeamBilling[] = []
+    let cursor: string | null = null
+    do {
+      const suffix = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`
+      const page: { teams: AdminTeamBilling[]; nextCursor: string | null } = await this.request("GET", `/api/admin/teams?limit=100${suffix}`)
+      teams.push(...page.teams)
+      cursor = page.nextCursor
+    } while (cursor !== null)
+    return teams
+  }
   registrationPolicy() { return this.request<{ registrationEnabled: boolean }>("GET", "/api/auth/config") }
   async updateRegistration(enabled: boolean) { await this.request("PATCH", "/api/auth/registration", { enabled }) }
   users(query: string) { return this.request<Array<{ id: string; name: string; email: string; disabled: boolean }>>("GET", `/api/admin/users?query=${encodeURIComponent(query)}`) }
@@ -145,11 +155,12 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   renameMachine(machineId: string, name: string) { return this.request<Machine>("PATCH", `/api/machines/${encodeURIComponent(machineId)}`, { name }) }
   async removeMachine(machineId: string) { await this.request("DELETE", `/api/machines/${encodeURIComponent(machineId)}`) }
   catalog(machineId: string) { return this.request<{ machineId: string; snapshot: CatalogSnapshot; lastObservedAt: string; providers?: ProviderDisplaySnapshot }>("GET", `/api/machines/${encodeURIComponent(machineId)}/catalog`) }
-  async sessions(machineId: string): Promise<AgentSnapshot[]> {
-    const sessions: AgentSnapshot[] = []
+  async sessions(machineId: string, sessionId?: string): Promise<AgentSessionSummary[]> {
+    const sessions: AgentSessionSummary[] = []
+    const filter = sessionId === undefined ? "" : `&sessionId=${encodeURIComponent(sessionId)}`
     let after = "0"
     for (;;) {
-      const page = await this.request<{ sessions: AgentSnapshot[]; nextCursor?: string }>("GET", `/api/machines/${encodeURIComponent(machineId)}/sessions?after=${encodeURIComponent(after)}&limit=200`)
+      const page = await this.request<{ sessions: AgentSessionSummary[]; nextCursor?: string }>("GET", `/api/machines/${encodeURIComponent(machineId)}/sessions?after=${encodeURIComponent(after)}&limit=200${filter}`)
       sessions.push(...page.sessions)
       if (!page.nextCursor) return sessions
       after = page.nextCursor

@@ -181,8 +181,12 @@ pub async fn machines(
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
     let mut machines = s.store.machines(&a.user.id, &p).await?;
+    let online = s
+        .hub
+        .online_machines(&machines.iter().map(|m| m.id.clone()).collect::<Vec<_>>())
+        .await;
     for m in &mut machines {
-        m.online = s.hub.online(&m.id).await;
+        m.online = online.contains(&m.id);
     }
     Ok(web::Json(json!(machines)))
 }
@@ -315,6 +319,7 @@ pub async fn catalog(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionPage {
+    session_id: Option<String>,
     #[serde(default)]
     after: i64,
     #[serde(default = "page_size")]
@@ -333,6 +338,9 @@ pub async fn sessions(
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
     s.store.authorized_machine(&a.user.id, &p).await?;
+    if let Some(id) = &q.session_id {
+        return Ok(web::Json(s.store.session_summary(&p, id).await?));
+    }
     Ok(web::Json(
         s.store
             .sessions(&p, q.after, q.limit, &q.archive_state)
@@ -458,7 +466,8 @@ pub async fn sync_catalog(
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct History {
     session_id: String,
-    snapshot: Value,
+    snapshot: Option<Value>,
+    snapshot_seq: Option<String>,
     events: Vec<Value>,
     #[serde(default)]
     commands: Vec<Value>,
@@ -472,10 +481,11 @@ pub async fn sync_history(
     let b = b.into_inner();
     let seq = s
         .store
-        .sync_history(
+        .sync_history_batch(
             &m.machine.id,
             &b.session_id,
             b.snapshot,
+            b.snapshot_seq,
             b.events,
             b.commands,
         )

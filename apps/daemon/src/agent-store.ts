@@ -7,10 +7,12 @@ export interface AgentPersistence {
   agentIdentity(): Promise<string>
   agentAllocateId(): Promise<string>
   agentList(): Promise<string>
+  agentSession(sessionId: string): Promise<string>
   agentSnapshot(sessionId: string): Promise<string>
   agentHistory(sessionId: string, afterSeq: string, limit: number): Promise<string>
   agentCommand(operationId: string): Promise<string>
   agentCommands(sessionId: string): Promise<string>
+  agentCommandsSince(sessionId: string, afterRevision: string): Promise<string>
   agentAdmissionDeleted(operationId: string): Promise<boolean>
   agentCommit(transaction: string): Promise<string>
   agentCreateSession(request: string): Promise<string>
@@ -37,6 +39,11 @@ export class AgentJournal {
   }
   id(): Promise<string> { return this.native.agentAllocateId() }
   async list(): Promise<AgentSessionRecord[]> { return JSON.parse(await this.native.agentList()) }
+  async session(id: string): Promise<AgentSessionRecord> {
+    const session = JSON.parse(await this.native.agentSession(id)) as AgentSessionRecord | null
+    if (!session) throw new Error("Agent Session was not found")
+    return session
+  }
   async read(id: string): Promise<AgentSnapshot> {
     const snapshot = JSON.parse(await this.native.agentSnapshot(id)) as AgentSnapshot | null
     if (!snapshot) throw new Error("Agent Session was not found")
@@ -48,15 +55,18 @@ export class AgentJournal {
   async commands(sessionId: string): Promise<AgentCommand[]> {
     return JSON.parse(await this.native.agentCommands(sessionId))
   }
+  async commandsSince(sessionId: string, afterRevision: string): Promise<{ commands: AgentCommand[]; revision: string }> {
+    return JSON.parse(await this.native.agentCommandsSince(sessionId, afterRevision))
+  }
   /** Publish receipt changes so synchronization observes outcomes after domain events. */
   async saveCommand(command: AgentCommand): Promise<void> {
     if (!command.sessionId) { await this.commit(undefined, { command }); return }
     const sessionId = command.sessionId
     await this.serial(sessionId, async () => {
-      const snapshot = JSON.parse(await this.native.agentSnapshot(sessionId)) as AgentSnapshot | null
-      await this.commit(snapshot ?? undefined, {
+      const session = JSON.parse(await this.native.agentSession(sessionId)) as AgentSessionRecord | null
+      await this.commit(session ?? undefined, {
         command,
-        ...(snapshot ? { events: [this.event(sessionId, "command", command, { commandId: command.id })] } : {}),
+        ...(session ? { events: [this.event(sessionId, "command", command, { commandId: command.id })] } : {}),
       })
     })
   }
@@ -79,9 +89,10 @@ export class AgentJournal {
   event(sessionId: string, kind: AgentEvent["kind"], payload: AgentEvent["payload"], context: Partial<AgentEventDraft> = {}): AgentEventDraft {
     return { sessionId, kind, payload, createdAt: timestamp(), ...context }
   }
-  async commit(snapshot: AgentSnapshot | undefined, changes: AgentCommit): Promise<AgentEvent[]> {
-    const transaction: AgentCommit = snapshot ? {
-      sessionId: snapshot.session.id, expectedSeq: snapshot.session.lastEventSeq,
+  async commit(current: AgentSnapshot | AgentSessionRecord | undefined, changes: AgentCommit): Promise<AgentEvent[]> {
+    const session = current && ("session" in current ? current.session : current)
+    const transaction: AgentCommit = session ? {
+      sessionId: session.id, expectedSeq: session.lastEventSeq,
       ...changes,
     } : changes
     const result = JSON.parse(await this.native.agentCommit(JSON.stringify(transaction))) as { events: AgentEvent[] }

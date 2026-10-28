@@ -304,6 +304,19 @@ pub(super) async fn save_command(
     } else {
         None
     };
+    // Receipt changes need their own cursor: creation and rejected commands
+    // can be persisted without advancing a Session's event sequence.
+    let revision: i64 = db
+        .query_one_raw(statement(
+            "UPDATE agent_command_revisions SET last_revision = last_revision + 1 \
+             WHERE id = 1 AND last_revision < 9223372036854775807 RETURNING last_revision",
+            vec![],
+        ))
+        .await?
+        .ok_or(StoreError::InvalidAgent(
+            "command revision allocator exhausted",
+        ))?
+        .try_get("", "last_revision")?;
     upsert(
         db,
         "agent_commands",
@@ -314,6 +327,7 @@ pub(super) async fn save_command(
             ("is_canonical", command.is_canonical.into()),
             ("state", command.status.as_str().into()),
             ("session_id", session_id.into()),
+            ("revision", revision.into()),
             (
                 "conflicting_command_id",
                 command

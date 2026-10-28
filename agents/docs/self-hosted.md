@@ -401,13 +401,14 @@ database indices; use separate Redis services to isolate environments.
 
 Saved peer grants map TURN usernames to Teams. The `cp_turn_usage` table stores
 interval byte deltas with separate client-side and peer-side counters. Unknown
-peers are skipped.
+peers are skipped. Team/minute sent-byte aggregates update in the same transaction;
+billing queries combine complete minutes with raw events at partial boundaries.
 
 Team settings show **Plans & Usages** to every member, with unlimited allowances
 for relayed traffic, active Sessions, and Team members. Relayed traffic is the
 cumulative sum of sent bytes across both socket sides. Active Sessions are
-unarchived Agent Sessions on the Team's enrolled machines, based on their latest
-synchronized snapshots. Idle Sessions and offline machines still count; removed
+unarchived Agent Sessions on the Team's enrolled machines, based on durable
+Session admissions. Idle Sessions and offline machines still count; removed
 machines and completed archives do not. Team members include administrators and
 members, excluding pending invitations.
 
@@ -440,9 +441,14 @@ also require restarting coturn. The event format is defined in the
 Create an empty database and a role, and put that URL in `DATABASE_URL`. The
 first start creates `cp_migrations` and applies schema versions `1` (owned identity
 and central records), `2` (TURN usage), `3` (site administration), `4` (Team
-entitlements and subscriptions), and `5` (multi-instance routing and shared
-signaling) under the transaction advisory lock `761946021`.
+entitlements and subscriptions), `5` (multi-instance routing and shared
+signaling), and `6` (query indexes, history summaries, shared expiry scheduling,
+billing repair scheduling, and TURN minute aggregates) under the transaction
+advisory lock `761946021`.
 Later starts take the same lock and apply any migration that is not recorded.
+Version 6 backfills summaries and TURN aggregates, so its first startup performs
+work proportional to existing history and holds the usage write lock during
+that backfill. Subsequent starts do not repeat it.
 
 The provisional OIDC database is not compatible with this schema. That database
 contained development data and must be rebuilt; see the

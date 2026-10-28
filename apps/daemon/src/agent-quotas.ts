@@ -166,16 +166,20 @@ export class SessionAdmissions {
   reconcile(): Promise<void> {
     if (this.#reconciling) return this.#reconciling
     this.#reconciling = (async () => {
+      // Allocations already underway can finish while this pass awaits central
+      // responses. Do not judge them using the pass's earlier local snapshot.
+      const active = new Set(this.#active)
       const admissions = await this.#authority.list()
+      const sessions = await this.#journal.list()
+      const generations = new Map(sessions.map(session => [session.admissionGeneration, session]))
+      const sessionIds = new Set(sessions.map(session => session.id))
       for (const receipt of admissions) {
-        if (this.#active.has(receipt.generation) || receipt.status === "released") continue
-        const sessions = await this.#journal.list()
-        if (this.#active.has(receipt.generation)) continue
-        const current = sessions.find(session => session.admissionGeneration === receipt.generation)
+        if (active.has(receipt.generation) || this.#active.has(receipt.generation) || receipt.status === "released") continue
+        const current = generations.get(receipt.generation)
         if (current) await this.synchronize(current)
         else if (receipt.status === "reserved") await this.#authority.cancel(receipt.generation)
         else if (receipt.sessionId) {
-          const replaced = sessions.some(session => session.id === receipt.sessionId)
+          const replaced = sessionIds.has(receipt.sessionId)
           const deleted = !replaced && await this.#journal.native.agentAdmissionDeleted(receipt.generation)
           // A newer restore or a durable deletion intent plus absent local row
           // proves this generation is no longer occupying a local Session.

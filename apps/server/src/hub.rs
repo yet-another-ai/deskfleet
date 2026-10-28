@@ -83,6 +83,27 @@ impl Hub {
     pub async fn online(&self, machine_id: &str) -> bool {
         self.route(machine_id).await.ok().flatten().is_some()
     }
+    pub(crate) async fn online_machines(
+        &self,
+        machines: &[String],
+    ) -> std::collections::HashSet<String> {
+        if let Some(cluster) = &self.cluster {
+            if cluster.ensure_ready().is_err() {
+                return Default::default();
+            }
+            return cluster
+                .store
+                .online_machines(machines)
+                .await
+                .unwrap_or_default();
+        }
+        let routes = self.inner.lock().await;
+        machines
+            .iter()
+            .filter(|id| routes.daemons.contains_key(*id))
+            .cloned()
+            .collect()
+    }
     async fn route(&self, machine_id: &str) -> Result<Option<RealtimeRoute>> {
         if let Some(cluster) = &self.cluster {
             cluster.ensure_ready()?;

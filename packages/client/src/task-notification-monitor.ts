@@ -1,5 +1,4 @@
-import type { CentralApi, CentralEvent } from "./central.ts"
-import type { AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentSessionSummary, CentralApi, CentralEvent } from "./central.ts"
 
 export interface TaskNotification {
   kind: "taskCompleted" | "taskNeedsInput"
@@ -19,6 +18,8 @@ interface SeenMachine {
   initialized: boolean
   /** The first read failed or was discarded, so the next snapshot is not a silent baseline. */
   missedBaseline: boolean
+  /** Recover missed targeted updates with a full read on the next event. */
+  refreshAll: boolean
   sessions: Map<string, SeenSession>
 }
 
@@ -28,7 +29,7 @@ export class TaskNotificationMonitor {
   readonly #notify: (notification: TaskNotification) => void
   readonly #onError: (error: unknown) => void
   readonly #machines = new Map<string, SeenMachine>()
-  readonly #pendingMachines = new Set<string>()
+  readonly #pendingMachines = new Map<string, Set<string> | null>()
   #identity: string | undefined
   #epoch = 0
   #rosterPending = false
@@ -74,13 +75,26 @@ export class TaskNotificationMonitor {
       this.#epoch++
       this.#rosterPending = true
     } else if (event.type === "catalogChanged") {
-      if (this.#machines.has(event.machineId)) this.#pendingMachines.add(event.machineId)
+      if (this.#machines.has(event.machineId)) this.#queueMachine(event.machineId, event.sessionId)
       else this.#rosterPending = true
     } else return
     void this.#schedule()
   }
 
   #current(epoch: number): boolean { return !this.#closed && epoch === this.#epoch }
+
+  #queueMachine(machineId: string, sessionId?: string): void {
+    const machine = this.#machines.get(machineId)
+    if (!sessionId || !machine?.initialized || machine.refreshAll) {
+      this.#pendingMachines.set(machineId, null)
+      return
+    }
+    const pending = this.#pendingMachines.get(machineId)
+    if (pending === null) return
+    const sessions = pending ?? new Set<string>()
+    sessions.add(sessionId)
+    this.#pendingMachines.set(machineId, sessions)
+  }
 
   #schedule(): Promise<void> {
     if (this.#running) return this.#running
@@ -102,8 +116,8 @@ export class TaskNotificationMonitor {
       }
       const machines = [...this.#pendingMachines]
       this.#pendingMachines.clear()
-      await Promise.all(machines.map(async id => {
-        try { await this.#refreshMachine(id, epoch) }
+      await Promise.all(machines.map(async ([id, sessions]) => {
+        try { await this.#refreshMachine(id, epoch, sessions) }
         catch (error) { if (this.#current(epoch)) this.#onError(error) }
       }))
     }
@@ -126,19 +140,25 @@ export class TaskNotificationMonitor {
     const authorized = new Set(machines.map(machine => machine.id))
     for (const id of this.#machines.keys()) if (!authorized.has(id)) this.#machines.delete(id)
     for (const id of authorized) {
-      if (!this.#machines.has(id)) this.#machines.set(id, { watchStartedAt: Date.now(), initialized: false, missedBaseline: false, sessions: new Map() })
-      this.#pendingMachines.add(id)
+      if (!this.#machines.has(id)) this.#machines.set(id, { watchStartedAt: Date.now(), initialized: false, missedBaseline: false, refreshAll: false, sessions: new Map() })
+      this.#queueMachine(id)
     }
   }
 
-  async #refreshMachine(machineId: string, epoch: number): Promise<void> {
-    if (!this.#machines.get(machineId)) return
-    let snapshots: AgentSnapshot[]
+  async #refreshMachine(machineId: string, epoch: number, sessions: Set<string> | null): Promise<void> {
+    const seen = this.#machines.get(machineId)
+    if (!seen) return
+    const full = sessions === null || !seen.initialized || seen.refreshAll
+    let snapshots: AgentSessionSummary[]
     try {
-      snapshots = await this.#source.sessions(machineId)
+      snapshots = full ? await this.#source.sessions(machineId)
+        : (await Promise.all([...sessions!].map(id => this.#source.sessions(machineId, id)))).flat()
     } catch (error) {
       const current = this.#machines.get(machineId)
-      if (this.#current(epoch) && current && !current.initialized) current.missedBaseline = true
+      if (this.#current(epoch) && current) {
+        current.refreshAll = true
+        if (!current.initialized) current.missedBaseline = true
+      }
       throw error
     }
     const machine = this.#machines.get(machineId)
@@ -152,9 +172,10 @@ export class TaskNotificationMonitor {
     const silentBaseline = !machine.initialized && !machine.missedBaseline && Date.now() <= machine.watchStartedAt
     for (const snapshot of snapshots) this.#observe(machineId, machine, snapshot, silentBaseline)
     machine.initialized = true
+    if (full) machine.refreshAll = false
   }
 
-  #observe(machineId: string, machine: SeenMachine, snapshot: AgentSnapshot, silentBaseline: boolean): void {
+  #observe(machineId: string, machine: SeenMachine, snapshot: AgentSessionSummary, silentBaseline: boolean): void {
     const { session } = snapshot
     const previous = machine.sessions.get(session.id)
     const sequence = BigInt(session.lastEventSeq)

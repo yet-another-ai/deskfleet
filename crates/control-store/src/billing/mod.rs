@@ -1,12 +1,14 @@
 //! Team-owned subscriptions, manual overrides, and authoritative usage admission.
+mod admin;
 mod admissions;
 mod payments;
 mod period;
 
+pub use admin::AdminBillingPage;
 pub use payments::{CheckoutAttempt, PaymentEvent, SubscriptionProjection};
 pub use period::period_at;
 
-use crate::{ControlStore, Error, Result, json_rows, now_ms, one, resource_id, sql, timestamp};
+use crate::{ControlStore, Error, Result, now_ms, one, resource_id, sql, timestamp};
 use sea_orm::{ConnectionTrait, QueryResult, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -120,6 +122,25 @@ fn profile(row: QueryResult) -> Result<BillingProfile> {
     })
 }
 
+fn summary_value(
+    p: BillingProfile,
+    usage: &QueryResult,
+    meter: &QueryResult,
+    hosted: bool,
+    now: i64,
+) -> Result<Value> {
+    let plan = p.effective_plan(hosted, now);
+    let (start, end) = period_at(p.period_anchor, now);
+    let last_seen = meter.try_get::<Option<i64>>("", "last_seen_at")?;
+    Ok(json!({
+        "plan":plan,"limits":plan.limits(),"enterpriseOverride":p.enterprise,
+        "usage":{"activeSessionCount":usage.try_get::<i64>("","sessions")?,"memberCount":usage.try_get::<i64>("","members")?,"relayedBytes":usage.try_get::<String>("","bytes")?},
+        "period":{"start":timestamp(start),"end":timestamp(end)},"nextResetAt":timestamp(end),
+        "metering":{"lastSeenAt":last_seen.map(timestamp),"gapSince":meter.try_get::<Option<i64>>("","gap_since")?.map(timestamp),"fresh":metering_fresh(last_seen,now)},
+        "subscription":p.subscription_id.map(|_|json!({"plan":p.plan,"status":p.subscription_status,"paidThrough":p.paid_through.map(timestamp),"cancelAtPeriodEnd":p.cancel_at_period_end}))
+    }))
+}
+
 pub(crate) async fn effective_plan(
     db: &impl ConnectionTrait,
     team: i64,
@@ -168,10 +189,10 @@ impl ControlStore {
 
     pub async fn billing_summary(&self, team_id: &str) -> Result<Value> {
         let p = self.billing_profile(team_id).await?;
-        let plan = p.effective_plan(self.hosted, now_ms());
-        let (start, end) = period_at(p.period_anchor, now_ms());
+        let now = now_ms();
+        let (start, end) = period_at(p.period_anchor, now);
         let row = one(&self.db,
-            "SELECT (SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machines m ON m.id=a.machine_id WHERE a.team_id=$1 AND a.status<>'released' AND NOT m.revoked) AS sessions, (SELECT COUNT(*) FROM cp_members WHERE team_id=$1) AS members, (SELECT COALESCE(SUM(sent_bytes),0)::text FROM cp_turn_usage WHERE team_id=$1 AND collected_at >= $2 AND collected_at < $3) AS bytes",
+            "SELECT (SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machines m ON m.id=a.machine_id WHERE a.team_id=$1 AND a.status<>'released' AND NOT m.revoked) AS sessions, (SELECT COUNT(*) FROM cp_members WHERE team_id=$1) AS members, cp_turn_sent_bytes($1,$2,$3)::text AS bytes",
             vec![resource_id(team_id)?.into(), start.into(), end.into()]).await?;
         let meter = one(
             &self.db,
@@ -179,14 +200,7 @@ impl ControlStore {
             vec![],
         )
         .await?;
-        let last_seen = meter.try_get::<Option<i64>>("", "last_seen_at")?;
-        Ok(json!({
-            "plan":plan,"limits":plan.limits(),"enterpriseOverride":p.enterprise,
-            "usage":{"activeSessionCount":row.try_get::<i64>("","sessions")?,"memberCount":row.try_get::<i64>("","members")?,"relayedBytes":row.try_get::<String>("","bytes")?},
-            "period":{"start":timestamp(start),"end":timestamp(end)},"nextResetAt":timestamp(end),
-            "metering":{"lastSeenAt":last_seen.map(timestamp),"gapSince":meter.try_get::<Option<i64>>("","gap_since")?.map(timestamp),"fresh":metering_fresh(last_seen,now_ms())},
-            "subscription":p.subscription_id.map(|_|json!({"plan":p.plan,"status":p.subscription_status,"paidThrough":p.paid_through.map(timestamp),"cancelAtPeriodEnd":p.cancel_at_period_end}))
-        }))
+        summary_value(p, &row, &meter, self.hosted, now)
     }
 
     pub async fn relay_allowed(&self, team_id: &str) -> Result<bool> {
@@ -203,7 +217,7 @@ impl ControlStore {
             return Ok(Some(RelayDeniedReason::FreePlan));
         }
         let (start, end) = period_at(profile.period_anchor, now);
-        let meter = one(&self.db,"SELECT last_seen_at,(SELECT COALESCE(SUM(sent_bytes),0)<$4::bigint FROM cp_turn_usage WHERE team_id=$1 AND collected_at >= $2 AND collected_at < $3) AS allowed FROM cp_turn_collector WHERE singleton",vec![resource_id(team_id)?.into(),start.into(),end.into(),limit.into()]).await?;
+        let meter = one(&self.db,"SELECT last_seen_at,cp_turn_sent_bytes($1,$2,$3)<$4::bigint AS allowed FROM cp_turn_collector WHERE singleton",vec![resource_id(team_id)?.into(),start.into(),end.into(),limit.into()]).await?;
         if !metering_fresh(meter.try_get("", "last_seen_at")?, now) {
             return Ok(Some(RelayDeniedReason::MeteringUnavailable));
         }
@@ -228,13 +242,6 @@ impl ControlStore {
         )
         .await?
         .try_get("", "relay_allowed")?)
-    }
-
-    pub async fn admin_billing_teams(&self, user_id: &str) -> Result<Vec<Value>> {
-        if !self.is_site_admin(user_id).await? {
-            return Err(Error::Forbidden);
-        }
-        json_rows(&self.db,"SELECT jsonb_build_object('id',t.id::text,'name',t.name,'enterpriseOverride',COALESCE(b.enterprise,FALSE),'subscription',CASE WHEN b.subscription_id IS NULL THEN NULL ELSE jsonb_build_object('plan',b.plan,'status',b.subscription_status,'paidThrough',b.paid_through,'cancelAtPeriodEnd',b.cancel_at_period_end) END) AS record FROM cp_teams t LEFT JOIN cp_billing_profiles b ON b.team_id=t.id ORDER BY t.id",vec![]).await
     }
 
     pub async fn set_enterprise(&self, actor: &str, team_id: &str, enabled: bool) -> Result<()> {

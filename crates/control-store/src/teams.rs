@@ -237,6 +237,20 @@ impl ControlStore {
     }
     pub async fn accept_invite(&self, user_id: &str, token: &str) -> Result<Team> {
         let tx = self.db.begin().await?;
+        let id: i64 = one(
+            &tx,
+            "SELECT team_id FROM cp_invites WHERE token_hash=$1 AND expires_at>$2",
+            vec![secret_hash(token).into(), now_ms().into()],
+        )
+        .await?
+        .try_get("", "team_id")?;
+        // Team deletion locks the parent before cascading to its invitations.
+        one(
+            &tx,
+            "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
+            vec![id.into()],
+        )
+        .await?;
         let invite=one(&tx,"SELECT i.team_id,i.email,i.role,t.name FROM cp_invites i JOIN cp_teams t ON t.id=i.team_id WHERE i.token_hash=$1 AND i.expires_at>$2 FOR UPDATE OF i",vec![secret_hash(token).into(),now_ms().into()]).await?;
         let user = one(
             &tx,
@@ -252,14 +266,7 @@ impl ControlStore {
         {
             return Err(Error::Forbidden);
         }
-        let id = invite.try_get::<i64>("", "team_id")?;
         let role = invite.try_get::<String>("", "role")?;
-        one(
-            &tx,
-            "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
-            vec![id.into()],
-        )
-        .await?;
         let existing = tx
             .query_one_raw(sql(
                 "SELECT user_id FROM cp_members WHERE team_id=$1 AND user_id=$2",

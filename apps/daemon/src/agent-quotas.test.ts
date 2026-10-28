@@ -161,6 +161,57 @@ test("central entitlements are fetched anew and an invalid response never become
   assert.equal(calls, 3)
 })
 
+test("admission reconciliation reads the local Session list once per pass", async t => {
+  const f = await setup(t)
+  await f.create(); await f.create()
+  const list = f.sessions.journal.list.bind(f.sessions.journal)
+  let reads = 0
+  f.sessions.journal.list = async () => { reads++; return list() }
+  try {
+    await f.sessions.reconcileAdmissions()
+    assert.equal(reads, 1)
+    assert.equal((await f.quotas.list()).filter(receipt => receipt.status === "committed").length, 3)
+  } finally { f.sessions.journal.list = list }
+})
+
+test("an allocation completing after the reconciliation snapshot is not cancelled by stale local absence", async t => {
+  const barrier = () => {
+    let resolve!: () => void
+    const promise = new Promise<void>(finish => { resolve = finish })
+    return { promise, resolve }
+  }
+  const f = await setup(t)
+  const allocate = f.catalog.native.agentCreateSession.bind(f.catalog.native)
+  const confirm = f.quotas.confirm.bind(f.quotas)
+  const allocationEntered = barrier(), allocationContinue = barrier()
+  f.catalog.native.agentCreateSession = async request => {
+    allocationEntered.resolve(); await allocationContinue.promise; return allocate(request)
+  }
+  const creating = f.create()
+  await allocationEntered.promise
+  const reconciliationEntered = barrier(), reconciliationContinue = barrier()
+  f.quotas.confirm = async (generation, sessionId) => {
+    if (generation !== f.source.session.admissionGeneration) throw new Error("Offline allocation confirmation")
+    reconciliationEntered.resolve(); await reconciliationContinue.promise; return confirm(generation, sessionId)
+  }
+  const reconciling = f.sessions.reconcileAdmissions()
+  try {
+    await reconciliationEntered.promise
+    allocationContinue.resolve()
+    const created = await creating
+    reconciliationContinue.resolve()
+    await reconciling
+    assert.equal(f.quotas.admissions.get(created.session.admissionGeneration!)?.status, "reserved")
+    f.quotas.confirm = confirm
+    await f.sessions.reconcileAdmissions()
+    assert.equal(f.quotas.admissions.get(created.session.admissionGeneration!)?.status, "committed")
+  } finally {
+    allocationContinue.resolve(); reconciliationContinue.resolve()
+    f.catalog.native.agentCreateSession = allocate; f.quotas.confirm = confirm
+    await Promise.allSettled([creating, reconciling])
+  }
+})
+
 test("in-flight allocations keep capacity, confirmed allocation failures cancel, and uncertain writes reconcile", async t => {
   const f = await setup(t)
   const allocate = f.catalog.native.agentCreateSession.bind(f.catalog.native)

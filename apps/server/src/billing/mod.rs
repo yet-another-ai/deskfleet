@@ -6,6 +6,7 @@ mod reconcile;
 #[cfg(test)]
 mod tests;
 mod webhook;
+mod worker;
 
 pub use config::BillingConfig;
 pub use handlers::configure;
@@ -25,10 +26,12 @@ pub struct BillingService {
     web_url: String,
     api_base: String,
 }
-pub struct BillingWorker(tokio::task::JoinHandle<()>);
+pub struct BillingWorker([tokio::task::JoinHandle<()>; 2]);
 impl Drop for BillingWorker {
     fn drop(&mut self) {
-        self.0.abort();
+        for task in &self.0 {
+            task.abort();
+        }
     }
 }
 
@@ -77,52 +80,6 @@ impl BillingService {
             ))
         }
     }
-    pub fn start_worker(&self, store: ControlStore) -> BillingWorker {
-        let service = self.clone();
-        BillingWorker(tokio::spawn(async move {
-            if !service.enabled() {
-                return;
-            }
-            let mut tick = tokio::time::interval(Duration::from_secs(5));
-            let mut iterations = 0_u32;
-            loop {
-                tick.tick().await;
-                for _ in 0..25 {
-                    match store.claim_payment_event().await {
-                        Ok(Some(event)) => {
-                            let success = service.process_event(&store, &event).await.is_ok();
-                            if !success {
-                                tracing::warn!(event_id=%event.id,"payment reconciliation failed; scheduled retry");
-                            }
-                            if store.finish_payment_event(&event, success).await.is_err() {
-                                tracing::warn!("payment event result could not be persisted");
-                            }
-                        }
-                        Ok(None) => break,
-                        Err(_) => {
-                            tracing::warn!("payment event inbox is unavailable");
-                            break;
-                        }
-                    }
-                }
-                if iterations.is_multiple_of(12)
-                    && let Ok(profiles) = store.billing_profiles_to_reconcile().await
-                {
-                    for profile in profiles {
-                        if service
-                            .reconcile_team(&store, &profile.team_id)
-                            .await
-                            .is_err()
-                        {
-                            tracing::warn!(team_id=%profile.team_id,"subscription repair will retry");
-                        }
-                    }
-                }
-                iterations = iterations.wrapping_add(1);
-            }
-        }))
-    }
-
     pub async fn checkout(
         &self,
         store: &ControlStore,

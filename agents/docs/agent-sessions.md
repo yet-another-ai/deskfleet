@@ -315,10 +315,33 @@ ownership, lookup, and active-resource constraints.
 | `agent_sessions` | `session_id` | Provider identity, title, lifecycle, archive state, capabilities, journal watermark, timestamps/error |
 | `agent_runs` | `(session_id, generation)` | Provider process state and start/end timestamps/error |
 | `agent_commands` | `id`; canonical `operation_id` | Immutable request audit and mutable receipt/outcome |
+| `agent_command_revisions` | Singleton | Monotonic revision allocator for changed command receipts |
 | `agent_inputs` | `id` | Content/author, submission command, acceptance sequence, requested and actual delivery, dispatch command/actor |
 | `agent_turns` | `id` | Initial input/dispatch command, run generation, execution state, stop reason, provider-reported token usage |
 | `agent_permissions` | `id` | Original ACP request/options, run/turn, winning decision command/actor |
 | `agent_events` | `(session_id, seq)` | Ordered domain transitions and original ACP notifications |
+
+Session metadata reads and journal-watermark checks use the Session row directly.
+Full snapshots load child records through Session/order indexes when a caller
+needs conversation state. Each command receipt write also advances a durable
+revision in the same transaction, including changes that emit no Session event.
+Replication reads changed receipts by Session and revision; migrated receipts
+start at revision zero and the first read starts at minus one.
+
+Central history uploads carry at most 200 events and 200 changed receipts per
+request. The first page carries the captured snapshot; later pages carry its
+`snapshotSeq` watermark. PostgreSQL locks the Session row, compares existing
+events in one query, rejects gaps or conflicting duplicates, and inserts the new
+events and receipts in batches. The daemon advances its receipt cursor only after
+all pages succeed, so a lost response replays unacknowledged changes. Identical
+replays do not rewrite the stored snapshot or command JSON.
+
+Central Session lists return a persisted summary: Session metadata, completed
+turn identifiers/state/end times, and permission/question identifiers and state
+timestamps. They omit conversation inputs, provider runs, and full request
+payloads. Numeric Session and command cursors use matching expression indexes;
+archive filtering has its own indexed path. Opening a conversation still reads
+the full snapshot and paged event history.
 
 Session lifecycle is `provisioning`, `ready`, `provision_failed`, or `deleting`.
 Independent `archiveState` is `active`, `archiving`, or `archived`. Archive first

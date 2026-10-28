@@ -134,7 +134,7 @@ impl ControlStore {
         ))
         .await?;
         tx.execute_raw(sql(
-            "UPDATE cp_session_admissions SET status='released' WHERE machine_id=$1",
+            "UPDATE cp_session_admissions SET status='released' WHERE machine_id=$1 AND status<>'released'",
             vec![resource_id(id)?.into()],
         ))
         .await?;

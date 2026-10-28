@@ -97,8 +97,8 @@ export class AgentRuntime {
     await this.#starting?.catch(() => {})
     signal?.throwIfAborted()
     const saved = await savedAgentConfiguration(this.journal, this.sessionId)
-    const snapshot = await this.journal.read(this.sessionId)
-    const providerId = snapshot.session.provider
+    const session = await this.journal.session(this.sessionId)
+    const providerId = session.provider
     // Reading a removed provider's history remains possible. Only a new process
     // requires that its launch settings still exist.
     try {
@@ -107,11 +107,11 @@ export class AgentRuntime {
       this.#providerKind = launch.provider.id
     } catch {}
     const identity = { id: providerId, name: this.#providerName ?? providerId }
-    const promptCapabilities = snapshot.session.capabilities?.promptCapabilities
+    const promptCapabilities = session.capabilities?.promptCapabilities
     if (composer && this.running) await this.#commands?.ready(signal)
     const availableCommands = this.#commands ? this.#commands.current : saved.commands
     const commands = availableCommands && agentComposerCatalog(availableCommands, this.#providerKind ?? "")
-    if (snapshot.session.archiveState !== "active" || this.running || !snapshot.session.error) {
+    if (session.archiveState !== "active" || this.running || !session.error) {
       return agentConfiguration(this.#configuration ?? saved.options, identity, promptCapabilities, commands)
     }
     // Discover alternatives without resuming the failed conversation, changing
@@ -125,7 +125,7 @@ export class AgentRuntime {
       const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
       if (!worktree?.directories[0]) throw new Error("Session worktree is unavailable")
       const discovery = await this.journal.serial(this.sessionId, async () => {
-        requireActiveSession((await this.journal.read(this.sessionId)).session)
+        requireActiveSession(await this.journal.session(this.sessionId))
         if (this.#stop === previousStop) {
           this.#stop = undefined
           this.#stopping = false
@@ -150,7 +150,7 @@ export class AgentRuntime {
   }
 
   async configure(selection: AgentConfigurationSelection): Promise<AgentConfiguration> {
-    requireActiveSession((await this.journal.read(this.sessionId)).session)
+    requireActiveSession(await this.journal.session(this.sessionId))
     if (this.#forking || this.#configuring || this.#active || this.#dispatching) throw new Error("Wait for the current turn before changing the Agent configuration")
     // Pause backlog dispatch through startup and every provider configuration call.
     this.#configuring = true
@@ -176,15 +176,15 @@ export class AgentRuntime {
   async #recordConfiguration(sessionId: string, options: acp.SessionConfigOption[]): Promise<void> {
     const notification: acp.SessionNotification = { sessionId, update: { sessionUpdate: "config_option_update", configOptions: options } }
     await this.journal.serial(this.sessionId, async () => {
-      const snapshot = await this.journal.read(this.sessionId)
+      const session = await this.journal.session(this.sessionId)
       this.#configuration = options
       this.#availableConfiguration = options
-      await this.journal.commit(snapshot, { events: [this.journal.event(this.sessionId, "acp", notification, { runGeneration: this.#run!.generation })] })
+      await this.journal.commit(session, { events: [this.journal.event(this.sessionId, "acp", notification, { runGeneration: this.#run!.generation })] })
     })
   }
 
   async start(selection?: AgentConfigurationSelection, forkSource?: string): Promise<void> {
-    requireActiveSession((await this.journal.read(this.sessionId)).session)
+    requireActiveSession(await this.journal.session(this.sessionId))
     if (this.#stopping && this.#stop) {
       const stopping = this.#stop
       return stopping.then(() => {
@@ -227,8 +227,8 @@ export class AgentRuntime {
       state: "starting", startedAt: timestamp(),
     }
     await this.journal.serial(this.sessionId, async () => {
-      const current = await this.journal.read(this.sessionId)
-      requireActiveSession(current.session)
+      const current = await this.journal.session(this.sessionId)
+      requireActiveSession(current)
       await this.journal.commit(current, { runs: [run], events: [this.journal.event(this.sessionId, "run", run)] })
     })
     this.#run = run
@@ -301,10 +301,10 @@ export class AgentRuntime {
       run.state = "running"
       const promptCapabilities = agentPromptCapabilities(capabilities?.promptCapabilities)
       await this.journal.serial(this.sessionId, async () => {
-        const current = await this.journal.read(this.sessionId)
-        requireActiveSession(current.session)
+        const current = await this.journal.session(this.sessionId)
+        requireActiveSession(current)
         const session = {
-          ...current.session, providerSessionId, lifecycle: "ready" as const, error: undefined, updatedAt: timestamp(),
+          ...current, providerSessionId, lifecycle: "ready" as const, error: undefined, updatedAt: timestamp(),
           capabilities: {
             steering: supportsSteering(connection.initialization),
             resume: canContinueSession(connection.initialization),
@@ -327,8 +327,8 @@ export class AgentRuntime {
       run.error = errorMessage(error)
       run.endedAt = timestamp()
       await this.journal.serial(this.sessionId, async () => {
-        const current = await this.journal.read(this.sessionId)
-        const session = { ...current.session, error: run.error, updatedAt: timestamp() }
+        const current = await this.journal.session(this.sessionId)
+        const session = { ...current, error: run.error, updatedAt: timestamp() }
         await this.journal.commit(current, { session, runs: [run], events: [this.journal.event(this.sessionId, "run", run), this.journal.event(this.sessionId, "session", session)] })
       })
       throw error
@@ -360,13 +360,13 @@ export class AgentRuntime {
         this.#configuration = params.update.configOptions
         this.#availableConfiguration = params.update.configOptions
       }
-      const snapshot = await this.journal.read(this.sessionId)
+      const current = await this.journal.session(this.sessionId)
       const turnId = this.#active?.turn.id
-      const session = params.update.sessionUpdate === "session_info_update" && params.update.title && !snapshot.session.titleCustomized
-        ? { ...snapshot.session, title: params.update.title, updatedAt: timestamp() } : undefined
+      const session = params.update.sessionUpdate === "session_info_update" && params.update.title && !current.titleCustomized
+        ? { ...current, title: params.update.title, updatedAt: timestamp() } : undefined
       const events = [this.journal.event(this.sessionId, "acp", params, { runGeneration: generation, turnId })]
       if (session) events.push(this.journal.event(this.sessionId, "session", session))
-      await this.journal.commit(snapshot, { session, events })
+      await this.journal.commit(current, { session, events })
     })
   }
 
@@ -380,13 +380,13 @@ export class AgentRuntime {
     this.#permissions.set(permission.id, resolve)
     try {
       await this.journal.serial(this.sessionId, async () => {
-        const snapshot = await this.journal.read(this.sessionId)
-        if (snapshot.session.archiveState !== "active") {
+        const session = await this.journal.session(this.sessionId)
+        if (session.archiveState !== "active") {
           permission.state = "cancelled"
           permission.resolvedAt = timestamp()
           resolve({ outcome: { outcome: "cancelled" } })
         }
-        await this.journal.commit(snapshot, { permissions: [permission], events: [this.journal.event(this.sessionId, "permission", permission)] })
+        await this.journal.commit(session, { permissions: [permission], events: [this.journal.event(this.sessionId, "permission", permission)] })
       })
       const abort = () => { void this.cancelPermissions(permission.id).catch(error => console.error("Permission cancellation failed", error)) }
       signal.addEventListener("abort", abort, { once: true })
@@ -495,8 +495,8 @@ export class AgentRuntime {
         await this.journal.commit(snapshot, { inputs: [input], command, events: [this.journal.event(this.sessionId, "input", input)] })
         return input
       })
-      const snapshot = await this.journal.read(this.sessionId)
-      requireActiveSession(snapshot.session)
+      const session = await this.journal.session(this.sessionId)
+      requireActiveSession(session)
       if (!this.running) throw new Error("Agent stopped before delivery")
       const prompt = await this.#catalog.attachments.preparePrompt(
         this.sessionId,
@@ -504,7 +504,7 @@ export class AgentRuntime {
         connection.initialization.agentCapabilities?.promptCapabilities ?? undefined,
       )
       sent = true
-      const result = await connection.steer({ sessionId: snapshot.session.providerSessionId!, prompt }, command.id)
+      const result = await connection.steer({ sessionId: session.providerSessionId!, prompt }, command.id)
       if (result.outcome === "inactive") {
         await active.completion
         if (!this.running) throw new Error("The Agent stopped before this input could start")
@@ -550,8 +550,8 @@ export class AgentRuntime {
       ] })
       return input
     })
-    const snapshot = await this.journal.read(this.sessionId)
-    if (snapshot.session.archiveState !== "active" || !this.running || this.#connection !== connection) {
+    const session = await this.journal.session(this.sessionId)
+    if (session.archiveState !== "active" || !this.running || this.#connection !== connection) {
       await this.#finish(turn, inputId, command, undefined, new Error("Agent stopped before delivery"), false)
       return
     }
@@ -568,7 +568,7 @@ export class AgentRuntime {
       if (!this.running || this.#connection !== connection) throw new Error("Agent stopped before delivery")
       await consumeTurn(this.journal, this.#quotas, turn)
       sent = true
-      return await connection.prompt({ sessionId: snapshot.session.providerSessionId!, prompt })
+      return await connection.prompt({ sessionId: session.providerSessionId!, prompt })
     })().then(
       result => this.#finish(turn, inputId, command, result),
       async error => {
@@ -630,12 +630,12 @@ export class AgentRuntime {
   async cancel(turnId: string): Promise<void> {
     if (this.#active?.turn.id !== turnId || !this.#connection) return
     const connection = this.#connection
-    const snapshot = await this.journal.read(this.sessionId)
+    const session = await this.journal.session(this.sessionId)
     if (this.#active?.turn.id !== turnId) return
     this.#endingTurn = turnId
     await this.cancelPermissions(undefined, turnId)
     await this.elicitations.cancel(undefined, turnId)
-    if (this.#active?.turn.id === turnId && this.#connection === connection) await connection.cancel(snapshot.session.providerSessionId!)
+    if (this.#active?.turn.id === turnId && this.#connection === connection) await connection.cancel(session.providerSessionId!)
   }
 
   #connectionLost(error: Error, generation: number): void {
@@ -694,10 +694,10 @@ export class AgentRuntime {
     await this.#active?.completion
     this.#connection = undefined
     await this.journal.serial(this.sessionId, async () => {
-      const snapshot = await this.journal.read(this.sessionId)
+      const session = await this.journal.session(this.sessionId)
       if (!this.#run) return
       this.#run = { ...this.#run, state: "stopped", endedAt: timestamp() }
-      await this.journal.commit(snapshot, { runs: [this.#run], events: [this.journal.event(this.sessionId, "run", this.#run)] })
+      await this.journal.commit(session, { runs: [this.#run], events: [this.journal.event(this.sessionId, "run", this.#run)] })
     })
   }
 

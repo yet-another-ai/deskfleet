@@ -4,6 +4,9 @@ mod commit;
 mod sql;
 mod validation;
 
+#[cfg(test)]
+mod tests;
+
 use deskfleet_model::{AgentSequence, AgentSessionId, agent::*};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, Set, TransactionTrait};
 
@@ -67,6 +70,14 @@ impl LocalCatalog {
         .await
     }
 
+    /// Read only the Session metadata and journal watermark.
+    pub async fn agent_session(
+        &self,
+        id: AgentSessionId,
+    ) -> Result<Option<AgentSessionRecord>, StoreError> {
+        scoped_session(self.catalog.database(), self.machine.id.as_i64(), id).await
+    }
+
     pub async fn agent_snapshot(
         &self,
         id: AgentSessionId,
@@ -83,30 +94,10 @@ impl LocalCatalog {
                 vec![id.as_i64().into()],
             )
             .await?,
-            inputs: records(
-                &db,
-                "SELECT record_json FROM agent_inputs WHERE session_id = ? ORDER BY accepted_seq, id",
-                vec![id.as_i64().into()],
-            )
-            .await?,
-            turns: records(
-                &db,
-                "SELECT record_json FROM agent_turns WHERE session_id = ? ORDER BY id",
-                vec![id.as_i64().into()],
-            )
-            .await?,
-            permissions: records(
-                &db,
-                "SELECT record_json FROM agent_permissions WHERE session_id = ? ORDER BY id",
-                vec![id.as_i64().into()],
-            )
-            .await?,
-            elicitations: records(
-                &db,
-                "SELECT record_json FROM agent_elicitations WHERE session_id = ? ORDER BY id",
-                vec![id.as_i64().into()],
-            )
-            .await?,
+            inputs: records(&db, sql::INPUTS, vec![id.as_i64().into()]).await?,
+            turns: records(&db, sql::TURNS, vec![id.as_i64().into()]).await?,
+            permissions: records(&db, sql::PERMISSIONS, vec![id.as_i64().into()]).await?,
+            elicitations: records(&db, sql::ELICITATIONS, vec![id.as_i64().into()]).await?,
         };
         db.commit().await?;
         Ok(Some(snapshot))
@@ -147,7 +138,7 @@ impl LocalCatalog {
     ) -> Result<Option<AgentCommand>, StoreError> {
         record(
             self.catalog.database(),
-            "SELECT record_json FROM agent_commands WHERE operation_id = ? AND is_canonical = 1",
+            sql::COMMAND,
             vec![operation_id.into()],
         )
         .await
@@ -177,16 +168,16 @@ impl LocalCatalog {
         if existing.is_some() {
             return Ok(false);
         }
-        let commands: Vec<AgentCommand> = records(
-            &db,
-            "SELECT record_json FROM agent_commands WHERE session_id IS NULL \
-             AND json_extract(record_json, '$.sessionId') = ?",
-            vec![id.to_string().into()],
-        )
-        .await?;
-        let deleted = commands
-            .iter()
-            .any(|command| command.is_canonical && command.method == "_deskfleet/session/delete");
+        let deleted: bool = db
+            .query_one_raw(statement(
+                sql::DELETED_ADMISSION,
+                vec![id.to_string().into()],
+            ))
+            .await?
+            .ok_or(StoreError::InvalidAgent(
+                "deletion receipt query returned no result",
+            ))?
+            .try_get("", "deleted")?;
         db.commit().await?;
         Ok(deleted)
     }
@@ -206,14 +197,48 @@ impl LocalCatalog {
                 id: id.as_i64(),
             });
         }
+        let commands = records(&db, sql::COMMANDS, vec![id.as_i64().into()]).await?;
+        db.commit().await?;
+        Ok(commands)
+    }
+
+    /// Current receipts changed after a durable revision; -1 includes migrated receipts.
+    pub async fn agent_commands_since(
+        &self,
+        id: AgentSessionId,
+        after_revision: i64,
+    ) -> Result<(Vec<AgentCommand>, i64), StoreError> {
+        if after_revision < -1 {
+            return Err(StoreError::InvalidAgent("invalid command revision"));
+        }
+        let db = self.catalog.database().begin().await?;
+        if scoped_session(&db, self.machine.id.as_i64(), id)
+            .await?
+            .is_none()
+        {
+            return Err(StoreError::NotFound {
+                kind: "agent session",
+                id: id.as_i64(),
+            });
+        }
+        let revision = db
+            .query_one_raw(statement(
+                "SELECT MAX(revision) AS revision FROM agent_commands WHERE session_id = ?",
+                vec![id.as_i64().into()],
+            ))
+            .await?
+            .and_then(|row| row.try_get::<Option<i64>>("", "revision").transpose())
+            .transpose()?
+            .unwrap_or(after_revision)
+            .max(after_revision);
         let commands = records(
             &db,
-            "SELECT record_json FROM agent_commands WHERE session_id = ? ORDER BY id",
-            vec![id.as_i64().into()],
+            sql::COMMAND_CHANGES,
+            vec![id.as_i64().into(), after_revision.into()],
         )
         .await?;
         db.commit().await?;
-        Ok(commands)
+        Ok((commands, revision))
     }
 
     /// Bind the accepted create command to its catalog Session in one transaction.

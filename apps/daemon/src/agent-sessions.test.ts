@@ -157,6 +157,42 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   return { catalog, service, provider, providers, actor, bob, create, snapshot, sessionId, read, submit, directory, repository }
 }
 
+test("streamed updates, receipt persistence, and history pages use session metadata without loading a snapshot", async t => {
+  const f = await setup(t)
+  const before = await f.service.journal.session(f.sessionId)
+  const cursor = await f.service.journal.commandsSince(f.sessionId, "-1")
+  const receipt: AgentCommand = {
+    id: await f.service.journal.id(), operationId: randomUUID(), actor: f.actor, sessionId: f.sessionId,
+    method: "_deskfleet/session/resume", params: {}, isCanonical: true, status: "completed",
+    receivedAt: new Date().toISOString(), completedAt: new Date().toISOString(),
+  }
+  const snapshot = f.catalog.native.agentSnapshot.bind(f.catalog.native)
+  f.catalog.native.agentSnapshot = async () => { throw new Error("Full snapshot should not be loaded") }
+  try {
+    await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: {
+      sessionUpdate: "agent_message_chunk", content: { type: "text", text: "streamed" },
+    } })
+    await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: {
+      sessionUpdate: "session_info_update", title: "Metadata title",
+    } })
+    await f.service.journal.saveCommand(receipt)
+    const current = await f.service.journal.session(f.sessionId)
+    assert.equal(current.title, "Metadata title")
+    assert.equal(BigInt(current.lastEventSeq) - BigInt(before.lastEventSeq), 4n)
+    const events = await f.service.handle("_deskfleet/session/history", {
+      sessionId: f.sessionId, afterSeq: before.lastEventSeq, limit: 2,
+    }, f.actor) as AgentEvent[]
+    assert.equal(events.length, 2)
+    assert.ok(events.every(event => event.kind === "acp"))
+    const changes = await f.service.journal.commandsSince(f.sessionId, cursor.revision)
+    assert.deepEqual(changes.commands, [receipt])
+    assert.ok(BigInt(changes.revision) > BigInt(cursor.revision))
+    await assert.rejects(f.service.handle("_deskfleet/session/history", {
+      sessionId: "9223372036854775807", afterSeq: "0",
+    }, f.actor), /not found/iu)
+  } finally { f.catalog.native.agentSnapshot = snapshot }
+})
+
 test("prompt token usage is persisted per turn and replayed independently from context usage", async t => {
   const f = await setup(t)
   const responses: acp.PromptResponse[] = [
@@ -756,7 +792,7 @@ test("a cancel waiting on persistence cannot cancel the next turn or its permiss
   await f.submit("hold").result
   const first = await until(f.read, state => state.turns.length === 1 && f.provider.prompts.length === 1)
   await f.submit("next").result
-  const read = f.service.journal.read.bind(f.service.journal)
+  const read = f.service.journal.session.bind(f.service.journal)
   let intercept = false
   let release!: () => void
   const blocked = new Promise<void>(resolve => { release = resolve })
@@ -765,10 +801,10 @@ test("a cancel waiting on persistence cannot cancel the next turn or its permiss
   const unsubscribe = f.service.onEvent(event => {
     if (event.kind === "turn" && "state" in event.payload && event.payload.state === "cancelling") intercept = true
   })
-  f.service.journal.read = async id => {
-    const snapshot = await read(id)
+  f.service.journal.session = async id => {
+    const session = await read(id)
     if (intercept) { intercept = false; entered(); await blocked }
-    return snapshot
+    return session
   }
   const cancel = f.service.handle("_deskfleet/turn/cancel", { sessionId: f.sessionId, operationId: randomUUID(), turnId: first.turns[0]!.id }, f.actor)
   await waiting

@@ -61,9 +61,14 @@ are retrieved and checked. Preserve the webhook's original request bytes.
 
 The endpoint verifies Stripe's HMAC signature with a five-minute timestamp
 window, checks test/live mode, and stores supported events in PostgreSQL before
-acknowledging them. A background worker retries failures and periodically repairs
-customer/subscription state. Unique event IDs and database leases fence duplicate
-and concurrent workers. See [Stripe webhook verification](https://docs.stripe.com/webhooks/signature).
+acknowledging them. Independent background tasks process the event inbox and
+repair customer/subscription state, so a slow periodic repair cannot hold up
+unrelated payment events. Each task claims at most 25 items per five-second tick.
+Repair claims select one due customer atomically, use a three-minute fencing
+lease, and schedule the next check after one minute on success or five minutes
+on failure. The inbox claim index excludes processed and exhausted events and
+matches receipt order. Unique event IDs and database leases fence duplicate and
+concurrent workers. See [Stripe webhook verification](https://docs.stripe.com/webhooks/signature).
 
 Checkout request IDs are UUIDs and are reused after an uncertain result. A Team
 has at most one open purchase attempt; replacing an unpaid checkout first
@@ -85,6 +90,11 @@ current usage; Enterprise traffic remains counted and consumes a restored paid
 allowance after revocation. Enterprise assignment does not cancel Stripe billing.
 Only Site Admin can change the override, after recent authentication, with an audit
 record. Team administrators manage payments; other members can inspect usage.
+
+The Site Admin Team endpoint uses an ID cursor and a maximum page size of 100.
+Profiles and usage summaries are read in batches, with one shared collector-state
+read per page. The shared client follows the cursor to preserve the existing
+administration view.
 
 TURN totals sum sent bytes on each side of a saved peer grant. A database lease
 selects the collector, and missing/stale metering is visible in the API. Stale

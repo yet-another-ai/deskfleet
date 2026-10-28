@@ -4,6 +4,7 @@ pub mod billing;
 mod history;
 mod identity;
 mod machines;
+mod maintenance;
 mod peer_negotiations;
 mod peers;
 pub mod policies;

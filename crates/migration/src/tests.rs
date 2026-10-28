@@ -32,7 +32,7 @@ async fn upgrade_baseline<M: MigratorTrait>() {
     M::up(&db, None).await.unwrap();
     assert_eq!(
         Migrator::get_pending_migrations(&db).await.unwrap().len(),
-        2
+        3
     );
 
     Migrator::up(&db, None).await.unwrap();
@@ -58,7 +58,7 @@ async fn upgrade_baseline<M: MigratorTrait>() {
     );
     assert_eq!(
         Migrator::get_applied_migrations(&db).await.unwrap().len(),
-        5
+        6
     );
 
     Migrator::down(&db, None).await.unwrap();
@@ -83,4 +83,41 @@ async fn elicitation_catalog_upgrades_with_archive_state() {
 #[tokio::test]
 async fn archive_catalog_upgrades_with_elicitations() {
     upgrade_baseline::<ArchiveBaseline>().await;
+}
+
+#[tokio::test]
+async fn query_indexes_upgrade_existing_receipts_without_rewriting_audit_json() {
+    use sea_orm_migration::sea_orm::{ConnectionTrait, DbBackend, Statement};
+
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    Migrator::up(&db, Some(5)).await.unwrap();
+    db.execute_unprepared(
+        "INSERT INTO agent_commands (id, state, record_json, operation_id, is_canonical) \
+         VALUES (1, 'completed', '{\"sessionId\":\"10\"}', 'old-operation', TRUE)",
+    )
+    .await
+    .unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let row = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "SELECT record_json, revision FROM agent_commands WHERE id = 1",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.try_get::<String>("", "record_json").unwrap(),
+        "{\"sessionId\":\"10\"}"
+    );
+    assert_eq!(row.try_get::<i64>("", "revision").unwrap(), 0);
+    Migrator::down(&db, Some(1)).await.unwrap();
+    assert!(
+        !SchemaManager::new(&db)
+            .has_column("agent_commands", "revision")
+            .await
+            .unwrap()
+    );
+    Migrator::up(&db, None).await.unwrap();
+    db.close().await.unwrap();
 }

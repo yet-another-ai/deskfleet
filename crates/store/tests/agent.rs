@@ -7,6 +7,8 @@ use serde_json::{Value, json};
 
 #[path = "agent/elicitations.rs"]
 mod elicitations;
+#[path = "agent/queries.rs"]
+mod queries;
 #[path = "agent/usage.rs"]
 mod usage;
 

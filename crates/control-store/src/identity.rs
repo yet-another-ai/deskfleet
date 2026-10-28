@@ -1,6 +1,7 @@
 //! Verified account identity; authentication credentials never identify Teams.
 mod challenges;
 mod credentials;
+mod maintenance;
 mod sessions;
 
 use crate::{ControlStore, Error, Result, name, one, sql};
@@ -154,17 +155,11 @@ impl ControlStore {
         if query.len() > 254 {
             return Err(Error::Invalid("search is too long"));
         }
-        crate::json_rows(&self.db,"SELECT jsonb_build_object('id',id,'name',name,'email',email,'disabled',disabled) AS record FROM cp_users WHERE strpos(lower(email),lower($1))>0 OR strpos(lower(name),lower($1))>0 ORDER BY email LIMIT 50",vec![query.trim().into()]).await
+        crate::json_rows(&self.db,"SELECT jsonb_build_object('id',id,'name',name,'email',email,'disabled',disabled) AS record FROM cp_users WHERE (cp_account_search_grams(name) || cp_account_search_grams(email)) @> cp_account_search_grams($1) AND (strpos(lower(email),lower($1))>0 OR strpos(lower(name),lower($1))>0) ORDER BY email LIMIT 50",vec![query.trim().into()]).await
     }
     /// Database-backed fixed windows also bound attempts across server replicas.
     pub async fn auth_rate_limit(&self, key: &str, limit: i32, window_ms: i64) -> Result<bool> {
         let period = crate::now_ms() / window_ms * window_ms;
-        self.db
-            .execute_raw(sql(
-                "DELETE FROM cp_auth_limits WHERE period<$1",
-                vec![(crate::now_ms() - 3_600_000).into()],
-            ))
-            .await?;
         let count: i32 = one(&self.db,"INSERT INTO cp_auth_limits(key_hash,period,requests) VALUES($1,$2,1) ON CONFLICT(key_hash,period) DO UPDATE SET requests=cp_auth_limits.requests+1 RETURNING requests",vec![crate::secret_hash(key).into(),period.into()]).await?.try_get("","requests")?;
         Ok(count <= limit)
     }

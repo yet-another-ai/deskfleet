@@ -89,6 +89,15 @@ logged by the router. Database backups can retain these operation payloads after
 the inbox rows expire; the central database and its backups therefore remain
 inside the trust boundary for that sensitive data.
 
+Expiry maintenance runs independently of the routing poll and authentication
+requests. A database claim permits one pass across API replicas every 30 seconds;
+the server allows 20 seconds for a pass. Each identity table and the routing inbox
+use deletion batches of at most 1,000 eligible rows, skipping locked rows.
+Expired API-node deletion locks the parent before cascading to its routes and
+messages, matching lease renewal's lock order. Login sessions, peer grants, and
+durable history remain available to their existing consumers. Machine lists
+resolve presence in one query against current node leases and revocation state.
+
 Instances use the existing database configuration; process identities are
 generated at startup. Redis remains specific to coturn statistics. The existing
 PostgreSQL collector lease selects one TURN subscriber, and billing work uses

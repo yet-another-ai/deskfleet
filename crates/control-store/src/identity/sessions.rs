@@ -77,7 +77,7 @@ impl ControlStore {
             vec![user_id.into()],
         )
         .await?;
-        tx.execute_raw(sql("UPDATE cp_login_sessions SET revoked=TRUE WHERE user_id=$1 AND ($2::text IS NULL OR id=$2)",vec![user_id.into(),session_id.map(str::to_owned).into()])).await?;
+        tx.execute_raw(sql("UPDATE cp_login_sessions SET revoked=TRUE WHERE user_id=$1 AND NOT revoked AND ($2::text IS NULL OR id=$2)",vec![user_id.into(),session_id.map(str::to_owned).into()])).await?;
         if session_id.is_none() {
             // Outstanding native codes and login ceremonies must not recreate a
             // session after the owner has explicitly revoked every session.
@@ -102,12 +102,6 @@ impl ControlStore {
         Ok(peers)
     }
     pub async fn save_login_attempt(&self, state: &str, record: Value) -> Result<()> {
-        self.db
-            .execute_raw(sql(
-                "DELETE FROM cp_login_attempts WHERE expires_at<$1",
-                vec![now_ms().into()],
-            ))
-            .await?;
         self.db
             .execute_raw(sql(
                 "INSERT INTO cp_login_attempts VALUES($1,$2,$3)",

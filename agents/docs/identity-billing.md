@@ -118,6 +118,21 @@ open decisions, not an implicit cascading deletion.
   does not automatically cancel scheduled work; account disablement must be
   checked when authorizing its next execution.
 
+Credential recovery and email changes lock the account before consuming its
+proof. Registration claims the unique mailbox before consuming registration
+proofs, then rechecks expiry and one-time use in the same transaction. Peer grants
+lock account and Team parents before revocable membership/login records;
+invitation acceptance locks its Team before the invitation. These orders match
+revocation and deletion, preventing opposite parent/child lock acquisition.
+
+Identity lookup and revocation indexes follow account, Team, and expiry filters.
+Site account search uses indexed character grams, followed by the original
+literal substring check, including short queries, punctuation, and Unicode.
+Expired rate windows, login attempts/codes, challenges, and invitations are
+removed by shared background maintenance in bounded batches. Authentication
+still checks expiry when consuming a credential; deletion timing does not extend
+its validity.
+
 Mail delivery, application origins, WebAuthn configuration, and payment secrets
 are deployment configuration. Failed mail delivery must remain diagnosable and
 retryable without permanently stranding the account.
@@ -279,6 +294,14 @@ cutoff. This release includes no automatic overage charge.
 and peer-facing sockets, attributed to the Team on the saved peer grant. Do not
 add received bytes to this sum. It measures relay protocol traffic, not file
 payload size. Period totals remain exact decimal integer strings in the API.
+
+PostgreSQL retains raw deltas and maintains Team/minute sent-byte aggregates in
+the same transaction through an insert trigger. Migration backfills existing
+events while excluding concurrent writes. Full minutes use these aggregates;
+each partial boundary reads only its raw timestamp range. This preserves exact
+millisecond anchors, short intervals, month-end boundaries, and late deltas
+without repeatedly summing every event in the billing month. Aggregate totals
+use PostgreSQL numeric values so summed bytes can exceed a single bigint.
 
 Current coturn Redis Pub/Sub collection cannot replay missing events and
 accumulates each notification independently. Production quota collection needs
