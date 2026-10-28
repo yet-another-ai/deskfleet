@@ -53,20 +53,37 @@ const terminal = new Terminal({
 terminal.loadAddon(fit)
 let webglAddon: WebglAddon | undefined
 let ligaturesAddon: LigaturesAddon | undefined
+/** `@xterm/addon-webgl@0.19.0` keeps the GL context private; dispose alone does not free it (xtermjs/xterm.js#6068). */
+type WebglAddonInternals = { _renderer?: { _gl?: WebGL2RenderingContext } }
+function webglRenderingContext(addon: WebglAddon): WebGL2RenderingContext | undefined {
+  try {
+    return (addon as unknown as WebglAddonInternals)._renderer?._gl
+  } catch {
+    return undefined
+  }
+}
+/**
+ * Detach the WebGL renderer and force-release its GPU context.
+ * Order is dispose first, then `loseContext`, so the addon's own `webglcontextlost`
+ * listener is gone before we drop the context (0.19.0 does not clear its restoration timeout).
+ */
+function releaseWebglRenderer(addon: WebglAddon | undefined = webglAddon): void {
+  if (!addon) return
+  if (webglAddon === addon) webglAddon = undefined
+  const gl = webglRenderingContext(addon)
+  try { addon.dispose() } catch { /* already disposed */ }
+  try { gl?.getExtension("WEBGL_lose_context")?.loseContext() } catch { /* ignore host / shape changes */ }
+}
 /** Prefer WebGL when the environment can create a context; otherwise keep the default canvas renderer. */
 function attachWebglRenderer(): void {
   let addon: WebglAddon | undefined
   try {
     addon = new WebglAddon()
-    addon.onContextLoss(() => {
-      addon!.dispose()
-      if (webglAddon === addon) webglAddon = undefined
-    })
+    addon.onContextLoss(() => { releaseWebglRenderer(addon) })
     terminal.loadAddon(addon)
     webglAddon = addon
   } catch {
-    addon?.dispose()
-    webglAddon = undefined
+    releaseWebglRenderer(addon)
   }
 }
 function updateLigatures(): void {
@@ -114,7 +131,14 @@ onMounted(() => {
   emit("ready", { cols: terminal.cols, rows: terminal.rows })
 })
 useResizeObserver(container, () => fit.fit())
-onBeforeUnmount(() => { input.dispose(); resize.dispose(); title.dispose(); terminal.dispose() })
+onBeforeUnmount(() => {
+  // TerminalWorkspace remounts this surface on tab switches; release the GPU slot before GC.
+  releaseWebglRenderer()
+  input.dispose()
+  resize.dispose()
+  title.dispose()
+  terminal.dispose()
+})
 
 defineExpose({
   terminal,

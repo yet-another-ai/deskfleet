@@ -242,8 +242,9 @@ submission is confirmed. `AgentClient` carries ACP JSON-RPC over the ordered
 `TerminalSurface` wraps xterm.js with its fit, ligatures, and WebGL addons. It
 attaches `@xterm/addon-webgl` after open when WebGL2 is available, and falls back
 to the default canvas renderer when WebGL is missing, fails to initialize, or
-loses its context. It fits the terminal to its container on resize and disposes
-of it on unmount. The terminal view remounts it for each terminal session. The
+loses its context. Unmount force-releases the WebGL2 context so tab remounts do
+not accumulate GPU contexts past Chromium's limit. It fits the terminal to its
+container on resize and disposes of it on unmount. The terminal view remounts it for each terminal session. The
 real local machine lists its machine-scoped sessions in tabs and supports dialing
 new or existing shells, live input/output, resize, reattachment, and explicit
 hangup. Switching tabs, leaving the view or closing the window leaves shells

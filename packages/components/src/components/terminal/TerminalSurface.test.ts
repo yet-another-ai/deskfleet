@@ -21,8 +21,15 @@ let webglFactory: () => FakeWebglAddon = () => new FakeWebglAddon()
 
 class FakeWebglAddon {
   dispose = vi.fn()
+  loseContext = vi.fn()
   lost: () => void = () => {}
   onContextLoss = vi.fn((listener: () => void) => { this.lost = listener })
+  // Mirrors @xterm/addon-webgl internals used to force-release the GPU context.
+  _renderer = {
+    _gl: {
+      getExtension: vi.fn((name: string) => name === "WEBGL_lose_context" ? { loseContext: this.loseContext } : null),
+    },
+  }
   constructor() { webglAddons.push(this) }
 }
 
@@ -95,6 +102,9 @@ test("opens a read-only xterm.js terminal that fits its container", () => {
   expect(wrapper.emitted("ready")).toEqual([[{ cols: 100, rows: 30 }]])
 
   wrapper.unmount()
+  expect(webgl!.dispose).toHaveBeenCalledOnce()
+  expect(webgl!.loseContext).toHaveBeenCalledOnce()
+  expect(webgl!._renderer._gl.getExtension).toHaveBeenCalledWith("WEBGL_lose_context")
   expect(terminal!.dispose).toHaveBeenCalledOnce()
 })
 
@@ -112,6 +122,25 @@ test("keeps the default renderer when WebGL fails to attach", () => {
   wrapper.unmount()
 })
 
+test("releases the WebGL context when loadAddon fails after constructing the addon", () => {
+  webglFactory = () => {
+    const addon = new FakeWebglAddon()
+    const terminal = terminals.at(-1)!
+    const loadAddon = terminal.loadAddon
+    terminal.loadAddon = vi.fn((loaded) => {
+      if (loaded === addon) throw new Error("activate failed")
+      return loadAddon(loaded)
+    })
+    return addon
+  }
+  const wrapper = mount(TerminalSurface, { props: { banner: "partial" } })
+  const addon = webglAddons.at(-1)!
+  expect(addon.dispose).toHaveBeenCalledOnce()
+  expect(addon.loseContext).toHaveBeenCalledOnce()
+  expect(wrapper.emitted("ready")).toEqual([[{ cols: 100, rows: 30 }]])
+  wrapper.unmount()
+})
+
 test("disposes the WebGL addon on context loss so the canvas renderer remains", () => {
   const wrapper = mount(TerminalSurface)
   const terminal = terminals.at(-1)!
@@ -119,7 +148,27 @@ test("disposes the WebGL addon on context loss so the canvas renderer remains", 
   expect(terminal.loadAddon).toHaveBeenCalledWith(webgl)
   webgl.lost()
   expect(webgl.dispose).toHaveBeenCalledOnce()
+  expect(webgl.loseContext).toHaveBeenCalledOnce()
   wrapper.unmount()
+  // Unmount must not release the already-dropped context a second time.
+  expect(webgl.dispose).toHaveBeenCalledOnce()
+  expect(webgl.loseContext).toHaveBeenCalledOnce()
+})
+
+test("releases each remounted surface's WebGL context so tab switches do not accumulate GPU slots", () => {
+  const first = mount(TerminalSurface)
+  const firstWebgl = webglAddons.at(-1)!
+  first.unmount()
+  expect(firstWebgl.dispose).toHaveBeenCalledOnce()
+  expect(firstWebgl.loseContext).toHaveBeenCalledOnce()
+
+  const second = mount(TerminalSurface)
+  const secondWebgl = webglAddons.at(-1)!
+  expect(secondWebgl).not.toBe(firstWebgl)
+  second.unmount()
+  expect(secondWebgl.dispose).toHaveBeenCalledOnce()
+  expect(secondWebgl.loseContext).toHaveBeenCalledOnce()
+  expect(firstWebgl.loseContext).toHaveBeenCalledOnce()
 })
 
 test("forwards terminal input and size changes and enables input only when attached", async () => {
