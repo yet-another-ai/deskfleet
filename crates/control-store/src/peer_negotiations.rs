@@ -120,14 +120,18 @@ impl ControlStore {
         Ok(state)
     }
 
-    pub async fn fail_peer_offer(&self, peer_id: &str) -> Result<()> {
-        self.db
+    /// Marks an incomplete attempt failed. Returns false when an answer is already
+    /// committed so waiters and post-answer ICE errors cannot tear it down.
+    pub async fn fail_peer_offer(&self, peer_id: &str) -> Result<bool> {
+        Ok(self
+            .db
             .execute_raw(sql(
-                "UPDATE cp_peer_negotiations SET failed=TRUE,pending='[]' WHERE peer_id=$1",
+                "UPDATE cp_peer_negotiations SET failed=TRUE,pending='[]' WHERE peer_id=$1 AND answer IS NULL",
                 vec![peer_id.into()],
             ))
-            .await?;
-        Ok(())
+            .await?
+            .rows_affected()
+            == 1)
     }
 }
 

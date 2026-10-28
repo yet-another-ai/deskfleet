@@ -448,6 +448,113 @@ async fn shared_negotiation_bounds_candidates_and_never_replays_expired_offer() 
     fixture.close().await;
 }
 
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn post_answer_ice_forwarding_failure_keeps_shared_negotiation() {
+    let mut fixture = Fixture::new().await;
+    let peer = fixture.peer().await;
+    let sdp = peers::tests::sdp();
+    let answer = sdp.replace("ice-ufrag:one", "ice-ufrag:two");
+    // Buffered before the answer; normalization fails only while forwarding.
+    candidate(
+        request(&fixture.token),
+        fixture.a.clone(),
+        peer.clone().into(),
+        web::Json(Candidate {
+            candidate: json!({
+                "candidate":"candidate:1 1 UDP 1 127.0.0.1 10009 typ host",
+                "sdpMlineIndex":99
+            }),
+        }),
+    )
+    .await
+    .unwrap();
+    let starter = start_offer(
+        fixture.a.clone(),
+        fixture.token.clone(),
+        peer.clone(),
+        sdp.clone(),
+    );
+    let (id, _) = fixture.next_request("peer.offer").await;
+    let waiter = start_offer(
+        fixture.b.clone(),
+        fixture.token.clone(),
+        peer.clone(),
+        sdp.clone(),
+    );
+    fixture.response(&id, json!({"sdp":answer})).await;
+    assert_eq!(starter.await.unwrap().unwrap()["sdp"], answer);
+    assert_eq!(waiter.await.unwrap().unwrap()["sdp"], answer);
+    assert_eq!(
+        fixture.a.store.peer_answer(&peer).await.unwrap(),
+        Some(answer.clone())
+    );
+    assert!(fixture.a.store.peer(&peer, &fixture.login).await.is_ok());
+    assert!(!fixture.a.store.fail_peer_offer(&peer).await.unwrap());
+    assert_eq!(
+        fixture.b.store.peer_answer(&peer).await.unwrap(),
+        Some(answer)
+    );
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn closed_peer_revokes_grant_when_client_notify_fails() {
+    let fixture = Fixture::new().await;
+    let peer = fixture.peer().await;
+    fixture
+        .b
+        .store
+        .database()
+        .execute_unprepared(
+            "CREATE FUNCTION reject_realtime_messages() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'injected notify failure'; END; $$ LANGUAGE plpgsql",
+        )
+        .await
+        .unwrap();
+    fixture
+        .b
+        .store
+        .database()
+        .execute_unprepared(
+            "CREATE TRIGGER reject_realtime_messages BEFORE INSERT ON cp_realtime_messages FOR EACH ROW EXECUTE FUNCTION reject_realtime_messages()",
+        )
+        .await
+        .unwrap();
+    let result = daemon_event(
+        &fixture.b,
+        &fixture.machine,
+        "daemon-b",
+        peer.clone(),
+        json!({"kind":"stateChanged","state":"closed"}),
+    )
+    .await;
+    let _ = fixture
+        .b
+        .store
+        .database()
+        .execute_unprepared("DROP TRIGGER IF EXISTS reject_realtime_messages ON cp_realtime_messages")
+        .await;
+    let _ = fixture
+        .b
+        .store
+        .database()
+        .execute_unprepared("DROP FUNCTION IF EXISTS reject_realtime_messages()")
+        .await;
+    assert!(result.is_err());
+    assert!(fixture.a.store.peer(&peer, &fixture.login).await.is_err());
+    assert!(
+        fixture
+            .a
+            .store
+            .valid_machine_peers(&fixture.machine)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    fixture.close().await;
+}
+
 async fn assert_negotiation_absent(fixture: &Fixture, peer_id: &str) {
     assert!(
         fixture

@@ -45,18 +45,36 @@ pub async fn offer(
             .unwrap_or_else(|_| Err(ApiError::bad("negotiation timed out; create a new peer")));
             match result {
                 Ok(answer) => answer,
-                Err(error) => {
-                    s.store.fail_peer_offer(&p).await?;
-                    let peers = s.store.revoke_peer(&p).await?;
-                    s.hub.revoke(peers, "negotiation_failed").await?;
-                    return Err(error);
-                }
+                Err(error) => match recover_committed_answer(&s, &p).await? {
+                    Some(answer) => answer,
+                    None => {
+                        if s.store.fail_peer_offer(&p).await? {
+                            let peers = s.store.revoke_peer(&p).await?;
+                            s.hub.revoke(peers, "negotiation_failed").await?;
+                            return Err(error);
+                        }
+                        // Answer committed between the first check and fail.
+                        match recover_committed_answer(&s, &p).await? {
+                            Some(answer) => answer,
+                            None => return Err(error),
+                        }
+                    }
+                },
             }
         }
     };
     // The grant can be revoked while the first request waits on another host.
     authorize(&req, &s, &p).await?;
     Ok(web::Json(json!({"sdp":answer})))
+}
+
+/// Shared negotiations may finish on another instance while this request fails.
+async fn recover_committed_answer(s: &AppState, peer_id: &str) -> Result<Option<String>> {
+    match s.store.peer_answer(peer_id).await {
+        Ok(answer) => Ok(answer),
+        Err(deskfleet_control_store::Error::Invalid(_)) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }
 
 async fn exchange_offer(
@@ -176,7 +194,10 @@ pub(crate) async fn daemon_event(
         return Err(ApiError::unavailable());
     }
     let login = s.store.peer_login(&peer_id, machine).await?;
-    s.hub
+    let closed = event["kind"] == "stateChanged"
+        && matches!(event["state"].as_str(), Some("closed" | "failed"));
+    let delivered = s
+        .hub
         .send_client(
             &login,
             ControlMessage::PeerEvent {
@@ -184,14 +205,14 @@ pub(crate) async fn daemon_event(
                 event: event.clone(),
             },
         )
-        .await?;
-    if event["kind"] == "stateChanged"
-        && matches!(event["state"].as_str(), Some("closed" | "failed"))
-    {
+        .await;
+    // Revoke even when the client notify fails so heartbeat reconcile cannot
+    // keep advertising a peer the daemon already shut down.
+    if closed {
         let peers = s.store.revoke_peer(&peer_id).await?;
         s.hub.revoke(peers, "peer_closed").await?;
     }
-    Ok(())
+    delivered
 }
 
 #[cfg(test)]
