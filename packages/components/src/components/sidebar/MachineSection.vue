@@ -6,6 +6,7 @@ import {
   Folder,
   FolderPlus,
   MonitorPlay,
+  SquarePen,
   SquareTerminal,
 } from "@lucide/vue"
 import { computed, ref } from "vue"
@@ -49,6 +50,11 @@ async function archiveSession(sessionId: string): Promise<void> {
 async function workspaceCreated(id: string): Promise<void> {
   addingWorkspace.value = false
   await router.push({ name: "workspace", params: { workspaceId: id } })
+}
+
+function startSession(workspaceId: string): void {
+  fleet.targetWorkspace(workspaceId)
+  void router.push({ name: "new-session" })
 }
 
 const collapsed = computed(() => fleet.isCollapsed(props.machine.id))
@@ -126,13 +132,16 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
       <CollapsibleRoot v-for="workspace in machine.workspaces" :key="workspace.id" v-slot="{ open }" as="li" default-open class="flex flex-col gap-1">
         <RouterLink v-slot="{ href, navigate, isActive, isExactActive }" :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" custom>
           <div class="group/workspace ui-nav-item relative" :class="isActive && 'ui-nav-active'">
-            <a :href="href" :aria-current="isExactActive ? 'page' : undefined" class="flex h-full min-w-0 flex-1 items-center gap-2.5 px-2.5" @click="navigate">
+            <a :href="href" :aria-current="isExactActive ? 'page' : undefined" class="flex h-full min-w-0 flex-1 items-center gap-2.5 pl-2.5 pr-9" @click="navigate">
               <Folder :size="15" :stroke-width="1.75" class="shrink-0 group-hover/workspace:invisible group-focus-within/workspace:invisible" aria-hidden="true" />
               <span class="truncate">{{ workspace.name }}</span>
             </a>
             <CollapsibleTrigger type="button" :aria-label="workspace.name" class="absolute left-1.5 top-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md opacity-0 group-hover/workspace:opacity-100 group-focus-within/workspace:opacity-100">
               <ChevronRight :size="15" :stroke-width="1.75" class="shrink-0" :class="open && 'rotate-90'" aria-hidden="true" />
             </CollapsibleTrigger>
+            <div class="absolute inset-y-0 right-1 flex items-center opacity-0 group-hover/workspace:opacity-100 group-focus-within/workspace:opacity-100">
+              <IconButton :icon="SquarePen" :label="t('workspace.newSession')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online" @click="startSession(workspace.id)" />
+            </div>
           </div>
         </RouterLink>
         <CollapsibleContent as="ul" class="flex flex-col gap-1 empty:hidden">

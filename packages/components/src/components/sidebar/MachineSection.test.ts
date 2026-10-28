@@ -4,6 +4,7 @@ import { expect, test } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
+import { useFleetStore } from "../../stores/fleet.ts"
 import MachineSection from "./MachineSection.vue"
 
 async function setup(machine: Partial<MachineSummary> = {}) {
@@ -12,6 +13,7 @@ async function setup(machine: Partial<MachineSummary> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: "/", name: "new-session", component: {} },
       { path: "/machines/:machineId/control", name: "machine-control", component: {} },
       { path: "/workspaces/:workspaceId", name: "workspace", component: {} },
       { path: "/sessions/:sessionId", name: "session", component: {} },
@@ -44,6 +46,26 @@ test.each([
   expect(wrapper.find('[title="New terminal"]').exists()).toBe(false)
   await router.push("/machines/local-daemon/control?tab=terminal&terminal=shell")
   expect(links[0]!.attributes("aria-current")).toBe("page")
+  wrapper.unmount()
+})
+
+test("new session buttons select their workspace, including from the creation page", async () => {
+  const { wrapper, router } = await setup({
+    workspaces: ["first", "second"].map(id => ({ id, name: id, directories: [{ path: `/${id}` }], sessions: [], terminals: [] })),
+  })
+  const fleet = useFleetStore()
+  const folder = wrapper.get('button[aria-label="first"]')
+  await folder.trigger("click")
+  const buttons = wrapper.findAll('button[aria-label="New session"]')
+  await buttons[0]!.trigger("click")
+  await flushPromises()
+  expect(fleet.targetWorkspaceId).toBe("first")
+  expect(router.currentRoute.value.name).toBe("new-session")
+  expect(folder.attributes("aria-expanded")).toBe("false")
+  await buttons[1]!.trigger("click")
+  await flushPromises()
+  expect(fleet.targetWorkspaceId).toBe("second")
+  expect(router.currentRoute.value.name).toBe("new-session")
   wrapper.unmount()
 })
 
