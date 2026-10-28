@@ -45,6 +45,17 @@ test("release verification accepts the installer names produced by packaging", {
   assert.notEqual(verify().status, 0, "A missing x86_64 installer must prevent publication")
 })
 
+test("the macOS ZIP alternative resolves independently of the primary installer", () => {
+  const archive = findDownload(release, "desktop", "macos", "x64", "archive")
+  assert.equal(archive?.name, "deskfleet-0.2.0-mac-arm64.zip")
+  assert.equal(archive?.url, `${releasesPage.replace("/latest", "")}/download/v0.2.0/deskfleet-0.2.0-mac-arm64.zip`)
+  const withoutArchive = { ...release, files: release.files.filter(file => !file.name.endsWith(".zip")) }
+  assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64", "archive"), undefined)
+  assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64")?.name, "deskfleet-0.2.0-mac-arm64.dmg")
+  assert.equal(findDownload(release, "headless", "macos", "x64", "archive"), undefined)
+  assert.equal(findDownload(release, "desktop", "linux", "x64", "archive"), undefined)
+})
+
 test("missing packages fall back to the release page without selecting another architecture", () => {
   const incomplete = { ...release, files: release.files.filter(file => file.name !== "deskfleet-0.2.0-linux-arm64.AppImage") }
   assert.equal(findDownload(incomplete, "desktop", "linux", "arm64")?.url ?? releasesPage, releasesPage)

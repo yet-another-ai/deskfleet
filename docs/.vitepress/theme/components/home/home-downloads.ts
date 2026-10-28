@@ -48,8 +48,14 @@ export function findDownload(
   mode: InstallMode,
   platform: InstallPlatform,
   linuxArchitecture: LinuxArchitecture,
+  format: "installer" | "archive" = "installer",
 ): ReleaseFile | undefined {
   if (!release) return undefined
+  if (format === "archive") {
+    return mode === "desktop" && platform === "macos"
+      ? release.files.find(file => file.name === `deskfleet-${release.version}-mac-arm64.zip`)
+      : undefined
+  }
   const target = platform === "macos" ? "macos-arm64" : platform === "windows" ? "windows-x64" : `linux-${linuxArchitecture}`
   const appImageArchitecture = linuxArchitecture === "x64" ? "x86_64" : linuxArchitecture
   const installer = platform === "macos" ? "mac-arm64.dmg" : platform === "windows" ? "win-x64.exe" : `linux-${appImageArchitecture}.AppImage`
