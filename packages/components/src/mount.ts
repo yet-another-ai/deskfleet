@@ -3,6 +3,7 @@ import { createApp, vaporInteropPlugin } from "vue"
 import { getClient } from "@deskfleet/client/platform"
 import { i18n } from "./i18n/index.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
+import { nativeDragPolicy } from "./plugins/native-drag.ts"
 import "./styles.css"
 
 export async function mountDeskfleet(target: string | Element = "#root") {
@@ -21,7 +22,7 @@ export async function mountDeskfleet(target: string | Element = "#root") {
       },
     })
     app.onUnmount(() => disposePinia(state))
-    app.use(vaporInteropPlugin).use(state).use((await import("./router/index.ts")).router).use(i18n).mount(target)
+    app.use(nativeDragPolicy).use(vaporInteropPlugin).use(state).use((await import("./router/index.ts")).router).use(i18n).mount(target)
     return app
   }
   const host = getClient()
@@ -30,6 +31,7 @@ export async function mountDeskfleet(target: string | Element = "#root") {
     ? (await import("./AccountShell.vue")).default
     : (await import("./App.vue")).default
   const app = host.central ? createApp(root, { host: { ...host } }) : createApp(root)
+  app.use(nativeDragPolicy)
   app.use(vaporInteropPlugin)
   app.use(state)
   app.onUnmount(() => disposePinia(state))

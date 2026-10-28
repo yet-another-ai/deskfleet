@@ -88,6 +88,12 @@ constraints. Schedule times cross the component boundary as minute-precision
 remote desktop fullscreen surface must portal into that surface. Tests should
 exercise visible controls and query portaled content through the document;
 primitive behavior tests use real portals and cover focus and form validation.
+Top-level application and authentication mounts install `nativeDragPolicy` from
+`packages/components/src/plugins/native-drag.ts`. It cancels native link/image
+`dragstart` events in application chrome, including teleported controls. Content
+inside `.ui-markdown` or `.select-text`, and explicit `draggable="true"` sources,
+retain native dragging. Keep incoming file drops and pointer-based interactions
+separate from this policy; nested machine applications inherit the document listener.
 `UiButton`, `IconButton`, and `UiTooltip` deliberately use normal Vue scripts:
 Reka's `useForwardExpose` and `as-child` composition require a VDOM component
 instance and VNode slots. Vapor callers should use `:as="IconButton"` for menu
