@@ -176,7 +176,8 @@ test("local composer without MCP finds files and returns no Session candidates w
 test("rename preserves running work, synchronizes its audited title, and takes precedence over provider updates", async t => {
   const f = await setup(t)
   await f.submit("hold").result
-  await until(f.read, snapshot => snapshot.turns.some(turn => turn.state === "running"))
+  // A running turn is persisted before quota consumption and provider dispatch.
+  await until(f.read, snapshot => snapshot.turns.some(turn => turn.state === "running") && f.provider.prompts.length === 1)
   await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: { sessionUpdate: "session_info_update", title: "Provider title" } })
   const before = await f.read()
   assert.equal(before.session.title, "Provider title")
