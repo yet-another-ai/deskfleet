@@ -1,6 +1,6 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, type Pinia } from "pinia"
-import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import { configureClient, getClient } from "@deskfleet/client/platform"
 import type { CentralApi, CentralEvent, Machine } from "@deskfleet/client/central"
 import { i18n } from "./i18n/index.ts"
@@ -15,6 +15,37 @@ const page = () => new DOMWrapper(document.body)
 let view: VueWrapper | undefined
 let pinia: Pinia
 beforeEach(() => { pinia = createPinia() })
+// Compile the lazy shell routes once. Doing it inside a test leaves vi.waitFor polling a 50ms timer while Vite loads them.
+beforeAll(async () => {
+  await Promise.all([
+    import("./components/account/MachineSurface.vue"),
+    import("./views/NewSessionView.vue"),
+    import("./views/SessionView.vue"),
+    import("./views/ArchivedSessionsView.vue"),
+    import("./views/SettingsView.vue"),
+    import("./components/settings/PreferencesSettings.vue"),
+    import("./components/settings/AppearanceSettings.vue"),
+    import("./views/TeamSettingsView.vue"),
+    import("./components/team/TeamSettings.vue"),
+    import("./components/settings/PlansUsageSettings.vue"),
+    import("./components/settings/AiUsageSettings.vue"),
+    import("./components/team/AiUsageChart.vue"),
+  ])
+})
+/** Check the shell as soon as its microtasks render, instead of on a real-time interval. */
+async function settled(probe: () => void): Promise<void> {
+  let failure: unknown
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      probe()
+      return
+    } catch (reason) {
+      failure = reason
+    }
+    await flushPromises()
+  }
+  throw failure
+}
 afterEach(async () => { view?.unmount(); view = undefined; disposePinia(pinia); configureClient(host); await router.replace("/"); vi.restoreAllMocks() })
 
 test("browses synchronized history with the machine offline and isolates equal local IDs when switching machines", async () => {
@@ -48,27 +79,24 @@ test("browses synchronized history with the machine offline and isolates equal l
     rpc: vi.fn(async () => { throw new Error("Offline") }), createPeer: vi.fn(),
   } as unknown as CentralApi
   view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
-  await flushPromises()
-  // The first mount also loads the workspace bundle while full checks build in parallel.
-  await vi.waitFor(() => expect(view!.text()).toContain("Workspace 101"), { timeout: 5_000 })
+  await settled(() => expect(view!.text()).toContain("Workspace 101"))
   expect(view.text()).toContain("Conversation 101")
-  await router.push("/sessions/30"); await flushPromises()
-  await vi.waitFor(() => expect(view!.text()).toContain("Message from 101"))
+  await router.push("/sessions/30")
+  await settled(() => expect(view!.text()).toContain("Message from 101"))
   expect(central.createPeer).not.toHaveBeenCalled()
   // Other Team machines are collapsed sidebar groups; opening one switches machines.
   expect(page().find('aside button[data-machine-id="101"]').exists()).toBe(false)
-  await page().get('aside button[data-machine-id="102"]').trigger("click"); await flushPromises()
-  await router.push("/sessions/30"); await flushPromises()
-  await vi.waitFor(() => expect(view!.text()).toContain("Workspace 102"))
-  await vi.waitFor(() => expect(view!.text()).toContain("Message from 102"))
+  await page().get('aside button[data-machine-id="102"]').trigger("click")
+  await settled(() => expect(view!.text()).toContain("Workspace 102"))
+  await router.push("/sessions/30")
+  await settled(() => expect(view!.text()).toContain("Message from 102"))
   expect(view.text()).not.toContain("Message from 101")
   expect(central.createPeer).not.toHaveBeenCalled()
   // An explicit Session destination survives the fresh Machine mount, even when
   // both machines use the same local Session ID and synchronized offline history.
   const account = view.getComponent({ name: "MachineSurface" }).props("session") as AccountSession
   account.openSession("101", "30")
-  await flushPromises()
-  await vi.waitFor(() => expect(view!.text()).toContain("Message from 101"))
+  await settled(() => expect(view!.text()).toContain("Message from 101"))
   expect(router.currentRoute.value.path).toBe("/sessions/30")
   expect(view.text()).not.toContain("Message from 102")
   await page().get('button[aria-label="Ada"]').trigger("click")
@@ -77,8 +105,7 @@ test("browses synchronized history with the machine offline and isolates equal l
   expect(view.text()).toContain("Sign in to deskfleet")
   expect(view.text()).not.toContain("Workspace 102")
   await page().get("form").trigger("submit")
-  await flushPromises()
-  await vi.waitFor(() => expect(view!.text()).toContain("Workspace 101"))
+  await settled(() => expect(view!.text()).toContain("Workspace 101"))
 })
 
 const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin") => {
@@ -117,25 +144,24 @@ test("keeps archived lists and their Conversations return path scoped to the sel
   localStorage.setItem("deskfleet.details-open", "true")
   await router.push("/sessions/archived")
   mountShell(fake.central, "web")
-  await flushPromises()
-  await vi.waitFor(() => expect(page().get("main").text()).toContain("Archived conversation m1"), { timeout: 5_000 })
+  await settled(() => expect(page().get("main").text()).toContain("Archived conversation m1"))
   expect(router.currentRoute.value.name).toBe("archived-sessions")
   expect(router.currentRoute.value.path).toBe("/sessions/archived")
   expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
 
   // Returning from the archive on the same machine retains its selected Session.
   const conversations = () => page().get('a[aria-label="Conversations"]')
-  await router.push("/sessions/30"); await flushPromises()
-  await vi.waitFor(() => expect(fake.central.session).toHaveBeenCalledWith("m1", "30"))
-  await router.push("/sessions/archived"); await flushPromises()
+  await router.push("/sessions/30")
+  await settled(() => expect(fake.central.session).toHaveBeenCalledWith("m1", "30"))
+  await router.push("/sessions/archived")
+  await flushPromises()
   expect(conversations().attributes("href")).toBe("#/sessions/30")
   await conversations().trigger("click"); await flushPromises()
   expect(router.currentRoute.value.path).toBe("/sessions/30")
   await router.push("/sessions/archived"); await flushPromises()
 
   await page().get('aside button[data-machine-id="m2"]').trigger("click")
-  await flushPromises()
-  await vi.waitFor(() => expect(page().get("main").text()).toContain("Archived conversation m2"))
+  await settled(() => expect(page().get("main").text()).toContain("Archived conversation m2"))
   expect(page().get("main").text()).not.toContain("Archived conversation m1")
   expect(router.currentRoute.value.name).toBe("archived-sessions")
   expect(router.currentRoute.value.path).toBe("/sessions/archived")
@@ -242,14 +268,12 @@ test.each([
   })
   withEmptyCatalogs(fake)
   mountShell(fake.central, platform)
-  await flushPromises()
-  await vi.waitFor(() => expect(page().find('button[aria-label="Team"]').exists()).toBe(true))
+  await settled(() => expect(page().find('button[aria-label="Team"]').exists()).toBe(true))
   const source = "/?from=settings-navigation"
   await router.push(source)
   await page().get('button[aria-label="Team"]').trigger("click")
   await page().findAll('[role="menuitem"]').find(item => item.text() === "Team settings")!.trigger("click")
-  await flushPromises()
-  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Design team"))
+  await settled(() => expect(page().get("h1").text()).toBe("Design team"))
   expect(router.currentRoute.value.path).toBe("/team/settings")
   const settingsLinks = () => page().findAll('nav[aria-label="Settings sections"] a')
   expect(settingsLinks().map(link => link.text())).toEqual(["Team settings", "Plans & Usages", "AI usage"])
@@ -257,8 +281,7 @@ test.each([
   expect(fake.central.billing).not.toHaveBeenCalled()
   const navItem = (label: string) => settingsLinks().find(item => item.text() === label)!
   await navItem("Plans & Usages").trigger("click")
-  await flushPromises()
-  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
+  await settled(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
   expect(page().find("[data-team-plan]").exists()).toBe(true)
   expect(page().find("[data-member-id]").exists()).toBe(false)
   expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith("team-1")
@@ -279,19 +302,19 @@ test.each([
   expect(page().get("h1").text()).toBe("Design team")
   expect(page().find("[data-team-plan]").exists()).toBe(false)
   await buttonText("Back to app")!.trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(source))
+  await settled(() => expect(router.currentRoute.value.fullPath).toBe(source))
   await flushPromises()
   await page().get('button[aria-label="Settings"]').trigger("click")
-  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Preferences"))
+  await settled(() => expect(page().get("h1").text()).toBe("Preferences"))
   expect(router.currentRoute.value.path).toBe("/settings/preferences")
   expect(settingsLinks().map(link => link.attributes("href"))).toEqual([
     "#/settings/preferences", "#/settings/appearance", "#/settings/notifications",
     ...(hasMachine ? ["#/settings/agents", "#/settings/mcp-servers"] : []),
   ])
   await navItem("Appearance").trigger("click")
-  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Appearance"))
+  await settled(() => expect(page().get("h1").text()).toBe("Appearance"))
   await buttonText("Back to app")!.trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(source))
+  await settled(() => expect(router.currentRoute.value.fullPath).toBe(source))
 })
 
 test.each([
