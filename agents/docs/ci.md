@@ -112,6 +112,11 @@ names explicitly; the bound environment supplies their values. The official
 API origin is injected only into Electron's build, so the Web artifact stays
 same-origin.
 
+Keep production compilation in separate steps using each runner's native shell
+(PowerShell on Windows). Running it through Git Bash selects Git's bundled Perl
+instead of Strawberry Perl and can break the vendored OpenSSL build. The Bash
+configuration check runs before either build and does not compile code.
+
 Configure these secrets in the same environment:
 
 | Secret | Value |

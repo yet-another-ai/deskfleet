@@ -74,21 +74,33 @@ jobs:
         if: ${{ !inputs.production_release }}
         run: mise run ci:build
 
-      - name: Build production release bundles
+      - name: Validate production release configuration
         if: ${{ inputs.production_release }}
         shell: bash
         env:
           DESKTOP_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
-          VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
-          VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
         run: |
           if [[ -z "$DESKTOP_SERVER_URL" ]]; then
             echo "::error::Set VITE_DESKFLEET_SERVER_URL in the production environment before publishing."
             exit 1
           fi
-          mise run build
-          # Keep Web same-origin; reuse the release addon for Electron's API-specific build.
-          VITE_DESKFLEET_SERVER_URL="$DESKTOP_SERVER_URL" mise exec -- pnpm --filter @deskfleet/desktop build
+
+      # Keep the runner's native shell so Windows uses Strawberry Perl for OpenSSL.
+      - name: Build production server, daemon, and Web bundles
+        if: ${{ inputs.production_release }}
+        env:
+          VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
+          VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
+        run: mise run build
+
+      - name: Build production Electron bundles
+        if: ${{ inputs.production_release }}
+        env:
+          VITE_DESKFLEET_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
+          VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
+          VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
+        # Keep Web same-origin; reuse the release addon for Electron's API-specific build.
+        run: mise exec -- pnpm --filter @deskfleet/desktop build
 
       - name: Package unsigned desktop installers
         if: ${{ runner.os != 'macOS' || !inputs.production_release }}
