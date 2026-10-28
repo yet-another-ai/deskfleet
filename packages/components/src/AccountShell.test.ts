@@ -263,9 +263,14 @@ test.each([
   expect(page().find("[data-member-id]").exists()).toBe(false)
   expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith("team-1")
   expect(router.currentRoute.value.path).toBe("/team/settings/plans")
+  const usageNavigation = vi.spyOn(router, "replace")
   await navItem("AI usage").trigger("click")
+  expect(usageNavigation).toHaveBeenCalledExactlyOnceWith({ name: "team-settings-ai-usage" })
+  // The first visit must load the lazy route and its chart modules before rendering.
+  await usageNavigation.mock.results[0]!.value
+  usageNavigation.mockRestore()
   await flushPromises()
-  await vi.waitFor(() => expect(page().get("h1").text()).toBe("AI usage"))
+  expect(page().get("h1").text()).toBe("AI usage")
   expect(router.currentRoute.value.path).toBe("/team/settings/ai-usage")
   expect(fake.central.aiUsage).toHaveBeenCalledExactlyOnceWith("team-1", { period: "30d", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
   expect(page().find("[data-team-plan]").exists()).toBe(false)
