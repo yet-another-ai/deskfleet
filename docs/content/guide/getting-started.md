@@ -1,4 +1,4 @@
-# Run deskfleet
+# Run DeskFleet
 
 Find packaged versions on [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases). To try the current development version, use the source workflow below.
 

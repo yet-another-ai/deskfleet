@@ -35,7 +35,7 @@ async fn main() -> std::io::Result<()> {
     })
     .bind(bind)?;
     for address in server.addrs() {
-        tracing::info!(%address,"deskfleet server listening");
+        tracing::info!(%address,"DeskFleet server listening");
     }
     server.run().await
 }

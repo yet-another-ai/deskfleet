@@ -1,4 +1,4 @@
-//! Versioned database migrations for the deskfleet resource catalog.
+//! Versioned database migrations for the DeskFleet resource catalog.
 
 pub use sea_orm_migration::prelude::*;
 

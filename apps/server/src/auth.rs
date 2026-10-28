@@ -1,4 +1,4 @@
-//! deskfleet-owned identity. Browsers use HttpOnly sessions; native clients keep
+//! DeskFleet-owned identity. Browsers use HttpOnly sessions; native clients keep
 //! one-use browser exchange credentials in their secure main-process store.
 mod account;
 pub mod config;
@@ -37,7 +37,7 @@ impl AuthService {
             .map_err(|_| ApiError::bad("invalid authentication Web URL"))?;
         let webauthn = WebauthnBuilder::new(&config.rp_id, &origin)
             .map_err(|_| ApiError::bad("invalid WebAuthn RP/origin"))?
-            .rp_name("deskfleet")
+            .rp_name("DeskFleet")
             .build()
             .map_err(|_| ApiError::bad("invalid WebAuthn configuration"))?;
         let mail = mail::Mailer::new(config.mail.clone())?;

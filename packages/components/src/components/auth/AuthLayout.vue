@@ -8,7 +8,7 @@ defineProps<{ title: string; description?: string; icon?: Component }>()
 
 <template>
   <main class="flex min-h-full flex-col items-center bg-ui-canvas px-4 py-10 text-ui-text sm:py-16">
-    <a href="/" class="mb-8 flex items-center gap-2.5 text-[15px] font-semibold"><BrandLogo :size="28" decorative />deskfleet</a>
+    <a href="/" class="mb-8 flex items-center gap-2.5 text-[15px] font-semibold"><BrandLogo :size="28" decorative />DeskFleet</a>
     <section class="ui-card w-full max-w-[25rem] p-7 shadow-ui-card sm:p-8">
       <span v-if="icon" class="mb-5 flex h-10 w-10 items-center justify-center rounded-full border border-ui-border bg-ui-sidebar text-ui-text-muted">
         <component :is="icon" :size="18" :stroke-width="1.75" aria-hidden="true" />

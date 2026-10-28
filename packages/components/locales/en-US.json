@@ -52,7 +52,7 @@
   },
   "siteAdmin": {
     "title": "Site administration",
-    "description": "Manage settings for this deskfleet site.",
+    "description": "Manage settings for this DeskFleet site.",
     "forbidden": "Site administrator access is required.",
     "siteName": "Site name",
     "announcement": "Announcement",
@@ -270,9 +270,9 @@
     "appearance": "Appearance",
     "notifications": "Notifications",
     "notificationsEnabled": "Desktop notifications",
-    "notificationsDescription": "Allow deskfleet to send notifications on this computer.",
+    "notificationsDescription": "Allow DeskFleet to send notifications on this computer.",
     "browserNotificationsEnabled": "Browser notifications",
-    "browserNotificationsDescription": "Allow deskfleet to send notifications while this page is open.",
+    "browserNotificationsDescription": "Allow DeskFleet to send notifications while this page is open.",
     "notificationPermission": "Browser permission",
     "enableBrowserNotifications": "Enable notifications",
     "notificationPermissionStatus": {
@@ -287,10 +287,10 @@
     "notificationTaskNeedsInputDescription": "Notify me when an agent pauses for a question or approval.",
     "thisComputer": "This computer",
     "launchAtStartup": "Launch at startup",
-    "launchAtStartupDescription": "Open deskfleet automatically when you log in.",
+    "launchAtStartupDescription": "Open DeskFleet automatically when you log in.",
     "launchAtStartupUnavailable": "Available in the installed app on macOS and Windows.",
     "keepAwake": "Keep Awake",
-    "keepAwakeDescription": "Prevent idle sleep while deskfleet is running, including in the tray. The display can still turn off.",
+    "keepAwakeDescription": "Prevent idle sleep while DeskFleet is running, including in the tray. The display can still turn off.",
     "worktreeRoot": "Worktree root directory",
     "worktreeRootDescription": "Store worktrees for new Sessions on this computer here. Existing files stay in place.",
     "chooseWorktreeRoot": "Choose folder…",
@@ -559,8 +559,8 @@
     "gitUnknown": "Git state has not been inspected."
   },
   "tray": {
-    "show": "Show deskfleet",
-    "quit": "Quit deskfleet"
+    "show": "Show DeskFleet",
+    "quit": "Quit DeskFleet"
   },
   "catalog": {
     "local": "Local",
@@ -862,8 +862,8 @@
     }
   },
   "account": {
-    "signIn": "Sign in to deskfleet",
-    "signInDescription": "Sign in to your deskfleet server with your account, then choose a team.",
+    "signIn": "Sign in to DeskFleet",
+    "signInDescription": "Sign in to your DeskFleet server with your account, then choose a team.",
     "signingIn": "Signing in…",
     "signOut": "Sign out",
     "signalingOffline": "Server connection interrupted. Existing peer sessions remain available until their authorization expires.",
@@ -874,7 +874,7 @@
     "openMachine": "Open {name}",
     "thisComputer": "This computer",
     "done": "Done",
-    "continueSignIn": "Sign in to deskfleet"
+    "continueSignIn": "Sign in to DeskFleet"
   },
   "team": {
     "label": "Team",
@@ -1000,11 +1000,11 @@
     "showHidden": "Show hidden items"
   },
   "welcome": {
-    "title": "Welcome to deskfleet",
+    "title": "Welcome to DeskFleet",
     "description": "Get this computer ready and sign in to your team, one step at a time.",
     "notificationsTitle": "Stay up to date with your tasks",
     "notificationsDescription": "Get a notification when an agent finishes a task or needs your input.",
-    "notificationsDetails": "Allow browser notifications to receive updates while deskfleet is open, even when you are using another tab. You can change this later in Settings.",
+    "notificationsDetails": "Allow browser notifications to receive updates while DeskFleet is open, even when you are using another tab. You can change this later in Settings.",
     "progress": "Setup progress",
     "steps": {
       "fullDiskAccess": "Full Disk Access",
@@ -1016,13 +1016,13 @@
     "continue": "Continue",
     "continueAs": "Continue as {name}",
     "systemSettings": "macOS System Settings",
-    "permissionRestart": "Enable deskfleet in the list. If macOS asks you to quit and reopen the app, your setup will resume here.",
+    "permissionRestart": "Enable DeskFleet in the list. If macOS asks you to quit and reopen the app, your setup will resume here.",
     "openSettings": "Enable access",
     "checking": "Checking…",
     "checkAgain": "Check again",
     "skip": "Skip for now",
     "retry": "Try again",
-    "loading": "Loading deskfleet…",
+    "loading": "Loading DeskFleet…",
     "permissionStatus": {
       "checking": "Checking access…",
       "requesting": "Waiting for macOS authorization…",
@@ -1038,7 +1038,7 @@
       "retry": "Retry access",
       "screenCapture": {
         "title": "Screen sharing",
-        "description": "Allow deskfleet to share this computer’s screen during remote desktop sessions.",
+        "description": "Allow DeskFleet to share this computer’s screen during remote desktop sessions.",
         "instructions": "Select the screens to share and approve access in your desktop’s authorization dialog.",
         "skip": "Remote screen sharing will be unavailable until you authorize it. You can skip this step and enable access later."
       },
@@ -1056,7 +1056,7 @@
         "skip": "You can continue with limited file access and enable this permission later in System Settings."
       },
       "screenCapture": {
-        "description": "Allow deskfleet to share this computer’s screen and system audio during remote desktop sessions.",
+        "description": "Allow DeskFleet to share this computer’s screen and system audio during remote desktop sessions.",
         "path": "Privacy & Security → Screen & System Audio Recording",
         "skip": "Remote screen sharing will be unavailable until you enable this permission in System Settings."
       },
@@ -1081,10 +1081,10 @@
   },
   "auth": {
     "signIn": "Sign in",
-    "signInTitle": "Sign in to deskfleet",
+    "signInTitle": "Sign in to DeskFleet",
     "accountSignInDescription": "Sign in to manage your password, Passkeys, and signed-in devices.",
     "emailSignInDescription": "Sign in with your current email to confirm the new address.",
-    "desktopSignInTitle": "Sign in to deskfleet Desktop",
+    "desktopSignInTitle": "Sign in to DeskFleet Desktop",
     "desktopSignInDescription": "After you sign in, this page hands the session back to the desktop app.",
     "email": "Email",
     "name": "Display name",
@@ -1096,12 +1096,12 @@
     "forgot": "Forgot password?",
     "or": "or",
     "signInWithPasskey": "Sign in with a Passkey",
-    "newHere": "New to deskfleet?",
+    "newHere": "New to DeskFleet?",
     "haveAccount": "Already have an account?",
     "createAccount": "Create account",
     "continue": "Continue",
     "loading": "Loading…",
-    "unavailable": "Can’t reach deskfleet",
+    "unavailable": "Can’t reach DeskFleet",
     "retry": "Try again",
     "backToSignIn": "Back to sign in",
     "registerTitle": "Create your account",
@@ -1126,7 +1126,7 @@
     "linkInvalid": "This link doesn’t work",
     "linkInvalidDescription": "It may be incomplete or already used. Request a new email to continue.",
     "requestNewLink": "Request a new link",
-    "desktopTitle": "Continue to deskfleet Desktop",
+    "desktopTitle": "Continue to DeskFleet Desktop",
     "desktopDescription": "The desktop app that opened this page will be signed in as this account.",
     "desktopAttemptMissing": "Start signing in again from the desktop app.",
     "continueDesktop": "Continue to desktop app",
@@ -1141,7 +1141,7 @@
     "usePasskeyInstead": "Use a Passkey",
     "confirm": "Confirm",
     "security": "Account security",
-    "back": "Back to deskfleet",
+    "back": "Back to DeskFleet",
     "signInMethods": "Sign-in methods",
     "change": "Change",
     "passwordRowDescription": "Changing it signs out every device.",

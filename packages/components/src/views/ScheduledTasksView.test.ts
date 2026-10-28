@@ -80,7 +80,7 @@ async function setup(initial: ScheduledTask[] = []) {
   fleet.localDesktopTarget.online = true
   vi.spyOn(platformClient.catalog, "list").mockResolvedValue({
     teamId: "team-1", machineId: "machine-1", machineName: "Build machine",
-    workspaces: [{ id: "10", name: "Deskfleet", worktrees: [{ id: "11", workspaceId: "10", directories: [{ path: "/code/deskfleet" }] }] }],
+    workspaces: [{ id: "10", name: "DeskFleet", worktrees: [{ id: "11", workspaceId: "10", directories: [{ path: "/code/deskfleet" }] }] }],
     sessions: [],
   })
   await fleet.refreshLocalCatalog()

@@ -1,6 +1,6 @@
 [package]
 name = "deskfleet-node"
-description = "Node-API bindings for deskfleet native capabilities"
+description = "Node-API bindings for DeskFleet native capabilities"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

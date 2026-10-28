@@ -1,15 +1,15 @@
 ---
 title: Privacy and our data promise
-description: The complete deskfleet client and server are open source. The official service will not use your work data to train models.
+description: The complete DeskFleet client and server are open source. The official service will not use your work data to train models.
 ---
 
 # Your work is not training data
 
-**The official deskfleet service will not use your code, conversations, or work records to train models.**
+**The official DeskFleet service will not use your code, conversations, or work records to train models.**
 
 ## Open from client to server
 
-The complete [deskfleet source](https://github.com/yet-another-ai/deskfleet) is available under Apache-2.0, including the desktop client, web client, machine daemon, and central backend. You can inspect how data moves and how the service handles it, or run your own deployment.
+The complete [DeskFleet source](https://github.com/yet-another-ai/deskfleet) is available under Apache-2.0, including the desktop client, web client, machine daemon, and central backend. You can inspect how data moves and how the service handles it, or run your own deployment.
 
 ## Where data lives
 
@@ -19,7 +19,7 @@ Live agent, Git, terminal, and desktop connections use authenticated WebRTC. Ter
 
 ## Agents you connect
 
-The agent and model providers you choose have their own data policies and account settings. The deskfleet promise describes the official deskfleet service; it does not change how those providers process requests sent to them.
+The agent and model providers you choose have their own data policies and account settings. The DeskFleet promise describes the official DeskFleet service; it does not change how those providers process requests sent to them.
 
 ## Website demos
 

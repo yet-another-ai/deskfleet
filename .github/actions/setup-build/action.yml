@@ -1,4 +1,4 @@
-name: Setup deskfleet build
+name: Setup DeskFleet build
 description: Install locked tools and dependencies with shared build caches.
 
 inputs:

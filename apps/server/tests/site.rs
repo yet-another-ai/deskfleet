@@ -75,7 +75,7 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
     let defaults: Value = test::read_body_json(response).await;
     assert_eq!(
         defaults,
-        json!({"siteName":"deskfleet","announcement":"","allowTeamCreation":true})
+        json!({"siteName":"DeskFleet","announcement":"","allowTeamCreation":true})
     );
     assert_eq!(
         test::call_service(

@@ -1,6 +1,6 @@
 [package]
 name = "deskfleet-control-store"
-description = "PostgreSQL storage for the deskfleet control plane"
+description = "PostgreSQL storage for the DeskFleet control plane"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,6 +1,6 @@
-# deskfleet architecture
+# DeskFleet architecture
 
-deskfleet manages AI agents and their working environments across a team's
+DeskFleet manages AI agents and their working environments across a team's
 computers. Users can browse workspaces and session history, inspect Git state,
 and access terminals or desktops on the machine doing the work.
 
@@ -26,7 +26,7 @@ flowchart LR
     Server <-->|"Outbound connection: presence, history, signaling"| Daemon["Machine daemon"]
     Client <-->|"WebRTC: operations, files, terminal, media"| Daemon
     Daemon <-->|"ACP"| Agent["Agent process / adapter"]
-    Agent <-->|"MCP tools"| MCP["deskfleet MCP facade"]
+    Agent <-->|"MCP tools"| MCP["DeskFleet MCP facade"]
     MCP <-->|"Operations on a target machine"| Target["Target daemon"]
     Daemon <-->|"napi-rs"| Native["Rust native capabilities"]
     Client -.->|"Relay fallback"| TURN["TURN service"]
@@ -40,7 +40,7 @@ flowchart LR
 | Native libraries | OS integration and performance-sensitive transport, capture, input, and media work | Rust with napi-rs bindings |
 | Desktop application | User interface, platform integration, and daemon installation/management | Electron / TypeScript |
 | Web application | Independently hosted frontend for catalog, history, and browser-supported remote access | Vue / TypeScript |
-| MCP facade | Let agents discover resources and operate on explicit remote targets | TypeScript, sharing deskfleet client operations |
+| MCP facade | Let agents discover resources and operate on explicit remote targets | TypeScript, sharing DeskFleet client operations |
 
 The server owns team membership and shared access policy. Each daemon owns its
 machine's workspace configuration, files, processes, and live session state. The
@@ -107,7 +107,7 @@ replica configuration and failure behavior.
 ## Identity and team access
 
 The identity design supports the hosted service and self-hosted installations with
-deskfleet-owned accounts with public email/password registration and Passkeys.
+DeskFleet-owned accounts with public email/password registration and Passkeys.
 [Identity and billing requirements](identity-billing.md) define the accepted
 plan model, account flows, and enforcement boundaries. Web sessions use HttpOnly
 cookies; Electron exchanges a browser authorization for a secure main-process
@@ -601,7 +601,7 @@ created on demand.
 | Presence, history synchronization, and WebRTC signaling | Authenticated WebSocket or HTTPS streams |
 | Terminal dial, hangup, catalog and lifecycle events | Authenticated signaling; IPC for the local client |
 | Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel |
-| Agent prompts, steering, permissions, and live Session events | ACP and deskfleet extensions over WebRTC DataChannel |
+| Agent prompts, steering, permissions, and live Session events | ACP and DeskFleet extensions over WebRTC DataChannel |
 | File browsing, transfer, and Agent file references | Independently authorized files WebRTC DataChannel |
 | Desktop loopback TCP port forwarding | Independently authorized ports WebRTC DataChannel; byte transport stays in Rust |
 | Desktop video/audio | WebRTC media tracks |
@@ -711,7 +711,7 @@ and live-reference semantics.
 MCP tools let an agent discover authorized machines and resources, inspect state,
 and request operations on an explicit target. Remotely created sessions belong
 to worktrees on that target machine. The agent coordinates related work across
-machines; deskfleet does not create a global Project or synchronize repository
+machines; DeskFleet does not create a global Project or synchronize repository
 contents automatically.
 
 The independent `@deskfleet/mcp` stdio server is injected into managed ACP

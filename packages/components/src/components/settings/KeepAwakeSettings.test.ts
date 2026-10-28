@@ -77,8 +77,8 @@ test("offers a reload after the initial read fails", async () => {
 })
 
 test.each([
-  ["en-US", "Keep Awake", "Prevent idle sleep while deskfleet is running, including in the tray. The display can still turn off."],
-  ["zh-cmn-Hans-CN", "保持唤醒", "deskfleet 运行时阻止本机因空闲而休眠，关闭到托盘后仍然有效。屏幕仍可自动关闭。"],
+  ["en-US", "Keep Awake", "Prevent idle sleep while DeskFleet is running, including in the tray. The display can still turn off."],
+  ["zh-cmn-Hans-CN", "保持唤醒", "DeskFleet 运行时阻止本机因空闲而休眠，关闭到托盘后仍然有效。屏幕仍可自动关闭。"],
 ] as const)("explains the app lifetime and display behavior in %s", async (locale, label, description) => {
   i18n.global.locale.value = locale
   const view = render()

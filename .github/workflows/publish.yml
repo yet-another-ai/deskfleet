@@ -117,7 +117,7 @@ jobs:
             fi
             gh release upload "$TAG_NAME" release-assets/* --clobber
           else
-            args=(--verify-tag --generate-notes --title "deskfleet $TAG_NAME" --draft)
+            args=(--verify-tag --generate-notes --title "DeskFleet $TAG_NAME" --draft)
             if [[ "$PRERELEASE" == true ]]; then args+=(--prerelease); fi
             gh release create "$TAG_NAME" release-assets/* "${args[@]}"
           fi

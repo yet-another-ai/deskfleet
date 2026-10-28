@@ -1,8 +1,8 @@
-<img src="packages/components/src/assets/deskfleet.png" width="96" height="96" alt="deskfleet logo" />
+<img src="packages/components/src/assets/deskfleet.png" width="96" height="96" alt="DeskFleet logo" />
 
-# deskfleet
+# DeskFleet
 
-deskfleet manages AI agents and their working environments across a team's computers.
+DeskFleet manages AI agents and their working environments across a team's computers.
 
 The system connects agents through ACP, stores session history on a
 central server, and uses WebRTC for terminal and desktop access. Workspaces
@@ -145,5 +145,5 @@ cache is ignored. `vueuse-functions` is the official VueUse skill; invoke it as
 
 ## License
 
-The backend and deskfleet source use the [Apache-2.0 license](LICENSE). Vendored
+The backend and DeskFleet source use the [Apache-2.0 license](LICENSE). Vendored
 skills retain their upstream licensing.

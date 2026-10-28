@@ -7,18 +7,18 @@ import AppWindow from "./AppWindow.vue"
 
 const props = withDefaults(defineProps<{ chinese?: boolean }>(), { chinese: false })
 const t = computed(() => props.chinese ? {
-  deskLabel: "使用示例数据运行的 deskfleet 实际界面：工作区、Agent 会话、团队审批和 Agent 设置。",
+  deskLabel: "使用示例数据运行的 DeskFleet 实际界面：工作区、Agent 会话、团队审批和 Agent 设置。",
   heroEyebrow: "你的电脑 · 你的 Agent · 你的团队",
   heroLines: ["所有 Agent，", "一起工作。"],
   heroLead: "连接你和团队的电脑。使用熟悉的 Agent，随时查看进展、亲自介入，一起把事情做好。",
-  heroPrimary: "开始使用 deskfleet",
+  heroPrimary: "开始使用 DeskFleet",
   heroSecondary: "探索工作方式",
 } : {
-  deskLabel: "The real deskfleet interface running with sample data: a workspace, an agent session, a shared approval, and agent settings.",
+  deskLabel: "The real DeskFleet interface running with sample data: a workspace, an agent session, a shared approval, and agent settings.",
   heroEyebrow: "Your machines. Your agents. Your team.",
   heroLines: ["All your agents.", "Working together."],
   heroLead: "Connect your team's computers. Bring the agents you love. Follow the work, step in, and move it forward together.",
-  heroPrimary: "Get deskfleet",
+  heroPrimary: "Get DeskFleet",
   heroSecondary: "Explore the workflow",
 })
 const hero = ref<HTMLElement>()

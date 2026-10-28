@@ -29,7 +29,7 @@ gate and cannot establish that Go/Pro billing works.
 | Test machines | End-to-end acceptance | Install Electron and/or the standalone daemon, Git, and an authenticated real Agent CLI on the execution machines. |
 
 The API contains its billing reconciliation worker and TURN collector; neither
-needs a separate worker service. Accounts are deskfleet-owned, so no OIDC service
+needs a separate worker service. Accounts are DeskFleet-owned, so no OIDC service
 is required. There is no central object store. Workspaces, Agent credentials,
 SQLite journals, and terminal transcripts remain on enrolled machines.
 Replicas need no new routing environment variables or Redis broker. Configure
@@ -156,7 +156,7 @@ frontend Stripe publishable-key environment variable in this Checkout flow.
   Compose loopback address, development secret, and `allow-loopback-peers` are
   local fixtures, not public deployment values.
 - Redis: configure private reachability and credentials for both coturn and the
-  API. There is no deskfleet-defined Redis-server password variable. Pub/Sub has
+  API. There is no DeskFleet-defined Redis-server password variable. Pub/Sub has
   no replay; separate Redis instances isolate environments, not database indices.
 - Test machines: `DESKFLEET_DAEMON_DIRECTORY` optionally selects the daemon data
   directory (default `~/.deskfleet`). Enroll using `--server-url` and the issued

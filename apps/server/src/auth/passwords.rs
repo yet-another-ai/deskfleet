@@ -136,7 +136,7 @@ pub(super) async fn register(
         send_link(
             &state,
             &email,
-            "Verify your deskfleet email",
+            "Verify your DeskFleet email",
             "verify",
             &token,
         )
@@ -209,7 +209,7 @@ pub(super) async fn recovery(
         send_link(
             &state,
             &email,
-            "Reset your deskfleet password",
+            "Reset your DeskFleet password",
             "recovery/complete",
             &token,
         )

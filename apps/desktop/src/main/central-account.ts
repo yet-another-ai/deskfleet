@@ -45,7 +45,7 @@ async function authorize(client: HttpCentralClient, openAuthorization: (url: str
     const origin = `http://127.0.0.1:${address.port}`
     if (request.method === "GET" && request.url?.startsWith("/auth/callback")) {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'" })
-      response.end(`<!doctype html><html><meta charset="utf-8"><title>deskfleet</title><body><p id="status">deskfleet</p><script>const code=new URLSearchParams(location.hash.slice(1)).get('loginCode');history.replaceState(null,'','/auth/callback');if(code)fetch('/auth/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})}).then(r=>{document.getElementById('status').textContent=r.ok?'Signed in. You can close this tab.':'Sign-in failed.'});</script></body></html>`)
+      response.end(`<!doctype html><html><meta charset="utf-8"><title>DeskFleet</title><body><p id="status">DeskFleet</p><script>const code=new URLSearchParams(location.hash.slice(1)).get('loginCode');history.replaceState(null,'','/auth/callback');if(code)fetch('/auth/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})}).then(r=>{document.getElementById('status').textContent=r.ok?'Signed in. You can close this tab.':'Sign-in failed.'});</script></body></html>`)
       return
     }
     if (request.method !== "POST" || request.url !== "/auth/complete" || request.headers.origin !== origin) { response.writeHead(404).end(); return }

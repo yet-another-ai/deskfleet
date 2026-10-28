@@ -11,7 +11,7 @@ pub struct User {
     pub email: Option<String>,
 }
 
-/// Public runtime configuration for one deskfleet installation.
+/// Public runtime configuration for one DeskFleet installation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SiteSettings {

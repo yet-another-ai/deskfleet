@@ -38,6 +38,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
   }
 
   const window = new BrowserWindow({
+    title: "DeskFleet",
     show: false,
     width: 1360,
     height: 840,
@@ -68,6 +69,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
 
   // The renderer is a single hash-routed document; auxiliary windows open only for standalone Mermaid views.
   attachExternalLinks(window.webContents, () => ({
+    title: "DeskFleet",
     width: 960,
     height: 680,
     minWidth: 480,
@@ -86,10 +88,10 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
   })
   window.webContents.on("will-navigate", (event) => event.preventDefault())
   window.webContents.on("render-process-gone", (_event, details) => {
-    console.error("deskfleet renderer process exited", details)
+    console.error("DeskFleet renderer process exited", details)
   })
   window.webContents.on("did-fail-load", (_event, code, description) => {
-    console.error("deskfleet renderer failed to load", { code, description })
+    console.error("DeskFleet renderer failed to load", { code, description })
   })
 
   const entrypoint = resolveRendererEntrypoint(app.isPackaged, process.env.DESKFLEET_RENDERER_URL)

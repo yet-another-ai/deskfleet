@@ -11,12 +11,12 @@ const values = computed(() => props.chinese ? [
   { title: "客户端完全开源", body: "你每天使用的界面、连接与交互，都有公开的源码。", link: "查看客户端", href: "https://github.com/yet-another-ai/deskfleet/tree/main/apps/desktop" },
   { title: "服务端也完全开源", body: "从前端到后端，完整实现均以 Apache-2.0 协议开放。", link: "查看服务端", href: "https://github.com/yet-another-ai/deskfleet/tree/main/apps/server" },
   { title: "在你的机器上工作", body: "复用你的开发环境和工具。Agent 的登录凭证保留在执行机器上。", link: "了解工作方式", href: withBase("/zh/guide/agents") },
-  { title: "工作数据不用于训练", body: "deskfleet 官方服务不会使用你的代码、对话和工作记录训练模型。", link: "阅读数据承诺", href: withBase("/zh/privacy") },
+  { title: "工作数据不用于训练", body: "DeskFleet 官方服务不会使用你的代码、对话和工作记录训练模型。", link: "阅读数据承诺", href: withBase("/zh/privacy") },
 ] : [
   { title: "An open-source client", body: "The interface, connections, and interactions you use every day. All there to inspect.", link: "Explore the client", href: "https://github.com/yet-another-ai/deskfleet/tree/main/apps/desktop" },
   { title: "An open-source server, too", body: "The complete implementation, frontend to backend, released under Apache-2.0.", link: "Explore the server", href: "https://github.com/yet-another-ai/deskfleet/tree/main/apps/server" },
   { title: "Your machines. Your environment.", body: "Keep your development environment and tools. Agent credentials stay on the machine doing the work.", link: "See how it works", href: withBase("/guide/agents") },
-  { title: "Your work isn't training data", body: "The official deskfleet service will not use your code, conversations, or work records to train models.", link: "Read our data promise", href: withBase("/privacy") },
+  { title: "Your work isn't training data", body: "The official DeskFleet service will not use your code, conversations, or work records to train models.", link: "Read our data promise", href: withBase("/privacy") },
 ])
 </script>
 

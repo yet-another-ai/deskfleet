@@ -1,6 +1,6 @@
 # Self-hosted backend
 
-This guide is the production deployment of deskfleet's central API. It covers
+This guide is the production deployment of DeskFleet's central API. It covers
 the `deskfleet-server` process, PostgreSQL, an SMTP relay, a TLS reverse
 proxy, an optional TURN relay, and the separately hosted Web client.
 For hosted plan enforcement and the official v0.1.0 trial, see the
@@ -211,7 +211,7 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | `DESKFLEET_MAIL_DIRECTORY` | local only | `.local/mail` | Development mail-file sink. |
 | `DESKFLEET_DEPLOYMENT_MODE` | no | `self-hosted` | Self-hosted installations have unlimited allowances and no payment integration. |
 | `DESKFLEET_WEB_ORIGINS` | for cross-origin browsers | empty | Comma-separated exact origins (`https://app.example.com`, with port if it is not the default). |
-| `DESKFLEET_STUN_URLS` | no | empty | Comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Invalid schemes fail startup. Empty means no STUN; deskfleet does not ship a public STUN default. |
+| `DESKFLEET_STUN_URLS` | no | empty | Comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Invalid schemes fail startup. Empty means no STUN; DeskFleet does not ship a public STUN default. |
 | `DESKFLEET_TURN_URLS` | no | empty | Comma-separated `turn:`/`turns:` URLs advertised on peer grants. Invalid schemes fail startup. Setting any URL requires a secret. |
 | `DESKFLEET_TURN_SECRET` | with TURN URLs | unset | Shared with the TURN server's REST `static-auth-secret`. Empty is treated as missing and startup fails when TURN URLs are set. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | no | unset | `redis://` or `rediss://` URL for [Team TURN usage collection](#team-turn-usage-collection). Empty disables collection. Invalid URLs fail startup; unavailable Redis is retried in the background. |
@@ -244,7 +244,7 @@ deskfleet-server
 ```
 
 `sslmode` in that URL is a PostgreSQL driver option on `DATABASE_URL`, not a
-deskfleet setting. Use the mode your database requires.
+DeskFleet setting. Use the mode your database requires.
 
 ## Accounts and mail
 
@@ -317,7 +317,7 @@ clients use. The API will not reconstruct that origin from `Host` or
 forwarded headers.
 
 This nginx fragment illustrates those requirements. It is not shipped or tuned
-as a deskfleet component:
+as a DeskFleet component:
 
 ```nginx
 # map belongs in the http context, outside the server block.
@@ -502,7 +502,7 @@ x64. The daemon's SQLite catalog, provider configuration, and terminal history
 stay in its data directory (`~/.deskfleet`, or `DESKFLEET_DAEMON_DIRECTORY`).
 
 Build the clients for the API origin (`https://api.example.com` or the shared
-hostname) as described above. On the welcome screen, sign in with a verified deskfleet
+hostname) as described above. On the welcome screen, sign in with a verified DeskFleet
 account, create a team, and enroll the local daemon from the desktop app when
 the app and the daemon are on the same computer.
 
@@ -542,7 +542,7 @@ online and a path or TURN relay exists.
 2. Registration sends a verification email through your SMTP relay.
 3. Verify the mailbox, sign in through Web and Electron, and create a Team.
 4. A daemon enrolls and the client shows it online. The API log includes the
-   bind address at startup (`deskfleet server listening`).
+   bind address at startup (`DeskFleet server listening`).
 5. An Agent or terminal session connects directly, and again with a forced
    relay if you depend on TURN. The development check for that path is
    `mise -E development run backend:smoke-relay`; it uses the local Compose

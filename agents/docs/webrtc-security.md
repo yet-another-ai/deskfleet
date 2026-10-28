@@ -17,8 +17,8 @@ possesses the private key for the certificate identified by that SDP.
 This uses the trusted-signaling model described in
 [RFC 8827, sections 4.1 and 4.3](https://www.rfc-editor.org/rfc/rfc8827.html#section-4.1).
 
-deskfleet-owned account sessions establish the application's user login; it does not automatically bind
-that user to a DTLS certificate. deskfleet's authenticated signaling supplies
+DeskFleet-owned account sessions establish the application's user login; it does not automatically bind
+that user to a DTLS certificate. DeskFleet's authenticated signaling supplies
 that binding. The first release does not use the browser WebRTC identity-provider
 API, manual fingerprint pairing, or an additional device-signature protocol.
 It does not attempt to protect against a malicious central identity service.
@@ -42,7 +42,7 @@ Central Agent history remains a separate, authorized plaintext storage path.
 | Peer authorization record | Server-issued identity, target, purpose, actions, and expiry | Metadata delivered over authenticated signaling, not a new cryptographic key or a reusable bearer token |
 
 Browser PeerConnections generate default certificates when none are supplied;
-the browser API does not expose their private key material. deskfleet keeps this
+the browser API does not expose their private key material. DeskFleet keeps this
 per-connection behavior and does not persist certificates for reuse.
 [W3C RTCConfiguration](https://www.w3.org/TR/webrtc/#dom-rtcconfiguration-certificates)
 and [RTCCertificate](https://www.w3.org/TR/webrtc/#rtccertificate-interface)
@@ -121,7 +121,7 @@ Use the same identity checks for direct and relayed paths; a relay-only test
 must exercise the actual peer protocol. Relay allocation and refresh follow
 [RFC 8656](https://www.rfc-editor.org/rfc/rfc8656.html), independently of the
 application grant's expiry. Refreshing a relay allocation does not extend
-deskfleet authorization.
+DeskFleet authorization.
 
 ## Authorization lifetime and revocation
 

@@ -42,7 +42,7 @@ test("a site administrator without any Team opens administration from the accoun
   await page().get("form").trigger("submit")
   await flushPromises()
   expect(page().get('[role="alert"]').text()).toBe("Unable to save settings")
-  expect(document.title).toBe("deskfleet")
+  expect(document.title).toBe("DeskFleet")
   await page().get("form").trigger("submit")
   await flushPromises()
   expect(fake.central.updateSiteSettings).toHaveBeenLastCalledWith({ siteName: "Studio fleet", announcement: "Maintenance on Sunday", allowTeamCreation: false })

@@ -1,11 +1,11 @@
-# deskfleet MCP
+# DeskFleet MCP
 
 `@deskfleet/mcp` exposes Workspace context, Session inspection, and scheduled-task
 management through standard MCP stdio. It does not depend on a particular ACP
 Agent implementation. The owning daemon executes operations and checks the
 delegating user's current team access on every call.
 
-deskfleet injects this server in `mcpServers` when starting or resuming an ACP
+DeskFleet injects this server in `mcpServers` when starting or resuming an ACP
 Session. Each running Session receives its own revocable credential, restricted
 to its Workspace. Closing the provider process, archiving the Session, or
 stopping the daemon revokes it. Configuration probes do not receive tools.

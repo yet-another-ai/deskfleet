@@ -19,6 +19,7 @@ import { DesktopNotifications } from "./notifications.ts"
 import { TaskNotificationMonitor } from "@deskfleet/client/task-notification-monitor"
 import { installSettings, publishLocalAgentState } from "./settings.ts"
 import { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
+import { configureApplicationDisplay } from "./application-display.ts"
 import {
   installRendererPermissions,
   installRendererProtocol,
@@ -35,6 +36,7 @@ function start(): void {
   app.on("second-instance", show)
 
   void app.whenReady().then(async () => {
+    configureApplicationDisplay()
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
     installDesktopMediaIpc()

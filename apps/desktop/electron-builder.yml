@@ -1,5 +1,6 @@
 appId: io.github.yet-another-ai.deskfleet
-# productName and the version come from package.json.
+# Keep package.json's runtime name stable for Electron profiles and safeStorage.
+productName: DeskFleet
 executableName: deskfleet
 asar: true
 asarUnpack:
@@ -23,7 +24,7 @@ electronFuses:
 directories:
   output: release
 
-artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+artifactName: "deskfleet-${version}-${os}-${arch}.${ext}"
 
 files:
   - out/**/*

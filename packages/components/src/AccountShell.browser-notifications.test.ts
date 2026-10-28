@@ -45,7 +45,7 @@ test.each(["granted", "denied", "default"] as const)("web onboarding requests on
   await click("Enable notifications")
   expect(requestBrowserNotificationPermission).toHaveBeenCalledOnce()
   expect(localStorage.getItem(storageKey)).toBe("true")
-  expect(view!.get("h1").text()).toBe("Sign in to deskfleet")
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
   expect(fake.central.login).not.toHaveBeenCalled()
 })
 
@@ -77,13 +77,13 @@ test("the click requests permission synchronously and waits for the browser prom
   expect(view!.get("h1").text()).toBe("Stay up to date with your tasks")
   finish("default")
   await flushPromises()
-  expect(view!.get("h1").text()).toBe("Sign in to deskfleet")
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
 })
 
 test.each(["granted", "denied", "unsupported"] as const)("web onboarding omits a redundant %s permission prompt", async permission => {
   vi.mocked(getBrowserNotificationPermission).mockReturnValue(permission)
   await render()
-  expect(view!.get("h1").text()).toBe("Sign in to deskfleet")
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
   expect(requestBrowserNotificationPermission).not.toHaveBeenCalled()
   expect(localStorage.getItem(storageKey)).toBeNull()
 })
@@ -96,13 +96,13 @@ test("a failed request offers retry and skip without persisting completion", asy
   expect(localStorage.getItem(storageKey)).toBeNull()
   expect(view!.findAll("button").filter(button => ["Enable notifications", "Skip for now"].includes(button.text())).every(button => button.attributes("disabled") === undefined)).toBe(true)
   await click("Enable notifications")
-  expect(view!.get("h1").text()).toBe("Sign in to deskfleet")
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
   expect(localStorage.getItem(storageKey)).toBe("true")
 })
 
 test("desktop sign-in does not ask for browser notification permission", async () => {
   await render(false, "win32")
-  expect(view!.get("h1").text()).toBe("Sign in to deskfleet")
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
   expect(getBrowserNotificationPermission).not.toHaveBeenCalled()
   expect(requestBrowserNotificationPermission).not.toHaveBeenCalled()
   expect(localStorage.getItem(storageKey)).toBeNull()

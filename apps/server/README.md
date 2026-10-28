@@ -1,4 +1,4 @@
-# deskfleet server
+# DeskFleet server
 
 An API-only Actix Web control plane backed by PostgreSQL. It owns verified accounts and credentials,
 application sessions, Teams and roles, machine enrollment, management RPC routing,
@@ -159,10 +159,12 @@ interactive user.
 **Site administration** from the Web client's account menu, including when they
 have no Team. The administration UI is Web-only.
 `GET /api/site` publicly returns only `siteName`, `announcement`, and
-`allowTeamCreation`; the defaults are `deskfleet`, an empty announcement, and
+`allowTeamCreation`; the defaults are `DeskFleet`, an empty announcement, and
 `true`. Web and Electron display the name/announcement and honor the creation
 switch. Closing Team creation applies to all users, including site administrators;
 existing Teams and invitation acceptance are unaffected.
+The brand-name migration updates the original `deskfleet` site name to
+`DeskFleet` once; other configured names are preserved.
 
 `GET /api/admin/site-settings` and `PATCH /api/admin/site-settings` require the
 current site grant. PATCH accepts all three settings fields, rejects unknown

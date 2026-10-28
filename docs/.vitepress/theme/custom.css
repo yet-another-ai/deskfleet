@@ -91,17 +91,17 @@ body {
 }
 
 .VPNavBarTitle .title {
-  font-family: var(--vp-font-family-mono);
-  font-size: 13px;
+  font-family: var(--vp-font-family-base);
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: -0.02em;
 }
 
 .VPNavBarMenuLink,
 .VPNavBarMenuGroup .text {
-  font-family: var(--vp-font-family-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-family: var(--vp-font-family-base);
+  font-size: 14px;
+  letter-spacing: normal;
 }
 
 .VPDoc h1,

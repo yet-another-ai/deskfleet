@@ -1,4 +1,4 @@
-# deskfleet web
+# DeskFleet web
 
 The independently deployed Vue application uses the same pages, components,
 conversation rendering, Git panels, terminal surfaces, and settings as Electron.
