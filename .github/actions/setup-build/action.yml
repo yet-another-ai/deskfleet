@@ -64,30 +64,6 @@ runs:
         }
         "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-    # A cold deskfleet-native test build took about 7.5 minutes on Windows
-    # and about 39 seconds once dependency artifacts were already on disk.
-    # Defender real-time scanning is on for this runner image; exclude the
-    # directories the compiler reads and writes before restoring or building.
-    - name: Exclude Rust builds from Windows Defender
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $sccache = Join-Path $env:RUNNER_TEMP 'deskfleet-sccache'
-        $paths = @(
-          $env:GITHUB_WORKSPACE,
-          $env:CARGO_HOME,
-          $env:RUSTUP_HOME,
-          $sccache
-        ) | Where-Object { $_ }
-        foreach ($path in $paths) {
-          New-Item -ItemType Directory -Force -Path $path | Out-Null
-          Add-MpPreference -ExclusionPath $path
-        }
-        foreach ($process in @('rustc.exe', 'cargo.exe', 'rustdoc.exe', 'link.exe', 'sccache.exe')) {
-          Add-MpPreference -ExclusionProcess $process
-        }
-
     - name: Restore Cargo target directory
       if: inputs.cache-rust-build == 'true'
       uses: Swatinem/rust-cache@v2
@@ -98,22 +74,17 @@ runs:
 
     - name: Configure compiler cache
       shell: bash
+      env:
+        CACHE_ERROR_LOG: ${{ runner.temp }}/deskfleet-sccache-errors.log
       run: |
-        # Job-local only. One GitHub Actions object per compilation filled the
-        # 10 GB repository quota (thousands of sccache entries) and evicted the
-        # Windows Cargo target cache. Windows never stored a hit there: main
-        # recorded a write error for every compilation. Identical rustc
-        # invocations in this job still share the local directory.
+        # Actions objects per compilation evict the Cargo target cache.
         echo "SCCACHE_GHA_ENABLED=off" >> "$GITHUB_ENV"
-        echo "SCCACHE_DIR=${RUNNER_TEMP}/deskfleet-sccache" >> "$GITHUB_ENV"
-        echo "SCCACHE_CACHE_SIZE=2G" >> "$GITHUB_ENV"
-        printf 'SCCACHE_ERROR_LOG=%s\n' "${RUNNER_TEMP}/deskfleet-sccache-errors.log" >> "$GITHUB_ENV"
+        printf 'SCCACHE_ERROR_LOG=%s\n' "$CACHE_ERROR_LOG" >> "$GITHUB_ENV"
         echo "SCCACHE_LOG=warn" >> "$GITHUB_ENV"
 
     - name: Install sccache
       uses: mozilla-actions/sccache-action@v0.0.11
       with:
-        # Pinned so the wrapper behavior stays reproducible across jobs.
         version: v0.19.0
 
     - name: Enable compiler caching

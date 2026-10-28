@@ -22,9 +22,8 @@ env:
   RUST_BACKTRACE: "1"
   # CI-only compilation tuning. Local builds keep full debug info. CI only
   # needs line tables for backtraces, and MSVC PDB generation is a large part
-  # of Windows build time. Incremental compilation is disabled so the job-local
-  # sccache can cache every rustc invocation. sccache is not stored in the
-  # GitHub Actions cache; that backend evicted the Windows Cargo target cache.
+  # of Windows build time. Incremental compilation is disabled so sccache can
+  # cache every rustc invocation.
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
