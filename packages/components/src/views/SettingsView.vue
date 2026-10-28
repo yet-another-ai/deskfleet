@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bell, Bot, CreditCard, Palette, Plug, SlidersHorizontal, Users } from "@lucide/vue"
+import { Bell, Bot, Palette, Plug, SlidersHorizontal } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRouter } from "vue-router"
 import SettingsLayout from "../components/settings/SettingsLayout.vue"
@@ -24,10 +24,8 @@ function leave(): void {
       <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
       <SidebarLink :to="{ name: 'settings-appearance' }" :icon="Palette" :label="t('settings.appearance')" replace />
       <SidebarLink :to="{ name: 'settings-notifications' }" :icon="Bell" :label="t('settings.notifications')" replace />
-      <SidebarLink :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
-      <SidebarLink :to="{ name: 'settings-mcp-servers' }" :icon="Plug" :label="t('mcpServers.title')" replace />
-      <SidebarLink v-if="account?.team.value" :to="{ name: 'settings-team' }" :icon="Users" :label="t('team.settings')" replace />
-      <SidebarLink v-if="account?.team.value" :to="{ name: 'settings-plans' }" :icon="CreditCard" :label="t('team.plansUsage')" replace />
+      <SidebarLink v-if="!account || account.machine.value" :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
+      <SidebarLink v-if="!account || account.machine.value" :to="{ name: 'settings-mcp-servers' }" :icon="Plug" :label="t('mcpServers.title')" replace />
     </template>
     <RouterView />
   </SettingsLayout>

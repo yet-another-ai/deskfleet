@@ -37,6 +37,8 @@ test("revokes only the matching peer and sends management over the central RPC",
   expect(events).toHaveBeenCalledWith({ sessionId: "local-peer", kind: "error", error: "membership_removed" })
   await f.remote.api.agent.control!("_deskfleet/session/archive", { sessionId: "1", operationId: "archive-op" })
   expect(f.central.rpc).toHaveBeenCalledWith("central7", "_deskfleet/session/archive", { sessionId: "1", operationId: "archive-op" })
+  await f.remote.api.agent.control!("_deskfleet/session/rename", { sessionId: "1", operationId: "rename-op", title: "Investigate payment errors" })
+  expect(f.central.rpc).toHaveBeenCalledWith("central7", "_deskfleet/session/rename", { sessionId: "1", operationId: "rename-op", title: "Investigate payment errors" })
   expect(f.remote.api.agent.control!("_deskfleet/input/submit", { sessionId: "1", operationId: "prompt", content: [], delivery: "backlog" })).toBeUndefined()
   expect(await f.remote.api.agent.history!.list()).toEqual([{ id: "1" }])
 })

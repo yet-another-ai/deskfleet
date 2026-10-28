@@ -173,6 +173,10 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     snapshotFor(id).session.archiveState = state
     fleet.findSession(id)!.session.archiveState = state
   }
+  agents.rename = async (id, title) => {
+    Object.assign(snapshotFor(id).session, { title: title.trim(), titleCustomized: true })
+    fleet.findSession(id)!.session.title = title.trim()
+  }
   agents.archive = async id => { archiveState(id, "archived") }
   agents.restore = async id => { archiveState(id, "active") }
   agents.gitStatus = async id => ({ sessionId: id, repositories: [{ id: `repository-${id}`, root: `/workspace/.worktrees/${id}`, branch: `deskfleet/${id}`, head: "84b7f21", changes: [{ path: "src/WorkspacePicker.vue", kind: "unstaged", status: "modified", additions: 7, deletions: 2 }] }], directories: [{ path: `/workspace/.worktrees/${id}`, repositoryId: `repository-${id}` }] })

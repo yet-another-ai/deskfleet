@@ -259,6 +259,7 @@ impl LocalCatalog {
             provider: request.provider,
             provider_session_id: None,
             title: request.title,
+            title_customized: false,
             context: request.context,
             lifecycle: SessionLifecycle::Provisioning,
             archive_state: ArchiveState::Active,

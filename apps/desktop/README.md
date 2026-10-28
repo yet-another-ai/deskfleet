@@ -70,10 +70,12 @@ Team selection, member administration, invitation codes, and machine enrollment
 are shared with the independently deployed Web application. A Team menu sits at
 the top of the sidebar. The selected machine's workspace tree appears below it;
 the Team's other machines appear as collapsed groups, and opening one switches
-to it. Team creation/joining and Add machine open focused dialogs. Team settings,
-alongside Preferences and Agents, manages the name, members and roles, and
-machines. It remains available while a Team has no machines. The account menu
-and sign-out action live in the sidebar footer.
+to it. Team creation/joining and Add machine open focused dialogs. The Team menu
+opens a separate Team settings area for the name, members and roles, machines,
+and Plans & Usages. The footer Settings button opens application preferences,
+appearance, notifications, and machine configuration. Both settings areas remain
+available while a Team has no machines. The account menu and sign-out action
+live in the sidebar footer.
 Add machine offers this computer on the desktop, which enrolls its hosted daemon;
 an existing enrollment is never silently reassigned. For another machine, paste
 the output of `deskfleet-daemon status` into the dialog and import the issued
@@ -152,6 +154,8 @@ machines start collapsed and report when they were last seen.
 | `/machines/:machineId/terminals` | Redirects to the Terminal tab in Remote control |
 | `/machines/:machineId/desktop` | Redirects to Desktop for remote machines or Terminal for this client's local machine |
 | `/settings/preferences` | Preferences, including launch at startup and the local Agent under This computer |
+| `/team/settings` | Team name, members and roles, and machines |
+| `/team/settings/plans` | The selected Team's plan, usage, and subscription management |
 
 A Workspace page's New session action makes that Workspace the composer's target.
 Worktree links and lookups only resolve Session-owned contexts.

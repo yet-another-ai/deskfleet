@@ -33,8 +33,6 @@ export interface AccountSession {
   connected: Ref<boolean>
   notice: Ref<string | undefined>
   dialog: Ref<AccountDialog | undefined>
-  /** Settings shown by the account shell while the Team has no machine to host them. */
-  shellSettings: Ref<AccountSettingsSection | undefined>
   reload(): Promise<void>
   refreshMachines(): Promise<void>
   signIn(): Promise<void>
@@ -68,7 +66,6 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   const connected = ref(true)
   const notice = ref(initialNotice)
   const dialog = ref<AccountDialog>()
-  const shellSettings = ref<AccountSettingsSection>()
   const team = computed(() => teams.value.find(value => value.id === teamId.value))
   const machine = computed(() => machines.value.find(value => value.id === machineId.value))
   const localMachineId = computed(() => {
@@ -102,7 +99,6 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     const candidates = [preferred, machineId.value, localMachineId.value]
     machineId.value = candidates.find(id => list.some(value => value.id === id))
       ?? list.find(value => value.online)?.id ?? list[0]?.id
-    if (machineId.value) shellSettings.value = undefined
   }
   function refreshMachines(): Promise<void> {
     return background(async () => { await loadEnrollment(); await loadMachines() })
@@ -117,7 +113,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       ++membersRevision
       teams.value = []; teamId.value = undefined; machines.value = []; machineId.value = undefined
       members.value = []
-      dialog.value = undefined; shellSettings.value = undefined
+      dialog.value = undefined
       await loadSite
       return
     }
@@ -161,8 +157,8 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     await Promise.all([loadEnrollment(), loadMachines()])
   }
   function openSettings(section: AccountSettingsSection): void {
-    if (machineId.value) void router.push({ name: `settings-${section}` })
-    else shellSettings.value = section
+    const name = section === "team" ? "team-settings" : section === "plans" ? "team-settings-plans" : `settings-${section}`
+    void router.push({ name })
   }
 
   const unsubscribe = central.onEvent(event => {
@@ -180,7 +176,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
 
   return {
     central, ready, account, site, teams, teamId, team, members, machines, machineId, machine, enrollment, localMachineId, canEnrollLocal,
-    connected, notice, dialog, shellSettings, reload,
+    connected, notice, dialog, reload,
     refreshMachines,
     async signIn() { await central.login(); await reload() },
     async signOut() { await central.logout(); await reload() },

@@ -46,7 +46,7 @@ test("browses synchronized history with the machine offline and isolates equal l
     events: vi.fn(async (machineId: string) => ({ events: [agentEvent(1, "input", snapshot(machineId).inputs[0]!)], lastEventSeq: "1" })),
     rpc: vi.fn(async () => { throw new Error("Offline") }), createPeer: vi.fn(),
   } as unknown as CentralApi
-  view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [pinia, i18n] }, attachTo: document.body })
+  view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
   await flushPromises()
   // The first mount also loads the workspace bundle while full checks build in parallel.
   await vi.waitFor(() => expect(view!.text()).toContain("Workspace 101"), { timeout: 5_000 })
@@ -73,7 +73,7 @@ test("browses synchronized history with the machine offline and isolates equal l
 })
 
 const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin") => {
-  view = mount(AccountShell, { props: { host: { ...host, platform, central } }, global: { plugins: [pinia, i18n] }, attachTo: document.body })
+  view = mount(AccountShell, { props: { host: { ...host, platform, central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
 }
 const buttonText = (text: string) => page().findAll("button").find(button => button.text() === text)
 /**
@@ -151,29 +151,30 @@ test.each(["Create a team", "Join a team"])("keyboard %s cancellation returns fo
   expect(document.activeElement).toBe(trigger.element)
 })
 
-test("a Team without machines still opens Team settings beside Preferences", async () => {
+test("a Team without machines opens its own settings and can add a machine", async () => {
   const fake = fakeCentral()
   mountShell(fake.central)
   await flushPromises()
   await page().get('button[aria-label="Team"]').trigger("click")
   await page().findAll('[role="menuitem"]').find(item => item.text() === "Team settings")!.trigger("click")
   await flushPromises()
-  expect(page().get("h1").text()).toBe("Design team")
+  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Design team"))
   expect(page().findAll("[data-member-id]")).toHaveLength(2)
-  expect(page().get('nav[aria-label="Settings sections"]').text()).toContain("Preferences")
+  expect(router.currentRoute.value.path).toBe("/team/settings")
+  expect(page().get('nav[aria-label="Settings sections"]').text()).not.toContain("Preferences")
   await buttonText("Add machine")!.trigger("click")
   await flushPromises()
   expect(page().get("[role=dialog] h2").text()).toBe("Add a machine to Design team")
   await buttonText("Cancel")!.trigger("click")
   await buttonText("Back to app")!.trigger("click")
-  expect(page().get("main h1").text()).toBe("Add a machine to Design team")
+  await vi.waitFor(() => expect(page().get("main h1").text()).toBe("Add a machine to Design team"))
   expect(fake.central.members).toHaveBeenCalledWith("team-1")
 })
 
 test.each([
   ["web", "admin", false], ["darwin", "member", false],
   ["web", "member", true], ["darwin", "admin", true],
-] as const)("%s %s sees Plans & Usages separately from Team settings (machine: %s)", async (platform, role, hasMachine) => {
+] as const)("%s %s enters separate Team and ordinary settings and returns to the source (machine: %s)", async (platform, role, hasMachine) => {
   const fake = fakeCentral({
     teams: [{ id: "team-1", name: "Design team", role }],
     machines: hasMachine ? [machineFixture("m1", "team-1", "Build server")] : [],
@@ -182,24 +183,59 @@ test.each([
   mountShell(fake.central, platform)
   await flushPromises()
   await vi.waitFor(() => expect(page().find('button[aria-label="Team"]').exists()).toBe(true))
+  const source = "/?from=settings-navigation"
+  await router.push(source)
   await page().get('button[aria-label="Team"]').trigger("click")
   await page().findAll('[role="menuitem"]').find(item => item.text() === "Team settings")!.trigger("click")
   await flushPromises()
   await vi.waitFor(() => expect(page().get("h1").text()).toBe("Design team"))
+  expect(router.currentRoute.value.path).toBe("/team/settings")
+  const settingsLinks = () => page().findAll('nav[aria-label="Settings sections"] a')
+  expect(settingsLinks().map(link => link.text())).toEqual(["Team settings", "Plans & Usages"])
   expect(page().find("[data-team-plan]").exists()).toBe(false)
   expect(fake.central.billing).not.toHaveBeenCalled()
-  const navItem = (label: string) => page().findAll('nav[aria-label="Settings sections"] a, nav[aria-label="Settings sections"] button').find(item => item.text() === label)!
+  const navItem = (label: string) => settingsLinks().find(item => item.text() === label)!
   await navItem("Plans & Usages").trigger("click")
   await flushPromises()
   await vi.waitFor(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
   expect(page().find("[data-team-plan]").exists()).toBe(true)
   expect(page().find("[data-member-id]").exists()).toBe(false)
   expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith("team-1")
-  if (hasMachine) expect(router.currentRoute.value.path).toBe("/settings/plans")
+  expect(router.currentRoute.value.path).toBe("/team/settings/plans")
   await navItem("Team settings").trigger("click")
   await flushPromises()
   expect(page().get("h1").text()).toBe("Design team")
   expect(page().find("[data-team-plan]").exists()).toBe(false)
+  await buttonText("Back to app")!.trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(source))
+  await flushPromises()
+  await page().get('button[aria-label="Settings"]').trigger("click")
+  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Preferences"))
+  expect(router.currentRoute.value.path).toBe("/settings/preferences")
+  expect(settingsLinks().map(link => link.attributes("href"))).toEqual([
+    "#/settings/preferences", "#/settings/appearance", "#/settings/notifications",
+    ...(hasMachine ? ["#/settings/agents", "#/settings/mcp-servers"] : []),
+  ])
+  await navItem("Appearance").trigger("click")
+  await vi.waitFor(() => expect(page().get("h1").text()).toBe("Appearance"))
+  await buttonText("Back to app")!.trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(source))
+})
+
+test.each([
+  ["web", false, "/team/settings", "Design team"],
+  ["darwin", false, "/team/settings/plans", "Plans & Usages"],
+  ["web", true, "/team/settings/plans", "Plans & Usages"],
+  ["darwin", true, "/team/settings", "Design team"],
+] as const)("%s opens direct Team settings (machine: %s, route: %s)", async (platform, hasMachine, path, title) => {
+  const fake = fakeCentral({ machines: hasMachine ? [machineFixture("m1", "team-1", "Build server")] : [] })
+  withEmptyCatalogs(fake)
+  await router.push(path)
+  mountShell(fake.central, platform)
+  await flushPromises()
+  await vi.waitFor(() => expect(page().get("h1").text()).toBe(title))
+  expect(router.currentRoute.value.path).toBe(path)
+  expect(page().findAll('nav[aria-label="Settings sections"] a').map(link => link.text())).toEqual(["Team settings", "Plans & Usages"])
 })
 
 test.each([
@@ -218,7 +254,7 @@ test.each([
   expect(page().get("section header").text()).toContain(target === "team-1" ? "First team" : "Paying team")
   expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith(target)
   expect(location.search).toBe("")
-  if (hasMachine) expect(router.currentRoute.value.path).toBe("/settings/plans")
+  expect(router.currentRoute.value.path).toBe("/team/settings/plans")
 })
 
 test.each(["darwin", "web"] as const)("notification settings are available without machines (%s)", async (platform) => {
@@ -227,15 +263,15 @@ test.each(["darwin", "web"] as const)("notification settings are available witho
   await flushPromises()
   await page().get('button[aria-label="Settings"]').trigger("click")
   await flushPromises()
-  const notifications = page().findAll('nav[aria-label="Settings sections"] button').find(button => button.text() === "Notifications")
+  const notifications = page().findAll('nav[aria-label="Settings sections"] a').find(link => link.text() === "Notifications")
   expect(notifications).toBeDefined()
   if (notifications) {
     await notifications.trigger("click")
     await flushPromises()
-    expect(page().get("h1").text()).toBe("Notifications")
+    await vi.waitFor(() => expect(page().get("h1").text()).toBe("Notifications"))
     expect(page().findAll('[role="switch"]')).toHaveLength(3)
     await buttonText("Back to app")!.trigger("click")
-    expect(page().get("main h1").text()).toBe("Add a machine to Design team")
+    await vi.waitFor(() => expect(page().get("main h1").text()).toBe("Add a machine to Design team"))
   }
 })
 

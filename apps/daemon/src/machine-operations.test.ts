@@ -54,3 +54,16 @@ test("system status rejects malformed parameters and preserves native sampling f
   await assert.rejects(operations.handle("systemStatus", {}, actor), error => error === failure)
   assert.equal(reads, 1)
 })
+
+test("Session rename passes only the server-verified actor to the Agent service", async () => {
+  const calls: unknown[][] = []
+  const operations = new MachineOperations({
+    agents: { handle: async (...args: unknown[]) => { calls.push(args); return { renamed: true } } },
+    catalog: {}, terminals: {}, providers: {}, setup: {}, capabilities: async () => ({ displays: [], audio: false }),
+  } as unknown as ConstructorParameters<typeof MachineOperations>[0])
+  const params = { sessionId: "1", operationId: "rename", title: "New title", actor }
+  await assert.rejects(operations.handle("_deskfleet/session/rename", params, undefined), /verified user and login/u)
+  assert.deepEqual(calls, [])
+  assert.deepEqual(await operations.handle("_deskfleet/session/rename", params, actor), { renamed: true })
+  assert.deepEqual(calls, [["_deskfleet/session/rename", params, actor]])
+})

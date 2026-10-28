@@ -41,6 +41,21 @@ catalog resource; a directory Session's workspace or home files are never
 removed. The new-session composer offers both contexts when a Workspace is
 selected and remembers the last choice on that device.
 
+### Session titles
+
+Authorized Team members can rename workspace and machine-scoped Sessions while
+the owning machine is online, including archived Sessions. Rename trims surrounding
+whitespace and requires a nonempty title of at most 200 characters. It preserves
+the Session identity, provider conversation, execution state, history, and files.
+The Session header menu and the sidebar or archived-list context menu offer Rename.
+The context menu also offers Archive, Retry archive, or Restore for the current state;
+opening it does not navigate away from the selected Session. Shift+F10 or the context
+menu key opens the same menu from a focused row. Failed saves retain the edited name.
+The daemon commits the customized title, command receipt, and Session event together;
+normal journal synchronization updates other clients and retained central history.
+The persisted `titleCustomized` flag makes a user rename take precedence over later
+ACP `session_info_update` titles, including after daemon restart or restore.
+
 ### Forking a conversation
 
 The Session menu offers Fork when the provider advertises `session/fork`. Forking
@@ -595,6 +610,7 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
 | `_deskfleet/session/resume`, `/stop` | Explicit provider lifecycle operations; input submission also resumes |
 | `_deskfleet/session/archive`, `/restore` | Backend management operations; preserve data and require an online daemon |
+| `_deskfleet/session/rename` | Rename an active or archived Session through management RPC or ACP; preserve execution and record the customized title |
 
 ACP notifications, including provider Session IDs, are carried in journal
 events and projected once by the renderer. Mode metadata is normalized as

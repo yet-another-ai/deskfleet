@@ -31,7 +31,7 @@ test("a site administrator without any Team opens administration from the accoun
   await flushPromises()
   await page().get('button[aria-label="Ada"]').trigger("click")
   await button("Site administration").trigger("click")
-  await flushPromises()
+  await vi.waitFor(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
   expect(router.currentRoute.value.path).toBe("/admin")
   expect(page().get("h1").text()).toBe("Site administration")
   expect(fake.central.siteSettings).toHaveBeenCalledOnce()

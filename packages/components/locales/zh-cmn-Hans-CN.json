@@ -696,6 +696,9 @@
       "other": "使用了 {n} 个工具"
     },
     "sessionActions": "会话操作",
+    "rename": "重命名会话",
+    "sessionName": "会话名称",
+    "renaming": "正在保存…",
     "fork": "分支会话",
     "forkDescription": "使用同一 Agent，在新会话中继续当前对话。对话记录会复制，文件以所选工作区上下文为准。",
     "forking": "正在创建会话分支…",

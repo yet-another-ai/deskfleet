@@ -154,6 +154,9 @@ pub struct AgentSessionRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_session_id: Option<String>,
     pub title: String,
+    /// A user rename takes precedence over later provider title updates.
+    #[serde(default)]
+    pub title_customized: bool,
     /// A generated worktree, or the Workspace's own directories used in place.
     #[serde(default)]
     pub context: SessionContext,

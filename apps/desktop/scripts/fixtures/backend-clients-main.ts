@@ -167,7 +167,7 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
     const manage = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === "Team settings")
     if (!manage) throw new Error("Team settings menu item is missing")
     manage.click()
-    await until(() => location.hash === "#/settings/team" && !!document.querySelector("[data-member-id]"), "team settings")
+    await until(() => location.hash === "#/team/settings" && !!document.querySelector("[data-member-id]"), "team settings")
     if (view === "invite") {
       const invite = [...document.querySelectorAll<HTMLButtonElement>("main button")].find(button => button.textContent?.trim() === "Invite")
       if (!invite) throw new Error("Invite button is missing")

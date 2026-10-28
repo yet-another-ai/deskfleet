@@ -42,9 +42,12 @@ Email links open verification/recovery pages; `/auth/account` manages credential
 and login sessions. Electron keeps an encrypted application token in its main
 process and uses the system browser with a one-use code/verifier exchange.
 
-Team settings show the effective plan, current usage, and Stripe subscription
-management. Only Team admins can purchase or manage subscriptions. Site admins
-manage Enterprise overrides and account policies in the Web administration page.
+The Team menu opens `/team/settings`, independently of application settings at
+`/settings`. Its Plans & Usages section at `/team/settings/plans` shows the
+effective plan, current usage, and Stripe subscription management. Both areas
+remain available without an enrolled machine. Only Team admins can purchase or
+manage subscriptions. Site admins manage Enterprise overrides and account
+policies in the Web administration page.
 
 Management operations use authenticated HTTP. Agent commands, terminal I/O, and
 Git reads use WebRTC after the backend authorizes the target peer and supplies

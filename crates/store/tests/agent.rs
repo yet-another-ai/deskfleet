@@ -185,6 +185,8 @@ async fn state_and_ordered_events_commit_atomically_and_replay_after_restart() {
     let mut commit = transaction(&created.session);
     commit.session = Some(AgentSessionRecord {
         lifecycle: SessionLifecycle::Ready,
+        title: "Customized title".into(),
+        title_customized: true,
         ..created.session.clone()
     });
     commit.runs = vec![run.clone()];
@@ -221,6 +223,8 @@ async fn state_and_ordered_events_commit_atomically_and_replay_after_restart() {
         .unwrap();
     assert_eq!(snapshot.inputs, [input]);
     assert_eq!(snapshot.runs, [run]);
+    assert_eq!(snapshot.session.title, "Customized title");
+    assert!(snapshot.session.title_customized);
     local.close().await.unwrap();
     let local = LocalCatalog::open(&file.0, "host").await.unwrap();
     assert_eq!(
