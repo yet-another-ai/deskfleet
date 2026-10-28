@@ -61,6 +61,8 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_SMTP_USERNAME`, `DESKFLEET_SMTP_PASSWORD`, `DESKFLEET_MAIL_FROM` | Mail relay credentials and sender. |
 | `DESKFLEET_MAIL_DIRECTORY` | Local-only mail sink; defaults to `.local/mail`. Messages contain one-use secrets and are ignored by Git. |
 | `DESKFLEET_DEPLOYMENT_MODE` | `self-hosted` (default): unlimited allowances and no Stripe; or `hosted`. |
+| `DESKFLEET_STATSIG_SERVER_KEY` | Optional Statsig server secret for verified billing events. Unset disables event production and delivery. Never expose it through a frontend `VITE_*` variable. |
+| `DESKFLEET_STATSIG_ENVIRONMENT` | Statsig environment tier, default `production`; match the frontend project and tier. See [analytics](../../agents/docs/analytics.md#payment-funnel). |
 | `DESKFLEET_WEB_ORIGINS` | Comma-separated browser origins permitted by CORS. |
 | `DESKFLEET_STUN_URLS` | Optional comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Empty means no STUN; there is no public default. Change the list and restart to update new grants. |
 | `DESKFLEET_TURN_URLS` | Optional comma-separated `turn:`/`turns:` URLs advertised on peer grants. Change the list and restart to update new grants. |

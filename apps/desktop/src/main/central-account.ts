@@ -3,7 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
 import { HttpCentralClient, serverAddress, type SavedAccount } from "@deskfleet/client/http-central"
-import type { LocalEnrollment } from "@deskfleet/client/central"
+import type { CentralEvent, LocalEnrollment } from "@deskfleet/client/central"
+import { setPeerTelemetrySink } from "@deskfleet/client/peer-telemetry"
 import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { enrollLocalMachine } from "./local-enrollment.ts"
@@ -94,7 +95,10 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
     if (!isDesktopMediaSender(event) || typeof method !== "string" || !Array.isArray(args) || !Object.hasOwn(methods, method)) throw new Error("Invalid account operation")
     return await methods[method]!(...args as never[])
   })
-  client.onEvent(event => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(CENTRAL_EVENT, event) })
-  app.once("will-quit", () => client.dispose())
+  const broadcast = (event: CentralEvent) => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(CENTRAL_EVENT, event) }
+  client.onEvent(broadcast)
+  // File and port peers live in main; the renderer owns the analytics SDK.
+  const stopTelemetry = setPeerTelemetrySink(event => broadcast({ type: "peerTelemetry", event }))
+  app.once("will-quit", () => { stopTelemetry(); client.dispose() })
   return client
 }

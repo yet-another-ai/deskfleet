@@ -69,7 +69,7 @@ async fn checkout(
     let user = auth::user(&req, &s).await?;
     s.store.require_admin(&user.user.id, &team).await?;
     Ok(web::Json(
-        json!({"url":s.billing.checkout(&s.store,&team,&body.plan,&body.interval,&body.request_id).await?}),
+        json!({"url":s.billing.checkout(&s.store,&team,&user.user.id,&body.plan,&body.interval,&body.request_id).await?}),
     ))
 }
 async fn portal(
@@ -80,7 +80,7 @@ async fn portal(
     let user = auth::user(&req, &s).await?;
     s.store.require_admin(&user.user.id, &team).await?;
     Ok(web::Json(
-        json!({"url":s.billing.portal(&s.store,&team).await?}),
+        json!({"url":s.billing.portal(&s.store,&team,&user.user.id).await?}),
     ))
 }
 #[derive(Deserialize)]

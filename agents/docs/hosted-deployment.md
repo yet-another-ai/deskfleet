@@ -181,6 +181,31 @@ environment does not rewrite an existing bundle. Electron defaults to
 a backend-address setting. Changing a compiled API origin requires rebuilding
 that client; an unset production Web build follows the origin serving its page.
 
+Statsig is optional and configured at build time for both Web and Electron. The
+build workflow reads the GitHub repository variables `VITE_STATSIG_CLIENT_KEY`
+and `VITE_STATSIG_ENVIRONMENT`; neither is a required release secret. Use a
+Statsig client-public SDK key, which is included in the distributed JavaScript,
+never a server secret key. An unset or blank key disables the integration. The
+environment defaults to the Vite mode when its value is absent or blank; set it
+explicitly when a build mode should report to a different Statsig environment.
+Local builds accept the same process environment variables. A change requires
+rebuilding and redistributing the affected clients, not restarting the API.
+
+For verified payment conversions, separately configure the API runtime with
+`DESKFLEET_STATSIG_SERVER_KEY` and `DESKFLEET_STATSIG_ENVIRONMENT` (default
+`production`) for the same Statsig project/tier. This server key is secret and
+must never enter a frontend build. Migration 10 adds the durable billing event
+outbox; its delivery worker is independent of Stripe reconciliation. The
+[analytics guide](analytics.md#payment-funnel) defines conversion metrics and
+delivery guarantees. Both frontend and backend analytics are optional.
+
+When enabled, allow `https://featureassets.org`, `https://prodregistryv2.org`, and
+`https://statsigapi.net` in the Web host's `connect-src` policy. The Electron
+build adds these origins only when its key is configured. Statsig owns behavioral
+analytics and frontend experiments; API/daemon authorization and quota admission
+remain authoritative. See the [Web](../../apps/web/README.md) and
+[desktop](../../apps/desktop/README.md) guides for environment-file locations.
+
 The tag workflow requires these GitHub Actions secrets, separate from API secrets:
 
 | Secret | Purpose |

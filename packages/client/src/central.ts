@@ -1,4 +1,5 @@
 import type { RelayDeniedReason } from "./relay.ts"
+import type { PeerTelemetryEvent } from "./peer-telemetry.ts"
 import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
@@ -27,6 +28,7 @@ export interface AgentSessionSummary {
   elicitations: Array<Pick<AgentSnapshot["elicitations"][number], "id" | "state" | "createdAt">>
 }
 export type CentralEvent =
+  | { type: "peerTelemetry"; event: PeerTelemetryEvent }
   | { type: "peerEvent"; peerId: string; event: Omit<DesktopEvent, "sessionId"> }
   | Extract<ControlMessage, { type: "peerRevoked" | "catalogChanged" | "machinesChanged" | "presence" }>
   | { type: "connection"; connected: boolean }

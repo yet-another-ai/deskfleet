@@ -1,8 +1,9 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi, CentralEvent } from "./central.ts"
 import { connectPortPeer, type PortPeer, type PortPeerEvents, type PortPeerFactory } from "./ports-signaling.ts"
+import { setPeerTelemetrySink } from "./peer-telemetry.ts"
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => { setPeerTelemetrySink(undefined); vi.useRealTimers() })
 const sdp = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\n"
 const target = { teamId: "team", machineId: "machine" }
 function deferred<T>() {
@@ -33,6 +34,8 @@ function fixture(lifetime = 60_000) {
 }
 
 test("ports signaling binds early ICE candidates and preserves an authorized tunnel through signaling loss", async () => {
+  const telemetry = vi.fn()
+  setPeerTelemetrySink(telemetry)
   const f = fixture()
   f.native.offer = async () => {
     f.events().candidate({ candidate: "local", sdpMid: "", sdpMlineIndex: 0 })
@@ -52,6 +55,10 @@ test("ports signaling binds early ICE candidates and preserves an authorized tun
   expect(f.close).toHaveBeenCalledOnce()
   expect(f.api.closePeer).toHaveBeenCalledOnce()
   expect(f.listeners.size).toBe(0)
+  expect(telemetry.mock.calls.map(([event]) => event)).toEqual([
+    { name: "peer_granted", teamId: "team", metadata: { feature: "ports", relay: "unconfigured" } },
+    { name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: "unconfigured", outcome: "connected", transport: "unknown" } },
+  ])
 })
 
 for (const event of [
@@ -105,6 +112,8 @@ test("setup timeout covers a stalled grant and revokes its late result", async (
 })
 
 test("cancelling pending native setup closes a late listener", async () => {
+  const telemetry = vi.fn()
+  setPeerTelemetrySink(telemetry)
   const f = fixture()
   const controller = new AbortController(), creating = deferred<PortPeer>()
   f.factory.mockImplementation(() => creating.promise)
@@ -116,6 +125,7 @@ test("cancelling pending native setup closes a late listener", async () => {
   await vi.waitFor(() => expect(f.close).toHaveBeenCalledOnce())
   expect(f.api.offerPeer).not.toHaveBeenCalled()
   expect(f.api.closePeer).toHaveBeenCalledOnce()
+  expect(telemetry).toHaveBeenCalledExactlyOnceWith({ name: "peer_granted", teamId: "team", metadata: { feature: "ports", relay: "unconfigured" } })
 })
 
 test("account changes cancel a pending grant before native resources can be created", async () => {
@@ -148,9 +158,13 @@ test("unreachable signaling cannot hold local cleanup open", async () => {
 })
 
 test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const)("explains relay denial after direct port failure: %s", async relayDeniedReason => {
+  const telemetry = vi.fn()
+  setPeerTelemetrySink(telemetry)
   const f = fixture()
   Object.assign(f.grant, { relayDeniedReason })
   f.native.answer = async () => { f.events().fail(new Error("ICE failed")) }
   await expect(f.connect()).rejects.toThrow("Direct connection failed.")
   expect(f.failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay") }))
+  expect(telemetry).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: relayDeniedReason, outcome: "failed", transport: "unknown" } })
+  expect(telemetry).toHaveBeenCalledTimes(2)
 })

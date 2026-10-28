@@ -70,6 +70,9 @@ jobs:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
 
       - name: Build the server, daemon, Web client, and Electron bundles
+        env:
+          VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
+          VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
         run: mise run ci:build
 
       - name: Package unsigned desktop installers

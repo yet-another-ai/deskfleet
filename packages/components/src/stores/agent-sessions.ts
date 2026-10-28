@@ -12,6 +12,8 @@ import type { AgentConfiguration } from "../../../client/src/agent-configuration
 import type { GitChangedNotification, GitDiffRequest } from "../../../../apps/daemon/src/git-protocol.ts"
 import { useProvidersStore } from "./providers.ts"
 import { AgentClient, type AgentConnectionState, type AgentNotification } from "../services/agent-client.ts"
+import { captureAnalyticsContext } from "../services/analytics.ts"
+import type { SessionCapacityDetails } from "../services/entitlement-events.ts"
 
 export interface AgentSelection { provider: string; model?: string; reasoningEffort?: string; mode?: string }
 
@@ -427,28 +429,54 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const result = await mutation("_deskfleet/session/configure", { sessionId, ...choices })
     return mergeConfiguration(sessionId, result, sequence, commands)
   }
+  async function capacityAction(action: "create" | "fork" | "restore", details: SessionCapacityDetails, run: () => Promise<AgentSnapshot>, track: ReturnType<typeof captureAnalyticsContext>): Promise<AgentSnapshot> {
+    track("session_capacity_action", { action, outcome: "attempt", ...details })
+    try {
+      const snapshot = await run()
+      track("session_capacity_action", { action, outcome: "success", context: snapshot.session.context, scope: snapshot.session.workspaceId ? "workspace" : "machine" })
+      return snapshot
+    } catch (reason) {
+      track("session_capacity_action", { action, outcome: "failure", ...details })
+      throw reason
+    }
+  }
   async function create(workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string, baseBranch?: string): Promise<AgentSnapshot> {
+    const track = captureAnalyticsContext()
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
     const choices = draftConfiguration.value.provider === provider ? draftConfiguration.value : undefined
     const branch = workspaceId && context === "worktree" && baseBranch?.trim() ? baseBranch.trim() : undefined
-    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", {
+    const snapshot = await capacityAction("create", { context, scope: workspaceId ? "workspace" : "machine" }, () => pending ? checkOperation(pending.operationId) as Promise<AgentSnapshot> : mutation("_deskfleet/session/create", {
       ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(branch ? { baseBranch: branch } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode,
-    })
+    }), track)
     snapshotReceived(snapshot)
+    track("session_created", { context: snapshot.session.context, scope: snapshot.session.workspaceId ? "workspace" : "machine" })
     return snapshot
   }
   async function fork(sessionId: string, context: AgentSessionContext): Promise<AgentSnapshot> {
+    const track = captureAnalyticsContext()
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/fork" && operation.sessionId === sessionId)
-    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/fork", { sessionId, context })
+    const source = sessions.value[sessionId]
+    const snapshot = await capacityAction("fork", { context, ...(source ? { scope: source.workspaceId ? "workspace" : "machine" } as const : {}) }, () => pending ? checkOperation(pending.operationId) as Promise<AgentSnapshot> : mutation("_deskfleet/session/fork", { sessionId, context }), track)
     snapshotReceived(snapshot)
+    track("session_forked", { context: snapshot.session.context })
     return snapshot
   }
-  const submit = (sessionId: string, content: string | AgentInput["content"], delivery: "backlog" | "steer", turnId?: string, draftText?: string, submittedDraft?: SubmittedAgentDraft) => {
+  const submit = async (sessionId: string, content: string | AgentInput["content"], delivery: "backlog" | "steer", turnId?: string, draftText?: string, submittedDraft?: SubmittedAgentDraft) => {
+    const track = captureAnalyticsContext()
     const blocks = typeof content === "string" ? [{ type: "text" as const, text: content }] : content
     const trackedText = draftText ?? (typeof content === "string" ? content : (drafts.value[sessionId] ?? ""))
-    return mutation("_deskfleet/input/submit", {
-      sessionId, content: blocks, delivery, ...(turnId ? { turnId } : {}),
-    }, trackedText, submittedDraft)
+    track("input_submit_action", { outcome: "attempt", delivery })
+    try {
+      const result = await mutation("_deskfleet/input/submit", {
+        sessionId, content: blocks, delivery, ...(turnId ? { turnId } : {}),
+      }, trackedText, submittedDraft)
+      track("input_submit_action", { outcome: "success", delivery })
+      track("input_submitted", { delivery })
+      return result
+    } catch (reason) {
+      track("input_submit_action", { outcome: "failure", delivery })
+      throw reason
+    }
   }
   const steer = (sessionId: string, inputId: string, turnId: string) => mutation("_deskfleet/input/steer", { sessionId, inputId, turnId })
   const withdraw = (sessionId: string, inputId: string) => mutation("_deskfleet/input/withdraw", { sessionId, inputId })
@@ -483,10 +511,15 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     snapshotReceived(await mutation("_deskfleet/session/rename", { sessionId, title }))
   }
   async function archive(sessionId: string): Promise<void> {
+    const track = captureAnalyticsContext()
     snapshotReceived(await mutation("_deskfleet/session/archive", { sessionId }))
+    track("session_archived", {})
   }
   async function restore(sessionId: string): Promise<void> {
-    snapshotReceived(await mutation("_deskfleet/session/restore", { sessionId }))
+    const track = captureAnalyticsContext()
+    const session = sessions.value[sessionId]
+    snapshotReceived(await capacityAction("restore", session ? { context: session.context, scope: session.workspaceId ? "workspace" : "machine" } : {}, () => mutation("_deskfleet/session/restore", { sessionId }), track))
+    track("session_restored", {})
   }
   const gitBranches = (workspaceId: string) => call("_deskfleet/git/branches", { workspaceId })
   const gitStatus = (sessionId: string, force = false) => call("_deskfleet/git/status", { sessionId, ...(force ? { force } : {}) })

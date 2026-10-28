@@ -263,6 +263,9 @@ importers:
       '@lucide/vue':
         specifier: 1.62.0
         version: 1.62.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
+      '@statsig/js-client':
+        specifier: 3.33.7
+        version: 3.33.7
       '@vueuse/core':
         specifier: 15.0.0
         version: 15.0.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
@@ -2084,6 +2087,12 @@ packages:
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
+
+  '@statsig/client-core@3.33.7':
+    resolution: {integrity: sha512-tnhczy57w879pAAz7z6x8KmbnfeLe1H++wsVtZfFGLy/xhssMdCCyMFXX9UunUHv7a+1mCj7jJNsphPGnTmIqQ==}
+
+  '@statsig/js-client@3.33.7':
+    resolution: {integrity: sha512-xVhjheb7UEqA0HxdO+aztZ0bT7aEE1RTcpu8RcCaM2L+Tm0ebFLzn1NH4VA0pbjfVi+WVBh8KGXolxcYrXVPug==}
 
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
@@ -6495,6 +6504,12 @@ snapshots:
   '@sindresorhus/is@4.6.0': {}
 
   '@stablelib/base64@1.0.1': {}
+
+  '@statsig/client-core@3.33.7': {}
+
+  '@statsig/js-client@3.33.7':
+    dependencies:
+      '@statsig/client-core': 3.33.7
 
   '@swc/helpers@0.5.23':
     dependencies:

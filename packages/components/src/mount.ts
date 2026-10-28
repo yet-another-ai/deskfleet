@@ -4,6 +4,7 @@ import { getClient } from "@deskfleet/client/platform"
 import { i18n } from "./i18n/index.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
 import { nativeDragPolicy } from "./plugins/native-drag.ts"
+import { installAnalytics } from "./plugins/analytics.ts"
 import "./styles.css"
 
 export async function mountDeskfleet(target: string | Element = "#root") {
@@ -31,11 +32,13 @@ export async function mountDeskfleet(target: string | Element = "#root") {
     ? (await import("./AccountShell.vue")).default
     : (await import("./App.vue")).default
   const app = host.central ? createApp(root, { host: { ...host } }) : createApp(root)
+  const { router } = await import("./router/index.ts")
+  installAnalytics(app, router)
   app.use(nativeDragPolicy)
   app.use(vaporInteropPlugin)
   app.use(state)
   app.onUnmount(() => disposePinia(state))
-  app.use((await import("./router/index.ts")).router)
+  app.use(router)
   app.use(i18n)
   app.mount(target)
   return app

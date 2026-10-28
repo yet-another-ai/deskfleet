@@ -1,6 +1,6 @@
-use super::{BillingProfile, Plan, profile};
+use super::{BillingAnalyticsEvent, BillingProfile, Plan, analytics, profile};
 use crate::{ControlStore, Error, Result, now_ms, one, resource_id, sql};
-use sea_orm::ConnectionTrait;
+use sea_orm::{ConnectionTrait, TransactionTrait};
 
 #[derive(Clone, Debug)]
 pub struct CheckoutAttempt {
@@ -11,6 +11,7 @@ pub struct CheckoutAttempt {
     pub session_id: Option<String>,
     pub status: String,
     pub created_at: i64,
+    pub actor_user_id: Option<String>,
 }
 #[derive(Clone, Debug)]
 pub struct PaymentEvent {
@@ -18,6 +19,8 @@ pub struct PaymentEvent {
     pub event_type: String,
     pub object_id: String,
     pub claim_token: String,
+    pub occurred_at: Option<i64>,
+    pub payment_attempt: Option<i64>,
 }
 pub struct SubscriptionProjection {
     pub subscription_id: String,
@@ -37,6 +40,7 @@ fn checkout(row: sea_orm::QueryResult) -> Result<CheckoutAttempt> {
         session_id: row.try_get("", "session_id")?,
         status: row.try_get("", "status")?,
         created_at: row.try_get("", "created_at")?,
+        actor_user_id: row.try_get("", "actor_user_id")?,
     })
 }
 fn parse_interval(interval: &str) -> Result<&str> {
@@ -108,6 +112,7 @@ impl ControlStore {
         team_id: &str,
         token: &str,
         projection: &SubscriptionProjection,
+        events: &[BillingAnalyticsEvent],
     ) -> Result<()> {
         if let Some(plan) = projection.paid_plan.as_deref() {
             Plan::paid(plan)?;
@@ -115,11 +120,14 @@ impl ControlStore {
         if projection.paid_plan.is_some() != projection.paid_through.is_some() {
             return Err(Error::Invalid("incomplete paid coverage"));
         }
-        let changed=self.db.execute_raw(sql(
+        let tx = self.db.begin().await?;
+        let changed=tx.execute_raw(sql(
             "UPDATE cp_billing_profiles SET subscription_id=$3,subscription_status=$4,plan=COALESCE($5,plan),paid_through=CASE WHEN $5::text IS NULL THEN paid_through ELSE $6 END,period_anchor=CASE WHEN subscription_id IS NULL OR subscription_id<>$3 THEN $7 ELSE period_anchor END,cancel_at_period_end=$8,reconciled_at=$9 WHERE team_id=$1 AND lease_token=$2 AND lease_until>$9 AND (subscription_id IS NULL OR subscription_id=$3 OR paid_through IS NULL OR paid_through<=$9)",
             vec![resource_id(team_id)?.into(),token.into(),projection.subscription_id.clone().into(),projection.status.clone().into(),projection.paid_plan.clone().into(),projection.paid_through.into(),projection.period_anchor.into(),projection.cancel_at_period_end.into(),now_ms().into()]
         )).await?.rows_affected()==1;
         if changed {
+            analytics::enqueue(&tx, team_id, events).await?;
+            tx.commit().await?;
             Ok(())
         } else {
             Err(Error::Conflict("billing reconciliation superseded"))
@@ -145,12 +153,13 @@ impl ControlStore {
         request_id: &str,
         plan: &str,
         interval: &str,
+        actor_user_id: &str,
     ) -> Result<CheckoutAttempt> {
         Plan::paid(plan)?;
         let interval = parse_interval(interval)?;
         uuid::Uuid::parse_str(request_id)
             .map_err(|_| Error::Invalid("requestId must be a UUID"))?;
-        one(&self.db,"INSERT INTO cp_checkout_attempts(request_id,team_id,plan,billing_interval,status,created_at) SELECT $3,team_id,$4,$5,'pending',$6 FROM cp_billing_profiles WHERE team_id=$1 AND lease_token=$2 AND lease_until>$6 RETURNING *",vec![resource_id(team_id)?.into(),token.into(),request_id.into(),plan.into(),interval.into(),now_ms().into()]).await.and_then(checkout)
+        one(&self.db,"INSERT INTO cp_checkout_attempts(request_id,team_id,plan,billing_interval,status,created_at,actor_user_id) SELECT $3,team_id,$4,$5,'pending',$6,$7 FROM cp_billing_profiles WHERE team_id=$1 AND lease_token=$2 AND lease_until>$6 RETURNING *",vec![resource_id(team_id)?.into(),token.into(),request_id.into(),plan.into(),interval.into(),now_ms().into(),actor_user_id.into()]).await.and_then(checkout)
     }
     pub async fn update_checkout_attempt(
         &self,
@@ -159,12 +168,16 @@ impl ControlStore {
         request_id: &str,
         session_id: &str,
         status: &str,
+        events: &[BillingAnalyticsEvent],
     ) -> Result<()> {
         if !matches!(status, "open" | "complete" | "expired") {
             return Err(Error::Invalid("invalid checkout state"));
         }
-        let changed=self.db.execute_raw(sql("UPDATE cp_checkout_attempts a SET session_id=$4,status=$5 FROM cp_billing_profiles b WHERE a.request_id=$3 AND a.team_id=$1 AND b.team_id=a.team_id AND b.lease_token=$2 AND b.lease_until>$6",vec![resource_id(team_id)?.into(),token.into(),request_id.into(),session_id.into(),status.into(),now_ms().into()])).await?.rows_affected()==1;
+        let tx = self.db.begin().await?;
+        let changed=tx.execute_raw(sql("UPDATE cp_checkout_attempts a SET session_id=$4,status=$5 FROM cp_billing_profiles b WHERE a.request_id=$3 AND a.team_id=$1 AND b.team_id=a.team_id AND b.lease_token=$2 AND b.lease_until>$6",vec![resource_id(team_id)?.into(),token.into(),request_id.into(),session_id.into(),status.into(),now_ms().into()])).await?.rows_affected()==1;
         if changed {
+            analytics::enqueue(&tx, team_id, events).await?;
+            tx.commit().await?;
             Ok(())
         } else {
             Err(Error::Conflict("checkout operation changed; retry"))
@@ -184,11 +197,13 @@ impl ControlStore {
         id: &str,
         event_type: &str,
         object_id: &str,
+        occurred_at: Option<i64>,
+        payment_attempt: Option<i64>,
     ) -> Result<()> {
         if id.is_empty() || id.len() > 255 || object_id.is_empty() || object_id.len() > 255 {
             return Err(Error::Invalid("invalid payment event"));
         }
-        self.db.execute_raw(sql("INSERT INTO cp_payment_events(id,event_type,object_id,available_at,received_at) VALUES($1,$2,$3,$4,$4) ON CONFLICT(id) DO NOTHING",vec![id.into(),event_type.into(),object_id.into(),now_ms().into()])).await?;
+        self.db.execute_raw(sql("INSERT INTO cp_payment_events(id,event_type,object_id,available_at,received_at,occurred_at,payment_attempt) VALUES($1,$2,$3,$4,$4,$5,$6) ON CONFLICT(id) DO NOTHING",vec![id.into(),event_type.into(),object_id.into(),now_ms().into(),occurred_at.into(),payment_attempt.into()])).await?;
         Ok(())
     }
     pub async fn claim_payment_event(&self) -> Result<Option<PaymentEvent>> {
@@ -200,6 +215,8 @@ impl ControlStore {
                 event_type: r.try_get("", "event_type")?,
                 object_id: r.try_get("", "object_id")?,
                 claim_token: token,
+                occurred_at: r.try_get("", "occurred_at")?,
+                payment_attempt: r.try_get("", "payment_attempt")?,
             })
         })
         .transpose()

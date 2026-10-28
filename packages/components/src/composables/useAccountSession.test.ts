@@ -1,11 +1,15 @@
 import { flushPromises } from "@vue/test-utils"
-import { afterEach, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { LocalEnrollment } from "@deskfleet/client/central"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import { router } from "../router/index.ts"
 import { createAccountSession, type AccountSession } from "./useAccountSession.ts"
+import { captureAnalyticsContext, trackEvent } from "../services/analytics.ts"
+
+vi.mock("../services/analytics.ts", () => { const trackEvent = vi.fn(); return { trackEvent, captureAnalyticsContext: vi.fn(() => trackEvent) } })
 
 let session: AccountSession | undefined
+beforeEach(() => vi.mocked(trackEvent).mockClear())
 afterEach(() => { session?.dispose(); session = undefined; vi.restoreAllMocks() })
 const enrollment = (value: Partial<LocalEnrollment> = {}): LocalEnrollment => ({
   configured: false, connected: false, revoked: false, identity: { originId: "local-origin", machineId: "1" }, machineName: "This Mac", ...value,
@@ -242,12 +246,58 @@ test("creating and joining Teams select them; signing out clears every selection
   expect(session.team.value?.name).toBe("Platform")
   await session.joinTeam("code")
   expect(fake.central.acceptInvite).toHaveBeenCalledExactlyOnceWith("code")
+  expect(vi.mocked(trackEvent).mock.calls).toEqual([
+    ["team_join_action", { outcome: "attempt" }],
+    ["team_join_action", { outcome: "success" }],
+  ])
   expect(session.team.value?.name).toBe("Invited team")
   expect(session.teams.value).toHaveLength(2)
   await session.signOut()
   expect(session.account.value.user).toBeUndefined()
   expect(session.teams.value).toEqual([])
   expect(session.teamId.value).toBeUndefined()
+})
+
+test("a rejected invitation acceptance records failure without the code or server message", async () => {
+  const fake = fakeCentral()
+  fake.central.acceptInvite.mockRejectedValueOnce(new Error("Private invitation details"))
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  await expect(session.joinTeam("private-token")).rejects.toThrow("Private invitation details")
+  expect(vi.mocked(trackEvent).mock.calls).toEqual([
+    ["team_join_action", { outcome: "attempt" }],
+    ["team_join_action", { outcome: "failure" }],
+  ])
+})
+
+test("join completion uses the context captured before accepting the invite", async () => {
+  const fake = fakeCentral()
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const captured = vi.fn()
+  vi.mocked(captureAnalyticsContext).mockReturnValueOnce(captured)
+  const response = Promise.withResolvers<{ id: string; name: string; role: "member" }>()
+  fake.central.acceptInvite.mockReturnValueOnce(response.promise)
+  const operation = session.joinTeam("private-token")
+  response.resolve({ id: "joined", name: "Joined", role: "member" })
+  await operation
+  expect(trackEvent).not.toHaveBeenCalled()
+  expect(captured.mock.calls).toEqual([
+    ["team_join_action", { outcome: "attempt" }],
+    ["team_join_action", { outcome: "success" }],
+  ])
+})
+
+test("accepted membership remains successful when its subsequent roster refresh fails", async () => {
+  const fake = fakeCentral()
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  fake.central.teams.mockRejectedValueOnce(new Error("Roster unavailable"))
+  await expect(session.joinTeam("private-token")).rejects.toThrow("Roster unavailable")
+  expect(vi.mocked(trackEvent).mock.calls).toEqual([
+    ["team_join_action", { outcome: "attempt" }],
+    ["team_join_action", { outcome: "success" }],
+  ])
 })
 
 test("account refresh updates site privileges and creation policy even without a Team", async () => {

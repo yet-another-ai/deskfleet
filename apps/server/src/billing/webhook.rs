@@ -61,8 +61,14 @@ pub(super) async fn receive(
     let object = event["data"]["object"]["id"]
         .as_str()
         .ok_or_else(|| ApiError::bad("invalid payment event"))?;
+    let occurred_at = event["created"]
+        .as_i64()
+        .and_then(|value| value.checked_mul(1000));
+    let payment_attempt = event["data"]["object"]["attempt_count"]
+        .as_i64()
+        .filter(|value| *value > 0);
     s.store
-        .receive_payment_event(id, event_type, object)
+        .receive_payment_event(id, event_type, object, occurred_at, payment_attempt)
         .await?;
     Ok(HttpResponse::Ok().finish())
 }

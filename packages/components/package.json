@@ -12,6 +12,7 @@
     "@internationalized/date": "3.12.4",
     "@lobehub/icons-static-svg": "1.101.0",
     "@lucide/vue": "1.62.0",
+    "@statsig/js-client": "3.33.7",
     "@vueuse/core": "15.0.0",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/addon-ligatures": "0.10.0",

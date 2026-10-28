@@ -1,11 +1,14 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi, CentralEvent } from "./central.ts"
 import { connectFilePeer, type FilePeerEvents } from "./files-signaling.ts"
+import { setPeerTelemetrySink } from "./peer-telemetry.ts"
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => { setPeerTelemetrySink(undefined); vi.useRealTimers() })
 const sdp = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\n"
 
 test("file peers retain transport through signaling loss and close on revocation", async () => {
+  const telemetry = vi.fn()
+  setPeerTelemetrySink(telemetry)
   let listener!: (event: CentralEvent) => void
   let events!: FilePeerEvents
   const send = vi.fn(async () => {}), close = vi.fn(async () => {}), failed = vi.fn()
@@ -32,6 +35,10 @@ test("file peers retain transport through signaling loss and close on revocation
   await expect(endpoint.send(new Uint8Array([2]))).rejects.toThrow("closed")
   expect(close).toHaveBeenCalledOnce()
   events.data(new Uint8Array())
+  expect(telemetry.mock.calls.map(([event]) => event)).toEqual([
+    { name: "peer_granted", teamId: "1", metadata: { feature: "files", relay: "unconfigured" } },
+    { name: "peer_connection", teamId: "1", metadata: { feature: "files", relay: "unconfigured", outcome: "connected", transport: "unknown" } },
+  ])
 })
 
 test("expiry closes file access without depending on another command", async () => {
@@ -66,6 +73,8 @@ test("the setup deadline rejects a stalled offer without waiting for signaling t
 })
 
 test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const)("explains relay denial after direct file failure: %s", async relayDeniedReason => {
+  const telemetry = vi.fn()
+  setPeerTelemetrySink(telemetry)
   const failed = vi.fn()
   const central = {
     createPeer: async () => ({ peerId: "a", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [], relayDeniedReason }),
@@ -76,4 +85,6 @@ test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const
   }), () => {}, failed)
   await expect(connecting).rejects.toThrow("Direct connection failed.")
   expect(failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay") }))
+  expect(telemetry).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "1", metadata: { feature: "files", relay: relayDeniedReason, outcome: "failed", transport: "unknown" } })
+  expect(telemetry).toHaveBeenCalledTimes(2)
 })

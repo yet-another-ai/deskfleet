@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ExternalLink, Info, Mail } from "@lucide/vue"
 import { useAsyncState, useEventListener } from "@vueuse/core"
-import { computed, ref, useId } from "vue"
+import { computed, ref, useId, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import type { BillingInterval } from "@deskfleet/client/billing"
@@ -9,6 +9,8 @@ import type { Team } from "@deskfleet/client/central"
 import { HttpError } from "@deskfleet/client/http-central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { fileSize } from "../../services/file-format.ts"
+import { beginAnalyticsPlanRefresh, trackEvent } from "../../services/analytics.ts"
+import { billingFailure } from "../../services/billing-events.ts"
 import IconButton from "../common/IconButton.vue"
 import UiButton from "../common/UiButton.vue"
 import AgentNotice from "../session/AgentNotice.vue"
@@ -17,14 +19,21 @@ import UsageMeter from "./UsageMeter.vue"
 const props = defineProps<{ team: Team }>()
 const { t, locale } = useI18n()
 const id = useId()
-const central = useAccountSession()!.central
+const account = useAccountSession()!
+const central = account.central
 const pending = ref<"go" | "pro" | "portal">()
 const checkoutOpened = ref(false)
 const actionError = ref<string>()
 const interval = ref<BillingInterval>("month")
 // A retried checkout reuses its request id so the server can return the same attempt.
 const checkoutIds = new Map<string, string>()
-const { state, isLoading, error, executeImmediate: load } = useAsyncState(() => central.billing(props.team.id), undefined)
+const { state, isLoading, error, executeImmediate: load } = useAsyncState(async () => {
+  const updatePlan = beginAnalyticsPlanRefresh(props.team.id)
+  const billing = await central.billing(props.team.id)
+  updatePlan(billing.plan)
+  return billing
+}, undefined)
+watch(() => account.account.value.user?.id, () => { checkoutIds.clear(); checkoutOpened.value = false })
 // Checkout and the billing portal finish in another tab or the system browser.
 useEventListener(window, "focus", () => { void load() })
 
@@ -59,22 +68,65 @@ const caption = computed(() => {
   return value.nextResetAt ? `${left} · ${t("billing.resets", { date: date(value.nextResetAt) })}` : left
 })
 
-async function open(target: "go" | "pro" | "portal"): Promise<void> {
+let viewed = false
+const recoveryViewed = new Set<string>()
+watch(state, value => {
+  if (!value) return
+  if (!viewed) {
+    viewed = true
+    trackEvent("billing_plans_viewed", {
+      current_plan: value.plan, can_manage: value.canManageBilling, payments_available: value.paymentsAvailable,
+      has_subscription: hasSubscription.value, enterprise_contact_available: !!enterpriseContact.value,
+    })
+  }
+  const status = value.subscription?.status
+  if (billingAdmin.value && (status === "past_due" || status === "unpaid" || status === "incomplete") && !recoveryViewed.has(status)) {
+    recoveryViewed.add(status)
+    trackEvent("billing_payment_recovery_viewed", { subscription_status: status })
+  }
+})
+
+function selectInterval(value: BillingInterval): void {
+  if (interval.value === value) return
+  trackEvent("billing_interval_selected", { interval: value, previous_interval: interval.value })
+  interval.value = value
+}
+
+async function open(target: "go" | "pro" | "portal", source: "manage" | "payment_recovery" = "manage"): Promise<void> {
   if (pending.value) return
   pending.value = target
   actionError.value = undefined
+  const actor = account.account.value.user?.id
+  const teamId = props.team.id
+  const sameActor = () => account.account.value.user?.id === actor && account.teamId.value === teamId
   try {
-    if (target === "portal") await central.billingPortal(props.team.id)
+    if (target === "portal") {
+      trackEvent("billing_portal_started", { source })
+      try {
+        await central.billingPortal(props.team.id)
+        if (sameActor()) trackEvent("billing_portal_opened_client", { source })
+      } catch (reason) {
+        if (sameActor()) trackEvent("billing_portal_failed", { source, reason: billingFailure(reason) })
+        throw reason
+      }
+    }
     else {
       const key = `${props.team.id}:${target}:${interval.value}`
       const requestId = checkoutIds.get(key) ?? crypto.randomUUID()
       checkoutIds.set(key, requestId)
-      try { await central.checkout(props.team.id, target, requestId, interval.value) }
+      const metadata = { target_plan: target, interval: interval.value, request_id: requestId }
+      trackEvent("billing_checkout_started", metadata)
+      try {
+        await central.checkout(props.team.id, target, requestId, metadata.interval)
+        if (sameActor()) trackEvent("billing_checkout_opened", metadata)
+      }
       catch (reason) {
+        if (sameActor()) trackEvent("billing_checkout_failed", { ...metadata, reason: billingFailure(reason) })
         if (reason instanceof HttpError && reason.code === "checkout_finished") checkoutIds.delete(key)
         throw reason
       }
       // Opening succeeded; it replaces any previous unpaid attempt for this Team.
+      if (!sameActor()) return
       checkoutIds.clear()
       checkoutOpened.value = true
     }
@@ -96,7 +148,7 @@ async function open(target: "go" | "pro" | "portal"): Promise<void> {
     </div>
     <div v-else-if="state" class="flex flex-col gap-3">
       <AgentNotice v-if="paymentProblem && billingAdmin" tone="danger" :text="t('billing.paymentIssueDescription')">
-        <UiButton size="sm" class="shrink-0" :loading="pending === 'portal'" @click="open('portal')">{{ t("billing.fixPayment") }}</UiButton>
+        <UiButton size="sm" class="shrink-0" :loading="pending === 'portal'" @click="open('portal', 'payment_recovery')">{{ t("billing.fixPayment") }}</UiButton>
       </AgentNotice>
       <AgentNotice v-if="checkoutOpened && !hasSubscription" tone="progress" :text="t('billing.checkoutOpened')" />
       <div class="ui-card shadow-ui-card" data-team-plan>
@@ -129,8 +181,8 @@ async function open(target: "go" | "pro" | "portal"): Promise<void> {
         <div class="flex flex-wrap items-center justify-between gap-3" data-billing-interval>
           <p class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.chooseInterval") }}</p>
           <div role="group" :aria-label="t('billing.chooseInterval')" class="flex rounded-lg border border-ui-border bg-ui-hover p-1">
-            <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'month' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'month'" data-billing-interval-option="month" @click="interval = 'month'">{{ t("billing.interval.month") }}</button>
-            <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'year' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'year'" data-billing-interval-option="year" @click="interval = 'year'">{{ t("billing.interval.year") }}</button>
+            <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'month' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'month'" data-billing-interval-option="month" @click="selectInterval('month')">{{ t("billing.interval.month") }}</button>
+            <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'year' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'year'" data-billing-interval-option="year" @click="selectInterval('year')">{{ t("billing.interval.year") }}</button>
           </div>
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
@@ -150,7 +202,7 @@ async function open(target: "go" | "pro" | "portal"): Promise<void> {
           <p class="m-0 text-sm font-semibold">{{ t("billing.plan.enterprise") }}</p>
           <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.offer.enterprise") }}</p>
         </div>
-        <a class="ui-button shrink-0" :href="`mailto:${enterpriseContact}`">{{ t("billing.contactEnterprise") }}<Mail :size="13" :stroke-width="1.75" aria-hidden="true" /></a>
+        <a class="ui-button shrink-0" :href="`mailto:${enterpriseContact}`" @click="trackEvent('billing_enterprise_contact_clicked', {})">{{ t("billing.contactEnterprise") }}<Mail :size="13" :stroke-width="1.75" aria-hidden="true" /></a>
       </div>
       <p v-if="actionError" role="alert" class="m-0 text-sm text-ui-danger">{{ actionError }}</p>
     </div>

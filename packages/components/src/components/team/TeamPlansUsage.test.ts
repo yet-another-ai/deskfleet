@@ -1,5 +1,5 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import type { TeamBilling } from "@deskfleet/client/billing"
 import { HttpError } from "@deskfleet/client/http-central"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
@@ -7,14 +7,19 @@ import { i18n } from "../../i18n/index.ts"
 import { fakeCentral, billingFixture } from "../../test/central.ts"
 import TeamPlansUsage from "./TeamPlansUsage.vue"
 import PlansUsageSettings from "../settings/PlansUsageSettings.vue"
+import { trackEvent } from "../../services/analytics.ts"
+
+vi.mock("../../services/analytics.ts", () => ({ trackEvent: vi.fn(), beginAnalyticsPlanRefresh: () => () => {} }))
 
 let view: VueWrapper | undefined
 let session: AccountSession | undefined
-afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined })
+afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined; vi.clearAllMocks() })
 const usage = () => view!.getComponent(TeamPlansUsage)
 const metric = (key: string) => usage().get(`[data-team-usage="${key}"]`)
 
 async function setup(configure?: (fake: ReturnType<typeof fakeCentral>) => void) {
+  view?.unmount()
+  session?.dispose()
   const fake = fakeCentral({ teams: [
     { id: "team-1", name: "Design team", role: "member" },
     { id: "team-2", name: "Engineering team", role: "member" },
@@ -221,4 +226,93 @@ test("a failed renewal offers billing admins the payment recovery action", async
   expect(usage().find("[data-billing-offer]").exists()).toBe(false)
   await button("Update payment")!.trigger("click"); await flushPromises()
   expect(fake.central.billingPortal).toHaveBeenCalledExactlyOnceWith("team-1")
+  expect(trackEvent).toHaveBeenCalledWith("billing_payment_recovery_viewed", { subscription_status: "past_due" })
+  expect(trackEvent).toHaveBeenCalledWith("billing_portal_started", { source: "payment_recovery" })
+  expect(trackEvent).toHaveBeenCalledWith("billing_portal_opened_client", { source: "payment_recovery" })
+})
+
+test("plans are viewed once after loading and do not become a paid conversion on focus", async () => {
+  await setup(fake => fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true }))
+  expect(trackEvent).toHaveBeenCalledWith("billing_plans_viewed", {
+    current_plan: "free", can_manage: true, payments_available: true, has_subscription: false, enterprise_contact_available: false,
+  })
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "billing_plans_viewed")).toHaveLength(1)
+  expect(vi.mocked(trackEvent).mock.calls.map(([name]) => name)).not.toContain("billing_invoice_paid")
+})
+
+test("checkout funnel captures the selected interval and request identity, never a paid conversion", async () => {
+  const opened = Promise.withResolvers<void>()
+  const fake = await setup(fake => {
+    fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true })
+    fake.central.checkout.mockReturnValueOnce(opened.promise)
+  })
+  await usage().get("[data-billing-interval-option='year']").trigger("click")
+  expect(trackEvent).toHaveBeenCalledWith("billing_interval_selected", { interval: "year", previous_interval: "month" })
+  await button("Upgrade to Go")!.trigger("click")
+  const metadata = { target_plan: "go", interval: "year", request_id: fake.central.checkout.mock.calls[0]![2] }
+  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_started", metadata)
+  expect(trackEvent).not.toHaveBeenCalledWith("billing_checkout_opened", metadata)
+  await usage().get("[data-billing-interval-option='month']").trigger("click")
+  opened.resolve()
+  await flushPromises()
+  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_opened", metadata)
+  expect(vi.mocked(trackEvent).mock.calls.map(([name]) => name)).not.toContain("billing_invoice_paid")
+})
+
+test("checkout retries report bounded failure categories without exception text", async () => {
+  const fake = await setup(fake => {
+    fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true })
+    fake.central.checkout.mockRejectedValueOnce(new HttpError(409, "private Stripe URL and customer info", undefined, "checkout_pending"))
+  })
+  await button("Upgrade to Pro")!.trigger("click"); await flushPromises()
+  const metadata = { target_plan: "pro", interval: "month", request_id: fake.central.checkout.mock.calls[0]![2] }
+  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_failed", { ...metadata, reason: "checkout_pending" })
+  await button("Upgrade to Pro")!.trigger("click"); await flushPromises()
+  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_opened", metadata)
+  expect(JSON.stringify(vi.mocked(trackEvent).mock.calls)).not.toContain("private")
+})
+
+test("Enterprise contact records intent without the configured email", async () => {
+  await setup(fake => fake.central.billing.mockResolvedValue({ ...free(), enterpriseContactEmail: "private@example.test" }))
+  await usage().get('[data-billing-offer="enterprise"] a').trigger("click")
+  expect(trackEvent).toHaveBeenCalledWith("billing_enterprise_contact_clicked", {})
+  expect(JSON.stringify(vi.mocked(trackEvent).mock.calls)).not.toContain("private@example.test")
+})
+
+test("Portal failure is reported separately from opening a Portal", async () => {
+  await setup(fake => {
+    fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true, subscription: { plan: "go", status: "past_due", paidThrough: null, cancelAtPeriodEnd: false } })
+    fake.central.billingPortal.mockRejectedValue(new Error("private opening failure"))
+  })
+  await button("Update payment")!.trigger("click"); await flushPromises()
+  expect(trackEvent).toHaveBeenCalledWith("billing_portal_failed", { source: "payment_recovery", reason: "network_or_open_failed" })
+  expect(trackEvent).not.toHaveBeenCalledWith("billing_portal_opened_client", expect.anything())
+})
+
+test("leaving settings still records a Checkout opening for the same account and Team", async () => {
+  const opened = Promise.withResolvers<void>()
+  await setup(fake => {
+    fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true })
+    fake.central.checkout.mockReturnValueOnce(opened.promise)
+  })
+  await button("Upgrade to Go")!.trigger("click")
+  view!.unmount(); view = undefined
+  opened.resolve()
+  await flushPromises()
+  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_opened", expect.objectContaining({ target_plan: "go", interval: "month" }))
+})
+
+test("an earlier account's pending Checkout is not attributed to its replacement", async () => {
+  const opened = Promise.withResolvers<void>()
+  await setup(fake => {
+    fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true })
+    fake.central.checkout.mockReturnValueOnce(opened.promise)
+  })
+  await button("Upgrade to Go")!.trigger("click")
+  session!.account.value = { ...session!.account.value, user: { ...session!.account.value.user!, id: "replacement-user" } }
+  opened.resolve()
+  await flushPromises()
+  expect(trackEvent).not.toHaveBeenCalledWith("billing_checkout_opened", expect.anything())
 })

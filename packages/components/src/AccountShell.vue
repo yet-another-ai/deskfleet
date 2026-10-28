@@ -20,6 +20,9 @@ import TeamSwitcher from "./components/sidebar/TeamSwitcher.vue"
 import { router } from "./router/index.ts"
 import { accountSessionKey, createAccountSession } from "./composables/useAccountSession.ts"
 import { useBrowserNotifications } from "./composables/useBrowserNotifications.ts"
+import { useAccountAnalytics } from "./composables/useAccountAnalytics.ts"
+import { trackEvent } from "./services/analytics.ts"
+import { billingReturn } from "./services/billing-events.ts"
 
 const loadMachineSurface = () => import("./components/account/MachineSurface.vue")
 const MachineSurface = defineAsyncComponent(loadMachineSurface)
@@ -34,6 +37,7 @@ const browserNotificationOnboardingComplete = props.host.platform === "web"
 const browserNotificationPermission = ref(props.host.platform === "web" ? getBrowserNotificationPermission() : undefined)
 const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
+useAccountAnalytics(session)
 const { ready, account, site, teams, team, machine, dialog } = session
 const route = router.currentRoute
 const returnParams = new URLSearchParams(location.search)
@@ -42,8 +46,11 @@ let billingReturnTeam: string | undefined
 function finishBillingReturn(machineId?: string): void {
   if (!billingReturnTeam || team.value?.id !== billingReturnTeam || (machine.value && machine.value.id !== machineId)) return
   billingReturnTeam = undefined
+  const source = billingReturn(returnParams.get("billing_return"))
+  if (source && returnParams.get("team") === team.value?.id) trackEvent("billing_returned", { source })
   session.openSettings("plans")
   returnParams.delete("team"); returnParams.delete("settings")
+  returnParams.delete("billing_return")
   const search = returnParams.toString()
   history.replaceState(null, "", location.pathname + (search ? `?${search}` : "") + location.hash)
 }

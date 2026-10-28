@@ -50,6 +50,17 @@ offline; clients show when that data was last observed.
 The backend is open source in this repository under Apache-2.0. Shared resource
 and protocol types remain independent of Actix Web and Node-API.
 
+Optional Statsig integration belongs to the shared JavaScript frontend. Web and
+Electron renderers use a build-time client-public key for behavioral events and
+UI gates/experiments; an absent key disables the integration. Electron permits
+only the configured Statsig origins through its renderer Content Security Policy.
+Verified billing conversions originate in the Rust server; a transactional
+billing outbox delivers them independently from payment reconciliation. Frontend
+actions and server conversions share account and Team identifiers.
+Experiment decisions never grant authorization, subscription entitlements, or
+quota capacity; those remain server and daemon responsibilities. The
+[analytics guide](analytics.md) owns identity, event scope, and configuration.
+
 ### Multiple API instances
 
 API instances share one PostgreSQL database and the same public service origin.

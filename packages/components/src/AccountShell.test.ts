@@ -9,6 +9,7 @@ import type { AccountSession } from "./composables/useAccountSession.ts"
 import AccountShell from "./AccountShell.vue"
 import { agentEvent, agentInput, agentSnapshot } from "./test/agent.ts"
 import { fakeCentral, machineFixture } from "./test/central.ts"
+import * as analytics from "./services/analytics.ts"
 
 const host = getClient()
 const page = () => new DOMWrapper(document.body)
@@ -340,12 +341,13 @@ test.each([
   [false, false, "team-2"], [true, false, "team-2"],
   [true, true, "team-2"], [true, true, "team-1"],
 ] as const)("a Stripe return opens the paying Team's Plans & Usages (target machine: %s, initial machine: %s, target: %s)", async (hasMachine, initialMachine, target) => {
+  const events = vi.spyOn(analytics, "trackEvent")
   const fake = fakeCentral({
     teams: [{ id: "team-1", name: "First team", role: "admin" }, { id: "team-2", name: "Paying team", role: "admin" }],
     machines: [...(hasMachine ? [machineFixture("m2", "team-2", "Build server")] : []), ...(initialMachine ? [machineFixture("m1", "team-1", "Initial server")] : [])],
   })
   withEmptyCatalogs(fake)
-  history.replaceState(history.state, "", `${location.pathname}?team=${target}&settings=plans${location.hash}`)
+  history.replaceState(history.state, "", `${location.pathname}?team=${target}&settings=plans&billing_return=checkout_success${location.hash}`)
   mountShell(fake.central, "web")
   await flushPromises()
   await vi.waitFor(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
@@ -353,6 +355,9 @@ test.each([
   expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith(target)
   expect(location.search).toBe("")
   expect(router.currentRoute.value.path).toBe("/team/settings/plans")
+  expect(events).toHaveBeenCalledWith("billing_returned", { source: "checkout_success" })
+  expect(events.mock.calls.filter(([name]) => name === "billing_returned")).toHaveLength(1)
+  expect(events.mock.calls.map(([name]) => name)).not.toContain("billing_invoice_paid")
 })
 
 test.each(["darwin", "web"] as const)("notification settings are available without machines (%s)", async (platform) => {

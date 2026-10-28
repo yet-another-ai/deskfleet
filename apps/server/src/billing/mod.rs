@@ -1,4 +1,5 @@
 //! Stripe-hosted checkout and local, payment-verified Team entitlements.
+mod analytics;
 mod config;
 mod gateway;
 mod handlers;
@@ -26,7 +27,11 @@ pub struct BillingService {
     web_url: String,
     api_base: String,
 }
-pub struct BillingWorker([tokio::task::JoinHandle<()>; 2]);
+pub struct BillingWorker([tokio::task::JoinHandle<()>; 3]);
+struct BillingActor<'a> {
+    team: &'a str,
+    user: &'a str,
+}
 impl Drop for BillingWorker {
     fn drop(&mut self) {
         for task in &self.0 {
@@ -70,8 +75,11 @@ impl BillingService {
     pub fn enterprise_contact_email(&self) -> Option<&str> {
         self.config.enterprise_contact_email.as_deref()
     }
-    fn return_url(&self, team: &str) -> String {
-        format!("{}/?team={team}&settings=plans", self.web_url)
+    fn return_url(&self, team: &str, outcome: &str) -> String {
+        format!(
+            "{}/?team={team}&settings=plans&billing_return={outcome}",
+            self.web_url
+        )
     }
     fn require_enabled(&self) -> Result<()> {
         if self.enabled() {
@@ -87,6 +95,7 @@ impl BillingService {
         &self,
         store: &ControlStore,
         team: &str,
+        actor: &str,
         plan: &str,
         interval: &str,
         request_id: &str,
@@ -105,7 +114,14 @@ impl BillingService {
             )
         })?;
         let result = self
-            .checkout_locked(store, team, plan, interval, request_id, &lease)
+            .checkout_locked(
+                store,
+                BillingActor { team, user: actor },
+                plan,
+                interval,
+                request_id,
+                &lease,
+            )
             .await;
         store.release_billing_operation(team, &lease).await?;
         result
@@ -113,12 +129,13 @@ impl BillingService {
     async fn checkout_locked(
         &self,
         store: &ControlStore,
-        team: &str,
+        actor: BillingActor<'_>,
         plan: &str,
         interval: &str,
         request_id: &str,
         lease: &str,
     ) -> Result<String> {
+        let BillingActor { team, user: actor } = actor;
         let profile = store.billing_profile(team).await?;
         if profile
             .paid_through
@@ -194,11 +211,11 @@ impl BillingService {
                 return Err(ApiError::internal());
             }
             store
-                .update_checkout_attempt(team, lease, &old.request_id, session_id, "expired")
+                .update_checkout_attempt(team, lease, &old.request_id, session_id, "expired", &[])
                 .await?;
         }
         let attempt = store
-            .create_checkout_attempt(team, lease, request_id, plan, interval)
+            .create_checkout_attempt(team, lease, request_id, plan, interval, actor)
             .await?;
         self.complete_checkout(store, team, lease, &attempt, &price)
             .await
@@ -227,7 +244,12 @@ impl BillingService {
                     "This checkout has completed or expired",
                 ));
             }
-            return hosted_url(&existing);
+            let url = hosted_url(&existing)?;
+            let events: Vec<_> = self.checkout_analytics(attempt).into_iter().collect();
+            store
+                .update_checkout_attempt(team, lease, &attempt.request_id, id, "open", &events)
+                .await?;
+            return Ok(url);
         }
         let profile = store.billing_profile(team).await?;
         let customer = match profile.customer_id {
@@ -254,8 +276,14 @@ impl BillingService {
                 stripe_id(price).ok_or_else(ApiError::internal)?.into(),
             ),
             ("line_items[0][quantity]".into(), "1".into()),
-            ("success_url".into(), self.return_url(team)),
-            ("cancel_url".into(), self.return_url(team)),
+            (
+                "success_url".into(),
+                self.return_url(team, "checkout_success"),
+            ),
+            (
+                "cancel_url".into(),
+                self.return_url(team, "checkout_cancel"),
+            ),
             ("client_reference_id".into(), team.into()),
             ("metadata[deskfleet_team_id]".into(), team.into()),
             (
@@ -281,13 +309,14 @@ impl BillingService {
             .await?;
         let url = hosted_url(&session)?;
         let id = stripe_id(&session).ok_or_else(ApiError::internal)?;
+        let events: Vec<_> = self.checkout_analytics(attempt).into_iter().collect();
         store
-            .update_checkout_attempt(team, lease, &attempt.request_id, id, "open")
+            .update_checkout_attempt(team, lease, &attempt.request_id, id, "open", &events)
             .await?;
         Ok(url)
     }
 
-    pub async fn portal(&self, store: &ControlStore, team: &str) -> Result<String> {
+    pub async fn portal(&self, store: &ControlStore, team: &str, actor: &str) -> Result<String> {
         self.require_enabled()?;
         let profile = store.billing_profile(team).await?;
         let customer = profile
@@ -308,12 +337,14 @@ impl BillingService {
                 vec![
                     ("customer".into(), customer),
                     ("configuration".into(), configuration.into()),
-                    ("return_url".into(), self.return_url(team)),
+                    ("return_url".into(), self.return_url(team, "portal")),
                 ],
                 None,
             )
             .await?;
-        hosted_url(&session)
+        let url = hosted_url(&session)?;
+        self.record_portal(store, team, actor, &session).await?;
+        Ok(url)
     }
 
     /// Portal price changes must stay on one billing interval so Stripe's

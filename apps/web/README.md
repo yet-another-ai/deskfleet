@@ -27,6 +27,23 @@ must share a site for SameSite cookies; unrelated cross-site hosting is unsuppor
 The welcome page signs in to this compiled backend and has no address setting.
 Changing the backend requires rebuilding the Web client.
 
+Statsig behavioral events and UI experiments are optional. Set
+`VITE_STATSIG_CLIENT_KEY` to a Statsig **client-public** SDK key before running
+Vite or building the Web app. Never use a server secret key: Vite includes this
+value in the public bundle. An unset or blank key disables Statsig.
+`VITE_STATSIG_ENVIRONMENT` optionally selects the Statsig environment; it defaults
+to Vite's mode (`development` or `production`). Vite reads `.env` files from
+`apps/web/`, including mode-specific files, with process environment values taking
+precedence. Changing these values requires a rebuild.
+
+When Statsig is enabled, a hosting Content Security Policy must allow
+`https://featureassets.org`, `https://prodregistryv2.org`, and
+`https://statsigapi.net` in `connect-src`. The shared client owns event logging
+and feature/experiment evaluation. Experiments may change the frontend experience;
+authorization, subscription entitlements, and quotas remain enforced by the
+server and daemon. See the [analytics guide](../../agents/docs/analytics.md) for
+identity, event metadata, and the shared API.
+
 Register and verify your email, or sign in using your password or Passkey.
 Select a team and a machine, and
 use its synchronized resource catalog. An administrator can create a team,

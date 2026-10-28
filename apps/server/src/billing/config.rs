@@ -15,6 +15,9 @@ pub struct BillingConfig {
     pub yearly_portal_configuration_id: Option<String>,
     /// Optional sales contact for Enterprise. Independent of Stripe configuration.
     pub enterprise_contact_email: Option<String>,
+    /// Optional server-only Statsig key; payment processing never waits on Statsig.
+    pub statsig_server_key: Option<String>,
+    pub statsig_environment: Option<String>,
 }
 impl BillingConfig {
     pub fn from_env() -> io::Result<Self> {
@@ -41,6 +44,8 @@ impl BillingConfig {
                 "DESKFLEET_STRIPE_YEARLY_PORTAL_CONFIGURATION_ID",
             ),
             enterprise_contact_email: contact_email("DESKFLEET_ENTERPRISE_CONTACT_EMAIL")?,
+            statsig_server_key: optional("DESKFLEET_STATSIG_SERVER_KEY"),
+            statsig_environment: optional("DESKFLEET_STATSIG_ENVIRONMENT"),
         };
         config.validate()?;
         Ok(config)
@@ -170,6 +175,8 @@ mod tests {
             portal_configuration_id: Some("bpc_month".into()),
             yearly_portal_configuration_id: Some("bpc_year".into()),
             enterprise_contact_email: None,
+            statsig_server_key: None,
+            statsig_environment: None,
         }
     }
     #[test]

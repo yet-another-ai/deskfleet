@@ -126,6 +126,14 @@ access, not an exact byte cutoff or automatic excess charge.
 
 ## Verification and operation
 
+Optional Statsig conversion reporting uses `DESKFLEET_STATSIG_SERVER_KEY` and
+`DESKFLEET_STATSIG_ENVIRONMENT` (default `production`). Use the same project/tier
+as frontend analytics and keep the server key out of `VITE_*` configuration.
+The server emits verified invoice payments/failures and subscription lifecycle
+facts through a separate durable outbox; browser returns record navigation only.
+See [analytics](analytics.md#payment-funnel) for event names, actor attribution,
+minor-unit amounts, replay handling, and delivery semantics.
+
 Focused tests cover real PostgreSQL capacity races, monthly boundaries, paid
 coverage expiry, overrides, event deduplication, and operation leases. A local
 Stripe HTTP fixture verifies Checkout retries/replacement and paid/unpaid plan

@@ -49,6 +49,24 @@ rebuilding the app; environment variables set only when launching a built app
 do not override it. The UI has no backend-address setting. The server address
 stored with an account only scopes its saved credentials to the compiled backend.
 
+Statsig behavioral events and UI experiments run in the renderer when
+`VITE_STATSIG_CLIENT_KEY` is set before development or building. Use a Statsig
+**client-public** SDK key, never a server secret: this value is embedded in the
+renderer bundle. An unset or blank key disables Statsig.
+`VITE_STATSIG_ENVIRONMENT` optionally selects the Statsig environment and defaults
+to Vite's mode (`development` or `production`). The renderer reads `.env` files
+from `apps/desktop/src/renderer/`, including mode-specific files; process
+environment values take precedence. Rebuild the app after changing either value.
+
+The renderer's Content Security Policy adds only the three configured Statsig
+origins (`https://featureassets.org`, `https://prodregistryv2.org`, and
+`https://statsigapi.net`) when a client key is present. Without it, production
+retains `connect-src 'none'`. Account and machine API traffic remains in the
+main process. Statsig gates and experiments control frontend experience only;
+the server and daemon continue to enforce authorization, entitlements, and quotas.
+See the [analytics guide](../../agents/docs/analytics.md) for identity, events,
+and the shared API.
+
 ## Layout
 
 | Path | Process | Bundle |
@@ -465,8 +483,9 @@ repository content are untrusted display data.
 Bundled builds load from the privileged `deskfleet-app://bundle/` scheme, which
 serves only files inside `out/renderer`. Development builds accept only the fixed
 loopback Vite URL. Each build injects its Content Security Policy into
-`index.html`. Production builds forbid renderer HTTP/WebSocket connections;
-WebRTC carries peer media and a narrow preload API carries authorized central signaling. The
+`index.html`. Production builds forbid renderer HTTP/WebSocket connections except
+for the three fixed Statsig origins when analytics is configured. WebRTC carries
+peer media and a narrow preload API carries authorized central signaling. The
 media policy permits local streams.
 The window denies renderer navigation and new Electron windows. Explicit HTTP(S)
 links requesting a new window open in the system browser; other schemes remain

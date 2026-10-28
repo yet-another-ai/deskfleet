@@ -1,14 +1,18 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { Team } from "@deskfleet/client/central"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
 import { i18n } from "../../i18n/index.ts"
 import { fakeCentral, machineFixture } from "../../test/central.ts"
 import TeamSettings from "./TeamSettings.vue"
 import { selectOption } from "../../test/controls.ts"
+import { captureAnalyticsContext, trackEvent } from "../../services/analytics.ts"
+
+vi.mock("../../services/analytics.ts", () => { const trackEvent = vi.fn(); return { trackEvent, captureAnalyticsContext: vi.fn(() => trackEvent) } })
 
 let view: VueWrapper | undefined
 let session: AccountSession | undefined
+beforeEach(() => vi.mocked(trackEvent).mockClear())
 afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined })
 const button = (text: string) => view!.findAll("button").find(value => value.text() === text)
 async function setup(role: Team["role"] = "admin") {
@@ -77,6 +81,10 @@ test("invitations show a copyable one-time code", async () => {
   await view!.get("[role=dialog][data-state=open] form").trigger("submit")
   await flushPromises()
   expect(fake.central.invite).toHaveBeenCalledExactlyOnceWith("team-1", "new@example.test", "admin")
+  expect(vi.mocked(trackEvent).mock.calls).toEqual([
+    ["member_invite_action", { outcome: "attempt", invited_role: "admin" }],
+    ["member_invite_action", { outcome: "success", invited_role: "admin" }],
+  ])
   expect(view!.get("[role=dialog][data-state=open] h2").text()).toBe("Invitation ready")
   expect(view!.get("[role=dialog][data-state=open]").text()).toContain("new@example.test")
   const code = view!.get<HTMLInputElement>("[role=dialog][data-state=open] input[readonly]")
@@ -84,6 +92,40 @@ test("invitations show a copyable one-time code", async () => {
   expect(document.activeElement).toBe(code.element)
   await button("Done")!.trigger("click")
   expect(view!.find("[role=dialog]").exists()).toBe(false)
+})
+
+test("a failed invitation records its role and outcome without the email or error", async () => {
+  const fake = await setup()
+  fake.central.invite.mockRejectedValueOnce(new Error("Private mailbox details"))
+  await button("Invite")!.trigger("click")
+  await flushPromises()
+  await view!.get('[name="invite-email"]').setValue("private@example.test")
+  await view!.get("[role=dialog][data-state=open] form").trigger("submit")
+  await flushPromises()
+  expect(vi.mocked(trackEvent).mock.calls).toEqual([
+    ["member_invite_action", { outcome: "attempt", invited_role: "member" }],
+    ["member_invite_action", { outcome: "failure", invited_role: "member" }],
+  ])
+  expect(view!.get('[role=dialog] [role="alert"]').text()).toBe("Private mailbox details")
+})
+
+test("invitation completion uses the context captured before its request", async () => {
+  const fake = await setup()
+  const captured = vi.fn()
+  vi.mocked(captureAnalyticsContext).mockReturnValueOnce(captured)
+  const response = Promise.withResolvers<Awaited<ReturnType<typeof fake.central.invite>>>()
+  fake.central.invite.mockReturnValueOnce(response.promise)
+  await button("Invite")!.trigger("click")
+  await flushPromises()
+  await view!.get('[name="invite-email"]').setValue("private@example.test")
+  await view!.get("[role=dialog][data-state=open] form").trigger("submit")
+  response.resolve({ token: "private-token", expiresAt: new Date().toISOString() })
+  await flushPromises()
+  expect(trackEvent).not.toHaveBeenCalled()
+  expect(captured.mock.calls).toEqual([
+    ["member_invite_action", { outcome: "attempt", invited_role: "member" }],
+    ["member_invite_action", { outcome: "success", invited_role: "member" }],
+  ])
 })
 
 test("administrators remove machines after confirmation", async () => {

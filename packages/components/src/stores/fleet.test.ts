@@ -12,12 +12,16 @@ import { useTerminalsStore } from "./terminals.ts"
 import { agentSnapshot } from "../test/agent.ts"
 import { fakeCentral } from "../test/central.ts"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../composables/useAccountSession.ts"
+import { captureAnalyticsContext, trackEvent } from "../services/analytics.ts"
+
+vi.mock("../services/analytics.ts", () => { const trackEvent = vi.fn(); return { trackEvent, captureAnalyticsContext: vi.fn(() => trackEvent) } })
 
 const stores: ReturnType<typeof useFleetStore>[] = []
 const accounts: AccountSession[] = []
 const originalClient = getClient()
 let changed: () => void
 beforeEach(() => {
+  vi.mocked(trackEvent).mockClear()
   setActivePinia(createPinia())
   vi.spyOn(platformClient.catalog, "onChanged").mockImplementation(listener => { changed = listener; return () => {} })
   vi.spyOn(platformClient.catalog, "list").mockResolvedValue(catalogFixture())
@@ -173,6 +177,29 @@ test("workspace creation selects its configured directories without exposing an 
   expect(store.newSessionTarget!.workspace!.directories.map(({ path }) => ({ path }))).toEqual(paths)
   expect(store.newSessionTarget!.workspace!.sessions).toEqual([])
   expect(store.findWorktree("21")).toBeNull()
+  expect(trackEvent).toHaveBeenCalledExactlyOnceWith("workspace_created", { directory_count: 1 })
+})
+
+test("failed workspace creation does not record a successful creation", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  vi.spyOn(platformClient.catalog, "createWorkspace").mockRejectedValue(new Error("Directory is unavailable"))
+  await expect(store.createWorkspace("Private workspace", [{ path: "/private/project" }])).rejects.toThrow("Directory is unavailable")
+  expect(trackEvent).not.toHaveBeenCalled()
+})
+
+test("workspace completion uses the context captured before its request", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const captured = vi.fn()
+  vi.mocked(captureAnalyticsContext).mockReturnValueOnce(captured)
+  const response = Promise.withResolvers<Awaited<ReturnType<typeof platformClient.catalog.createWorkspace>>>()
+  vi.spyOn(platformClient.catalog, "createWorkspace").mockReturnValueOnce(response.promise)
+  const operation = store.createWorkspace("Private workspace", [{ path: "/private/project" }])
+  response.resolve({ id: "20", name: "Private workspace", worktrees: [] })
+  await operation
+  expect(trackEvent).not.toHaveBeenCalled()
+  expect(captured).toHaveBeenCalledExactlyOnceWith("workspace_created", { directory_count: 1 })
 })
 
 test("workspace updates replace configured directories and retain Session paths; disconnection keeps the catalog read-only", async () => {

@@ -1,6 +1,7 @@
 import { computed, inject, ref, type ComputedRef, type InjectionKey, type Ref } from "vue"
 import type { AccountState, CentralApi, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
 import { router } from "../router/index.ts"
+import { captureAnalyticsContext } from "../services/analytics.ts"
 
 export type AccountDialog = "create-team" | "join-team" | "add-machine"
 export type AccountSettingsSection = "preferences" | "appearance" | "notifications" | "team" | "plans"
@@ -216,7 +217,16 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       await selectTeam(created.id)
     },
     async joinTeam(code) {
-      const joined = await central.acceptInvite(code)
+      const track = captureAnalyticsContext()
+      track("team_join_action", { outcome: "attempt" })
+      let joined: Team
+      try {
+        joined = await central.acceptInvite(code)
+        track("team_join_action", { outcome: "success" })
+      } catch (reason) {
+        track("team_join_action", { outcome: "failure" })
+        throw reason
+      }
       teams.value = await central.teams()
       await selectTeam(joined.id)
     },

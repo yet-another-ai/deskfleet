@@ -3,10 +3,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
+import { observePeerGrant, setPeerTelemetrySink } from "@deskfleet/client/peer-telemetry"
 
 vi.mock("electron", () => ({
   app: { getPath: vi.fn(), once: vi.fn() },
-  BrowserWindow: { getAllWindows: () => [] },
+  BrowserWindow: { getAllWindows: vi.fn(() => []) },
   ipcMain: { handle: vi.fn() },
   safeStorage: { isAsyncEncryptionAvailable: vi.fn(), decryptStringAsync: vi.fn(), encryptStringAsync: vi.fn() },
   shell: { openExternal: vi.fn() },
@@ -14,8 +15,8 @@ vi.mock("electron", () => ({
 vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
 vi.mock("./backend.ts", () => ({ backendUrl: "https://fleet.example/" }))
-import { app, ipcMain, safeStorage } from "electron"
-import { CENTRAL_CHANNEL, installCentralAccount } from "./central-account.ts"
+import { app, BrowserWindow, ipcMain, safeStorage } from "electron"
+import { CENTRAL_CHANNEL, CENTRAL_EVENT, installCentralAccount } from "./central-account.ts"
 
 const user = { id: "user-1", name: "Ada" }
 const serverUrl = "https://fleet.example"
@@ -23,12 +24,34 @@ const roots: string[] = []
 const clients: HttpCentralClient[] = []
 afterEach(async () => {
   for (const client of clients.splice(0)) client.dispose()
+  setPeerTelemetrySink(undefined)
   vi.unstubAllGlobals()
   vi.clearAllMocks()
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
 
+test("main-process peer telemetry reaches the renderer without peer credentials", async () => {
+  const f = await setup(), send = vi.fn(), destroyedSend = vi.fn()
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+    { isDestroyed: () => false, webContents: { send } },
+    { isDestroyed: () => true, webContents: { send: destroyedSend } },
+  ] as unknown as Electron.BrowserWindow[])
+  await f.install()
+  const telemetry = observePeerGrant("ports", { iceServers: [{ urls: "turn:private.example", username: "private-user", credential: "secret" }] }, "team")
+  telemetry.connected()
+  expect(send.mock.calls).toEqual([
+    [CENTRAL_EVENT, { type: "peerTelemetry", event: { name: "peer_granted", teamId: "team", metadata: { feature: "ports", relay: "allowed" } } }],
+    [CENTRAL_EVENT, { type: "peerTelemetry", event: { name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: "allowed", outcome: "connected", transport: "unknown" } } }],
+  ])
+  expect(destroyedSend).not.toHaveBeenCalled()
+  const quitting = vi.mocked(app.once).mock.calls.find(([name]) => String(name) === "will-quit")![1]
+  quitting()
+  observePeerGrant("files", { iceServers: [] }, "team")
+  expect(send).toHaveBeenCalledTimes(2)
+})
+
 async function setup(stored: Record<string, unknown> = {}) {
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
   const root = await mkdtemp(join(tmpdir(), "deskfleet-account-"))
   roots.push(root)
   const path = join(root, "account.json")
