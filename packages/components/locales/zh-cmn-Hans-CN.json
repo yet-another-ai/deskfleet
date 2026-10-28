@@ -535,6 +535,8 @@
     "detachedHead": "分离的 HEAD",
     "noCommits": "尚无提交",
     "openDiff": "查看 {path} 的{kind}差异",
+    "expandFileDiff": "显示 {path} 的差异",
+    "collapseFileDiff": "隐藏 {path} 的差异",
     "showFileTree": "显示文件树",
     "hideFileTree": "隐藏文件树",
     "fileTree": "变更文件",

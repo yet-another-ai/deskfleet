@@ -1,49 +1,57 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { computed, ref, shallowRef } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { GitDiffRequest, GitFileChange, GitFileDiff, GitStatusSnapshot } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitFileChange, GitFileDiff, GitStatusSnapshot } from "../../../../../apps/daemon/src/git-protocol.ts"
+import { gitDiffCardKey, type GitDiffCard } from "./git-diff-card.ts"
 import { i18n } from "../../i18n/index.ts"
 import GitChanges from "./GitChanges.vue"
 
 const connected = ref(true)
 const state = {
   snapshot: shallowRef<GitStatusSnapshot | null>(null), loading: ref(false), error: ref<string | null>(null), connected: computed(() => connected.value),
-  selection: shallowRef<GitDiffRequest | null>(null), diff: shallowRef<GitFileDiff | null>(null), diffLoading: ref(false), diffError: ref<string | null>(null),
-  refresh: vi.fn(async () => {}), select: vi.fn(), closeDiff: vi.fn(),
+  cards: shallowRef(new Map<string, GitDiffCard>()),
+  refresh: vi.fn(async () => {}), expand: vi.fn(), collapse: vi.fn(),
 }
 vi.mock("../../composables/useSessionGit.ts", () => ({ useSessionGit: () => state }))
 const wrappers: VueWrapper[] = []
 const global = { plugins: [i18n], stubs: { teleport: { inheritAttrs: false, template: "<slot />" } } }
 const change = (options: Partial<GitFileChange> = {}): GitFileChange => ({ path: "src/app.ts", kind: "unstaged", status: "modified", additions: 2, deletions: 1, ...options })
-const selection: GitDiffRequest = { sessionId: "11", repositoryId: "repo", path: "src/app.ts", kind: "unstaged" }
 const patch = [
   "diff --git a/src/app.ts b/src/app.ts", "--- a/src/app.ts", "+++ b/src/app.ts", "@@ -2,2 +2,3 @@",
   " same", "-previous", "+<script>alert('content')</script>", "+next", "@@ -10 +11 @@", "--- old", "+++ new", "",
 ].join("\n")
-const fileDiff = (options: Partial<GitFileDiff> = {}): GitFileDiff => ({ ...selection, patch, binary: false, truncated: false, ...options })
+const fileDiff = (options: Partial<GitFileDiff> = {}): GitFileDiff => ({ sessionId: "11", repositoryId: "repo", path: "src/app.ts", kind: "unstaged", patch, binary: false, truncated: false, ...options })
+function storeCard(diff: GitFileDiff | null, options: { loading?: boolean; error?: string | null } = {}): void {
+  const next = new Map(state.cards.value)
+  if (!diff) { state.cards.value = next; return }
+  next.set(gitDiffCardKey(diff.repositoryId, diff.path, diff.kind), { request: diff, diff, loading: options.loading ?? false, error: options.error ?? null })
+  state.cards.value = next
+}
 function panel(enabled = true): VueWrapper {
   const view = mount(GitChanges, { props: { sessionId: "11", enabled }, global }); wrappers.push(view); return view
 }
 async function inlineDiff(options: { diff?: GitFileDiff | null; loading?: boolean; error?: string | null; diffError?: string | null; connected?: boolean } = {}): Promise<VueWrapper> {
-  state.selection.value = selection
-  state.diff.value = options.diff === undefined ? fileDiff() : options.diff
-  state.diffLoading.value = options.loading ?? false
-  state.diffError.value = options.diffError ?? null
+  const diff = options.diff === undefined ? fileDiff() : options.diff
+  if (!state.snapshot.value && diff) {
+    state.snapshot.value = { sessionId: "11", repositories: [{ id: "repo", root: "/code/repo", branch: "main", head: "abcdef123456", changes: [change({ path: diff.path, kind: diff.kind })] }], directories: [] }
+  }
+  if (diff) storeCard(diff, { loading: options.loading, error: options.diffError })
   state.error.value = options.error ?? null
   if (options.connected !== undefined) connected.value = options.connected
   const view = panel()
+  await view.get(`[data-git-cards] button[data-git-path="${diff?.path ?? "src/app.ts"}"][data-git-kind="${diff?.kind ?? "unstaged"}"]`).trigger("click")
   await flushPromises()
   return view
 }
 beforeEach(() => {
   connected.value = true
   state.snapshot.value = null; state.loading.value = false; state.error.value = null
-  state.selection.value = null; state.diff.value = null; state.diffLoading.value = false; state.diffError.value = null
-  state.refresh.mockClear(); state.select.mockClear(); state.closeDiff.mockClear()
+  state.cards.value = new Map()
+  state.refresh.mockClear(); state.expand.mockClear(); state.collapse.mockClear()
 })
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
 
-test("lists each checkout once, separates staged and unstaged versions, and selects the exact diff", async () => {
+test("lists each checkout once, separates staged and unstaged versions, and expands each diff card", async () => {
   const staged = change({ kind: "staged", additions: 1, deletions: 0 })
   const unstaged = change()
   state.snapshot.value = {
@@ -63,10 +71,14 @@ test("lists each checkout once, separates staged and unstaged versions, and sele
   expect(view.text()).toContain("Detached HEAD12345678")
   expect(view.text()).toContain("No changes")
   expect(view.text()).toContain("Not a Git checkout")
-  await view.get('button[data-git-path="src/app.ts"][data-git-kind="staged"]').trigger("click")
-  expect(state.select).toHaveBeenLastCalledWith("repo", staged)
-  await view.get('button[data-git-path="src/app.ts"][data-git-kind="unstaged"]').trigger("click")
-  expect(state.select).toHaveBeenLastCalledWith("repo", unstaged)
+  expect(view.findAll("[data-git-card]")).toHaveLength(3)
+  expect(view.find("[data-git-diff]").exists()).toBe(false)
+  await view.get('[data-git-cards] button[data-git-path="src/app.ts"][data-git-kind="staged"]').trigger("click")
+  expect(state.expand).toHaveBeenLastCalledWith("repo", staged)
+  expect(view.get('[data-git-card][data-git-kind="staged"]').attributes("data-git-diff")).toBe("staged")
+  await view.get('[data-git-cards] button[data-git-path="src/app.ts"][data-git-kind="unstaged"]').trigger("click")
+  expect(state.expand).toHaveBeenLastCalledWith("repo", unstaged)
+  expect(view.findAll("[data-git-diff]")).toHaveLength(2)
 })
 
 test("shows unavailable, initial load, per-directory failure and stale state without calling it clean", async () => {
@@ -112,14 +124,13 @@ test("renders the selected diff inline, without a dialog, and closes it from the
   const added = preview.findAll('[data-line-kind="added"]')
   expect(added[0]!.findAll(".git-diff-number").map(cell => cell.text())).toEqual(["", "3"])
   expect(added[2]!.findAll(".git-diff-number").map(cell => cell.text())).toEqual(["", "11"])
-  state.diff.value = fileDiff({ patch: patch.replace("previous", "updated previous") })
+  storeCard(fileDiff({ patch: patch.replace("previous", "updated previous") }))
   await view.vm.$nextTick()
   expect(view.text()).toContain("updated previous")
-  expect(view.get('[data-git-list] button[data-git-path="src/app.ts"][data-git-kind="unstaged"]').attributes("aria-current")).toBe("true")
-  await preview.trigger("keydown", { key: "Escape" })
-  expect(state.closeDiff).toHaveBeenCalledOnce()
-  await view.get("[data-git-diff]").get('button[aria-label="Close diff"]').trigger("click")
-  expect(state.closeDiff).toHaveBeenCalledTimes(2)
+  expect(preview.get("button").attributes("aria-expanded")).toBe("true")
+  await preview.get("button").trigger("click")
+  expect(state.collapse).toHaveBeenCalledWith("repo", "src/app.ts", "unstaged")
+  expect(view.find("[data-git-diff]").exists()).toBe(false)
 })
 
 test("explains binary and truncated diffs and keeps stale content visible on failure", async () => {
@@ -127,7 +138,7 @@ test("explains binary and truncated diffs and keeps stale content visible on fai
   expect(view.find("[role=dialog]").exists()).toBe(false)
   expect(view.text()).toContain("Binary file changed")
   expect(view.find(".git-diff-content").exists()).toBe(false)
-  state.diff.value = fileDiff({ truncated: true })
+  storeCard(fileDiff({ truncated: true }))
   state.error.value = "Read failed"
   connected.value = false
   await view.vm.$nextTick()
@@ -138,15 +149,14 @@ test("explains binary and truncated diffs and keeps stale content visible on fai
   expect(view.find(".git-diff-content").exists()).toBe(true)
   await view.get('button[aria-label="Refresh Git changes"]').trigger("click")
   expect(state.refresh).toHaveBeenCalledOnce()
-  state.diff.value = fileDiff({ patch: "" })
+  storeCard(fileDiff({ patch: "" }))
   state.error.value = null
-  state.diffError.value = null
   connected.value = true
   await view.vm.$nextTick()
   expect(view.text()).toContain("No changes remain in this diff")
 })
 
-test("keeps the file tree collapsed until toggled, then selects a nested file beside the diff", async () => {
+test("keeps the file tree collapsed until toggled, then jumps to that file's diff card", async () => {
   state.snapshot.value = {
     sessionId: "11",
     repositories: [{
@@ -166,38 +176,42 @@ test("keeps the file tree collapsed until toggled, then selects a nested file be
   const view = panel()
   expect(view.find("[data-git-tree]").exists()).toBe(false)
   expect(view.find("[data-git-split]").exists()).toBe(false)
-  expect(view.get("[data-git-list]").text()).toContain("src")
+  expect(view.findAll("[data-git-card]")).toHaveLength(4)
+  expect(view.get("[data-git-cards]").text()).toContain("src")
   const toggle = view.get("[data-git-tree-toggle]")
   expect(toggle.attributes("aria-pressed")).toBe("false")
   expect(toggle.attributes("aria-label")).toBe("Show file tree")
   await toggle.trigger("click")
   expect(toggle.attributes("aria-pressed")).toBe("true")
   expect(toggle.attributes("aria-label")).toBe("Hide file tree")
-  expect(view.find("[data-git-list]").exists()).toBe(false)
+  expect(view.findAll("[data-git-card]")).toHaveLength(4)
   const split = view.get("[data-git-split]")
   expect(split.classes()).toContain("flex-row")
   const tree = view.get("[data-git-tree]")
+  const cards = view.get("[data-git-cards]")
   expect(tree.attributes("role")).toBe("navigation")
   expect(split.element.contains(tree.element)).toBe(true)
-  expect(view.text()).toContain("Select a changed file to view its diff.")
+  expect(split.element.contains(cards.element)).toBe(true)
+  expect(tree.element.compareDocumentPosition(cards.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   const unstaged = tree.get('[data-kind="unstaged"]')
   expect(unstaged.get('[data-git-directory="src"]').attributes("aria-expanded")).toBe("true")
   expect(unstaged.find('[data-git-directory="src/lib"]').exists()).toBe(true)
   const nested = unstaged.get('button[data-git-path="src/lib/util.ts"][data-git-kind="unstaged"]')
   expect(nested.text()).toContain("util.ts")
   expect(nested.text()).not.toContain("src/lib")
+  const nestedCard = cards.get('[data-git-card][data-git-path="src/lib/util.ts"][data-git-kind="unstaged"]')
+  const scroll = vi.spyOn(nestedCard.element, "scrollIntoView").mockImplementation(() => {})
   await nested.trigger("click")
-  expect(state.select).toHaveBeenCalledWith("repo", expect.objectContaining({ path: "src/lib/util.ts", kind: "unstaged" }))
-  state.selection.value = { ...selection, path: "src/lib/util.ts" }
-  state.diff.value = fileDiff({ path: "src/lib/util.ts" })
-  await view.vm.$nextTick()
-  const preview = view.get("[data-git-diff]")
+  expect(state.expand).toHaveBeenCalledWith("repo", expect.objectContaining({ path: "src/lib/util.ts", kind: "unstaged" }))
+  expect(nestedCard.attributes("data-git-diff")).toBe("unstaged")
+  expect(nestedCard.get("button").attributes("aria-expanded")).toBe("true")
+  expect(scroll).toHaveBeenCalledWith({ block: "start" })
   expect(view.find("[role=dialog]").exists()).toBe(false)
-  expect(split.element.contains(preview.element)).toBe(true)
-  expect(tree.element.compareDocumentPosition(preview.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  expect(preview.attributes("data-git-path")).toBe("src/lib/util.ts")
+  expect(cards.element.contains(nestedCard.element)).toBe(true)
   await tree.get('button[data-git-path="src/app.ts"][data-git-kind="staged"]').trigger("click")
-  expect(state.select).toHaveBeenLastCalledWith("repo", expect.objectContaining({ path: "src/app.ts", kind: "staged" }))
+  expect(state.expand).toHaveBeenLastCalledWith("repo", expect.objectContaining({ path: "src/app.ts", kind: "staged" }))
+  expect(cards.get('[data-git-card][data-git-kind="staged"]').attributes("data-git-diff")).toBe("staged")
+  expect(nestedCard.attributes("data-git-diff")).toBe("unstaged")
   await unstaged.get('[data-git-directory="src"]').trigger("click")
   expect(unstaged.get('[data-git-directory="src"]').attributes("aria-expanded")).toBe("false")
   expect(unstaged.find('[data-git-path="src/lib/util.ts"]').exists()).toBe(false)
@@ -206,6 +220,10 @@ test("keeps the file tree collapsed until toggled, then selects a nested file be
   await toggle.trigger("click")
   expect(view.find("[data-git-tree]").exists()).toBe(false)
   expect(view.find("[data-git-split]").exists()).toBe(false)
-  expect(view.get("[data-git-list]").find('button[data-git-path="src/lib/util.ts"]').exists()).toBe(true)
-  expect(view.find("[data-git-diff]").exists()).toBe(true)
+  expect(view.findAll("[data-git-card]")).toHaveLength(4)
+  expect(view.findAll("[data-git-diff]")).toHaveLength(2)
+  await cards.get('[data-git-card][data-git-path="src/lib/util.ts"] button').trigger("click")
+  expect(state.collapse).toHaveBeenCalledWith("repo", "src/lib/util.ts", "unstaged")
+  expect(cards.get('[data-git-card][data-git-path="src/lib/util.ts"]').attributes("data-git-diff")).toBeUndefined()
+  expect(cards.get('[data-git-card][data-git-kind="staged"]').attributes("data-git-diff")).toBe("staged")
 })

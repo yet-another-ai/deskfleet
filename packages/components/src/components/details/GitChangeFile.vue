@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChevronRight } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import type { GitFileChange, GitFileStatus } from "../../../../../apps/daemon/src/git-protocol.ts"
@@ -10,6 +11,9 @@ const props = defineProps<{
   showParent?: boolean
   selected: boolean
   disabled: boolean
+  /** Card header: the button expands and collapses that file's diff. */
+  disclosure?: boolean
+  expanded?: boolean
 }>()
 const emit = defineEmits<{ select: [] }>()
 const { t } = useI18n()
@@ -37,7 +41,8 @@ const statusColor: Record<GitFileStatus, string> = {
     class="flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-md py-1 pr-1.5 text-left text-[13px] hover:bg-ui-hover disabled:cursor-default"
     :class="selected && 'bg-ui-active'"
     :style="{ paddingLeft: `${6 + depth * 12}px` }"
-    :aria-label="t('panel.openDiff', { path: change.path, kind: t(`panel.changeKind.${change.kind}`) })"
+    :aria-label="disclosure ? t(expanded ? 'panel.collapseFileDiff' : 'panel.expandFileDiff', { path: change.path }) : t('panel.openDiff', { path: change.path, kind: t(`panel.changeKind.${change.kind}`) })"
+    :aria-expanded="disclosure ? !!expanded : undefined"
     :aria-current="selected ? 'true' : undefined"
     :title="change.previousPath ? `${change.previousPath} → ${change.path}` : change.path"
     :data-git-path="change.path"
@@ -46,6 +51,7 @@ const statusColor: Record<GitFileStatus, string> = {
     :disabled="disabled"
     @click="emit('select')"
   >
+    <ChevronRight v-if="disclosure" :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-muted transition-transform" :class="expanded && 'rotate-90'" aria-hidden="true" />
     <span class="min-w-0 flex-1 truncate">
       <span :class="change.status === 'deleted' && 'line-through op-70'">{{ fileName }}</span>
       <span v-if="showParent && parent" class="ml-1.5 text-xs text-ui-text-faint">{{ parent }}</span>

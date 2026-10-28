@@ -3,6 +3,7 @@ import { effectScope, nextTick, reactive, ref } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { GitDiffRequest, GitFileChange, GitFileDiff, GitStatusSnapshot } from "../../../../apps/daemon/src/git-protocol.ts"
 import { deferred } from "../test/desktop-media.ts"
+import { gitDiffCardKey } from "../components/details/git-diff-card.ts"
 import { useSessionGit } from "./useSessionGit.ts"
 
 const service = reactive({
@@ -45,23 +46,29 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-test("refreshes status and the open diff even when file status and line counts stay the same", async () => {
+test("refreshes status and every open diff even when file status and line counts stay the same", async () => {
   const { git } = setup()
+  const second = { ...change, path: "second.txt" }
   await flushPromises()
   expect(git.snapshot.value?.sessionId).toBe("30")
-  git.select("repo", change)
+  git.expand("repo", change)
+  git.expand("repo", second)
   await flushPromises()
-  expect(git.diff.value?.patch).toBe("+first")
+  const patch = (path: string) => git.cards.value.get(gitDiffCardKey("repo", path, "unstaged"))?.diff?.patch
+  expect(patch("file.txt")).toBe("+first")
+  expect(patch("second.txt")).toBe("+first")
+  service.gitStatus.mockImplementation(async id => status(id, [change, second]))
   service.gitDiff.mockImplementation(async request => ({ ...request, patch: "+later", binary: false, truncated: false }))
   changed()
   await vi.advanceTimersByTimeAsync(300)
   expect(service.gitStatus).toHaveBeenCalledTimes(2)
-  expect(git.diff.value?.patch).toBe("+later")
-  service.gitStatus.mockResolvedValue(status("30", []))
+  expect(patch("file.txt")).toBe("+later")
+  expect(patch("second.txt")).toBe("+later")
+  service.gitStatus.mockResolvedValue(status("30", [second]))
   changed()
   await vi.advanceTimersByTimeAsync(300)
-  expect(git.selection.value).toBeNull()
-  expect(git.diff.value).toBeNull()
+  expect(git.cards.value.has(gitDiffCardKey("repo", "file.txt", "unstaged"))).toBe(false)
+  expect(patch("second.txt")).toBe("+later")
 })
 
 test("serializes invalidations and stops reads when its scope is disposed", async () => {
@@ -97,26 +104,29 @@ test("late status responses cannot replace the newly selected Session", async ()
   expect(service.gitStatus.mock.calls.map(([id]) => id)).toEqual(["30", "31", "31"])
 })
 
-test("late diff responses cannot overwrite another file or reopen a dismissed preview", async () => {
+test("late diff responses cannot overwrite another file or reopen a collapsed card", async () => {
   const old = deferred<GitFileDiff>()
   const { git } = setup()
   await flushPromises()
   service.gitDiff.mockReturnValueOnce(old.promise)
-  git.select("repo", change)
+  git.expand("repo", change)
   const oldRequest = service.gitDiff.mock.calls[0]![0]
-  git.select("repo", { ...change, path: "second.txt" })
+  git.collapse("repo", change.path, change.kind)
+  git.expand("repo", { ...change, path: "second.txt" })
   await flushPromises()
-  expect(git.diff.value?.path).toBe("second.txt")
+  const secondKey = gitDiffCardKey("repo", "second.txt", "unstaged")
+  expect(git.cards.value.get(secondKey)?.diff?.path).toBe("second.txt")
   old.resolve({ ...oldRequest, patch: "old", binary: false, truncated: false })
   await flushPromises()
-  expect(git.diff.value?.path).toBe("second.txt")
+  expect(git.cards.value.has(gitDiffCardKey("repo", change.path, change.kind))).toBe(false)
+  expect(git.cards.value.get(secondKey)?.diff?.path).toBe("second.txt")
   const closing = deferred<GitFileDiff>()
   service.gitDiff.mockReturnValueOnce(closing.promise)
-  git.select("repo", change)
-  git.closeDiff()
+  git.expand("repo", change)
+  git.collapse("repo", change.path, change.kind)
   closing.resolve({ ...oldRequest, patch: "closed", binary: false, truncated: false })
   await flushPromises()
-  expect(git.diff.value).toBeNull()
+  expect(git.cards.value.has(gitDiffCardKey("repo", change.path, change.kind))).toBe(false)
 })
 
 test("retains the last snapshot with an error and recovers on the next refresh", async () => {
@@ -262,7 +272,7 @@ test("an invalidation rereads a selected diff that was already in flight", async
   await flushPromises()
   const old = deferred<GitFileDiff>()
   service.gitDiff.mockReturnValueOnce(old.promise)
-  git.select("repo", change)
+  git.expand("repo", change)
   const request = service.gitDiff.mock.calls[0]![0]
   changed()
   await vi.advanceTimersByTimeAsync(300)
@@ -270,5 +280,5 @@ test("an invalidation rereads a selected diff that was already in flight", async
   old.resolve({ ...request, patch: "+old", binary: false, truncated: false })
   await flushPromises()
   expect(service.gitDiff).toHaveBeenCalledTimes(2)
-  expect(git.diff.value?.patch).toBe("+latest")
+  expect(git.cards.value.get(gitDiffCardKey("repo", change.path, change.kind))?.diff?.patch).toBe("+latest")
 })

@@ -44,15 +44,17 @@ async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promis
       await new Promise(resolve => setTimeout(resolve, 25))
     }
   }
-  const diff = () => document.querySelector<HTMLElement>("[data-git-diff]")
+  const diff = (path?: string, kind?: string) => [...document.querySelectorAll<HTMLElement>("[data-git-diff]")].find(element => !path || (element.dataset.gitPath === path && element.dataset.gitKind === kind))
   const changes = () => document.querySelector<HTMLElement>('aside[aria-label="Changes"]')
-  async function open(path: string, kind: string, expected: string): Promise<void> {
-    const row = () => [...document.querySelectorAll<HTMLButtonElement>("button[data-git-path][data-git-kind]")]
+  function row(path: string, kind: string): HTMLButtonElement | undefined {
+    return [...document.querySelectorAll<HTMLButtonElement>("button[data-git-path][data-git-kind]")]
       .find(element => element.dataset.gitPath === path && element.dataset.gitKind === kind)
-    await until(() => !!row() && !row()!.disabled, `Git ${kind} ${path}`)
-    row()!.click()
-    await until(() => !!diff()?.innerText.includes(expected), `Git ${kind} preview`)
-    const view = diff()!
+  }
+  async function open(path: string, kind: string, expected: string): Promise<void> {
+    await until(() => { const button = row(path, kind); return !!button && !button.disabled }, `Git ${kind} ${path}`)
+    if (row(path, kind)!.getAttribute("aria-expanded") !== "true") row(path, kind)!.click()
+    await until(() => !!diff(path, kind)?.innerText.includes(expected), `Git ${kind} preview`)
+    const view = diff(path, kind)!
     const aside = changes()
     const style = getComputedStyle(view)
     if (!aside?.contains(view) || view.closest("[role=dialog]") || view.getAttribute("role") === "dialog" || style.display !== "flex" || style.flexDirection !== "column") {
@@ -64,13 +66,12 @@ async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promis
       throw new Error("Inline Git diff must stay within the Changes panel width")
     }
   }
-  async function close(): Promise<void> {
-    const view = diff()
-    if (!view) throw new Error("Git diff was missing")
-    const closeButton = view.querySelector<HTMLButtonElement>('button[aria-label="Close diff"]')
-    if (!closeButton) throw new Error("Git diff close button was missing")
-    closeButton.click()
-    await until(() => !diff(), "Git diff close")
+  async function close(path: string, kind: string): Promise<void> {
+    const button = () => [...document.querySelectorAll<HTMLButtonElement>("button[aria-expanded='true'][data-git-path][data-git-kind]")]
+      .find(element => element.dataset.gitPath === path && element.dataset.gitKind === kind)
+    if (!button()) throw new Error("Git diff collapse button was missing")
+    button()!.click()
+    await until(() => !diff(path, kind), "Git diff collapse")
   }
   async function setTree(open: boolean): Promise<void> {
     const toggle = () => document.querySelector<HTMLButtonElement>("[data-git-tree-toggle]")
@@ -85,28 +86,31 @@ async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promis
     if (phase === "initial") {
       if (document.querySelector("[data-git-tree]")) throw new Error("File tree must stay hidden until the toggle opens it")
       await open("README.md", "staged", "+Smoke staged baseline")
-      await close()
+      await close("README.md", "staged")
       await open("new-file.txt", "untracked", "+Smoke untracked file")
-      await close()
+      await close("new-file.txt", "untracked")
     }
     await open("README.md", "unstaged", phase === "initial" ? "+Smoke diff first version" : "+Smoke diff live version")
     if (phase === "initial") {
       await setTree(true)
       const split = document.querySelector<HTMLElement>("[data-git-split]")
       const tree = document.querySelector<HTMLElement>("[data-git-tree]")
-      const view = diff()
+      const cards = document.querySelector<HTMLElement>("[data-git-cards]")
+      const view = diff("README.md", "unstaged")
       const splitStyle = split ? getComputedStyle(split) : undefined
-      if (!split || !tree || !view || splitStyle!.display !== "flex" || splitStyle!.flexDirection !== "row" || tree.getBoundingClientRect().right > view.getBoundingClientRect().left + 1) {
-        throw new Error("Open file tree must sit to the left of the inline diff")
+      if (!split || !tree || !cards || !view || !cards.contains(view) || splitStyle!.display !== "flex" || splitStyle!.flexDirection !== "row" || tree.getBoundingClientRect().right > cards.getBoundingClientRect().left + 1) {
+        throw new Error("Open file tree must sit to the left of the diff cards")
       }
-      await open("new-file.txt", "untracked", "+Smoke untracked file")
+      const before = view.getBoundingClientRect().top
+      row("new-file.txt", "untracked")!.click()
+      await until(() => Math.abs((diff("new-file.txt", "untracked")?.getBoundingClientRect().top ?? 0) - before) < 80 || !!diff("new-file.txt", "untracked"), "Tree click jumps to the file card")
       await open("README.md", "unstaged", "+Smoke diff first version")
       await setTree(false)
     }
   } else {
-    await until(() => !!diff()?.innerText.includes("+Smoke diff live version") && !diff()!.innerText.includes("+Smoke diff first version"), "Live Git diff refresh without agent events")
+    await until(() => !!diff("README.md", "unstaged")?.innerText.includes("+Smoke diff live version") && !diff("README.md", "unstaged")!.innerText.includes("+Smoke diff first version"), "Live Git diff refresh without agent events")
   }
-  const view = diff()!
+  const view = diff("README.md", "unstaged")!
   const aside = changes()!
   const content = view.querySelector<HTMLElement>(".git-diff-content")!
   const header = view.querySelector("header")!

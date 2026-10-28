@@ -535,6 +535,8 @@
     "detachedHead": "Detached HEAD",
     "noCommits": "No commits yet",
     "openDiff": "View {kind} diff for {path}",
+    "expandFileDiff": "Show diff for {path}",
+    "collapseFileDiff": "Hide diff for {path}",
     "showFileTree": "Show file tree",
     "hideFileTree": "Hide file tree",
     "fileTree": "Changed files",
