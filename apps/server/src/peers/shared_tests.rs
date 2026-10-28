@@ -533,7 +533,9 @@ async fn closed_peer_revokes_grant_when_client_notify_fails() {
         .b
         .store
         .database()
-        .execute_unprepared("DROP TRIGGER IF EXISTS reject_realtime_messages ON cp_realtime_messages")
+        .execute_unprepared(
+            "DROP TRIGGER IF EXISTS reject_realtime_messages ON cp_realtime_messages",
+        )
         .await;
     let _ = fixture
         .b
