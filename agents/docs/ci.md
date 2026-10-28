@@ -152,6 +152,14 @@ and installs the pnpm workspace with `--frozen-lockfile`.
 Task definitions live in `mise.toml`; the workflows select tasks and execution
 platforms instead of maintaining another set of validation commands.
 
+GitHub-hosted macOS runners are often throttled by nodejs.org while downloading
+the locked Node archive, slow enough that mise's download budget expires first.
+The setup action rewrites `https://nodejs.org/dist/` to the npmmirror CDN on
+macOS only. The lockfile still records the nodejs.org URL and checksum, and
+mise checks the downloaded bytes against that checksum. Linux and Windows keep
+using nodejs.org. A throttled Actions cache restore or save is retried for up
+to two minutes; without that wait, HTTP 429 is treated as a missing tool cache.
+
 When both suites are scheduled, daemon tests wait for Rust tests to finish.
 Both create many SQLite catalogs; separating them avoids overlapping storage
 workloads while daemon IPC deadlines are active. Running only `check:daemon`

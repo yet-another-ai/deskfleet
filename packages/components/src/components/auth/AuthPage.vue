@@ -48,7 +48,7 @@ async function signOut(): Promise<void> { await props.api.logout(); await reload
     <p role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ failureMessage(error) }}</p>
     <UiButton class="h-9 w-full text-sm" @click="reload()">{{ t("auth.retry") }}</UiButton>
   </AuthLayout>
-  <EmailLinkForm v-else-if="route === '/auth/register' || route === '/auth/recovery'" :account="account" :purpose="route === '/auth/register' ? 'register' : 'recovery'" :registration-enabled="state.config.registrationEnabled" />
+  <EmailLinkForm v-else-if="route === '/auth/register' || route === '/auth/recovery'" :account="account" :purpose="route === '/auth/register' ? 'register' : 'recovery'" :config="state.config" />
   <SetPasswordForm v-else-if="route === '/auth/verify' || route === '/auth/recovery/complete'" :account="account" :purpose="route === '/auth/verify' ? 'verify' : 'reset'" :token="token" />
   <SignInForm
     v-else-if="!state.user || !(route in signedInPages)"

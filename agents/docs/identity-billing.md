@@ -79,6 +79,13 @@ Public registration and Team creation are separate site policies. Site Admin
 grants remain explicit operator actions on an existing account; the first user
 or a special email address does not automatically receive that authority.
 
+Site administrators may configure Terms of Service and Privacy Terms URLs
+independently in runtime site settings. When either is present, registration
+requires an initially unchecked agreement checkbox with links to the configured
+documents. The server checks acceptance before sending the verification link,
+including resends. With both URLs empty, registration has no agreement checkbox
+or acceptance requirement. Password recovery remains available without it.
+
 Account closure must preserve the final-Team-administrator invariant and resolve
 machine ownership and billing responsibilities. Closure and retention policy are
 open decisions, not an implicit cascading deletion.

@@ -1,13 +1,21 @@
 //! Daemon-owned PTYs. Detaching a transport does not affect the terminal.
 
 use std::collections::HashMap;
+#[cfg(windows)]
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, mpsc as sync_mpsc};
+#[cfg(windows)]
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+#[cfg(windows)]
+use std::sync::mpsc as sync_mpsc;
+use std::sync::{Arc, Mutex, MutexGuard};
+#[cfg(any(windows, test))]
 use std::time::Duration;
 
-use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+#[cfg(windows)]
+use portable_pty::{Child, MasterPty};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 
@@ -17,6 +25,8 @@ const MAX_INPUT_BYTES: usize = 64 * 1024;
 
 #[cfg(unix)]
 mod unix;
+#[cfg(unix)]
+use unix::Handles;
 
 #[cfg(windows)]
 mod windows;
@@ -64,6 +74,7 @@ pub enum TerminalEvent {
     Error(String),
 }
 
+#[cfg(windows)]
 struct Handles {
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     writer: Mutex<Option<Box<dyn Write + Send>>>,
@@ -96,6 +107,7 @@ fn size(cols: u16, rows: u16) -> Result<PtySize> {
     })
 }
 
+#[cfg(windows)]
 impl Handles {
     // Kill before taking the writer lock: a pending write can be blocked on
     // the child reading input, and terminating the child releases that write.
@@ -186,73 +198,74 @@ impl Terminal {
             let pair = native_pty_system()
                 .openpty(dimensions)
                 .map_err(|error| backend("open PTY", error))?;
-            let (shutdown, cancelled) = watch::channel(false);
-            let closed = Arc::new(AtomicBool::new(false));
             #[cfg(unix)]
-            let (reader, writer) = unix::io(&*pair.master, Arc::clone(&closed), cancelled.clone())?;
-            #[cfg(not(unix))]
-            let reader = pair
-                .master
-                .try_clone_reader()
-                .map_err(|error| backend("open reader", error))?;
-            #[cfg(not(unix))]
-            let writer = pair
-                .master
-                .take_writer()
-                .map_err(|error| backend("open writer", error))?;
-            let child = pair
-                .slave
-                .spawn_command(command)
-                .map_err(|error| backend("spawn", error))?;
-            drop(pair.slave);
+            return unix::spawn(pair, command, &runtime);
+            #[cfg(windows)]
+            {
+                let (shutdown, cancelled) = watch::channel(false);
+                let closed = Arc::new(AtomicBool::new(false));
+                let reader = pair
+                    .master
+                    .try_clone_reader()
+                    .map_err(|error| backend("open reader", error))?;
+                let writer = pair
+                    .master
+                    .take_writer()
+                    .map_err(|error| backend("open writer", error))?;
+                let child = pair
+                    .slave
+                    .spawn_command(command)
+                    .map_err(|error| backend("spawn", error))?;
+                drop(pair.slave);
 
-            let handles = Arc::new(Handles {
-                master: Mutex::new(Some(pair.master)),
-                writer: Mutex::new(Some(writer)),
-                child: Mutex::new(child),
-                closed,
-            });
-            let (events, receiver) = mpsc::channel(OUTPUT_QUEUE_CHUNKS);
-            let terminal = Self {
-                handles: Arc::clone(&handles),
-                events: AsyncMutex::new(receiver),
-                shutdown,
-            };
-            let (read_done, read_finished) = sync_mpsc::channel();
-            let reader_events = events.clone();
-            let mut reader_cancelled = cancelled.clone();
-            let reader_runtime = runtime.clone();
-            let reader_handles = Arc::clone(&handles);
-            std::thread::Builder::new()
-                .name("deskfleet-pty-read".into())
-                .spawn(move || {
-                    if let Err(error) = read_output(
-                        reader,
-                        &reader_events,
-                        &mut reader_cancelled,
-                        &reader_runtime,
-                        #[cfg(windows)]
-                        &reader_handles,
-                    ) {
-                        send_event(
+                let handles = Arc::new(Handles {
+                    master: Mutex::new(Some(pair.master)),
+                    writer: Mutex::new(Some(writer)),
+                    child: Mutex::new(child),
+                    closed,
+                });
+                let (events, receiver) = mpsc::channel(OUTPUT_QUEUE_CHUNKS);
+                let terminal = Self {
+                    handles: Arc::clone(&handles),
+                    events: AsyncMutex::new(receiver),
+                    shutdown,
+                };
+                let (read_done, read_finished) = sync_mpsc::channel();
+                let reader_events = events.clone();
+                let mut reader_cancelled = cancelled.clone();
+                let reader_runtime = runtime.clone();
+                let reader_handles = Arc::clone(&handles);
+                std::thread::Builder::new()
+                    .name("deskfleet-pty-read".into())
+                    .spawn(move || {
+                        if let Err(error) = read_output(
+                            reader,
                             &reader_events,
-                            TerminalEvent::Error(error.to_string()),
                             &mut reader_cancelled,
                             &reader_runtime,
-                        );
-                        // read_output has released its FD before kill/wait.
-                        let _ = reader_handles.close();
-                    }
-                    let _ = read_done.send(());
-                })
-                .map_err(|error| backend("start reader", error))?;
-            std::thread::Builder::new()
-                .name("deskfleet-pty-wait".into())
-                .spawn(move || {
-                    wait_for_exit(&handles, read_finished, &events, cancelled, &runtime);
-                })
-                .map_err(|error| backend("start reaper", error))?;
-            Ok(terminal)
+                            #[cfg(windows)]
+                            &reader_handles,
+                        ) {
+                            send_event(
+                                &reader_events,
+                                TerminalEvent::Error(error.to_string()),
+                                &mut reader_cancelled,
+                                &reader_runtime,
+                            );
+                            // read_output has released its FD before kill/wait.
+                            let _ = reader_handles.close();
+                        }
+                        let _ = read_done.send(());
+                    })
+                    .map_err(|error| backend("start reader", error))?;
+                std::thread::Builder::new()
+                    .name("deskfleet-pty-wait".into())
+                    .spawn(move || {
+                        wait_for_exit(&handles, read_finished, &events, cancelled, &runtime);
+                    })
+                    .map_err(|error| backend("start reaper", error))?;
+                Ok(terminal)
+            }
         })
         .await
         .map_err(|error| backend("spawn worker", error))?
@@ -263,19 +276,24 @@ impl Terminal {
         if data.len() > MAX_INPUT_BYTES {
             return Err(TerminalError::InputTooLarge);
         }
-        let handles = Arc::clone(&self.handles);
-        tokio::task::spawn_blocking(move || {
-            let mut writer = lock(&handles.writer);
-            if handles.closed.load(Ordering::Acquire) {
-                return Err(TerminalError::Closed);
-            }
-            let writer = writer.as_mut().ok_or(TerminalError::Closed)?;
-            writer
-                .write_all(&data)
-                .map_err(|error| backend("write", error))
-        })
-        .await
-        .map_err(|error| backend("write worker", error))?
+        #[cfg(unix)]
+        return self.handles.write(data).await;
+        #[cfg(windows)]
+        {
+            let handles = Arc::clone(&self.handles);
+            tokio::task::spawn_blocking(move || {
+                let mut writer = lock(&handles.writer);
+                if handles.closed.load(Ordering::Acquire) {
+                    return Err(TerminalError::Closed);
+                }
+                let writer = writer.as_mut().ok_or(TerminalError::Closed)?;
+                writer
+                    .write_all(&data)
+                    .map_err(|error| backend("write", error))
+            })
+            .await
+            .map_err(|error| backend("write worker", error))?
+        }
     }
 
     pub async fn resize(&self, cols: u16, rows: u16) -> Result<()> {
@@ -344,6 +362,7 @@ impl Drop for Terminal {
     }
 }
 
+#[cfg(windows)]
 fn send_event(
     events: &mpsc::Sender<TerminalEvent>,
     event: TerminalEvent,
@@ -378,6 +397,7 @@ fn reply_startup_cursor(writer: &Mutex<Option<Box<dyn Write + Send>>>) -> Result
     Ok(())
 }
 
+#[cfg(windows)]
 fn read_output(
     mut reader: Box<dyn Read + Send>,
     events: &mpsc::Sender<TerminalEvent>,
@@ -427,6 +447,7 @@ fn read_output(
     Ok(())
 }
 
+#[cfg(windows)]
 fn wait_for_exit(
     handles: &Handles,
     read_finished: sync_mpsc::Receiver<()>,

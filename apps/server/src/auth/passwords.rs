@@ -9,6 +9,13 @@ pub(super) struct Email {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct Registration {
+    email: String,
+    #[serde(default)]
+    accepted_terms: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Verification {
     token: String,
     name: String,
@@ -116,7 +123,7 @@ async fn verify_password(
 pub(super) async fn register(
     req: HttpRequest,
     state: web::Data<AppState>,
-    body: web::Json<Email>,
+    body: web::Json<Registration>,
 ) -> Result<HttpResponse> {
     browser_mutation(&req, &state)?;
     let email = deskfleet_control_store::normalize_email(&body.email)?;
@@ -126,6 +133,16 @@ pub(super) async fn register(
             StatusCode::FORBIDDEN,
             "registration_disabled",
             "New account registration is disabled.",
+        ));
+    }
+    let settings = state.store.site_settings().await?;
+    if !body.accepted_terms
+        && (!settings.terms_of_service_url.is_empty() || !settings.privacy_terms_url.is_empty())
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "terms_acceptance_required",
+            "Accept the terms before creating an account.",
         ));
     }
     if state.store.password_credentials(&email).await?.is_none() {

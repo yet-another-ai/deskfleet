@@ -58,6 +58,22 @@ test("archiving and restoring the same Session release and recreate Git observat
   expect(service.gitStatus).toHaveBeenCalledTimes(2)
 })
 
+test("opening the file tree keeps the Changes panel width", async () => {
+  const wrapper = mount(ChangesPanel, { global: { plugins: [pinia!, i18n] } })
+  unmount = () => wrapper.unmount()
+  await flushPromises()
+  const aside = wrapper.get('aside[aria-label="Changes"]')
+  const width = aside.attributes("style")
+  expect(wrapper.find("[data-git-tree]").exists()).toBe(false)
+  await wrapper.get("[data-git-tree-toggle]").trigger("click")
+  expect(wrapper.find("[data-git-tree]").exists()).toBe(true)
+  expect(wrapper.find("[data-git-split]").exists()).toBe(true)
+  expect(aside.attributes("style")).toBe(width)
+  await wrapper.get("[data-git-tree-toggle]").trigger("click")
+  expect(wrapper.find("[data-git-tree]").exists()).toBe(false)
+  expect(aside.attributes("style")).toBe(width)
+})
+
 test("only ready execution contexts attach Git observation", async () => {
   service.sessions["30"].lifecycle = "provisioning"
   const wrapper = mount(ChangesPanel, { global: { plugins: [pinia!, i18n] } })

@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(unix)]
+mod async_io;
+
 fn config() -> TerminalConfig {
     TerminalConfig {
         cwd: std::env::current_dir().expect("test cwd"),
@@ -111,12 +114,7 @@ async fn close_terminates_a_busy_terminal_without_an_output_consumer() {
         .await
         .expect("close timeout")
         .expect("close");
-    assert!(
-        lock(&terminal.handles.child)
-            .try_wait()
-            .expect("wait")
-            .is_some()
-    );
+    assert!(terminal.handles.has_exited());
     while next(&terminal).await.is_some() {}
     assert!(matches!(
         terminal.write(b"hello".to_vec()).await,
@@ -288,7 +286,7 @@ async fn dropping_terminal_terminates_the_owned_shell() {
         .await
         .expect("spawn");
     let handles = Arc::downgrade(&terminal.handles);
-    let process_id = lock(&terminal.handles.child).process_id().expect("pid");
+    let process_id = terminal.handles.process_id();
     drop(terminal);
     tokio::time::timeout(Duration::from_secs(2), async {
         while handles.strong_count() != 0 {

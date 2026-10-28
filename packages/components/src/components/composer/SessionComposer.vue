@@ -12,6 +12,7 @@ import { RouterLink } from "vue-router"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { FileEntry } from "../../../../client/src/files.ts"
 import { useFileTarget } from "../../composables/useFileTarget.ts"
+import { useSessionGit } from "../../composables/useSessionGit.ts"
 import { attachmentsFromFiles, createMachineFileAttachment, createPastedTextAttachment, hasSubmittableText, shouldFoldPastedText, type ComposerAttachment } from "../../services/composer-attachments.ts"
 import { fileSize } from "../../services/file-format.ts"
 import { commandDraft, type ComposerMention } from "../../services/composer-mentions.ts"
@@ -64,8 +65,15 @@ const initialPickerPath = computed(() => props.location?.worktree?.directories[0
 const empty = computed(() => !hasSubmittableText(draft.value, attachments.value))
 const commandInput = computed(() => commandDraft(draft.value) || mentions.value.some(mention => mention.reference.kind === "skill" && mention.reference.invocation.startsWith("/")))
 const placeholder = computed(() => t(props.activeTurn ? "agent.backlogHint" : "composer.placeholder"))
-const checkout = computed(() => props.location?.worktree?.directories.find(directory => directory.git)?.git ?? undefined)
-const changes = computed(() => (checkout.value?.changes ?? []).reduce((total, change) => ({ additions: total.additions + change.additions, deletions: total.deletions + change.deletions }), { additions: 0, deletions: 0 }))
+const { snapshot: gitSnapshot } = useSessionGit(
+  () => props.location?.session?.id ?? "",
+  () => !props.showTarget && !!props.location?.worktree && !!props.location.machine.online,
+)
+const checkout = computed(() => gitSnapshot.value?.repositories.find(repository => !repository.error))
+const checkoutLabel = computed(() => checkout.value
+  ? checkout.value.branch ?? `${t("panel.detachedHead")}${checkout.value.head ? ` · ${checkout.value.head.slice(0, 8)}` : ""}`
+  : t(props.location?.session?.context === "directory" ? "session.directory" : "session.worktree"))
+const changes = computed(() => (checkout.value?.changes ?? []).reduce((total, change) => ({ additions: total.additions + (change.additions ?? 0), deletions: total.deletions + (change.deletions ?? 0) }), { additions: 0, deletions: 0 }))
 const availableBranches = ref<string[]>([])
 let branchProbeGeneration = 0
 watch(() => [props.showTarget, props.location?.workspace?.id, props.location?.machine.online] as const, async ([showTarget, workspaceId, online], previous) => {
@@ -182,11 +190,10 @@ function keydown(event: KeyboardEvent): void {
         </template>
       </template>
       <template v-else-if="location.worktree">
-        <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
-        <RouterLink :to="{ name: 'worktree', params: { worktreeId: location.worktree.id } }" class="inline-flex min-w-0 items-center gap-1.5 rounded-md text-ui-text hover:underline" :title="t(location.session?.context === 'directory' ? 'session.directory' : 'session.worktree')" data-composer-context>
+        <RouterLink :to="{ name: 'worktree', params: { worktreeId: location.worktree.id } }" class="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-ui-text-muted transition-colors hover:bg-ui-hover" :title="checkoutLabel" data-composer-context>
           <FolderOpen v-if="location.session?.context === 'directory'" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <GitBranch v-else :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-          <span class="truncate">{{ checkout?.branch ?? t(location.session?.context === 'directory' ? 'session.directory' : 'session.worktree') }}</span>
+          <span class="truncate">{{ checkoutLabel }}</span>
         </RouterLink>
       </template>
       <span v-if="changes.additions || changes.deletions" class="ml-auto shrink-0 rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></span>

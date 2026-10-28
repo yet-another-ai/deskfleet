@@ -1,9 +1,12 @@
 import { useDebounceFn, useDocumentVisibility, watchImmediate } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from "vue"
-import type { GitDiffRequest, GitFileChange, GitFileDiff, GitStatusSnapshot } from "../../../../apps/daemon/src/git-protocol.ts"
+import type { GitChangeKind, GitDiffRequest, GitFileChange, GitStatusSnapshot } from "../../../../apps/daemon/src/git-protocol.ts"
+import { gitDiffCardKey, type GitDiffCard } from "../components/details/git-diff-card.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
+
+export { gitDiffCardKey, type GitDiffCard }
 
 /** Inspect only the visible Session context; filesystem changes need no agent events. */
 export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: MaybeRefOrGetter<boolean>) {
@@ -12,12 +15,8 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
   const loading = ref(false)
   const error = ref<string | null>(null)
   const connected = computed(() => agents.state === "connected")
-  const selection = shallowRef<GitDiffRequest | null>(null)
-  const diff = shallowRef<GitFileDiff | null>(null)
-  const diffLoading = ref(false)
-  const diffError = ref<string | null>(null)
+  const cards = shallowRef<ReadonlyMap<string, GitDiffCard>>(new Map())
   let generation = 0
-  let diffGeneration = 0
   let disposed = false
   let unsubscribe: (() => void) | undefined
   let attaching: Promise<void> | undefined
@@ -25,57 +24,81 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
   let dirty = false
   let forceNext = false
   let watchError: string | null = null
-  let pendingDiff: { request: GitDiffRequest; promise: Promise<void> } | undefined
+  const cardGeneration = new Map<string, number>()
+  const pendingCards = new Map<string, { request: GitDiffRequest; promise: Promise<void> }>()
   const scheduleRefresh = useDebounceFn(() => {
     if (!attaching) return readStatus()
   }, 300, { maxWait: 2_000 })
   const visibility = useDocumentVisibility()
 
   function active(): boolean { return !disposed && toValue(enabled) && !!toValue(sessionId) && visibility.value !== "hidden" }
-  function closeDiff(): void {
-    diffGeneration++
-    pendingDiff = undefined
-    selection.value = null
-    diff.value = null
-    diffLoading.value = false
-    diffError.value = null
+  function writeCards(next: ReadonlyMap<string, GitDiffCard>): void { cards.value = next }
+  function putCard(key: string, card: GitDiffCard): void {
+    const next = new Map(cards.value)
+    next.set(key, card)
+    writeCards(next)
+  }
+  function dropCard(key: string): void {
+    cardGeneration.set(key, (cardGeneration.get(key) ?? 0) + 1)
+    pendingCards.delete(key)
+    if (!cards.value.has(key)) return
+    const next = new Map(cards.value)
+    next.delete(key)
+    writeCards(next)
+  }
+  function clearCards(): void {
+    for (const key of cards.value.keys()) cardGeneration.set(key, (cardGeneration.get(key) ?? 0) + 1)
+    pendingCards.clear()
+    writeCards(new Map())
   }
 
-  function readDiff(fresh = false): Promise<void> {
-    const request = selection.value
-    if (!request || !active()) return Promise.resolve()
-    if (pendingDiff?.request === request) {
-      const current = generation
-      return fresh ? pendingDiff.promise.then(() => {
-        if (current === generation && selection.value === request && active()) return readDiff()
-      }) : pendingDiff.promise
+  /** One generation per open card, so a late response cannot fill a card that was collapsed or replaced. */
+  function readCard(key: string, fresh = false): Promise<void> {
+    const card = cards.value.get(key)
+    if (!card || !active()) return Promise.resolve()
+    const request = card.request
+    const inflight = pendingCards.get(key)
+    if (inflight?.request === request) {
+      const statusGeneration = generation
+      const seen = cardGeneration.get(key)
+      return fresh ? inflight.promise.then(() => {
+        if (statusGeneration === generation && cards.value.get(key)?.request === request && cardGeneration.get(key) === seen && active()) return readCard(key)
+      }) : inflight.promise
     }
-    const current = ++diffGeneration
-    diffLoading.value = !diff.value
+    const token = (cardGeneration.get(key) ?? 0) + 1
+    cardGeneration.set(key, token)
+    const current = cards.value.get(key)
+    if (current && !current.diff) putCard(key, { ...current, loading: true })
     const promise = (async () => {
       try {
         const result = await agents.gitDiff(request)
-        if (disposed || current !== diffGeneration) return
-        diff.value = result
-        diffError.value = null
+        if (disposed || cardGeneration.get(key) !== token) return
+        const latest = cards.value.get(key)
+        if (!latest) return
+        putCard(key, { ...latest, diff: result, loading: false, error: null })
       } catch (reason) {
-        if (disposed || current !== diffGeneration) return
-        diffError.value = message(reason)
+        if (disposed || cardGeneration.get(key) !== token) return
+        const latest = cards.value.get(key)
+        if (!latest) return
+        putCard(key, { ...latest, loading: false, error: message(reason) })
       } finally {
-        if (!disposed && current === diffGeneration) {
-          diffLoading.value = false
-          pendingDiff = undefined
-        }
+        if (!disposed && cardGeneration.get(key) === token) pendingCards.delete(key)
       }
     })()
-    pendingDiff = { request, promise }
+    pendingCards.set(key, { request, promise })
     return promise
   }
 
-  function select(repositoryId: string, change: GitFileChange): void {
-    closeDiff()
-    selection.value = { sessionId: toValue(sessionId), repositoryId, path: change.path, kind: change.kind }
-    void readDiff()
+  function expand(repositoryId: string, change: GitFileChange): void {
+    const key = gitDiffCardKey(repositoryId, change.path, change.kind)
+    if (cards.value.has(key)) return
+    const request: GitDiffRequest = { sessionId: toValue(sessionId), repositoryId, path: change.path, kind: change.kind }
+    putCard(key, { request, diff: null, loading: true, error: null })
+    void readCard(key)
+  }
+
+  function collapse(repositoryId: string, path: string, kind: GitChangeKind): void {
+    dropCard(gitDiffCardKey(repositoryId, path, kind))
   }
 
   function readStatus(force = false): Promise<void> {
@@ -96,11 +119,11 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
         if (disposed || current !== generation) return
         snapshot.value = result
         error.value = watchError
-        const selected = selection.value
-        if (selected) {
-          const repository = result.repositories.find(value => value.id === selected.repositoryId)
-          if (repository && !repository.error && !repository.changes.some(change => change.path === selected.path && change.kind === selected.kind)) closeDiff()
-          else await readDiff(true)
+        for (const card of [...cards.value.values()]) {
+          const repository = result.repositories.find(value => value.id === card.request.repositoryId)
+          const key = gitDiffCardKey(card.request.repositoryId, card.request.path, card.request.kind)
+          if (repository && !repository.error && !repository.changes.some(change => change.path === card.request.path && change.kind === card.request.kind)) collapse(card.request.repositoryId, card.request.path, card.request.kind)
+          else await readCard(key, true)
         }
       } catch (reason) {
         if (!disposed && current === generation) error.value = message(reason)
@@ -125,10 +148,9 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
     dirty = false
     forceNext = false
     scheduleRefresh.cancel()
-    diffGeneration++
-    pendingDiff = undefined
+    for (const key of cardGeneration.keys()) cardGeneration.set(key, (cardGeneration.get(key) ?? 0) + 1)
+    pendingCards.clear()
     loading.value = false
-    diffLoading.value = false
   }
 
   function attach(force = false): Promise<void> {
@@ -174,7 +196,7 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
 
   watchImmediate([() => toValue(sessionId), () => toValue(enabled)], () => {
     detach()
-    closeDiff()
+    clearCards()
     snapshot.value = null
     error.value = null
     watchError = null
@@ -191,7 +213,7 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
   onScopeDispose(() => {
     disposed = true
     detach()
-    closeDiff()
+    clearCards()
   })
-  return { snapshot, loading, error, connected, selection, diff, diffLoading, diffError, refresh, select, closeDiff }
+  return { snapshot, loading, error, connected, cards, expand, collapse, refresh }
 }

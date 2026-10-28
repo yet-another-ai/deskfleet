@@ -259,7 +259,17 @@ async fn public_config(req: HttpRequest, state: web::Data<AppState>) -> Result<H
         .filter(|c| c.value().len() >= 32)
         .map(|c| c.value().to_owned())
         .unwrap_or_else(secret);
-    Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).cookie(cookie(CSRF_COOKIE,csrf.clone(),&state,false)).json(json!({"webUrl":state.auth.config.web_url,"registrationEnabled":state.store.registration_enabled().await?,"csrfToken":csrf})))
+    let settings = state.store.site_settings().await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(("Cache-Control", "no-store"))
+        .cookie(cookie(CSRF_COOKIE, csrf.clone(), &state, false))
+        .json(json!({
+            "webUrl": state.auth.config.web_url,
+            "registrationEnabled": state.store.registration_enabled().await?,
+            "termsOfServiceUrl": settings.terms_of_service_url,
+            "privacyTermsUrl": settings.privacy_terms_url,
+            "csrfToken": csrf,
+        })))
 }
 pub async fn me(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse> {
     let auth = user(&req, &state).await?;

@@ -4,8 +4,10 @@ import {
   Bot,
   ChevronRight,
   Folder,
+  FolderOpen,
   FolderPlus,
   MonitorPlay,
+  SquarePen,
   SquareTerminal,
 } from "@lucide/vue"
 import { computed, ref } from "vue"
@@ -51,6 +53,11 @@ async function workspaceCreated(id: string): Promise<void> {
   await router.push({ name: "workspace", params: { workspaceId: id } })
 }
 
+function startSession(workspaceId: string): void {
+  fleet.targetWorkspace(workspaceId)
+  void router.push({ name: "new-session" })
+}
+
 const collapsed = computed(() => fleet.isCollapsed(props.machine.id))
 const lastSeen = computed(() => {
   if (!props.machine.lastSeen) return undefined
@@ -87,7 +94,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
     </div>
     <WorkspaceCreateDialog v-if="addingWorkspace" @created="workspaceCreated" @cancel="addingWorkspace = false" />
 
-    <CollapsibleContent as="ul">
+    <CollapsibleContent as="ul" class="mt-1 flex flex-col gap-1">
       <li>
         <TreeLink
           :to="{ name: 'machine-control', params: { machineId: machine.id } }"
@@ -123,12 +130,22 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
       <li v-if="machine.workspaces.length === 0 && machine.sessions.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
         {{ t("machine.noWorkspaces") }}
       </li>
-      <li v-for="workspace in machine.workspaces" :key="workspace.id">
-        <div class="group flex h-8 items-center gap-2.5 pl-2.5 pr-1 text-ui-text-muted">
-          <Folder :size="16" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
-          <RouterLink :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" class="min-w-0 flex-1 truncate hover:text-ui-text" active-class="text-ui-accent">{{ workspace.name }}</RouterLink>
-        </div>
-        <ul>
+      <CollapsibleRoot v-for="workspace in machine.workspaces" :key="workspace.id" v-slot="{ open }" as="li" default-open class="flex flex-col gap-1">
+        <RouterLink v-slot="{ href, navigate, isActive, isExactActive }" :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" custom>
+          <div class="workspace-row ui-nav-item relative" :class="isActive && 'ui-nav-active'">
+            <a :href="href" :aria-current="isExactActive ? 'page' : undefined" class="flex h-full min-w-0 flex-1 items-center gap-2.5 pl-2.5 pr-9" @click="navigate">
+              <component :is="open ? FolderOpen : Folder" :size="15" :stroke-width="1.75" class="workspace-folder-icon shrink-0" aria-hidden="true" />
+              <span class="truncate">{{ workspace.name }}</span>
+            </a>
+            <CollapsibleTrigger type="button" :aria-label="workspace.name" class="workspace-collapse-trigger absolute left-1.5 top-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md">
+              <ChevronRight :size="15" :stroke-width="1.75" class="workspace-collapse-icon shrink-0" :class="open && 'rotate-90'" aria-hidden="true" />
+            </CollapsibleTrigger>
+            <div class="workspace-session-action absolute inset-y-0 right-1 flex items-center">
+              <IconButton :icon="SquarePen" :label="t('workspace.newSession')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online" @click="startSession(workspace.id)" />
+            </div>
+          </div>
+        </RouterLink>
+        <CollapsibleContent as="ul" class="flex flex-col gap-1 empty:hidden">
           <li v-for="terminal in workspace.terminals" :key="terminal.id">
             <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
           </li>
@@ -157,8 +174,39 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
             </SessionContextMenu>
             <p v-if="archiveErrors[session.id]" role="alert" class="m-0 px-2.5 pb-1 pl-6 text-xs text-ui-danger break-words">{{ archiveErrors[session.id] }}</p>
           </li>
-        </ul>
-      </li>
+        </CollapsibleContent>
+      </CollapsibleRoot>
     </CollapsibleContent>
   </CollapsibleRoot>
 </template>
+
+<style scoped>
+.workspace-folder-icon,
+.workspace-collapse-trigger,
+.workspace-collapse-icon,
+.workspace-session-action {
+  transition: opacity 100ms ease-out, transform 100ms ease-out;
+}
+
+.workspace-collapse-trigger,
+.workspace-session-action {
+  opacity: 0;
+}
+
+.workspace-row:is(:hover, :has(:focus-visible)) .workspace-folder-icon {
+  opacity: 0;
+}
+
+.workspace-row:is(:hover, :has(:focus-visible)) :is(.workspace-collapse-trigger, .workspace-session-action) {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-folder-icon,
+  .workspace-collapse-trigger,
+  .workspace-collapse-icon,
+  .workspace-session-action {
+    transition: none;
+  }
+}
+</style>

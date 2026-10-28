@@ -80,7 +80,7 @@ test("desktop IPC reads public site settings but rejects administration even for
   expect((await client.status()).siteAdmin).toBe(true)
   f.fetch.mockClear()
 
-  const settings = { siteName: "Studio fleet", announcement: "News", allowTeamCreation: false }
+  const settings = { siteName: "Studio fleet", announcement: "News", allowTeamCreation: false, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy" }
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify(settings)))
   const invoke = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
   const event = {} as Electron.IpcMainInvokeEvent

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { client } from "@deskfleet/client/platform"
-import { computed, onBeforeUnmount, provide, ref, watch } from "vue"
+import { computed, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentEvent, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { groupTranscript, projectConversation } from "../../services/agent-conversation.ts"
@@ -19,11 +19,13 @@ provide(agentResourceContextKey, computed(() => {
 }))
 const { t } = useI18n()
 const transcript = computed(() => groupTranscript(projectConversation(props.events, props.snapshot), props.snapshot))
+const items = useTemplateRef<HTMLLIElement[]>("items")
+defineExpose({ items })
 </script>
 
 <template>
   <ol class="flex flex-col gap-6 text-[15px] leading-[1.65]" :aria-label="t('agent.conversation')">
-    <li v-for="entry in transcript" :key="entry.id" :data-conversation-entry="entry.kind === 'input' ? entry.id : undefined">
+    <li v-for="entry in transcript" :key="entry.id" ref="items" class="scroll-mt-6" :data-conversation-entry="entry.kind === 'input' ? entry.id : undefined">
       <AgentUserMessage v-if="entry.kind === 'input'" :input="entry.input" />
       <AgentResponse v-else :response="entry" :disabled="disabled" />
     </li>
