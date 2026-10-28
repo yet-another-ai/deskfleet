@@ -22,7 +22,7 @@ export const clientCodeSplitting = {
     },
     {
       name: "markdown",
-      test: /[\\/]node_modules[\\/](?:markdown-it|katex|highlight\.js)[\\/]/,
+      test: /[\\/]node_modules[\\/](?:markdown-it|katex|shiki|@shikijs)[\\/]/,
       priority: 30,
     },
     {

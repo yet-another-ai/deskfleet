@@ -1,7 +1,7 @@
-import hljs from "highlight.js/lib/common"
 import katex from "katex"
 import MarkdownIt, { type Env } from "markdown-it"
 import { isFileResource } from "./agent-resources.ts"
+import { canHighlight, codeLanguageName, highlightFence } from "./code-highlight.ts"
 
 // Raw HTML stays escaped; markdown-it's link validation also rejects script URLs.
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: false })
@@ -30,20 +30,14 @@ function renderMathBlock(tex: string, newline = true): string {
 
 function renderCodeBlock(code: string, info: string): string {
   const language = info.toLowerCase()
-  const definition = language ? hljs.getLanguage(language) : undefined
-  const name = definition?.name || info
+  const name = codeLanguageName(language) ?? info
   const label = name ? `<span class="ui-code-language">${escapeHtml(name)}</span>` : ""
   const button = `<button type="button" class="ui-button-ghost ui-code-copy h-7 w-7 shrink-0 p-0" data-code-copy="${escapeHtml(code)}" aria-label="Copy" title="Copy">${COPY_ICONS}</button>`
-  const languageClass = definition && /^[\w#+.-]+$/u.test(language) ? ` language-${language}` : ""
   let highlighted = escapeHtml(code)
-  if (definition) {
-    try {
-      highlighted = hljs.highlight(code, { language, ignoreIllegals: true }).value
-    } catch {
-      highlighted = escapeHtml(code)
-    }
+  if (canHighlight(language)) {
+    try { highlighted = highlightFence(code, language) } catch { highlighted = escapeHtml(code) }
   }
-  return `<div class="ui-code-block" data-code-block><div class="ui-code-header">${label}${button}</div><pre><code class="hljs${languageClass}">${highlighted}</code></pre></div>\n`
+  return `<div class="ui-code-block" data-code-block><div class="ui-code-header">${label}${button}</div><pre><code>${highlighted}</code></pre></div>\n`
 }
 
 markdown.inline.ruler.before("escape", "math_bracket", (state, silent) => {

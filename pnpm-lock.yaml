@@ -278,9 +278,6 @@ importers:
       echarts:
         specifier: 6.1.0
         version: 6.1.0
-      highlight.js:
-        specifier: 11.12.0
-        version: 11.12.0
       katex:
         specifier: 0.19.1
         version: 0.19.1
@@ -296,6 +293,9 @@ importers:
       reka-ui:
         specifier: 2.11.0
         version: 2.11.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
+      shiki:
+        specifier: 4.5.0
+        version: 4.5.0
       vue:
         specifier: 3.6.0-rc.13
         version: 3.6.0-rc.13(@typescript/typescript6@6.0.2)
@@ -3682,10 +3682,6 @@ packages:
 
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
-
-  highlight.js@11.12.0:
-    resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
-    engines: {node: '>=12.0.0'}
 
   hono@4.13.14:
     resolution: {integrity: sha512-yhRLQ21U6qa9Hsu2N7Qcbh8tE+WKEcoErjIo56LeSGiGXGp9sA7UpE86Ui9uexb61KakiGwuHMn2QdV7w6i6kQ==}
@@ -8352,8 +8348,6 @@ snapshots:
   hast-util-whitespace@3.0.0:
     dependencies:
       '@types/hast': 3.0.5
-
-  highlight.js@11.12.0: {}
 
   hono@4.13.14: {}
 

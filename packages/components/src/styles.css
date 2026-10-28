@@ -223,40 +223,6 @@ textarea {
   display: block;
   color: var(--ui-color-focus);
 }
-.ui-markdown .hljs-comment,
-.ui-markdown .hljs-quote {
-  color: var(--ui-color-text-faint);
-  font-style: italic;
-}
-.ui-markdown .hljs-keyword,
-.ui-markdown .hljs-selector-tag,
-.ui-markdown .hljs-doctag,
-.ui-markdown .hljs-template-tag,
-.ui-markdown .hljs-meta .hljs-keyword { color: var(--ui-color-accent); }
-.ui-markdown .hljs-string,
-.ui-markdown .hljs-regexp,
-.ui-markdown .hljs-addition,
-.ui-markdown .hljs-attribute,
-.ui-markdown .hljs-meta .hljs-string { color: var(--ui-color-success); }
-.ui-markdown .hljs-number,
-.ui-markdown .hljs-literal,
-.ui-markdown .hljs-symbol,
-.ui-markdown .hljs-bullet { color: var(--ui-color-warning); }
-.ui-markdown .hljs-title,
-.ui-markdown .hljs-section,
-.ui-markdown .hljs-name,
-.ui-markdown .hljs-selector-id,
-.ui-markdown .hljs-selector-class,
-.ui-markdown .hljs-built_in,
-.ui-markdown .hljs-type { color: light-dark(#1d4f91, #9ec1ff); }
-.ui-markdown .hljs-attr,
-.ui-markdown .hljs-property,
-.ui-markdown .hljs-variable,
-.ui-markdown .hljs-template-variable { color: light-dark(#8a4b08, #f0b56b); }
-.ui-markdown .hljs-deletion { color: var(--ui-color-danger); }
-.ui-markdown .hljs-meta { color: var(--ui-color-text-muted); }
-.ui-markdown .hljs-emphasis { font-style: italic; }
-.ui-markdown .hljs-strong { font-weight: 600; }
 .ui-mermaid [data-mermaid-stage] > svg {
   display: block;
   max-width: 100%;
