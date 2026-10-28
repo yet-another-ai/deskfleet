@@ -34,7 +34,7 @@ export default defineConfig(({ command }) => {
     build: {
       emptyOutDir: true,
       outDir: resolve(import.meta.dirname, "out/renderer"),
-      rolldownOptions: { output: { codeSplitting: clientCodeSplitting } },
+      rolldownOptions: { output: { codeSplitting: clientCodeSplitting, strictExecutionOrder: true } },
     },
     server: {
       host: "127.0.0.1",

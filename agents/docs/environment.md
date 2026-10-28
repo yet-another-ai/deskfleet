@@ -240,6 +240,24 @@ See [native media](media.md) for static linkage and platform support.
 After changing a tool declaration, run `mise lock` and `mise install --locked`,
 then include the configuration and lockfile changes together.
 
+### Client bundles
+
+Web and Electron renderer builds share the Rolldown groups in
+`packages/components/src/chunking.ts`. Heavy library groups split at module
+boundaries with a 500,000-byte pre-minification target. Mermaid
+and Markdown also preserve entry usage so diagram-specific code, layout engines,
+and the highlighter are not merged across their loading boundaries. Both builds
+enable `strictExecutionOrder` so dependent Shiki grammars initialize in order
+after splitting.
+
+Vite's default chunk-size warning remains enabled. Mermaid's upstream bundled
+ELK engine and generated parser, plus Shiki's C++ grammar, each exceed the warning
+threshold as a single module; the group size target cannot split them further.
+The Mermaid chunks stay behind its dynamic imports; the grammar loads with the
+Session Markdown renderer. When changing the groups, build both clients
+and exercise Markdown, diagrams, charts, and terminals from production bundles
+to check module initialization order as well as file sizes.
+
 ## Task boundaries
 
 | Command | Purpose |
