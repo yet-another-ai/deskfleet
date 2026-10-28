@@ -36,7 +36,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
-  # Disable incremental compilation so sccache can cache every rustc invocation.
+  # Disable incremental compilation so the job-local sccache can cache every
+  # rustc invocation. sccache is not stored in the GitHub Actions cache.
   CARGO_INCREMENTAL: "0"
 
 jobs:

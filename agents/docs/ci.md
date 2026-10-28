@@ -208,15 +208,31 @@ restores `@electron/get`'s default cache, and the PostgreSQL job saves it after
 `install-electron` on main and tags. Installed `node_modules` directories are
 rebuilt from the lockfile.
 
-All jobs use sccache 0.19.0 through the pinned `sccache-action` release and share
-its GitHub Actions cache namespace. The tool version stays pinned because it
-participates in that cache version. Main and tag runs can write that cache;
-pull requests and other branches read it. A miss compiles normally. Service
-errors are written to a runner log and `SCCACHE_LOG` is `warn`. Dependency and
-tool caches follow the same producer policy, with Cargo target caches saved
-from main only.
+All jobs run sccache 0.19.0 through the pinned `sccache-action` release, as
+`RUSTC_WRAPPER`, with a cache directory under the runner temp path. That
+directory lives for one job. Incremental compilation stays off so sccache can
+reuse identical `rustc` invocations inside the job. The tool version stays
+pinned. `SCCACHE_LOG` is `warn`, and service errors go to a runner log.
 
-`mise run ci:report:sccache` reports cache hit, miss, write, and error counters.
+sccache does not use the GitHub Actions cache. Storing one Actions object per
+compilation created thousands of entries. Together with the other caches they
+kept the repository over the 10 GB quota and evicted the Windows Cargo target
+cache (`v0-rust-checks-Windows_NT-x64-…`, about 1.1 GB). Windows also never
+wrote that backend successfully: a main run in read-write mode recorded a write
+error for every compilation and zero hits, so a target-cache miss recompiled
+the workspace. On that miss, `cargo test` spent about 7.5 minutes in
+`deskfleet-native` alone. The same step was about 93 seconds when the target
+cache hit, and about 39 seconds of that was `deskfleet-native`.
+
+The Cargo target cache is the cross-job compiler cache. Test jobs restore it
+from main and only main and tags save it. Pull requests do not write a
+merge-ref copy. Windows runners exclude the workspace, Cargo home, Rustup, and
+the local sccache directory from Microsoft Defender real-time scanning before
+that restore, because a cold MSVC link of the native test binary is the slow
+part of a miss.
+
+`mise run ci:report:sccache` reports cache hit, miss, write, and error counters
+for that job-local server.
 
 Heron's Nix, coverage upload, Playwright, plug-in SDK, signing, and symbol-upload
 jobs are not part of this workflow. Deskfleet keeps the orchestrator, the reusable
