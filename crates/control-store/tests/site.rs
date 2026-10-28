@@ -39,6 +39,49 @@ async fn audit(store: &ControlStore) -> Vec<Value> {
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn legal_url_migration_preserves_existing_site_settings() {
+    let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
+    let database = Database::connect(&url).await.unwrap();
+    let schema = format!("site_upgrade_{}", uuid::Uuid::new_v4().simple());
+    database
+        .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
+        .await
+        .unwrap();
+    let separator = if url.contains('?') { '&' } else { '?' };
+    let scoped_url = format!("{url}{separator}options=-csearch_path%3D{schema}");
+    let store = ControlStore::connect(&scoped_url).await.unwrap();
+    // Restore the previous schema shape with a configured installation to exercise upgrade defaults.
+    store.database().execute_unprepared(
+        "UPDATE cp_site_settings SET site_name='Existing fleet', announcement='Existing announcement', allow_team_creation=FALSE;
+         ALTER TABLE cp_site_settings DROP COLUMN terms_of_service_url, DROP COLUMN privacy_terms_url;
+         DELETE FROM cp_migrations WHERE version=7",
+    ).await.unwrap();
+    store.close().await.unwrap();
+    let upgraded = ControlStore::connect(&scoped_url).await.unwrap();
+    assert_eq!(
+        upgraded.site_settings().await.unwrap(),
+        SiteSettings {
+            site_name: "Existing fleet".into(),
+            announcement: "Existing announcement".into(),
+            allow_team_creation: false,
+            terms_of_service_url: String::new(),
+            privacy_terms_url: String::new(),
+        }
+    );
+    // The central teardown must understand the added migration as well.
+    deskfleet_control_store::schema::down(upgraded.database())
+        .await
+        .unwrap();
+    upgraded.close().await.unwrap();
+    database
+        .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
+    database.close().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn site_grants_settings_revocation_and_audit_are_transactional() {
     let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
     let database = Database::connect(&url).await.unwrap();
@@ -69,6 +112,8 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         site_name: "deskfleet".into(),
         announcement: String::new(),
         allow_team_creation: true,
+        terms_of_service_url: String::new(),
+        privacy_terms_url: String::new(),
     };
     assert_eq!(store.site_settings().await.unwrap(), defaults);
     assert!(!store.is_site_admin(&admin.id).await.unwrap());
@@ -119,12 +164,16 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         site_name: "  Research fleet  ".into(),
         announcement: "Maintenance at 19:00".into(),
         allow_team_creation: false,
+        terms_of_service_url: "  https://example.test/terms  ".into(),
+        privacy_terms_url: " https://example.test/privacy ".into(),
     };
     let saved = store
         .update_site_settings(&admin.id, &changed)
         .await
         .unwrap();
     changed.site_name = "Research fleet".into();
+    changed.terms_of_service_url = "https://example.test/terms".into();
+    changed.privacy_terms_url = "https://example.test/privacy".into();
     assert_eq!(saved, changed);
     // Read from a new connection, so persistence and per-request grants are tested.
     let second = ControlStore::connect(&scoped_url).await.unwrap();
@@ -150,6 +199,14 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         },
         SiteSettings {
             announcement: "x".repeat(10_001),
+            ..changed.clone()
+        },
+        SiteSettings {
+            terms_of_service_url: "javascript:alert(1)".into(),
+            ..changed.clone()
+        },
+        SiteSettings {
+            privacy_terms_url: "/privacy".into(),
             ..changed.clone()
         },
     ] {

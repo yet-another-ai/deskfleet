@@ -53,9 +53,10 @@ test("closed registration presents the site policy without an email submission f
 
 test("registration confirms the mailed link and resends to the same address after a pause", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
-  const request = mountAt("/auth/register", async () => ({ registrationEnabled: true }))
+  const request = mountAt("/auth/register", async () => ({ registrationEnabled: true, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy" }))
   await flushPromises()
   await view!.get('input[type="email"]').setValue("grace@example.test")
+  await view!.get('[role="checkbox"]').trigger("click")
   await view!.get("form").trigger("submit"); await flushPromises()
   expect(view!.get("h1").text()).toBe(i18n.global.t("auth.checkInbox"))
   expect(view!.text()).toContain("grace@example.test")
@@ -64,10 +65,63 @@ test("registration confirms the mailed link and resends to the same address afte
   vi.advanceTimersByTime(30_000); await flushPromises()
   await resend.trigger("click"); await flushPromises()
   expect(request.mock.calls.filter(([, path]) => path === "/api/auth/register")).toEqual([
-    ["POST", "/api/auth/register", { email: "grace@example.test" }],
-    ["POST", "/api/auth/register", { email: "grace@example.test" }],
+    ["POST", "/api/auth/register", { email: "grace@example.test", acceptedTerms: true }],
+    ["POST", "/api/auth/register", { email: "grace@example.test", acceptedTerms: true }],
   ])
   expect(view!.get('[role="status"]').text()).toBe(i18n.global.t("auth.sentAgain"))
+})
+
+test.each([
+  { termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy" },
+  { termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "" },
+  { termsOfServiceUrl: "", privacyTermsUrl: "https://example.test/privacy" },
+])("registration requires explicit consent to configured terms: %j", async config => {
+  const request = mountAt("/auth/register", async () => ({ registrationEnabled: true, ...config }))
+  await flushPromises()
+  await view!.get('input[type="email"]').setValue("grace@example.test")
+  const checkbox = view!.get('[role="checkbox"]')
+  const submit = view!.get('button[type="submit"]')
+  const terms = [config.termsOfServiceUrl && "Terms of Service", config.privacyTermsUrl && "Privacy Terms"].filter(Boolean)
+  expect(view!.get(`#${checkbox.attributes("aria-labelledby")}`).text().replace(/\s+/g, " ")).toBe(`I agree to the ${terms.join(" and ")}`)
+  expect(checkbox.attributes("aria-checked")).toBe("false")
+  expect(submit.attributes("disabled")).toBeDefined()
+  // Exercise the submit handler as well as the disabled button.
+  await view!.get("form").trigger("submit"); await flushPromises()
+  expect(request.mock.calls.some(([, path]) => path === "/api/auth/register")).toBe(false)
+  const links = view!.findAll('a[target="_blank"]')
+  expect(links.map(link => link.attributes("href"))).toEqual(Object.values(config).filter(Boolean))
+  for (const link of links) {
+    expect(link.attributes("rel")).toBe("noopener noreferrer")
+    await link.trigger("click")
+    expect(checkbox.attributes("aria-checked")).toBe("false")
+  }
+  await checkbox.trigger("click")
+  expect(submit.attributes("disabled")).toBeUndefined()
+  await checkbox.trigger("click")
+  expect(submit.attributes("disabled")).toBeDefined()
+  await checkbox.trigger("click")
+  await view!.get("form").trigger("submit"); await flushPromises()
+  expect(request).toHaveBeenLastCalledWith("POST", "/api/auth/register", { email: "grace@example.test", acceptedTerms: true })
+})
+
+test("registration with no configured terms does not require a checkbox", async () => {
+  const request = mountAt("/auth/register", async () => ({ registrationEnabled: true, termsOfServiceUrl: "", privacyTermsUrl: "" }))
+  await flushPromises()
+  expect(view!.find('[role="checkbox"]').exists()).toBe(false)
+  expect(view!.get('button[type="submit"]').attributes("disabled")).toBeUndefined()
+  await view!.get('input[type="email"]').setValue("grace@example.test")
+  await view!.get("form").trigger("submit"); await flushPromises()
+  expect(request).toHaveBeenLastCalledWith("POST", "/api/auth/register", { email: "grace@example.test", acceptedTerms: false })
+})
+
+test("recovery does not request consent even when registration terms are configured", async () => {
+  const request = mountAt("/auth/recovery", async () => ({ registrationEnabled: true, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy" }))
+  await flushPromises()
+  expect(view!.find('[role="checkbox"]').exists()).toBe(false)
+  expect(view!.find('a[target="_blank"]').exists()).toBe(false)
+  await view!.get('input[type="email"]').setValue("grace@example.test")
+  await view!.get("form").trigger("submit"); await flushPromises()
+  expect(request).toHaveBeenLastCalledWith("POST", "/api/auth/recovery", { email: "grace@example.test" })
 })
 
 test("a mailed link without its token offers a new link instead of a form", async () => {

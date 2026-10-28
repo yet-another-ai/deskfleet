@@ -18,7 +18,7 @@ export function aiUsageFixture(query: AiUsageQuery = { period: "30d", timeZone: 
 export interface FakeCentralOptions {
   signedIn?: boolean
   siteAdmin?: boolean
-  site?: SiteSettings
+  site?: Partial<SiteSettings>
   teams?: Team[]
   machines?: Machine[]
   members?: TeamMember[]
@@ -36,7 +36,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
   const state = {
     signedIn: options.signedIn ?? true,
     siteAdmin: options.siteAdmin ?? false,
-    site: options.site ?? { siteName: "deskfleet", announcement: "", allowTeamCreation: true },
+    site: { siteName: "deskfleet", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "", ...options.site },
     teams: options.teams ?? [{ id: "team-1", name: "Design team", role: "admin" as const }],
     machines: options.machines ?? [],
     members: options.members ?? [

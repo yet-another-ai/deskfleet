@@ -257,7 +257,7 @@ test("account refresh updates site privileges and creation policy even without a
   expect(session.account.value.siteAdmin).toBe(true)
   expect(session.site.value?.allowTeamCreation).toBe(true)
   fake.state.siteAdmin = false
-  fake.state.site = { siteName: "Changed site", announcement: "News", allowTeamCreation: false }
+  fake.state.site = { ...fake.state.site, siteName: "Changed site", announcement: "News", allowTeamCreation: false }
   fake.emit({ type: "connection", connected: true })
   await flushPromises()
   expect(session.account.value.siteAdmin).toBe(false)
@@ -268,10 +268,10 @@ test("account refresh updates site privileges and creation policy even without a
   const refreshing = session.reload()
   await flushPromises()
   expect(session.site.value).toEqual(previous)
-  finishSite({ siteName: "Still here", announcement: "", allowTeamCreation: true })
+  finishSite({ siteName: "Still here", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "" })
   await refreshing
-  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true })
+  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "" })
   fake.central.site.mockRejectedValueOnce(new Error("Site unavailable"))
   await expect(session.reload()).rejects.toThrow("Site unavailable")
-  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true })
+  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "" })
 })

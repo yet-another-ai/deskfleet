@@ -75,7 +75,7 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
     let defaults: Value = test::read_body_json(response).await;
     assert_eq!(
         defaults,
-        json!({"siteName":"deskfleet","announcement":"","allowTeamCreation":true})
+        json!({"siteName":"deskfleet","announcement":"","allowTeamCreation":true,"termsOfServiceUrl":"","privacyTermsUrl":""})
     );
     assert_eq!(
         test::call_service(
@@ -109,8 +109,7 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
         StatusCode::OK
     );
 
-    let changed =
-        json!({"siteName":"Lab fleet", "announcement":"Welcome", "allowTeamCreation":false});
+    let changed = json!({"siteName":"Lab fleet", "announcement":"Welcome", "allowTeamCreation":false,"termsOfServiceUrl":"https://example.test/terms","privacyTermsUrl":"https://example.test/privacy"});
     assert_eq!(
         call!(patch, "/api/admin/site-settings", admin_token, &changed).status(),
         StatusCode::OK
@@ -118,11 +117,13 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
     let public: Value = test::read_body_json(call!(get, "/api/site", "", &json!({}))).await;
     assert_eq!(public, changed);
     for invalid in [
-        json!({"siteName":"", "announcement":"", "allowTeamCreation":true}),
-        json!({"siteName":"Lab fleet", "announcement":"x".repeat(10_001), "allowTeamCreation":true}),
+        json!({"siteName":"", "announcement":"", "allowTeamCreation":true,"termsOfServiceUrl":"","privacyTermsUrl":""}),
+        json!({"siteName":"Lab fleet", "announcement":"x".repeat(10_001), "allowTeamCreation":true,"termsOfServiceUrl":"","privacyTermsUrl":""}),
         json!({"siteName":"Lab fleet"}),
-        json!({"siteName":"Lab fleet", "announcement":"", "allowTeamCreation":"yes"}),
-        json!({"siteName":"Lab fleet", "announcement":"", "allowTeamCreation":true, "oidcSecret":"not a runtime setting"}),
+        json!({"siteName":"Lab fleet", "announcement":"", "allowTeamCreation":"yes","termsOfServiceUrl":"","privacyTermsUrl":""}),
+        json!({"siteName":"Lab fleet", "announcement":"", "allowTeamCreation":true,"termsOfServiceUrl":"","privacyTermsUrl":"", "oidcSecret":"not a runtime setting"}),
+        json!({"siteName":"Lab fleet", "announcement":"", "allowTeamCreation":true,"termsOfServiceUrl":"javascript:alert(1)","privacyTermsUrl":""}),
+        json!({"siteName":"Lab fleet", "announcement":"", "allowTeamCreation":true,"termsOfServiceUrl":"","privacyTermsUrl":"https://user:secret@example.test/privacy"}),
     ] {
         assert_eq!(
             call!(patch, "/api/admin/site-settings", admin_token, &invalid).status(),

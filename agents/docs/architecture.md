@@ -149,8 +149,9 @@ transaction checks, peer expiry/revocation, and daemon delegation bounds remain
 part of authorization. Rules such as retaining a Team's final administrator are
 transactional business invariants in addition to policy checks.
 
-PostgreSQL owns runtime site name, announcement, and Team-creation policy. The
-public site endpoint exposes only those fields; authenticated site administrators
+PostgreSQL owns runtime site name, announcement, Team-creation policy, and optional
+Terms of Service and Privacy Terms URLs. The public site endpoint exposes these
+fields; authenticated site administrators
 can edit them in the Web client's Site administration page. The administration
 UI is Web-only. Web and Electron both display the public site name and
 announcement and apply the Team-creation setting. The creation switch applies to
@@ -159,6 +160,12 @@ remain usable. Settings writes and administrator grant/revoke
 operations record their changes atomically in central site audit. Database URLs,
 authentication configuration, service origins, and transport credentials remain
 deployment configuration; machine-local settings remain owned by their daemons.
+
+Authentication configuration also publishes the legal URLs. When either URL is
+configured, the registration page requires explicit checkbox acceptance and the
+registration endpoint rejects missing consent before issuing a mailbox challenge.
+Both empty URLs preserve email-only registration. Recovery does not require this
+registration agreement.
 
 The current automatically created local Team and discovery-token actor are
 development scaffolding for this flow. They do not establish authenticated Team
