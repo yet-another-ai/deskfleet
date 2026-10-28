@@ -191,6 +191,15 @@ test("configured Enterprise contact is offered without checkout", async () => {
   expect(offer.get("a").text()).toContain("Contact us")
 })
 
+test("Enterprise contact does not replace the member upgrade hint", async () => {
+  await setup(fake => fake.central.billing.mockResolvedValue({
+    ...free(), enterpriseContactEmail: "sales@example.test",
+  }))
+  expect(usage().get('[data-billing-offer="enterprise"]').get("a").attributes("href")).toBe("mailto:sales@example.test")
+  expect(usage().find("[data-billing-offer='go']").exists()).toBe(false)
+  expect(usage().text()).toContain("A Team admin can upgrade this Team.")
+})
+
 test("Enterprise contact is hidden when unset or already granted", async () => {
   await setup(fake => fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true }))
   expect(usage().find('[data-billing-offer="enterprise"]').exists()).toBe(false)

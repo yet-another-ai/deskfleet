@@ -125,15 +125,15 @@ async function open(target: "go" | "pro" | "portal"): Promise<void> {
           </div>
         </div>
       </div>
-      <div v-if="offers || enterpriseContact" class="flex flex-col gap-3">
-        <div v-if="offers" class="flex flex-wrap items-center justify-between gap-3" data-billing-interval>
+      <div v-if="offers" class="flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3" data-billing-interval>
           <p class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.chooseInterval") }}</p>
           <div role="group" :aria-label="t('billing.chooseInterval')" class="flex rounded-lg border border-ui-border bg-ui-hover p-1">
             <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'month' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'month'" data-billing-interval-option="month" @click="interval = 'month'">{{ t("billing.interval.month") }}</button>
             <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'year' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'year'" data-billing-interval-option="year" @click="interval = 'year'">{{ t("billing.interval.year") }}</button>
           </div>
         </div>
-        <div v-if="offers" class="grid gap-3 sm:grid-cols-2">
+        <div class="grid gap-3 sm:grid-cols-2">
           <div v-for="plan in plans" :key="plan" class="ui-card flex flex-col gap-3 p-4" :data-billing-offer="plan">
             <div>
               <p class="m-0 text-sm font-semibold">{{ t(`billing.plan.${plan}`) }}</p>
@@ -143,15 +143,15 @@ async function open(target: "go" | "pro" | "portal"): Promise<void> {
             <UiButton :variant="plan === 'go' ? 'primary' : 'default'" class="mt-auto" :loading="pending === plan" :disabled="!!pending" @click="open(plan)">{{ t("billing.upgradeTo", { plan: t(`billing.plan.${plan}`) }) }}</UiButton>
           </div>
         </div>
-        <div v-if="enterpriseContact" class="ui-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" data-billing-offer="enterprise">
-          <div class="min-w-0">
-            <p class="m-0 text-sm font-semibold">{{ t("billing.plan.enterprise") }}</p>
-            <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.offer.enterprise") }}</p>
-          </div>
-          <a class="ui-button shrink-0" :href="`mailto:${enterpriseContact}`">{{ t("billing.contactEnterprise") }}<Mail :size="13" :stroke-width="1.75" aria-hidden="true" /></a>
-        </div>
       </div>
       <p v-else-if="state.plan === 'free' && state.paymentsAvailable && !state.canManageBilling" class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.askAdmin") }}</p>
+      <div v-if="enterpriseContact" class="ui-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" data-billing-offer="enterprise">
+        <div class="min-w-0">
+          <p class="m-0 text-sm font-semibold">{{ t("billing.plan.enterprise") }}</p>
+          <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.offer.enterprise") }}</p>
+        </div>
+        <a class="ui-button shrink-0" :href="`mailto:${enterpriseContact}`">{{ t("billing.contactEnterprise") }}<Mail :size="13" :stroke-width="1.75" aria-hidden="true" /></a>
+      </div>
       <p v-if="actionError" role="alert" class="m-0 text-sm text-ui-danger">{{ actionError }}</p>
     </div>
   </section>
