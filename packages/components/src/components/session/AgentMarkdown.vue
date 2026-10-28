@@ -61,7 +61,7 @@ function hydrate(): void {
       holder.replaceChildren(loading)
     }
   }
-  for (const button of surface.value?.querySelectorAll<HTMLButtonElement>("[data-math-copy]") ?? []) {
+  for (const button of surface.value?.querySelectorAll<HTMLButtonElement>("[data-math-copy], [data-code-copy]") ?? []) {
     const label = t(button.dataset.copied === "true" ? "common.copied" : "common.copy")
     button.setAttribute("aria-label", label)
     button.title = label
@@ -97,14 +97,14 @@ watchImmediate([rendered, context, locale], async () => {
 
 async function click(event: MouseEvent): Promise<void> {
   const target = event.target instanceof Element ? event.target : null
-  const mathCopy = target?.closest<HTMLButtonElement>("[data-math-copy]")
-  if (mathCopy) {
+  const copyButton = target?.closest<HTMLButtonElement>("[data-math-copy], [data-code-copy]")
+  if (copyButton) {
     event.preventDefault()
-    try { await navigator.clipboard.writeText(mathCopy.dataset.mathCopy ?? "") } catch { return }
+    try { await navigator.clipboard.writeText(copyButton.dataset.mathCopy ?? copyButton.dataset.codeCopy ?? "") } catch { return }
     const setCopied = (copied: boolean) => {
-      if (copied) mathCopy.dataset.copied = "true"; else delete mathCopy.dataset.copied
+      if (copied) copyButton.dataset.copied = "true"; else delete copyButton.dataset.copied
       const label = t(copied ? "common.copied" : "common.copy")
-      mathCopy.setAttribute("aria-label", label); mathCopy.title = label
+      copyButton.setAttribute("aria-label", label); copyButton.title = label
     }
     setCopied(true)
     setTimeout(() => { if (!disposed) setCopied(false) }, 1500)

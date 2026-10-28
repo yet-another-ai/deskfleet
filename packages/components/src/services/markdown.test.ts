@@ -63,6 +63,7 @@ test("renders LaTeX inline, display, and fenced blocks while ignoring plain curr
   expect(result.html).toContain('class="katex-display"')
   expect(result.html).toContain("prices like $10 and $20, escaped $30.")
   expect(result.html).toContain('class="ui-math-fallback"')
+  expect(result.html).not.toContain("ui-code-block")
 })
 
 test("extracts mermaid code blocks with escaped source fallback", () => {
@@ -71,4 +72,38 @@ test("extracts mermaid code blocks with escaped source fallback", () => {
   expect(result.html).toContain('data-mermaid="0"')
   expect(result.html).not.toContain("<script>")
   expect(result.html).toContain("&lt;script&gt;")
+  expect(result.html).not.toContain("ui-code-block")
+})
+
+test("highlights fenced code, shows the language name, and offers the source for copy", () => {
+  const result = renderResourceMarkdown([
+    "```ts",
+    "const value = \"<script>alert(1)</script>\"",
+    "```",
+    "",
+    "```not-a-language",
+    "custom <i>code</i> & more",
+    "```",
+    "",
+    "```",
+    "plain",
+    "```",
+    "",
+    "```<img/src/onerror=alert(1)>",
+    "alert(1)",
+    "```",
+  ].join("\n"))
+  expect(result.html).toContain('<span class="ui-code-language">TypeScript</span>')
+  expect(result.html).toContain('class="hljs language-ts"')
+  expect(result.html).toContain("hljs-keyword")
+  expect(result.html).toContain("hljs-string")
+  expect(result.html).toContain('data-code-copy="const value = &quot;&lt;script&gt;alert(1)&lt;/script&gt;&quot;"')
+  expect(result.html).not.toContain("<script>")
+  expect(result.html).toContain('<span class="ui-code-language">not-a-language</span>')
+  expect(result.html).toContain('data-code-copy="custom &lt;i&gt;code&lt;/i&gt; &amp; more"')
+  expect(result.html).not.toContain("<i>")
+  expect(result.html).toContain('data-code-copy="plain"')
+  expect(result.html).toContain("&lt;img/src/onerror=alert(1)&gt;")
+  expect(result.html).not.toContain("<img")
+  expect(result.html.match(/ui-code-language/gu)).toHaveLength(3)
 })

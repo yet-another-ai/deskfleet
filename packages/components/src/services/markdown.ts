@@ -1,3 +1,4 @@
+import hljs from "highlight.js/lib/common"
 import katex from "katex"
 import MarkdownIt, { type Env } from "markdown-it"
 import { isFileResource } from "./agent-resources.ts"
@@ -25,6 +26,24 @@ function renderMathBlock(tex: string, newline = true): string {
   const trimmed = tex.trim()
   const button = `<button type="button" class="ui-button-ghost ui-math-copy h-7 w-7 shrink-0 p-0" data-math-copy="${escapeHtml(trimmed)}" aria-label="Copy" title="Copy">${COPY_ICONS}</button>`
   return `<div class="ui-math-block" data-math-block>${button}${renderMath(trimmed, true)}</div>${newline ? "\n" : ""}`
+}
+
+function renderCodeBlock(code: string, info: string): string {
+  const language = info.toLowerCase()
+  const definition = language ? hljs.getLanguage(language) : undefined
+  const name = definition?.name || info
+  const label = name ? `<span class="ui-code-language">${escapeHtml(name)}</span>` : ""
+  const button = `<button type="button" class="ui-button-ghost ui-code-copy h-7 w-7 shrink-0 p-0" data-code-copy="${escapeHtml(code)}" aria-label="Copy" title="Copy">${COPY_ICONS}</button>`
+  const languageClass = definition && /^[\w#+.-]+$/u.test(language) ? ` language-${language}` : ""
+  let highlighted = escapeHtml(code)
+  if (definition) {
+    try {
+      highlighted = hljs.highlight(code, { language, ignoreIllegals: true }).value
+    } catch {
+      highlighted = escapeHtml(code)
+    }
+  }
+  return `<div class="ui-code-block" data-code-block><div class="ui-code-header">${label}${button}</div><pre><code class="hljs${languageClass}">${highlighted}</code></pre></div>\n`
 }
 
 markdown.inline.ruler.before("escape", "math_bracket", (state, silent) => {
@@ -91,10 +110,10 @@ markdown.renderer.rules.link_open = (tokens, index, options, _environment, rende
   }
   return renderer.renderToken(tokens, index, options)
 }
-const fence = markdown.renderer.rules.fence!
-markdown.renderer.rules.fence = (tokens, index, options, environment, renderer) => {
+markdown.renderer.rules.fence = (tokens, index, _options, environment) => {
   const token = tokens[index]!
-  const lang = token.info.trim().split(/\s+/u)[0]?.toLowerCase()
+  const info = token.info.trim().split(/\s+/u)[0] ?? ""
+  const lang = info.toLowerCase()
   if (lang === "mermaid") {
     const diagrams = (environment as MarkdownEnvironment).diagrams
     const id = String(diagrams.length)
@@ -102,7 +121,7 @@ markdown.renderer.rules.fence = (tokens, index, options, environment, renderer) 
     return `<div class="ui-mermaid" data-mermaid="${id}"><pre><code>${escapeHtml(token.content)}</code></pre></div>\n`
   }
   if (lang === "math" || lang === "latex" || lang === "tex" || lang === "katex") return renderMathBlock(token.content)
-  return fence(tokens, index, options, environment, renderer)
+  return renderCodeBlock(token.content.replace(/\n$/u, ""), info)
 }
 
 export function renderResourceMarkdown(text: string): { html: string; resources: MarkdownResource[]; diagrams: MarkdownDiagram[] } {
