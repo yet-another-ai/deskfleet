@@ -111,7 +111,7 @@ test("full output survives detached clients and daemon restart until explicit ha
   await assert.rejects(recovered.input(terminal.id, Buffer.from("pwd\r")), /not running/)
   await recovered.hangup(terminal.id)
   assert.deepEqual(recovered.list(), [])
-  assert.deepEqual(await readdir(f.directory), [])
+  assert.deepEqual(await readdir(f.directory), [".shell-bin"])
   await recovered.hangup(terminal.id)
 })
 
@@ -135,7 +135,7 @@ test("dial retries are idempotent and hanging up one shell preserves the others 
   assert.equal(hungup, true)
   assert.equal(f.spawned[0]!.closed, true)
   assert.equal(f.spawned[1]!.closed, false)
-  assert.deepEqual(await readdir(f.directory), [second.id])
+  assert.deepEqual((await readdir(f.directory)).sort(), [".shell-bin", second.id])
   assert.deepEqual(await readAll(f.sessions, second.id), Buffer.from("second"))
   assert.deepEqual(changed.at(-1), { kind: "terminalHungup", terminalId: first.id })
   await assert.rejects(f.sessions.dial({ mode: "resume", terminalId: first.id }), /Unknown terminal/)

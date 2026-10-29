@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./adapters": "./src/agents/adapters.ts",
+    "./terminal-images": "./src/terminal-images.ts",
     "./control-client": "./src/control-client.ts",
     "./control-discovery": "./src/control-discovery.ts",
     "./agent-protocol": "./src/agent-protocol.ts"

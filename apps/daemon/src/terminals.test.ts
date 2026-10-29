@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises"
 import test, { type TestContext } from "node:test"
 import type { NativeTerminal, TerminalConfig } from "@deskfleet/native"
 import { TerminalChannel } from "./terminal-channel.ts"
-import { TERMINAL_CHUNK_BYTES, type TerminalMessage } from "./terminal-protocol.ts"
+import { TERMINAL_CHUNK_BYTES, TERMINAL_OUTPUT_WINDOW_BYTES, type TerminalMessage } from "./terminal-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
 
 type NativeEvent = Awaited<ReturnType<NativeTerminal["nextEvent"]>>
@@ -128,9 +128,28 @@ test("public terminal dial cannot select the internal setup command fields", asy
     command: "/tools/not-a-shell", args: ["login"], env: { API_KEY: "not-an-override" }, title: "Not a shell", kind: "acp" as const,
   }
   const terminal = await f.sessions.dial(params)
-  assert.deepEqual(f.configs, [{ cwd: homedir(), cols: 80, rows: 24 }])
+  const { env, ...config } = f.configs[0]!
+  assert.deepEqual(config, { cwd: homedir(), cols: 80, rows: 24 })
+  assert.equal(env?.TERM_PROGRAM, "deskfleet")
+  assert.equal(env?.API_KEY, undefined)
+  assert.ok(env?.PATH?.startsWith(join(f.directory, ".shell-bin")))
   assert.notEqual(terminal.title, params.title)
   assert.equal(terminal.kind, undefined)
+})
+
+test("concurrent first dials share helper initialization and spawn one terminal", async context => {
+  const f = await fixture(context)
+  const params = { mode: "create" as const, terminalId: randomUUID(), cols: 80, rows: 24 }
+  const terminals = await Promise.all([f.sessions.dial(params), f.sessions.dial(params), f.sessions.dial(params)])
+  assert.equal(f.spawned.length, 1)
+  assert.deepEqual(terminals[1], terminals[0])
+  assert.deepEqual(terminals[2], terminals[0])
+  assert.equal(f.configs[0]?.env?.TERM_PROGRAM, "deskfleet")
+  const launcher = join(f.directory, ".shell-bin", process.platform === "win32" ? "icat.cmd" : "icat")
+  if (process.platform === "win32") {
+    assert.ok(Object.values(f.configs[0]!.env!).includes("--deskfleet-icat"))
+    assert.match(await readFile(launcher, "utf8"), /DESKFLEET_ICAT_ARG_0/u)
+  } else assert.match(await readFile(launcher, "utf8"), /--deskfleet-icat/u)
 })
 
 test("ACP terminals allow concurrent viewers but reject every human control path", async context => {
@@ -276,7 +295,8 @@ async function receiveAll(client: ReturnType<Awaited<ReturnType<typeof fixture>>
 test("terminal input, resize and full replay remain byte exact across client detach and reattach", async context => {
   const f = await fixture(context)
   const terminal = await f.dial()
-  assert.deepEqual(f.configs, [{ cwd: homedir(), cols: 80, rows: 24 }])
+  const { env: _env, ...config } = f.configs[0]!
+  assert.deepEqual(config, { cwd: homedir(), cols: 80, rows: 24 })
   const first = f.client()
   first.dialed.add(terminal.id)
   await first.request("attach", { sessionId: terminal.id })
@@ -313,19 +333,20 @@ test("terminal input, resize and full replay remain byte exact across client det
 test("slow clients replay history larger than the former tail without loss and only become ready after acknowledgements", async context => {
   const f = await fixture(context)
   const terminal = await f.dial()
-  const bytes = Buffer.concat([Buffer.from("retained beginning\r\n"), Buffer.alloc(300 * 1024, 65)])
+  const bytes = Buffer.concat([Buffer.from("retained beginning\r\n"), Buffer.alloc(TERMINAL_OUTPUT_WINDOW_BYTES + TERMINAL_CHUNK_BYTES, 65)])
   f.spawned[0]!.emit({ kind: "data", data: bytes })
   await until(() => f.sessions.snapshot(terminal.id).end === bytes.length)
   const client = f.client()
   client.dialed.add(terminal.id)
   await client.request("attach", { sessionId: terminal.id })
-  await until(() => output(client.messages).length === 1)
+  const windowChunks = TERMINAL_OUTPUT_WINDOW_BYTES / TERMINAL_CHUNK_BYTES
+  await until(() => output(client.messages).length === windowChunks)
   assert.equal(Buffer.from(output(client.messages)[0]!.data, "base64").length, TERMINAL_CHUNK_BYTES)
   assert.equal(client.messages.some(message => "event" in message && message.event.kind === "ready"), false)
   const more = Buffer.from("live after attach\r\n")
   f.spawned[0]!.emit({ kind: "data", data: more })
   await until(() => f.sessions.snapshot(terminal.id).end === bytes.length + more.length)
-  assert.equal(output(client.messages).length, 1)
+  assert.equal(output(client.messages).length, windowChunks)
   assert.deepEqual(await receiveAll(client, terminal.id, bytes.length + more.length), Buffer.concat([bytes, more]))
   await until(() => client.messages.some(message => "event" in message && message.event.kind === "ready"))
   assert.equal(client.messages.filter(message => "event" in message && message.event.kind === "reset").length, 1)
@@ -365,12 +386,13 @@ test("output acknowledgements proceed while a PTY write waits, without reorderin
   f.spawned[0]!.writeWait = new Promise(resolve => { written = resolve })
   const writing = client.request("input", { sessionId: terminal.id, data: "YQ==" })
   const resizing = client.request("resize", { sessionId: terminal.id, cols: 100, rows: 40 })
-  f.spawned[0]!.emit({ kind: "data", data: Buffer.alloc(TERMINAL_CHUNK_BYTES * 2, 65) })
-  await until(() => output(client.messages).length === 1)
+  const windowChunks = TERMINAL_OUTPUT_WINDOW_BYTES / TERMINAL_CHUNK_BYTES
+  f.spawned[0]!.emit({ kind: "data", data: Buffer.alloc(TERMINAL_OUTPUT_WINDOW_BYTES + TERMINAL_CHUNK_BYTES, 65) })
+  await until(() => output(client.messages).length === windowChunks)
   assert.equal(f.spawned[0]!.writes.length, 1)
   assert.equal(f.spawned[0]!.sizes.length, 0)
   await client.ack(terminal.id, output(client.messages)[0]!.offset)
-  await until(() => output(client.messages).length === 2)
+  await until(() => output(client.messages).length === windowChunks + 1)
   written()
   await Promise.all([writing, resizing])
   assert.deepEqual(f.spawned[0]!.sizes, [[100, 40]])

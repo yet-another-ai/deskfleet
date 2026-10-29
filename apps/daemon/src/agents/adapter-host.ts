@@ -19,6 +19,11 @@ export function configureAdapterHost(host: AgentProcess): void {
 }
 
 export function adapterProcess(argument: AdapterArgument): AgentProcess {
+  return hostedProcess(argument)
+}
+
+/** Reuse the embedding runtime for bundled command-line helpers. */
+export function hostedProcess(argument: string): AgentProcess {
   if (adapterHost) return { ...adapterHost, args: [...adapterHost.args ?? [], argument] }
   // Resolve the source fallback only when needed. A literal new URL(...,
   // import.meta.url) is treated as an asset by Vite and can become a data URL.

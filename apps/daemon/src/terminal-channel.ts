@@ -1,6 +1,8 @@
+import { setTimeout as delay } from "node:timers/promises"
 import {
   MAX_TERMINAL_MESSAGE_BYTES,
   TERMINAL_CHUNK_BYTES,
+  TERMINAL_OUTPUT_WINDOW_BYTES,
   type TerminalAck,
   type TerminalMessage,
   type TerminalRequest,
@@ -50,10 +52,10 @@ export function parseTerminalRequest(value: unknown): TerminalRequest | Terminal
 }
 
 interface Attachment {
-  cursor: number
+  sent: number
+  consumed: number
   replayEnd: number
   ready: boolean
-  awaiting?: number
   reset: boolean
   exited: boolean
   error?: string
@@ -68,7 +70,9 @@ export class TerminalChannel {
   readonly #fail: (error: unknown) => void
   readonly #authorized: (id: string) => boolean
   readonly #attached = new Map<string, Attachment>()
+  readonly #closing = new AbortController()
   #operations: Promise<void> = Promise.resolve()
+  #sending: Promise<void> = Promise.resolve()
   #pendingBytes = 0
   #closed = false
 
@@ -94,8 +98,10 @@ export class TerminalChannel {
     }
     if ("ack" in request) {
       const attachment = this.#attached.get(request.ack.sessionId)
-      if (attachment && attachment.awaiting === request.ack.offset) {
-        attachment.awaiting = undefined
+      if (attachment) {
+        // An in-flight output ACK can outlive detach and reach a fresh attachment.
+        if (request.ack.offset <= attachment.consumed || request.ack.offset > attachment.sent) return
+        attachment.consumed = request.ack.offset
         this.#pump(request.ack.sessionId, attachment)
       }
       return
@@ -129,6 +135,7 @@ export class TerminalChannel {
 
   close(): void {
     this.#closed = true
+    this.#closing.abort()
     for (const [id, attachment] of this.#attached) {
       attachment.unsubscribe()
       this.#sessions.release(id, this)
@@ -137,7 +144,42 @@ export class TerminalChannel {
   }
 
   async #emit(message: TerminalMessage): Promise<void> {
-    if (!this.#closed) await this.#send(JSON.stringify(message))
+    if (this.#closed) return
+    const text = JSON.stringify(message)
+    const sending = this.#sending.then(() => this.#sendMessage(text))
+    this.#sending = sending.catch(() => {})
+    await sending
+  }
+
+  async #sendMessage(message: string): Promise<void> {
+    const deadline = Date.now() + 5_000
+    while (!this.#closed) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      let stopped: (() => void) | undefined
+      try {
+        const stopping = new Promise<never>((_, reject) => {
+          stopped = () => reject(new Error("Terminal channel closed"))
+          this.#closing.signal.addEventListener("abort", stopped, { once: true })
+        })
+        await Promise.race([
+          this.#send(message),
+          stopping,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("Terminal send buffer stalled")), Math.max(1, deadline - Date.now()))
+          }),
+        ])
+        return
+      } catch (error) {
+        if (this.#closed) return
+        const detail = error instanceof Error ? error.message : String(error)
+        if (!/backpressure|send buffer is full/iu.test(detail) || Date.now() >= deadline) throw error
+        try { await delay(10, undefined, { signal: this.#closing.signal }) }
+        catch (error) { if (!this.#closed) throw error; return }
+      } finally {
+        clearTimeout(timer)
+        if (stopped) this.#closing.signal.removeEventListener("abort", stopped)
+      }
+    }
   }
 
   async #handle(request: TerminalRequest): Promise<unknown> {
@@ -150,7 +192,7 @@ export class TerminalChannel {
         // ACP viewers only replay output, so they never acquire the interactive controller.
         if (snapshot.summary.kind !== "acp") this.#sessions.claim(sessionId, this)
         const attachment: Attachment = {
-          cursor: 0, replayEnd: snapshot.end, ready: false, reset: true, exited: false, pumping: false, unsubscribe: () => {},
+          sent: 0, consumed: 0, replayEnd: snapshot.end, ready: false, reset: true, exited: false, pumping: false, unsubscribe: () => {},
         }
         this.#attached.set(sessionId, attachment)
         attachment.unsubscribe = this.#sessions.subscribe(sessionId, reason => {
@@ -186,7 +228,7 @@ export class TerminalChannel {
   }
 
   #pump(id: string, attachment: Attachment): void {
-    if (this.#closed || this.#attached.get(id) !== attachment || attachment.pumping || attachment.awaiting !== undefined) return
+    if (this.#closed || this.#attached.get(id) !== attachment || attachment.pumping) return
     attachment.pumping = true
     void this.#flush(id, attachment).catch(error => {
       if (this.#closed || this.#attached.get(id) !== attachment) return
@@ -194,9 +236,16 @@ export class TerminalChannel {
       this.#fail(error)
     }).finally(() => {
       attachment.pumping = false
-      if (this.#closed || this.#attached.get(id) !== attachment || attachment.awaiting !== undefined) return
+      if (this.#closed || this.#attached.get(id) !== attachment) return
       const snapshot = this.#sessions.snapshot(id)
-      if (!attachment.ready || attachment.cursor < snapshot.end || (snapshot.summary.status === "exited" && !attachment.exited)) this.#pump(id, attachment)
+      const end = attachment.ready ? snapshot.end : attachment.replayEnd
+      const canSend = attachment.sent < end && attachment.sent - attachment.consumed < TERMINAL_OUTPUT_WINDOW_BYTES
+      const canSignal = (!attachment.ready && attachment.consumed >= attachment.replayEnd)
+        || (attachment.consumed >= snapshot.end && ((snapshot.error && attachment.error !== snapshot.error)
+          || (snapshot.summary.status === "exited" && !attachment.exited)))
+      // ACKs and newly persisted output can arrive while read/send is pending.
+      // Recheck progress here, but stop when only the viewer can free credit.
+      if (canSend || canSignal) this.#pump(id, attachment)
     })
   }
 
@@ -207,22 +256,23 @@ export class TerminalChannel {
       await this.#emit({ event: { kind: "reset", sessionId: id } })
     }
     if (this.#closed || this.#attached.get(id) !== attachment) return
-    if (!attachment.ready && attachment.cursor >= attachment.replayEnd) {
+    if (!attachment.ready && attachment.consumed >= attachment.replayEnd) {
       attachment.ready = true
       await this.#emit({ event: { kind: "ready", sessionId: id } })
     }
     if (this.#closed || this.#attached.get(id) !== attachment) return
-    if (attachment.cursor < snapshot.end) {
-      const end = attachment.ready ? snapshot.end : attachment.replayEnd
-      const data = await this.#sessions.read(id, attachment.cursor, Math.min(TERMINAL_CHUNK_BYTES, end - attachment.cursor))
+    const end = attachment.ready ? snapshot.end : attachment.replayEnd
+    const available = TERMINAL_OUTPUT_WINDOW_BYTES - (attachment.sent - attachment.consumed)
+    if (attachment.sent < end && available > 0) {
+      const data = await this.#sessions.read(id, attachment.sent, Math.min(TERMINAL_CHUNK_BYTES, end - attachment.sent, available))
       if (this.#closed || this.#attached.get(id) !== attachment) return
       if (!data.length) throw new Error("Terminal history ended before its persisted offset")
-      attachment.cursor += data.length
-      // Reserve the acknowledgement before sending, including for fast local peers.
-      attachment.awaiting = attachment.cursor
-      await this.#emit({ event: { kind: "output", sessionId: id, data: data.toString("base64"), offset: attachment.cursor } })
+      // Reserve the sent range before sending, including for fast local peers.
+      attachment.sent += data.length
+      await this.#emit({ event: { kind: "output", sessionId: id, data: data.toString("base64"), offset: attachment.sent } })
       return
     }
+    if (attachment.consumed < snapshot.end) return
     if (snapshot.error && attachment.error !== snapshot.error) {
       attachment.error = snapshot.error
       await this.#emit({ event: { kind: "error", sessionId: id, error: snapshot.error } })

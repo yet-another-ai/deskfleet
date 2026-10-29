@@ -39,6 +39,16 @@ try {
   assert.equal(info.runtime.sea, true)
   assert.equal(info.runtime.node, process.versions.node)
 
+  const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6nWQAAAAASUVORK5CYII=", "base64")
+  const imageOutput = execFileSync(command, ["--deskfleet-icat"], {
+    cwd: directory, env: environment, input: image, encoding: "utf8", timeout: 15_000,
+  })
+  assert.match(imageOutput, /^\x1b\]1337;File=/u)
+  assert.ok(imageOutput.includes(`size=${image.length}`))
+  assert.ok(imageOutput.includes("inline=1"))
+  const payload = imageOutput.slice(imageOutput.indexOf(":") + 1, imageOutput.indexOf("\x07"))
+  assert.deepEqual(Buffer.from(payload, "base64"), image)
+
   const adapterVersion = execFileSync(command, ["--codex-acp", "--version"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()
@@ -100,7 +110,7 @@ try {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
     await closed.catch(() => {})
   }
-  console.log("Standalone SEA: native bridge, bundled ACP adapter, readiness, health, and shutdown passed")
+  console.log("Standalone SEA: native bridge, icat, bundled ACP adapter, readiness, health, and shutdown passed")
 } finally {
   rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

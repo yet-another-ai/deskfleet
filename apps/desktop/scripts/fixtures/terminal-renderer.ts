@@ -1,3 +1,4 @@
+import { ImageAddon } from "@xterm/addon-image"
 import { Terminal } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
 import { decodeTerminalBytes, TerminalClient } from "../../../../packages/components/src/services/terminal-client.ts"
@@ -5,10 +6,12 @@ import type { DeskfleetDesktopApi } from "../../../../packages/client/src/deskto
 
 const { deskfleet, terminalSmoke } = window as unknown as {
   deskfleet: DeskfleetDesktopApi
-  terminalSmoke: { context: { phase?: string; terminalId?: string; secondId?: string; pid?: string }; finish(result: unknown): void }
+  terminalSmoke: { context: { phase?: string; terminalId?: string; secondId?: string; pid?: string; imagePath?: string }; finish(result: unknown): void }
 }
 const terminal = new Terminal({ cols: 100, rows: 32, scrollback: 5_000 })
 terminal.open(document.getElementById("terminal")!)
+const images = new ImageAddon({ enableSizeReports: true, pixelLimit: 16_777_216, storageLimit: 64 })
+terminal.loadAddon(images)
 let client: TerminalClient
 let output = ""
 let exitCode: number | undefined
@@ -17,6 +20,23 @@ const decoder = new TextDecoder()
 
 function require(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
+}
+
+async function verifyImage(): Promise<void> {
+  // Output arrives before xterm finishes parsing it, including asynchronous image decoding.
+  await new Promise<void>(resolve => terminal.write("", resolve))
+  const buffer = terminal.buffer.active
+  for (let y = buffer.length - 1; y >= 0; y--) {
+    for (let x = 0; x < terminal.cols; x++) {
+      const image = images.getImageAtBufferCell(x, y)
+      if (!image) continue
+      require(image.width === 768 && image.height === 512, `Unexpected image dimensions: ${image.width}×${image.height}`)
+      const pixel = image.getContext("2d")!.getImageData(0, 0, 1, 1).data
+      require(pixel.join(",") === "255,0,0,255", `Unexpected image pixel: ${pixel}`)
+      return
+    }
+  }
+  throw new Error("icat output did not produce a terminal image")
 }
 
 async function until(predicate: () => boolean): Promise<void> {
@@ -83,6 +103,14 @@ async function writeHistory(): Promise<void> {
     ? "pwsh -Command \"Write-Output ('x' * 300000); Write-Output ('DF_' + 'HISTORY_END')\"\r"
     : "head -c 300000 /dev/zero | tr '\\0' x; printf '\\nDF_%s\\n' HISTORY_END\r")
   await until(() => output.includes("DF_HISTORY_END"))
+  const imagePath = terminalSmoke.context.imagePath
+  require(imagePath, "Missing icat fixture path")
+  const quotedImage = windows ? `"${imagePath}"` : `'${imagePath.replaceAll("'", "'\\''")}'`
+  await client.input(summary.id, windows
+    ? `icat ${quotedImage} && echo DF_IMAGE_END\r`
+    : `icat ${quotedImage} && printf '\\nDF_%s\\n' IMAGE_END\r`)
+  await until(() => output.includes("DF_IMAGE_END"))
+  await verifyImage()
   require(output.includes("DF_UNICODE:终端"), "Full output before client change was lost")
   client.close()
   terminalSmoke.finish({ result: { phase: "write", dataOnly: true, terminalId: summary.id, secondId: second.id, pid } })
@@ -98,6 +126,8 @@ async function restoreHistory(): Promise<void> {
   terminal.resize(restored.cols, restored.rows)
   await attach(terminalId)
   require(output.length > 300_000 && output.includes(`DF_READY:${pid}`) && output.includes("DF_UNICODE:终端") && output.includes("DF_HISTORY_END"), "Full history was not restored on a fresh client")
+  require(output.includes("DF_IMAGE_END"), "Image output was not restored on a fresh client")
+  await verifyImage()
   const replayedBytes = new TextEncoder().encode(output).byteLength
   await client.input(terminalId, deskfleet.platform === "win32"
     ? "echo DF_REATTACHED:%DF_SMOKE_TOKEN%\r"
@@ -119,7 +149,7 @@ async function restoreHistory(): Promise<void> {
   await deskfleet.terminal.hangup(secondId)
   require((await deskfleet.terminal.list()).length === 0, "Hung-up terminals remain in the catalog")
   terminal.dispose()
-  terminalSmoke.finish({ result: { dataOnly: true, replayedBytes, reattachedPid: pid, multipleShells: true, signalingHangup: true, exitCode } })
+  terminalSmoke.finish({ result: { dataOnly: true, replayedBytes, reattachedPid: pid, multipleShells: true, imageReplayed: true, signalingHangup: true, exitCode } })
 }
 
 void (terminalSmoke.context.phase === "resume" ? restoreHistory() : writeHistory()).catch(error => {

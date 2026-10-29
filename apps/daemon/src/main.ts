@@ -6,6 +6,7 @@ import { daemonControlDirectory } from "./control-discovery.ts"
 import { runAgent } from "./agent-cli.ts"
 import { bundledAdapter, configureAdapterHost } from "./agents/adapters.ts"
 import { runMachineCli } from "./machine-cli.ts"
+import { ICAT_ARGUMENT, runIcat } from "./terminal-images.ts"
 
 configureAdapterHost({
   command: process.execPath,
@@ -18,6 +19,10 @@ function fail(error: unknown) {
 }
 
 async function main() {
+  if (process.argv[2] === ICAT_ARGUMENT) {
+    process.exitCode = await runIcat(process.argv.slice(3))
+    return
+  }
   const adapter = bundledAdapter(process.argv.slice(2, 3))
   if (adapter) {
     await adapter()

@@ -1,6 +1,8 @@
 /** Terminal I/O uses a reliable, ordered WebRTC DataChannel. */
 export const TERMINAL_CHANNEL = "deskfleet-terminal"
 export const TERMINAL_CHUNK_BYTES = 8 * 1024
+/** Maximum raw output bytes sent ahead of a viewer's consumed offset. */
+export const TERMINAL_OUTPUT_WINDOW_BYTES = 1024 * 1024
 export const MAX_TERMINAL_MESSAGE_BYTES = 32 * 1024
 
 export interface TerminalSummary {
@@ -53,5 +55,6 @@ export type TerminalMessage =
   | { event: TerminalEvent }
 
 export interface TerminalAck {
+  /** Cumulative raw-byte offset consumed by the terminal renderer. */
   ack: { sessionId: string; offset: number }
 }

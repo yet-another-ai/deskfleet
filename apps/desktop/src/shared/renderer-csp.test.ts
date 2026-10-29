@@ -7,6 +7,12 @@ test("production renderers without analytics cannot open network connections", (
   expect(html).not.toContain(CSP_PLACEHOLDER)
 })
 
+test("terminal image decoders may compile WebAssembly without allowing JavaScript eval", () => {
+  const policy = injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, true)
+  expect(policy.split("; ").find(directive => directive.startsWith("script-src ")))
+    .toBe("script-src 'self' 'wasm-unsafe-eval'")
+})
+
 test("development renderers may reach only the Vite HMR socket", () => {
   const html = injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, false)
   expect(html).toContain("connect-src 'self' ws://127.0.0.1:5173")

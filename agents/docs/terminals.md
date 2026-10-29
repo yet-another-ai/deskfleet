@@ -152,10 +152,52 @@ A desktop media peer cannot invoke the terminal dispatcher.
 
 Output and input preserve raw bytes using base64 in JSON messages. This also
 preserves UTF-8 characters split across reads. Output is sent in chunks of at
-most 8 KiB, with one chunk outstanding per attachment. The client acknowledges
-only after xterm consumes it. Input is chunked and waits for each PTY write; the
+most 8 KiB, with up to 1 MiB of unacknowledged output bytes per attachment.
+The daemon pipelines chunks until that window is full. The client acknowledges
+the cumulative byte offset only after xterm consumes the output; acknowledgements
+release window capacity for more chunks. The window counts raw terminal bytes,
+before the transport's base64 encoding. Transient native send-buffer backpressure
+retries the same message in order, with the same five-second send deadline used
+by the other data channels. Replay readiness and process exit are
+published only after their preceding output has been consumed.
+Input is chunked and waits for each PTY write; the
 renderer bounds queued paste/input to 256 KiB. Resize sends terminal columns and
 rows, not pixel dimensions.
+
+## Inline images
+
+New interactive shells receive an `icat` command through a daemon-managed
+directory on their `PATH`. The launcher uses the bundled runtime in source,
+standalone SEA, and Electron installations; it does not require another Node.js
+installation. Shell startup files are not modified. Existing shells retain
+their original environment, and a startup file that replaces `PATH` can hide
+the injected command. Setup programs and ACP command terminals retain their
+explicit environments.
+
+Use `icat image.png`, `icat -- 'image with spaces.jpg'`, or pipe image bytes into
+`icat`. The helper accepts one PNG, JPEG, or GIF at a time; GIFs display their
+first frame. It checks the image header and enforces the current renderer's
+20,000,000-byte file limit and pixel count below 16,777,216. It does not convert
+formats or implement the options of Kitty's `kitten icat`.
+
+The current encoder emits iTerm2's legacy `OSC 1337;File=...` protocol with the
+image bytes embedded as base64. The command name is independent of that encoding;
+Kitty graphics are not implemented. The locked xterm image addon does not accept
+iTerm2's multipart protocol. Electron's renderer policy allows the bundled
+WebAssembly decoders through `script-src 'self' 'wasm-unsafe-eval'`.
+
+Images use the same authorized terminal stream and durable transcript as text.
+Replay restores the recorded image without rereading the original path. The
+renderer's 64 MB image cache is separate from transcript storage; cache eviction
+can replace older images with placeholders. Large images increase transfer and
+replay time.
+
+Injection applies on the machine that owns the terminal. An SSH destination or
+container entered from that shell needs its own helper. Multiplexers can require
+escape-sequence passthrough configuration; the helper does not configure or wrap
+tmux/screen output. Windows-hosted PTYs also depend on the system ConPTY version
+preserving the image sequence. A Windows client viewing a Unix-hosted terminal
+does not pass that output through ConPTY.
 
 ## Durable history
 
@@ -199,10 +241,13 @@ the panel keeps the existing shells; hanging up its last shell closes the panel.
 signaling ownership, and renderer input/output. `mise run desktop:smoke-terminal`
 runs real Chromium, production preload and IPC handlers, a daemon, and a native
 PTY. It checks data-only negotiation, UTF-8 output rendered by xterm, input,
-resize, two independent shells, full history beyond 256 KiB recovered by a fresh
-Electron process, the same shell identity, and signaling hangup after the data
-peer has closed. Daemon tests additionally cover restart recovery, incomplete
-creation/deletion, and hangup while a PTY write is blocked.
+resize, two independent shells, an `icat` image larger than the 1 MiB output
+window, image pixels and full history recovered by a fresh Electron process,
+the same shell identity, and signaling hangup after the data peer has closed.
+Daemon tests additionally cover window bounds and cumulative acknowledgements,
+restart recovery, incomplete creation/deletion, and hangup while a PTY write is
+blocked. `mise run daemon:smoke` also exercises the bundled image encoder with
+no Node executable on `PATH`.
 
 The UI uses local signaling and direct ICE. The native transport accepts
 STUN/TURN configuration. Selecting another machine in the UI requires integrating

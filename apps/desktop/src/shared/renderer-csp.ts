@@ -9,7 +9,8 @@ export function rendererContentSecurityPolicy(production: boolean, statsigEnable
   ]
   return [
     "default-src 'none'",
-    "script-src 'self'",
+    // xterm's image decoders compile bundled WebAssembly modules.
+    "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     // User avatars come from Gravatar.
     "img-src 'self' data: blob: https://gravatar.com",
