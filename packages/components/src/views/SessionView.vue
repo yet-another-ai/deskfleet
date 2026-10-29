@@ -11,6 +11,7 @@ import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import WindowToolbar from "../components/chrome/WindowToolbar.vue"
+import OpenWithMenu from "../components/catalog/OpenWithMenu.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import SessionAllowance from "../components/session/SessionAllowance.vue"
 import AgentBacklog from "../components/session/AgentBacklog.vue"
@@ -82,12 +83,15 @@ const unresolvedSubmission = computed(() => Object.values(agents.operations).som
 const pending = computed(() => Object.values(agents.operations).filter(operation => operation.sessionId === props.sessionId && operation.error))
 // Shells need the Session's own Worktree on this machine.
 const terminalWorktree = computed(() => (location.value?.machine.online || terminals.state === "connected") && snapshot.value?.session.lifecycle === "ready" ? location.value?.worktree : undefined)
+const applicationTarget = computed(() => client.platform !== "web" && location.value?.machine.local && client.applications && snapshot.value?.session.lifecycle === "ready" && location.value.worktree && location.value.worktree.directories.length > 0
+  ? { api: client.applications, machineId: location.value.machine.id, worktreeId: location.value.worktree.id } : undefined)
+const openWithMenu = ref<InstanceType<typeof OpenWithMenu> | null>(null)
 const empty = computed(() => !view.value?.loading && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
 const busy = ref(false)
 const forkOpen = ref(false)
 const renameOpen = ref(false)
 const actionError = ref<string | null>(null)
-const draftError = computed(() => actionError.value ?? agents.draftErrors[props.sessionId])
+const draftError = computed(() => actionError.value ?? openWithMenu.value?.launchError ?? agents.draftErrors[props.sessionId])
 const scroller = ref<HTMLElement | null>(null)
 const followBottom = ref(true)
 const activeEntry = ref<string>()
@@ -190,7 +194,7 @@ async function checkOperation(operationId: string): Promise<void> {
 <template>
   <PaneHeader>
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, ...(location.workspace ? [location.workspace.name] : [])]" /></template>
-    <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" /></template>
+    <template v-if="snapshot" #actions><OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error /><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" /></template>
   </PaneHeader>
   <div class="relative flex min-h-0 flex-1">
     <AgentOutline

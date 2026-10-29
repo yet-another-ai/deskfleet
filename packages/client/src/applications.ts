@@ -9,7 +9,8 @@ export interface OpenWorkspaceRequest {
   applicationId: string
   /** The client's active central registration, not the daemon's catalog ID. */
   machineId: string
-  workspaceId: string
+  workspaceId?: string
+  worktreeId?: string
   /** Omit to open the first (default) Workspace directory. */
   directoryIndex?: number
 }

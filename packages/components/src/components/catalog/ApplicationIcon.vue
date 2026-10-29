@@ -11,13 +11,13 @@ const props = defineProps<{ application: LocalApplication }>()
 const editorIcons: Record<string, string> = { vscode, vscodium }
 const icon = computed(() => editorIcons[props.application.id])
 const cursorStyle = { maskImage: `url("${cursor}")`, maskSize: "contain", maskRepeat: "no-repeat", maskPosition: "center" }
-const zedStyle = { ...cursorStyle, maskImage: `url("${zed}")`, backgroundColor: "light-dark(#000, #fff)" }
+const zedStyle = { ...cursorStyle, maskImage: `url("${zed}")` }
 </script>
 
 <template>
   <img v-if="icon" :src="icon" alt="" class="h-4 w-4 shrink-0 object-contain" aria-hidden="true" />
   <span v-else-if="application.id === 'cursor'" class="inline-block h-4 w-4 shrink-0 bg-current" :style="cursorStyle" aria-hidden="true" />
-  <span v-else-if="application.id === 'zed'" class="inline-block h-4 w-4 shrink-0" :style="zedStyle" aria-hidden="true" />
+  <span v-else-if="application.id === 'zed'" class="inline-block h-4 w-4 shrink-0 bg-current" :style="zedStyle" aria-hidden="true" />
   <SquareTerminal v-else-if="application.kind === 'terminal'" :size="16" class="shrink-0" aria-hidden="true" />
   <FolderOpen v-else-if="application.kind === 'fileManager'" :size="16" class="shrink-0" aria-hidden="true" />
   <CodeXml v-else :size="16" class="shrink-0" aria-hidden="true" />

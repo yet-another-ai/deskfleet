@@ -26,14 +26,21 @@ export class LocalApplicationsController implements LocalApplicationsApi {
   scan(): ReturnType<LocalApplicationsApi["scan"]> { return this.#launcher.scan() }
 
   async openWorkspace(request: OpenWorkspaceRequest): Promise<void> {
+    if ((request.workspaceId === undefined) === (request.worktreeId === undefined)) {
+      throw new Error("Invalid application or Workspace identifier")
+    }
     const [account, local] = await Promise.all([this.#central.status(), this.#enrollment()])
     if (!account.user || !local.configured || local.revoked || local.serverUrl !== account.serverUrl || local.machineId !== request.machineId) {
       throw new Error("Only Workspaces on this client's local machine can be opened")
     }
     const catalog = await this.#central.rpc<CatalogSnapshot>(request.machineId, "catalogList", {})
     if (catalog.machineId !== local.identity.machineId) throw new Error("Workspace machine does not match the local machine")
-    const workspace = catalog.workspaces.find(workspace => workspace.id === request.workspaceId)
-    const directories = workspace?.worktrees.find(worktree => worktree.sessionId === undefined)?.directories
+    const worktrees = request.worktreeId !== undefined
+      ? [...catalog.sessions, ...catalog.workspaces.flatMap(workspace => workspace.worktrees)]
+      : undefined
+    const directories = request.worktreeId !== undefined
+      ? worktrees?.find(worktree => worktree.id === request.worktreeId)?.directories
+      : catalog.workspaces.find(workspace => workspace.id === request.workspaceId)?.worktrees.find(worktree => worktree.sessionId === undefined)?.directories
     const directory = directories?.[request.directoryIndex ?? 0]
     if (!directory) throw new Error("Workspace directory is unavailable")
     await this.#launcher.open(request.applicationId, directory.path)
@@ -50,11 +57,16 @@ export async function invokeApplications(api: LocalApplicationsApi, method: unkn
   if (method !== "openWorkspace") throw new Error("Unknown local application operation")
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Workspace request")
   const input = value as Record<string, unknown>
+  if ((input.workspaceId === undefined) === (input.worktreeId === undefined)) {
+    throw new Error("Invalid application or Workspace identifier")
+  }
   if (input.directoryIndex !== undefined && (!Number.isSafeInteger(input.directoryIndex) || (input.directoryIndex as number) < 0)) {
     throw new Error("Invalid Workspace directory index")
   }
   return api.openWorkspace({
-    applicationId: identifier(input.applicationId), machineId: identifier(input.machineId), workspaceId: identifier(input.workspaceId),
+    applicationId: identifier(input.applicationId), machineId: identifier(input.machineId),
+    ...(input.workspaceId === undefined ? {} : { workspaceId: identifier(input.workspaceId) }),
+    ...(input.worktreeId === undefined ? {} : { worktreeId: identifier(input.worktreeId) }),
     ...(input.directoryIndex === undefined ? {} : { directoryIndex: input.directoryIndex as number }),
   })
 }
