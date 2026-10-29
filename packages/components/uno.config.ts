@@ -1,4 +1,4 @@
-import { defineConfig, presetMini } from "unocss"
+import { defineConfig, presetWind4 } from "unocss"
 
 const colorNames = [
   "canvas",
@@ -29,19 +29,16 @@ const colorNames = [
   "terminal",
 ] as const
 
-// UnoCSS cannot apply opacity modifiers to a bare var(); mixing with transparent makes `bg-ui-danger/10` work.
-const tokenColor = (name: string) => `color-mix(in srgb, var(--ui-color-${name}) calc(%alpha * 100%), transparent)`
-
 // Buttons share a shape; each variant sets its colors. Utilities on the element still override the shortcut.
 const button =
   "app-no-drag inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-3 py-1.5 text-[13px] font-medium leading-5 cursor-pointer transition-colors disabled:cursor-default [&[aria-disabled=true]]:cursor-default"
 
 export default defineConfig({
-  presets: [presetMini()],
+  presets: [presetWind4()],
   theme: {
-    fontFamily: { mono: "var(--ui-font-mono)" },
-    colors: Object.fromEntries(colorNames.map((name) => [`ui-${name}`, tokenColor(name)])),
-    boxShadow: {
+    font: { mono: "var(--ui-font-mono)" },
+    colors: Object.fromEntries(colorNames.map((name) => [`ui-${name}`, `var(--ui-color-${name})`])),
+    shadow: {
       "ui-card": "var(--ui-shadow-card)",
       "ui-popover": "var(--ui-shadow-popover)",
       "ui-dialog": "var(--ui-shadow-dialog)",
@@ -94,7 +91,5 @@ export default defineConfig({
     // Frameless windows move by dragging these regions; controls inside opt out.
     ["app-drag", { "app-region": "drag", "-webkit-app-region": "drag" }],
     ["app-no-drag", { "app-region": "no-drag", "-webkit-app-region": "no-drag" }],
-    // Visually hidden but still announced; presetMini has no equivalent.
-    ["sr-only", { position: "absolute", width: "1px", height: "1px", padding: "0", margin: "-1px", overflow: "hidden", clip: "rect(0, 0, 0, 0)", "white-space": "nowrap", "border-width": "0" }],
   ],
 })
