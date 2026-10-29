@@ -1,4 +1,5 @@
 import { computed, inject, ref, type ComputedRef, type InjectionKey, type Ref } from "vue"
+import type { RouteLocationRaw } from "vue-router"
 import type { AccountState, CentralApi, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
 import { router } from "../router/index.ts"
 import { captureAnalyticsContext } from "../services/analytics.ts"
@@ -40,6 +41,10 @@ export interface AccountSession {
   signOut(): Promise<void>
   selectTeam(id: string): Promise<void>
   selectMachine(id: string): void
+  /** Selects a Machine before navigating to one of its machine-local resources. */
+  openMachineRoute(machineId: string, destination: RouteLocationRaw): void
+  /** Consumed once by the selected Machine surface during initialization. */
+  takeMachineDestination(machineId: string): RouteLocationRaw | undefined
   /** Opens a Session in its owning Machine's isolated application scope. */
   openSession(machineId: string, sessionId: string): void
   /** Consumed once by the selected Machine surface during initialization. */
@@ -81,7 +86,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   // A slower response for a Team the user has already left must not replace the current list.
   let machinesRevision = 0
   let membersRevision = 0
-  let sessionDestination: { teamId: string; machineId: string; sessionId: string } | undefined
+  let machineDestination: { teamId: string; machineId: string; route: RouteLocationRaw } | undefined
 
   async function background(work: () => Promise<void>): Promise<void> {
     try { await work(); notice.value = undefined } catch (reason) { notice.value = message(reason) }
@@ -105,7 +110,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     const candidates = [preferred, machineId.value, localMachineId.value]
     machineId.value = candidates.find(id => list.some(value => value.id === id))
       ?? list.find(value => value.online)?.id ?? list[0]?.id
-    if (sessionDestination?.machineId !== machineId.value) sessionDestination = undefined
+    if (machineDestination?.machineId !== machineId.value) machineDestination = undefined
   }
   function refreshMachines(): Promise<void> {
     return background(async () => { await loadEnrollment(); await loadMachines() })
@@ -121,7 +126,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       teams.value = []; teamId.value = undefined; machines.value = []; machineId.value = undefined
       members.value = []
       dialog.value = undefined
-      sessionDestination = undefined
+      machineDestination = undefined
       await loadSite
       return
     }
@@ -132,12 +137,12 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       teamId.value = (list.find(value => value.id === enrolledTeam) ?? list[0])?.id
       machineId.value = undefined
       members.value = []
-      sessionDestination = undefined
+      machineDestination = undefined
     }
     await Promise.all([loadMachines(), loadMembers()])
   }
   async function selectTeam(id: string): Promise<void> {
-    sessionDestination = undefined
+    machineDestination = undefined
     if (id === teamId.value) return
     teamId.value = id
     machineId.value = undefined
@@ -145,23 +150,32 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     members.value = []
     await background(async () => { await Promise.all([loadMachines(), loadMembers()]) })
   }
-  function openSession(targetMachineId: string, sessionId: string): void {
+  function openMachineRoute(targetMachineId: string, route: RouteLocationRaw): void {
     const selectedTeam = teamId.value
     if (!selectedTeam || !machines.value.some(value => value.id === targetMachineId && value.teamId === selectedTeam)) return
     if (targetMachineId === machineId.value) {
       // A second click can arrive while the newly selected surface is still mounting.
-      if (sessionDestination) sessionDestination = { teamId: selectedTeam, machineId: targetMachineId, sessionId }
-      void router.push({ name: "session", params: { sessionId } })
+      if (machineDestination) machineDestination = { teamId: selectedTeam, machineId: targetMachineId, route }
+      void router.push(route)
       return
     }
-    sessionDestination = { teamId: selectedTeam, machineId: targetMachineId, sessionId }
+    machineDestination = { teamId: selectedTeam, machineId: targetMachineId, route }
     machineId.value = targetMachineId
   }
+  function takeMachineDestination(targetMachineId: string): RouteLocationRaw | undefined {
+    if (!machineDestination || targetMachineId !== machineId.value) return
+    const destination = machineDestination
+    machineDestination = undefined
+    if (destination.teamId === teamId.value && destination.machineId === targetMachineId) return destination.route
+  }
+  function openSession(targetMachineId: string, sessionId: string): void {
+    openMachineRoute(targetMachineId, { name: "session", params: { sessionId } })
+  }
   function takeSessionDestination(targetMachineId: string): string | undefined {
-    if (!sessionDestination || targetMachineId !== machineId.value) return
-    const destination = sessionDestination
-    sessionDestination = undefined
-    if (destination.teamId === teamId.value && destination.machineId === targetMachineId) return destination.sessionId
+    const destination = takeMachineDestination(targetMachineId)
+    if (typeof destination !== "object" || !("name" in destination) || destination.name !== "session") return
+    const sessionId = destination.params?.sessionId
+    return typeof sessionId === "string" ? sessionId : undefined
   }
   async function enrollLocal(name?: string): Promise<void> {
     if (!central.enrollLocal || !teamId.value) throw new Error("This computer cannot be connected from this client")
@@ -207,10 +221,10 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     connected, notice, dialog, reload,
     refreshMachines,
     async signIn() { await central.login(); await reload() },
-    async signOut() { sessionDestination = undefined; await central.logout(); await reload() },
+    async signOut() { machineDestination = undefined; await central.logout(); await reload() },
     selectTeam,
-    selectMachine(id) { sessionDestination = undefined; if (machines.value.some(value => value.id === id)) machineId.value = id },
-    openSession, takeSessionDestination,
+    selectMachine(id) { machineDestination = undefined; if (machines.value.some(value => value.id === id)) machineId.value = id },
+    openMachineRoute, takeMachineDestination, openSession, takeSessionDestination,
     async createTeam(name) {
       const created = await central.createTeam(name)
       teams.value = [...teams.value, created]

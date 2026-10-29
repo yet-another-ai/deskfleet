@@ -13,10 +13,11 @@ import {
 import { computed, ref } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
-import { RouterLink, useRouter } from "vue-router"
+import { RouterLink, useRouter, type RouteLocationRaw } from "vue-router"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
+import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import IconButton from "../common/IconButton.vue"
@@ -33,6 +34,8 @@ const sessionLabel = useSessionLabel()
 const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
 const router = useRouter()
+const account = useAccountSession()
+const selected = computed(() => !account || account.machineId.value === props.machine.id)
 const addingWorkspace = ref(false)
 const archiving = ref(new Set<string>())
 const archiveErrors = ref<Record<string, string>>({})
@@ -50,14 +53,27 @@ async function archiveSession(sessionId: string): Promise<void> {
   }
 }
 
-async function workspaceCreated(id: string): Promise<void> {
+function openRoute(destination: RouteLocationRaw): void {
+  if (account) account.openMachineRoute(props.machine.id, destination)
+  else void router.push(destination)
+}
+
+function workspaceCreated(id: string): void {
   addingWorkspace.value = false
-  await router.push({ name: "workspace", params: { workspaceId: id } })
+  openRoute({ name: "workspace", params: { workspaceId: id } })
 }
 
 function startSession(workspaceId: string): void {
   fleet.targetWorkspace(workspaceId)
-  void router.push({ name: "new-session" })
+  openRoute({ name: "new-session" })
+}
+
+function openWorkspace(workspaceId: string, event: MouseEvent, navigate: (event?: MouseEvent) => unknown): void {
+  if (!account) { void navigate(event); return }
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return
+  if ((event.currentTarget as HTMLAnchorElement).target === "_blank") return
+  event.preventDefault()
+  openRoute({ name: "workspace", params: { workspaceId } })
 }
 
 const collapsed = computed(() => fleet.isCollapsed(props.machine.id))
@@ -74,7 +90,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
 </script>
 
 <template>
-  <CollapsibleRoot as="section" :open="!collapsed" class="mt-4 first:mt-0" @update:open="fleet.toggleMachine(machine.id)">
+  <CollapsibleRoot as="section" :data-machine-id="machine.id" :open="!collapsed" class="mt-4 first:mt-0" @update:open="fleet.toggleMachine(machine.id)">
     <div class="group flex h-8 items-center gap-1 pl-2.5 pr-1">
       <CollapsibleTrigger
         type="button"
@@ -100,6 +116,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
     <CollapsibleContent as="ul" class="mt-1 flex flex-col gap-1">
       <li>
         <TreeLink
+          :machine-id="machine.id"
           :to="{ name: 'machine-control', params: { machineId: machine.id } }"
           :icon="machine.local ? SquareTerminal : MonitorPlay"
           :label="t(machine.local ? 'machine.localControl' : 'machine.remoteControl')"
@@ -109,6 +126,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
       <li v-for="session in machine.sessions" :key="session.id">
         <SessionContextMenu :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
           <TreeLink
+            :machine-id="machine.id"
             :to="{ name: 'session', params: { sessionId: session.id } }"
             :icon="Bot"
             :label="sessionLabel(session)"
@@ -138,8 +156,8 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
       </li>
       <CollapsibleRoot v-for="workspace in machine.workspaces" :key="workspace.id" v-slot="{ open }" as="li" default-open class="flex flex-col gap-1">
         <RouterLink v-slot="{ href, navigate, isActive, isExactActive }" :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" custom>
-          <div class="workspace-row ui-nav-item relative" :class="isActive && 'ui-nav-active'">
-            <a :href="href" :aria-current="isExactActive ? 'page' : undefined" class="flex h-full min-w-0 flex-1 items-center gap-2.5 pl-2.5 pr-9" @click="navigate">
+          <div class="workspace-row ui-nav-item relative" :class="selected && isActive && 'ui-nav-active'">
+            <a :href="href" :aria-current="selected && isExactActive ? 'page' : undefined" class="flex h-full min-w-0 flex-1 items-center gap-2.5 pl-2.5 pr-9" @click="openWorkspace(workspace.id, $event, navigate)">
               <component :is="open ? FolderOpen : Folder" :size="15" :stroke-width="1.75" class="workspace-folder-icon shrink-0" aria-hidden="true" />
               <span class="truncate">{{ workspace.name }}</span>
             </a>
@@ -153,12 +171,13 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
         </RouterLink>
         <CollapsibleContent as="ul" class="flex flex-col gap-1 empty:hidden">
           <li v-for="terminal in workspace.terminals" :key="terminal.id">
-            <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
+            <TreeLink :machine-id="machine.id" :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
           </li>
           <li v-for="session in workspace.sessions" :key="session.id">
             <SessionContextMenu :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
               <!-- A Session's shells open in its bottom panel, not the sidebar. -->
               <TreeLink
+                :machine-id="machine.id"
                 :to="{ name: 'session', params: { sessionId: session.id } }"
                 :icon="Bot"
                 :label="sessionLabel(session)"

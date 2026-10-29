@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { getBrowserNotificationPermission, requestBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
 import { useEventListener } from "@vueuse/core"
 import { computed, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { NotificationSettings } from "../../../../client/src/settings.ts"
 import SettingsRow from "./SettingsRow.vue"
+
+const client = usePlatformClient()
 
 const { t } = useI18n()
 const settings = ref<NotificationSettings | null>(null)

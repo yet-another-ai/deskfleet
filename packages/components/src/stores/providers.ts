@@ -1,4 +1,4 @@
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { defineStore } from "pinia"
 import { onScopeDispose, ref } from "vue"
 import type { ProviderDisplay } from "@deskfleet/client/providers"
@@ -19,6 +19,7 @@ function persistedDraftProvider(): string {
 
 /** The local daemon owns these settings; all windows refresh after a mutation. */
 export const useProvidersStore = defineStore("providers", () => {
+  const platformClient = usePlatformClient()
   const providers = ref<ProviderDisplay[]>([])
   const revision = ref<string>()
   const selectedId = ref("")

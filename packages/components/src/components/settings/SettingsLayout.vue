@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 
 import { ArrowLeft } from "@lucide/vue"
 import { useEventListener } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
+
+const platformClient = usePlatformClient()
 
 defineProps<{ stackOnSmallScreens?: boolean; wide?: boolean }>()
 const emit = defineEmits<{ back: [] }>()

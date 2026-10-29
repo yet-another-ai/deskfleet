@@ -1,5 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { createPinia, disposePinia, type Pinia } from "pinia"
 import { getClient } from "@deskfleet/client/platform"
 import { getBrowserNotificationPermission, requestBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
 import { i18n } from "./i18n/index.ts"
@@ -14,17 +15,19 @@ vi.mock("./composables/useBrowserNotifications.ts", () => ({ useBrowserNotificat
 
 const storageKey = "deskfleet.notifications-onboarding-complete"
 let view: VueWrapper | undefined
+let pinia: Pinia
 beforeEach(() => {
+  pinia = createPinia()
   vi.clearAllMocks()
   localStorage.removeItem(storageKey)
   vi.mocked(getBrowserNotificationPermission).mockReturnValue("default")
   vi.mocked(requestBrowserNotificationPermission).mockResolvedValue("granted")
 })
-afterEach(() => { view?.unmount(); view = undefined; localStorage.removeItem(storageKey); vi.restoreAllMocks() })
+afterEach(() => { view?.unmount(); view = undefined; disposePinia(pinia); localStorage.removeItem(storageKey); vi.restoreAllMocks() })
 
 async function render(signedIn = false, platform: "web" | "win32" = "web") {
   const fake = fakeCentral({ signedIn, teams: [] })
-  view = mount(AccountShell, { props: { host: { ...getClient(), platform, central: fake.central } }, global: { plugins: [i18n] } })
+  view = mount(AccountShell, { props: { host: { ...getClient(), platform, central: fake.central } }, global: { plugins: [pinia, i18n] } })
   await flushPromises()
   return fake
 }

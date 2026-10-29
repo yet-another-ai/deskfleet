@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { Check, Copy, Ellipsis, ExternalLink, LocateFixed, Maximize2, PanelRight, RotateCcw, ZoomIn, ZoomOut } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { getActivePinia, storeToRefs } from "pinia"
@@ -12,6 +12,8 @@ import { renderMermaidDiagram } from "../../services/mermaid.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 import { broadcastMermaidLocate, locateMermaidInMainView, openMermaidSidebarTab, useLayoutStore, type MermaidSource } from "../../stores/layout.ts"
 import IconButton from "../common/IconButton.vue"
+
+const platformClient = usePlatformClient()
 
 const props = withDefaults(defineProps<{ code: string; mode?: "inline" | "focus" | "sidebar" | "window"; source?: MermaidSource; loading?: boolean }>(), { mode: "inline", loading: false })
 const { t } = useI18n()

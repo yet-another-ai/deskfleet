@@ -2,7 +2,7 @@
 import UiButton from "../components/common/UiButton.vue"
 import UiSelect from "../components/common/UiSelect.vue"
 import UiCheckbox from "../components/common/UiCheckbox.vue"
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 
 import { GripVertical, LoaderCircle, Maximize, Minimize, MonitorPlay, Play, RefreshCw, SlidersHorizontal, Unplug } from "@lucide/vue"
 import { watchImmediate, whenever } from "@vueuse/core"
@@ -15,6 +15,8 @@ import { commonDesktopCodecs, desktopCodecLabel, useDesktopConnection } from "..
 import { useDesktopInput } from "../composables/useDesktopInput.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
+
+const platformClient = usePlatformClient()
 
 const props = withDefaults(defineProps<{ machineId: string; visible?: boolean }>(), { visible: true })
 const { t } = useI18n()

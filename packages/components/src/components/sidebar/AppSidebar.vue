@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 
 import { Plus } from "@lucide/vue"
 import { useEventListener } from "@vueuse/core"
@@ -7,6 +7,7 @@ import { storeToRefs } from "pinia"
 import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { useMachineRuntimes } from "../../composables/useMachineRuntimes.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import WindowToolbar from "../chrome/WindowToolbar.vue"
@@ -14,6 +15,7 @@ import IconButton from "../common/IconButton.vue"
 import AccountNotices from "./AccountNotices.vue"
 import AppUpdateNotice from "./AppUpdateNotice.vue"
 import MachineSection from "./MachineSection.vue"
+import MachineSidebarSurface from "./MachineSidebarSurface.vue"
 import PinnedSessions from "./PinnedSessions.vue"
 import SidebarFooter from "./SidebarFooter.vue"
 import SidebarNavigation from "./SidebarNavigation.vue"
@@ -21,12 +23,14 @@ import TeamMachineRow from "./TeamMachineRow.vue"
 import TeamSwitcher from "./TeamSwitcher.vue"
 
 const { t } = useI18n()
+const platformClient = usePlatformClient()
 const fleet = useFleetStore()
 const account = useAccountSession()
+const runtimes = useMachineRuntimes()
 const { sidebarWidth } = storeToRefs(useLayoutStore())
 const { machines, catalogError, catalogLoading } = storeToRefs(fleet)
 const platform = platformClient.platform
-// With an account, this application scope holds only the selected machine's catalog.
+// Each opened machine retains its own catalog and action scope.
 const loaded = (id: string) => machines.value.find(machine => machine.id === id)
 const minimum = 200
 const maximum = 480
@@ -99,6 +103,7 @@ function refresh(): void {
       <template v-if="account">
         <template v-for="machine in account.machines.value" :key="machine.id">
           <MachineSection v-if="loaded(machine.id)" :machine="loaded(machine.id)!" />
+          <MachineSidebarSurface v-else-if="runtimes?.opened.has(machine.id)" :runtime="runtimes.opened.get(machine.id)!" />
           <TeamMachineRow v-else :machine="machine" @select="account.selectMachine(machine.id)" />
         </template>
       </template>

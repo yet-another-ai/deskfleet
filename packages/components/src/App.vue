@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "./composables/usePlatformClient.ts"
 
 import { storeToRefs } from "pinia"
 import { useEventListener, whenever } from "@vueuse/core"
@@ -12,6 +12,8 @@ import { useFleetStore } from "./stores/fleet.ts"
 import { useTerminalsStore } from "./stores/terminals.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { useProvidersStore } from "./stores/providers.ts"
+
+const platformClient = usePlatformClient()
 
 const { sidebarOpen, detailsOpen } = storeToRefs(useLayoutStore())
 const route = useRoute()

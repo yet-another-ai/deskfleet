@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 
 import { PanelRight } from "@lucide/vue"
 import { storeToRefs } from "pinia"
@@ -7,6 +7,8 @@ import { useI18n } from "vue-i18n"
 import { useLayoutStore } from "../../stores/layout.ts"
 import IconButton from "../common/IconButton.vue"
 import WindowToolbar from "./WindowToolbar.vue"
+
+const platformClient = usePlatformClient()
 
 defineProps<{ hideDetails?: boolean }>()
 const { t } = useI18n()

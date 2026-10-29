@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { ArrowLeft, ArrowRight, File, Folder, RotateCcw, X } from "@lucide/vue"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -8,6 +8,8 @@ import type { FileConflict, FileEntry, FileLocation, FilesApi, FileTarget, FileT
 import { fileSize } from "../../services/file-format.ts"
 import FileBrowserPane from "./FileBrowserPane.vue"
 import IconButton from "../common/IconButton.vue"
+
+const client = usePlatformClient()
 const props = defineProps<{ api: FilesApi; target: FileTarget; machineName: string }>()
 const { t } = useI18n()
 const local: FileTarget = { kind: "local" }

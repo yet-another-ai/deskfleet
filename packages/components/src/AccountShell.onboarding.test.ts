@@ -1,5 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { createPinia, disposePinia, type Pinia } from "pinia"
 import { getClient } from "@deskfleet/client/platform"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { DesktopPermissionsState, LocalAgentState } from "@deskfleet/client/local-agent"
@@ -9,7 +10,9 @@ import AccountShell from "./AccountShell.vue"
 import { fakeCentral } from "./test/central.ts"
 
 let view: VueWrapper | undefined
-afterEach(() => { view?.unmount(); view = undefined; vi.restoreAllMocks() })
+let pinia: Pinia
+beforeEach(() => { pinia = createPinia() })
+afterEach(() => { view?.unmount(); view = undefined; disposePinia(pinia); vi.restoreAllMocks() })
 
 function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false, platform: DeskfleetDesktopApi["platform"] = "darwin") {
   const fake = fakeCentral({ signedIn, teams: [] })
@@ -42,7 +45,7 @@ function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false,
   }
   return {
     fake, state, permissions, onboarding, listeners,
-    mount() { view = mount(AccountShell, { props: { host }, global: { plugins: [i18n] }, attachTo: document.body }) },
+    mount() { view = mount(AccountShell, { props: { host }, global: { plugins: [pinia, i18n] }, attachTo: document.body }) },
     changed() { for (const listener of listeners) listener({ enabled: true, status: "running", ...permissions }) },
   }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 
 import { Bot, Ellipsis, Pencil, Plus, Trash2 } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
@@ -13,6 +13,8 @@ import ProviderIcon from "../common/ProviderIcon.vue"
 import ProviderDialog from "./ProviderDialog.vue"
 import MenuPopover from "../common/MenuPopover.vue"
 import UiDialog from "../common/UiDialog.vue"
+
+const platformClient = usePlatformClient()
 
 const { t } = useI18n()
 const fleet = useFleetStore()

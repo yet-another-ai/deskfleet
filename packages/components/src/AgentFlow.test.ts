@@ -144,6 +144,41 @@ test("a workspace prompt creates a Session, keeps shared candidates, streams too
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/session/stop" || method === "_deskfleet/turn/cancel")).toBe(false)
 })
 
+test("a pending Session creation completes in its retained store without navigating a replacement machine view", async () => {
+  const ownerState = pinia
+  const owner = useAgentSessionsStore(ownerState)
+  const creation = deferred<AgentSnapshot>()
+  const created = agentSnapshot()
+  created.session = { ...created.session, id: "32", title: "Created on the previous machine", workspaceId }
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => {
+    if (method === "_deskfleet/session/create") return creation.promise
+    if (method === "_deskfleet/input/submit" && params.sessionId === "32") return { operationId: params.operationId, commandId: "52", sessionId: "32", inputId: "42" }
+    return normal(method, params)
+  })
+  const submit = vi.spyOn(owner, "submit")
+  await wrapper.get("textarea").setValue("Finish on the original machine")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/session/create")).toHaveLength(1)
+  try {
+    // Machine selection replaces the route App while retaining its original Pinia.
+    wrapper.unmount()
+    pinia = createPinia()
+    await router.push("/")
+    wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia, router, i18n], stubs: { LiveTerminal: true } } })
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe("new-session")
+    creation.resolve(structuredClone(created))
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe("new-session")
+    expect(owner.sessions["32"]?.title).toBe("Created on the previous machine")
+    expect(useAgentSessionsStore(pinia).sessions["32"]).toBeUndefined()
+    expect(submit).toHaveBeenCalledExactlyOnceWith("32", "Finish on the original machine", "backlog", undefined, "Finish on the original machine", { mentions: [], attachmentIds: [] })
+    expect(owner.preparingDrafts["32"]).toBeUndefined()
+  } finally { disposePinia(ownerState) }
+})
+
 function draftWithReferences(): { text: string; mentions: ComposerMention[] } {
   const text = "Review @README.md using @Earlier design"
   const references: Array<{ token: string; reference: ComposerMention["reference"] }> = [
@@ -571,6 +606,39 @@ test("a supported idle Session forks in the chosen workspace context and navigat
   expect(wrapper.get("main").text()).toContain("Forked conversation")
   expect(wrapper.find('aside a[href="#/sessions/30"]').exists()).toBe(true)
   expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit")).toHaveLength(submittedBefore)
+})
+
+test("a pending fork completes in its retained store without navigating another machine's equal Session ID", async () => {
+  snapshot.session.capabilities = { steering: true, resume: true, fork: true }
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  await flushPromises()
+  const ownerState = pinia
+  const owner = useAgentSessionsStore(ownerState)
+  const forkResponse = deferred<AgentSnapshot>()
+  const forked = agentSnapshot()
+  forked.session = { ...snapshot.session, id: "32", title: "Forked on the previous machine", lastEventSeq: "0" }
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/session/fork" ? forkResponse.promise : normal(method, params))
+  await wrapper.get('[aria-label="Session actions"]').trigger("click")
+  await flushPromises()
+  await page().findAll('[role="menuitem"]').find(item => item.text() === "Fork session")!.trigger("click")
+  await flushPromises()
+  await page().get('[role="dialog"] .ui-button-primary').trigger("click")
+  await flushPromises()
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/session/fork")).toHaveLength(1)
+  try {
+    wrapper.unmount()
+    pinia = createPinia()
+    await router.push({ name: "session", params: { sessionId: "30" } })
+    wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia, router, i18n], stubs: { LiveTerminal: true } } })
+    await flushPromises()
+    forkResponse.resolve(structuredClone(forked))
+    await flushPromises()
+    expect(router.currentRoute.value.params.sessionId).toBe("30")
+    expect(owner.sessions["32"]?.title).toBe("Forked on the previous machine")
+    expect(useAgentSessionsStore(pinia).sessions["32"]).toBeUndefined()
+    expect(wrapper.get("main").text()).not.toContain("Forked on the previous machine")
+  } finally { disposePinia(ownerState) }
 })
 
 test.each(["completed", "failed"] as const)("checking a lost fork response recovers a %s operation without repeating the fork", async status => {

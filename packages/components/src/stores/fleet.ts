@@ -1,4 +1,4 @@
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { defineStore } from "pinia"
 import { computed, hasInjectionContext, onScopeDispose, ref } from "vue"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspace } from "../../../client/src/catalog.ts"
@@ -75,6 +75,7 @@ function workspaceSummary(value: CatalogWorkspace): WorkspaceSummary {
 
 /** Selected machine resources; database IDs and connection targets have separate identities. */
 export const useFleetStore = defineStore("fleet", () => {
+  const platformClient = usePlatformClient()
   const account = hasInjectionContext() ? useAccountSession() : undefined
   const target = platformClient.target
   const targetId = target?.id ?? "local-daemon"

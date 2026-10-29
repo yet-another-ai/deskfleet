@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import UiButton from "../components/common/UiButton.vue"
 import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
 import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
-import { computed, defineAsyncComponent, nextTick, ref, useTemplateRef, watch } from "vue"
+import { computed, defineAsyncComponent, nextTick, onScopeDispose, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
@@ -35,12 +35,16 @@ import { latestAgentUsage } from "../services/agent-usage.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
 
+const client = usePlatformClient()
+
 // xterm stays out of the session bundle until the panel is opened.
 const SessionTerminalPanel = defineAsyncComponent(() => import("../components/terminal/SessionTerminalPanel.vue"))
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+let disposed = false
+onScopeDispose(() => { disposed = true })
 const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
@@ -179,7 +183,7 @@ function submit(delivery: "backlog" | "steer"): void {
 async function showFork(snapshot: AgentSnapshot, sourceId: string): Promise<void> {
   // Open the child before refreshing the catalog: the fork already exists, and a
   // refresh failure must not reject the dialog into allocating another child.
-  if (router.currentRoute.value.name === "session" && props.sessionId === sourceId) await router.push({ name: "session", params: { sessionId: snapshot.session.id } })
+  if (!disposed && router.currentRoute.value.name === "session" && props.sessionId === sourceId) await router.push({ name: "session", params: { sessionId: snapshot.session.id } })
   await fleet.refreshLocalCatalog().catch(() => undefined)
 }
 async function fork(context: AgentSessionContext): Promise<void> {

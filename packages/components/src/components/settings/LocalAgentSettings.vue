@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { LocalAgentState } from "../../../../client/src/local-agent.ts"
 import SettingsRow from "./SettingsRow.vue"
+
+const platformClient = usePlatformClient()
 
 const { t } = useI18n()
 const state = ref<LocalAgentState | null>(null)

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ShieldCheck } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useRecentAuthentication } from "../composables/useRecentAuthentication.ts"
 import { router } from "../router/index.ts"
@@ -10,6 +10,8 @@ import SettingsLayout from "../components/settings/SettingsLayout.vue"
 import SiteIdentitySettings from "../components/settings/SiteIdentitySettings.vue"
 import EnterpriseTeams from "../components/settings/EnterpriseTeams.vue"
 import SiteSettings from "../components/settings/SiteSettings.vue"
+
+const client = usePlatformClient()
 
 const { t } = useI18n()
 const session = useAccountSession()

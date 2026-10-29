@@ -2,11 +2,13 @@
 import { ChevronUp, KeyRound, LogOut, ShieldCheck } from "@lucide/vue"
 import { DropdownMenuItem } from "reka-ui"
 import { useI18n } from "vue-i18n"
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { router } from "../../router/index.ts"
 import MenuPopover from "../common/MenuPopover.vue"
 import UserAvatar from "../common/UserAvatar.vue"
+
+const client = usePlatformClient()
 
 const session = useAccountSession()
 const { t } = useI18n()

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { storeToRefs } from "pinia"
-import { computed, ref } from "vue"
+import { computed, onScopeDispose, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
@@ -13,11 +13,15 @@ import { useFleetStore } from "../stores/fleet.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useLayoutStore } from "../stores/layout.ts"
 import { useProvidersStore } from "../stores/providers.ts"
+
+const client = usePlatformClient()
 const { t } = useI18n()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
 const providers = useProvidersStore()
 const router = useRouter()
+let disposed = false
+onScopeDispose(() => { disposed = true })
 const { sessionContext } = storeToRefs(useLayoutStore())
 const { newSessionTarget } = storeToRefs(fleet)
 const resourceTarget = useFileTarget(() => newSessionTarget.value?.machine.id)
@@ -59,7 +63,7 @@ async function submit(): Promise<void> {
     await fleet.refreshLocalCatalog()
     const sameTarget = newSessionTarget.value?.workspace?.id === target.workspace?.id
       && newSessionTarget.value?.machine.id === target.machine.id
-    if (router.currentRoute.value.name === "new-session" && sameTarget) await router.push({ name: "session", params: { sessionId: id } })
+    if (!disposed && router.currentRoute.value.name === "new-session" && sameTarget) await router.push({ name: "session", params: { sessionId: id } })
     // A rejected or disconnected submission remains in the Session draft for reconciliation.
     if (snapshot.session.lifecycle === "ready") {
       await (async () => {

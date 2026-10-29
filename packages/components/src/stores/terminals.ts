@@ -1,4 +1,4 @@
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { defineStore } from "pinia"
 import { onScopeDispose, ref } from "vue"
 import type { TerminalSummary } from "../../../../apps/daemon/src/terminal-protocol.ts"
@@ -6,6 +6,7 @@ import { TerminalClient, type TerminalConnectionState, type TerminalListener } f
 
 /** Shell lifecycle uses signaling; the shared data-only peer carries terminal I/O. */
 export const useTerminalsStore = defineStore("terminals", () => {
+  const platformClient = usePlatformClient()
   const sessions = ref<TerminalSummary[]>([])
   const state = ref<TerminalConnectionState>("idle")
   const error = ref<string | null>(null)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../components/common/UiButton.vue"
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 
 import { SquarePen } from "@lucide/vue"
 import { computed, ref, watch } from "vue"
@@ -15,6 +15,8 @@ import OpenWithMenu from "../components/catalog/OpenWithMenu.vue"
 import WorkspaceForm from "../components/catalog/WorkspaceForm.vue"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useFleetStore } from "../stores/fleet.ts"
+
+const platformClient = usePlatformClient()
 
 const props = defineProps<{ workspaceId: string }>()
 const { t } = useI18n()

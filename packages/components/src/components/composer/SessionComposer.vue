@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
@@ -24,6 +24,8 @@ import AgentUsage from "./AgentUsage.vue"
 import ComposerCompletions from "./ComposerCompletions.vue"
 import { useComposerCompletions } from "./useComposerCompletions.ts"
 import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
+
+const client = usePlatformClient()
 const configurationLoading = ref(false)
 const filePickerOpen = ref(false)
 const props = defineProps<{

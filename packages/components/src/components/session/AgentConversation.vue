@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { computed, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentEvent, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
@@ -8,6 +8,8 @@ import AgentResponse from "./AgentResponse.vue"
 import AgentUserMessage from "./AgentUserMessage.vue"
 import type { FileTarget } from "../../../../client/src/files.ts"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
+
+const client = usePlatformClient()
 const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; disabled?: boolean; resourceTarget?: FileTarget }>()
 const resourceActive = ref(true)
 watch([() => props.snapshot.session.id, () => JSON.stringify(props.resourceTarget)], () => { resourceActive.value = true })

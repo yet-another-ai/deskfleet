@@ -3,6 +3,7 @@ import { defineStore } from "pinia"
 import { nextTick, ref } from "vue"
 import type { AgentSessionContext } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { router } from "../router/index.ts"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 
 export interface MermaidSource { sessionId?: string; entryId?: string; diagramId?: string }
 export interface MermaidLocateRequest extends MermaidSource { id: number; code: string }
@@ -98,8 +99,8 @@ export const useLayoutStore = defineStore("layout", () => {
   const sidebarWidth = useLocalStorage("deskfleet.sidebar-width", 260)
   const detailsOpen = useLocalStorage("deskfleet.details-open", true)
   const detailsWidth = useLocalStorage("deskfleet.details-width", 288)
-  /** Last Conversations destination; survives sidebar remounts (hide/show, Settings). */
-  const conversationPath = useLocalStorage("deskfleet.conversation-path", "/")
+  /** Machine-local destinations survive view remounts without leaking to another machine. */
+  const conversationPath = usePlatformClient().target ? ref("/") : useLocalStorage("deskfleet.conversation-path", "/")
   /** The execution context a new Session uses; the last choice is remembered. */
   const sessionContext = useLocalStorage<AgentSessionContext>("deskfleet.session-context", "worktree")
   /** The Session terminal panel below the conversation. */

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { watchImmediate } from "@vueuse/core"
 import { MarkdownRender, setCustomComponents } from "markstream-vue"
 import { computed, inject, onBeforeUnmount, provide, reactive, ref } from "vue"
@@ -12,6 +12,8 @@ import MarkdownLinkNode from "./markdown/MarkdownLinkNode.vue"
 import MarkdownMathBlock from "./markdown/MarkdownMathBlock.vue"
 import MarkdownMathInline from "./markdown/MarkdownMathInline.vue"
 import MarkdownMermaidNode from "./markdown/MarkdownMermaidNode.vue"
+
+const client = usePlatformClient()
 
 defineProps<{ text: string; final?: boolean }>()
 const { t } = useI18n()

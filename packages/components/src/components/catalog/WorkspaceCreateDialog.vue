@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 
 import { DialogTitle } from "reka-ui"
 import { useI18n } from "vue-i18n"
@@ -7,6 +7,8 @@ import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import WorkspaceForm from "./WorkspaceForm.vue"
 import UiDialog from "../common/UiDialog.vue"
+
+const platformClient = usePlatformClient()
 
 const emit = defineEmits<{ created: [id: string]; cancel: [] }>()
 const { t } = useI18n()

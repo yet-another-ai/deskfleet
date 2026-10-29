@@ -75,6 +75,38 @@ test("a newer Session selection replaces the destination of a Machine still moun
   expect(session.takeSessionDestination("b")).toBe("31")
 })
 
+test.each([
+  { name: "workspace", params: { workspaceId: "20" } },
+  { name: "terminal", params: { terminalId: "10" } },
+  { name: "machine-control", params: { machineId: "b" }, query: { tab: "terminal" } },
+  { name: "new-session" },
+])("opening another Machine's $name waits for its own scope before navigating", async destination => {
+  const fake = fakeCentral({ machines: [machineFixture("a", "team-1", "First"), machineFixture("b", "team-1", "Second")] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const push = vi.spyOn(router, "push").mockResolvedValue(undefined)
+  session.openMachineRoute("b", destination)
+  expect(session.machineId.value).toBe("b")
+  expect(push).not.toHaveBeenCalled()
+  expect(session.takeMachineDestination("a")).toBeUndefined()
+  expect(session.takeMachineDestination("b")).toEqual(destination)
+  expect(session.takeMachineDestination("b")).toBeUndefined()
+  session.openMachineRoute("b", destination)
+  expect(push).toHaveBeenCalledExactlyOnceWith(destination)
+})
+
+test("a workspace click replaces a queued Session destination while its Machine mounts", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("a", "team-1", "First"), machineFixture("b", "team-1", "Second")] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const push = vi.spyOn(router, "push").mockResolvedValue(undefined)
+  session.openSession("b", "30")
+  const workspace = { name: "workspace", params: { workspaceId: "20" } }
+  session.openMachineRoute("b", workspace)
+  expect(push).toHaveBeenCalledExactlyOnceWith(workspace)
+  expect(session.takeMachineDestination("b")).toEqual(workspace)
+})
+
 test.each(["machine", "same team", "other team", "sign out"] as const)("ordinary %s selection clears a queued Session destination", async action => {
   const fake = fakeCentral({
     teams: [{ id: "team-1", name: "First", role: "member" }, { id: "team-2", name: "Second", role: "member" }],

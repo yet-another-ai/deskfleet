@@ -14,8 +14,8 @@ const management = new Set<string>([
   "_deskfleet/git/branches",
 ])
 
-/** One selected machine owns this adapter; the host replaces its Pinia scope on target changes. */
-export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine): { api: DeskfleetDesktopApi; dispose(): void } {
+/** One opened machine owns this adapter until its account/Team scope is released. */
+export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine): { api: DeskfleetDesktopApi; updateMachine(value: Machine): void; dispose(): void } {
   const peers = new Map<string, Peer>()
   const events = new Set<(event: DesktopEvent) => void>()
   const catalogEvents = new Set<(sessionId?: string) => void>()
@@ -138,5 +138,18 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       },
     },
   }
-  return { api, dispose() { disposed = true; unsubscribe(); for (const [id] of peers) void api.agent.close(id).catch(() => {}); events.clear(); catalogEvents.clear(); providerEvents.clear() } }
+  return {
+    api,
+    // A refreshed roster repairs presence events missed during signaling loss,
+    // without replacing the adapter or revoking its still-authorized peers.
+    updateMachine(value) {
+      const lastSeen = value.lastSeenAt ?? undefined
+      if (online === value.online && name === value.name && api.target!.lastSeen === lastSeen) return
+      online = value.online
+      name = value.name
+      api.target!.lastSeen = lastSeen
+      for (const listener of catalogEvents) listener()
+    },
+    dispose() { disposed = true; unsubscribe(); for (const [id] of peers) void api.agent.close(id).catch(() => {}); events.clear(); catalogEvents.clear(); providerEvents.clear() },
+  }
 }

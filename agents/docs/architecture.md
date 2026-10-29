@@ -401,9 +401,13 @@ Web builds without that variable use the page's origin. Saved desktop account
 addresses only scope credentials to that backend and never override the compiled
 choice. Web authentication uses HttpOnly cookies, without storing the backend
 address in browser storage.
-Both use the selected central Machine identity for routes, caches, drafts, and
-commands; integer local IDs do
-not identify resources across machines. The UI displays synchronized history
+Both retain an independent client adapter and store scope for each opened
+Machine in the selected Team. Selecting another Machine changes the active
+route view while preserving the other resource trees, drafts, and Agent and
+terminal peers. Sidebar navigation selects the owning central Machine before
+opening its local resource; integer local IDs do not identify resources across
+machines. Closing the account, changing Teams, or removing a Machine releases
+the affected scopes and connections. The UI displays synchronized history
 while a machine is offline and attaches through WebRTC for live Agent, Git, and
 terminal operations. The working directory remains separate from terminal
 ownership. Failed Session provisioning remains visible without a fabricated

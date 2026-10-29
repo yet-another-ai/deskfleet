@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { Activity, FolderSync, MonitorPlay, SquareTerminal } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
@@ -11,6 +11,8 @@ import ResourcePath from "../components/chrome/ResourcePath.vue"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
+
+const platformClient = usePlatformClient()
 
 const TerminalWorkspace = defineAsyncComponent(() => import("../components/terminal/TerminalWorkspace.vue"))
 const FileTransferPanel = defineAsyncComponent(() => import("../components/files/FileTransferPanel.vue"))

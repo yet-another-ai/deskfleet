@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { Link, LoaderCircle } from "@lucide/vue"
 import { computed, inject, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { agentResourceContextKey, isFileResource } from "../../services/agent-resources.ts"
+
+const client = usePlatformClient()
 const props = defineProps<{ uri: string; name: string }>()
 const { t } = useI18n()
 const context = inject(agentResourceContextKey, computed(() => undefined))

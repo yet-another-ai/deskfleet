@@ -1,4 +1,4 @@
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "./usePlatformClient.ts"
 import { useDocumentVisibility, useIntervalFn, watchImmediate } from "@vueuse/core"
 import { computed, onScopeDispose, ref, toValue, type MaybeRefOrGetter } from "vue"
 import type { SystemStatus } from "../../../client/src/system.ts"
@@ -8,6 +8,7 @@ export const SYSTEM_STATUS_HISTORY = 60_000
 
 /** A visible machine panel owns its transient samples and polling lifetime. */
 export function useSystemStatus(machineId: MaybeRefOrGetter<string>, enabled: MaybeRefOrGetter<boolean>) {
+  const client = usePlatformClient()
   const visibility = useDocumentVisibility()
   const available = computed(() => Boolean(client.system))
   const running = computed(() => toValue(enabled) && visibility.value === "visible" && available.value)

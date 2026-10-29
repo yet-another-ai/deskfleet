@@ -18,8 +18,27 @@ function fixture() {
   const machine: Machine = { id: "central7", teamId: "team2", name: "Remote", originId: "origin", localMachineId: "1", capabilities: {}, online: false }
   const remote = remoteMachineClient({ platform: "web", locale: "en-US" } as DeskfleetDesktopApi, central, machine)
   disposers.push(remote.dispose)
-  return { remote, central, emit: (event: CentralEvent) => listener(event) }
+  return { remote, central, machine, emit: (event: CentralEvent) => listener(event) }
 }
+test("a refreshed machine reconciles missed presence without replacing its peer", async () => {
+  const f = fixture()
+  const changed = vi.fn()
+  f.remote.api.catalog.onChanged(changed)
+  await f.remote.api.agent.prepare!("retained-peer")
+  f.emit({ type: "connection", connected: false })
+  const updated = { ...f.machine, online: true, name: "Renamed remote", lastSeenAt: "2026-10-29T12:00:00Z" }
+  f.central.machines = vi.fn(async () => [updated])
+  f.remote.updateMachine(updated)
+  expect(f.remote.api.agent.history!.available()).toBe(true)
+  expect(await f.remote.api.desktop.target()).toMatchObject({ name: updated.name, online: true })
+  expect(f.remote.api.target!.lastSeen).toBe(updated.lastSeenAt)
+  expect(changed).toHaveBeenCalledOnce()
+  f.remote.updateMachine({ ...updated })
+  expect(changed).toHaveBeenCalledOnce()
+  await f.remote.api.agent.offer({ sessionId: "retained-peer", sdp: "offer" })
+  expect(f.central.offerPeer).toHaveBeenCalledWith("peer1", "offer", { sessionId: "retained-peer", sdp: "offer" })
+  expect(f.central.closePeer).not.toHaveBeenCalled()
+})
 test("passes TURN config to the browser, preserves peers during signaling loss, and closes authorization at 24 hours", async () => {
   vi.useFakeTimers(); const f = fixture(); const events = vi.fn()
   f.remote.api.agent.onEvent(events)

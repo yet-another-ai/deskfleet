@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "./components/common/UiButton.vue"
-import { defineAsyncComponent, onBeforeUnmount, provide, ref, watch } from "vue"
+import { computed, defineAsyncComponent, onBeforeUnmount, provide, ref, watch } from "vue"
 import { useEventListener, useStorage, useTitle } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
 import { RouterView } from "vue-router"
@@ -24,6 +24,9 @@ import { useBrowserNotifications } from "./composables/useBrowserNotifications.t
 import { useAccountAnalytics } from "./composables/useAccountAnalytics.ts"
 import { trackEvent } from "./services/analytics.ts"
 import { billingReturn } from "./services/billing-events.ts"
+import { createMachineRuntimes, machineRuntimesKey } from "./composables/useMachineRuntimes.ts"
+import { useAppearanceStore } from "./stores/appearance.ts"
+import { platformClientKey } from "./composables/usePlatformClient.ts"
 
 const loadMachineSurface = () => import("./components/account/MachineSurface.vue")
 const MachineSurface = defineAsyncComponent(loadMachineSurface)
@@ -38,8 +41,11 @@ const browserNotificationOnboardingComplete = props.host.platform === "web"
 const browserNotificationPermission = ref(props.host.platform === "web" ? getBrowserNotificationPermission() : undefined)
 const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
+provide(platformClientKey, props.host)
+provide(machineRuntimesKey, createMachineRuntimes(props.host, session, useAppearanceStore()))
 useAccountAnalytics(session)
 const { ready, account, site, teams, team, machine, dialog } = session
+const machineScopeKey = computed(() => JSON.stringify([account.value.serverUrl, account.value.user?.id, session.teamId.value, machine.value?.id]))
 const route = router.currentRoute
 const returnParams = new URLSearchParams(location.search)
 let billingReturnPending = props.host.platform === "web" && returnParams.get("settings") === "plans"
@@ -87,8 +93,8 @@ if (props.host.onboarding) void loadOnboarding()
     <template v-if="ready && onboarding">
       <BrowserNotificationOnboarding v-if="!browserNotificationOnboardingComplete && browserNotificationPermission === 'default'" :site-name="site?.siteName ?? 'DeskFleet'" @complete="browserNotificationOnboardingComplete = true" />
       <WelcomePage v-else-if="onboarding.step !== 'complete' || !account.user" :host="host" :state="onboarding" @change="onboarding = $event" />
-      <!-- Each selected machine runs in its own application scope; see MachineSurface. -->
-      <MachineSurface v-else-if="machine" :key="machine.id" :host="host" :session="session" :machine="machine" @ready="finishBillingReturn" />
+      <!-- Only the selected route mounts here; opened machines retain their stores and peers. -->
+      <MachineSurface v-else-if="machine" :key="machineScopeKey" :session="session" :machine="machine" @ready="finishBillingReturn" />
       <RouterView v-else-if="route.meta.fullWindow" />
       <div v-else class="flex min-h-0 flex-1">
         <aside class="flex w-65 shrink-0 flex-col border-r border-ui-border bg-ui-sidebar">

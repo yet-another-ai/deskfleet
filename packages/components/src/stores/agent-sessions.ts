@@ -1,4 +1,4 @@
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { onScopeDispose, ref, watch } from "vue"
@@ -51,6 +51,7 @@ function replace<T>(values: T[], value: T, key: (value: T) => string | number): 
 
 /** Shared projections outlive the visible route; the daemon owns execution and history. */
 export const useAgentSessionsStore = defineStore("agent-sessions", () => {
+  const platformClient = usePlatformClient()
   const api = platformClient.agent
   const providers = useProvidersStore()
   const sessions = ref<Record<string, AgentSessionRecord>>({})

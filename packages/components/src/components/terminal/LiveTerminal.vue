@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { useTimeoutFn, watchImmediate } from "@vueuse/core"
-import { client as platformClient } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { computed, onBeforeUnmount, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
 import { decodeTerminalBytes, TerminalClient, type TerminalListener } from "../../services/terminal-client.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import TerminalSurface from "./TerminalSurface.vue"
+
+const platformClient = usePlatformClient()
 
 export type TerminalConnection = "connecting" | "replaying" | "connected" | "disconnected" | "ended" | "error"
 

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import type { UpdateState } from "@deskfleet/client/updates"
 import { Download } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { computed, onScopeDispose, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import UiButton from "../common/UiButton.vue"
+
+const client = usePlatformClient()
 
 const { t } = useI18n()
 const api = client.updates

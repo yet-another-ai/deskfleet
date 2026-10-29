@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { client } from "@deskfleet/client/platform"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useI18n } from "vue-i18n"
 import KeepAwakeSettings from "./KeepAwakeSettings.vue"
 import LaunchAtStartupSettings from "./LaunchAtStartupSettings.vue"
 import LocalAgentSettings from "./LocalAgentSettings.vue"
 import WorktreeRootSettings from "./WorktreeRootSettings.vue"
+
+const client = usePlatformClient()
 
 const { t } = useI18n()
 </script>
