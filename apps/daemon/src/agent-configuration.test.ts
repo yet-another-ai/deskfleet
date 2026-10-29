@@ -309,11 +309,12 @@ test("draft probes reuse startup, isolate callers, and invalidate changed launch
   await catalog.init((_path, name) => openInMemoryCatalog(name))
   const providers = new AgentProviders(directory, fake.provider)
   await providers.init()
+  const configured = await providers.create({ template: "codex", name: "Codex", env: {} })
   const service = new AgentSessions(catalog, catalog.native, fake.provider, providers, undefined, undefined, new TestAgentQuotas())
   await service.init()
   context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
   const workspace = await catalog.native.createWorkspace("Draft", [{ path: directory }])
-  const params = { provider: "codex", workspaceId: workspace.id, probeId: "cc8b5b3d-154a-4bf8-89f6-dd2403a646f5" }
+  const params = { provider: configured.id, workspaceId: workspace.id, probeId: "cc8b5b3d-154a-4bf8-89f6-dd2403a646f5" }
   const first = { kind: "user" as const, userId: "alice", deviceId: "login-1" }
   const second = { ...first, deviceId: "login-2" }
   await service.handle("_deskfleet/agent/configuration", params, first)
@@ -327,7 +328,7 @@ test("draft probes reuse startup, isolate callers, and invalidate changed launch
   assert.equal(fake.closed, 1)
   await service.handle("_deskfleet/agent/configuration", params, first)
   assert.equal(fake.connections, 2, "Releasing another login's probe leaves this one usable")
-  await providers.update("codex", { name: "Updated", binaryPath: "updated-codex", env: {} })
+  await providers.update(configured.id, { name: "Updated", binaryPath: "updated-codex", env: {} })
   const updated = await service.handle("_deskfleet/agent/configuration", params, first) as AgentConfiguration
   assert.equal(updated.provider.name, "Updated")
   assert.equal(fake.configs.at(-1)?.binaryPath, "updated-codex")
@@ -336,7 +337,7 @@ test("draft probes reuse startup, isolate callers, and invalidate changed launch
   await service.handle("_deskfleet/agent/configuration", params, first)
   assert.equal(fake.sessions.at(-1)?.cwd, tmpdir())
   assert.equal(fake.connections, 4)
-  await providers.remove("codex")
+  await providers.remove(configured.id)
   assert.equal(await service.handle("_deskfleet/agent/configuration", { ...params, workspaceId: "99999", release: true }, first), null,
     "Cleanup works even when its provider and workspace no longer exist")
   assert.deepEqual(await service.journal.list(), [])

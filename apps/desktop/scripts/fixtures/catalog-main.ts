@@ -136,9 +136,11 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   require(document.querySelector("main")!.innerText.includes("No sessions yet."), "New workspaces must show an empty session list")
   await click("New session")
   await until(() => location.hash === "#/", "Workspace new session navigation")
+  await until(() => !!document.querySelector('a[href="#/settings/agents"]'), "Empty Agent setup")
+  require((await api.providers.list()).providers.length === 0, "A new machine must start without configured Agents")
   const targets = [...document.querySelectorAll("[data-composer-context]")].map(chip => chip.textContent?.trim())
-  // Machine, Workspace, the choice of a new Session context, and the provider.
-  require(targets.length === 4 && targets.includes(created.name) && targets.includes("New worktree") && targets.includes("Codex"), "The composer must target the selected workspace and provider without an existing worktree")
+  // Machine, Workspace, the choice of a new Session context, and the empty Agent selection.
+  require(targets.length === 4 && targets.includes(created.name) && targets.includes("New worktree") && targets.includes("Agent"), "The composer must target the selected workspace and show an unconfigured Agent selection")
   require(document.querySelector('aside[aria-label="Changes"]')!.textContent?.includes("Git changes are available within a session."), "Composer must not inspect a workspace as a Session Worktree")
   const workspaceLink = [...document.querySelectorAll("a")].find(element => element.textContent?.trim() === created.name)
   require(workspaceLink, "Created workspace must remain available in the sidebar")

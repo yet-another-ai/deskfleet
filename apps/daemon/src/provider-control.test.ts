@@ -35,7 +35,7 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
   const client = own(await DaemonClient.connect(() => {}, () => {}, directory))
   let changed: (() => void) | undefined
   const observer = own(await DaemonClient.connect(event => { if (event.kind === "providersChanged") changed?.() }, () => {}, directory))
-  assert.equal((await client.call("providerList", {})).providers[0]?.id, "codex")
+  assert.deepEqual((await client.call("providerList", {})).providers, [])
   const missing = { template: "acp" as const, name: "Missing", binaryPath: join(directory, "missing-binary"), env: {} }
   assert.equal((await client.call("providerProbe", { provider: missing })).status, "missing")
   await assert.rejects(client.call("providerInstall", { provider: missing }))
@@ -53,11 +53,10 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
     let settled = false
     const testing = client.call("providerTest", { provider: { template: "acp", name: "Silent", binaryPath: silent, env: {} } })
       .finally(() => { settled = true })
-    assert.equal((await client.call("providerList", {})).providers.length, 2)
+    assert.equal((await client.call("providerList", {})).providers.length, 1)
     assert.equal(settled, false)
     await assert.rejects(testing, /closed|exited/u)
   }
-  await client.call("providerRemove", { providerId: "codex" })
   clients.forEach(connection => connection.close())
   await daemon.close()
   assert.deepEqual(JSON.parse(await readFile(join(directory, "agent-providers.json"), "utf8")).providers, [updated])

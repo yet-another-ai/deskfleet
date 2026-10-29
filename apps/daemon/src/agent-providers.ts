@@ -54,7 +54,7 @@ export class AgentProviders {
     try { data = await readFile(this.#path, "utf8") }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-      const providers: AgentProviderConfig[] = [{ id: "codex", template: "codex", name: "Codex", env: {} }]
+      const providers: AgentProviderConfig[] = []
       await this.#save(providers)
       this.#providers = providers
       this.#revision = randomUUID()

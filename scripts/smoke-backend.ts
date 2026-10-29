@@ -224,7 +224,7 @@ try {
   // control link waits for its handler to finish.
   providers[1]!.blockNextCreation = true
   const creating = rpc(machines[1]!, "_deskfleet/session/create", {
-    workspaceId: workspaces[1]!.id, provider: "codex", operationId: randomUUID(), context: "directory",
+    workspaceId: workspaces[1]!.id, provider: sessions[1]!.session.provider, operationId: randomUUID(), context: "directory",
   }).catch(() => {})
   await until(() => providers[1]!.blockedCreations, value => value === 1, "blocked provider session creation")
   let stopped = false

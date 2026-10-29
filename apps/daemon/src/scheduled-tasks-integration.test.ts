@@ -33,13 +33,14 @@ test("machine scheduling uses real Session persistence, retains approvals, and r
   let runtime = new MachineRuntime(directory, options)
   t.after(async () => { try { await runtime.close() } finally { await rm(directory, { recursive: true, force: true }) } })
   await runtime.init()
+  const configured = await runtime.current.providers.create({ template: "codex", name: "Scheduled fixture", env: {} })
   const actor: AgentActor = { kind: "user", userId: "schedule-user", deviceId: "schedule-login" }
   const authorized: AgentActor[] = []
   runtime.current.central.authorizeDelegation = async value => { authorized.push(value); return value }
   const workspace = await runtime.current.operations.handle("workspaceCreate", { name: "Scheduled workspace", directories: [{ path: working }] }, actor) as CatalogWorkspace
   const task = await runtime.current.operations.handle("scheduleCreate", { schedule: {
     title: "Inspect changes", prompt: "Read yesterday's changes", workspaceId: workspace.id, enabled: true,
-    target: { kind: "new", provider: "codex", context: "directory" }, trigger: { kind: "interval", minutes: 1 },
+    target: { kind: "new", provider: configured.id, context: "directory" }, trigger: { kind: "interval", minutes: 1 },
   } }, actor) as ScheduledTask
   const run = await runtime.current.operations.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
   assert.equal(run.state, "running")
@@ -95,6 +96,7 @@ test("Workspace deletion and scheduled task creation cannot leave a dangling tar
   await runtime.init()
   const actor: AgentActor = { kind: "user", userId: "schedule-user", deviceId: "schedule-login" }
   const { operations, catalog, schedules } = runtime.current
+  const configured = await runtime.current.providers.create({ template: "codex", name: "Scheduled fixture", env: {} })
   const workspace = await operations.handle("workspaceCreate", { name: "To delete", directories: [{ path: working }] }, actor) as CatalogWorkspace
   let enteredDeletion = () => {}
   const entered = new Promise<void>(resolve => { enteredDeletion = resolve })
@@ -114,7 +116,7 @@ test("Workspace deletion and scheduled task creation cannot leave a dangling tar
   await entered
   const creating = operations.handle("scheduleCreate", { schedule: {
     title: "Must not become orphaned", prompt: "Inspect this Workspace", workspaceId: workspace.id, enabled: true,
-    target: { kind: "new", provider: "codex", context: "directory" }, trigger: { kind: "manual" },
+    target: { kind: "new", provider: configured.id, context: "directory" }, trigger: { kind: "manual" },
   } }, actor)
   const rejected = assert.rejects(creating, /Workspace was not found/u)
   await Promise.resolve()
@@ -137,12 +139,13 @@ test("scheduled Session creation cannot bypass Team admission capacity", async t
   })
   t.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
   await runtime.init()
+  const configured = await runtime.current.providers.create({ template: "codex", name: "Scheduled fixture", env: {} })
   runtime.current.central.authorizeDelegation = async actor => actor
   const actor: AgentActor = { kind: "user", userId: "member", deviceId: "login" }
   const workspace = await runtime.current.catalog.native.createWorkspace("Quota", [{ path: directory }])
   const task = await runtime.current.operations.handle("scheduleCreate", { schedule: {
     title: "Cannot exceed capacity", prompt: "Read the repository", enabled: true, workspaceId: workspace.id,
-    target: { kind: "new", provider: "codex", context: "directory" }, trigger: { kind: "manual" },
+    target: { kind: "new", provider: configured.id, context: "directory" }, trigger: { kind: "manual" },
   } }, actor) as ScheduledTask
   const run = await runtime.current.operations.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
   assert.equal(run.state, "failed")

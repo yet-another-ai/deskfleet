@@ -171,9 +171,10 @@ the active machine while keeping the Agents settings route open, so provider
 operations and installation or login terminals share that machine's runtime.
 Offline machines remain selectable, with provider configuration disabled until
 they reconnect.
-The initial configuration contains a Codex provider. Removing all providers
-leaves the machine unconfigured until one is added; startup does not recreate
-deleted entries.
+New machines start with no configured providers. Add a provider through
+Settings → Agents, where executable discovery, installation, login, and
+connection testing are available. Startup preserves existing provider settings,
+including an empty list after all providers are removed.
 
 A provider has a stable ID, a template, a display name, an optional icon, an
 optional binary path, and environment overrides. Icons are bundled catalog slugs;

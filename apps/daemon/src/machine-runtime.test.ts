@@ -47,10 +47,10 @@ test("explicit registration reset stops resources and preserves their original p
   await execute("git", ["-C", repository, "add", "."])
   await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
   const workspace = await previous.catalog.native.createWorkspace("Previous workspace", [{ path: repository }])
-  await previous.providers.update("codex", { name: "Private previous configuration", env: { OLD_SECRET: "retained-locally" } })
+  const configured = await previous.providers.create({ template: "codex", name: "Private previous configuration", env: { OLD_SECRET: "retained-locally" } })
   const actor = previous.agents.actor()
   const created = await previous.agents.handle("_deskfleet/session/create", {
-    workspaceId: workspace.id, provider: "codex", operationId: randomUUID(), context: "worktree",
+    workspaceId: workspace.id, provider: configured.id, operationId: randomUUID(), context: "worktree",
   }, actor) as AgentSnapshot
   const sessionId = created.session.id
   const worktree = await previous.catalog.sessionWorktree(sessionId)
@@ -91,12 +91,13 @@ test("explicit registration reset stops resources and preserves their original p
   assert.deepEqual(runtime.current.terminals.list(), [])
   assert.deepEqual((await runtime.current.catalog.native.snapshot()).workspaces, [])
   assert.deepEqual(await runtime.current.agents.journal.list(), [])
-  assert.deepEqual(runtime.current.providers.get("codex").env, {})
+  assert.deepEqual(runtime.current.providers.snapshot().providers, [])
   assert.notEqual(runtime.current.directory, previous.directory)
   assert.equal(await activeMachineDirectory(directory), runtime.current.directory)
   assert.deepEqual(await runtime.prepareEnrollment(), status, "Retrying prepare on the fresh identity does not rotate it again")
 
   assert.deepEqual(JSON.parse(await readFile(join(previous.directory, "central.json"), "utf8")), credentials)
+  assert.deepEqual(JSON.parse(await readFile(join(previous.directory, "agent-providers.json"), "utf8")).providers, [configured])
   assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "uncommitted changes\n")
   assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "untracked data\n")
   const gitStatus = (await execute("git", ["-C", cwd, "status", "--porcelain"])).stdout
@@ -118,6 +119,7 @@ test("explicit registration reset stops resources and preserves their original p
   await runtime.init()
   assert.deepEqual(runtime.current.central.status().identity, status.identity, "Host restart selects the newly prepared directory")
   assert.deepEqual(await runtime.current.agents.journal.list(), [])
+  assert.deepEqual(runtime.current.providers.snapshot().providers, [])
 })
 
 test("registration preparation retains host IPC and resolves getters to the new context", async context => {

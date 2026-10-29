@@ -597,9 +597,10 @@ child processes; the SEA executable reuses its bundled Node runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
 paths use the template default (`codex`, `claude`, `agent`, `grok`, `pi`, `dsh`, or `acp-agent`), and configured environment
 values extend the executing daemon's inherited environment. New installations
-start with a default Codex provider; the new-session composer chooses among the
-machine's configured providers. See [Agent Sessions](agent-sessions.md) for
-configuration and lifecycle details.
+start with no configured providers; users add them in Settings → Agents using
+the machine's executable discovery, installation, and login actions. The
+new-session composer chooses among the machine's configured providers. See
+[Agent Sessions](agent-sessions.md) for configuration and lifecycle details.
 
 The current agent CLI creates one ACP session per prompt invocation. With
 `--workspace-id`, it asks the running daemon to allocate a managed Session and

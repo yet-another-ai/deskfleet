@@ -11,12 +11,41 @@ import { configureAdapterHost } from "./agents/adapter-host.ts"
 import { validateControlParams } from "./control-request.ts"
 import type { AgentProviderSettings } from "./provider-protocol.ts"
 
+test("new machines start with no configured providers and remain empty after restart", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-providers-empty-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  assert.deepEqual(registry.snapshot().providers, [])
+  assert.deepEqual(registry.metadata().providers, [])
+  assert.ok(registry.snapshot().templates.some(template => template.id === "codex"))
+  const reopened = new AgentProviders(directory)
+  await reopened.init()
+  assert.deepEqual(reopened.snapshot().providers, [])
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "agent-providers.json"), "utf8")).providers, [])
+})
+
+test("initialization preserves existing provider settings including the legacy codex ID", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-providers-existing-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const providers = [
+    { id: "codex", template: "codex", name: "Work Codex", binaryPath: "/opt/codex", env: { CODEX_HOME: "/account/codex" } },
+    { id: "custom-agent", template: "acp", name: "Custom agent", icon: "openai", binaryPath: "/opt/agent", env: {} },
+  ]
+  const path = join(directory, "agent-providers.json")
+  const persisted = JSON.stringify({ providers })
+  await writeFile(path, persisted)
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  assert.deepEqual(registry.snapshot().providers, providers)
+  assert.equal(await readFile(path, "utf8"), persisted)
+})
+
 test("provider settings persist with private permissions and removal preserves an empty registry", async t => {
   const directory = await mkdtemp(join(tmpdir(), "df-providers-"))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const registry = new AgentProviders(directory)
   await registry.init()
-  assert.deepEqual(registry.snapshot().providers, [{ id: "codex", template: "codex", name: "Codex", env: {} }])
   let changes = 0
   registry.onChanged(() => { changes += 1 })
   const first = await registry.create({ template: "codex", name: " Work Codex ", binaryPath: "  ", env: { API_KEY: "secret", EMPTY: "" } })
@@ -34,8 +63,8 @@ test("provider settings persist with private permissions and removal preserves a
   const path = join(directory, "agent-providers.json")
   assert.ok(!(await readFile(path, "utf8")).includes("secret"))
   if (process.platform !== "win32") assert.equal((await stat(path)).mode & 0o777, 0o600)
-  await Promise.all([registry.remove("codex"), registry.remove(first.id), registry.remove(second.id)])
-  assert.equal(changes, 6)
+  await Promise.all([registry.remove(first.id), registry.remove(second.id)])
+  assert.equal(changes, 5)
   await reopened.init()
   assert.deepEqual(reopened.snapshot().providers, [])
   assert.throws(() => registry.resolve(first.id), /unavailable/u)
@@ -47,8 +76,9 @@ test("templates resolve their own binary defaults and cannot change after creati
   const fixture = { id: "fixture", connect: async () => { throw new Error("fixture") } }
   const registry = new AgentProviders(directory, fixture)
   await registry.init()
-  assert.equal(registry.resolve("codex").provider, fixture)
-  assert.equal(registry.resolve("codex").config.binaryPath, "codex")
+  const codex = await registry.create({ template: "codex", name: "Codex", env: {} })
+  assert.equal(registry.resolve(codex.id).provider, fixture)
+  assert.equal(registry.resolve(codex.id).config.binaryPath, "codex")
   const custom = await registry.create({ template: "acp", name: "Local ACP", env: { CUSTOM: "yes" } })
   assert.equal(registry.resolve(custom.id).provider.id, "acp")
   assert.deepEqual(registry.resolve(custom.id).config, { name: "Local ACP", binaryPath: "acp-agent", env: { CUSTOM: "yes" } })
@@ -76,10 +106,11 @@ test("public provider revision changes on settings edits without exposing launch
   t.after(() => rm(directory, { recursive: true, force: true }))
   const registry = new AgentProviders(directory)
   await registry.init()
+  const codex = await registry.create({ template: "codex", name: "Codex", env: {} })
   const before = registry.metadata()
   assert.equal(before.revision, registry.snapshot().revision)
   assert.equal(registry.metadata().revision, before.revision, "Ordinary catalog/history refreshes keep the same revision")
-  await registry.update("codex", { name: "Codex", binaryPath: "/private/tool", env: { API_KEY: "test-secret" } })
+  await registry.update(codex.id, { name: "Codex", binaryPath: "/private/tool", env: { API_KEY: "test-secret" } })
   const after = registry.metadata()
   assert.notEqual(after.revision, before.revision, "An environment-only change invalidates metadata even when its display fields are unchanged")
   assert.deepEqual(after.providers, before.providers)
@@ -261,7 +292,7 @@ test("provider tests open a prompt-free session from unsaved settings and report
   await assert.rejects(registry.test({ template: "acp", name: "Missing", binaryPath: join(directory, "missing"), env: {} }), /Could not start/u)
   await assert.rejects(registry.test({ template: "unknown", name: "Agent", env: {} } as never), /Unknown Agent provider template/u)
   assert.equal(changes, 0)
-  assert.deepEqual(registry.snapshot().providers.map(provider => provider.id), ["codex"])
+  assert.deepEqual(registry.snapshot().providers, [])
 })
 
 test("invalid provider inputs and template edits are rejected by the IPC boundary", () => {

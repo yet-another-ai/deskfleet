@@ -200,9 +200,10 @@ test("machine shutdown releases ACP terminal handles before closing their regist
   })
   await runtime.init()
   const machine = runtime.current
+  const configured = await machine.providers.create({ template: "codex", name: "Terminal fixture", env: {} })
   const workspace = await machine.catalog.native.createWorkspace("Shutdown", [{ path: repository }])
   const created = await machine.agents.handle("_deskfleet/session/create", {
-    workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "directory",
+    workspaceId: workspace.id, operationId: randomUUID(), provider: configured.id, context: "directory",
   }, machine.agents.actor()) as AgentSnapshot
   assert.equal(created.session.error, undefined)
   const result = await connection.prompt({

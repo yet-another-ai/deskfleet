@@ -140,12 +140,13 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   provider.failConfiguration = failConfiguration
   const providers = new AgentProviders(daemon, provider)
   await providers.init()
+  const configured = await providers.create({ template: "codex", name: "Codex", env: {} })
   const service = new AgentSessions(catalog, catalog.native, provider, providers, undefined, undefined, new TestAgentQuotas())
   await service.init()
   const actor: AgentActor = { ...service.actor(), kind: "user", userId: "alice" }
   const bob: AgentActor = { ...actor, userId: "bob", sourceMachine: { originId: "other-origin", id: "2" } }
   t.after(async () => { try { await service.close() } finally { await catalog.close(); await rm(directory, { recursive: true, force: true }) } })
-  const create = { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "worktree", ...selection }
+  const create = { workspaceId: workspace.id, operationId: randomUUID(), provider: configured.id, context: "worktree", ...selection }
   const snapshot = await service.handle("_deskfleet/session/create", create, actor) as AgentSnapshot
   assert.equal(snapshot.session.lifecycle, "ready")
   const sessionId = snapshot.session.id
@@ -225,7 +226,7 @@ test("prompt token usage is persisted per turn and replayed independently from c
     assert.deepEqual(completed?.payload, turn, "the committed turn event contains the same usage as the snapshot")
   }
   await f.service.close()
-  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
+  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   await restarted.init()
   try {
     assert.deepEqual((await restarted.journal.read(f.sessionId)).turns, finishedTurns)
@@ -310,12 +311,12 @@ test("rename validates titles and persists customization for archived and machin
   assert.equal(renamed.session.archiveState, "archived")
   assert.deepEqual(renamed.runs, archived.runs)
   assert.equal(f.provider.clients.length, 1)
-  const home = await f.service.handle("_deskfleet/session/create", { operationId: randomUUID(), provider: "codex", context: "directory" }, f.actor) as AgentSnapshot
+  const home = await f.service.handle("_deskfleet/session/create", { operationId: randomUUID(), provider: f.create.provider, context: "directory" }, f.actor) as AgentSnapshot
   const renamedHome = await rename(home.session.id, "Home investigation")
   assert.equal(renamedHome.session.workspaceId, undefined)
   assert.equal(renamedHome.session.title, "Home investigation")
   await f.service.close()
-  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
+  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   await restarted.init()
   try {
     assert.equal((await restarted.journal.read(f.sessionId)).session.titleCustomized, true)
@@ -405,7 +406,7 @@ test("failed archive retains archiving admission state and retry survives servic
   await assert.rejects(f.submit("blocked while archiving").result, /Restore this Session/u)
   assert.ok(await f.catalog.sessionWorktree(f.sessionId))
   await f.service.close()
-  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
+  const restarted = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   await restarted.init()
   try {
     assert.equal((await restarted.journal.read(f.sessionId)).session.archiveState, "archiving")
@@ -653,7 +654,7 @@ test("service restart cancels recorded questions and stale provider generations 
   const orphan: AgentElicitation = { id: await f.service.journal.id(), sessionId: f.sessionId, runGeneration: snapshot.runs.at(-1)!.generation,
     request: questionRequest, state: "pending", createdAt: new Date().toISOString() }
   await f.service.journal.commit(snapshot, { elicitations: [orphan], events: [f.service.journal.event(f.sessionId, "elicitation", orphan)] })
-  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   await restored.init()
   t.after(() => restored.close())
   assert.equal((await restored.journal.read(f.sessionId)).elicitations[0]!.state, "cancelled")
@@ -670,7 +671,7 @@ test("restart cancels a URL completed before consent without retaining its compl
     state: "pending", createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
   }
   await f.service.journal.commit(snapshot, { elicitations: [orphan], events: [f.service.journal.event(f.sessionId, "elicitation", orphan)] })
-  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   t.after(() => restored.close())
   await restored.init()
   const recovered = (await restored.journal.read(f.sessionId)).elicitations[0]!
@@ -842,7 +843,7 @@ test("a directory Session works in the Workspace's own directories, even without
   await mkdir(plain)
   await writeFile(join(plain, "notes.txt"), "keep\n")
   const workspace = await f.catalog.native.createWorkspace("Plain", [{ path: plain }])
-  const params = { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "directory" }
+  const params = { workspaceId: workspace.id, operationId: randomUUID(), provider: f.create.provider, context: "directory" }
   const snapshot = await f.service.handle("_deskfleet/session/create", params, f.actor) as AgentSnapshot
   assert.equal(snapshot.session.lifecycle, "ready")
   assert.equal(snapshot.session.context, "directory")
@@ -906,7 +907,7 @@ test("a worktree Session still requires a committed Git checkout", async t => {
   const plain = join(f.directory, "plain")
   await mkdir(plain)
   const workspace = await f.catalog.native.createWorkspace("Plain", [{ path: plain }])
-  const snapshot = await f.service.handle("_deskfleet/session/create", { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "worktree" }, f.actor) as AgentSnapshot
+  const snapshot = await f.service.handle("_deskfleet/session/create", { workspaceId: workspace.id, operationId: randomUUID(), provider: f.create.provider, context: "worktree" }, f.actor) as AgentSnapshot
   assert.equal(snapshot.session.lifecycle, "provision_failed")
   assert.match(snapshot.session.error ?? "", /Git working tree/u)
   for (const method of ["_deskfleet/git/status", "_deskfleet/git/diff"] as const) {
@@ -973,7 +974,7 @@ test("draft selections reach the first prompt and live configuration survives se
   assert.equal(changed.reasoningEfforts?.currentValue, "low")
   assert.deepEqual(await f.service.handle("_deskfleet/session/configure", operation, f.actor), changed)
   await f.service.close()
-  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   await restored.init()
   t.after(() => restored.close())
   const connections = f.provider.clients.length
@@ -1023,7 +1024,7 @@ test("failed selection discovery after restart keeps the saved choice and backlo
   await f.submit("waiting for valid effort").result
   await until(f.read, state => state.runs.length === 2 && state.runs.at(-1)?.state === "failed")
   await f.service.close()
-  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, undefined, undefined, undefined, new TestAgentQuotas())
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   await restored.init()
   t.after(() => restored.close())
   const before = await f.read()
@@ -1102,11 +1103,11 @@ test("unknown providers cannot allocate Sessions and removing one preserves its 
     ...f.create, operationId: randomUUID(), provider: "missing",
   }, f.actor), /provider.*(unavailable|not found)/iu)
   assert.equal((await f.service.journal.list()).length, 1)
-  await f.providers.remove("codex")
+  await f.providers.remove(f.create.provider)
   const configuration = await f.service.handle("_deskfleet/session/configure", {
     sessionId: f.sessionId, operationId: randomUUID(), model: "second",
   }, f.actor) as AgentConfiguration
-  assert.deepEqual(configuration.provider, { id: "codex", name: "Codex" })
+  assert.deepEqual(configuration.provider, { id: f.create.provider, name: "Codex" })
   assert.equal(configuration.models?.currentValue, "second")
   assert.equal(f.provider.closeCount, 0)
   f.provider.finishImmediately = true
@@ -1117,7 +1118,7 @@ test("unknown providers cannot allocate Sessions and removing one preserves its 
     sessionId: f.sessionId, operationId: randomUUID(),
   }, f.actor), /provider.*(unavailable|not found)/iu)
   const state = await f.read()
-  assert.equal(state.session.provider, "codex")
+  assert.equal(state.session.provider, f.create.provider)
   assert.equal(state.runs.at(-1)?.state, "failed")
   assert.match(state.session.error ?? "", /provider.*(unavailable|not found)/iu)
   assert.equal(state.turns[0]?.state, "completed")
