@@ -122,15 +122,20 @@ on October 25, 2026. The [official PostgreSQL 18 image](https://hub.docker.com/_
 stores `PGDATA` at `/var/lib/postgresql/18/docker`, so both database services
 mount storage at `/var/lib/postgresql`. The coturn relay uses plain TCP and UDP;
 DTLS remains disabled because it is opt-in in coturn 4.18.
-A single [Redis 8.10.3](https://github.com/redis/redis/releases/tag/8.10.3)
+A single [Valkey 9.1.3](https://github.com/valkey-io/valkey/releases/tag/9.1.3)
 instance carries TURN usage notifications.
 
 | Service | Host endpoint | Data lifetime |
 | --- | --- | --- |
 | `postgres` | `127.0.0.1:55432`, database/user `deskfleet`, password `deskfleet-dev` | Named volume `postgres-18-data` |
 | `postgres-test` | `127.0.0.1:55433`, database/user `deskfleet_test`, password `deskfleet-test` | Temporary memory filesystem, cleared on stop |
-| `redis` | `127.0.0.1:56379`, no password | Temporary memory filesystem, persistence disabled |
+| `valkey` | `127.0.0.1:56379`, no password | Temporary memory filesystem, persistence disabled |
 | `turn` (coturn) | `127.0.0.1:3478` TCP/UDP, relay ports `49160–49180` UDP | Temporary |
+
+When upgrading an existing Redis-based stack, run
+`docker compose down --remove-orphans` before `mise run infra:up`. This removes
+the old `redis` container and frees port `56379` for `valkey`, while preserving
+the named PostgreSQL volume; omit `--volumes`.
 
 `infra:up` waits for all four health checks. `mise.development.toml` opts into
 their connection settings with `-E development`; it leaves the base environment
@@ -138,7 +143,9 @@ and CI settings alone. The development `DATABASE_URL` is scoped to the `backend:
 task, so `db:migrate` continues to target the daemon's SQLite catalog. No Vite
 production URL is set by the development environment. The backend task also enables
 [Team TURN usage collection](self-hosted.md#team-turn-usage-collection) through
-the local Redis instance.
+the local Valkey instance. Redis-compatible URLs (`redis://` and `rediss://`),
+`DESKFLEET_TURN_USAGE_REDIS_URL`, `TEST_REDIS_URL`, coturn's `redis-statsdb`, and
+the Rust `redis` client retain their protocol and API names when using Valkey.
 
 The backend owns registration, password recovery and Passkeys. Local mail is
 written as restricted `.eml` files to `.local/mail/`; use their one-use links in
@@ -168,7 +175,7 @@ is running and never reset its database. `backend:smoke-relay` repeats the nativ
 Web, and Electron flows with TURN forced, verifying actual relay traffic. On
 headless Linux, prefix the client and relay commands with `xvfb-run -a`.
 For only the automated checks,
-`docker compose up -d --wait postgres-test redis turn` starts the services they
+`docker compose up -d --wait postgres-test valkey turn` starts the services they
 need. `backend:test` uses `TEST_DATABASE_URL` and `TEST_REDIS_URL`.
 
 Inspect or stop the stack with:
@@ -268,7 +275,7 @@ to check module initialization order as well as file sizes.
 | `mise -E development run dev` | Run both services with the local Compose database, local mail, and TURN settings |
 | `mise run dev:seed` | Create the default verified Site Admin in the local Compose development database; preserve existing accounts |
 | `mise run backend:dev` | Run only the Actix Web API; add `-E development` for local Compose settings |
-| `mise run backend:test` | Run real PostgreSQL and Redis integration tests using `TEST_DATABASE_URL` and `TEST_REDIS_URL` |
+| `mise run backend:test` | Run real PostgreSQL and Valkey integration tests using `TEST_DATABASE_URL` and `TEST_REDIS_URL` |
 | `mise run backend:smoke` | Exercise owned authentication, two enrolled daemons, native WebRTC, and synchronized history |
 | `mise run backend:smoke-clients` | Drive the built Web and Electron clients through login and remote execution; use `xvfb-run -a` on headless Linux |
 | `mise run backend:smoke-relay` | Force both backend smoke suites through the configured TURN relay |

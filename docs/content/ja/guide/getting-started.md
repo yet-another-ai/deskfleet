@@ -16,7 +16,7 @@ mise run infra:up
 mise -E development run dev
 ```
 
-ローカルのインフラには、PostgreSQL、Redis、TURN が含まれます。`dev` は API と Web クライアントを一緒に起動します。Web クライアントを使うには、`http://localhost:5174/` を開いてください。パスキーには DNS ホスト名が必要なため、Web と API のアドレスには一貫して `localhost` を使用します。
+ローカルのインフラには、PostgreSQL、Valkey、TURN が含まれます。`dev` は API と Web クライアントを一緒に起動します。Web クライアントを使うには、`http://localhost:5174/` を開いてください。パスキーには DNS ホスト名が必要なため、Web と API のアドレスには一貫して `localhost` を使用します。
 
 デスクトップアプリを使う場合は、別のターミナルで起動します。
 

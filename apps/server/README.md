@@ -13,7 +13,7 @@ provisioning, runtime/build secrets, and public smoke acceptance.
 
 ## Run and configure
 
-For local development, Docker Compose supplies PostgreSQL, Redis, and coturn.
+For local development, Docker Compose supplies PostgreSQL, Valkey, and coturn.
 Authentication emails are written to the local `.local/mail/` directory. From the repository root:
 
 ```sh
@@ -296,7 +296,7 @@ mise exec -- cargo run -p deskfleet-control-store --example migrate -- status
 ## Verification
 
 Unit tests run without external services. Integration tests require PostgreSQL;
-TURN collection integration tests also require Redis.
+TURN collection integration tests also require Valkey.
 Each run creates uniquely scoped fixture identities.
 
 ```sh

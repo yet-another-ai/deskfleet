@@ -46,7 +46,7 @@ mise run dev:seed
 mise -E development run dev
 ```
 
-Docker Compose provides local PostgreSQL, Redis, and TURN services. Authentication
+Docker Compose provides local PostgreSQL, Valkey, and TURN services. Authentication
 emails are written to `.local/mail/`. The `dev` task starts both the API and Web
 client. Open `http://localhost:5174/`, or run `mise run desktop:dev` in another
 terminal. Keep the Web service running for Electron's browser login. Sign in
