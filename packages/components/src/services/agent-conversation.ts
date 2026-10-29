@@ -1,7 +1,20 @@
 import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 
 type Content = AgentInput["content"]
-export type ConversationTool = AgentPermission["request"]["toolCall"]
+export interface AgentTerminalOutput {
+  terminalId: string
+  output: string
+  cwd?: string
+  status: "running" | "exited"
+  exitCode?: number | null
+  signal?: string | null
+}
+export type ConversationTool = AgentPermission["request"]["toolCall"] & { terminals?: Record<string, AgentTerminalOutput> }
+
+interface TerminalProjection {
+  outputs: Map<string, AgentTerminalOutput>
+  references: Set<string>
+}
 type MessageEntry = { id: string; kind: "message"; role: "assistant" | "thought"; content: Content; turnId?: string }
 type ToolEntry = { id: string; kind: "tool"; tool: ConversationTool; permission?: AgentPermission; turnId?: string }
 type PlanEntry = { id: string; kind: "plan"; entries: { content: string; status: string }[]; turnId?: string }
@@ -18,6 +31,53 @@ export function readableValue(value: unknown): string {
   return value === undefined ? "" : JSON.stringify(value, null, 2)
 }
 
+/** Provider-owned terminals arrive as ACP v1 metadata, without terminal/create. */
+function updateTerminalProjection(state: TerminalProjection, tool: ConversationTool, meta: unknown): void {
+  for (const block of tool.content ?? []) if (block.type === "terminal") state.references.add(block.terminalId)
+  if (!record(meta)) return
+  const terminal = (value: unknown) => {
+    if (!record(value) || typeof value.terminal_id !== "string") return undefined
+    let output = state.outputs.get(value.terminal_id)
+    if (!output) {
+      output = { terminalId: value.terminal_id, output: "", status: "running" }
+      state.outputs.set(value.terminal_id, output)
+    }
+    return output
+  }
+  const info = terminal(meta.terminal_info)
+  if (info) {
+    state.references.add(info.terminalId)
+    if (record(meta.terminal_info) && typeof meta.terminal_info.cwd === "string") info.cwd = meta.terminal_info.cwd
+  }
+  // Both conventions carry plain text chunks. Prefer terminal_output if both occur.
+  const chunk = meta.terminal_output ?? meta.terminal_output_delta
+  if (record(chunk) && typeof chunk.data === "string") {
+    const output = terminal(chunk)
+    if (output) output.output += chunk.data
+  }
+  const exit = meta.terminal_exit
+  const ended = terminal(exit)
+  if (ended && record(exit)) {
+    ended.status = "exited"
+    if (exit.exit_code === null || typeof exit.exit_code === "number") ended.exitCode = exit.exit_code
+    if (exit.signal === null || typeof exit.signal === "string") ended.signal = exit.signal
+  }
+}
+
+function applyTerminalProjection(tool: ConversationTool, state: TerminalProjection): void {
+  for (const output of state.outputs.values()) {
+    if (state.references.has(output.terminalId)) {
+      tool.terminals = { ...tool.terminals, [output.terminalId]: output }
+      if (!tool.content?.some(block => block.type === "terminal" && block.terminalId === output.terminalId)) {
+        tool.content = [...tool.content ?? [], { type: "terminal", terminalId: output.terminalId }]
+      }
+    } else if (output.output) {
+      // Codex also streams read/search output through metadata without a terminal reference.
+      tool.content = [...tool.content ?? [], { type: "content", content: { type: "text", text: output.output } }]
+    }
+  }
+}
+
 /** Rebuild from committed event order; live ACP mirrors are deliberately excluded. */
 export function projectConversation(events: AgentEvent[], snapshot: AgentSnapshot): ConversationEntry[] {
   const entries: ConversationEntry[] = []
@@ -28,6 +88,7 @@ export function projectConversation(events: AgentEvent[], snapshot: AgentSnapsho
   const seenElicitations = new Set<string>()
   const messages = new Map<string, MessageEntry>()
   const tools = new Map<string, ToolEntry>()
+  const terminals = new Map<string, TerminalProjection>()
   const plans = new Map<string, PlanEntry>()
   for (const event of events) {
     if (event.kind === "elicitation") {
@@ -94,6 +155,9 @@ export function projectConversation(events: AgentEvent[], snapshot: AgentSnapsho
       for (const field of ["title", "kind", "status", "content", "rawInput", "rawOutput", "locations"] as const) {
         if (field in update) Object.assign(entry.tool, { [field]: update[field] ?? undefined })
       }
+      let terminalState = terminals.get(key)
+      if (!terminalState) { terminalState = { outputs: new Map(), references: new Set() }; terminals.set(key, terminalState) }
+      updateTerminalProjection(terminalState, entry.tool, update._meta)
     } else if (update.sessionUpdate === "plan" && Array.isArray(update.entries)) {
       const key = event.turnId ?? `run-${event.runGeneration ?? 0}`
       let entry = plans.get(key)
@@ -101,6 +165,7 @@ export function projectConversation(events: AgentEvent[], snapshot: AgentSnapsho
       entry.entries = update.entries.filter(record).map(value => ({ content: String(value.content ?? ""), status: String(value.status ?? "pending") }))
     }
   }
+  for (const [key, state] of terminals) applyTerminalProjection(tools.get(key)!.tool, state)
   // A reconnect can restore a pending question before its journal page arrives.
   for (const elicitation of snapshot.elicitations) {
     if (!seenElicitations.has(elicitation.id)) entries.push({ id: `elicitation-${elicitation.id}`, kind: "elicitation", elicitation, turnId: elicitation.turnId })

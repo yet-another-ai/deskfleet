@@ -191,6 +191,15 @@ it is not copied into the Agent event journal or synchronized to central history
 Release, Session archive, and daemon restart retain read-only replay while the
 machine is available. Session restoration does not restart these commands.
 
+Some providers, including Codex, execute commands themselves and report their
+output through ACP v1 tool-call metadata (`terminal_info`, `terminal_output` or
+`terminal_output_delta`, and `terminal_exit`). These provider-owned IDs are not
+daemon terminal handles. The conversation projects their journaled text and exit
+status into a read-only terminal surface, replaying on expansion and appending
+live output without dialing a daemon terminal. Plain LF output starts a new line.
+The same projection restores historical output, scopes IDs to each tool and run,
+and shows output-only metadata on non-terminal tools as text content.
+
 ## Wire contract and flow control
 
 `apps/daemon/src/terminal-protocol.ts` owns the provisional TypeScript contract.

@@ -9,6 +9,7 @@ import { setTimeout as delay } from "node:timers/promises"
 import { promisify } from "node:util"
 import { build } from "esbuild"
 import { startDaemon } from "../../daemon/src/daemon.ts"
+import { TestAgentQuotas } from "../../daemon/src/fixtures/agent-quotas.ts"
 import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "../../daemon/src/agents/acp.ts"
 import type { AgentSmokeContext, AgentSmokeResult } from "./fixtures/agent-main.ts"
 
@@ -98,6 +99,24 @@ class ScriptedProvider implements AgentProvider {
           } })
           await client.terminals.sessions.waitForExit(terminal.id)
           await client.onUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "tool_call_update", toolCallId: "smoke-terminal", status: "completed" } })
+          // Codex owns these processes and streams their output in ACP v1 metadata;
+          // their IDs do not refer to a daemon terminal created by terminal/create.
+          const providerTerminalId = "smoke-provider-terminal"
+          await client.onUpdate({ sessionId: params.sessionId, update: {
+            sessionUpdate: "tool_call", toolCallId: providerTerminalId, title: "Run provider smoke terminal", kind: "execute", status: "in_progress",
+            content: [{ type: "terminal", terminalId: providerTerminalId }],
+            _meta: { terminal_info: { terminal_id: providerTerminalId, cwd: client.terminals.cwd } },
+          } })
+          for (const [key, data] of [["terminal_output_delta", "PROVIDER_SMOKE_OUTPUT:终端\n"], ["terminal_output", "PROVIDER_SMOKE_NEXT:第二行\n"]] as const) {
+            await client.onUpdate({ sessionId: params.sessionId, update: {
+              sessionUpdate: "tool_call_update", toolCallId: providerTerminalId,
+              _meta: { [key]: { terminal_id: providerTerminalId, data } },
+            } })
+          }
+          await client.onUpdate({ sessionId: params.sessionId, update: {
+            sessionUpdate: "tool_call_update", toolCallId: providerTerminalId, status: "completed",
+            _meta: { terminal_exit: { terminal_id: providerTerminalId, exit_code: 3, signal: null } },
+          } })
           await update("stream one 中文\n")
           await delay(75)
           await update("stream two\n")
@@ -146,6 +165,8 @@ class ScriptedProvider implements AgentProvider {
   }
 }
 const provider = new ScriptedProvider()
+// The isolated smoke has no Team server; keep its admission authority across daemon restarts.
+const agentQuotas = new TestAgentQuotas()
 
 async function stopClient(): Promise<void> {
   if (!electron || electron.exitCode !== null || electron.signalCode !== null) return
@@ -185,7 +206,7 @@ try {
   await execute("git", ["-C", repository, "add", "."])
   await execute("git", ["-C", repository, "-c", "user.name=Smoke", "-c", "user.email=smoke@example.invalid", "commit", "-m", "fixture"])
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/agent-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" })
-  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null, agentProvider: provider })
+  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null, agentProvider: provider, agentQuotas })
   const first = await launchClient("create")
   assert.deepEqual(provider.failures, [])
   assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate", "Smoke changed model prompt"])
@@ -203,12 +224,12 @@ try {
   const connections = provider.connections
   await daemon.close()
   daemon = undefined
-  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null, agentProvider: provider })
+  daemon = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null, agentProvider: provider, agentQuotas })
   const restored = await launchClient("restore", first)
   assert.deepEqual(restored, first)
   assert.equal(provider.connections, connections, "Reconnecting must not restart the provider")
   assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate", "Smoke changed model prompt"])
-  console.log("Production Electron Agent: configured providers, dynamic configuration, file/command/skill completions, streaming, backlog, steering, permissions, user question forms, read-only ACP terminal output, simultaneous terminal viewers, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath, questionScreenshotPath, completionScreenshotPath })
+  console.log("Production Electron Agent: configured providers, dynamic configuration, file/command/skill completions, streaming, backlog, steering, permissions, user question forms, read-only ACP client and provider terminal output, simultaneous terminal viewers, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath, questionScreenshotPath, completionScreenshotPath })
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   if (provider.failures.length) console.error(provider.failures)

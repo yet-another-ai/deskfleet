@@ -370,6 +370,21 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   }
   await until(() => ![...document.querySelectorAll('[role="status"]')].some(element => element.textContent?.includes("Restoring conversation")), "History replay completed")
   await verifyConversation()
+  const providerTerminal = () => conversation()?.querySelector<HTMLElement>('[data-agent-terminal="smoke-provider-terminal"]')
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await click("Run provider smoke terminal", () => conversation()!)
+    await until(() => !!providerTerminal(), "Expanded provider-owned ACP terminal")
+    providerTerminal()!.scrollIntoView({ block: "center" })
+    const rows = () => [...providerTerminal()!.querySelectorAll(".xterm-rows > div")].map(row => row.textContent?.trim() ?? "")
+    await until(() => !!providerTerminal()?.querySelector('[data-connection="ended"]') && rows().includes("PROVIDER_SMOKE_OUTPUT:终端") && rows().includes("PROVIDER_SMOKE_NEXT:第二行"), "Provider ACP metadata renders UTF-8 output on separate lines")
+    require(providerTerminal()!.innerText.includes("Read only") && providerTerminal()!.innerText.includes("Process exited (3)"), "Provider terminal must retain its read-only label and exit status")
+    require(providerTerminal()!.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")?.readOnly, "Provider terminal input must be disabled")
+    require(!providerTerminal()!.querySelector('[data-connection="error"]'), "Provider terminal output must not invoke a missing daemon terminal")
+    require(rows().filter(row => row === "PROVIDER_SMOKE_OUTPUT:终端").length === 1 && rows().filter(row => row === "PROVIDER_SMOKE_NEXT:第二行").length === 1, "Provider terminal replay must not duplicate streamed chunks")
+    await click("Run provider smoke terminal", () => conversation()!)
+    await until(() => !providerTerminal(), "Collapsed provider terminal")
+  }
+  require(!(await api.terminal.list()).some(terminal => terminal.id === "smoke-provider-terminal"), "Provider metadata must render without a daemon terminal record")
   await click("Run smoke terminal", () => conversation()!)
   const agentTerminal = () => conversation()?.querySelector<HTMLElement>("[data-agent-terminal]")
   await until(() => !!agentTerminal(), "Expanded ACP terminal viewer")
@@ -451,7 +466,8 @@ void app.whenReady().then(async () => {
   installDesktopMediaIpc()
   const window = new BrowserWindow({
     show: false, width: 1280, height: 960,
-    webPreferences: { preload: context.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true, additionalArguments: ["--deskfleet-locale=en-US"] },
+    // The smoke inspects rendered xterm DOM rows; select that renderer consistently.
+    webPreferences: { preload: context.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true, webgl: false, additionalArguments: ["--deskfleet-locale=en-US"] },
   })
   attachDesktopMedia(window)
   let previewCaptured = false

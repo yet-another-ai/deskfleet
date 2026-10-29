@@ -36,7 +36,7 @@ const hasDetails = computed(() => !!props.tool.locations?.length || props.tool.r
       <pre v-if="tool.rawInput != null" class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono select-text">{{ readableValue(tool.rawInput) }}</pre>
       <template v-for="(block, index) in tool.content" :key="index">
         <AgentContent v-if="block.type === 'content'" :content="[block.content]" class="text-xs" />
-        <AgentTerminal v-else-if="block.type === 'terminal'" :key="block.terminalId" :terminal-id="block.terminalId" />
+        <AgentTerminal v-else-if="block.type === 'terminal'" :key="block.terminalId" :terminal-id="block.terminalId" :output="tool.terminals?.[block.terminalId]" :live="live" />
         <div v-else-if="block.type === 'diff'" class="overflow-hidden rounded-md border border-ui-border font-mono select-text">
           <div class="truncate border-b border-ui-border px-2 py-1 text-ui-text-muted">{{ block.path }}</div>
           <div class="max-h-80 overflow-auto">

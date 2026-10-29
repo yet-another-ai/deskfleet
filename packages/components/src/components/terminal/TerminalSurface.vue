@@ -25,6 +25,8 @@ const props = withDefaults(defineProps<{
   /** Written once when the terminal opens; `\n` becomes a new line. */
   banner?: string
   interactive?: boolean
+  /** Provider command output uses LF rather than PTY line endings. */
+  convertEol?: boolean
   scrollback?: number
   /** Search, export, clipboard requests, and program progress for live/history viewers. */
   tools?: boolean
@@ -59,6 +61,7 @@ const terminal = new Terminal({
   allowProposedApi: true,
   cursorBlink: props.interactive ?? false,
   disableStdin: !props.interactive,
+  convertEol: props.convertEol ?? false,
   fontFamily: fontFamily.value,
   fontSize: 13,
   scrollback: props.scrollback ?? 5_000,
