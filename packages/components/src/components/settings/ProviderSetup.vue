@@ -187,7 +187,7 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
 
 <template>
   <section class="rounded-xl border border-ui-border text-sm" :aria-label="t('providers.setup.title', { machine: machineName })" data-provider-setup>
-    <div class="flex min-h-14 items-center gap-3 px-3.5 py-2.5">
+    <div class="flex min-h-14 flex-wrap items-center gap-3 px-3.5 py-2.5 sm:flex-nowrap">
       <template v-if="probing">
         <LoaderCircle :size="14" :stroke-width="2" class="shrink-0 animate-spin text-ui-text-muted" aria-hidden="true" />
         <p role="status" class="m-0 min-w-0 flex-1 text-ui-text-muted">{{ t("providers.setup.probing", { machine: machineName }) }}</p>
@@ -201,7 +201,7 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
       </template>
       <p v-else class="m-0 min-w-0 flex-1 text-ui-text-muted">{{ t("providers.setup.unavailable") }}</p>
       <!-- The running operation owns the card's only action, Stop, until it finishes. -->
-      <div v-if="!running" class="flex shrink-0 items-center gap-1.5">
+      <div v-if="!running" class="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto">
         <IconButton :icon="RotateCw" :label="t('providers.setup.refresh')" :disabled="actionsDisabled || !provider" data-provider-probe @click="probe()" />
         <UiButton variant="ghost" size="sm" v-if="canSetPath" type="button" class="cursor-pointer hover:bg-ui-hover" :disabled="busy || disabled" data-provider-set-path @click="emit('editPath')">{{ t("providers.setup.setPath") }}</UiButton>
         <UiButton v-if="canInstall" type="button" :variant="result?.status === 'found' ? 'ghost' : 'default'" :size="result?.status === 'found' ? 'sm' : 'default'" :disabled="actionsDisabled" data-provider-install @click="start('install')">{{ t(result?.status === "found" ? "providers.setup.reinstall" : "providers.setup.install") }}</UiButton>
