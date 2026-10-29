@@ -18,7 +18,7 @@ export async function zshImageEnvironment(historyDirectory: string): Promise<Rec
     [".zprofile", "[[ -o login ]]"],
     [".zshrc", "[[ -o login ]]"],
     [".zlogin", "false"],
-  ]) {
+  ] as const) {
     const restore = file === ".zshenv" ? `
 if (( \${+DESKFLEET_ORIGINAL_ZDOTDIR} )); then
   ZDOTDIR=$DESKFLEET_ORIGINAL_ZDOTDIR
