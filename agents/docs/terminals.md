@@ -2,7 +2,7 @@
 
 The shared Electron/Web terminal uses xterm.js and a reliable, ordered WebRTC DataChannel.
 `TerminalSurface` prefers the `@xterm/addon-webgl` renderer after the terminal opens
-and falls back to xterm's default canvas renderer when WebGL2 is unavailable,
+and falls back to xterm's default DOM renderer when WebGL2 is unavailable,
 fails to create a context, or reports context loss. On unmount (including tab
 remounts) it force-releases the WebGL2 context via `WEBGL_lose_context`, because
 addon `dispose()` alone leaves zombie contexts that can exhaust Chromium's per-page
@@ -10,6 +10,59 @@ cap. It negotiates a data-only peer:
 no video/audio tracks, capture devices, codec selection, or screen-recording
 permission are involved. SDP and ICE reuse the authenticated central signaling
 service used by desktop streaming.
+
+## Frontend addons
+
+The shared terminal pins xterm.js 6.0.0 and its compatible stable addons.
+The [official addon list](https://github.com/xtermjs/xterm.js#addons) includes
+features for other transports and newer xterm releases, so installation alone
+does not imply support in DeskFleet.
+
+| Addon | Version | Supported behavior |
+| --- | --- | --- |
+| Fit | 0.11.0 | Resize the terminal to its container. |
+| Image | 0.9.0 | Sixel and iTerm2 inline images; see the image limits below. |
+| Ligatures | 0.10.0 | Optional font ligatures, with the repository's existing patch. |
+| WebGL | 0.19.0 | GPU rendering with DOM fallback and explicit context cleanup. |
+| Search | 0.16.0 | Search the loaded buffer, highlight matches, navigate results, and toggle case sensitivity, whole words, and regular expressions. |
+| Web links | 0.12.0 | Detect HTTP(S) URLs; detected links and OSC 8 links share the external-link handler. |
+| Serialize | 0.14.0 | Explicitly download the loaded buffer as ANSI or styled HTML. ANSI export excludes terminal modes and the alternate buffer. |
+| Clipboard | 0.2.0 | Stage live OSC 52 writes as a copy request that the user can accept. Clipboard reads return an empty string. |
+| Unicode 11 | 0.9.0 | Use Unicode 11 character widths. |
+| Progress | 0.2.0 | Display OSC 9;4 percentage, indeterminate, error, and paused progress. |
+
+Search and export cover the renderer's current buffer, including its retained
+scrollback, rather than the full daemon transcript. Export does not replace
+durable history. Clipboard requests are ignored during replay and in read-only
+views; terminal output never reads or automatically overwrites the system
+clipboard. Progress is cleared when the surface resets.
+
+The terminal toolbar exposes search, copy selection, and both export formats in
+machine, Session, and read-only Agent terminals. Ctrl/Cmd+F opens search within
+the focused terminal; Enter/Shift+Enter or F3/Shift+F3 navigate matches while
+search has focus, and Escape closes it and returns focus to the terminal.
+
+Search 0.16.0 caches highlights across option changes; the UI clears that cache
+when case, whole-word, or regex mode changes. The pinned
+[search patch](../../patches/@xterm__addon-search@0.16.0.patch) also continues past
+non-whole-word candidates within a line, so searching `food foo` for the whole
+word `foo` finds the second occurrence in both navigation directions.
+
+The remaining official addons are not enabled:
+
+| Addon | Reason |
+| --- | --- |
+| Unicode graphemes 0.4.0 | Upstream still marks grapheme clustering experimental. Unicode 11 remains the active width provider. |
+| Program status 0.1.0 | Its [published package](https://registry.npmjs.org/@xterm%2Faddon-program-status/0.1.0) requires xterm `^6.1.0-beta.316`. |
+| Web fonts 0.1.0 | Its [published package](https://registry.npmjs.org/@xterm%2Faddon-web-fonts/0.1.0) requires xterm `^6.1.0-beta.86`; terminal fonts use the existing appearance settings. |
+| Attach 0.12.0 | Connects a WebSocket directly; DeskFleet's terminal transport is the flow-controlled WebRTC DataChannel. |
+| Canvas 0.7.0 | Removed in the [xterm 6.0 release](https://github.com/xtermjs/xterm.js/releases/tag/6.0.0), which recommends DOM or WebGL rendering. |
+
+See the pinned upstream APIs for [search](https://github.com/xtermjs/xterm.js/blob/6.0.0/addons/addon-search/typings/addon-search.d.ts),
+[serialization](https://github.com/xtermjs/xterm.js/blob/6.0.0/addons/addon-serialize/typings/addon-serialize.d.ts),
+[clipboard](https://github.com/xtermjs/xterm.js/blob/6.0.0/addons/addon-clipboard/typings/addon-clipboard.d.ts),
+[progress](https://github.com/xtermjs/xterm.js/blob/6.0.0/addons/addon-progress/typings/addon-progress.d.ts),
+and the [grapheme warning](https://github.com/xtermjs/xterm.js/blob/6.0.0/addons/addon-unicode-graphemes/README.md).
 
 ## Ownership and lifecycle
 

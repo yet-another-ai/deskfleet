@@ -1,6 +1,6 @@
 import { mount } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
-import { nextTick } from "vue"
+import { defineComponent, nextTick, ref } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appearance.ts"
 
@@ -62,6 +62,7 @@ class FakeTerminal {
   reset = vi.fn()
   dispose = vi.fn()
   loadAddon = vi.fn()
+  attachCustomKeyEventHandler = vi.fn()
   constructor(options: Record<string, unknown>) {
     this.options = options
     terminals.push(this)
@@ -108,7 +109,7 @@ test("opens a read-only xterm.js terminal that fits its container", () => {
   terminal!.input("pasted command\r")
   expect(wrapper.emitted("input")).toBeUndefined()
   expect(terminal!.loadAddon).toHaveBeenCalledWith(fit)
-  expect(terminal!.open).toHaveBeenCalledWith(wrapper.element)
+  expect(terminal!.open).toHaveBeenCalledWith(wrapper.element.firstElementChild)
   expect(terminal!.loadAddon).toHaveBeenCalledWith(webgl)
   expect(terminal!.loadAddon).toHaveBeenCalledWith(image)
   expect(image!.options).toEqual({
@@ -141,7 +142,7 @@ test("keeps the default renderer when WebGL fails to attach", () => {
   const image = imageAddons.at(-1)!
   expect(webglAddons).toHaveLength(initialWebgl)
   expect(imageAddons).toHaveLength(initialImages + 1)
-  expect(terminal.open).toHaveBeenCalledWith(wrapper.element)
+  expect(terminal.open).toHaveBeenCalledWith(wrapper.element.firstElementChild)
   expect(terminal.loadAddon).toHaveBeenCalledWith(fit)
   expect(terminal.loadAddon).toHaveBeenCalledWith(image)
   expect(terminal.write).toHaveBeenCalledWith("fallback")
@@ -317,5 +318,39 @@ test("previews font and ligature drafts independently of saved terminal preferen
   await wrapper.setProps({ fontFamily: undefined, ligatures: undefined })
   expect(terminal.options.fontFamily).toBe("serif")
   expect(ligatureAddons.at(-1)!.dispose).toHaveBeenCalledOnce()
+  wrapper.unmount()
+})
+
+test("opens local search without sending its shortcut to the shell and keeps search focus when replay ends", async () => {
+  const searchOpen = ref(false)
+  const openSearch = vi.fn(() => { searchOpen.value = true })
+  const reset = vi.fn()
+  const wrapper = mount(TerminalSurface, {
+    props: { tools: true },
+    global: { stubs: { TerminalToolbar: defineComponent({
+      setup(_props, { expose }) { expose({ openSearch, reset, searchOpen }); return () => null },
+    }) } },
+  })
+  const terminal = terminals.at(-1)!
+  const handle = terminal.attachCustomKeyEventHandler.mock.calls[0]![0] as (event: KeyboardEvent) => boolean
+  for (const modifier of ["ctrlKey", "metaKey"]) {
+    const event = new KeyboardEvent("keydown", { key: "f", [modifier]: true, cancelable: true })
+    expect(handle(event)).toBe(false)
+    expect(event.defaultPrevented).toBe(true)
+  }
+  expect(openSearch).toHaveBeenCalledTimes(2)
+  expect(handle(new KeyboardEvent("keyup", { key: "f", ctrlKey: true }))).toBe(false)
+  expect(openSearch).toHaveBeenCalledTimes(2)
+  expect(handle(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))).toBe(true)
+  expect(handle(new KeyboardEvent("keydown", { key: "f" }))).toBe(true)
+  await wrapper.setProps({ interactive: true })
+  wrapper.vm.focus()
+  expect(terminal.focus).not.toHaveBeenCalled()
+  searchOpen.value = false
+  wrapper.vm.focus()
+  expect(terminal.focus).toHaveBeenCalledOnce()
+  wrapper.vm.reset()
+  expect(terminal.reset).toHaveBeenCalledOnce()
+  expect(reset).toHaveBeenCalledOnce()
   wrapper.unmount()
 })

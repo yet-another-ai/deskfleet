@@ -7,9 +7,10 @@ import { Terminal, type ITheme } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
 import { useResizeObserver } from "@vueuse/core"
 import { storeToRefs } from "pinia"
-import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, onUnmounted, useTemplateRef, watch } from "vue"
 import { DEFAULT_TERMINAL_FONT } from "@deskfleet/client/appearance"
 import { useAppearanceStore } from "../../stores/appearance.ts"
+import TerminalToolbar from "./TerminalToolbar.vue"
 
 /** Sixel / iTerm2 inline images; size reports stay on for apps that query CSI t metrics. */
 const IMAGE_ADDON_OPTIONS = {
@@ -25,6 +26,8 @@ const props = withDefaults(defineProps<{
   banner?: string
   interactive?: boolean
   scrollback?: number
+  /** Search, export, clipboard requests, and program progress for live/history viewers. */
+  tools?: boolean
   /** Preview overrides; omitted values use the saved appearance. */
   fontFamily?: string
   ligatures?: boolean
@@ -46,6 +49,7 @@ const theme: ITheme = {
 }
 
 const container = useTemplateRef<HTMLDivElement>("container")
+const toolbar = useTemplateRef<InstanceType<typeof TerminalToolbar>>("toolbar")
 const { terminalFont, terminalLigatures } = storeToRefs(useAppearanceStore())
 const fontFamily = computed(() => props.fontFamily === undefined ? terminalFont.value : props.fontFamily.trim() || DEFAULT_TERMINAL_FONT)
 const ligatures = computed(() => props.ligatures ?? terminalLigatures.value)
@@ -58,9 +62,18 @@ const terminal = new Terminal({
   fontFamily: fontFamily.value,
   fontSize: 13,
   scrollback: props.scrollback ?? 5_000,
+  overviewRuler: { width: props.tools ? 8 : 0 },
   theme,
 })
 terminal.loadAddon(fit)
+terminal.attachCustomKeyEventHandler(event => {
+  if (!props.tools || !(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "f") return true
+  if (event.type === "keydown") {
+    event.preventDefault()
+    void toolbar.value?.openSearch()
+  }
+  return false
+})
 let webglAddon: WebglAddon | undefined
 let imageAddon: ImageAddon | undefined
 let ligaturesAddon: LigaturesAddon | undefined
@@ -85,7 +98,7 @@ function releaseWebglRenderer(addon: WebglAddon | undefined = webglAddon): void 
   try { addon.dispose() } catch { /* already disposed */ }
   try { gl?.getExtension("WEBGL_lose_context")?.loseContext() } catch { /* ignore host / shape changes */ }
 }
-/** Prefer WebGL when the environment can create a context; otherwise keep the default canvas renderer. */
+/** Prefer WebGL when the environment can create a context; otherwise keep the default DOM renderer. */
 function attachWebglRenderer(): void {
   let addon: WebglAddon | undefined
   try {
@@ -124,10 +137,14 @@ function updateLigatures(): void {
 const input = terminal.onData((data) => { if (props.interactive) emit("input", data) })
 const resize = terminal.onResize((size) => emit("resize", size))
 const title = terminal.onTitleChange((value) => emit("title", value))
+function focus(): void {
+  // Finishing a replay must not redirect an in-progress search into shell input.
+  if (!toolbar.value?.searchOpen) terminal.focus()
+}
 watch(() => props.interactive, (interactive) => {
   terminal.options.disableStdin = !interactive
   terminal.options.cursorBlink = interactive ?? false
-  if (interactive) terminal.focus()
+  if (interactive) focus()
 })
 watch(() => props.scrollback, (scrollback) => { terminal.options.scrollback = scrollback ?? 5_000 })
 watch(fontFamily, (fontFamily) => {
@@ -161,17 +178,21 @@ onBeforeUnmount(() => {
   input.dispose()
   resize.dispose()
   title.dispose()
-  terminal.dispose()
 })
+// Child controls release their subscriptions/addons before the terminal itself.
+onUnmounted(() => terminal.dispose())
 
 defineExpose({
   terminal,
   write: (data: Uint8Array, callback?: () => void) => terminal.write(data, callback),
-  reset: () => terminal.reset(),
-  focus: () => terminal.focus(),
+  reset: () => { terminal.reset(); toolbar.value?.reset() },
+  focus,
 })
 </script>
 
 <template>
-  <div ref="container" class="h-full min-h-0 w-full" />
+  <div class="relative flex h-full min-h-0 w-full flex-col">
+    <div ref="container" class="min-h-0 w-full flex-1" />
+    <TerminalToolbar v-if="tools" ref="toolbar" :terminal="terminal" :interactive="interactive ?? false" />
+  </div>
 </template>

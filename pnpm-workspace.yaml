@@ -25,4 +25,5 @@ overrides:
 patchedDependencies:
   '@agentclientprotocol/codex-acp@2.3.0': patches/@agentclientprotocol__codex-acp@2.3.0.patch
   '@xterm/addon-ligatures@0.10.0': patches/@xterm__addon-ligatures@0.10.0.patch
+  '@xterm/addon-search@0.16.0': patches/@xterm__addon-search@0.16.0.patch
   pi-acp@0.0.34: patches/pi-acp@0.0.34.patch

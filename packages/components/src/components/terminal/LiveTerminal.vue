@@ -169,6 +169,7 @@ onBeforeUnmount(() => {
   <div class="min-h-0 flex-1 overflow-hidden bg-ui-terminal">
     <TerminalSurface
       ref="surface"
+      tools
       :interactive="interactive && !readonly"
       @ready="ready"
       @input="input"
