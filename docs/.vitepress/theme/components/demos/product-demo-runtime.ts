@@ -1,4 +1,5 @@
 import { computed, createApp, ref } from "vue"
+import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { createPinia, disposePinia } from "pinia"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { createI18n } from "vue-i18n"
@@ -9,13 +10,14 @@ import { useProvidersStore } from "@deskfleet/components/stores/providers.ts"
 import { useTerminalsStore } from "@deskfleet/components/stores/terminals.ts"
 import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import en from "../../../../../packages/components/locales/en-US.json"
+import ja from "../../../../../packages/components/locales/ja-JP.json"
 import zh from "../../../../../packages/components/locales/zh-cmn-Hans-CN.json"
 import { configureProductDemoHost } from "./product-demo-host.ts"
 import { configuration, demoPatch, demoProviders, fixtures, input } from "./product-demo-fixtures.ts"
 
 export interface ProductDemoOptions {
   kind: "agents" | "team" | "remote" | "session"
-  chinese?: boolean
+  locale?: AppLocale
   initialRoute?: string
   sidebar?: boolean
   details?: boolean
@@ -23,9 +25,11 @@ export interface ProductDemoOptions {
 
 /** Mount the production application with browser-local state and no daemon connection. */
 export async function mountProductDemo(target: HTMLElement, options: ProductDemoOptions) {
-  const locale = options.chinese ? "zh-cmn-Hans-CN" : "en-US"
+  const locale = options.locale ?? "en-US"
+  const say = (en: string, zh: string, ja: string) => locale === "ja-JP" ? ja : locale === "zh-cmn-Hans-CN" ? zh : en
   configureProductDemoHost(locale)
   const { default: App } = await import("@deskfleet/components/App.vue")
+  const { useAppearanceStore } = await import("@deskfleet/components/stores/appearance.ts")
   const pinia = createPinia()
   const app = createApp(App)
   const router = createRouter({ history: createMemoryHistory(), routes: [
@@ -42,6 +46,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     { path: "/settings", component: () => import("@deskfleet/components/views/SettingsView.vue"), meta: { fullWindow: true }, children: [
       { path: "", name: "settings", redirect: { name: "settings-preferences" } },
       { path: "preferences", name: "settings-preferences", component: () => import("@deskfleet/components/components/settings/PreferencesSettings.vue") },
+      { path: "appearance", name: "settings-appearance", component: () => import("@deskfleet/components/components/settings/AppearanceSettings.vue") },
       { path: "notifications", name: "settings-notifications", component: () => import("@deskfleet/components/components/settings/NotificationsSettings.vue") },
       { path: "agents", name: "settings-agents", component: () => import("@deskfleet/components/components/settings/AgentsSettings.vue") },
       { path: "mcp-servers", name: "settings-mcp-servers", component: () => import("@deskfleet/components/components/settings/McpServersSettings.vue") },
@@ -51,7 +56,22 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   ] })
   app.use(pinia)
   app.use(router)
-  app.use(createI18n({ legacy: false, locale, fallbackLocale: "en-US", messages: { "en-US": en, "zh-cmn-Hans-CN": zh } }))
+  const i18n = createI18n({ legacy: false, locale, fallbackLocale: "en-US", messages: { "en-US": en, "zh-cmn-Hans-CN": zh, "ja-JP": ja } })
+  app.use(i18n)
+
+  // Appearance changes stay inside this embed and never apply to the website document.
+  const appearance = useAppearanceStore(pinia)
+  appearance.settings = { ...appearance.settings, language: locale }
+  appearance.ready = true
+  appearance.initialize = async () => {}
+  appearance.set = async patch => {
+    appearance.settings = { ...appearance.settings, ...patch }
+    i18n.global.locale.value = appearance.settings.language === "system" ? locale : appearance.settings.language
+    target.lang = intlLocale(i18n.global.locale.value)
+    target.style.colorScheme = appearance.settings.theme === "system" ? "" : appearance.settings.theme
+    target.style.setProperty("--ui-font-interface", appearance.interfaceFont)
+  }
+  target.lang = intlLocale(locale)
 
   const layout = useLayoutStore(pinia)
   // Embedded applications get independent, nonpersistent layout preferences.
@@ -69,11 +89,11 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   agents.state = "connected"
   const fleet = useFleetStore(pinia)
   const terminals = useTerminalsStore(pinia)
-  const data = fixtures(!!options.chinese)
+  const data = fixtures(locale)
   const buildWorkspaces = data.machine.workspaces.filter(workspace => workspace.id === "202")
   data.machine.workspaces = data.machine.workspaces.filter(workspace => workspace.id !== "202")
   // The embedded demo owns its sample resource tree and the selectors that read it.
-  Reflect.set(fleet, "machines", ref([data.machine, { id: "demo-build", name: "Build server", local: false, online: true, desktop: false, terminals: [], sessions: [], workspaces: buildWorkspaces }]))
+  Reflect.set(fleet, "machines", ref([data.machine, { id: "demo-build", name: say("Build server", "构建服务器", "ビルドサーバー"), local: false, online: true, desktop: false, terminals: [], sessions: [], workspaces: buildWorkspaces }]))
   const workspaces = computed(() => fleet.machines.flatMap(machine => machine.workspaces.map(workspace => ({ machine, workspace }))))
   const sessions = computed(() => workspaces.value.flatMap(location => location.workspace.sessions.map(session => ({ ...location, session, worktree: session.worktree }))))
   const terminalLocations = computed<TerminalLocation[]>(() => [
@@ -99,11 +119,10 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   for (const [id, snapshot] of Object.entries(data.snapshots)) {
     agents.sessions[id] = snapshot.session
     agents.views[id] = { snapshot, events: data.events[id]!, loading: false, error: null, historySeq: snapshot.session.lastEventSeq, snapshotSeq: snapshot.session.lastEventSeq }
-    agents.configurations[id] = configuration(snapshot.session.provider)
+    agents.configurations[id] = configuration(locale, snapshot.session.provider)
   }
 
   let serial = 1000
-  const say = (en: string, zh: string) => options.chinese ? zh : en
   const snapshotFor = (id: string) => agents.views[id]!.snapshot!
   function append(id: string, kind: AgentEvent["kind"], payload: AgentEvent["payload"]) {
     const view = agents.views[id]!
@@ -114,13 +133,13 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   }
   const receipt = (sessionId: string, inputId?: string) => ({ operationId: `operation-${serial++}`, commandId: `command-${serial++}`, sessionId, inputId })
   const activeTurn = (snapshot: AgentSnapshot) => snapshot.turns.find(turn => turn.state === "running")
-  const actor = { kind: "user" as const, userId: say("You", "你") }
+  const actor = { kind: "user" as const, userId: say("You", "你", "あなた") }
   agents.refresh = async () => {}
   agents.open = async () => {}
-  agents.agentConfiguration = async params => configuration(params.provider, params.model, params.reasoningEffort)
-  agents.sessionConfiguration = async id => agents.configurations[id] ?? configuration(agents.sessions[id]!.provider)
+  agents.agentConfiguration = async params => configuration(locale, params.provider, params.model, params.reasoningEffort)
+  agents.sessionConfiguration = async id => agents.configurations[id] ?? configuration(locale, agents.sessions[id]!.provider)
   agents.configureSession = async (id, choices) => {
-    const result = configuration(agents.sessions[id]!.provider, choices.model, choices.reasoningEffort)
+    const result = configuration(locale, agents.sessions[id]!.provider, choices.model, choices.reasoningEffort)
     agents.configurations[id] = result
     return result
   }
@@ -128,7 +147,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     const id = String(serial++)
     const snapshot: AgentSnapshot = { session: { id, ...(workspaceId ? { workspaceId } : {}), title, context, provider, lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "", updatedAt: "", capabilities: { steering: true, resume: true } }, runs: [{ sessionId: id, generation: 1, state: "running", startedAt: "" }], inputs: [], turns: [], permissions: [], elicitations: [] }
     agents.views[id] = { snapshot, events: [], loading: false, error: null, snapshotSeq: "0", historySeq: "0" }
-    agents.configurations[id] = configuration(provider, agents.draftConfiguration.model, agents.draftConfiguration.reasoningEffort)
+    agents.configurations[id] = configuration(locale, provider, agents.draftConfiguration.model, agents.draftConfiguration.reasoningEffort)
     const summary = { id, title, context, archiveState: "active" as const, provider: demoProviders.find(item => item.id === provider)?.name, providerTemplate: provider, worktree: { id: `worktree-${id}`, directories: [{ path: workspaceId ? `/workspace/.worktrees/${id}` : "/workspace" }], terminals: [] } }
     if (workspaceId) {
       const workspace = fleet.findWorkspace(workspaceId)!.workspace
@@ -149,7 +168,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     snapshot.inputs.push(message)
     if (!queued) {
       append(id, "input", message)
-      append(id, "acp", { sessionId: id, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: say("Your request is now part of this sample session. Try the conversation controls, or inspect the changes in the side panel.", "你的要求已加入这个示例会话。可以继续体验对话操作，或在侧栏查看代码变更。") } } })
+      append(id, "acp", { sessionId: id, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: say("Your request is now part of this sample session. Try the conversation controls, or inspect the changes in the side panel.", "你的要求已加入这个示例会话。可以继续体验对话操作，或在侧栏查看代码变更。", "リクエストをこのサンプルセッションに追加しました。会話の操作を試したり、サイドパネルで変更内容を確認したりできます。") } } })
     }
     agents.drafts[id] = ""
     return receipt(id, message.id)

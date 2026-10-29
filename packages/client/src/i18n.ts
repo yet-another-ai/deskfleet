@@ -1,4 +1,4 @@
-export const APP_LOCALES = ["en-US", "zh-cmn-Hans-CN"] as const
+export const APP_LOCALES = ["en-US", "zh-cmn-Hans-CN", "ja-JP"] as const
 export type AppLocale = (typeof APP_LOCALES)[number]
 export const DEFAULT_LOCALE: AppLocale = "en-US"
 
@@ -20,6 +20,7 @@ function supportedLocale(tag: string): AppLocale | null {
   }
   if (locale.language === "en") return "en-US"
   if (locale.language === "zh" && locale.script === "Hans") return "zh-cmn-Hans-CN"
+  if (locale.language === "ja") return "ja-JP"
   return null
 }
 

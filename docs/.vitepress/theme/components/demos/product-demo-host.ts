@@ -1,4 +1,5 @@
 import { configureClient } from "@deskfleet/client/platform"
+import { DEFAULT_APPEARANCE_SETTINGS } from "@deskfleet/client/appearance"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { AppLocale } from "@deskfleet/client/i18n"
 import type { CatalogWorkspace } from "@deskfleet/client/catalog"
@@ -7,7 +8,9 @@ import { AGENT_PROVIDER_TEMPLATES } from "../../../../../apps/daemon/src/provide
 import { desktopPreview } from "./product-demo-media.ts"
 
 const subscribe = () => () => {}
-const unavailable = async (): Promise<never> => { throw new Error("This operation needs a connected machine.") }
+const unavailable = async (): Promise<never> => {
+  throw new Error(host.locale === "ja-JP" ? "この操作には接続済みのマシンが必要です。" : host.locale === "zh-cmn-Hans-CN" ? "此操作需要已连接的机器。" : "This operation needs a connected machine.")
+}
 const providers = AGENT_PROVIDER_TEMPLATES.filter(template => template.id !== "acp").map(template => ({
   id: template.id as string, template: template.id, name: template.name, env: {},
 }))
@@ -21,6 +24,12 @@ const host: DeskfleetDesktopApi = {
   platform: "web",
   locale: "en-US",
   target: { id: "demo-machine", local: true },
+  // Each embedded store owns its settings; this adapter never reads or writes browser storage.
+  appearance: {
+    get: async () => ({ ...DEFAULT_APPEARANCE_SETTINGS }),
+    set: async settings => settings,
+    onChanged: subscribe,
+  },
   settings: {
     get: async () => ({ enabled: true, status: "running" }),
     setLocalAgentEnabled: async enabled => ({ enabled, status: enabled ? "running" : "stopped" }),

@@ -23,17 +23,20 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-test("restores browser preferences before mounting and persists CSS fallback lists verbatim", async () => {
+test.each([
+  ["zh-cmn-Hans-CN", "zh-Hans-CN"],
+  ["ja-JP", "ja-JP"],
+] as const)("restores browser preferences in %s before mounting and persists CSS fallback lists verbatim", async (language, documentLanguage) => {
   const saved: AppearanceSettings = {
-    language: "zh-cmn-Hans-CN", theme: "dark", interfaceFont: '"Noto Sans", sans-serif',
+    language, theme: "dark", interfaceFont: '"Noto Sans", sans-serif',
     terminalFont: '"Cascadia Code", "Noto Sans Mono CJK SC", monospace',
     terminalLigatures: true,
   }
   localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(saved))
   const appearance = useAppearanceStore(pinia)
   await appearance.initialize()
-  expect(i18n.global.locale.value).toBe("zh-cmn-Hans-CN")
-  expect(document.documentElement.lang).toBe("zh-Hans-CN")
+  expect(i18n.global.locale.value).toBe(language)
+  expect(document.documentElement.lang).toBe(documentLanguage)
   expect(document.documentElement.style.colorScheme).toBe("dark")
   expect(document.documentElement.style.getPropertyValue("--ui-font-interface")).toBe(saved.interfaceFont)
   expect(appearance.terminalFont).toBe(saved.terminalFont)
@@ -44,6 +47,22 @@ test("restores browser preferences before mounting and persists CSS fallback lis
   disposePinia(pinia)
   pinia = createPinia()
   expect(useAppearanceStore(pinia).settings).toEqual({ ...saved, theme: "light" })
+})
+
+test("follows Japanese browser language preferences until a language is selected", async () => {
+  const languages = vi.spyOn(navigator, "languages", "get").mockReturnValue(["ja-JP", "en-US"])
+  const appearance = useAppearanceStore(pinia)
+  await appearance.initialize()
+  expect(i18n.global.locale.value).toBe("ja-JP")
+  expect(document.documentElement.lang).toBe("ja-JP")
+  await appearance.set({ language: "en-US" })
+  expect(i18n.global.locale.value).toBe("en-US")
+  await appearance.set({ language: "system" })
+  expect(i18n.global.locale.value).toBe("ja-JP")
+  languages.mockReturnValue(["en-US"])
+  window.dispatchEvent(new Event("languagechange"))
+  await nextTick()
+  expect(i18n.global.locale.value).toBe("en-US")
 })
 
 test("explicit theme overrides OS changes and Follow System resumes tracking them", async () => {

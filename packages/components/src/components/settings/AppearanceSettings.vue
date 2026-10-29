@@ -21,6 +21,7 @@ const languages = computed(() => [
   { value: "system", label: t("appearance.followSystem") },
   { value: "en-US", label: "English" },
   { value: "zh-cmn-Hans-CN", label: "简体中文" },
+  { value: "ja-JP", label: "日本語" },
 ])
 
 function saveFont(key: "interfaceFont" | "terminalFont"): void {

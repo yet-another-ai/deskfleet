@@ -109,7 +109,7 @@ development and packaging details.
 
 ## Product website
 
-The VitePress website in `docs/` includes English and Simplified Chinese pages
+The VitePress website in `docs/` includes English, Simplified Chinese, and Japanese pages
 and interactive examples built from the application's shared Vue components.
 Start it with `mise run docs:dev` and open `http://127.0.0.1:5175/`.
 Build the static site with `mise run docs:build`; the output is

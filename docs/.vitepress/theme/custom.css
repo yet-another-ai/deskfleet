@@ -62,6 +62,12 @@
     "Noto Sans SC Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
+:root:lang(ja) {
+  --deskfleet-display: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-base: "Inter Variable", var(--deskfleet-display);
+  --ui-font-interface: var(--vp-font-family-base);
+}
+
 html {
   background: var(--vp-c-bg);
   transition: background-color 180ms ease;

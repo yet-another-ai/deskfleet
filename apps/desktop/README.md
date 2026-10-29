@@ -452,9 +452,12 @@ isolated instance for both the client and its bundled daemon.
 ## Localization
 
 `packages/components/locales/<locale>.json` holds one catalog per supported locale. Currently these
-are `en-US` and `zh-cmn-Hans-CN`. The main process selects the first supported
+are `en-US`, `zh-cmn-Hans-CN`, and `ja-JP`. The main process selects the first supported
 locale from the OS language preferences and passes it to the preload through
 `additionalArguments`. The renderer reads it from `window.deskfleet.locale`.
+The Web client uses the same catalogs and resolves browser language preferences.
+Settings → Appearance → Language can override the system language with a saved
+selection; Japanese is listed as **日本語**.
 
 The main process translates with `t()` from `src/main/i18n.ts`. Components use
 `useI18n()` from vue-i18n, not the global `$t`, which Vapor components do not

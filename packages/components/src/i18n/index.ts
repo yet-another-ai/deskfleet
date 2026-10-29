@@ -1,6 +1,7 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { createI18n } from "vue-i18n"
 import enUS from "../../locales/en-US.json"
+import jaJP from "../../locales/ja-JP.json"
 import zhCmnHansCN from "../../locales/zh-cmn-Hans-CN.json"
 import { DEFAULT_LOCALE } from "../../../client/src/i18n.ts"
 
@@ -12,5 +13,6 @@ export const i18n = createI18n({
   messages: {
     "en-US": enUS,
     "zh-cmn-Hans-CN": zhCmnHansCN,
+    "ja-JP": jaJP,
   },
 })

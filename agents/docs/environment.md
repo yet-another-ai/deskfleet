@@ -68,8 +68,8 @@ movement, and disperse on scroll. Hero sizing reserves VitePress's navigation
 height and the copy's actual height before sizing the scene. Reduced-motion
 preferences show the assembled scene without animation. The showcase mounts the same
 `App.vue`, routes, stores, and controls with independent browser-local sample
-state. It needs no backend, agent credentials, or model calls. English and
-Simplified Chinese content share those components. The sticky showcase reserves
+state. It needs no backend, agent credentials, or model calls. English,
+Simplified Chinese, and Japanese content share those components. The sticky showcase reserves
 the fixed navigation height; short viewports use normal page flow with tabs so
 the application controls and explanatory text remain reachable.
 

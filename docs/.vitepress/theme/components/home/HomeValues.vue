@@ -1,31 +1,33 @@
 <script setup lang="ts">
+import type { AppLocale } from "@deskfleet/client/i18n"
 import { computed, ref } from "vue"
 import { withBase } from "vitepress"
 import { Code, Server, ShieldCheck, Monitor } from "@lucide/vue"
 import { useRevealOnce } from "./home-motion.ts"
-const props = withDefaults(defineProps<{ chinese?: boolean }>(), { chinese: false })
+import { homeCopy, homeLocalePath } from "./home-locales.ts"
+
+const props = withDefaults(defineProps<{ locale?: AppLocale }>(), { locale: "en-US" })
 const root = ref<HTMLElement>()
 const shown = useRevealOnce(root, 0.15)
 const icons = [Code, Server, Monitor, ShieldCheck]
-const values = computed(() => props.chinese ? [
-  { title: "客户端完全开源", body: "你每天使用的界面、连接与交互，都有公开的源码。", link: "查看客户端", href: "https://github.com/yet-another-ai/deskfleet/tree/main/apps/desktop" },
-  { title: "服务端也完全开源", body: "从前端到后端，完整实现均以 Apache-2.0 协议开放。", link: "查看服务端", href: "https://github.com/yet-another-ai/deskfleet/tree/main/apps/server" },
-  { title: "在你的机器上工作", body: "复用你的开发环境和工具。Agent 的登录凭证保留在执行机器上。", link: "了解工作方式", href: withBase("/zh/guide/agents") },
-  { title: "工作数据不用于训练", body: "DeskFleet 官方服务不会使用你的代码、对话和工作记录训练模型。", link: "阅读数据承诺", href: withBase("/zh/privacy") },
-] : [
-  { title: "An open-source client", body: "The interface, connections, and interactions you use every day. All there to inspect.", link: "Explore the client", href: "https://github.com/yet-another-ai/deskfleet/tree/main/apps/desktop" },
-  { title: "An open-source server, too", body: "The complete implementation, frontend to backend, released under Apache-2.0.", link: "Explore the server", href: "https://github.com/yet-another-ai/deskfleet/tree/main/apps/server" },
-  { title: "Your machines. Your environment.", body: "Keep your development environment and tools. Agent credentials stay on the machine doing the work.", link: "See how it works", href: withBase("/guide/agents") },
-  { title: "Your work isn't training data", body: "The official DeskFleet service will not use your code, conversations, or work records to train models.", link: "Read our data promise", href: withBase("/privacy") },
-])
+const t = computed(() => homeCopy[props.locale].values)
+const values = computed(() => {
+  const links = [
+    "https://github.com/yet-another-ai/deskfleet/tree/main/apps/desktop",
+    "https://github.com/yet-another-ai/deskfleet/tree/main/apps/server",
+    withBase(homeLocalePath(props.locale, "/guide/agents")),
+    withBase(homeLocalePath(props.locale, "/privacy")),
+  ]
+  return t.value.cards.map((card, index) => ({ ...card, href: links[index] }))
+})
 </script>
 
 <template>
   <section id="open" ref="root" class="values reveal" :class="{ 'is-shown': shown }">
     <header class="values__intro">
-      <p class="home-kicker reveal-line" style="--line: 0">{{ chinese ? '信任，有据可查' : 'Trust you can inspect' }}</p>
-      <h2 class="values__title reveal-line" style="--line: 1">{{ chinese ? '完全开源。安心工作。' : 'Fully open. Yours to trust.' }}</h2>
-      <p class="values__subtitle reveal-line" style="--line: 2">{{ chinese ? '源码公开，数据使用承诺明确。' : 'Open code. A clear promise about your data.' }}</p>
+      <p class="home-kicker reveal-line" style="--line: 0">{{ t.kicker }}</p>
+      <h2 class="values__title reveal-line" style="--line: 1">{{ t.title }}</h2>
+      <p class="values__subtitle reveal-line" style="--line: 2">{{ t.subtitle }}</p>
     </header>
     <ul class="values__grid">
       <li v-for="(value, i) in values" :key="i" class="values__card reveal-line" :style="{ '--line': i + 3 }">

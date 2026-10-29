@@ -40,6 +40,7 @@ afterEach(async () => {
   disposePinia(pinia)
   configureClient(host)
   document.documentElement.removeAttribute("style")
+  document.documentElement.lang = "en-US"
   i18n.global.locale.value = "en-US"
   await router.replace("/")
 })
@@ -79,6 +80,18 @@ test("changes theme through preview radios and translates their labels live", as
   await selectOption(wrapper, '[data-control-name="appearance-language"]', "English")
   expect(wrapper.get("h1").text()).toBe("Appearance")
   expect(theme("light").text()).toBe("Light")
+})
+
+test("selects Japanese, saves its locale, and translates the settings immediately", async () => {
+  const wrapper = await render()
+  await selectOption(wrapper, '[data-control-name="appearance-language"]', "日本語")
+  expect(set).toHaveBeenLastCalledWith({ ...DEFAULT_APPEARANCE_SETTINGS, language: "ja-JP" })
+  expect(wrapper.get("h1").text()).toBe("外観")
+  expect(wrapper.get('[data-control-name="appearance-language"]').text()).toContain("日本語")
+  expect(document.documentElement.lang).toBe("ja-JP")
+  await selectOption(wrapper, '[data-control-name="appearance-language"]', "English")
+  expect(wrapper.get("h1").text()).toBe("Appearance")
+  expect(document.documentElement.lang).toBe("en-US")
 })
 
 test("previews font drafts and saves full CSS fallback lists on commit", async () => {

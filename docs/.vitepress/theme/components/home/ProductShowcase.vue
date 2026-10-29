@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import type { AppLocale } from "@deskfleet/client/i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import AgentPlayground from "../demos/AgentPlayground.vue"
 import RemoteControlDemo from "../demos/RemoteControlDemo.vue"
 import CollaborationDemo from "../demos/CollaborationDemo.vue"
 import SegmentedControl from "./SegmentedControl.vue"
 import { smoothstep, usePrefersReducedMotion, useRevealOnce } from "./home-motion.ts"
+import { homeCopy } from "./home-locales.ts"
 
-const props = withDefaults(defineProps<{ chinese?: boolean }>(), { chinese: false })
+const props = withDefaults(defineProps<{ locale?: AppLocale }>(), { locale: "en-US" })
 const intro = ref<HTMLElement>()
 const scroller = ref<HTMLElement>()
 const sticky = ref<HTMLElement>()
@@ -16,15 +18,8 @@ const progress = ref(0)
 const flowing = ref(false)
 const selected = ref(0)
 const panels = [AgentPlayground, RemoteControlDemo, CollaborationDemo]
-const copy = computed(() => props.chinese ? [
-  { key: "agents", tab: "你的 Agent", kicker: "你熟悉的工具，共同的工作现场", title: "继续使用你喜欢的 Agent。", body: "Codex、Claude Code、Cursor、Grok，各有所长。切换机器、选择任务，在同一处查看它们的工作。", hint: "选择 Agent 并创建会话，或从侧栏打开已有任务。" },
-  { key: "remote", tab: "随时介入", kicker: "人随时可以在场", title: "需要你时，直接上手。", body: "进入 Agent 所在电脑的真实桌面。操作浏览器、终端和工具，处理需要你的步骤，再让 Agent 接着工作。", hint: "连接示例桌面，体验当前的远程桌面界面。远程控制将在首发提供。" },
-  { key: "team", tab: "一起协作", kicker: "同一个任务，一起推进", title: "和同事一起，操作同一个 Agent。", body: "共享完整上下文，补充要求，回应问题，共同审批。每一次参与，都留在同一段工作记录里。", hint: "查看成员的消息，补充要求，或者回应 Agent 的审批请求。" },
-] : [
-  { key: "agents", tab: "Your agents", kicker: "Familiar tools. A shared place to work.", title: "Keep using the agents you love.", body: "Codex, Claude Code, Cursor, Grok. Bring their strengths to the same desk. Move between machines and tasks, with the work right in front of you.", hint: "Choose an agent and start a session, or open an existing task in the sidebar." },
-  { key: "remote", tab: "Step in", kicker: "A human, whenever it matters.", title: "When you're needed, take the controls.", body: "Step into the computer your agent is using. Work in its browser, terminal, and tools, handle the part that needs you, then let your agent carry on.", hint: "Connect to a sample desktop in the current product UI. Remote control is coming at launch." },
-  { key: "team", tab: "Work together", kicker: "One task. Everyone in the loop.", title: "Work with your team, on the same agent.", body: "Share the context, add a request, answer a question, or approve the next step. Every contribution stays with the work.", hint: "Read your teammates’ messages, add a request, or answer your agent’s approval request." },
-])
+const t = computed(() => homeCopy[props.locale].showcase)
+const copy = computed(() => t.value.panels)
 
 const edgeRest = 0.35
 const position = computed(() => {
@@ -95,17 +90,17 @@ function show(key: string) {
 </script>
 
 <template>
-  <section id="explore" class="showcase" :aria-label="chinese ? '探索 DeskFleet' : 'Explore DeskFleet'">
+  <section id="explore" class="showcase" :aria-label="t.label">
     <header ref="intro" class="showcase__intro reveal" :class="{ 'is-shown': shown }">
-      <p class="home-kicker reveal-line" style="--line: 0">{{ chinese ? '现在，就试试看' : 'Make yourself at home' }}</p>
-      <h2 class="home-heading reveal-line" style="--line: 1">{{ chinese ? '所有的工作，都能亲手参与。' : 'Get a feel for working together.' }}</h2>
-      <p class="showcase__intro-note reveal-line" style="--line: 2">{{ chinese ? '真实应用界面 · 交互演示' : 'The real application · Interactive demos' }}</p>
+      <p class="home-kicker reveal-line" style="--line: 0">{{ t.kicker }}</p>
+      <h2 class="home-heading reveal-line" style="--line: 1">{{ t.title }}</h2>
+      <p class="showcase__intro-note reveal-line" style="--line: 2">{{ t.note }}</p>
     </header>
     <div ref="scroller" class="showcase__scroller">
       <div ref="sticky" class="showcase__sticky">
         <div class="showcase__stage">
           <div v-for="(panel, i) in copy" :key="panel.key" class="showcase__card" :class="{ 'is-active': i === active }" :style="cardStyle(i)" :inert="i !== active" :aria-hidden="i !== active" :data-demo-panel="panel.key">
-            <component :is="panels[i]" :chinese="chinese" />
+            <component :is="panels[i]" :locale="locale" />
           </div>
         </div>
         <div class="showcase__text">
@@ -116,7 +111,7 @@ function show(key: string) {
             <p class="showcase__hint reveal-line" style="--line: 3">{{ panel.hint }}</p>
           </article>
         </div>
-        <SegmentedControl class="showcase__island" size="small" :label="chinese ? '选择演示' : 'Choose a demo'" :options="copy.map(panel => ({ value: panel.key, label: panel.tab }))" :model-value="activeKey" @update:model-value="show" />
+        <SegmentedControl class="showcase__island" size="small" :label="t.chooseDemo" :options="copy.map(panel => ({ value: panel.key, label: panel.tab }))" :model-value="activeKey" @update:model-value="show" />
       </div>
     </div>
   </section>

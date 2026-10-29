@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { intlLocale, resolveAppLocale, translate } from "../../../../packages/client/src/i18n.ts"
+import { APP_LOCALES, intlLocale, resolveAppLocale, translate } from "../../../../packages/client/src/i18n.ts"
 
 test.each([
   [["zh-Hans-CN", "en-US"], "zh-cmn-Hans-CN"],
@@ -7,6 +7,11 @@ test.each([
   [["zh-SG"], "zh-cmn-Hans-CN"],
   [["zh-TW", "en-GB"], "en-US"],
   [["fr-FR", "zh-Hans"], "zh-cmn-Hans-CN"],
+  [["ja-JP", "en-US"], "ja-JP"],
+  [["ja"], "ja-JP"],
+  [["ja-JP-u-ca-japanese"], "ja-JP"],
+  [["fr-FR", "ja-JP", "zh-CN"], "ja-JP"],
+  [["en-US", "ja-JP"], "en-US"],
   [["fr-FR"], "en-US"],
   [["not a tag"], "en-US"],
   [[], "en-US"],
@@ -22,7 +27,7 @@ test("translates nested keys and parameters, returning missing keys unchanged", 
 })
 
 test("formatting locales are ones Intl has data for", () => {
-  for (const locale of ["en-US", "zh-cmn-Hans-CN"] as const) {
+  for (const locale of APP_LOCALES) {
     const tag = intlLocale(locale)
     expect(Intl.DateTimeFormat.supportedLocalesOf(tag)).toEqual([tag])
   }

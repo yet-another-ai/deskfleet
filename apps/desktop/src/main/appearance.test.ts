@@ -12,7 +12,7 @@ vi.mock("electron", () => ({
 }))
 vi.mock("./tray.ts", () => ({ refreshTrayMenu }))
 import { attachAppearance, installAppearance } from "./appearance.ts"
-import { getMainLocale, setMainLocale } from "./i18n.ts"
+import { getMainLocale, setMainLocale, t } from "./i18n.ts"
 import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
 
 const renderers: EventEmitter[] = []
@@ -38,11 +38,15 @@ function install(settings: AppearanceSettings = { ...DEFAULT_APPEARANCE_SETTINGS
   return { controller, invoke }
 }
 
-test("saved appearance applies before windows and updates native language, theme, and all registered windows", () => {
-  const saved: AppearanceSettings = { ...DEFAULT_APPEARANCE_SETTINGS, language: "zh-cmn-Hans-CN", theme: "dark" }
+test.each([
+  ["zh-cmn-Hans-CN", "显示 DeskFleet"],
+  ["ja-JP", "DeskFleet を表示"],
+] as const)("saved %s appearance applies before windows and updates native language, theme, and all registered windows", (language, trayLabel) => {
+  const saved: AppearanceSettings = { ...DEFAULT_APPEARANCE_SETTINGS, language, theme: "dark" }
   const { invoke } = install(saved)
   expect(nativeTheme.themeSource).toBe("dark")
-  expect(getMainLocale()).toBe("zh-cmn-Hans-CN")
+  expect(getMainLocale()).toBe(language)
+  expect(t("tray.show")).toBe(trayLabel)
   expect(refreshTrayMenu).toHaveBeenCalledOnce()
   const main = renderer()
   const auxiliary = renderer("#/mermaid?code=graph")

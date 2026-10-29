@@ -62,10 +62,46 @@ export default defineConfig({
         returnToTopLabel: "回到顶部", sidebarMenuLabel: "菜单", darkModeSwitchLabel: "主题", langMenuLabel: "更改语言",
       },
     },
+    ja: {
+      label: "日本語", lang: "ja-JP", link: "/ja/",
+      description: "エージェントのコンピューターに入り、チームと共同作業。使い慣れたエージェントをそのまま使えます。クライアントもサーバーも、すべてオープンソース。",
+      themeConfig: {
+        nav: [{ text: "体験する", link: "/ja/#explore" }, { text: "ガイド", link: "/ja/guide/" }, { text: "プライバシー", link: "/ja/privacy" }, { text: "DeskFleet を使う", link: "/ja/#get-deskfleet" }],
+        sidebar: [{ text: "はじめに", items: [{ text: "ようこそ", link: "/ja/guide/" }, { text: "DeskFleet を実行する", link: "/ja/guide/getting-started" }, { text: "エージェントと共同作業", link: "/ja/guide/agents" }, { text: "プライバシー", link: "/ja/privacy" }] }],
+        footer: { message: "クライアントとサーバーは Apache-2.0 ライセンスで公開しています。", copyright: "DeskFleet コントリビューター" },
+        editLink: { pattern: `${repository}/edit/main/docs/content/:path`, text: "このページを改善する" },
+        outline: { label: "このページの内容" },
+        docFooter: { prev: "前のページ", next: "次のページ" },
+        lastUpdated: { text: "最終更新", formatOptions: { forceLocale: true } },
+        returnToTopLabel: "ページの先頭に戻る", sidebarMenuLabel: "メニュー", darkModeSwitchLabel: "外観", langMenuLabel: "言語を変更",
+        lightModeSwitchTitle: "ライトテーマに切り替え", darkModeSwitchTitle: "ダークテーマに切り替え",
+        navMenuLabel: "メインナビゲーション", mobileMenuLabel: "メニュー", extraMenuLabel: "その他のオプション", skipToContentLabel: "本文へ移動",
+        notFound: { title: "ページが見つかりません", quote: "リンク先を確認するか、ホームページに戻ってください。", link: "/ja/", linkLabel: "ホームページに戻る", linkText: "ホームページに戻る" },
+      },
+    },
   },
   themeConfig: {
     logo: { src: "/logo.png", alt: "DeskFleet" },
-    search: { provider: "local" },
+    search: {
+      provider: "local",
+      options: {
+        locales: {
+          ja: {
+            translations: {
+              button: { buttonText: "検索", buttonAriaLabel: "ドキュメントを検索" },
+              modal: {
+                displayDetails: "詳細を表示", resetButtonTitle: "検索をクリア", backButtonTitle: "検索を閉じる", noResultsText: "一致する結果はありません：",
+                footer: {
+                  selectText: "選択", selectKeyAriaLabel: "Enter キー",
+                  navigateText: "移動", navigateUpKeyAriaLabel: "上矢印キー", navigateDownKeyAriaLabel: "下矢印キー",
+                  closeText: "閉じる", closeKeyAriaLabel: "Escape キー",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     socialLinks: [{ icon: "github", link: repository }],
   },
 })

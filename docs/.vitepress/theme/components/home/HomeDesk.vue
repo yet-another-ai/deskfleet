@@ -1,26 +1,14 @@
 <script setup lang="ts">
+import type { AppLocale } from "@deskfleet/client/i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { deskWindows, type DeskWindow } from "./desk-scenario.ts"
 import { usePrefersReducedMotion, useScrollProgress } from "./home-motion"
 import { useHeroMotion } from "./hero-motion.ts"
 import AppWindow from "./AppWindow.vue"
+import { homeCopy } from "./home-locales.ts"
 
-const props = withDefaults(defineProps<{ chinese?: boolean }>(), { chinese: false })
-const t = computed(() => props.chinese ? {
-  deskLabel: "使用示例数据运行的 DeskFleet 实际界面：工作区、Agent 会话、团队审批和 Agent 设置。",
-  heroEyebrow: "你的电脑 · 你的 Agent · 你的团队",
-  heroLines: ["所有 Agent，", "一起工作。"],
-  heroLead: "连接你和团队的电脑。使用熟悉的 Agent，随时查看进展、亲自介入，一起把事情做好。",
-  heroPrimary: "开始使用 DeskFleet",
-  heroSecondary: "探索工作方式",
-} : {
-  deskLabel: "The real DeskFleet interface running with sample data: a workspace, an agent session, a shared approval, and agent settings.",
-  heroEyebrow: "Your machines. Your agents. Your team.",
-  heroLines: ["All your agents.", "Working together."],
-  heroLead: "Connect your team's computers. Bring the agents you love. Follow the work, step in, and move it forward together.",
-  heroPrimary: "Get DeskFleet",
-  heroSecondary: "Explore the workflow",
-})
+const props = withDefaults(defineProps<{ locale?: AppLocale }>(), { locale: "en-US" })
+const t = computed(() => homeCopy[props.locale].desk)
 const hero = ref<HTMLElement>()
 const reduced = usePrefersReducedMotion()
 const leave = useScrollProgress(hero, "leave")
@@ -73,7 +61,7 @@ onBeforeUnmount(() => cancelAnimationFrame(arrivalFrame))
 </script>
 
 <template>
-  <section ref="hero" class="desk" :class="{ 'is-assembled': assembled, 'is-reduced': reduced }">
+  <section ref="hero" class="desk" :class="{ 'is-assembled': assembled, 'is-reduced': reduced, 'desk--ja': locale === 'ja-JP' }">
     <div class="desk__viewport">
       <div class="desk__stage" role="img" :aria-label="t.deskLabel" :style="stageStyle">
         <div class="desk__light" aria-hidden="true" />
@@ -83,7 +71,7 @@ onBeforeUnmount(() => cancelAnimationFrame(arrivalFrame))
             <div class="desk__arrival">
               <div class="desk__pose">
                 <div class="desk__float" inert aria-hidden="true">
-                  <AppWindow :kind="win.kind" :initial-route="win.route" :chinese="chinese" />
+                  <AppWindow :kind="win.kind" :initial-route="win.route" :locale="locale" />
                 </div>
               </div>
             </div>
@@ -157,6 +145,7 @@ onBeforeUnmount(() => cancelAnimationFrame(arrivalFrame))
   .desk__stage { width: min(780px, calc((100cqh + 24px) * 1440 / 690)); bottom: -24px; perspective: 1000px; }
   .desk__copy { padding: 0 16px; }
   .desk__title { font-size: clamp(38px, 10.8vw, 60px); letter-spacing: -0.045em; }
+  .desk--ja .desk__title { font-size: clamp(28px, 8vw, 60px); line-height: 1.15; }
   .desk__eyebrow { font-size: 10px; letter-spacing: 0.08em; }
   .desk__lead { max-width: 480px; font-size: 17px; }
   .desk__floor { background-size: 48px 48px; }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useAsyncState } from "@vueuse/core"
 import { withBase } from "vitepress"
@@ -8,7 +9,10 @@ import PlatformIcon from "./PlatformIcon.vue"
 import SegmentedControl from "./SegmentedControl.vue"
 import { useRevealOnce } from "./home-motion.ts"
 import { fetchLatestRelease, findDownload, formatSize, releasesPage, type InstallMode, type InstallPlatform } from "./home-downloads.ts"
-const props = withDefaults(defineProps<{ chinese?: boolean }>(), { chinese: false })
+import { homeCopy, homeLocalePath } from "./home-locales.ts"
+
+const props = withDefaults(defineProps<{ locale?: AppLocale }>(), { locale: "en-US" })
+const t = computed(() => homeCopy[props.locale].install)
 const root = ref<HTMLElement>()
 const shown = useRevealOnce(root, 0.15)
 const mode = ref<InstallMode>("desktop")
@@ -16,21 +20,21 @@ const platform = ref<InstallPlatform>("macos")
 const copied = ref(false)
 const copyError = ref(false)
 const platforms: { value: InstallPlatform; label: string }[] = [{ value: "macos", label: "macOS" }, { value: "windows", label: "Windows" }, { value: "linux", label: "Linux" }]
-const modes = computed<{ value: InstallMode; label: string }[]>(() => [{ value: "desktop", label: props.chinese ? "桌面应用" : "Desktop app" }, { value: "headless", label: props.chinese ? "无桌面机器" : "Headless machine" }])
+const modes = computed<{ value: InstallMode; label: string }[]>(() => [{ value: "desktop", label: t.value.desktop }, { value: "headless", label: t.value.headless }])
 const command = computed(() => mode.value === "desktop" ? "mise run desktop:dev" : `mise run daemon:pack\n${platform.value === "windows" ? ".\\apps\\daemon\\dist\\deskfleet-daemon.exe" : "./apps/daemon/dist/deskfleet-daemon"}`)
-const guide = computed(() => withBase(`${props.chinese ? "/zh" : ""}/guide/getting-started`))
+const guide = computed(() => withBase(homeLocalePath(props.locale, "/guide/getting-started")))
 const { state: release, isLoading, executeImmediate: loadRelease } = useAsyncState(fetchLatestRelease, undefined, { immediate: false })
-const locale = computed(() => props.chinese ? "zh-CN" : "en-US")
-const releaseSummary = computed(() => release.value && `v${release.value.version} · ${new Intl.DateTimeFormat(locale.value, { dateStyle: "medium" }).format(new Date(release.value.publishedAt))}`)
+const formatLocale = computed(() => intlLocale(props.locale))
+const releaseSummary = computed(() => release.value && `v${release.value.version} · ${new Intl.DateTimeFormat(formatLocale.value, { dateStyle: "medium" }).format(new Date(release.value.publishedAt))}`)
 const downloadTitle = computed(() => {
-  const product = mode.value === "desktop" ? "DeskFleet" : "DeskFleet daemon"
-  const system = platforms.find(item => item.value === platform.value)?.label
-  return props.chinese ? `${product} ${system} 版` : `${product} for ${system}`
+  const product = mode.value === "desktop" ? "DeskFleet" : t.value.daemon
+  const system = platforms.find(item => item.value === platform.value)!.label
+  return t.value.downloadTitle.replace("{product}", product).replace("{system}", system)
 })
 const packageFormat = computed(() => {
-  if (mode.value === "headless") return props.chinese ? "TAR.GZ 压缩包" : "TAR.GZ archive"
-  if (platform.value === "macos") return props.chinese ? "DMG 安装包" : "DMG installer"
-  if (platform.value === "windows") return props.chinese ? "安装程序" : "Installer"
+  if (mode.value === "headless") return t.value.tarArchive
+  if (platform.value === "macos") return t.value.dmgInstaller
+  if (platform.value === "windows") return t.value.installer
   return "AppImage"
 })
 const primary = computed(() => {
@@ -39,7 +43,7 @@ const primary = computed(() => {
     title: downloadTitle.value,
     detail: `${packageFormat.value} · ${platform.value === "macos" ? "Apple Silicon" : "x64"}`,
     href: file?.url ?? releasesPage,
-    file: file && `${file.name} · ${formatSize(file.size, locale.value)}`,
+    file: file && `${file.name} · ${formatSize(file.size, formatLocale.value)}`,
   }
 })
 const alternatives = computed(() => {
@@ -49,16 +53,16 @@ const alternatives = computed(() => {
       title: downloadTitle.value,
       detail: `${packageFormat.value} · arm64`,
       href: file?.url ?? releasesPage,
-      file: file && formatSize(file.size, locale.value),
+      file: file && formatSize(file.size, formatLocale.value),
     }]
   }
   if (mode.value === "desktop" && platform.value === "macos") {
     const file = findDownload(release.value, "desktop", "macos", "x64", "archive")
     return [{
-      title: props.chinese ? "ZIP 压缩包" : "ZIP archive",
+      title: t.value.zipArchive,
       detail: "Apple Silicon",
       href: file?.url ?? releasesPage,
-      file: file && formatSize(file.size, locale.value),
+      file: file && formatSize(file.size, formatLocale.value),
     }]
   }
   return []
@@ -83,36 +87,36 @@ async function copy() {
   <section id="get-deskfleet" ref="root" class="install reveal" :class="{ 'is-shown': shown }">
     <div class="install__inner">
       <img class="install__mark reveal-line" style="--line: 0" :src="withBase('/logo.png')" alt="" width="64" height="64" />
-      <p class="home-kicker reveal-line" style="--line: 1">{{ chinese ? '给你的 Agent，一个共同的工作现场' : 'A place for all your agents' }}</p>
-      <h2 class="home-heading reveal-line" style="--line: 2">{{ chinese ? '让它们，一起工作。' : 'Bring your agents together.' }}</h2>
-      <p class="install__lead reveal-line" style="--line: 3">{{ chinese ? '从你的电脑开始，再连接团队的其他机器。' : 'Start with your computer. Bring the rest of your team along.' }}</p>
+      <p class="home-kicker reveal-line" style="--line: 1">{{ t.kicker }}</p>
+      <h2 class="home-heading reveal-line" style="--line: 2">{{ t.title }}</h2>
+      <p class="install__lead reveal-line" style="--line: 3">{{ t.lead }}</p>
       <div class="install__controls reveal-line" style="--line: 4">
-        <SegmentedControl v-model="mode" :options="modes" :label="chinese ? '运行方式' : 'How to run DeskFleet'" />
+        <SegmentedControl v-model="mode" :options="modes" :label="t.mode" />
         <div class="install__row">
-          <SegmentedControl v-model="platform" :options="platforms" size="small" :label="chinese ? '操作系统' : 'Operating system'">
+          <SegmentedControl v-model="platform" :options="platforms" size="small" :label="t.platform">
             <template #icon="{ value }"><PlatformIcon :platform="value" /></template>
           </SegmentedControl>
           <span class="install__release" :class="{ 'is-ready': releaseSummary }" aria-live="polite">
             <i aria-hidden="true" />
-            {{ releaseSummary ? `${chinese ? '最新版本' : 'Latest release'} · ${releaseSummary}` : isLoading ? (chinese ? '正在查询最新版本…' : 'Checking the latest release…') : (chinese ? '请前往发布页下载' : 'Downloads available on the release page') }}
+            {{ releaseSummary ? `${t.latestRelease} · ${releaseSummary}` : isLoading ? t.checkingRelease : t.downloadAvailability }}
           </span>
         </div>
       </div>
       <Transition name="install-swap" mode="out-in">
         <div :key="`${mode}-${platform}`" class="install__target">
-          <DownloadCard primary :href="primary.href" :title="primary.title" :detail="primary.detail" :file="primary.file" :platform="platform" :action="primary.file ? (chinese ? '下载' : 'Download') : (chinese ? '查看发布版本' : 'View releases')" />
+          <DownloadCard primary :href="primary.href" :title="primary.title" :detail="primary.detail" :file="primary.file" :platform="platform" :action="primary.file ? t.download : t.releases" />
           <div v-if="alternatives.length" class="install__alternatives">
-            <DownloadCard v-for="download in alternatives" :key="download.detail" :href="download.href" :title="download.title" :detail="download.detail" :file="download.file" :platform="platform" :action="download.file ? (chinese ? '下载' : 'Download') : (chinese ? '查看发布版本' : 'View releases')" />
+            <DownloadCard v-for="download in alternatives" :key="download.detail" :href="download.href" :title="download.title" :detail="download.detail" :file="download.file" :platform="platform" :action="download.file ? t.download : t.releases" />
           </div>
           <div class="install__command">
-            <div class="install__command-head"><span><Terminal :size="14" aria-hidden="true" />{{ chinese ? '完成开发环境配置后，从源码运行' : 'Run from source after setting up your environment' }}</span><button type="button" :aria-label="chinese ? '复制命令' : 'Copy command'" @click="copy"><Check v-if="copied" :size="15" /><Copy v-else :size="15" />{{ copied ? (chinese ? '已复制' : 'Copied') : (chinese ? '复制' : 'Copy') }}</button></div>
+            <div class="install__command-head"><span><Terminal :size="14" aria-hidden="true" />{{ t.source }}</span><button type="button" :aria-label="t.copyCommand" @click="copy"><Check v-if="copied" :size="15" /><Copy v-else :size="15" />{{ copied ? t.copied : t.copy }}</button></div>
             <pre><code>{{ command }}</code></pre>
           </div>
-          <p v-if="copyError" class="install__note" role="status">{{ chinese ? '请选中上方命令手动复制。' : 'Select the command above to copy it manually.' }}</p>
-          <p class="install__note">{{ chinese ? '需要已安装并登录的 Agent CLI。开发环境配置、机器注册和平台要求请查看入门指南。' : 'Bring an installed, authenticated agent CLI. The setup guide covers the development environment, enrollment, and platform requirements.' }}</p>
+          <p v-if="copyError" class="install__note" role="status">{{ t.copyError }}</p>
+          <p class="install__note">{{ t.note }}</p>
         </div>
       </Transition>
-      <p class="install__links reveal-line" style="--line: 5"><a :href="guide">{{ chinese ? '入门指南' : 'Setup guide' }} →</a><a :href="releasesPage">{{ chinese ? '所有下载' : 'All downloads' }} →</a><a href="https://github.com/yet-another-ai/deskfleet">{{ chinese ? '查看完整源码' : 'Explore the source' }} →</a></p>
+      <p class="install__links reveal-line" style="--line: 5"><a :href="guide">{{ t.guide }} →</a><a :href="releasesPage">{{ t.allDownloads }} →</a><a href="https://github.com/yet-another-ai/deskfleet">{{ t.repository }} →</a></p>
     </div>
   </section>
 </template>

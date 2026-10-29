@@ -1,12 +1,13 @@
 <script setup lang="ts">
+import type { AppLocale } from "@deskfleet/client/i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import ProductDemo from "../demos/ProductDemo.vue"
 
 withDefaults(defineProps<{
   kind: "agents" | "team" | "session"
   initialRoute: string
-  chinese?: boolean
-}>(), { chinese: false })
+  locale?: AppLocale
+}>(), { locale: "en-US" })
 
 // The application renders at its normal desktop size. Only the presentation
 // layer scales it into a hero slot; the product components stay unchanged.
@@ -31,7 +32,7 @@ onBeforeUnmount(() => observer?.disconnect())
   <div ref="target" class="app-window">
     <div class="app-window__frame" :style="frameStyle">
       <div class="app-window__content" :style="contentStyle">
-        <ProductDemo :kind="kind" :initial-route="initialRoute" :chinese="chinese" />
+        <ProductDemo :kind="kind" :initial-route="initialRoute" :locale="locale" />
       </div>
     </div>
   </div>

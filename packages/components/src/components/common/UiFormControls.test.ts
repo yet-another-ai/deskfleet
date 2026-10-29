@@ -1,6 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test } from "vitest"
 import { defineComponent, ref } from "vue"
+import { APP_LOCALES } from "@deskfleet/client/i18n"
 import UiSelect from "./UiSelect.vue"
 import UiCheckbox from "./UiCheckbox.vue"
 import UiSwitch from "./UiSwitch.vue"
@@ -45,7 +46,7 @@ test("search text cannot satisfy a required selection and filtering preserves ca
   expect((view.get("form").element as HTMLFormElement).checkValidity()).toBe(true)
 })
 
-test.each(["en-US", "zh-cmn-Hans-CN"])("time segments emit minute precision and clearing invalidates the form in %s", async locale => {
+test.each(APP_LOCALES)("time segments emit minute precision and clearing invalidates the form in %s", async locale => {
   const view = render(`<form><UiTimeField v-model="value" name="time" required locale="${locale}" aria-label="Time" /></form>`, "09:00")
   await setTime(view, '[role="group"]', "23:59")
   expect(new FormData(view.get("form").element as HTMLFormElement).get("time")).toBe("23:59")

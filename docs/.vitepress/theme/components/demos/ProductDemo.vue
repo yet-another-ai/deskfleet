@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue"
 import type { ProductDemoOptions } from "./product-demo-runtime.ts"
 
-const props = withDefaults(defineProps<ProductDemoOptions>(), { chinese: false, sidebar: undefined, details: undefined })
+const props = withDefaults(defineProps<ProductDemoOptions>(), { locale: "en-US", sidebar: undefined, details: undefined })
 const target = ref<HTMLElement>()
 let dispose: (() => void) | undefined
 let generation = 0
@@ -21,7 +21,7 @@ async function mount() {
   else dispose = cleanup
 }
 onMounted(mount)
-watch(() => [props.chinese, props.kind, props.initialRoute, props.sidebar, props.details], mount)
+watch(() => [props.locale, props.kind, props.initialRoute, props.sidebar, props.details], mount)
 onBeforeUnmount(() => { generation++; dispose?.() })
 </script>
 

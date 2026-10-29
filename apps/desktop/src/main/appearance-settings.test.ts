@@ -15,11 +15,11 @@ function fixture() {
   return { path, controller: new AppearanceSettingsController(path) }
 }
 
-test("appearance defaults follow the system and preserves CSS fallback stacks across restarts", () => {
+test.each(["zh-cmn-Hans-CN", "ja-JP"] as const)("appearance defaults follow the system and preserves %s and CSS fallback stacks across restarts", language => {
   const { path, controller } = fixture()
   expect(controller.get()).toEqual(DEFAULT_APPEARANCE_SETTINGS)
   const selected: AppearanceSettings = {
-    language: "zh-cmn-Hans-CN", theme: "dark", interfaceFont: '"Segoe UI", sans-serif',
+    language, theme: "dark", interfaceFont: '"Segoe UI", sans-serif',
     terminalFont: '"Cascadia Code", "Noto Sans Mono CJK SC", monospace',
     terminalLigatures: true,
   }

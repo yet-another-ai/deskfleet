@@ -1,0 +1,755 @@
+{
+  "updates": {
+    "available": "バージョン {version} が利用可能です", "install": "更新して再起動",
+    "retry": "更新を再試行", "checking": "更新を確認中…",
+    "downloading": "ダウンロード中 {percent}%", "installing": "再起動中…",
+    "failed": "更新に失敗しました。再試行するか、DeskFleet を終了して再度開いてください。"
+  },
+  "aiUsage": {
+    "title": "AI 使用量", "period": "集計期間",
+    "periods": {
+      "24h": "24 時間", "7d": "7 日間",
+      "30d": "30 日間", "all": "全期間"
+    },
+    "ranges": {
+      "24h": "過去 24 時間", "7d": "過去 7 日間",
+      "30d": "過去 30 日間", "all": "全期間"
+    },
+    "refresh": "使用量を更新", "tokens": "トークン",
+    "totalTokens": "合計トークン数", "input": "入力",
+    "output": "出力", "cachedRead": "キャッシュ読み取り",
+    "cachedWrite": "キャッシュ書き込み", "coverage": "{turns} ターン中 {reported} ターンの使用量を報告済み",
+    "lastSynced": "最終同期: {date}", "notSynced": "使用量はまだ同期されていません",
+    "empty": "この期間のターンはありません。エージェントの実行と同期が完了すると、使用量がここに表示されます。", "noReports": "これらのターンではトークン使用量が報告されていません。エージェントが使用量を報告すると、合計が表示されます。",
+    "unreported": "未報告", "heatmap": "使用状況",
+    "heatmapDescription": "過去 53 週間のうち、{range}を強調表示", "selectDay": "日付を選択してセッションを表示",
+    "less": "少ない", "more": "多い",
+    "monday": "月", "wednesday": "水",
+    "friday": "金", "dayEmpty": "{date}: ターンなし",
+    "dayUnreported": "{date}: トークン使用量は未報告", "dayTokens": "{date}: {tokens} トークン、{turns} ターン中 {reported} ターンの使用量を報告済み",
+    "dailyAverage": "1 日あたりの平均", "hourlyAverage": "1 時間あたりの平均",
+    "peakDay": "最多使用日", "peakHour": "最多使用時間帯",
+    "activeDays": "利用日数", "activeHours": "利用時間帯数",
+    "longestStreak": "最長連続利用日数", "days": "日",
+    "hours": "時間帯", "byModel": "モデル別",
+    "byMember": "メンバー別", "modelNote": "各ターンの開始時に設定されていたモデルで集計します。古いターンにはモデルが記録されていない場合があります。",
+    "unknownModel": "不明なモデル", "unknownMember": "不明なメンバー",
+    "modelChart": "モデル別のトークン使用量の推移。合計は下に表示されます。", "memberChart": "メンバー別のトークン使用量の推移。合計は下に表示されます。",
+    "closeDetails": "日別の詳細を閉じる", "noSessions": "この日にターンのあったセッションはありません。",
+    "untitledSession": "無題のセッション", "sessionsTruncated": "トークン数が多い上位 {count} 件のセッションを表示しています。",
+    "dataNote": "エージェントが報告し、同期された使用量に基づきます。未報告分は合計トークン数に含まれません。入力・出力・キャッシュの分類は各エージェントの報告に従い、重複する場合があります。利用状況は、トークン使用量が報告された期間を集計します。日付には {timeZone} を使用します。"
+  },
+  "siteAdmin": {
+    "title": "サイト管理", "description": "この DeskFleet サイトの設定を管理します。",
+    "forbidden": "サイト管理者権限が必要です。", "siteName": "サイト名",
+    "termsOfServiceUrl": "利用規約の URL", "privacyTermsUrl": "プライバシー規約の URL",
+    "termsDescription": "HTTP または HTTPS で始まる完全な URL を指定してください。新規アカウントの登録には、設定された規約への同意が必要です。URL を空欄にすると、そのリンクは表示されません。", "announcement": "お知らせ",
+    "announcementDescription": "このサイトを利用するすべてのユーザーに表示されます。空欄にすると非表示になります。", "allowTeamCreation": "チームの作成を許可",
+    "allowTeamCreationDescription": "ログイン済みのユーザーがチームを作成できます。", "teamCreationDisabled": "管理者からの招待でチームに参加してください。",
+    "saved": "サイト設定を保存しました。", "accounts": "アカウント",
+    "searchUsers": "メールアドレスまたは名前で検索", "search": "検索",
+    "enableUser": "アカウントを有効化", "disableUser": "アカウントを無効化",
+    "registration": "一般ユーザーの登録", "registrationDescription": "メールアドレスを認証したユーザーは誰でもアカウントを作成できます。",
+    "disabled": "無効", "noAccounts": "「{query}」に一致するアカウントはありません。",
+    "resultLimit": "最初の {count} 件を表示しています。検索条件を絞り込んでください。", "disableTitle": "{name} のアカウントを無効にしますか？",
+    "disableDescription": "このユーザーのログインセッションとピアアクセスは失効し、スケジュールされたタスクの実行も許可されなくなります。チームのマシンとデータは保持されます。"
+  },
+  "mcpServers": {
+    "title": "MCP サーバー", "description": "{machine} 上のエージェントが利用できるツールを設定します。",
+    "servers": "サーバー", "empty": "MCP サーバーを追加すると、エージェントがそのツールを利用できるようになります。",
+    "add": "MCP サーバーを追加", "edit": "MCP サーバーを編集",
+    "name": "サーバー名", "transport": "通信方式",
+    "command": "実行ファイルのパス", "commandHint": "このマシン上の絶対パスを指定してください。コマンドの引数は下に個別に入力します。",
+    "arguments": "引数", "addArgument": "引数を追加",
+    "argumentNumber": "引数 {n}", "removeArgument": "引数 {n} を削除",
+    "url": "サーバー URL", "environment": "環境変数",
+    "headers": "HTTP ヘッダー", "addEntry": "項目を追加",
+    "key": "名前", "value": "値",
+    "keyNumber": "項目 {n} の名前", "valueNumber": "項目 {n} の値",
+    "removeEntry": "項目 {n} を削除", "duplicateKey": "環境変数名またはヘッダー名を重複させることはできません。",
+    "enabled": "有効", "disabled": "無効",
+    "enableNamed": "{name} を有効化", "disableNamed": "{name} を無効化",
+    "editNamed": "{name} を編集", "removeNamed": "{name} を削除",
+    "remove": "サーバーを削除", "removeTitle": "{name} を削除しますか？",
+    "removeHint": "エージェントが次回起動または再開するときに、このサーバーは含まれなくなります。実行中のセッションでは現在のツールを引き続き使用します。", "appliesNext": "変更はエージェントの次回起動時または再開時に適用されます。HTTP と SSE の利用には、選択したエージェントの対応が必要です。",
+    "loading": "MCP サーバーを読み込み中…", "offline": "このマシンはオフラインです。MCP サーバーを管理するには、デーモンを接続してください。",
+    "busy": "現在の MCP サーバー操作が完了するまでお待ちください。"
+  },
+  "schedules": {
+    "title": "スケジュール", "description": "{machine} で指定時刻または手動で実行するエージェントのタスクです。",
+    "create": "新規タスク", "createTitle": "新規スケジュールタスク",
+    "machine": "マシン", "workspace": "ワークスペース",
+    "chooseWorkspace": "ワークスペースを選択", "unavailableWorkspace": "ワークスペースを利用できません",
+    "name": "タスク名", "nameHint": "タスク名を入力",
+    "prompt": "タスクの指示", "promptHint": "実行のたびにエージェントに何をさせますか？ 例: 昨日のコミットをレビューし、リスクがありそうな変更をまとめる。",
+    "runIn": "実行先",
+    "destination": {
+      "worktree": "新しいワークツリー", "directory": "作業ディレクトリ",
+      "existing": "既存のセッション"
+    },
+    "destinationHint": {
+      "worktree": "実行ごとに専用の Git ワークツリーで新しいセッションを開始します。", "directory": "実行ごとにワークスペースのディレクトリで新しいセッションを開始します。",
+      "existing": "実行ごとにセッションのバックログに指示を追加します。"
+    },
+    "session": "セッション", "chooseSession": "アクティブなセッションを選択",
+    "unavailableSession": "セッションを利用できないか、アーカイブされています", "existingConfiguration": "セッションのエージェント設定を使用します",
+    "noWorkspace": "タスクをスケジュールするには、まずこのマシンにワークスペースを作成してください。", "noProvider": "利用可能なエージェントを選択してください。利用できるものがない場合は、設定でエージェントを構成してください。",
+    "when": "実行タイミング", "repeat": "トリガー",
+    "trigger": {
+      "manual": "手動", "daily": "毎日",
+      "weekly": "毎週", "interval": "一定間隔"
+    },
+    "manualHint": "「今すぐ実行」を選択したときだけ実行します。", "every": "実行間隔",
+    "intervalUnit": "間隔の単位",
+    "unit": {
+      "minutes": "分 | 分", "hours": "時間 | 時間"
+    },
+    "at": "時刻", "timeZone": "タイムゾーン",
+    "days": "曜日",
+    "cadence": {
+      "manual": "手動", "daily": "毎日 {time}",
+      "weekdays": "平日 {time}", "weekly": "{days} {time}",
+      "minutes": "毎分 | {n} 分ごと", "hours": "毎時 | {n} 時間ごと"
+    },
+    "executionHint": "このマシンのデーモンがオンラインの間に実行します。過ぎた実行時刻や、前回の実行と重なる回はスキップします。エージェントからの権限要求には承認が必要です。", "cancel": "キャンセル",
+    "save": "変更を保存", "createAction": "タスクを作成",
+    "run": "今すぐ実行", "runNamed": "{title} を今すぐ実行",
+    "automaticNamed": "{title} の自動実行", "pause": "一時停止",
+    "resume": "再開",
+    "status": {
+      "active": "有効", "paused": "一時停止中",
+      "onDemand": "手動実行"
+    },
+    "paused": "一時停止中", "onDemand": "手動実行",
+    "nextRelative": "次回の実行: {time}", "nextAt": "次回の実行: {time}（{relative}）",
+    "notScheduled": "予定なし", "delete": "タスクを削除",
+    "deleteTitle": "{title} を削除しますか？", "deleteHint": "今後の実行を停止します。既存のセッションとファイルは保持されます。",
+    "recentRuns": "最近の実行", "noRuns": "まだ実行されていません。「今すぐ実行」でタスクを試せます。",
+    "noRunsShort": "実行履歴はありません", "openSession": "セッションを開く",
+    "runState": {
+      "claimed": "開始中", "running": "待機中または実行中",
+      "completed": "完了", "failed": "失敗",
+      "interrupted": "中断", "skipped": "スキップ"
+    },
+    "loading": "スケジュールを読み込み中…", "empty": "スケジュールされたタスクはありません",
+    "emptyHint": "指定時刻、一定間隔、または手動でエージェントを実行するタスクを作成できます。", "offline": "このマシンはオフラインです。スケジュールを管理・実行するには、デーモンを接続してください。",
+    "signIn": "スケジュールを管理するには、ログインしてマシンを選択してください。", "busy": "現在のスケジュール操作が完了するまでお待ちください。"
+  },
+  "common": {
+    "increase": "増やす", "decrease": "減らす",
+    "noResults": "該当する結果はありません。", "notAvailable": "まだ利用できません",
+    "placeholderControl": "{label}（まだ利用できません）", "copy": "コピー",
+    "copied": "コピーしました", "copyLabel": "{label} をコピー"
+  },
+  "toolbar": {
+    "showSidebar": "サイドバーを表示", "hideSidebar": "サイドバーを非表示",
+    "resizeSidebar": "サイドバーのサイズを変更", "back": "戻る",
+    "forward": "進む", "showPanel": "変更パネルを表示",
+    "hidePanel": "変更パネルを非表示", "resizePanel": "変更パネルのサイズを変更"
+  },
+  "nav": {
+    "label": "ナビゲーション", "conversations": "会話",
+    "newSession": "新規セッション", "settings": "設定",
+    "team": "チームを切り替え"
+  },
+  "archivedSessions": {
+    "title": "アーカイブ済みセッション", "machine": "マシン",
+    "loading": "アーカイブ済みセッションを読み込み中…", "description": "セッションを復元して作業を再開したり、開いて会話を確認したりできます。",
+    "empty": "アーカイブ済みセッションはありません", "emptyDescription": "セッションをアーカイブすると、実行を停止し、会話と作業コンテキストを保持できます。",
+    "location": "{machine} / {workspace}", "openLabel": "{title} を開く",
+    "restoreLabel": "{title} を復元"
+  },
+  "appearance": {
+    "language": "言語", "theme": "テーマ",
+    "followSystem": "システム設定に合わせる", "light": "ライト",
+    "dark": "ダーク", "preview": "ライブプレビュー",
+    "defaultFont": "システムのデフォルト", "interfaceFont": "インターフェースのフォント",
+    "terminalFont": "ターミナルのフォント", "fontHint": "インストール済みのフォントを指定してください。空欄の場合はデフォルトを使用します。",
+    "terminalFontHint": "CSS の代替フォントを指定できます（例: \"Cascadia Code\", monospace）。空欄の場合はデフォルトを使用します。", "interfacePreview": "The quick brown fox. こんにちは、世界。",
+    "terminalPreview": "ターミナルのフォントプレビュー", "ligatures": "フォントの合字",
+    "ligaturesHint": "ターミナルのフォントが対応している場合、=> や != などの文字を合字で表示します。"
+  },
+  "settings": {
+    "preferences": "環境設定", "appearance": "外観",
+    "notifications": "通知", "notificationsEnabled": "デスクトップ通知",
+    "notificationsDescription": "このコンピューターで DeskFleet からの通知を許可します。", "browserNotificationsEnabled": "ブラウザー通知",
+    "browserNotificationsDescription": "このページが開いている間、DeskFleet からの通知を許可します。", "notificationPermission": "ブラウザーの権限",
+    "enableBrowserNotifications": "通知を有効にする",
+    "notificationPermissionStatus": {
+      "default": "タスクの更新通知を受け取るには、ブラウザーで通知を許可してください。", "granted": "このブラウザーでは通知が許可されています。",
+      "denied": "通知がブロックされています。タスクの更新通知を受け取るには、ブラウザーのサイト設定で通知を許可してください。", "unsupported": "このブラウザーまたは接続では通知を利用できません。対応ブラウザーで HTTPS 接続を使用してください。"
+    },
+    "notificationTaskCompleted": "タスク完了", "notificationTaskCompletedDescription": "エージェントがタスクを完了したときに通知します。",
+    "notificationTaskNeedsInput": "入力が必要なタスク", "notificationTaskNeedsInputDescription": "エージェントが質問や承認を待っているときに通知します。",
+    "thisComputer": "このコンピューター", "launchAtStartup": "ログイン時に起動",
+    "launchAtStartupDescription": "ログイン時に DeskFleet を自動で起動します。", "launchAtStartupUnavailable": "macOS と Windows にインストールしたアプリで利用できます。",
+    "keepAwake": "スリープを防止", "keepAwakeDescription": "DeskFleet の実行中は、トレイに格納されている間も、無操作によるスリープを防ぎます。ディスプレイはオフにできます。",
+    "worktreeRoot": "ワークツリーのルートディレクトリ", "worktreeRootDescription": "このコンピューターで新しいセッションのワークツリーを保存する場所です。既存のファイルは移動しません。",
+    "chooseWorktreeRoot": "フォルダーを選択…", "useDefaultWorktreeRoot": "デフォルトを使用",
+    "choosingFolder": "フォルダーを選択中…", "runLocalAgent": "ローカルエージェントを実行",
+    "stopsTerminals": "オフにすると、そのターミナルも停止します。", "sections": "設定項目",
+    "back": "アプリに戻る", "loading": "設定を読み込み中…",
+    "unavailable": "設定を利用できません", "stopped": "停止中",
+    "starting": "起動中…", "running": "実行中",
+    "stopping": "停止処理中…", "error": "ローカルエージェントでエラーが発生しました",
+    "runningSeparately": "別プロセスで実行中", "retryStart": "起動を再試行",
+    "retryStop": "停止を再試行", "retryLoad": "設定を再読み込み",
+    "screenCaptureRequesting": "画面とシステムオーディオの収録権限を要求中…", "screenCaptureDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「画面収録とシステムオーディオ録音」でアクセスを許可してから、ローカルエージェントをオフにして再度オンにしてください。",
+    "waylandScreenCaptureRequesting": "デスクトップ共有の許可を待っています…", "waylandScreenCaptureDenied": "画面共有が許可されていません。デスクトップのロックを解除し、ローカルエージェントをオフにして再度オンにしてから、デスクトップ共有のダイアログで許可してください。",
+    "waylandScreenCaptureError": "デスクトップ共有の許可を取得できませんでした。", "waylandControlRequesting": "マウスとキーボードの操作許可を待っています…",
+    "waylandControlDenied": "マウスとキーボードの操作が許可されていません。デスクトップのロックを解除し、ローカルエージェントをオフにして再度オンにしてから、デスクトップ共有のダイアログでリモート操作を許可してください。", "waylandControlError": "マウスとキーボードの操作許可を取得できませんでした。",
+    "screenCaptureError": "画面とシステムオーディオへのアクセスを要求できませんでした。ローカルエージェントをオフにして再度オンにし、もう一度お試しください。", "desktopPermissions": "デスクトップの権限",
+    "fullDiskAccessRequesting": "ローカルエージェントのフルディスクアクセス権限を要求中…", "fullDiskAccessDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「フルディスクアクセス」で、ローカルエージェントを実行しているアプリまたは実行ファイルにアクセスを許可し、そのアプリまたは実行ファイルを再起動してください。",
+    "fullDiskAccessError": "フルディスクアクセスを要求できませんでした。ローカルエージェントを実行しているアプリまたは実行ファイルを再起動して、もう一度お試しください。", "accessibilityRequesting": "マウスとキーボードを操作するためのアクセシビリティ権限を要求中…",
+    "accessibilityDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」でマウスとキーボードの操作を許可してから、ローカルエージェントをオフにして再度オンにしてください。", "accessibilityError": "マウスとキーボードを操作するためのアクセシビリティ権限を要求できませんでした。ローカルエージェントをオフにして再度オンにし、もう一度お試しください。",
+    "agents": "エージェント"
+  },
+  "notification": {
+    "taskCompleted": "タスクが完了しました", "taskNeedsInput": "タスクに入力が必要です"
+  },
+  "machine": {
+    "offline": "オフライン", "lastSeen": "最終接続: {time}",
+    "local": "このマシン", "addWorkspace": "ワークスペースを追加",
+    "noWorkspaces": "ワークスペースはありません", "remoteControl": "リモート操作",
+    "localControl": "ローカル操作", "online": "オンライン"
+  },
+  "newSession": {
+    "heading": "エージェントのセッションを開始", "noTarget": "マシンに接続してセッションを開始してください。"
+  },
+  "worktree": {
+    "notFound": "このワークツリーは存在しません。", "directories": "ディレクトリ",
+    "terminals": "ターミナル", "noTerminals": "ターミナルはありません。",
+    "openTerminal": "ターミナルを開く", "openTerminalAt": "{path} でターミナルを開く",
+    "session": "セッション"
+  },
+  "pinnedSessions": {
+    "title": "ピン留め"
+  },
+  "session": {
+    "notFound": "このセッションは存在しません。", "label": "セッション {id}",
+    "worktree": "ワークツリー", "directory": "作業ディレクトリ"
+  },
+  "composer": {
+    "label": "プロンプト", "placeholder": "エージェントに依頼するタスクを入力",
+    "provider": "エージェント", "send": "送信",
+    "attach": "添付ファイルを追加", "attachments": "添付ファイル",
+    "uploadLocalFiles": "ローカルファイルをアップロード", "chooseMachineFiles": "マシンからファイルを選択",
+    "pastedText": "貼り付けたテキスト", "pastedTextLines": "{n} 行 | {n} 行",
+    "removeAttachment": "{name} を削除", "dropFiles": "ファイルをドロップして添付",
+    "completions": {
+      "label": "プロンプトの候補", "references": "選択した参照",
+      "file": "ファイル", "session": "セッション",
+      "skill": "スキル", "command": "コマンド",
+      "loading": "候補を検索中…", "empty": "一致するファイルやセッションはありません。",
+      "noSkills": "このエージェントが提供する使用可能なスキルに、一致するものはありません。", "noCommands": "このエージェントのコマンドに一致するものはありません。",
+      "refine": "さらに入力して候補を絞り込んでください。", "keyboard": "↑↓ で選択 · Enter または Tab で挿入 · Esc で閉じる",
+      "remove": "参照 {name} を削除"
+    },
+    "context": "セッションの作業環境", "contextChoice": "セッションの作業環境: {context}",
+    "contextOption": {
+      "worktree": "新しいワークツリー", "directory": "作業ディレクトリ"
+    },
+    "contextHint": {
+      "worktree": "各ディレクトリのコミット済み HEAD から独立した Git チェックアウトを作成", "directory": "未コミットの変更を含むワークスペースのディレクトリで作業"
+    },
+    "baseBranch": "ベースブランチ", "baseBranchChoice": "ベースブランチ: {branch}",
+    "model": "モデル", "reasoningEffort": "推論",
+    "mode": "モード", "configuration": "エージェント設定",
+    "configureAgent": "エージェントを設定: {selection}", "collapseConfiguration": "エージェント設定を折りたたむ",
+    "loading": "読み込み中…", "unavailable": "利用できません",
+    "loadingConfiguration": "エージェントから設定を読み込み中…", "reloadConfiguration": "エージェントから再読み込み",
+    "efforts": {
+      "none": "なし", "minimal": "最小",
+      "low": "低", "medium": "中",
+      "high": "高", "xhigh": "非常に高い",
+      "max": "最大", "ultra": "ウルトラ"
+    }
+  },
+  "terminal": {
+    "new": "新しいターミナル", "newTab": "新しいシェル",
+    "tabs": "ターミナル", "tab": "シェル {number}",
+    "agent": "エージェントのターミナル", "readOnly": "読み取り専用",
+    "agentInterrupted": "プロセスが中断されました。保存済みの出力を確認できます。", "empty": "開いているシェルはありません。新しいシェルに接続して開始してください。",
+    "hangupTab": "{name} を終了", "hangupHint": "終了: このシェルを停止して履歴を削除",
+    "notFound": "このターミナルは存在しません。", "unavailable": "ターミナルへのアクセスはまだ利用できません。",
+    "connecting": "接続中…", "replaying": "ターミナルの履歴を復元中…",
+    "connected": "接続済み", "disconnected": "接続が切れました。ターミナルはマシン上で引き続き実行されています。",
+    "reconnect": "再接続", "interrupted": "シェルが中断されました。シェルを終了するまでは保存済みの履歴を確認できます。",
+    "ended": "プロセスが終了しました", "exited": "プロセスが終了しました ({code})",
+    "sessionPanel": "セッションのターミナル", "resizePanel": "ターミナルパネルのサイズを変更",
+    "showPanel": "ターミナルを表示", "hidePanel": "ターミナルを非表示"
+  },
+  "remoteControl": {
+    "terminal": "ターミナル", "desktop": "デスクトップ",
+    "filesUnavailable": "このマシンではファイル転送を利用できません。"
+  },
+  "systemStatus": {
+    "title": "システムの状態", "online": "オンライン",
+    "refresh": "更新", "loading": "読み込み中…",
+    "offline": "オフライン", "unavailable": "システムの状態を取得できません",
+    "failed": "システムの状態を更新できませんでした", "stale": "最終更新: {time}",
+    "cpu": "CPU", "memory": "メモリ",
+    "swap": "スワップ", "noSwap": "未割り当て",
+    "highUsage": "使用率が高くなっています", "cores": "{count} 論理コア",
+    "usedOf": "{used} / {total}", "total": "合計 {total}",
+    "trendTitle": "リソース使用状況", "chartLabel": "CPU とメモリの使用状況",
+    "machineInfo": "マシン情報", "os": "オペレーティングシステム",
+    "processor": "プロセッサ", "arch": "アーキテクチャ",
+    "uptime": "稼働時間", "daemonVersion": "DeskFleet のバージョン",
+    "duration": "{days}日 {hours}時間 {minutes}分", "unknown": "不明"
+  },
+  "desktop": {
+    "notFound": "このマシンは存在しません。", "unavailable": "リモートデスクトップはまだ利用できません。",
+    "offline": "{machine} はオフラインです。", "noDisplay": "{machine} には共有できるディスプレイがありません。",
+    "connect": "接続", "disconnect": "切断",
+    "retry": "ディスプレイを更新", "settings": "ストリーム設定",
+    "settingsLocked": "これらの設定を変更するには切断してください。", "moveControls": "操作パネルを移動",
+    "display": "ディスプレイ", "displayOption": "ディスプレイ {id} · {width} × {height}",
+    "codecStatus": "映像コーデック: {codec}", "audio": "システム音声",
+    "control": "マウスとキーボードの操作", "pauseControl": "操作を一時停止",
+    "resumeControl": "操作を再開", "controlHint": "デスクトップをクリックすると、マウスとキーボードの入力を送信できます。",
+    "video": "リモートデスクトップ映像", "checking": "ローカルデスクトップを確認中…",
+    "ready": "ディスプレイを選択して接続すると、共有を開始します。", "connecting": "{codec} で接続中…",
+    "starting": "{codec} で画面キャプチャを開始中…", "connected": "接続済み · {codec}",
+    "daemonUnavailable": "ローカルデーモンを利用できません。デーモンを起動してからディスプレイを更新してください。", "captureUnavailable": "このマシンでは画面キャプチャを利用できません。",
+    "discoveryFailed": "利用可能なディスプレイを読み込めませんでした。", "noCodec": "Electron で利用できる互換性のある映像コーデックがありません。",
+    "connectionFailed": "デスクトップへの接続に失敗しました。", "timeout": "デスクトップへの接続がタイムアウトしました。デーモンを確認して、もう一度お試しください。",
+    "fullscreen": "全画面表示", "exitFullscreen": "全画面表示を終了",
+    "fullscreenFailed": "全画面表示を切り替えられませんでした。", "play": "デスクトップ映像を再生"
+  },
+  "panel": {
+    "changes": "変更", "noWorktree": "Git の変更はセッション内で確認できます。",
+    "notGit": "Git チェックアウトではありません", "clean": "変更はありません",
+    "gitUnavailable": "Git の状態はオンラインのローカルマシン上にあるセッションで確認できます。", "gitLive": "リアルタイム更新中",
+    "gitPaused": "リアルタイム更新を一時停止中", "gitStale": "最後に読み込んだ変更を表示しています。",
+    "gitLoading": "Git の変更を読み込み中…", "refreshGit": "Git の変更を更新",
+    "detachedHead": "HEAD がブランチから切り離されています", "noCommits": "コミットはまだありません",
+    "openDiff": "{path} の差分を表示 ({kind})", "expandFileDiff": "{path} の差分を表示",
+    "collapseFileDiff": "{path} の差分を非表示", "showFileTree": "ファイルツリーを表示",
+    "hideFileTree": "ファイルツリーを非表示", "fileTree": "変更されたファイル",
+    "expandDirectory": "{path} を展開", "collapseDirectory": "{path} を折りたたむ",
+    "diffEmptySelection": "変更されたファイルを選択すると差分が表示されます。", "closeDiff": "差分を閉じる",
+    "diffLoading": "差分を読み込み中…", "diffContent": "ファイルの差分",
+    "binaryDiff": "バイナリファイルが変更されました。テキストの差分は表示できません。", "emptyDiff": "この差分に残っている変更はありません。",
+    "truncatedDiff": "差分が大きいため、先頭部分のみ表示しています。",
+    "changeKind": {
+      "staged": "ステージ済み", "unstaged": "未ステージ",
+      "untracked": "未追跡"
+    },
+    "changeStatus": {
+      "modified": "変更", "added": "追加",
+      "deleted": "削除", "renamed": "名前変更",
+      "untracked": "未追跡", "copied": "コピー",
+      "conflicted": "競合", "typeChanged": "種類変更"
+    },
+    "gitUnknown": "Git の状態はまだ確認されていません。"
+  },
+  "tray": {
+    "show": "DeskFleet を表示", "quit": "DeskFleet を終了"
+  },
+  "catalog": {
+    "local": "ローカル", "workspaces": "ワークスペース",
+    "loading": "ワークスペースを読み込み中…", "refresh": "更新",
+    "offline": "ローカルデーモンを利用できません。更新して再接続してください。", "workspaceName": "名前",
+    "directoryPath": "ディレクトリ {number}", "removeDirectory": "ディレクトリ {number} を削除",
+    "addDirectory": "ディレクトリを追加", "nameRequired": "名前を入力してください。",
+    "directoriesRequired": "ディレクトリを 1 つ以上選択してください。", "create": "作成",
+    "save": "保存", "saving": "保存中…",
+    "cancel": "キャンセル", "confirmDelete": "削除を確認",
+    "defaultDirectory": "デフォルト", "moveDirectoryUp": "ディレクトリ {number} を上に移動",
+    "moveDirectoryDown": "ディレクトリ {number} を下に移動", "newWorkspace": "{machine} にワークスペースを作成",
+    "duplicateDirectory": "このディレクトリはすでに追加されています。"
+  },
+  "workspace": {
+    "notFound": "このワークスペースは存在しません。", "directoryCount": "{count} 個のディレクトリ",
+    "delete": "ワークスペースを削除", "deleteQuestion": "ワークスペース「{name}」とその登録情報を削除しますか？ディレクトリはディスクに残ります。",
+    "edit": "ワークスペースを編集", "openDefaultTerminal": "デフォルトのディレクトリでターミナルを開く",
+    "sessions": "セッション", "newSession": "新しいセッション",
+    "noSessions": "セッションはまだありません。"
+  },
+  "applications": {
+    "openWith": "アプリで開く", "openDefault": "デフォルトのディレクトリをアプリで開く",
+    "openDirectory": "{path} をアプリで開く", "scanning": "インストール済みのアプリを検索中…",
+    "empty": "対応するアプリが見つかりませんでした。", "rescan": "再検索",
+    "scanFailed": "アプリを検索できませんでした: {message}", "launchFailed": "{name} を開けませんでした: {message}",
+    "terminal": "ターミナル", "fileManager": "ファイルマネージャー"
+  },
+  "folderPicker": {
+    "title": "フォルダーを選択", "locations": "フォルダーの場所",
+    "location": "現在の場所", "home": "ホーム",
+    "up": "上の階層へ", "loading": "フォルダーを読み込み中…",
+    "retry": "再試行", "folders": "フォルダー",
+    "openFolder": "{name} を開く", "empty": "この場所にフォルダーはありません。",
+    "showHidden": "隠しフォルダーを表示", "select": "フォルダーを選択",
+    "editPath": "パスを編集", "applyPath": "パスを適用"
+  },
+  "filePicker": {
+    "title": "ファイルを選択", "empty": "この場所にファイルやフォルダーはありません。",
+    "showHidden": "隠し項目を表示", "select": "選択したファイルを添付"
+  },
+  "agent": {
+    "conversation": "会話",
+    "usage": {
+      "title": "セッションの使用量", "context": "コンテキスト使用量",
+      "summary": "コンテキスト使用率: {percent}", "used": "使用済み",
+      "capacity": "容量", "tokens": "{count} トークン",
+      "cost": "セッションの費用"
+    },
+    "localUser": "ローカルユーザー", "system": "システム",
+    "sourceMachine": "マシン {id}", "image": "エージェントの画像",
+    "pastedText": "貼り付けたテキスト", "pastedTextLines": "{n} 行 | {n} 行",
+    "expandText": "すべて表示", "collapseText": "折りたたむ",
+    "contentType": "{type} のコンテンツ", "tool": "ツール呼び出し",
+    "thinking": "思考中", "plan": "計画",
+    "steered": "実行中の指示を更新しました", "backlog": "キューに追加済み",
+    "steer": "今すぐ指示を追加", "withdraw": "取り消す",
+    "retryInput": "送信を再試行", "uncertainInput": "送信を確認できませんでした。再送信する前に会話を確認してください。",
+    "permissions": "権限", "permissionRequired": "許可が必要です",
+    "questions": {
+      "title": "入力が必要です", "urlTitle": "ブラウザーで続行",
+      "urlConsent": "{host} を開いて続行してください。リンク先の手続きを完了することと、このリクエストを承認することは別です。", "openUrl": "{host} を開く",
+      "awaitingCompletion": "完了を待機中", "completed": "完了",
+      "unsupportedUrl": "このリンクは開けません。", "required": "必須",
+      "optional": "任意", "yes": "はい",
+      "no": "いいえ", "clear": "回答をクリア",
+      "submit": "回答を送信", "sending": "回答を送信中…",
+      "decline": "辞退", "cancel": "キャンセル",
+      "answered": "回答済み", "declined": "辞退済み",
+      "cancelled": "質問はキャンセルされました", "invalid": "必須項目を入力し、回答を確認してください。",
+      "unsupported": "この質問には表示できない項目が含まれています。"
+    },
+    "planApproval": {
+      "title": "計画の承認が必要です", "accept": "計画を承認",
+      "reject": "計画を却下", "cancel": "キャンセル",
+      "sending": "承認結果を送信中…", "accepted": "計画は承認されました",
+      "rejected": "計画は却下されました", "cancelled": "計画の承認はキャンセルされました"
+    },
+    "backlogHint": "今送信するメッセージはキューに追加されます。", "addToBacklog": "キューに追加",
+    "cancelTurn": "ターンをキャンセル", "stop": "エージェントを停止",
+    "delete": "セッションを削除", "stopQuestion": "このエージェントを停止しますか？会話とワークツリーは残ります。",
+    "deleteQuestion": "このセッションと会話、管理対象のワークツリーを削除しますか？", "loading": "会話を復元中…",
+    "disconnected": "接続が切れました。エージェントはマシン上で引き続き実行されています。", "reconnect": "再接続",
+    "operationPending": "操作結果の確認が必要です。", "checkResult": "結果を確認",
+    "empty": "メッセージを送信して作業を開始してください。",
+    "toolStatus": {
+      "pending": "待機中", "in_progress": "実行中",
+      "completed": "完了", "failed": "失敗"
+    },
+    "inputState": {
+      "pending": "待機中", "dispatching": "送信中",
+      "failed": "送信に失敗", "uncertain": "送信を確認できません"
+    },
+    "runState": {
+      "starting": "エージェントを起動中…", "stopping": "エージェントを停止中…"
+    },
+    "lifecycle": {
+      "provisioning": "ワークツリーを準備中…", "ready": "準備完了",
+      "provision_failed": "ワークツリーの作成に失敗しました", "deleting": "セッションを削除中…"
+    },
+    "turnState": {
+      "completed": "ターンが完了しました", "cancelled": "ターンはキャンセルされました",
+      "interrupted": "ターンが中断されました", "failed": "ターンが失敗しました"
+    },
+    "creating": "セッションを作成中…", "resumeUnavailable": "このプロバイダーではこのセッションを再開できません。新しいセッションを開始して続けてください。",
+    "inputInProgress": "処理中", "awaitingApproval": "承認待ち",
+    "copy": "メッセージをコピー", "copied": "コピーしました",
+    "copyFailed": "メッセージをコピーできませんでした。もう一度お試しください。", "working": "作業中",
+    "workingFor": "{duration} 作業中", "worked": "作業完了",
+    "workedFor": "{duration} 作業しました",
+    "summary": {
+      "execute": "{n} 個のコマンドを実行 | {n} 個のコマンドを実行", "edit": "{n} 個のファイルを編集 | {n} 個のファイルを編集",
+      "read": "{n} 個のファイルを読み取り | {n} 個のファイルを読み取り", "search": "{n} 回検索 | {n} 回検索",
+      "other": "{n} 個のツールを使用 | {n} 個のツールを使用"
+    },
+    "pin": "セッションをピン留め", "unpin": "セッションのピン留めを解除",
+    "sessionActions": "セッションの操作", "rename": "セッション名を変更",
+    "sessionName": "セッション名", "renaming": "保存中…",
+    "fork": "セッションを分岐", "forkDescription": "同じエージェントで新しいセッションを作り、この会話を続けます。会話はコピーされ、ファイルは選択したワークスペースの作業環境に従います。",
+    "forking": "セッションを分岐中…", "deleteDirectoryQuestion": "このセッションと会話を削除しますか？作業ディレクトリとファイルはそのまま残ります。",
+    "archive": "セッションをアーカイブ", "restore": "セッションを復元",
+    "retryArchive": "アーカイブを再試行", "archiveQuestion": "このセッションをアーカイブしますか？実行中のエージェントとターミナルは停止します。会話と作業環境は保持されます。",
+    "restoreQuestion": "このセッションを復元しますか？新しいメッセージを送信するまで実行は停止したままです。", "archived": "このセッションはアーカイブされています。作業を続けるには復元してください。",
+    "archiving": "このセッションをアーカイブ中です。実行中のリソースがすべて終了するまで実行できません。"
+  },
+  "providers": {
+    "choose": "プロバイダーを選択", "manage": "プロバイダーを管理",
+    "noneConfigured": "セッションを開始するには、設定でプロバイダーを追加してください。", "unavailable": "プロバイダーを利用できません",
+    "add": "プロバイダーを追加", "edit": "プロバイダーを編集",
+    "remove": "プロバイダーを削除", "machines": "エージェントプロバイダーのマシン",
+    "loading": "プロバイダーを読み込み中…", "offline": "プロバイダーを管理するには、環境設定でローカルエージェントを起動してください。",
+    "remoteUnavailable": "このマシンではプロバイダー設定を利用できません。", "actions": "{name} の操作",
+    "empty": "プロバイダーがありません", "emptyDescription": "このマシンでセッションを開始するには、エージェントプロバイダーを追加してください。",
+    "environmentCount": "環境変数なし | 環境変数 {n} 個 | 環境変数 {n} 個", "removeQuestion": "{name} を削除しますか？",
+    "removeDescription": "実行中のセッションは継続し、会話履歴も残ります。新規または再開するセッションでは、このプロバイダーを使用できなくなります。", "template": "エージェント",
+    "name": "名前", "nameRequired": "プロバイダー名を入力してください。",
+    "binaryPath": "実行ファイルのパス", "binaryDefault": "空欄にすると {binary} を自動検出します。",
+    "environment": "環境変数", "environmentDescription": "エージェントの起動時に環境へ追加されます。",
+    "key": "キー", "value": "値",
+    "environmentKey": "環境変数 {n} のキー", "environmentValue": "環境変数 {n} の値",
+    "addEnvironment": "変数を追加", "removeEnvironment": "環境変数 {n} を削除",
+    "invalidEnvironmentKey": "変数名には英数字とアンダースコアのみを使用し、先頭は英字またはアンダースコアにしてください。", "duplicateEnvironmentKey": "環境変数名は重複できません。",
+    "test": "接続をテスト", "testing": "接続をテスト中…",
+    "testDescription": "現在の認証情報でエージェントを起動し、プロンプトを送信せずにセッションを開きます。", "testSucceeded": "{agent} に接続しました。",
+    "testFailed": "接続に失敗しました：{error}", "editNamed": "{name} を編集",
+    "back": "エージェントに戻る", "chooseTemplate": "{machine} で実行するエージェントを選択してください。",
+    "runsOn": "{machine} 上の {template}", "advanced": "詳細設定",
+    "customPath": "カスタムパス", "binaryDetected": "空欄にすると検出された実行ファイルを使用します。",
+    "showDetails": "詳細", "hideDetails": "非表示",
+    "templateDescription": {
+      "codex": "OpenAI のコーディングエージェント。", "claude-code": "Anthropic のコーディングエージェント。",
+      "cursor": "Cursor のエージェント CLI。", "grok": "xAI の Grok CLI。",
+      "pi": "Pi のコーディングエージェント CLI。", "deepseek-harness": "DeepSeek のエージェントハーネス CLI（dsh）。",
+      "acp": "Agent Client Protocol に対応した任意のエージェント。"
+    },
+    "iconDefault": "テンプレートのデフォルト", "iconReset": "テンプレートのデフォルトを使用",
+    "iconSearch": "LLM アイコンを検索", "iconChoices": "LLM アイコン",
+    "iconNoResults": "一致するアイコンがありません。", "iconLabel": "アイコン：{name}",
+    "setup": {
+      "title": "{machine} の状態", "probing": "{machine} を確認中…",
+      "unavailable": "状態を取得できません。", "probeFailed": "{machine} を確認できませんでした",
+      "ready": "準備完了", "installed": "インストール済み",
+      "signedOut": "未ログイン", "signedOutDetail": "セッションを開始する前にログインしてください。",
+      "missing": "未インストール", "missingDetail": "{machine} に公式 CLI をインストールしてください。",
+      "invalid": "この実行ファイルは使用できません", "install": "インストール",
+      "login": "ログイン", "refresh": "再確認",
+      "setPath": "パスを設定", "starting": "起動中…",
+      "installing": "インストール中…", "loggingIn": "ログインを待っています。以下の案内に従ってください。",
+      "piLoginHint": "/login を入力してログインし、/quit で戻ってください。", "output": "セットアップの出力",
+      "installNotFound": "インストーラーは終了しましたが、実行ファイルが見つかりません。出力を確認するか、詳細設定でパスを指定してください。", "interrupted": "セットアップが中断されました。",
+      "failed": "セットアップがステータス {code} で終了しました。", "unknownExit": "不明",
+      "stop": "停止"
+    }
+  },
+  "account": {
+    "signIn": "DeskFleet にログイン", "signInDescription": "アカウントで DeskFleet サーバーにログインし、チームを選択してください。",
+    "signingIn": "ログイン中…", "signOut": "ログアウト",
+    "signalingOffline": "サーバーとの接続が中断されました。既存のピアセッションは、認可の有効期限まで引き続き利用できます。", "enrollmentRevoked": "このコンピューターはチームから削除されました。再接続すると空の新しい ID が割り当てられます。以前のローカルデータはディスクに残ります。",
+    "reconnectThisComputer": "このコンピューターを再接続", "dismiss": "閉じる",
+    "addMachine": "マシンを追加", "openMachine": "{name} を開く",
+    "thisComputer": "このコンピューター", "done": "完了",
+    "continueSignIn": "DeskFleet にログイン"
+  },
+  "team": {
+    "label": "チーム", "teams": "チーム",
+    "none": "チームなし", "settings": "チーム設定",
+    "create": "チームを作成", "createDescription": "新しいチームを作成して、メンバーを招待します。",
+    "createAction": "チームを作成", "creating": "作成中…",
+    "join": "チームに参加", "joinDescription": "チーム管理者から届いた招待コードを入力してください。",
+    "joinAction": "チームに参加", "joining": "参加中…",
+    "welcome": "{name} さん、ようこそ", "welcomeDescription": "チームではマシンとエージェントのセッションを共有します。新しいチームを作成するか、既存のチームに参加してください。",
+    "youAreAdmin": "あなたはこのチームの管理者です。", "youAreMember": "あなたはこのチームのメンバーです。",
+    "general": "一般", "name": "チーム名",
+    "plansUsage": "プランと使用状況", "relayedTraffic": "中継通信量",
+    "activeSessions": "アクティブなセッション", "activeSessionsHint": "アーカイブされていないセッション。",
+    "usageMembers": "チームメンバー", "usageMembersHint": "管理者とメンバーの合計。招待中のユーザーは含みません。",
+    "unlimited": "無制限", "usageLoading": "使用状況を読み込み中…",
+    "usageError": "使用状況を読み込めませんでした。", "usageRetry": "再試行",
+    "members": "メンバー", "machines": "マシン",
+    "you": "（あなた）", "role": "役割",
+    "roleFor": "{name} の役割", "member": "メンバー",
+    "admin": "管理者", "memberDescription": "チームのマシンを使用し、自分のマシンを追加できます。",
+    "adminDescription": "さらにメンバーの管理とマシンの削除もできます。", "remove": "削除",
+    "removeMemberLabel": "{name} を削除", "removeMemberTitle": "{name} を削除しますか？",
+    "removeMemberDescription": "このメンバーは {team} とそのマシンにすぐにアクセスできなくなります。", "invite": "招待",
+    "inviteTitle": "{team} に招待", "inviteDescription": "このメールアドレス向けに、1 回限りの招待コードを作成します。",
+    "email": "メールアドレス", "createInvite": "招待を作成",
+    "creatingInvite": "作成中…", "inviteReady": "招待の準備ができました",
+    "inviteInstructions": "このコードを {email} に送ってください。{expires} まで「チームに参加」から使用できます。", "inviteCode": "招待コード",
+    "neverConnected": "接続履歴なし", "noMachines": "マシンがありません",
+    "noMachinesDescription": "チームメンバーがエージェントを実行したりターミナルを開いたりできるよう、マシンを追加してください。", "renameMachineLabel": "{name} の名前を変更",
+    "machineNameFor": "{name} の新しい名前", "removeMachineLabel": "{name} を削除",
+    "removeMachineTitle": "{name} を削除しますか？", "removeMachineDescription": "認証情報が失効し、現在の接続が切断されます。ファイルと履歴はマシンに残り、後で新しい ID で再参加できます。"
+  },
+  "addMachine": {
+    "title": "{team} にマシンを追加", "description": "マシンでは、チーム用のエージェント、ターミナル、リモートデスクトップを実行します。",
+    "localDescription": "現在使用中のコンピューターでエージェントを実行します。", "localRevoked": "空の新しい ID で再接続します。以前のデータはディスクに残ります。",
+    "localConnected": "すでに {team} に接続しています。", "connecting": "接続中…",
+    "other": "別のマシン", "otherDescription": "deskfleet-daemon を実行しているサーバーまたは別のコンピューター。",
+    "statusStep": "そのマシンでデーモンを起動し、次を実行します", "pasteStep": "コマンドの出力を貼り付けます",
+    "pasteHint": "この出力はデーモンのインストールを識別します。機密情報は含まれていません。", "identityFound": "マシン ID が見つかりました。",
+    "status": {
+      "invalid": "deskfleet-daemon status の出力ではないようです。", "enrolled": "このマシンはすでにチームに所属しています。再度追加するには、管理者が先に削除する必要があります。",
+      "revoked": "このマシンはチームから削除されています。deskfleet-daemon prepare-enrollment を実行し、その出力を貼り付けてください。"
+    },
+    "nameStep": "チームで使用する名前を付けます", "nameHint": "デフォルトではマシンのホスト名を使用します。後でチーム設定から変更できます。",
+    "connect": "接続", "back": "戻る",
+    "adding": "追加中…", "finishTitle": "マシン側で設定を完了",
+    "finishDescription": "この認証情報を取り込むまで、マシンはオフラインと表示されます。", "enrollStep": "次を実行します",
+    "credentialsStep": "この認証情報をコマンドに貼り付けてから、Ctrl-D を押してください", "credentialsWarning": "この認証情報は一度だけ表示されます。取得した人は誰でも、このマシンとして操作できます。",
+    "emptyTitle": "{team} にマシンを追加", "emptyDescription": "チームメンバーはチームのマシンでエージェントを実行したり、ターミナルを開いたりできます。このコンピューターまたはサーバーを接続して始めましょう。"
+  },
+  "files": {
+    "title": "ファイル転送", "local": "このコンピューター",
+    "chooseFolder": "フォルダーを選択", "refresh": "更新",
+    "select": "{name} を選択", "empty": "このフォルダーは空です。",
+    "close": "閉じる", "send": "リモートに送信",
+    "receive": "このコンピューターにダウンロード", "queue": "転送キュー",
+    "noTransfers": "転送はありません", "retry": "再試行",
+    "cancel": "キャンセル", "keepBoth": "両方を保持",
+    "skip": "スキップ", "replace": "置き換え",
+    "loadingResource": "画像を読み込み中…", "imageUnavailable": "画像を表示できません",
+    "resourceUnavailable": "このリソースは利用できません。対象のマシンに接続して、もう一度お試しください。", "notImage": "このファイルは画像として表示できません。",
+    "state": {
+      "queued": "待機中", "preparing": "準備中",
+      "transferring": "転送中", "completed": "完了",
+      "failed": "失敗", "cancelled": "キャンセル済み",
+      "conflict": "既存ファイルあり"
+    },
+    "showHidden": "隠し項目を表示"
+  },
+  "welcome": {
+    "title": "DeskFleet へようこそ", "description": "このコンピューターの準備を整え、チームにログインしましょう。順を追ってご案内します。",
+    "notificationsTitle": "タスクの状況を通知で確認", "notificationsDescription": "エージェントがタスクを完了したときや、入力が必要なときに通知を受け取れます。",
+    "notificationsDetails": "ブラウザー通知を許可すると、DeskFleet を開いている間は別のタブを使用中でも通知を受け取れます。後で設定から変更できます。", "progress": "セットアップの進行状況",
+    "steps": {
+      "fullDiskAccess": "フルディスクアクセス", "screenCapture": "画面収録",
+      "accessibility": "アクセシビリティ", "account": "アカウント"
+    },
+    "stepCount": "ステップ {current} / {total}", "continue": "続ける",
+    "continueAs": "{name} として続ける", "systemSettings": "macOS システム設定",
+    "permissionRestart": "一覧で DeskFleet を有効にしてください。macOS からアプリの終了と再起動を求められた場合、セットアップはここから再開されます。", "openSettings": "アクセスを許可",
+    "checking": "確認中…", "checkAgain": "再確認",
+    "skip": "今はスキップ", "retry": "再試行",
+    "loading": "DeskFleet を読み込み中…",
+    "permissionStatus": {
+      "checking": "アクセス権を確認中…", "requesting": "macOS の許可を待っています…",
+      "granted": "アクセス許可済み", "not-required": "追加の権限は不要です",
+      "denied": "アクセスはまだ許可されていません", "error": "アクセス権を確認できませんでした"
+    },
+    "wayland": {
+      "dialog": "デスクトップのアクセス許可", "shared": "画面共有とマウス・キーボードの操作は、1 回の許可で有効になります。許可したら、両方のステップを進めてください。",
+      "requesting": "デスクトップのアクセス許可を待っています…", "retry": "アクセス許可を再試行",
+      "screenCapture": {
+        "title": "画面共有", "description": "リモートデスクトップセッションで、DeskFleet がこのコンピューターの画面を共有することを許可します。",
+        "instructions": "デスクトップの許可ダイアログで、共有する画面を選択してアクセスを許可してください。", "skip": "許可するまでリモート画面共有は利用できません。このステップをスキップして、後で許可することもできます。"
+      },
+      "accessibility": {
+        "title": "マウスとキーボードの操作", "description": "リモートデスクトップセッションから、このコンピューターのマウスとキーボードを操作することを許可します。",
+        "instructions": "デスクトップの許可ダイアログで、マウスとキーボードの操作を許可してください。画面共有と一緒に許可済みの場合、追加の操作は不要です。", "skip": "許可するまでリモートからのマウスとキーボードの操作は利用できません。操作を許可しなくても画面共有は利用できます。"
+      }
+    },
+    "permissions": {
+      "fullDiskAccess": {
+        "description": "ローカルエージェントに、保護されたフォルダー内のファイルへのアクセスを許可します。ファイルのプレビューやワークスペースのファイル操作に使用します。", "path": "プライバシーとセキュリティ → フルディスクアクセス",
+        "skip": "ファイルへのアクセスが制限された状態で続け、後でシステム設定からこの権限を有効にできます。"
+      },
+      "screenCapture": {
+        "description": "リモートデスクトップセッションで、DeskFleet がこのコンピューターの画面とシステムオーディオを共有することを許可します。", "path": "プライバシーとセキュリティ → 画面収録とシステムオーディオ録音",
+        "skip": "システム設定でこの権限を有効にするまで、リモート画面共有は利用できません。"
+      },
+      "accessibility": {
+        "description": "リモートデスクトップセッションから、このコンピューターのマウスとキーボードを操作することを許可します。", "path": "プライバシーとセキュリティ → アクセシビリティ",
+        "skip": "システム設定でこの権限を有効にするまで、リモートからのマウスとキーボードの操作は利用できません。"
+      }
+    }
+  },
+  "mermaid": {
+    "title": "Mermaid 図", "zoomIn": "拡大",
+    "zoomOut": "縮小", "resetView": "ズームと位置をリセット",
+    "locateMessage": "元のメッセージへ移動", "focus": "フォーカス",
+    "more": "その他", "showInSidebar": "サイドバーに表示",
+    "showInNewWindow": "新しいウィンドウに表示", "closeTab": "{title} を閉じる"
+  },
+  "auth": {
+    "signIn": "ログイン", "signInTitle": "DeskFleet にログイン",
+    "accountSignInDescription": "ログインしてパスワード、パスキー、ログイン中のデバイスを管理します。", "emailSignInDescription": "新しいメールアドレスを確認するため、現在のメールアドレスでログインしてください。",
+    "desktopSignInTitle": "DeskFleet Desktop にログイン", "desktopSignInDescription": "ログイン後、このページからデスクトップアプリへセッションが引き継がれます。",
+    "email": "メールアドレス", "name": "表示名",
+    "password": "パスワード", "newPassword": "新しいパスワード",
+    "passwordHint": "15～128 文字。スペースやパスワードマネージャーも使用できます。", "showPassword": "パスワードを表示",
+    "hidePassword": "パスワードを非表示", "forgot": "パスワードを忘れた場合",
+    "or": "または", "signInWithPasskey": "パスキーでログイン",
+    "newHere": "DeskFleet を初めてご利用ですか？", "haveAccount": "すでにアカウントをお持ちですか？",
+    "createAccount": "アカウントを作成", "continue": "続ける",
+    "loading": "読み込み中…", "unavailable": "DeskFleet に接続できません",
+    "retry": "再試行", "backToSignIn": "ログインに戻る",
+    "registerTitle": "アカウントを作成", "registerDescription": "メールアドレスを入力してください。確認リンクをお送りします。確認後にパスワードを設定できます。",
+    "registrationClosed": "このサイトでは新規アカウントを受け付けていません。アクセスについて管理者にお問い合わせください。", "agreeToTerms": "以下に同意します：",
+    "termsAnd": "および", "termsOfService": "利用規約",
+    "privacyTerms": "プライバシー規約", "registerSent": "{email} に確認リンクを送りました。有効期限は 1 時間です。",
+    "recoveryTitle": "パスワードをリセット", "recoveryDescription": "アカウントのメールアドレスを入力してください。新しいパスワードを設定するリンクをお送りします。",
+    "recoverySent": "{email} がアカウントに登録されている場合、リセットリンクが届きます。有効期限は 1 時間です。", "sendResetLink": "リセットリンクを送信",
+    "checkInbox": "受信トレイをご確認ください", "resend": "メールを再送信",
+    "sentAgain": "再送信しました。届くまで少し時間がかかる場合があります。", "differentEmail": "別のメールアドレスを使用",
+    "verifyTitle": "アカウントの作成を完了", "verifyDescription": "メールアドレスを確認しました。チームメンバーに表示する名前とパスワードを設定してください。",
+    "resetTitle": "新しいパスワードを設定", "resetDescription": "すべてのデバイスからログアウトされます。登録済みのパスキーは保持されます。",
+    "resetPassword": "パスワードをリセット", "passwordReset": "パスワードを更新しました",
+    "passwordResetDescription": "各デバイスで新しいパスワードを使ってログインしてください。", "linkInvalid": "このリンクは使用できません",
+    "linkInvalidDescription": "リンクが不完全か、すでに使用済みの可能性があります。新しいメールをリクエストして続けてください。", "requestNewLink": "新しいリンクをリクエスト",
+    "desktopTitle": "DeskFleet Desktop に進む", "desktopDescription": "このページを開いたデスクトップアプリに、このアカウントでログインします。",
+    "desktopAttemptMissing": "デスクトップアプリからログインをやり直してください。", "continueDesktop": "デスクトップアプリに進む",
+    "differentAccount": "別のアカウントを使用", "confirmEmailTitle": "新しいメールアドレスを確認",
+    "confirmEmailDescription": "{email} でログイン中です。確認すると、ログイン用のメールアドレスが新しいものに置き換わります。", "confirmEmail": "メールアドレスを確認",
+    "emailChanged": "メールアドレスを更新しました", "emailChangedDescription": "以前のメールアドレスに通知を送りました。新しいアドレスで再度ログインしてください。",
+    "reauthTitle": "本人確認", "reauthDescription": "パスワードを入力して続けてください。10 分間は再確認を求められません。",
+    "usePasskeyInstead": "パスキーを使用", "confirm": "確認",
+    "security": "アカウントのセキュリティ", "back": "DeskFleet に戻る",
+    "signInMethods": "ログイン方法", "change": "変更",
+    "passwordRowDescription": "変更すると、すべてのデバイスからログアウトされます。", "changeEmailTitle": "メールアドレスを変更",
+    "changeEmailDescription": "新しいアドレスにリンクを送ります。リンクを開くまでは、現在のメールアドレスが有効です。", "changeEmailSent": "{email} に届いたリンクを開いて完了してください。有効期限は 1 時間です。",
+    "newEmail": "新しいメールアドレス", "sendVerification": "確認リンクを送信",
+    "changePasswordTitle": "パスワードを変更", "changePasswordDescription": "このデバイスを含むすべてのデバイスからログアウトされます。",
+    "changePassword": "パスワードを変更", "passkeys": "パスキー",
+    "addPasskey": "パスキーを追加", "addPasskeyDescription": "続いてブラウザーでパスキーの作成を求められます。",
+    "renamePasskey": "パスキー名を変更", "passkeyName": "名前",
+    "passkeyNamePlaceholder": "仕事用ノートパソコン", "noPasskeys": "パスキーがありません",
+    "noPasskeysDescription": "パスワードの代わりに Touch ID、Windows Hello、セキュリティキーでログインできます。", "passkeysUnavailable": "このブラウザーではパスキーを管理できません。最新のブラウザーで HTTPS 接続をご利用ください。",
+    "added": "{date} に追加", "renamePasskeyLabel": "{name} の名前を変更",
+    "removePasskeyLabel": "{name} を削除", "removePasskeyTitle": "{name} を削除しますか？",
+    "removePasskeyDescription": "このパスキーではログインできなくなります。他のログイン方法には影響しません。", "remove": "削除",
+    "sessions": "ログイン中のデバイス", "sessionsDescription": "このアカウントでログイン中のブラウザーとデスクトップアプリです。登録済みのマシンは別途管理されます。",
+    "thisSession": "このブラウザー", "otherSession": "別のブラウザーまたはデスクトップアプリ",
+    "current": "現在使用中", "sessionDates": "ログイン：{created} · 有効期限：{expires}",
+    "revoke": "ログアウト", "revokeTitle": "このデバイスからログアウトしますか？",
+    "revokeCurrentTitle": "このブラウザーからログアウトしますか？", "revokeDescription": "再度ログインが必要になります。マシンや実行中の作業には影響しません。",
+    "revokeAll": "すべてからログアウト", "revokeAllTitle": "すべてからログアウトしますか？",
+    "revokeAllDescription": "このブラウザーを含むすべてのブラウザーとデスクトップアプリで、再度ログインが必要になります。マシンや実行中の作業には影響しません。"
+  },
+  "billing": {
+    "plan": {
+      "free": "Free", "go": "Go",
+      "pro": "Pro", "enterprise": "Enterprise",
+      "selfHosted": "セルフホスト"
+    },
+    "planDescription": {
+      "free": "アクティブなセッションは最大 3 件、各セッション 30 ターン、メンバー 3 人まで。直接接続のみ。", "go": "セッション、ターン、メンバーは無制限。TURN 中継通信量は毎月 2 GiB。",
+      "pro": "セッション、ターン、メンバーは無制限。TURN 中継通信量は毎月 20 GiB。", "enterprise": "サイト管理者が付与します。すべての利用枠が無制限です。",
+      "selfHosted": "このサーバーには製品上の利用制限がありません。中継には運営者の TURN サーバーを使用します。"
+    },
+    "offer": {
+      "go": "TURN 中継 2 GiB / 月 · セッション、ターン、メンバーは無制限", "pro": "TURN 中継 20 GiB / 月 · セッション、ターン、メンバーは無制限",
+      "enterprise": "すべての利用枠が無制限で、運営者によるデプロイ支援も含まれます。Enterprise については営業担当にお問い合わせください。"
+    },
+    "offerInterval": {
+      "month": "毎月請求", "year": "年 1 回請求"
+    },
+    "interval": {
+      "month": "月払い", "year": "年払い"
+    },
+    "chooseInterval": "請求期間", "contactEnterprise": "お問い合わせ",
+    "upgradeTo": "{plan} にアップグレード", "askAdmin": "チーム管理者がこのチームをアップグレードできます。",
+    "checkoutOpened": "開いたページで購入手続きを完了してください。支払いが確認されるとプランが更新されます。", "manage": "請求を管理",
+    "renews": "更新日：{date}", "ends": "終了日：{date}",
+    "paymentIssue": "支払いに問題があります", "paymentIssueDescription": "前回の支払いが完了しませんでした。有料プランの利用枠を維持するには、支払い方法を更新してください。",
+    "fixPayment": "支払い方法を更新", "enterpriseSubscription": "既存の {plan} サブスクリプションへの請求は、解約するまで続きます。",
+    "notIncluded": "含まれていません", "remaining": "残り {amount}",
+    "resets": "リセット日：{date}", "trafficHint": "TURN で中継された通信量のみを計測します。使用量の反映には少し遅れがあります。上限に達すると新しい中継接続はできなくなりますが、既存の接続は許可済みの有効期限まで継続します。",
+    "trafficNotIncluded": "直接接続は引き続き利用できます。直接接続できない場合に中継を利用するには、アップグレードしてください。", "turnsPerSession": "セッションごとのターン数",
+    "turnsPerSessionHint": "エージェントへのプロンプト送信 1 回につき 1 ターン消費します。分岐したセッションには、分岐前に使用したターン数が引き継がれます。", "turnsPerSessionLimit": "セッションごとに {count} ターン",
+    "sessionTurns": "このセッションで {limit} ターン中 {used} ターン使用済み", "turnsLeft": "このセッションの残りターンはありません | このセッションは全 {limit} ターン中、残り 1 ターンです | このセッションは全 {limit} ターン中、残り {remaining} ターンです",
+    "inheritedTurns": "元のセッションから {count} ターン引き継ぎ", "resumeHint": "待機中の入力は保持されます。チームのアップグレード後に再試行してください。",
+    "viewPlans": "プランを見る", "enterpriseTeams": "Enterprise",
+    "enterpriseHint": "チームのすべての利用枠を無制限にします。Stripe サブスクリプションは解約も一時停止もされません。", "filterTeams": "チームを絞り込み",
+    "noTeams": "チームがありません。", "noMatchingTeams": "条件に一致するチームがありません。",
+    "noSubscription": "有料サブスクリプションなし", "subscriptionPlan": "{plan} サブスクリプション",
+    "grantEnterprise": "Enterprise を付与", "revokeEnterprise": "Enterprise を取り消す",
+    "grantTitle": "{team} に Enterprise を付与しますか？", "grantDescription": "取り消すまで、すべての利用枠が無制限になります。",
+    "grantWithSubscription": "すべての利用枠が無制限になります。{plan} サブスクリプションへの請求は、チーム管理者が解約するまで続きます。", "revokeTitle": "{team} の Enterprise を取り消しますか？",
+    "revokeDescription": "チームは Free に戻ります。既存のセッションとメンバーは保持されますが、新規追加はプランの上限内に制限されます。", "revokeWithSubscription": "サブスクリプションが支払い済みの間はチームは {plan} に戻り、その後 Free に戻ります。",
+    "status": {
+      "active": "有効", "trialing": "試用中",
+      "past_due": "支払い期限超過", "unpaid": "未払い",
+      "incomplete": "支払い待ち", "paused": "一時停止中"
+    }
+  }
+}

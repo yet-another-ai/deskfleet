@@ -2,6 +2,7 @@ import type { Theme } from "vitepress"
 import DefaultTheme from "vitepress/theme-without-fonts"
 import { createI18n } from "vue-i18n"
 import en from "../../../packages/components/locales/en-US.json"
+import ja from "../../../packages/components/locales/ja-JP.json"
 import zh from "../../../packages/components/locales/zh-cmn-Hans-CN.json"
 import HomePage from "./components/home/HomePage.vue"
 import SiteLayout from "./components/SiteLayout.vue"
@@ -19,7 +20,7 @@ export default {
   extends: DefaultTheme,
   Layout: SiteLayout,
   enhanceApp({ app }) {
-    app.use(createI18n({ legacy: false, locale: "en-US", fallbackLocale: "en-US", messages: { "en-US": en, "zh-cmn-Hans-CN": zh } }))
+    app.use(createI18n({ legacy: false, locale: "en-US", fallbackLocale: "en-US", messages: { "en-US": en, "zh-cmn-Hans-CN": zh, "ja-JP": ja } }))
     app.component("HomePage", HomePage)
   },
 } satisfies Theme
