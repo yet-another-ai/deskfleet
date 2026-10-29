@@ -64,6 +64,13 @@ jobs:
             echo "CARGO_PROFILE_RELEASE_STRIP=symbols"
           } >> "$GITHUB_ENV"
 
+      - name: Disable MSVC PDB generation for release builds
+        if: runner.os == 'Windows'
+        shell: pwsh
+        # rustc still passes /DEBUG with debug=0 and strip=symbols on MSVC.
+        # Match this release profile without requiring vendored OpenSSL's PDB.
+        run: '"CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS=-C link-arg=/DEBUG:NONE" >> $env:GITHUB_ENV'
+
       - name: Set up build environment
         id: setup_build
         uses: ./.github/actions/setup-build

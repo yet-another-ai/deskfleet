@@ -34,8 +34,12 @@ a stable `Gate` result for branch protection.
   native runner's triple.
   Pull requests use a Linux x64 smoke build; main and manual runs use the full
   platform matrix. Packaging keeps Cargo's parallel release codegen: 16 units,
-  LTO off, no debug info, and stripped symbols. Each target packages and verifies
-  the standalone SEA daemon.
+  LTO off, no debug info, and stripped symbols. Windows packaging additionally
+  passes `/DEBUG:NONE` to the MSVC linker through target-specific Rust flags,
+  overriding rustc's `/DEBUG` default so vendored OpenSSL does not require a PDB
+  during release linking. This applies only to Build jobs; test and development
+  builds keep their debug information. Each target packages and verifies the
+  standalone SEA daemon.
   The same matrix packages Electron installers and smoke-tests the bundled server
   container on each native Linux runner. The Publish caller enables production
   configuration and macOS signing. PR, main, and manual Build runs do not bind
