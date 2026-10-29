@@ -5,7 +5,7 @@ use super::*;
 async fn anonymous_options_hide_accounts_and_assertions_keep_their_bindings() {
     let state = web::Data::new(
         AppState::new(ServerConfig {
-            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            bind_addrs: vec!["127.0.0.1:0".parse().unwrap()],
             database_url: std::env::var("TEST_DATABASE_URL").unwrap(),
             public_url: "http://localhost".into(),
             web_origins: vec!["http://localhost".into()],

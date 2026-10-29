@@ -54,7 +54,7 @@ paths, queries and credentials are rejected.
 | Variable | Meaning |
 | --- | --- |
 | `DATABASE_URL` | Required PostgreSQL connection URL. SQLite is rejected. |
-| `DESKFLEET_BIND_ADDR` | IP and port; defaults to `127.0.0.1:8080`. |
+| `DESKFLEET_BIND_ADDR` | One or more comma-separated IP:port addresses; defaults to `127.0.0.1:8080`. IPv6 addresses require brackets. |
 | `DESKFLEET_WEB_DIRECTORY` | Optional directory containing the built Web `index.html` and assets. Unset keeps the binary API-only. The image sets `/usr/share/deskfleet/web`. |
 | `DESKFLEET_PUBLIC_URL` | Stable external API origin and server identity; defaults to `http://localhost:8080`. |
 | `DESKFLEET_TRUSTED_PROXY_IPS` | Comma-separated exact proxy IPs allowed to set `X-Real-IP` for authentication rate limits. Empty by default; proxies must overwrite that header. |
@@ -72,6 +72,23 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_TURN_SECRET` | Required with TURN URLs; shared with coturn's REST credential mechanism. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | Optional `redis://` or `rediss://` URL for [Team TURN usage collection](../../agents/docs/self-hosted.md#team-turn-usage-collection). Empty or unset disables it. |
 | `RUST_LOG` | Log filter; defaults to `info`. |
+
+To listen explicitly on both IPv4 and IPv6, set:
+
+```dotenv
+DESKFLEET_BIND_ADDR=0.0.0.0:8080,[::]:8080
+```
+
+The list also supports different addresses and ports. Surrounding whitespace is
+ignored, but empty entries and invalid addresses fail configuration. Every
+configured address must bind successfully before the HTTP server starts; a
+failure aborts startup instead of serving only part of the list. All listeners
+serve the same API and Web routes with shared application state.
+
+When an IPv4 address is listed on the same port, the IPv6 wildcard socket accepts
+only IPv6, so the two listeners do not conflict. This explicit pair does not depend
+on the operating system's IPv4-mapped IPv6 default. A single `[::]:8080` keeps
+the existing platform-dependent behavior.
 
 For official hosting, run server instances behind a TLS reverse proxy that
 supports WebSocket upgrades, request bodies of at least 64 MiB, and idle periods

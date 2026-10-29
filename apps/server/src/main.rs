@@ -3,6 +3,7 @@ use deskfleet_server::{AppState, WebAssets, config::ServerConfig, configure};
 use tracing_subscriber::EnvFilter;
 
 mod cli;
+mod listeners;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -17,10 +18,10 @@ async fn main() -> std::io::Result<()> {
     }
     let config = ServerConfig::from_env()?;
     let web_assets = WebAssets::from_env()?;
-    let bind = config.bind_addr;
+    let listeners = listeners::bind_all(&config.bind_addrs)?;
     let origins = config.web_origins.clone();
     let state = web::Data::new(AppState::new(config).await.map_err(std::io::Error::other)?);
-    let server = HttpServer::new(move || {
+    let mut server = HttpServer::new(move || {
         let mut cors = actix_cors::Cors::default()
             .allowed_methods(["GET", "POST", "PUT", "PATCH", "DELETE"])
             .allowed_headers(["authorization", "content-type", "x-csrf-token"])
@@ -38,8 +39,10 @@ async fn main() -> std::io::Result<()> {
                     assets.configure(config);
                 }
             })
-    })
-    .bind(bind)?;
+    });
+    for listener in listeners {
+        server = server.listen(listener)?;
+    }
     for address in server.addrs() {
         tracing::info!(%address,"DeskFleet server listening");
     }

@@ -322,7 +322,7 @@ pub(crate) mod tests {
         turn_secret: Option<&str>,
     ) -> ServerConfig {
         ServerConfig {
-            bind_addr: "127.0.0.1:8080".parse().unwrap(),
+            bind_addrs: vec!["127.0.0.1:8080".parse().unwrap()],
             database_url: "postgres://unused".into(),
             public_url: "http://127.0.0.1:8080".into(),
             web_origins: vec![],

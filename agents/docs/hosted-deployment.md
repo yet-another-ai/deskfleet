@@ -100,7 +100,7 @@ URLs and use the database/Redis TLS options required by those services.
 | Variable | Requirement and default |
 | --- | --- |
 | `DATABASE_URL` | Required nonempty `postgres://` or `postgresql://` URL. Includes credentials, database, and driver options such as `sslmode`; no separate pool-size or database-TLS variable. |
-| `DESKFLEET_BIND_ADDR` | IP:port, default `127.0.0.1:8080` for the binary. The image defaults to `0.0.0.0:8080`; expose it through the proxy. |
+| `DESKFLEET_BIND_ADDR` | Comma-separated IP:port addresses, default `127.0.0.1:8080` for the binary. The image defaults to `0.0.0.0:8080`; expose it through the proxy. Use brackets around IPv6 addresses. |
 | `DESKFLEET_WEB_DIRECTORY` | The official image sets `/usr/share/deskfleet/web`. For a binary deployment, set an absolute path to the built Web directory to enable static hosting; unset keeps the binary API-only. |
 | `DESKFLEET_PUBLIC_URL` | Set explicitly to the stable HTTPS API origin, without a path or trailing slash. Default is `http://localhost:8080`. This string is also the enrolled machines' server identity. |
 | `DESKFLEET_AUTH_WEB_URL` | Set explicitly to the HTTPS Web origin. Used for email links, Passkeys, Electron authorization, and Stripe return URLs. Defaults to the first Web origin, otherwise the API origin. |
@@ -123,6 +123,24 @@ URLs and use the database/Redis TLS options required by those services.
 Configuration is read at startup. Restart the API after changes; new peer grants
 receive updated ICE settings. Changing `DESKFLEET_PUBLIC_URL` after enrollment
 is not a supported retargeting procedure.
+
+For explicit IPv4 and IPv6 listeners, override the image's single-address default
+in the existing Compose service:
+
+```yaml
+services:
+  deskfleet:
+    environment:
+      DESKFLEET_BIND_ADDR: "0.0.0.0:8080,[::]:8080"
+```
+
+The host and Docker network must have IPv6 enabled. Both listeners serve the
+same application. The IPv6 wildcard socket is IPv6-only when an IPv4 address is
+listed on the same port, so this pair works independently of `net.ipv6.bindv6only`.
+Every configured address is required: empty or malformed entries and bind
+failures stop startup. Recreate the container after changing its environment.
+Public IPv6 access still requires the reverse proxy, DNS, and firewall to
+accept IPv6 traffic.
 
 ### Stripe test-mode environment
 

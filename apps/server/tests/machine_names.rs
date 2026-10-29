@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 async fn team_members_rename_machines_and_catalogs_use_the_team_name() {
     let state = web::Data::new(
         AppState::new(ServerConfig {
-            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            bind_addrs: vec!["127.0.0.1:0".parse().unwrap()],
             database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
             public_url: "https://control.test".into(),
             web_origins: vec![],

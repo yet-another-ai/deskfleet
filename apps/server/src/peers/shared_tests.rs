@@ -33,7 +33,7 @@ impl Fixture {
             .unwrap();
         let separator = if url.contains('?') { '&' } else { '?' };
         let config = ServerConfig {
-            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            bind_addrs: vec!["127.0.0.1:0".parse().unwrap()],
             database_url: format!("{url}{separator}options=-csearch_path%3D{schema}"),
             public_url: "https://shared-control.test".into(),
             web_origins: vec![],

@@ -3,7 +3,7 @@ use std::{env, io, net::SocketAddr};
 
 #[derive(Clone)]
 pub struct ServerConfig {
-    pub bind_addr: SocketAddr,
+    pub bind_addrs: Vec<SocketAddr>,
     pub database_url: String,
     pub public_url: String,
     pub web_origins: Vec<String>,
@@ -35,7 +35,7 @@ impl ServerConfig {
             ));
         }
         Ok(Self {
-            bind_addr: parse_bind_addr(
+            bind_addrs: parse_bind_addrs(
                 &env::var("DESKFLEET_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into()),
             )?,
             database_url: required("DATABASE_URL")?,
@@ -91,22 +91,72 @@ fn has_ice_scheme(url: &str, schemes: &[&str]) -> bool {
         url.len() > prefix.len() && url[..prefix.len()].eq_ignore_ascii_case(&prefix)
     })
 }
-fn parse_bind_addr(value: &str) -> io::Result<SocketAddr> {
-    value.parse().map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("invalid DESKFLEET_BIND_ADDR: {e}"),
-        )
-    })
+fn parse_bind_addrs(value: &str) -> io::Result<Vec<SocketAddr>> {
+    value
+        .split(',')
+        .map(str::trim)
+        .map(|entry| {
+            entry.parse().map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("invalid DESKFLEET_BIND_ADDR entry {entry:?}: {e}"),
+                )
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{has_ice_scheme, parse_bind_addr, parse_ice_urls, parse_list};
+    use super::{has_ice_scheme, parse_bind_addrs, parse_ice_urls, parse_list};
+    use std::{io, net::SocketAddr};
+
+    #[test]
+    fn listener_accepts_single_ipv4_and_ipv6_addresses() {
+        for value in ["127.0.0.1:8080", "[::]:8080"] {
+            assert_eq!(
+                parse_bind_addrs(value).unwrap(),
+                vec![value.parse::<SocketAddr>().unwrap()]
+            );
+        }
+    }
+
+    #[test]
+    fn listener_accepts_trimmed_address_lists_in_order() {
+        assert_eq!(
+            parse_bind_addrs(" 0.0.0.0:8080 , [::]:8080 , 127.0.0.1:9090 ").unwrap(),
+            vec![
+                "0.0.0.0:8080".parse::<SocketAddr>().unwrap(),
+                "[::]:8080".parse().unwrap(),
+                "127.0.0.1:9090".parse().unwrap(),
+            ]
+        );
+    }
+
     #[test]
     fn listener_requires_ip_and_port() {
-        for value in ["", "127.0.0.1", "localhost:80", "127.0.0.1:65536"] {
-            assert!(parse_bind_addr(value).is_err())
+        for value in ["127.0.0.1", "localhost:80", "127.0.0.1:65536", "::1:8080"] {
+            for input in [value.to_owned(), format!("127.0.0.1:8080,{value}")] {
+                let error = parse_bind_addrs(&input).unwrap_err();
+                assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+                assert!(error.to_string().contains(value));
+            }
+        }
+    }
+
+    #[test]
+    fn listener_rejects_empty_entries() {
+        for value in [
+            "",
+            " ",
+            ",",
+            ",127.0.0.1:8080",
+            "127.0.0.1:8080,",
+            "127.0.0.1:8080, , [::]:8080",
+        ] {
+            let error = parse_bind_addrs(value).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+            assert!(error.to_string().contains("entry \"\""));
         }
     }
     #[test]

@@ -8,7 +8,7 @@ use crate::{AppState, config::ServerConfig, configure};
 async fn postgres_http_ai_usage_requires_team_membership_and_valid_queries() {
     let state = web::Data::new(
         AppState::new(ServerConfig {
-            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            bind_addrs: vec!["127.0.0.1:0".parse().unwrap()],
             database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
             public_url: "https://control.test".into(),
             web_origins: vec![],
