@@ -117,17 +117,18 @@ test("removes a provider after confirmation and keeps errors available for retry
   expect(view.text()).toContain("No providers yet")
 })
 
-test("shows offline and remote states without reading local providers for another machine", async () => {
+test("disables provider configuration while the owning machine is offline and loads on reconnect", async () => {
   fleet.machines[0]!.online = false
-  fleet.machines.push({ ...fleet.machines[0]!, id: "remote", name: "remote-machine", local: false, online: true })
   const view = render()
   await flushPromises()
   expect(platformClient.providers.list).not.toHaveBeenCalled()
-  expect(view.get('[role="status"]').text()).toContain("Start the local Agent")
+  expect(view.get('[role="status"]').text()).toBe("This machine is offline. Connect its daemon to manage providers.")
   expect(button(view, "Add provider").attributes("disabled")).toBeDefined()
-  await button(view, "remote-machine").trigger("click")
-  expect(view.get('[role="status"]').text()).toBe("Provider settings are unavailable for this machine.")
-  expect(platformClient.providers.list).not.toHaveBeenCalled()
+  fleet.machines[0]!.online = true
+  await flushPromises()
+  expect(platformClient.providers.list).toHaveBeenCalledOnce()
+  expect(view.get('[data-provider-id="codex"]').text()).toContain("Work Codex")
+  expect(button(view, "Add provider").attributes("disabled")).toBeUndefined()
 })
 
 test("retries failed reads without allowing changes before providers load", async () => {

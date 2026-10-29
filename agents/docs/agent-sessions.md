@@ -166,6 +166,11 @@ Each daemon owns its machine's provider settings in
 `<daemon directory>/machine/`). Settings → Agents lists those providers
 and supports adding, editing, and removing them through authenticated backend
 management RPC to the target daemon.
+The machine tabs list every machine in the selected Team. Selecting a tab switches
+the active machine while keeping the Agents settings route open, so provider
+operations and installation or login terminals share that machine's runtime.
+Offline machines remain selectable, with provider configuration disabled until
+they reconnect.
 The initial configuration contains a Codex provider. Removing all providers
 leaves the machine unconfigured until one is added; startup does not recreate
 deleted entries.
