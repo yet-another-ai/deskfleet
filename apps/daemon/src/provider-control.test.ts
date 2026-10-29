@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 import { openInMemoryCatalog } from "@deskfleet/native"
-import { DaemonClient } from "../../desktop/src/main/daemon-client.ts"
+import { DaemonClient } from "./control-client.ts"
 import { startDaemon } from "./daemon.ts"
 
 test("authenticated provider CRUD broadcasts changes and survives daemon restart", { timeout: 15_000 }, async t => {
