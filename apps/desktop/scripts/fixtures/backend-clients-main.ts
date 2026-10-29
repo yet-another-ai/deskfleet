@@ -72,19 +72,17 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     }, `${label} confirmation`)
     confirmation!.click()
   }
-  // Unselected Team machines are collapsed sidebar groups; opening one switches machines.
+  // Unopened machines have a button; retained trees select their owner through resource links.
   const machineRow = (index: number) => document.querySelector<HTMLButtonElement>(`aside button[data-machine-id="${context.machines[index]}"]`)
-  async function selectMachine(index: number): Promise<void> {
+  const machineTree = (index: number) => document.querySelector<HTMLElement>(`aside section[data-machine-id="${context.machines[index]}"]`)
+  async function session(index: number): Promise<void> {
     const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean } }).__deskfleetRtcGuard
     guard.blocked = context.mode === "electron" && index === 0
-    await until(() => context.machines.some((_, other) => other !== index && !!machineRow(other)) || !!machineRow(index), "team machines")
+    await until(() => !!machineTree(index) || !!machineRow(index), "team machines")
     machineRow(index)?.click()
-    await until(() => !machineRow(index), "selected machine")
-  }
-  async function session(index: number): Promise<void> {
-    await selectMachine(index)
-    await until(() => [...document.querySelectorAll('aside a[href*="/workspaces/"]')].some(link => link.textContent?.trim() === `Machine ${index}`), "machine catalog")
-    location.hash = `/sessions/${context.sessionId}`
+    const link = () => machineTree(index)?.querySelector<HTMLAnchorElement>(`a[href="#/sessions/${context.sessionId}"]`)
+    await until(() => !!link(), "machine session link")
+    link()!.click()
     await until(() => !!document.querySelector("main")?.textContent?.includes(`Machine ${index} conversation`), "session route")
   }
   if (context.mode === "web") require(!("deskfleet" in window), "Web must not receive an Electron preload")
@@ -95,7 +93,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     require(!JSON.stringify(account).includes('"token"'), "The Electron renderer must not receive the app session token")
   }
   if (offline) {
-    await until(() => (machineRow(0) ?? document.querySelector("aside"))?.textContent?.includes("Offline") === true, "offline machine presence")
+    await until(() => (machineRow(0) ?? machineTree(0))?.textContent?.includes("Offline") === true, "offline machine presence")
     await session(1)
     await session(0)
     await until(() => !!document.querySelector("main")?.textContent?.includes(`Prompt from ${context.mode}`), "offline synchronized history")
@@ -132,6 +130,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   catalogObserver.disconnect()
   require(!flashedLoading, "Background catalog updates flashed the workspace loading title")
   await session(1)
+  require(context.machines.every((_, index) => !!machineTree(index)?.querySelector('a[href*="/workspaces/"]')), "Switching machines must retain both expanded workspace trees")
   await until(() => !!document.querySelector('button[aria-label="Session actions"]'), "second machine conversation snapshot")
   require(!document.querySelector("main")!.textContent!.includes(`Prompt from ${context.mode}`), "Same local Session ID leaked across machines")
   await session(0)

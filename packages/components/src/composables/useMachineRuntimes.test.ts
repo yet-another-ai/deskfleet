@@ -4,7 +4,9 @@ import { createPinia, disposePinia } from "pinia"
 import { defineComponent, effectScope, h, nextTick } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import { useAppearanceStore } from "../stores/appearance.ts"
+import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useFleetStore } from "../stores/fleet.ts"
+import { agentSnapshot } from "../test/agent.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import { createAccountSession } from "./useAccountSession.ts"
 import { createMachineRuntimes, type MachineRuntime } from "./useMachineRuntimes.ts"
@@ -112,6 +114,67 @@ test("a background catalog event refreshes its owning machine after another mach
   expect(f.session.machineId.value).toBe("m2")
 })
 
+test("reconnect refreshes every retained catalog and conversation when roster metadata is unchanged", async () => {
+  const f = await fixture()
+  let revision = 0
+  const snapshot = (machineId: string) => {
+    const value = agentSnapshot()
+    value.session.title = `Conversation ${machineId} revision ${revision}`
+    return value
+  }
+  f.catalog.mockImplementation(async machineId => ({
+    machineId, lastObservedAt: "2026-10-29T00:00:00Z",
+    snapshot: {
+      teamId: "1", machineId: "1", machineName: machineId === "m1" ? f.first.name : f.second.name,
+      workspaces: [{ id: "20", name: `Workspace ${machineId} revision ${revision}`, worktrees: [{ id: "21", workspaceId: "20", directories: [{ path: "/code" }] }] }],
+      sessions: [],
+    },
+  }))
+  Object.assign(f.central, {
+    sessions: vi.fn(async (machineId: string) => [snapshot(machineId)]),
+    session: vi.fn(async (machineId: string) => ({ snapshot: snapshot(machineId) })),
+    events: vi.fn(async () => ({ events: [] })),
+  })
+  const first = f.runtimes.open(f.first)
+  const firstView = mountFleet(first)
+  const firstAgents = useAgentSessionsStore(first.state)
+  await firstView.fleet.refreshLocal()
+  await firstAgents.refresh()
+  await firstAgents.open("30")
+  firstAgents.drafts["30"] = "Keep this draft"
+  await first.api.agent.prepare!("retained-peer")
+  firstView.unmount()
+  f.session.selectMachine("m2")
+  const second = f.runtimes.open(f.second)
+  const secondView = mountFleet(second)
+  const secondAgents = useAgentSessionsStore(second.state)
+  await secondView.fleet.refreshLocal()
+  await secondAgents.refresh()
+  await secondAgents.open("30")
+  await second.api.agent.prepare!("retained-peer")
+
+  f.emit({ type: "connection", connected: false })
+  revision++
+  f.catalog.mockClear()
+  f.emit({ type: "connection", connected: true })
+  await flushPromises()
+
+  expect(f.catalog).toHaveBeenCalledWith("m1")
+  expect(f.catalog).toHaveBeenCalledWith("m2")
+  expect(firstView.fleet.findWorkspace("20")?.workspace.name).toBe("Workspace m1 revision 1")
+  expect(secondView.fleet.findWorkspace("20")?.workspace.name).toBe("Workspace m2 revision 1")
+  expect(firstAgents.sessions["30"]?.title).toBe("Conversation m1 revision 1")
+  expect(secondAgents.sessions["30"]?.title).toBe("Conversation m2 revision 1")
+  expect(firstAgents.views["30"]?.snapshot?.session.title).toBe("Conversation m1 revision 1")
+  expect(secondAgents.views["30"]?.snapshot?.session.title).toBe("Conversation m2 revision 1")
+  expect(firstAgents.drafts["30"]).toBe("Keep this draft")
+  expect(f.session.machineId.value).toBe("m2")
+  expect(f.runtimes.opened.get("m1")).toBe(first)
+  expect(f.runtimes.opened.get("m2")).toBe(second)
+  expect(f.createPeer).toHaveBeenCalledTimes(2)
+  expect(f.closePeer).not.toHaveBeenCalled()
+})
+
 test("a roster refresh reconciles an inactive machine after missed presence without closing its peer", async () => {
   const f = await fixture()
   const first = f.runtimes.open(f.first)
@@ -130,18 +193,18 @@ test("a roster refresh reconciles an inactive machine after missed presence with
   expect(first.api.agent.history!.available()).toBe(true)
   expect(await first.api.desktop.target()).toMatchObject({ name: "Renamed first", online: true })
   expect(first.api.target!.lastSeen).toBe("2026-10-29T12:00:00Z")
-  expect(changed).toHaveBeenCalledOnce()
+  expect(changed).toHaveBeenCalledTimes(2)
   expect(f.closePeer).not.toHaveBeenCalled()
   await f.session.refreshMachines()
   await flushPromises()
-  expect(changed).toHaveBeenCalledOnce()
+  expect(changed).toHaveBeenCalledTimes(2)
 
   // Both the direct event and the account's in-place roster update reach this
   // adapter, but the catalog needs only one refresh for the presence change.
   f.emit({ type: "presence", machineId: "m1", online: false })
   await flushPromises()
   expect(first.api.agent.history!.available()).toBe(false)
-  expect(changed).toHaveBeenCalledTimes(2)
+  expect(changed).toHaveBeenCalledTimes(3)
   expect(f.closePeer).not.toHaveBeenCalled()
 })
 

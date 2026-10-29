@@ -42,9 +42,11 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         emit({ ...event.event, sessionId: local[0] } as DesktopEvent)
       }
       else emit({ sessionId: local[0], kind: "error", error: event.reason })
-    } else if (event.type === "catalogChanged" && event.machineId === machine.id) {
-      for (const listener of catalogEvents) listener(event.sessionId)
-      if (!event.sessionId) for (const listener of providerEvents) listener()
+    } else if ((event.type === "catalogChanged" && event.machineId === machine.id) || (event.type === "connection" && event.connected)) {
+      // Reconnect can miss catalog updates even when the machine's roster metadata is unchanged.
+      const sessionId = event.type === "catalogChanged" ? event.sessionId : undefined
+      for (const listener of catalogEvents) listener(sessionId)
+      if (!sessionId) for (const listener of providerEvents) listener()
     } else if (event.type === "presence" && event.machineId === machine.id) {
       online = event.online
       for (const listener of catalogEvents) listener()
