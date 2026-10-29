@@ -55,16 +55,15 @@ export class OnboardingController {
         } else return this.#save(this.#initialStep())
       }
     }
-    // Unknown backend keeps a saved Wayland consent step; only a known non-Wayland backend drops it.
+    // The permission list preserves saved Wayland consent while its backend is unknown.
     if (ONBOARDING_PERMISSIONS.includes(this.#state.step as OnboardingPermission)
-      && this.#options.localAgent.state.linuxDesktopBackend !== undefined
       && !this.#permissionSteps().includes(this.#state.step as OnboardingPermission)) return this.#save("account")
     return this.#snapshot(this.#state)
   }
 
   #permissionSteps() {
     const backend = this.#options.localAgent.state.linuxDesktopBackend
-    // Fresh Linux starts wait for hello; a saved Portal step may continue while reconnecting.
+    // A saved Portal step may continue while reconnecting; fresh profiles need a known backend.
     if (backend === undefined && this.#state
       && ONBOARDING_PERMISSIONS.includes(this.#state.step as OnboardingPermission)) {
       return onboardingPermissions(this.#options.platform, "wayland")

@@ -448,9 +448,11 @@ it after restart. A profile that already has an account or desktop settings, but
 no welcome file, is treated as finished so sign-in is not repeated and the local
 Agent still starts. Startup starts or reuses the local Agent according to the
 existing enabled preference. Windows clients skip the OS permission steps, as
-do clients with local Agent startup disabled and no running daemon. An enabled
-Agent that fails to start retains permission guidance so users can retry.
-Users can defer an individual
+do clients with local Agent startup disabled and no running daemon. macOS retains
+permission guidance when an enabled Agent fails to start. Linux preserves a saved
+Portal step while disconnected; a fresh profile with no known backend starts at
+account setup. When a later hello identifies X11, the renderer reloads the host's
+normalized account step after active permission work finishes. Users can defer an individual
 permission without blocking account setup or unrelated Agent work.
 
 After acquiring discovery and initializing local IPC, a macOS desktop-hosted

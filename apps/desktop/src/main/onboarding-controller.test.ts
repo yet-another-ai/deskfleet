@@ -82,6 +82,15 @@ test("Windows skips OS permission steps", async () => {
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })
 
+test("Windows normalizes a saved permission step before completing account setup", async () => {
+  const f = await fixture("win32")
+  await writeFile(f.path, JSON.stringify({ step: "screenCapture" }))
+  expect(await f.controller.get()).toEqual({ step: "account" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "account" })
+  expect(await f.controller.complete()).toEqual({ step: "complete" })
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+})
+
 test.each(["darwin", "linux"] as const)("disabled local Agent preference skips %s local permissions", async platform => {
   const f = await fixture(platform)
   f.localAgent.state.enabled = false
