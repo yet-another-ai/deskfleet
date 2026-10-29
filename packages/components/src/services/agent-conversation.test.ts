@@ -1,7 +1,7 @@
 import { expect, test } from "vitest"
-import type { AgentEvent } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot } from "../test/agent.ts"
-import { groupTranscript, projectConversation, summarizeTools } from "./agent-conversation.ts"
+import { groupTranscript, projectConversation, snapshotIsWorking, summarizeTools } from "./agent-conversation.ts"
 const update = (seq: number, update: Record<string, unknown>) => agentEvent(seq, "acp", { sessionId: "provider-session", update } as AgentEvent["payload"])
 test("reconstructs text around tools without user echoes or mutating the durable journal", () => {
   const input = agentInput({ state: "delivered" })
@@ -49,4 +49,20 @@ test("questions retain their original conversation position and use the winning 
   expect(entries.map(entry => entry.kind)).toEqual(["message", "elicitation", "message"])
   expect(entries[1]).toMatchObject({ id: "elicitation-80", turnId: "70", elicitation: resolved })
   expect(projectConversation([], snapshot)).toEqual([entries[1]])
+})
+test.each(["starting", "running", "cancelling"] as const)("snapshotIsWorking is true for a %s turn", state => {
+  const snapshot = agentSnapshot()
+  snapshot.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state, startedAt: "now" }]
+  expect(snapshotIsWorking(snapshot)).toBe(true)
+})
+test.each(["completed", "cancelled", "interrupted", "failed"] as const)("snapshotIsWorking is false for a %s turn", state => {
+  const snapshot = agentSnapshot()
+  const turn: AgentTurn = { id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state, startedAt: "now", endedAt: "now" }
+  snapshot.turns = [turn]
+  expect(snapshotIsWorking(snapshot)).toBe(false)
+})
+test("snapshotIsWorking ignores missing snapshots and idle sessions", () => {
+  expect(snapshotIsWorking(undefined)).toBe(false)
+  expect(snapshotIsWorking(null)).toBe(false)
+  expect(snapshotIsWorking(agentSnapshot())).toBe(false)
 })

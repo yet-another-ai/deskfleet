@@ -29,6 +29,7 @@ import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
+import { liveTurnStates } from "../services/agent-conversation.ts"
 import { latestAgentUsage } from "../services/agent-usage.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
@@ -56,7 +57,7 @@ const view = computed(() => agents.views[props.sessionId])
 const snapshot = computed(() => view.value?.snapshot)
 const usage = computed(() => latestAgentUsage(view.value?.events ?? []))
 const run = computed(() => snapshot.value?.runs.at(-1))
-const activeTurn = computed(() => snapshot.value?.turns.find(turn => ["starting", "running", "cancelling"].includes(turn.state)))
+const activeTurn = computed(() => snapshot.value?.turns.find(turn => liveTurnStates.includes(turn.state)))
 const active = computed(() => !snapshot.value || snapshot.value.session.archiveState === "active")
 const connected = computed(() => agents.state === "connected")
 const canResume = computed(() => !snapshot.value?.session.providerSessionId || !!snapshot.value.session.capabilities?.resume)

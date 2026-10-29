@@ -5,12 +5,18 @@ import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
+import { snapshotIsWorking } from "../../services/agent-conversation.ts"
+import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
+import { useFleetStore } from "../../stores/fleet.ts"
 import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
+import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 
 const { t } = useI18n()
 const id = useId()
 const pins = usePinnedSessionsStore()
+const agents = useAgentSessionsStore()
+const fleet = useFleetStore()
 const account = useAccountSession()
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +29,10 @@ function active(machineId: string, sessionId: string): boolean {
 function open(machineId: string, sessionId: string): void {
   if (account) account.openSession(machineId, sessionId)
   else void router.push({ name: "session", params: { sessionId } })
+}
+/** Live turns are only projected for the selected machine's agent connection. */
+function working(machineId: string, sessionId: string): boolean {
+  return machineId === fleet.targetId && snapshotIsWorking(agents.views[sessionId]?.snapshot)
 }
 </script>
 
@@ -42,6 +52,7 @@ function open(machineId: string, sessionId: string): void {
           >
             <Pin :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
             <span class="min-w-0 flex-1 truncate">{{ sessionLabel({ id: item.sessionId, title: item.title }) }}</span>
+            <SessionWorkingIndicator v-if="working(item.machineId, item.sessionId)" />
             <span v-if="!item.online" class="ui-badge shrink-0 rounded-full font-normal">{{ t('machine.offline') }}</span>
           </button>
         </SessionContextMenu>

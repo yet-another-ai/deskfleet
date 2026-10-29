@@ -130,3 +130,34 @@ test("unpinning the final row removes the empty Pinned section", async () => {
   expect(wrapper!.find("[data-pinned-sessions]").exists()).toBe(false)
   expect(pins.items).toEqual([])
 })
+
+test("pinned rows show a working indicator for the selected machine's live turn", async () => {
+  const { pins, agents, machineId } = await render()
+  pins.pin(machineId, "30", "Cached title"); await flushPromises()
+  expect(row(machineId).find("[data-session-working]").exists()).toBe(false)
+  const live = agentSnapshot()
+  live.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "starting", startedAt: "now" }]
+  agents.views["30"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+  await flushPromises()
+  expect(row(machineId).get("[data-session-working]").attributes("role")).toBe("status")
+  expect(row(machineId).get("[data-session-working]").text()).toContain("Working")
+  agents.views["30"] = {
+    ...agents.views["30"]!,
+    snapshot: { ...live, turns: [{ ...live.turns[0]!, state: "completed", endedAt: "now" }] },
+  }
+  await flushPromises()
+  expect(row(machineId).find("[data-session-working]").exists()).toBe(false)
+})
+
+test("pinned rows on another machine do not use this scope's live turns", async () => {
+  const { pins, agents } = await render(true)
+  pins.pin("first", "30", "Local title")
+  pins.pin("second", "30", "Remote title")
+  await flushPromises()
+  const live = agentSnapshot()
+  live.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
+  agents.views["30"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+  await flushPromises()
+  expect(row("first").find("[data-session-working]").exists()).toBe(true)
+  expect(row("second").find("[data-session-working]").exists()).toBe(false)
+})
