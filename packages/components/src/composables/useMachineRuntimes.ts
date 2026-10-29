@@ -1,5 +1,5 @@
 import { createPinia, disposePinia } from "pinia"
-import { computed, createApp, inject, onScopeDispose, shallowReactive, vaporInteropPlugin, watch, type Component, type InjectionKey } from "vue"
+import { computed, createApp, h, inject, nextTick, onScopeDispose, ref, shallowReactive, vaporInteropPlugin, watch, type Component, type InjectionKey } from "vue"
 import type { Machine } from "@deskfleet/client/central"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import { remoteMachineClient } from "@deskfleet/client/remote"
@@ -8,6 +8,8 @@ import { platformClientKey } from "./usePlatformClient.ts"
 import { i18n } from "../i18n/index.ts"
 import { router } from "../router/index.ts"
 import { appearanceStoreKey, type useAppearanceStore } from "../stores/appearance.ts"
+import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
+import { useTerminalsStore } from "../stores/terminals.ts"
 
 export interface MachineRuntime {
   state: ReturnType<typeof createPinia>
@@ -48,16 +50,38 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
     open(machine) {
       const existing = opened.get(machine.id)
       if (existing) return existing
-      const remote = remoteMachineClient(host, session.central, machine)
+      function isLocal(previous: boolean): boolean {
+        if (host.platform === "web") return false
+        const enrollment = session.enrollment.value
+        // Discovery can be temporarily unavailable after a known local registration.
+        if (!enrollment) return previous
+        return session.localMachineId.value === machine.id && enrollment.teamId === machine.teamId
+      }
+      const remote = remoteMachineClient(host, session.central, machine, { local: isLocal(false) })
       const state = createPinia()
       const views = new Set<() => void>()
+      const renderViews = ref(true)
+      let mounted = false
+      let disposed = false
       let viewId = 0
+      // Reattach viewers when enrollment changes transport, including inactive machines.
+      // Keep the adapter, stores, drafts, and current route throughout the transition.
+      const stopLocal = watch(() => isLocal(remote.api.target?.local ?? false), async value => {
+        if (!mounted) { remote.setLocal(value); return }
+        renderViews.value = false
+        await nextTick()
+        if (disposed) return
+        useAgentSessionsStore(state).closeTransport()
+        useTerminalsStore(state).closeTransport()
+        remote.setLocal(isLocal(remote.api.target?.local ?? false))
+        renderViews.value = true
+      })
       const runtime: MachineRuntime = {
         state,
         api: remote.api,
         updateMachine: remote.updateMachine,
         mount(component, root) {
-          const app = createApp(component)
+          const app = createApp({ render: () => renderViews.value ? h(component) : null })
             .provide(accountSessionKey, session)
             .provide(appearanceStoreKey, appearance)
             .provide(platformClientKey, remote.api)
@@ -68,9 +92,12 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
           const unmount = () => { if (views.delete(unmount)) app.unmount() }
           views.add(unmount)
           app.mount(root)
+          mounted = true
           return unmount
         },
         dispose() {
+          disposed = true
+          stopLocal()
           for (const unmount of views) unmount()
           disposePinia(state)
           remote.dispose()

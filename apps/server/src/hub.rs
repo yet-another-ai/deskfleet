@@ -412,7 +412,7 @@ mod tests {
         let (shutdown, mut stopped) = watch::channel(None);
         send.try_send(ControlMessage::Ping).unwrap();
         hub.add_daemon("1", "old", send, shutdown).await.unwrap();
-        let peer: PeerAuthorization = serde_json::from_value(serde_json::json!({"peerId":"peer","serverId":"server","teamId":"team","actor":{"kind":"user","userId":"u","deviceId":"d"},"targetMachine":{"id":"1","originId":"origin","localMachineId":"1"},"purpose":"agent","actions":[],"issuedAt":"now","expiresAt":"later"})).unwrap();
+        let peer: PeerAuthorization = serde_json::from_value(serde_json::json!({"peerId":"peer","serverId":"server","teamId":"team","actor":{"kind":"user","userId":"u","deviceId":"d"},"targetMachine":{"id":"1","originId":"origin","localMachineId":"1"},"transport":"webrtc","purpose":"agent","actions":[],"issuedAt":"now","expiresAt":"later"})).unwrap();
         hub.revoke(vec![peer], "logout").await.unwrap();
         stopped.changed().await.unwrap();
         assert_eq!(*stopped.borrow(), Some(1012));

@@ -20,7 +20,7 @@ const epoch = Date.parse("2026-10-25T00:00:00Z")
 function grant(): PeerAuthorization {
   return {
     peerId: "peer", serverId: "server", teamId: "team", actor: { kind: "user", userId: "alice", deviceId: "login" },
-    targetMachine: { id: "machine", originId: "origin", localMachineId: "1" }, purpose: "agent",
+    targetMachine: { id: "machine", originId: "origin", localMachineId: "1" }, purpose: "agent", transport: "webrtc",
     actions: ["agent:read", "agent:execute", "git:read"], issuedAt: new Date(epoch).toISOString(), expiresAt: new Date(epoch + 86_400_000).toISOString(),
   }
 }
@@ -68,7 +68,7 @@ function fixture(closeGate?: Promise<void>, closeError?: Error) {
     push({ kind: "data", label: "deskfleet-acp", data: Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n") })
     for (let tries = 0; tries < 100 && !sent.some(value => value.includes(`"id":${id},`)); tries++) await delay(1)
   }
-  return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, negotiation, forwardingDeadlines, gitListeners, closeStarted, closeCalls: () => closeCalls, expired: () => { now += 86_400_001 }, closed: () => closed }
+  return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, negotiation, forwardingDeadlines, gitListeners, closeStarted, closeCalls: () => closeCalls, advance: (ms: number) => { now += ms }, expired: () => { now += 86_400_001 }, closed: () => closed }
 }
 
 test("ports require their own action and enable native forwarding before negotiation", async context => {
@@ -418,3 +418,79 @@ test("files peers route binary reads and enforce a separate write action", async
   assert.equal(f.closed(), true)
   assert.equal(f.calls.length, 0)
 })
+
+const localToken = "local-claim-token-with-at-least-32-characters"
+function localGrant(): PeerAuthorization { return { ...grant(), transport: "local" } }
+
+test("local claims require the bound server, Team, machine, user, purpose, transport, and one-use secret", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const prepare = (authorization: PeerAuthorization) => f.peers.prepareLocal({ peerId: "peer", authorization, token: localToken })
+  for (const changes of [
+    { serverId: "other" }, { teamId: "other" }, { targetMachine: { ...grant().targetMachine, id: "other" } },
+    { actor: { kind: "user" as const, userId: "", deviceId: "login" } },
+    { purpose: "files" as const }, { transport: "webrtc" as const },
+  ]) assert.throws(() => prepare({ ...localGrant(), ...changes }))
+  await assert.rejects(f.peers.offer({ peerId: "peer", authorization: localGrant(), sdp, iceServers: [] }), /WebRTC authorization/)
+  prepare(localGrant())
+  const owner = {}, sink = { send: async () => {}, close: () => {} }
+  assert.throws(() => f.peers.openLocal("peer", "incorrect", owner, sink), /claim token/)
+  f.peers.openLocal("peer", localToken, owner, sink)
+  assert.throws(() => f.peers.openLocal("peer", localToken, owner, sink), /unavailable/)
+  assert.throws(() => f.peers.sendLocal("peer", {}, Buffer.from(""), false), /this connection/)
+  await assert.rejects(f.peers.closeLocal("peer", {}), /this connection/)
+  await f.peers.closeLocal("peer", owner)
+  assert.throws(() => prepare(localGrant()), /new peer/)
+  assert.deepEqual(f.negotiation, [], "local peers never create, negotiate, or close native WebRTC resources")
+  assert.equal(f.closeCalls(), 0)
+})
+
+test("an unclaimed local secret expires after 30 seconds without extending its grant", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  f.peers.prepareLocal({ peerId: "peer", authorization: localGrant(), token: localToken })
+  f.advance(30_001)
+  assert.throws(() => f.peers.openLocal("peer", localToken, {}, { send: async () => {}, close: () => {} }), /claim has expired/)
+  assert.throws(() => f.peers.prepareLocal({ peerId: "peer", authorization: localGrant(), token: localToken }), /new peer/)
+})
+
+test("local Agent and Git requests share verified actors, action checks, and management restrictions", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const owner = {}, sent: string[] = []
+  f.peers.prepareLocal({ peerId: "peer", authorization: { ...localGrant(), actions: ["agent:read", "git:read"] }, token: localToken })
+  f.peers.openLocal("peer", localToken, owner, { send: async (data, isString) => { assert.equal(isString, false); sent.push(data.toString()) }, close: () => {} })
+  const rpc = async (id: number, method: string, params = {}) => {
+    f.peers.sendLocal("peer", owner, Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"), false)
+    for (let attempt = 0; attempt < 100 && !sent.some(value => value.includes(`"id":${id},`)); attempt++) await delay(1)
+    return JSON.parse(sent.find(value => value.includes(`"id":${id},`))!) as { error?: { message: string } }
+  }
+  await rpc(1, "initialize", { protocolVersion: 1 })
+  await rpc(2, "_deskfleet/session/list")
+  await rpc(3, "_deskfleet/git/status", { sessionId: "session" })
+  assert.deepEqual(f.calls.map(call => call.actor), [grant().actor, grant().actor])
+  assert.match((await rpc(4, "_deskfleet/input/submit")).error!.message, /does not allow/)
+  assert.match((await rpc(5, "_deskfleet/session/create")).error!.message, /backend API/)
+  await rpc(6, "_deskfleet/git/subscribe", { sessionId: "session", subscriptionId: "watch" })
+  assert.equal(f.gitListeners.size, 1)
+  f.expired()
+  for (const listener of f.gitListeners) listener()
+  await delay(0)
+  assert.equal(f.gitListeners.size, 0)
+  assert.ok(!sent.some(value => value.includes("_deskfleet/git/changed")), "expired grants cannot stream Git events")
+  assert.deepEqual(f.negotiation, [])
+})
+
+for (const ending of ["expiry", "revoke", "reconcile", "shutdown"] as const) {
+  test(`local ${ending} closes only its viewers and denies subsequent messages`, async context => {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    const owner = {}, closed: (string | undefined)[] = []
+    const authorization = { ...localGrant(), ...(ending === "expiry" ? { expiresAt: new Date(epoch + 10).toISOString() } : {}) }
+    f.peers.prepareLocal({ peerId: "peer", authorization, token: localToken })
+    f.peers.openLocal("peer", localToken, owner, { send: async () => {}, close: error => { closed.push(error) } })
+    if (ending === "expiry") await delay(20)
+    if (ending === "revoke") await f.peers.close("peer")
+    if (ending === "reconcile") await f.peers.reconcile([{ ...authorization, expiresAt: new Date(epoch + 12_000).toISOString() }])
+    if (ending === "shutdown") await f.peers.closeAll()
+    assert.equal(closed.length, 1)
+    assert.throws(() => f.peers.sendLocal("peer", owner, Buffer.from(""), false), /Unknown authorized peer/)
+    assert.equal(f.closeCalls(), 0)
+  })
+}

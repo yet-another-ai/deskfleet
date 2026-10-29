@@ -7,6 +7,9 @@ use deskfleet_control_store::{PeerCandidateState, PeerOfferState, now_ms};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
 use tokio::sync::{mpsc, watch};
 
+#[path = "local_tests.rs"]
+mod local_tests;
+
 struct Fixture {
     admin: DatabaseConnection,
     schema: String,

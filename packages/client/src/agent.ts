@@ -1,8 +1,10 @@
 import type { AgentEvent, AgentMethod, AgentMethods, AgentSessionRecord, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { DesktopEvent, IceCandidate, TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts"
+import type { DataChannel } from "./data-channel.ts"
 
-/** IPC only negotiates the peer; agent operations and history use its ACP DataChannel. */
+/** Agent operations share ACP framing across local and remote message channels. */
 export interface AgentSignalingApi {
+  connectChannel?(sessionId: string): DataChannel
   prepare?(sessionId: string): Promise<RTCIceServer[]>
   /** Additional context for a transport failure, without masking authorization errors. */
   connectionFailure?(sessionId: string): string | undefined

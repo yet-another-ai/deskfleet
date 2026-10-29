@@ -123,6 +123,7 @@ async fn peer_grants_lock_parents_before_revocable_children() {
                 local_machine_id: machine.local_machine_id,
             },
             purpose: "agent".into(),
+            transport: deskfleet_protocol::control::PeerTransport::Webrtc,
             actions: vec!["agent:read".into()],
             issued_at: timestamp(now_ms()),
             expires_at: timestamp(expires),

@@ -5,7 +5,7 @@ import type { ProviderEvent, ProviderMethods } from "./provider-protocol.ts"
 import type { CentralStatus, MachineEnrollment } from "./central-protocol.ts"
 import type { SystemMethods } from "./system-protocol.ts"
 
-/** Provisional local IPC contract. Media and terminal bytes stay on WebRTC. */
+/** Provisional local IPC contract. Media remains on WebRTC. */
 export type VideoCodec = "h264" | "h265" | "av1"
 
 export interface IceCandidate {
@@ -106,6 +106,8 @@ export interface LocalDaemonInfo extends DesktopPermissionsState {
 
 export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent | ProviderEvent
   | { kind: "desktopPermissionsChanged"; permissions: DesktopPermissionsState }
+  | { kind: "localChannelMessage"; peerId: string; sequence: number; data: string; isString: boolean }
+  | { kind: "localChannelClosed"; peerId: string; error?: string }
 
 export interface ControlMethods extends CatalogMethods, FilesystemMethods, ProviderMethods, SystemMethods {
   permissionsRefresh: { params: Record<string, never>; result: DesktopPermissionsState }
@@ -113,6 +115,10 @@ export interface ControlMethods extends CatalogMethods, FilesystemMethods, Provi
   centralStatus: { params: Record<string, never>; result: CentralStatus }
   centralPrepareEnrollment: { params: Record<string, never>; result: CentralStatus }
   centralEnroll: { params: MachineEnrollment; result: CentralStatus }
+  localOpen: { params: { peerId: string; token: string }; result: null }
+  localSend: { params: { peerId: string; data: string; isString: boolean }; result: null }
+  localAck: { params: { peerId: string; sequence: number }; result: null }
+  localClose: { params: { peerId: string }; result: null }
   hello: { params: { token: string }; result: LocalDaemonInfo }
   shutdown: { params: Record<string, never>; result: null }
   capabilities: { params: Record<string, never>; result: DesktopCapabilities }
@@ -143,3 +149,5 @@ export interface DaemonDiscovery {
 
 /** Limit client requests; accumulated catalog responses may be larger. */
 export const MAX_CONTROL_MESSAGE_BYTES = 256 * 1024
+/** DataChannel messages are chunked before crossing the discovery IPC socket. */
+export const MAX_LOCAL_MESSAGE_BYTES = 64 * 1024

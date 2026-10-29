@@ -1,6 +1,7 @@
 import { installCentralAccount } from "./central-account.ts"
 import { installFiles } from "./files.ts"
 import { installPorts } from "./ports.ts"
+import { installLocalChannels } from "./local-channels.ts"
 import { installLocalApplications } from "./applications.ts"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { join } from "node:path"
@@ -45,6 +46,7 @@ function start(): void {
     installLocalApplications(central)
     const files = installFiles(central)
     const ports = installPorts(central)
+    const localChannels = installLocalChannels(central)
     installRendererPermissions()
     // The dev runner, service managers, and session shutdown stop the client with
     // signals. Electron's own handlers, installed during startup, request an
@@ -79,7 +81,7 @@ function start(): void {
     const closeServices = (): Promise<void> => {
       notificationMonitor.close()
       notifications.close()
-      closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close()]).then(results => {
+      closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close()]).then(results => {
         const failure = results.find(result => result.status === "rejected")
         if (failure?.status === "rejected") throw failure.reason
         servicesClosed = true

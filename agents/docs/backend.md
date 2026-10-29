@@ -50,8 +50,12 @@ ownership and explicit Site Admin boundary.
 - Send Workspace, Provider, and machine-settings management requests to backend
   APIs. The backend authorizes and forwards them to the owning daemon. The daemon
   validates and executes machine-local changes.
-- Keep Agent interaction, Git queries, and terminal streams on WebRTC. Working
-  established peers can continue working when the central connection is lost.
+- Use a direct authenticated message channel for Agent interaction, Git queries,
+  and terminal streams when Electron operates its registered local machine.
+  The shared DataChannel interface selects the IPC adapter locally; remote
+  machines and Web clients use WebRTC.
+  Working established connections can continue within their existing grants
+  when the central connection is lost.
   Assume the central service is available for the first release; do not add an
   offline resource-creation or offline-authorization subsystem.
 - Trust the central service to bind verified user/machine identities to SDP
@@ -92,6 +96,7 @@ ownership and explicit Site Admin boundary.
 | Resource catalog | Team-scoped Machine/Workspace/Session/Worktree queries, source identity mapping, synchronized directory metadata, and active/archived Session filtering | Daemon owns Workspace configuration and captured Session directories |
 | Machine management | Authorize and route Workspace/Provider/machine-settings requests, correlate results, and report unavailable targets | Daemon validates paths, persists machine configuration, and performs filesystem/process changes |
 | Signaling | Bind verified identities, target, SDP fingerprints, and expiry to each peer; route SDP/ICE and terminal lifecycle messages; issue ICE configuration and relay credentials; deliver revocation | Endpoints perform DTLS key exchange; daemon enforces peer authorization and the 24-hour ceiling independently of the signaling socket |
+| Local message access | Authorize the local connection's user/device, Team, Machine, purpose, actions, and expiry; deliver revocation without requiring SDP/ICE or TURN | Electron verifies locality and supplies the direct adapter; daemon enforces the same operation permissions and lifetime as remote access |
 | History ingestion | Accept daemon snapshots/events and audit, deduplicate retries, record committed sequence watermarks, and propagate catalog changes/deletions | Daemon is the sole writer of execution history and retains unsynchronized data |
 | History queries | Serve paginated Session summaries, conversations, tool history, and audit over HTTPS, including when a machine is offline | Clients project stored events and attach to the live daemon when operations are available |
 | Archive and restore | Synchronize and query archive state while preserving all central history and audit; report completion only after daemon confirmation | Daemon pauses input delivery, closes the provider and owned PTYs without removing files or records, and restores active state without launching processes |
@@ -276,7 +281,10 @@ not by untrusted operation parameters.
    Session archive/restore with resource closure and complete data retention.
    Integrate active/archived lists and cached history with live Session views
    in both clients.
-4. Complete the end-to-end checks below with the real backend, two machines,
+4. Use the implemented [local message channel](architecture.md#local-message-channel)
+   for Electron's registered local machine, sharing Agent/Git/terminal services
+   and authorization with the remote adapters.
+5. Complete the end-to-end checks below with the real backend, two machines,
    Electron, and the separately hosted Web client.
 
 The release workflow is: log in, select a Team, enroll a headless machine,
@@ -285,7 +293,7 @@ run an Agent, inspect Git, and open a terminal from another client. Verify both
 direct and forced TURN connections.
 
 The identity/subscription replacement additionally follows the
-[delivery boundaries](identity-billing.md#delivery-boundaries) and
+[delivery and verification](identity-billing.md#delivery-and-verification) and
 [acceptance scenarios](identity-billing.md#acceptance-scenarios): real password
 and Passkey login, concurrent Team quota admission, fork-inherited turn limits,
 date-anchored TURN, expiry without grace, and manually assigned Enterprise.
@@ -322,6 +330,49 @@ Acceptance also covers:
 - PostgreSQL server integration and SQLite daemon behavior are tested at their
   respective storage boundaries. Browser and Electron exercise the shared UI
   with their actual adapters.
+
+### Local message channel acceptance
+
+The local adapter and grant path are implemented. Validate the production
+Electron bridge and daemon alongside the existing remote-client checks:
+
+- The signed-in server, selected Team, and Machine registration identify the
+  local target. A remote machine, another registration, or a Web client does
+  not acquire local access merely because its hostname or API URL is local.
+- With WebRTC creation disabled and STUN/TURN unavailable, the authorized local
+  client can submit a prompt, receive streamed events, respond to an approval,
+  read Git status/diffs and invalidations, and attach, type, resize, and replay
+  a terminal. Interactive delivery does not use the central server as a relay;
+  history synchronization retains its separate path.
+- A local connection cannot be established with only a discovery token or
+  renderer-supplied actor/grant. Wrong-user, wrong-Team, wrong-Machine, and
+  wrong-purpose attempts fail. Logout, removal, and grant expiry close access,
+  including outgoing streams, under the same rules as remote connections.
+- Closing or crashing a renderer releases its channel and subscriptions while
+  other windows, Agents, and shells continue. Reattachment restores their state
+  without duplicate prompts or shells. A local channel failure is visible and retries
+  locally; loss of central signaling alone does not end a valid local grant.
+- Slow viewers and large terminal output exercise bounded queues and existing
+  acknowledgements without blocking another viewer or Agent execution. Record
+  connection setup and message round-trip latency against the same-machine
+  WebRTC baseline to verify that the local path removes negotiation overhead.
+- Remote Electron and Web Agent/Git/terminal flows still pass direct-ICE and
+  forced-TURN checks. File transfer, TCP forwarding, and media retain their
+  independently authorized transports.
+
+Focused daemon coverage verifies trusted grant delivery, one-use claims, socket
+ownership, action checks, expiry/revocation, delivery acknowledgements, and
+Agent/terminal I/O with WebRTC creation disabled. Reconnection replays the same
+shell transcript, and signaling loss preserves an established local grant:
+
+```sh
+mise exec -- node --test apps/daemon/src/authorized-peers.test.ts apps/daemon/src/local-channel.test.ts
+```
+
+The shared client and Electron suites cover the DataChannel surface, transport
+selection, main-process locality checks, cancellation, and window isolation.
+`mise run backend:smoke-clients` exercises the production backend/client path;
+`mise run backend:smoke-relay` remains the remote forced-TURN regression command.
 
 MCP coordination and desktop-control expansion follow this remote Agent/Git/
 terminal workflow. Workspace-scoped terminals are an existing architecture goal

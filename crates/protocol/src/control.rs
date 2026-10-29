@@ -71,10 +71,18 @@ pub struct PeerAuthorization {
     pub team_id: String,
     pub actor: PeerActor,
     pub target_machine: PeerTarget,
+    pub transport: PeerTransport,
     pub purpose: String,
     pub actions: Vec<String>,
     pub issued_at: String,
     pub expires_at: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum PeerTransport {
+    Webrtc,
+    Local,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
@@ -182,6 +190,7 @@ pub fn typescript() -> String {
         Machine::decl(&config),
         PeerActor::decl(&config),
         PeerTarget::decl(&config),
+        PeerTransport::decl(&config),
         PeerAuthorization::decl(&config),
         IceServer::decl(&config),
         RpcError::decl(&config),

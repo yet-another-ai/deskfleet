@@ -783,6 +783,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       peerId: "peer-1",
       authorization: {
         peerId: "peer-1",
+        transport: "webrtc",
         serverId: "srv-1",
         teamId: "team-1",
         actor: { kind: "user", userId: "user-1", deviceId: "dev-1" },

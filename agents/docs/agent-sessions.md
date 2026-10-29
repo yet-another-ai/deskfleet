@@ -1,8 +1,9 @@
 # Agent Session persistence and ACP transport
 
 The daemon owns persistent Agent Sessions, their provider processes, and their
-conversation journal. Electron uses the same ACP DataChannel facade intended for
-remote clients. This document owns the collaboration, persistence, and transport
+conversation journal. Clients share one ACP facade over remote DataChannels or
+the direct local message channel used by Electron for its registered local machine.
+This document owns the collaboration, persistence, and transport
 contract; [architecture](architecture.md) owns the resource hierarchy.
 
 The target [identity and billing requirements](identity-billing.md) add Team
@@ -19,8 +20,8 @@ leaves the Agent running and its approvals pending.
 
 ```mermaid
 flowchart LR
-    A[Client A] <-->|ACP over DataChannel| D[Daemon Session service]
-    B[Client B] <-->|ACP over DataChannel| D
+    A[Client A] <-->|ACP messages| D[Daemon Session service]
+    B[Client B] <-->|ACP messages| D
     D <-->|One ACP connection per running Session| P[Agent / ACP adapter]
     D --> S[SQLite catalog and Session journal]
     S -.->|Future history synchronization| C[Central server]
@@ -227,7 +228,7 @@ and passes environment overrides directly to the process. Installation does not
 imply authentication: completion triggers a new probe, and successful installation
 fills the executable's absolute path. Custom ACP providers have discovery but no
 built-in installation or login action. Setup uses authenticated machine management
-RPC; terminal interaction uses the existing WebRTC terminal channel.
+RPC; terminal interaction uses the shared terminal message transport.
 Pi installation uses the official `pi.dev` installer. Its **Log in** action opens
 Pi; enter `/login`, complete provider setup, then `/quit`. Discovery leaves Pi's
 credential status unknown because its credential check requires a specific model
@@ -629,16 +630,21 @@ stops outstanding commands while retaining their output. See
 [ACP command terminals](terminals.md#acp-command-terminals) for lifecycle and
 output retention semantics.
 
-## ACP over DataChannel
+## ACP message transport
 
-Each client initializes an independent JSON-RPC connection over one reliable,
-ordered `deskfleet-acp` DataChannel, multiplexing its Session subscriptions.
+Each client initializes an independent, reliable, ordered JSON-RPC connection,
+multiplexing its Session subscriptions. Remote connections use the
+`deskfleet-acp` DataChannel. Electron connections to the registered local machine
+use the [direct message channel](architecture.md#local-message-channel)
+without constructing a WebRTC peer. Both expose the same DataChannel-compatible
+message, lifecycle, and buffering surface to `AgentClient`.
 The daemon terminates that connection and owns the separate ACP SDK connection
 to each provider. RPC IDs are never forwarded between viewers and providers.
 `PROTOCOL_VERSION` remains `1` while contracts are provisional.
 
 The wire format is UTF-8 NDJSON in binary chunks, at most 16 KiB per chunk (or the
-browser's negotiated SCTP limit when lower). Chunks are not JSON boundaries.
+browser's negotiated SCTP limit when lower for WebRTC). Chunks are not JSON
+boundaries.
 Readers reconstruct split JSON and Unicode; writers finish a message before
 starting another. A reconstructed message has a 32 MiB limit, advertised at
 initialization. Viewer queues and outstanding requests are bounded. Native
@@ -647,9 +653,15 @@ without blocking the provider or other clients. Reconnection reads SQLite again.
 
 The receive loop dispatches requests concurrently instead of waiting for one
 request to finish before accepting approvals and cancellation. Authentication is
-bound at signaling; the DataChannel label itself is not authorization. Local
-Electron IPC supplies discovery and SDP/ICE signaling only, not a separate
-conversation API. Remote authenticated signaling can reuse this facade.
+bound to the connection's verified grant; a channel label is not authorization.
+The local adapter carries the same ACP messages through Electron's
+narrow IPC bridge and the daemon's existing dispatcher. It preserves actor and
+action checks, expiry/revocation, framing, backpressure, concurrent request
+dispatch, and journal replay. It does not introduce another conversation API or
+use discovery credentials as Team authorization. Main claims a one-use secret
+from a centrally authorized local grant; the renderer never receives the secret.
+Each binary frame waits for the preload delivery acknowledgement before the
+next frame, retaining the existing five-second send deadline.
 
 | Operation | Contract |
 | --- | --- |

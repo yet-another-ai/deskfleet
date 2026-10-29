@@ -256,6 +256,7 @@ async fn postgres_roles_tokens_replication_and_revocation() {
             local_machine_id: "1".into(),
         },
         purpose: "agent".into(),
+        transport: deskfleet_protocol::control::PeerTransport::Webrtc,
         actions: vec!["agent:read".into()],
         issued_at: timestamp(now_ms()),
         expires_at: timestamp(now_ms() + 86_400_000),

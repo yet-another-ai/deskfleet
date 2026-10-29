@@ -2,8 +2,8 @@ import { chmod, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { hostname } from "node:os"
 import { join } from "node:path"
 import type { AgentActor } from "./agent-protocol.ts"
-import { AuthorizedPeers } from "./authorized-peers.ts"
-import { centralUrl, type CentralStatus, type MachineCredentials, type MachineEnrollment, type PeerOffer, type ServerMessage } from "./central-protocol.ts"
+import { AuthorizedPeers, type LocalPeerSink } from "./authorized-peers.ts"
+import { centralUrl, type CentralStatus, type LocalPeerGrant, type MachineCredentials, type MachineEnrollment, type PeerOffer, type ServerMessage } from "./central-protocol.ts"
 import { CentralSync } from "./central-sync.ts"
 import type { ControlPeers } from "./control-server.ts"
 import { isEncoderFailure, type IceCandidate } from "./control-protocol.ts"
@@ -67,6 +67,18 @@ export class CentralClient {
   }
 
   desktopCapabilitiesChanged(): void { this.#sync.changed() }
+
+  openLocal(peerId: string, token: string, owner: object, sink: LocalPeerSink): void {
+    this.#peers.openLocal(peerId, token, owner, sink)
+  }
+
+  sendLocal(peerId: string, owner: object, data: Buffer, isString: boolean): void {
+    this.#peers.sendLocal(peerId, owner, data, isString)
+  }
+
+  closeLocal(peerId: string, owner: object): Promise<void> {
+    return this.#peers.closeLocal(peerId, owner)
+  }
 
   /** Schedules and session tools retain user intent, never a reusable user login token. */
   async authorizeDelegation(actor: AgentActor): Promise<AgentActor> {
@@ -221,6 +233,7 @@ export class CentralClient {
     const params = value as Record<string, unknown>
     switch (method) {
       case "peer.offer": return this.#peers.offer(value as PeerOffer)
+      case "peer.local": this.#peers.prepareLocal(value as LocalPeerGrant); return null
       case "peer.candidate": await this.#peers.candidate(params.peerId as string, params.candidate as IceCandidate); return null
       case "peer.close": await this.#peers.close(params.peerId as string); return null
       case "peer.start": await this.#peers.start(params.peerId as string, validateRelayedDesktopStart(params)); return null

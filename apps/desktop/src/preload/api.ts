@@ -14,6 +14,7 @@ import { appearanceApi } from "./appearance.ts"
 import { portsApi } from "./ports.ts"
 import { applicationsApi } from "./applications.ts"
 import { updatesApi } from "./updates.ts"
+import { localChannelsApi } from "./local-channels.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -55,6 +56,7 @@ return {
   updates: updatesApi(),
   files: filesApi(),
   ports: portsApi(),
+  localChannels: localChannelsApi(),
   settings: {
     get: () => invokeSettings("get"),
     setLocalAgentEnabled: (enabled) => invokeSettings("setLocalAgentEnabled", enabled),

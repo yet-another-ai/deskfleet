@@ -1,6 +1,7 @@
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentSignalingApi } from "../../../client/src/agent.ts"
+import { LocalDataChannel, type LocalChannelsApi } from "../../../client/src/local-channels.ts"
 import { deferred } from "../test/desktop-media.ts"
 import { AgentClient } from "./agent-client.ts"
 import { AgentMessageDecoder } from "./agent-stream.ts"
@@ -81,6 +82,25 @@ test("disconnect rejects mutations and reconnect never replays them", async () =
   await flushPromises(); client.close(); await rejected
   const next = await connect(client)
   expect(next.channel.send).not.toHaveBeenCalled()
+})
+
+test("changing an existing client's transport never replays an accepted command", async () => {
+  const { client, api } = setup(), peer = await connect(client)
+  const accepted = client.call("_deskfleet/input/submit", { operationId: "accepted-operation" })
+  await flushPromises()
+  peer.channel.message({ jsonrpc: "2.0", id: peer.channel.sent()[0]!.id, result: { accepted: true } })
+  await accepted
+  client.close()
+  const bridge: LocalChannelsApi = { open: vi.fn(async () => {}), send: vi.fn(async () => {}), close: vi.fn(async () => {}), onEvent: () => () => {} }
+  api.connectChannel = connectionId => new LocalDataChannel(bridge, { connectionId, teamId: "team", machineId: "machine", purpose: "agent" })
+  await client.connect()
+  expect(bridge.send).not.toHaveBeenCalled()
+  expect(api.offer).toHaveBeenCalledOnce()
+  client.close()
+  api.connectChannel = undefined
+  const next = await connect(client)
+  expect(next.channel.send).not.toHaveBeenCalled()
+  expect(api.offer).toHaveBeenCalledTimes(2)
 })
 
 test("releasing an in-flight offer closes a late peer answer too", async () => {

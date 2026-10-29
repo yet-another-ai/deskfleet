@@ -10,6 +10,8 @@ import AccountShell from "./AccountShell.vue"
 import { agentEvent, agentInput, agentSnapshot } from "./test/agent.ts"
 import { fakeCentral, machineFixture } from "./test/central.ts"
 import * as analytics from "./services/analytics.ts"
+import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
+import * as machineRuntimes from "./composables/useMachineRuntimes.ts"
 
 const host = getClient()
 const page = () => new DOMWrapper(document.body)
@@ -159,6 +161,46 @@ test("refreshing to another account remounts the same Team machine in its new id
   expect(account.teamId.value).toBe("team-1")
   expect(account.machineId.value).toBe("m1")
   expect(page().get("main").element).not.toBe(previousMain)
+})
+
+test.each(["selected", "background"])("late local enrollment switches a %s machine's channel without losing its route or draft", async visibility => {
+  const fake = fakeCentral({
+    machines: [machineFixture("mine", "team-1", "This computer", false), machineFixture("other", "team-1", "Other machine", false)],
+    enrollment: { configured: true, connected: true, revoked: false, serverUrl: "https://fleet.example", teamId: "team-1", machineId: "mine", identity: { originId: "origin-mine", machineId: "1" }, machineName: "This computer" },
+  })
+  withEmptyCatalogs(fake)
+  fake.central.localEnrollment!.mockRejectedValueOnce(new Error("Daemon is starting"))
+  const createRuntimes = vi.spyOn(machineRuntimes, "createMachineRuntimes")
+  mountShell(fake.central)
+  const runtimes = createRuntimes.mock.results[0]!.value!
+  await settled(() => expect(runtimes.opened.get("mine")).toBeDefined())
+  const runtime = runtimes.opened.get("mine")!
+  const api = runtime.api
+  expect(api.agent.connectChannel).toBeUndefined()
+  await settled(() => expect(page().get("aside").text()).toContain("This computer"))
+  const agents = useAgentSessionsStore(runtime.state)
+  agents.drafts["machine:mine"] = "Keep this unsent message"
+  const session = view!.getComponent({ name: "MachineSurface" }).props("session") as AccountSession
+  if (visibility === "background") {
+    session.selectMachine("other")
+    await settled(() => expect(runtimes.opened.get("other")).toBeDefined())
+    await flushPromises()
+  }
+  await router.push("/settings/preferences")
+  await session.refreshMachines()
+  await settled(() => expect(api.agent.connectChannel).toBeTypeOf("function"))
+  expect(runtimes.opened.get("mine")?.api).toBe(api)
+  expect(router.currentRoute.value.path).toBe("/settings/preferences")
+  expect(useAgentSessionsStore(runtime.state)).toBe(agents)
+  expect(agents.drafts["machine:mine"]).toBe("Keep this unsent message")
+  fake.central.localEnrollment!.mockRejectedValueOnce(new Error("Daemon discovery is temporarily unavailable"))
+  await session.refreshMachines()
+  expect(api.agent.connectChannel).toBeTypeOf("function")
+  fake.state.enrollment!.revoked = true
+  await session.refreshMachines()
+  await settled(() => expect(api.agent.connectChannel).toBeUndefined())
+  expect(router.currentRoute.value.path).toBe("/settings/preferences")
+  expect(agents.drafts["machine:mine"]).toBe("Keep this unsent message")
 })
 
 test("keeps archived lists and their Conversations return path scoped to the selected machine", async () => {

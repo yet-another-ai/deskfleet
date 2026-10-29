@@ -1,5 +1,6 @@
 import type { TerminalSignalingApi } from "../../../client/src/terminal.ts"
 import type { IceCandidate } from "../../../client/src/desktop-media.ts"
+import { DataChannelErrorEvent, type DataChannel } from "../../../client/src/data-channel.ts"
 import {
   MAX_TERMINAL_MESSAGE_BYTES,
   TERMINAL_CHANNEL,
@@ -11,7 +12,7 @@ import {
 
 export type TerminalConnectionState = "idle" | "connecting" | "connected" | "error"
 export type TerminalListener = (event: TerminalEvent, acknowledge: () => void) => void
-type TransportSignaling = Pick<TerminalSignalingApi, "offer" | "candidate" | "close" | "onEvent" | "prepare" | "connectionFailure">
+type TransportSignaling = Pick<TerminalSignalingApi, "offer" | "candidate" | "close" | "onEvent" | "prepare" | "connectionFailure" | "connectChannel">
 
 interface PendingRequest {
   resolve: (result: unknown) => void
@@ -21,8 +22,8 @@ interface PendingRequest {
 
 interface PeerSession {
   id: string
-  peer: RTCPeerConnection
-  channel: RTCDataChannel
+  peer: RTCPeerConnection | undefined
+  channel: DataChannel
   unsubscribe: () => void
   timeout: ReturnType<typeof setTimeout>
   resolve: () => void
@@ -58,7 +59,7 @@ export function decodeTerminalBytes(data: string): Uint8Array {
   return Uint8Array.from(atob(data), (character) => character.charCodeAt(0))
 }
 
-/** A data-only peer. Terminal processes belong to the daemon, independently of this connection. */
+/** An ordered message channel. Terminal processes belong to the daemon, independently of this connection. */
 export class TerminalClient {
   readonly #api: TransportSignaling
   readonly #state: (state: TerminalConnectionState, error?: string) => void
@@ -93,54 +94,57 @@ export class TerminalClient {
         reject(new Error("Connection was cancelled")); return
       }
       try {
-        const peer = new RTCPeerConnection({ iceServers })
-        const channel = peer.createDataChannel(TERMINAL_CHANNEL, { ordered: true })
+        const peer = this.#api.connectChannel ? undefined : new RTCPeerConnection({ iceServers })
+        const channel: DataChannel = this.#api.connectChannel?.(id) ?? peer!.createDataChannel(TERMINAL_CHANNEL, { ordered: true })
         const session: PeerSession = {
           id, peer, channel, unsubscribe: () => {},
           timeout: setTimeout(() => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection timed out")), 20_000),
-          resolve, reject, offered: false, remoteReady: false,
+          resolve, reject, offered: false, remoteReady: !peer,
           localCandidates: [], remoteCandidates: [],
           localSending: Promise.resolve(), remoteAdding: Promise.resolve(),
         }
         this.#current = session
-        session.unsubscribe = this.#api.onEvent((event) => {
-          if (event.sessionId !== session.id || this.#current !== session) return
-          if (event.kind === "iceCandidate") {
-            session.remoteCandidates.push(event.candidate)
-            this.#addCandidates(session)
-          } else if (event.kind === "error") {
-            this.#fail(session, new Error(event.error))
-          } else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) {
-            this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
-          }
-        })
-        peer.onicecandidate = ({ candidate }) => {
-          if (!candidate || this.#current !== session) return
-          const value = candidate.toJSON()
-          session.localCandidates.push({
-            candidate: value.candidate ?? "",
-            ...(value.sdpMid != null ? { sdpMid: value.sdpMid } : {}),
-            ...(value.sdpMLineIndex != null ? { sdpMlineIndex: value.sdpMLineIndex } : {}),
-            ...(value.usernameFragment != null ? { usernameFragment: value.usernameFragment } : {}),
+        if (peer) {
+          session.unsubscribe = this.#api.onEvent((event) => {
+            if (event.sessionId !== session.id || this.#current !== session) return
+            if (event.kind === "iceCandidate") {
+              session.remoteCandidates.push(event.candidate)
+              this.#addCandidates(session)
+            } else if (event.kind === "error") {
+              this.#fail(session, new Error(event.error))
+            } else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) {
+              this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
+            }
           })
-          this.#sendCandidates(session)
-        }
-        peer.onconnectionstatechange = () => {
-          if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
-            this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
+          peer.onicecandidate = ({ candidate }) => {
+            if (!candidate || this.#current !== session) return
+            const value = candidate.toJSON()
+            session.localCandidates.push({
+              candidate: value.candidate ?? "",
+              ...(value.sdpMid != null ? { sdpMid: value.sdpMid } : {}),
+              ...(value.sdpMLineIndex != null ? { sdpMlineIndex: value.sdpMLineIndex } : {}),
+              ...(value.usernameFragment != null ? { usernameFragment: value.usernameFragment } : {}),
+            })
+            this.#sendCandidates(session)
+          }
+          peer.onconnectionstatechange = () => {
+            if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
+              this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
+            }
           }
         }
         channel.onopen = () => this.#ready(session)
         channel.onclose = () => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
-        channel.onerror = () => this.#fail(session, new Error("Terminal data channel failed"))
+        channel.onerror = event => this.#fail(session, event instanceof DataChannelErrorEvent ? event.error : new Error("Terminal data channel failed"))
         channel.onmessage = ({ data }) => this.#message(session, data)
-        void this.#negotiate(session).catch((error: unknown) => this.#fail(session, errorOf(error)))
+        if (peer) void this.#negotiate(session).catch((error: unknown) => this.#fail(session, errorOf(error)))
+        else this.#ready(session)
       } catch (error) {
         this.#state("error", errorOf(error).message)
         reject(errorOf(error))
       }
       }
-      if (this.#api.prepare) void this.#api.prepare(id).then(begin, error => { this.#state("error", errorOf(error).message); reject(errorOf(error)) })
+      if (!this.#api.connectChannel && this.#api.prepare) void this.#api.prepare(id).then(begin, error => { this.#state("error", errorOf(error).message); reject(errorOf(error)) })
       else begin([])
     })
     this.#connecting = connecting
@@ -152,9 +156,10 @@ export class TerminalClient {
   }
 
   async #negotiate(session: PeerSession): Promise<void> {
-    const offer = await session.peer.createOffer()
+    const peer = session.peer!
+    const offer = await peer.createOffer()
     if (this.#current !== session) return
-    await session.peer.setLocalDescription(offer)
+    await peer.setLocalDescription(offer)
     if (this.#current !== session) return
     const answer = await this.#api.offer({ sessionId: session.id, sdp: offer.sdp! })
     if (this.#current !== session) {
@@ -163,7 +168,7 @@ export class TerminalClient {
     }
     session.offered = true
     this.#sendCandidates(session)
-    await session.peer.setRemoteDescription({ type: "answer", sdp: answer.sdp })
+    await peer.setRemoteDescription({ type: "answer", sdp: answer.sdp })
     if (this.#current !== session) return
     session.remoteReady = true
     this.#addCandidates(session)
@@ -194,7 +199,7 @@ export class TerminalClient {
     session.remoteAdding = session.remoteAdding.then(async () => {
       for (const candidate of candidates) {
         if (this.#current !== session) return
-        await session.peer.addIceCandidate({
+        await session.peer!.addIceCandidate({
           candidate: candidate.candidate,
           ...(candidate.sdpMid != null ? { sdpMid: candidate.sdpMid } : {}),
           ...(candidate.sdpMlineIndex != null ? { sdpMLineIndex: candidate.sdpMlineIndex } : {}),
@@ -323,11 +328,13 @@ export class TerminalClient {
     this.#connecting = null
     clearTimeout(session.timeout)
     session.unsubscribe()
-    session.peer.onicecandidate = null
-    session.peer.onconnectionstatechange = null
+    if (session.peer) {
+      session.peer.onicecandidate = null
+      session.peer.onconnectionstatechange = null
+    }
     session.channel.onopen = session.channel.onclose = session.channel.onerror = session.channel.onmessage = null
     session.channel.close()
-    session.peer.close()
+    session.peer?.close()
     session.reject(error)
     for (const request of this.#pending.values()) {
       clearTimeout(request.timeout)
