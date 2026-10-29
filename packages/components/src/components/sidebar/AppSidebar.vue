@@ -55,7 +55,8 @@ function keyResize(event: KeyboardEvent): void {
 }
 
 function refresh(): void {
-  void fleet.refreshLocal()
+  if (runtimes) for (const runtime of runtimes.opened.values()) runtime.refreshCatalog()
+  else void fleet.refreshLocal()
   void account?.refreshMachines()
 }
 </script>

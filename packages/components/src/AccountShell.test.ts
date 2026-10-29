@@ -11,6 +11,7 @@ import { agentEvent, agentInput, agentSnapshot } from "./test/agent.ts"
 import { fakeCentral, machineFixture } from "./test/central.ts"
 import * as analytics from "./services/analytics.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
+import { useProvidersStore } from "./stores/providers.ts"
 import * as machineRuntimes from "./composables/useMachineRuntimes.ts"
 
 const host = getClient()
@@ -127,6 +128,78 @@ const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin") 
   view = mount(AccountShell, { props: { host: { ...host, platform, central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
 }
 const buttonText = (text: string) => page().findAll("button").find(button => button.text() === text)
+
+test("Refresh reloads every opened machine's resources with unchanged roster metadata", async () => {
+  const fake = fakeCentral({ machines: [
+    machineFixture("m1", "team-1", "First", false),
+    machineFixture("m2", "team-1", "Second", false),
+    machineFixture("m3", "team-1", "Unopened", false),
+  ] })
+  let revision = 0
+  const snapshot = (machineId: string) => {
+    const value = agentSnapshot()
+    value.session.workspaceId = "20"
+    value.session.title = `Conversation ${machineId} revision ${revision}`
+    return value
+  }
+  const catalog = vi.fn(async (machineId: string) => ({
+    machineId, lastObservedAt: "2026-10-29T00:00:00Z",
+    providers: { providers: [{ id: "codex", name: `Provider ${machineId} revision ${revision}`, template: "codex" }] },
+    snapshot: {
+      teamId: "1", machineId: "1", machineName: fake.state.machines.find(machine => machine.id === machineId)!.name,
+      workspaces: [{ id: "20", name: `Workspace ${machineId} revision ${revision}`, worktrees: [{ id: "21", workspaceId: "20", directories: [{ path: "/code" }] }] }],
+      sessions: [],
+    },
+  }))
+  const createPeer = vi.fn(async (_teamId: string, machineId: string) => ({
+    peerId: `peer-${machineId}`, authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [],
+  }))
+  const closePeer = vi.fn(async () => {})
+  Object.assign(fake.central, { catalog, createPeer, closePeer, sessions: vi.fn(async (machineId: string) => [snapshot(machineId)]) })
+  const createRuntimes = vi.spyOn(machineRuntimes, "createMachineRuntimes")
+  mountShell(fake.central, "web")
+  await settled(() => expect(page().get("aside").text()).toContain("Workspace m1 revision 0"))
+  await page().get('aside button[data-machine-id="m2"]').trigger("click")
+  await settled(() => {
+    expect(page().get("aside").text()).toContain("Workspace m2 revision 0")
+    expect(page().get("aside").text()).toContain("Conversation m1 revision 0")
+    expect(page().get("aside").text()).toContain("Conversation m2 revision 0")
+  })
+  const account = view!.getComponent({ name: "MachineSurface" }).props("session") as AccountSession
+  const runtimes = createRuntimes.mock.results[0]!.value!
+  const first = runtimes.opened.get("m1")!
+  const second = runtimes.opened.get("m2")!
+  const firstAgents = useAgentSessionsStore(first.state)
+  firstAgents.drafts["30"] = "Keep the background draft"
+  await first.api.agent.prepare!("retained-peer")
+  await second.api.agent.prepare!("retained-peer")
+  const main = page().get("main").element
+  catalog.mockClear()
+  fake.central.machines.mockClear()
+  revision++
+
+  await buttonText("Refresh")!.trigger("click")
+  await settled(() => {
+    const sidebar = page().get("aside").text()
+    expect(sidebar).toContain("Workspace m1 revision 1")
+    expect(sidebar).toContain("Workspace m2 revision 1")
+    expect(sidebar).toContain("Conversation m1 revision 1")
+    expect(sidebar).toContain("Conversation m2 revision 1")
+    expect(useProvidersStore(first.state).providers[0]?.name).toBe("Provider m1 revision 1")
+    expect(useProvidersStore(second.state).providers[0]?.name).toBe("Provider m2 revision 1")
+  })
+  expect(fake.central.machines).toHaveBeenCalledWith("team-1")
+  expect(catalog).not.toHaveBeenCalledWith("m3")
+  expect(runtimes.opened.size).toBe(2)
+  expect(runtimes.opened.get("m1")).toBe(first)
+  expect(runtimes.opened.get("m2")).toBe(second)
+  expect(firstAgents.drafts["30"]).toBe("Keep the background draft")
+  expect(account.machineId.value).toBe("m2")
+  expect(page().get("main").element).toBe(main)
+  expect(createPeer).toHaveBeenCalledTimes(2)
+  expect(closePeer).not.toHaveBeenCalled()
+})
+
 /**
  * Machine views read synchronized catalogs and history; these machines have none.
  * Like the server, the catalog names each machine with its Team name.

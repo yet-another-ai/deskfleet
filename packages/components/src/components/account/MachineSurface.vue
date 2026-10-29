@@ -27,7 +27,7 @@ onMounted(async () => {
     const path = route.name === "schedules" ? "/schedules" : route.name === "archived-sessions" ? "/sessions/archived" : "/"
     await router.replace(path)
   }
-  if (disposed || !root.value) return
+  if (disposed || !root.value || props.session.machineId.value !== props.machine.id || runtimes.opened.get(props.machine.id) !== runtime) return
   unmount = runtime.mount(App, root.value)
   emit("ready", props.machine.id)
 })

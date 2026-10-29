@@ -16,7 +16,7 @@ const management = new Set<string>([
 ])
 
 /** One opened machine owns this adapter until its account/Team scope is released. */
-export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine, options: { local?: boolean } = {}): { api: DeskfleetDesktopApi; updateMachine(value: Machine): void; setLocal(local: boolean): void; dispose(): void } {
+export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine, options: { local?: boolean } = {}): { api: DeskfleetDesktopApi; refreshCatalog(): void; updateMachine(value: Machine): void; setLocal(local: boolean): void; dispose(): void } {
   let local = options.local === true && host.platform !== "web"
   const localChannels = new Map<string, LocalDataChannel>()
   const peers = new Map<string, Peer>()
@@ -29,6 +29,10 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
   let name = machine.name
   let knownTerminals: TerminalSummary[] = []
   const emit = (event: DesktopEvent) => { for (const listener of events) listener(event) }
+  function refreshCatalog(sessionId?: string): void {
+    for (const listener of catalogEvents) listener(sessionId)
+    if (!sessionId) for (const listener of providerEvents) listener()
+  }
   const unsubscribe = central.onEvent((event: CentralEvent) => {
     if (event.type === "peerEvent" || event.type === "peerRevoked") {
       const local = [...peers.entries()].find(([, peer]) => peer.id === event.peerId)
@@ -44,9 +48,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       else emit({ sessionId: local[0], kind: "error", error: event.reason })
     } else if ((event.type === "catalogChanged" && event.machineId === machine.id) || (event.type === "connection" && event.connected)) {
       // Reconnect can miss catalog updates even when the machine's roster metadata is unchanged.
-      const sessionId = event.type === "catalogChanged" ? event.sessionId : undefined
-      for (const listener of catalogEvents) listener(sessionId)
-      if (!sessionId) for (const listener of providerEvents) listener()
+      refreshCatalog(event.type === "catalogChanged" ? event.sessionId : undefined)
     } else if (event.type === "presence" && event.machineId === machine.id) {
       online = event.online
       for (const listener of catalogEvents) listener()
@@ -156,6 +158,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
   }
   return {
     api,
+    refreshCatalog,
     // A refreshed roster repairs presence events missed during signaling loss,
     // without replacing the adapter or revoking its still-authorized peers.
     updateMachine(value) {

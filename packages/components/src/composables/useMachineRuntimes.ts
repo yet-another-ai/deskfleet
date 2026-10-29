@@ -14,6 +14,7 @@ import { useTerminalsStore } from "../stores/terminals.ts"
 export interface MachineRuntime {
   state: ReturnType<typeof createPinia>
   api: DeskfleetDesktopApi
+  refreshCatalog(): void
   updateMachine(machine: Machine): void
   mount(component: Component, root: Element): () => void
   dispose(): void
@@ -79,6 +80,7 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
       const runtime: MachineRuntime = {
         state,
         api: remote.api,
+        refreshCatalog: remote.refreshCatalog,
         updateMachine: remote.updateMachine,
         mount(component, root) {
           const app = createApp({ render: () => renderViews.value ? h(component) : null })
