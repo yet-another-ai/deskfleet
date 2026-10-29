@@ -18,7 +18,9 @@ export default defineConfig({
       configFile: resolve(import.meta.dirname, "../../packages/components/uno.config.ts"),
       content: { filesystem: [resolve(import.meta.dirname, "../../packages/components/src/**/*.vue")] },
     })],
-    resolve: { dedupe: ["vue", "vue-i18n"] },
+    // The demo host and shared components must use the same router injection keys,
+    // even when pnpm installs separate peer dependency variants of vue-router.
+    resolve: { dedupe: ["vue", "vue-i18n", "vue-router"] },
     ssr: { noExternal: ["@deskfleet/components", "@lucide/vue", "vue-i18n"] },
     define: { __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false },
   },

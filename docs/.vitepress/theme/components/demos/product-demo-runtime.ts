@@ -201,6 +201,8 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   agents.restore = async id => { archiveState(id, "active") }
   agents.gitStatus = async id => ({ sessionId: id, repositories: [{ id: `repository-${id}`, root: `/workspace/.worktrees/${id}`, branch: `deskfleet/${id}`, head: "84b7f21", changes: [{ path: "src/WorkspacePicker.vue", kind: "unstaged", status: "modified", additions: 7, deletions: 2 }] }], directories: [{ path: `/workspace/.worktrees/${id}`, repositoryId: `repository-${id}` }] })
   agents.gitDiff = async request => ({ ...request, patch: demoPatch, binary: false, truncated: false })
+  // Fixture changes are static; observing them must not connect to a real daemon.
+  agents.watchGit = async () => () => {}
   fleet.updateWorkspace = async (id, name, directories) => { const workspace = fleet.findWorkspace(id)!.workspace; workspace.name = name; workspace.directories = directories }
   fleet.deleteWorkspace = async id => { fleet.machines[0]!.workspaces = fleet.machines[0]!.workspaces.filter(item => item.id !== id); fleet.targetWorkspaceId = fleet.machines[0]!.workspaces[0]?.id ?? null }
   fleet.createWorkspace = async (name, directories) => {
