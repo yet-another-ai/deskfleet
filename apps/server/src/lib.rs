@@ -1,4 +1,4 @@
-//! API-only control plane: trusted identity/signaling and PostgreSQL read replicas.
+//! Control plane with trusted identity/signaling, PostgreSQL replicas, and optional Web hosting.
 mod ai_usage;
 mod api;
 pub mod auth;
@@ -10,7 +10,10 @@ mod maintenance;
 mod peers;
 mod site;
 mod turn_usage;
+mod web_assets;
 mod websocket;
+
+pub use web_assets::WebAssets;
 
 use actix_web::{web, web::ServiceConfig};
 use config::ServerConfig;

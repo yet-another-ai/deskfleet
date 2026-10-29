@@ -145,7 +145,7 @@ jobs:
         shell: bash
         run: rm -f "$RUNNER_TEMP/deskfleet-notarization.p8"
 
-      - name: Verify the Linux server image
+      - name: Verify the Linux server and Web image
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -153,9 +153,10 @@ jobs:
             X64) arch=amd64 ;;
             ARM64) arch=arm64 ;;
           esac
-          mkdir -p "image-context/$arch"
+          mkdir -p "image-context/$arch" image-context/web
           host_target=$(mise exec -- rustc --print host-tuple)
           cp "target/$host_target/release/deskfleet-server" "image-context/$arch/"
+          cp -R apps/web/dist/. image-context/web/
           docker build --platform "linux/$arch" -f apps/server/Dockerfile -t deskfleet-server:smoke image-context
           mise exec -- node scripts/smoke-server-image.ts deskfleet-server:smoke
 

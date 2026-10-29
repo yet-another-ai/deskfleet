@@ -1,9 +1,11 @@
 # DeskFleet server
 
-An API-only Actix Web control plane backed by PostgreSQL. It owns verified accounts and credentials,
+An Actix Web control plane backed by PostgreSQL. It owns verified accounts and credentials,
 application sessions, Teams and roles, machine enrollment, management RPC routing,
 trusted WebRTC signaling, and read replicas of daemon catalogs and Agent journals.
-The independently deployed Vue Web frontend and Electron use the same API.
+The Vue Web frontend and Electron use the same API. The official server image
+includes the Web build and serves it from the same process; independent Web
+hosting remains supported.
 Execution, provider processes, files, PTYs, and terminal output stay on the daemon.
 See the [backend scope](../../agents/docs/backend.md) and
 [WebRTC authorization](../../agents/docs/webrtc-security.md).
@@ -53,6 +55,7 @@ paths, queries and credentials are rejected.
 | --- | --- |
 | `DATABASE_URL` | Required PostgreSQL connection URL. SQLite is rejected. |
 | `DESKFLEET_BIND_ADDR` | IP and port; defaults to `127.0.0.1:8080`. |
+| `DESKFLEET_WEB_DIRECTORY` | Optional directory containing the built Web `index.html` and assets. Unset keeps the binary API-only. The image sets `/usr/share/deskfleet/web`. |
 | `DESKFLEET_PUBLIC_URL` | Stable external API origin and server identity; defaults to `http://localhost:8080`. |
 | `DESKFLEET_TRUSTED_PROXY_IPS` | Comma-separated exact proxy IPs allowed to set `X-Real-IP` for authentication rate limits. Empty by default; proxies must overwrite that header. |
 | `DESKFLEET_AUTH_WEB_URL` | Trusted Web origin for verification links, Passkeys, and desktop authorization. Defaults to the first Web origin or API origin. |
@@ -72,7 +75,9 @@ paths, queries and credentials are rejected.
 
 For official hosting, run server instances behind a TLS reverse proxy that
 supports WebSocket upgrades, request bodies of at least 64 MiB, and idle periods
-longer than the 60-second socket timeout. Serve the Web application separately.
+longer than the 60-second socket timeout. With the official image, forward all
+paths to the server and set the public API and authentication Web origins to
+the same HTTPS origin.
 Store PostgreSQL data on persistent storage and supply database/SMTP/TURN secrets via
 the deployment's secret mechanism. `DESKFLEET_PUBLIC_URL` must remain stable.
 Instances share one PostgreSQL database, public origin, and service configuration.
@@ -91,12 +96,30 @@ bounded lifetime. See [multi-instance operation](../../agents/docs/self-hosted.m
 and authentication configuration validation complete before the HTTP listener starts.
 Database, migration, or invalid configuration failures stop startup. Actix handles graceful shutdown.
 
+## Web static hosting
+
+Set `DESKFLEET_WEB_DIRECTORY` to a built Web directory to serve it alongside the
+API. For a local binary, use an absolute path such as `/opt/deskfleet/web`;
+the official image sets this automatically. The directory must contain
+`index.html`. The server serves the entry point at `/` and `/auth/*` so browser
+login, recovery, Passkeys, and Electron authorization work on direct navigation.
+Application navigation otherwise uses URL hashes. Static files are served from
+the configured directory; missing assets and unknown `/api/*` routes retain
+404 responses rather than returning the SPA page.
+
+The Web build uses its serving origin unless `VITE_DESKFLEET_SERVER_URL` was
+set at build time. Leave that variable unset for the bundled image. Runtime
+environment changes do not rewrite the bundle, including its optional Statsig
+configuration. Leave `DESKFLEET_WEB_DIRECTORY` unset for a binary used with an
+independent static host or Vite during local development.
+
 ## Container image
 
 Version-tag builds publish `ghcr.io/yet-another-ai/deskfleet-server` for
-`linux/amd64` and `linux/arm64`. The image contains the server binary from the
-Linux release artifacts. It runs as UID/GID `10001:10001` and listens on
-`0.0.0.0:8080` inside the container.
+`linux/amd64` and `linux/arm64`. The image contains the server binary and Web
+build from the same release run. Web files live at `/usr/share/deskfleet/web`
+and are served by the single Actix process. It runs as UID/GID `10001:10001`
+and listens on `0.0.0.0:8080` inside the container.
 
 Put the configuration above in an environment file, including `DATABASE_URL`,
 the public API/Web origins, and SMTP settings. Use a database hostname reachable from
@@ -110,18 +133,22 @@ docker run --detach --name deskfleet-server \
   ghcr.io/yet-another-ai/deskfleet-server:0.1.0
 ```
 
-PostgreSQL remains an external service with persistent storage. The image needs
-no application data volume. Use `/healthz` for the deployment's HTTP liveness
-probe, and allow at least 15 seconds for graceful shutdown.
+TLS termination, PostgreSQL, SMTP, coturn, and Redis remain separate services;
+PostgreSQL needs persistent storage. The image needs no application data volume.
+Use `/healthz` for the deployment's HTTP liveness probe, and allow at least
+15 seconds for graceful shutdown.
 
-`apps/server/Dockerfile` packages already-built Linux binaries. Its build context
-contains `amd64/deskfleet-server` and/or `arm64/deskfleet-server`; the target
-platform selects the binary. On a Linux build host, for example:
+`apps/server/Dockerfile` packages already-built Linux binaries and Web files.
+Its build context contains `amd64/deskfleet-server` and/or
+`arm64/deskfleet-server`, plus `web/` containing `apps/web/dist/`; the target
+platform selects the binary and both architectures share the Web build.
+After `mise run build` on a Linux build host, for example:
 
 ```sh
-mkdir -p dist/server-image/arm64
+mkdir -p dist/server-image/arm64 dist/server-image/web
 host_target=$(mise exec -- rustc --print host-tuple)
 cp "target/$host_target/release/deskfleet-server" dist/server-image/arm64/
+cp -R apps/web/dist/. dist/server-image/web/
 docker build --platform linux/arm64 -f apps/server/Dockerfile \
   --tag deskfleet-server:local dist/server-image
 mise exec -- node scripts/smoke-server-image.ts deskfleet-server:local
@@ -129,7 +156,9 @@ mise exec -- node scripts/smoke-server-image.ts deskfleet-server:local
 
 Use `amd64` for a Linux x64 binary. The smoke script starts an isolated,
 temporary PostgreSQL container, verifies non-root server startup, migrations,
-HTTP health, and signal-driven shutdown, then removes its containers and network.
+HTTP health, the Web entry point and assets, authentication-page fallback,
+missing API/asset responses, and signal-driven shutdown, then removes its
+containers and network.
 
 ## Authentication and API
 

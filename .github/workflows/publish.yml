@@ -133,7 +133,7 @@ jobs:
           fi
 
   image:
-    name: Publish backend image
+    name: Publish server and Web image
     needs: [validate, test, build]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -151,6 +151,12 @@ jobs:
           pattern: deskfleet-linux-*
           path: archives
           merge-multiple: true
+
+      - name: Download the same-release Web client
+        uses: actions/download-artifact@v8
+        with:
+          name: deskfleet-web
+          path: image-context/web
 
       - name: Stage native server binaries
         shell: bash

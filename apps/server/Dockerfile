@@ -1,5 +1,6 @@
 # The release workflow supplies binaries built on Ubuntu 24.04 runners in
-# amd64/deskfleet-server and arm64/deskfleet-server beneath the build context.
+# amd64/deskfleet-server and arm64/deskfleet-server beneath the build context,
+# alongside the same release's Web build in web/.
 FROM ubuntu:24.04@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c
 
 RUN apt-get update \
@@ -8,8 +9,10 @@ RUN apt-get update \
 
 ARG TARGETARCH
 COPY --chmod=755 ${TARGETARCH}/deskfleet-server /usr/local/bin/deskfleet-server
+COPY web/ /usr/share/deskfleet/web/
 
 ENV DESKFLEET_BIND_ADDR=0.0.0.0:8080
+ENV DESKFLEET_WEB_DIRECTORY=/usr/share/deskfleet/web
 USER 10001:10001
 EXPOSE 8080
 STOPSIGNAL SIGTERM

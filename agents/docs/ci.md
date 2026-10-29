@@ -36,13 +36,13 @@ a stable `Gate` result for branch protection.
   platform matrix. Packaging keeps Cargo's parallel release codegen: 16 units,
   LTO off, no debug info, and stripped symbols. Each target packages and verifies
   the standalone SEA daemon.
-  The same matrix packages Electron installers and smoke-tests the backend
+  The same matrix packages Electron installers and smoke-tests the bundled server
   container on each native Linux runner. The Publish caller enables production
   configuration and macOS signing. PR, main, and manual Build runs do not bind
   the production environment: Statsig stays disabled, and Electron defaults to
   `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
-  creates a draft GitHub Release and pushes the backend image to GHCR after
+  creates a draft GitHub Release and pushes the server image to GHCR after
   both workflows succeed.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
   and configures shared caches for both reusable workflows.
@@ -55,7 +55,9 @@ exercise packaging on Linux x64.
 The Linux x64 job also uploads `deskfleet-web` with the static Vue application.
 Its API origin is the hosting origin, including tagged release artifacts;
 deployments with a separate API origin build with `VITE_DESKFLEET_SERVER_URL`
-as described in the Web guide.
+as described in the Web guide. Publish includes this same-run Web artifact in
+both server image architectures. The artifact remains available for independent
+static hosting for 14 days; it is not added to the GitHub Release archives.
 
 Smoke tests copy the daemon executable alone to an unrelated temporary directory,
 clear Node's environment overrides and PATH, then check native information,
@@ -167,7 +169,7 @@ Installed upgrades still need platform release testing: metadata generation and
 unit tests do not demonstrate a successful installation on Windows, signed macOS
 or either Linux architecture.
 
-### Backend image
+### Server image
 
 The same successful tag build pushes
 `ghcr.io/yet-another-ai/deskfleet-server:<version>` as one Linux amd64/arm64 image.
@@ -179,10 +181,18 @@ to public if anonymous image pulls are required; repository visibility alone doe
 not make a new package public. See the [server guide](../../apps/server/README.md)
 for configuration and a container run example.
 
-The image reuses the native Linux server binaries from Build. Each Linux runner
-builds that runtime image, starts it against a disposable PostgreSQL container,
-checks `/healthz`, and verifies graceful shutdown before uploading its archive.
-It does not compile the Rust server again inside Docker.
+The image reuses the native Linux server binaries and built Web files from Build.
+Publish downloads `deskfleet-web` from the same workflow run and includes it in
+both architectures at `/usr/share/deskfleet/web`. The image sets
+`DESKFLEET_WEB_DIRECTORY` to that directory, so one Actix process serves the Web
+application and API. Both are upgraded and rolled back with the image tag.
+
+Each Linux runner stages its Web build alongside the server binary, builds that
+runtime image, and starts it against a disposable PostgreSQL container. The
+smoke test checks `/healthz`, the Web entry point and assets, authentication-page
+fallback, 404 responses for missing API routes and assets, and graceful shutdown
+before uploading its archive. Docker does not compile the Rust server or Web app
+again.
 
 ## Documentation-only changes
 

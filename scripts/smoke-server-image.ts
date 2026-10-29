@@ -58,10 +58,57 @@ try {
       return false
     }
   })
+  const origin = `http://127.0.0.1:${port}`
+  const homepage = await fetch(origin, { signal: AbortSignal.timeout(5_000) })
+  assert.equal(homepage.status, 200)
+  assert.match(homepage.headers.get("content-type") ?? "", /^text\/html(?:;|$)/)
+  assert.equal(homepage.headers.get("cache-control"), "no-cache")
+  const html = await homepage.text()
+  assert.match(html, /<div id="root"><\/div>/)
+
+  const account = await fetch(`${origin}/auth/account`, { signal: AbortSignal.timeout(5_000) })
+  assert.equal(account.status, 200)
+  assert.match(account.headers.get("content-type") ?? "", /^text\/html(?:;|$)/)
+  assert.equal(account.headers.get("cache-control"), "no-cache")
+  assert.equal(await account.text(), html, "Authentication pages must serve the bundled Web entry point")
+
+  const accountHead = await fetch(`${origin}/auth/account`, {
+    method: "HEAD", signal: AbortSignal.timeout(5_000),
+  })
+  assert.equal(accountHead.status, 200)
+  assert.match(accountHead.headers.get("content-type") ?? "", /^text\/html(?:;|$)/)
+  assert.equal(accountHead.headers.get("cache-control"), "no-cache")
+  assert.equal(await accountHead.text(), "", "HEAD must return headers without the Web entry point body")
+
+  for (const [extension, contentType] of [
+    ["js", /^(?:text|application)\/javascript(?:;|$)/],
+    ["css", /^text\/css(?:;|$)/],
+  ] as const) {
+    const path = html.match(new RegExp(`(?:src|href)="([^"]+\\.${extension})"`))?.[1]
+    assert.ok(path, `Web entry point must reference a built ${extension} asset`)
+    const url = new URL(path, origin)
+    assert.equal(url.origin, origin, "Bundled Web assets must be served from the same origin")
+    const asset = await fetch(url, { signal: AbortSignal.timeout(5_000) })
+    assert.equal(asset.status, 200, `Missing bundled asset: ${path}`)
+    assert.match(asset.headers.get("content-type") ?? "", contentType)
+    assert.ok((await asset.text()).length > 0, `Bundled asset is empty: ${path}`)
+  }
+
+  const site = await fetch(`${origin}/api/site`, { signal: AbortSignal.timeout(5_000) })
+  assert.equal(site.status, 200)
+  assert.match(site.headers.get("content-type") ?? "", /^application\/json(?:;|$)/)
+  const settings = await site.json() as { siteName: string }
+  assert.equal(typeof settings.siteName, "string", "API routing must retain database-backed site settings")
+
+  for (const path of ["/api/not-a-route", "/assets/not-a-bundle.js"]) {
+    const missing = await fetch(`${origin}${path}`, { signal: AbortSignal.timeout(5_000) })
+    assert.equal(missing.status, 404, `${path} must not fall back to the Web entry point`)
+    assert.notEqual(await missing.text(), html)
+  }
   docker("stop", "--time", "15", server)
   assert.equal(docker("inspect", "--format", "{{.State.ExitCode}}", server), "0",
     "Server did not shut down gracefully")
-  console.log("Server image: non-root startup, PostgreSQL migrations, HTTP health, and shutdown passed")
+  console.log("Server image: non-root startup, PostgreSQL migrations, same-origin Web/API routing, bundled assets, 404s, and shutdown passed")
 } catch (error) {
   for (const container of [server, database]) {
     const logs = spawnSync("docker", ["logs", container], { encoding: "utf8", timeout: 10_000 })

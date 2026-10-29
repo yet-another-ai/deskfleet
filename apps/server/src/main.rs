@@ -1,5 +1,5 @@
 use actix_web::{App, HttpServer, web};
-use deskfleet_server::{AppState, config::ServerConfig, configure};
+use deskfleet_server::{AppState, WebAssets, config::ServerConfig, configure};
 use tracing_subscriber::EnvFilter;
 
 mod cli;
@@ -16,6 +16,7 @@ async fn main() -> std::io::Result<()> {
         return Ok(());
     }
     let config = ServerConfig::from_env()?;
+    let web_assets = WebAssets::from_env()?;
     let bind = config.bind_addr;
     let origins = config.web_origins.clone();
     let state = web::Data::new(AppState::new(config).await.map_err(std::io::Error::other)?);
@@ -32,6 +33,11 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .app_data(state.clone())
             .configure(configure)
+            .configure(|config| {
+                if let Some(assets) = &web_assets {
+                    assets.configure(config);
+                }
+            })
     })
     .bind(bind)?;
     for address in server.addrs() {

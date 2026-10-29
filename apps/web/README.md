@@ -1,9 +1,10 @@
 # DeskFleet web
 
-The independently deployed Vue application uses the same pages, components,
+The Vue application uses the same pages, components,
 conversation rendering, Git panels, terminal surfaces, and settings as Electron.
 `packages/components` owns that UI; `packages/client` owns the injected platform
-interfaces and the HTTPS/WebSocket adapter. The Rust server exposes APIs only.
+interfaces and the HTTPS/WebSocket adapter. The official server image bundles
+this application and serves its static files from the same Actix process as the API.
 
 From the repository root:
 
@@ -19,13 +20,24 @@ API is already running separately. Electron also uses this Web service for login
 Open Vite at `http://localhost:5174` (its listener binds to loopback). The
 development API defaults to `http://localhost:8080`. WebAuthn requires a DNS
 hostname, including localhost for development. Set `VITE_DESKFLEET_SERVER_URL` at build time for a
-separately hosted API; production otherwise uses the page's origin. Deploy
-`dist/` on a static host with an `index.html` fallback for `/auth/*`. Configure
-`DESKFLEET_AUTH_WEB_URL` and explicit CORS origins for this application. Web and API
-must share a site for SameSite cookies; unrelated cross-site hosting is unsupported.
+separately hosted API; production otherwise uses the page's origin.
+
+For the official image, leave `VITE_DESKFLEET_SERVER_URL` unset when building Web
+and set `DESKFLEET_PUBLIC_URL` and `DESKFLEET_AUTH_WEB_URL` to the same public HTTPS
+origin at runtime. The image sets `DESKFLEET_WEB_DIRECTORY=/usr/share/deskfleet/web`.
+For a binary deployment, set that variable to the absolute path of the built
+`dist/` directory. The server serves `/` and `/auth/*` through `index.html`,
+serves static files, and preserves 404 responses for missing API routes and assets.
+
+Independent static hosting remains supported: deploy `dist/` on a static host
+with an `index.html` fallback for `/auth/*`, configure `DESKFLEET_AUTH_WEB_URL`,
+and allow the Web origin in `DESKFLEET_WEB_ORIGINS` when it differs from the API
+origin. Web and API must share a site for SameSite cookies; unrelated cross-site
+hosting is unsupported.
 
 The welcome page signs in to this compiled backend and has no address setting.
-Changing the backend requires rebuilding the Web client.
+Changing a compiled API origin requires rebuilding the Web client. A production
+build without an API override follows the origin serving its page.
 
 Statsig behavioral events and UI experiments are optional. Set
 `VITE_STATSIG_CLIENT_KEY` to a Statsig **client-public** SDK key before running

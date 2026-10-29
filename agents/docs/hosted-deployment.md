@@ -18,10 +18,10 @@ gate and cannot establish that Go/Pro billing works.
 
 | Service | Required for | Deployment responsibility |
 | --- | --- | --- |
-| `deskfleet-server` | Every deployment | API processes/containers sharing PostgreSQL and one public origin. PostgreSQL coordinates socket ownership, cross-instance routing, and SDP exchanges. |
+| `deskfleet-server` | Every deployment | The official image serves the API and same-version Web build from one Actix process. Instances share PostgreSQL and one public origin. PostgreSQL coordinates socket ownership, cross-instance routing, and SDP exchanges. |
 | PostgreSQL | Every deployment | Persistent central accounts, Teams, machine registrations, history, billing, and usage, plus transient routing payloads. Startup applies migrations; the database role needs schema modification rights. Development and CI currently use PostgreSQL 18.6. |
-| Web static host | Every official deployment | Serve `apps/web/dist/`, including an `index.html` fallback for `/auth/*`. Electron also uses these pages for browser login. |
-| HTTPS/WSS reverse proxy | Every public deployment | Terminate TLS and forward `/api` and `/healthz` to the API. It can also serve the static Web files. |
+| Web static host | Optional independent Web hosting | Serve `apps/web/dist/`, including an `index.html` fallback for `/auth/*`. The official image already provides these pages, including Electron browser login. |
+| HTTPS/WSS reverse proxy | Every public deployment | Terminate TLS and forward all paths to the bundled server. With independent Web hosting, route `/api` and `/healthz` to the API and Web paths to the static host. |
 | SMTP relay | Public registration and recovery | Authenticated STARTTLS delivery, normally port 587. Public deployments cannot use the local mail-file sink. |
 | coturn | Public relay and cross-network smoke tests | Public STUN/TURN endpoints, REST shared-secret authentication, reachable relay ports. TURN traffic goes directly between peers and coturn. |
 | Redis | TURN usage collection and Go/Pro relay | Receive coturn statistics via Pub/Sub; the API persists usage to PostgreSQL. This is not a general application cache or job queue. |
@@ -44,13 +44,13 @@ See the [data boundary](self-hosted.md#what-this-release-runs).
 
 ## Domains and network
 
-For the first deployment, one origin for the application and API allows use of
-the existing Web build artifact. The following names are examples, not
+For the first deployment, use the bundled server image with one origin for the
+application and API. The following names are examples, not
 provisioned official domains:
 
 | Endpoint | Example | Routing |
 | --- | --- | --- |
-| Application and API | `https://fleet.example.com` | `/api` and `/healthz` to the API; all other paths to Web static files with SPA fallback. |
+| Application and API | `https://fleet.example.com` | Forward all paths to the server. It handles `/api/*`, `/healthz`, Web static files, and the `/` and `/auth/*` SPA entry points. Missing API routes and assets remain 404 responses. |
 | STUN/TURN | `turn.example.com` | Public UDP/TCP listener and configured relay range. It does not pass through the HTTP proxy. |
 | Product website | Existing `www.deskfleet.org` | The separate VitePress/GitHub Pages site; it does not serve the application login. |
 
@@ -101,6 +101,7 @@ URLs and use the database/Redis TLS options required by those services.
 | --- | --- |
 | `DATABASE_URL` | Required nonempty `postgres://` or `postgresql://` URL. Includes credentials, database, and driver options such as `sslmode`; no separate pool-size or database-TLS variable. |
 | `DESKFLEET_BIND_ADDR` | IP:port, default `127.0.0.1:8080` for the binary. The image defaults to `0.0.0.0:8080`; expose it through the proxy. |
+| `DESKFLEET_WEB_DIRECTORY` | The official image sets `/usr/share/deskfleet/web`. For a binary deployment, set an absolute path to the built Web directory to enable static hosting; unset keeps the binary API-only. |
 | `DESKFLEET_PUBLIC_URL` | Set explicitly to the stable HTTPS API origin, without a path or trailing slash. Default is `http://localhost:8080`. This string is also the enrolled machines' server identity. |
 | `DESKFLEET_AUTH_WEB_URL` | Set explicitly to the HTTPS Web origin. Used for email links, Passkeys, Electron authorization, and Stripe return URLs. Defaults to the first Web origin, otherwise the API origin. |
 | `DESKFLEET_WEB_ORIGINS` | Empty by default; can remain unset for same-origin hosting. For split hosts, set the exact Web origin. Supports comma-separated origins, credentialed CORS, and `X-CSRF-Token`. |
@@ -228,14 +229,14 @@ separate from API secrets:
 | `APPLE_API_ISSUER` | App Store Connect API issuer ID. |
 
 macOS signing/notarization is mandatory for tag builds. Its failure blocks both
-the draft release and API image publication. GHCR uses the workflow's
+the draft release and server image publication. GHCR uses the workflow's
 `GITHUB_TOKEN`; no separate registry password secret is required. Verify GHCR
 package visibility after the first push if anonymous pulls are needed.
 
 Before tagging, account for these current behaviors:
 
 1. **`v0.1.0` is classified as stable by the existing workflow.** It creates a
-   draft GitHub Release but also pushes both `:0.1.0` and `:latest` API image
+   draft GitHub Release but also pushes both `:0.1.0` and `:latest` server image
    tags. The draft does not delay the image push. Keeping this exact tag while
    treating it as a prerelease requires a workflow policy change; a SemVer
    prerelease suffix uses the existing prerelease path. See
@@ -244,18 +245,19 @@ Before tagging, account for these current behaviors:
 2. The tag must match the root package, desktop package, and Cargo workspace
    versions. Follow [tagged releases](ci.md#tagged-releases) for version/lockfile
    updates and asset review. `PROTOCOL_VERSION` remains `1`.
-3. The workflow publishes an amd64/arm64 API image and draft desktop/daemon
-   assets. It does not deploy the API or Web application. `deskfleet-web` is a
-   same-origin Actions artifact retained for 14 days, not a GitHub Release asset;
-   retain and deploy the build from the selected tag.
+3. The workflow publishes an amd64/arm64 server image containing the API and
+   same-version Web build, plus draft desktop/daemon assets. It does not deploy
+   the application. `deskfleet-web` also remains a same-origin Actions artifact
+   retained for 14 days, not a GitHub Release asset; retain it from the selected
+   tag when using independent static hosting.
 4. The repository has no production Compose stack. The server image contains
-   only the API, runs as UID/GID `10001:10001`, and needs no application data
-   volume. PostgreSQL and execution-machine data need persistent storage.
+   the API and Web files, runs as UID/GID `10001:10001`, and needs no application
+   data volume. PostgreSQL and execution-machine data need persistent storage.
 
 ## Deployment and smoke sequence
 
-1. Provision DNS/TLS, PostgreSQL, SMTP, coturn, and Redis. Deploy the selected Web
-   build and at least two API instances sharing the environment above for the
+1. Provision DNS/TLS, PostgreSQL, SMTP, coturn, and Redis. Deploy at least two
+   instances of the selected server image sharing the environment above for the
    multi-instance acceptance pass. Keep the API origin stable and take a database
    backup before subsequent upgrades. Use one public load balancer without
    requiring client affinity.
@@ -311,5 +313,6 @@ Record core hosted acceptance (Free/Enterprise) separately from payment
 acceptance (Stripe test mode/Go/Pro). Existing `backend:smoke` and
 `backend:smoke-clients` start local fixtures, force `self-hosted`, use local mail
 files and scripted providers, and disable Stripe. `backend:smoke-relay` exercises
-those fixtures, and image smoke checks startup/migrations/health/shutdown. They
-remain useful regression checks but do not validate the public deployment.
+those fixtures, and image smoke checks startup, migrations, health, Web serving,
+and shutdown. They remain useful regression checks but do not validate the public
+deployment.

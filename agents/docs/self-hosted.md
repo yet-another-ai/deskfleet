@@ -1,8 +1,8 @@
 # Self-hosted backend
 
-This guide is the production deployment of DeskFleet's central API. It covers
+This guide is the production deployment of DeskFleet's central server. It covers
 the `deskfleet-server` process, PostgreSQL, an SMTP relay, a TLS reverse
-proxy, an optional TURN relay, and the separately hosted Web client.
+proxy, an optional TURN relay, and bundled or independent Web hosting.
 For hosted plan enforcement and the official v0.1.0 trial, see the
 [hosted deployment checklist](hosted-deployment.md).
 
@@ -39,8 +39,10 @@ reconciliation; active grants are retained. This recovery requires a working
 database and signaling connection. Reconnecting daemons also receive a fresh
 reconciliation at connection setup.
 
-The process does not terminate TLS, serve the Vue application, store files, or
-run agents. Daemons stay on the computers they enroll. The API authorizes
+The official image serves the Vue application from the same process as the API.
+For a binary deployment, `DESKFLEET_WEB_DIRECTORY` enables static hosting;
+without it the process serves only the API. TLS terminates at the reverse proxy.
+Workspace files and agent execution stay on enrolled machines. The API authorizes
 management calls and WebRTC signaling, then stores account data and replicas of
 catalogs and Agent history.
 
@@ -90,7 +92,6 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
 - An authentication bypass or automatic first-user administrator grant.
 - SQLite, or any `DATABASE_URL` that does not start with `postgres://` or
   `postgresql://`.
-- Serving the Web UI from the API process.
 - Permanent Session deletion. Archive and restore are the user-facing
   operations.
 - Retargeting enrolled machines after `DESKFLEET_PUBLIC_URL` changes. The
@@ -109,9 +110,10 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
   least 64 MiB, and keep a connection idle for more than 60 seconds.
 - A TURN server that implements the REST credential mechanism, when peers
   cannot connect directly. STUN is optional.
-- The `deskfleet-server` binary for the host, and a static build of the Web
-  client for browser use and Electron authentication. Build the daemon and
-  Electron for the computers that execute agents; they do not run on the API host.
+- The official `deskfleet-server` image, which includes the Web client for browser
+  use and Electron authentication, or the server binary and a separate Web build.
+  Build the daemon and Electron for the computers that execute agents; they do
+  not run on the API host.
 - An accurate API host clock for session, challenge and entitlement deadlines.
 
 Build the API from this repository. CI compiles the same server and daemon
@@ -119,14 +121,15 @@ binaries for Linux x64, Linux arm64, macOS arm64, and Windows x64, and the
 Linux x64 job also uploads a Web client built without
 `VITE_DESKFLEET_SERVER_URL` (that build calls the origin that serves the page).
 Those uploads are workflow artifacts kept for 14 days. Version-tag builds also
-publish an API container image and draft release archives; the Web build remains
-a workflow artifact. Neither workflow deploys the API or Web application. See
+publish a container image with the server and same-version Web build, plus draft
+release archives. The Web build also remains available as a workflow artifact
+for independent hosting. Neither workflow deploys the application. See
 [tagged releases](ci.md#tagged-releases).
 
 ## Recommended layout
 
-Put PostgreSQL, the API, and the proxy on a network where only the proxy is
-reachable from clients. The API binds a loopback address. Browsers, Electron,
+Put PostgreSQL and the server behind the proxy. Bind a host binary to loopback,
+or publish the container's port only to the proxy's network. Browsers, Electron,
 and daemons use the proxy's HTTPS origin. TURN, when you run it, is a separate
 public UDP/TCP service; the API does not carry media.
 
@@ -135,8 +138,12 @@ browsers, Electron, daemons
         |  HTTPS and WSS
         v
 TLS reverse proxy
-        |-- /api and /healthz --> deskfleet-server instance(s)
-        |-- everything else   --> apps/web/dist   (omit this if the Web app has its own origin)
+        |  all paths
+        v
+deskfleet-server instance(s)
+        |-- /api and /healthz --> API handlers
+        |-- / and /auth/*     --> Web index.html
+        |-- static files     --> bundled Web directory
         |
         +--> PostgreSQL (read-write URL in DATABASE_URL)
         +--> outbound STARTTLS to the configured SMTP relay
@@ -152,6 +159,11 @@ Two public shapes work:
 | Split hosts | `https://api.example.com` | `https://app.example.com` | Build the Web client with `VITE_DESKFLEET_SERVER_URL=https://api.example.com`. Set `DESKFLEET_WEB_ORIGINS=https://app.example.com` and `DESKFLEET_AUTH_WEB_URL=https://app.example.com`. |
 
 Electron uses the built-in `127.0.0.1` loopback callback allowlist. The daemon's `--server-url` is the API origin, with no path.
+
+The official image serves the one-hostname layout by default. Independent Web
+hosting can use either shape: serve the Web files from a static host and route
+API requests to the server. A binary with `DESKFLEET_WEB_DIRECTORY` unset remains
+API-only, including during local development with Vite.
 
 A process supervisor should restart the API on failure and inject the
 environment from the host's secret store. The binary has no working-directory
@@ -180,8 +192,13 @@ mise run build
 - `apps/daemon/dist/deskfleet-daemon` (`.exe` on Windows)
 - `apps/web/dist/` for the static Web client
 
+To serve this Web build from a binary, set `DESKFLEET_WEB_DIRECTORY` to its
+absolute directory path. The directory must contain `index.html`. The official
+image copies these files to `/usr/share/deskfleet/web` and sets the variable for
+you; it requires no Node runtime or additional Web server.
+
 `VITE_DESKFLEET_SERVER_URL` is read when the Web or Electron client is compiled.
-Changing the API origin requires rebuilding the affected client. The UI has no
+Changing a compiled API origin requires rebuilding the affected client. The UI has no
 backend-address setting, and saved account data cannot override that choice.
 Without the variable, production Web builds use the page's origin and Electron
 uses `http://localhost:8080`. Build Electron for this deployment with:
@@ -202,6 +219,7 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes |  | `postgres://` or `postgresql://` URL, including credentials, database name, and any driver options such as `sslmode`. Empty is rejected. Other schemes are rejected. There is no separate pool-size or database-TLS variable. |
 | `DESKFLEET_BIND_ADDR` | no | `127.0.0.1:8080` | `IP:port` of the plain HTTP listener. A hostname is invalid. |
+| `DESKFLEET_WEB_DIRECTORY` | no | unset for binaries; `/usr/share/deskfleet/web` in the image | Directory containing the built Web `index.html` and assets. Set an absolute path to enable Web hosting alongside the API. Unset keeps the binary API-only. |
 | `DESKFLEET_PUBLIC_URL` | no | `http://localhost:8080` | External origin and the server identity (`serverId`). Use an `https` origin with no path and no trailing slash. The raw string is what daemons store. |
 | `DESKFLEET_TRUSTED_PROXY_IPS` | behind a proxy | empty | Comma-separated exact proxy IPs allowed to supply `X-Real-IP` for authentication rate limits. |
 | `DESKFLEET_AUTH_WEB_URL` | for split hosts | first Web origin or API origin | Trusted origin serving `/auth/*`, verification links and Passkeys. |
@@ -286,7 +304,9 @@ link. Retain mail delivery diagnostics when operating the service.
 
 ## Reverse proxy
 
-Proxy `/api` (HTTP and WebSocket) and `/healthz` to `DESKFLEET_BIND_ADDR`.
+For the bundled image or a binary with Web hosting enabled, proxy all paths to
+`DESKFLEET_BIND_ADDR`. For independent Web hosting, proxy `/api` (HTTP and
+WebSocket) and `/healthz` to the server and route Web requests to the static host.
 WebSocket routes are `/api/client/ws` and `/api/daemon/ws`. Browser sockets authenticate from their cookie and Origin during the upgrade.
 Native/daemon sockets send `{"type":"authenticate","token":"..."}` within ten
 seconds. Tokens are not placed in the URL.
@@ -346,10 +366,14 @@ server {
 }
 ```
 
-For one hostname, serve `apps/web/dist` at `/` and proxy only `/api` and
-`/healthz`. Main application routes use hashes. Authentication uses `/auth/*`
-paths, which must fall back to `index.html`; for nginx, use
-`try_files $uri $uri/ /index.html` in the static location.
+For the bundled image, use the same all-path proxy block with the application's
+hostname. The server serves `index.html` at `/` and `/auth/*`, preserving 404
+responses for missing API routes and assets. Main application routes use hashes.
+
+For independent static hosting on one hostname, serve `apps/web/dist` at `/`
+and proxy only `/api` and `/healthz`. Authentication paths under `/auth/*` need
+an `index.html` fallback; configure that fallback only for application pages,
+so missing static assets still return 404.
 
 ## TURN and STUN
 
@@ -531,7 +555,8 @@ After an administrator removes a machine, `status` reports `revoked`. Register
 it again only after `deskfleet-daemon prepare-enrollment`, which prints a new
 identity. An active registration cannot be overwritten.
 
-The Web client is the contents of `apps/web/dist` on any static host. Browsers
+The Web client is bundled in the official image, or can be deployed from
+`apps/web/dist` to an independent static host. Browsers
 need no daemon. They can read synchronized history while a machine is offline
 and can open live Agent, Git, terminal, desktop, and file peers when it is
 online and a path or TURN relay exists.
@@ -540,6 +565,8 @@ online and a path or TURN relay exists.
 
 1. `curl https://api.example.com/healthz` returns
    `{"status":"ok","version":"...","protocol_version":1}`.
+   Open `/` and `/auth/account` at the Web origin and verify that static assets
+   load. Missing API routes and assets should return 404, not the Web entry point.
 2. Registration sends a verification email through your SMTP relay.
 3. Verify the mailbox, sign in through Web and Electron, and create a Team.
 4. A daemon enrolls and the client shows it online. The API log includes the

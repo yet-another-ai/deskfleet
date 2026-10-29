@@ -6,8 +6,8 @@ and access terminals or desktops on the machine doing the work.
 
 The central Actix Web API uses PostgreSQL for application sessions, Teams,
 machine enrollment, access grants, and synchronized catalog/history. Electron
-and the independently hosted Web app share the Vue UI and authenticated client
-operations. Each TypeScript daemon connects outbound to the backend and keeps
+and the Web app share the Vue UI and authenticated client operations. Each
+TypeScript daemon connects outbound to the backend and keeps
 its execution journal in SQLite through napi-rs. Management uses authenticated
 backend APIs; Agent interaction, Git, files, terminals, and desktop streams use WebRTC.
 
@@ -35,11 +35,11 @@ flowchart LR
 
 | Component | Responsibility | Implementation |
 | --- | --- | --- |
-| Central server | Team membership, machine registration, catalog, stored session history, presence, access control, and signaling | Rust / Actix Web |
+| Central server | Team membership, machine registration, catalog, stored session history, presence, access control, signaling, and optional Web static hosting | Rust / Actix Web |
 | Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript library; Node.js SEA or bundled Electron host |
 | Native libraries | OS integration and performance-sensitive transport, capture, input, and media work | Rust with napi-rs bindings |
 | Desktop application | User interface, platform integration, and daemon installation/management | Electron / TypeScript |
-| Web application | Independently hosted frontend for catalog, history, and browser-supported remote access | Vue / TypeScript |
+| Web application | Frontend for catalog, history, and browser-supported remote access, served by the central server or an independent static host | Vue / TypeScript |
 | MCP facade | Let agents discover resources and operate on explicit remote targets | TypeScript, sharing DeskFleet client operations |
 
 The server owns team membership and shared access policy. Each daemon owns its
@@ -126,8 +126,14 @@ credential. Stripe subscriptions belong to Teams; Enterprise is a separate
 Site Admin override. Existing development databases must be rebuilt for this
 schema; legacy identity/data migration is not supported.
 
-The Rust backend is API-only. An independently hosted Vue
-Web client and the Electron client share a common UI component package.
+The Vue Web client and the Electron client share a common UI component package.
+The official server image bundles the same-version Web build, served by the
+Actix process alongside `/api/*` and `/healthz`. `DESKFLEET_WEB_DIRECTORY` enables
+static hosting for a binary deployment; leaving it unset keeps the binary
+API-only for independent static hosting or the local Vite development server.
+Web static hosting serves the application entry point at `/` and `/auth/*`,
+while missing API routes and assets remain 404 responses. TLS termination,
+PostgreSQL, SMTP, and TURN remain separate deployment services.
 Creating resources requires an authenticated user and a selected Team.
 Headless machines need enrollment into that Team before accepting
 resource creation; their ongoing server connection uses machine credentials,

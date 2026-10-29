@@ -46,7 +46,7 @@ description = "Stop local infrastructure, preserving development database volume
 run = "docker compose down"
 
 [tasks."backend:build"]
-description = "Build the API-only central backend"
+description = "Build the central server"
 wait_for = ["native:debug", "rust:clippy", "rust:test"]
 run = "cargo build -p deskfleet-server --locked"
 
@@ -159,12 +159,12 @@ depends = ["native:debug"]
 run = "pnpm --filter @deskfleet/desktop dev"
 
 [tasks."web:dev"]
-description = "Run the independently hosted Vue Web client"
+description = "Run the Vue Web development server"
 depends = ["install"]
 run = "pnpm --filter @deskfleet/web dev"
 
 [tasks."web:build"]
-description = "Build the independent Vue Web client"
+description = "Build the Vue Web client"
 depends = ["install"]
 run = "pnpm --filter @deskfleet/web build"
 

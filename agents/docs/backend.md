@@ -44,9 +44,9 @@ ownership and explicit Site Admin boundary.
 - Central resource policies use explicit typed actions; Team and Machine list
   scopes enforce membership in SQL. Shared operation boundaries retain these
   checks for HTTP, signaling, and delegated Agent access.
-- Deliver an independent Vue Web client alongside Electron. Extract shared UI
-  components into a common component package. The Rust server is API-only; Web
-  frontend hosting is separate.
+- Deliver a Vue Web client alongside Electron with shared UI components in a
+  common package. The official server image bundles the Web build and serves it
+  through Actix; independent static hosting remains supported.
 - Send Workspace, Provider, and machine-settings management requests to backend
   APIs. The backend authorizes and forwards them to the owning daemon. The daemon
   validates and executes machine-local changes.
@@ -95,7 +95,7 @@ ownership and explicit Site Admin boundary.
 | History ingestion | Accept daemon snapshots/events and audit, deduplicate retries, record committed sequence watermarks, and propagate catalog changes/deletions | Daemon is the sole writer of execution history and retains unsynchronized data |
 | History queries | Serve paginated Session summaries, conversations, tool history, and audit over HTTPS, including when a machine is offline | Clients project stored events and attach to the live daemon when operations are available |
 | Archive and restore | Synchronize and query archive state while preserving all central history and audit; report completion only after daemon confirmation | Daemon pauses input delivery, closes the provider and owned PTYs without removing files or records, and restores active state without launching processes |
-| API and persistence foundation | PostgreSQL migrations and server storage, shared wire contracts, authenticated API/stream errors, and deployment configuration for independently hosted clients | Native bindings remain thin; daemon persistence remains SQLite |
+| API and persistence foundation | PostgreSQL migrations and server storage, shared wire contracts, authenticated API/stream errors, and deployment configuration for bundled or independently hosted Web clients | Native bindings remain thin; daemon persistence remains SQLite |
 
 Authorization is enforced at both server and daemon boundaries. The initial Team
 policy can grant members the same execution actions without implementing
@@ -253,7 +253,9 @@ local permissions, and its narrow preload bridge. Its remote API/signaling
 adapter can live in the main process, preserving the renderer boundary. Web
 uses browser APIs and has no local daemon installation or OS-control bridge.
 Both frontends use the same backend API and target-machine operation contracts.
-The API-only backend does not serve the Vue application.
+The official server image serves the Vue application alongside the API. Binary
+deployments enable this with `DESKFLEET_WEB_DIRECTORY`; leaving it unset keeps
+API-only operation for an independent static host or local Vite development.
 
 Browser identity must be modeled explicitly: the user and client/device are
 known, but the browser need not run on an enrolled Machine. Adapt the current

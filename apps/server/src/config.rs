@@ -1,4 +1,4 @@
-//! Startup configuration for an API-only central service.
+//! Startup configuration for the central API; Web hosting is configured by `WebAssets`.
 use std::{env, io, net::SocketAddr};
 
 #[derive(Clone)]
