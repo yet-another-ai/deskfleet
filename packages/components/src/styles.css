@@ -11,6 +11,10 @@
   border-color: var(--ui-color-border);
 }
 
+[hidden] {
+  display: none !important;
+}
+
 button {
   margin: 0;
   padding: 0;
