@@ -76,10 +76,14 @@ test("new terminal helper uses the bundled runtime and survives login shell init
   const path = join(directory, "image 空格.png")
   await writeFile(path, png)
   if (process.platform === "win32") {
-    const result = await exec(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", 'icat "%DESKFLEET_TEST_IMAGE%"'], {
-      env: { ...process.env, ...env, DESKFLEET_TEST_IMAGE: path },
+    // Absolute path as its own argv element — not %VAR% inside one /c string —
+    // so Node's CreateProcess quoting and cmd /s keep spaces/Unicode intact.
+    const result = await exec(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", "icat", path], {
+      env: { ...process.env, ...env },
     })
     assert.ok(result.stdout.endsWith(`:${png.toString("base64")}\x07\n`))
+    const launcher = await readFile(join(directory, ".shell-bin", "icat.cmd"), "utf8")
+    assert.ok(launcher.includes("%DESKFLEET_ICAT_ARG_0%"))
   } else {
     for (const shell of process.platform === "darwin" ? ["/bin/zsh", "/bin/bash"] : ["/bin/bash"]) {
       const result = await exec(shell, ["-lic", 'icat "$DESKFLEET_TEST_IMAGE"'], {
