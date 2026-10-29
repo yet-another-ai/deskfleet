@@ -10,6 +10,7 @@ use super::WebAssets;
 
 const INDEX: &str = "<!doctype html><html><body>DeskFleet Web</body></html>";
 const SCRIPT: &str = "console.log('DeskFleet')";
+const IMMUTABLE: &str = "public, max-age=31536000, immutable";
 
 struct Fixture {
     parent: PathBuf,
@@ -23,7 +24,17 @@ impl Fixture {
         fs::create_dir_all(directory.join("assets")).unwrap();
         fs::create_dir_all(directory.join("api")).unwrap();
         fs::write(directory.join("index.html"), INDEX).unwrap();
-        fs::write(directory.join("assets/app-a1b2.js"), SCRIPT).unwrap();
+        for path in [
+            "assets/app-a1b2c3d4.js",
+            "assets/chevron-down-BEOiB5L-.js",
+            "assets/styles-Cog8TC2_.css",
+            "assets/app-a1b2.js",
+            "assets/config.json",
+            "app-a1b2c3d4.js",
+            "favicon.ico",
+        ] {
+            fs::write(directory.join(path), SCRIPT).unwrap();
+        }
         // These names must never override the API or health routes.
         fs::write(directory.join("api/missing"), "not an API response").unwrap();
         fs::write(directory.join("healthz"), "not health JSON").unwrap();
@@ -67,6 +78,7 @@ async fn page_entry_points_serve_revalidatable_html_and_head() {
             response.headers().get(header::CACHE_CONTROL).unwrap(),
             "no-cache"
         );
+        let etag = response.headers().get(header::ETAG).unwrap().clone();
         assert_eq!(http_test::read_body(response).await, INDEX);
 
         let response = http_test::call_service(
@@ -86,11 +98,26 @@ async fn page_entry_points_serve_revalidatable_html_and_head() {
             response.headers().get(header::CONTENT_TYPE).unwrap(),
             "text/html; charset=utf-8"
         );
+
+        let response = http_test::call_service(
+            &app,
+            http_test::TestRequest::get()
+                .uri(path)
+                .insert_header((header::IF_NONE_MATCH, etag))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED, "{path}");
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-cache"
+        );
+        assert!(http_test::read_body(response).await.is_empty());
     }
 }
 
 #[actix_web::test]
-async fn real_assets_keep_mime_and_conditional_request_support() {
+async fn real_assets_use_content_hash_cache_policy_and_keep_validators() {
     let fixture = Fixture::new();
     let app = http_test::init_service(
         App::new()
@@ -98,34 +125,74 @@ async fn real_assets_keep_mime_and_conditional_request_support() {
             .configure(|config| fixture.assets.configure(config)),
     )
     .await;
-    let response = http_test::call_service(
-        &app,
-        http_test::TestRequest::get()
-            .uri("/assets/app-a1b2.js")
-            .to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("javascript")
-    );
-    let etag = response.headers().get(header::ETAG).unwrap().clone();
-    assert_eq!(http_test::read_body(response).await, SCRIPT);
-    let response = http_test::call_service(
-        &app,
-        http_test::TestRequest::get()
-            .uri("/assets/app-a1b2.js")
-            .insert_header((header::IF_NONE_MATCH, etag))
-            .to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+    for (path, cache_control, content_type) in [
+        (
+            "/assets/app-a1b2c3d4.js?download=1",
+            IMMUTABLE,
+            "javascript",
+        ),
+        ("/assets/chevron-down-BEOiB5L-.js", IMMUTABLE, "javascript"),
+        ("/assets/styles-Cog8TC2_.css", IMMUTABLE, "text/css"),
+        ("/assets/app-a1b2.js", "no-cache", "javascript"),
+        ("/assets/config.json", "no-cache", "application/json"),
+        ("/app-a1b2c3d4.js", "no-cache", "javascript"),
+        ("/favicon.ico", "no-cache", "image/"),
+    ] {
+        let response =
+            http_test::call_service(&app, http_test::TestRequest::get().uri(path).to_request())
+                .await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            cache_control,
+            "{path}"
+        );
+        assert!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains(content_type),
+            "{path}"
+        );
+        let etag = response.headers().get(header::ETAG).unwrap().clone();
+        assert!(response.headers().contains_key(header::LAST_MODIFIED));
+        assert_eq!(http_test::read_body(response).await, SCRIPT);
+
+        let response = http_test::call_service(
+            &app,
+            http_test::TestRequest::default()
+                .method(Method::HEAD)
+                .uri(path)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            cache_control,
+            "{path}"
+        );
+        assert_eq!(response.headers().get(header::ETAG).unwrap(), &etag);
+
+        let response = http_test::call_service(
+            &app,
+            http_test::TestRequest::get()
+                .uri(path)
+                .insert_header((header::IF_NONE_MATCH, etag))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED, "{path}");
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            cache_control,
+            "{path}"
+        );
+        assert!(http_test::read_body(response).await.is_empty());
+    }
 }
 
 #[actix_web::test]
@@ -143,6 +210,7 @@ async fn api_and_health_routes_take_priority_over_web_files() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
+    assert!(!response.headers().contains_key(header::CACHE_CONTROL));
     let body: serde_json::Value = http_test::read_body_json(response).await;
     assert_eq!(body["status"], "ok");
     assert_eq!(body["protocol_version"], 1);
@@ -151,6 +219,7 @@ async fn api_and_health_routes_take_priority_over_web_files() {
             http_test::call_service(&app, http_test::TestRequest::get().uri(path).to_request())
                 .await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        assert!(!response.headers().contains_key(header::CACHE_CONTROL));
         assert!(http_test::read_body(response).await.is_empty());
     }
 }
@@ -164,11 +233,22 @@ async fn missing_assets_and_non_page_paths_do_not_fall_back_to_html() {
             .configure(|config| fixture.assets.configure(config)),
     )
     .await;
-    for path in ["/assets/missing.js", "/missing.png", "/assets/", "/unknown"] {
+    for path in [
+        "/assets/missing-a1b2c3d4.js",
+        "/assets/missing.js",
+        "/missing.png",
+        "/assets/",
+        "/unknown",
+    ] {
         let response =
             http_test::call_service(&app, http_test::TestRequest::get().uri(path).to_request())
                 .await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store",
+            "{path}"
+        );
         assert_ne!(http_test::read_body(response).await, INDEX);
     }
 }
@@ -182,7 +262,12 @@ async fn writes_and_private_paths_cannot_read_the_web_bundle_or_parent_directory
             .configure(|config| fixture.assets.configure(config)),
     )
     .await;
-    for path in ["/", "/auth/account", "/index.html", "/assets/app-a1b2.js"] {
+    for path in [
+        "/",
+        "/auth/account",
+        "/index.html",
+        "/assets/app-a1b2c3d4.js",
+    ] {
         let response =
             http_test::call_service(&app, http_test::TestRequest::post().uri(path).to_request())
                 .await;
@@ -206,7 +291,7 @@ async fn writes_and_private_paths_cannot_read_the_web_bundle_or_parent_directory
 #[actix_web::test]
 async fn without_web_assets_only_api_routes_are_registered() {
     let app = http_test::init_service(App::new().configure(crate::configure)).await;
-    for path in ["/", "/auth/account", "/assets/app-a1b2.js"] {
+    for path in ["/", "/auth/account", "/assets/app-a1b2c3d4.js"] {
         let response =
             http_test::call_service(&app, http_test::TestRequest::get().uri(path).to_request())
                 .await;

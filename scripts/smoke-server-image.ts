@@ -10,6 +10,7 @@ const prefix = `deskfleet-image-smoke-${randomUUID()}`
 const database = `${prefix}-postgres`
 const server = `${prefix}-server`
 const postgresImage = "postgres:18.6@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6"
+const immutableCacheControl = "public, max-age=31536000, immutable"
 
 function docker(...args: string[]): string {
   return execFileSync("docker", args, { encoding: "utf8", stdio: "pipe", timeout: 120_000 }).trim()
@@ -65,6 +66,14 @@ try {
   assert.equal(homepage.headers.get("cache-control"), "no-cache")
   const html = await homepage.text()
   assert.match(html, /<div id="root"><\/div>/)
+  const homepageEtag = homepage.headers.get("etag")
+  assert.ok(homepageEtag, "The Web entry point must support conditional requests")
+  const unchangedHomepage = await fetch(origin, {
+    headers: { "If-None-Match": homepageEtag }, signal: AbortSignal.timeout(5_000),
+  })
+  assert.equal(unchangedHomepage.status, 304)
+  assert.equal(unchangedHomepage.headers.get("cache-control"), "no-cache")
+  assert.equal(await unchangedHomepage.text(), "")
 
   const account = await fetch(`${origin}/auth/account`, { signal: AbortSignal.timeout(5_000) })
   assert.equal(account.status, 200)
@@ -88,11 +97,34 @@ try {
     assert.ok(path, `Web entry point must reference a built ${extension} asset`)
     const url = new URL(path, origin)
     assert.equal(url.origin, origin, "Bundled Web assets must be served from the same origin")
+    assert.match(url.pathname, /^\/assets\/.+-[A-Za-z0-9_-]{8}\.[^.]+$/,
+      "Bundled assets must retain Vite's content-hashed filenames")
     const asset = await fetch(url, { signal: AbortSignal.timeout(5_000) })
     assert.equal(asset.status, 200, `Missing bundled asset: ${path}`)
     assert.match(asset.headers.get("content-type") ?? "", contentType)
+    assert.equal(asset.headers.get("cache-control"), immutableCacheControl)
+    const etag = asset.headers.get("etag")
+    assert.ok(etag, `Bundled asset must support conditional requests: ${path}`)
     assert.ok((await asset.text()).length > 0, `Bundled asset is empty: ${path}`)
+
+    const assetHead = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(5_000) })
+    assert.equal(assetHead.status, 200)
+    assert.equal(assetHead.headers.get("cache-control"), immutableCacheControl)
+    assert.equal(await assetHead.text(), "")
+
+    const unchangedAsset = await fetch(url, {
+      headers: { "If-None-Match": etag }, signal: AbortSignal.timeout(5_000),
+    })
+    assert.equal(unchangedAsset.status, 304)
+    assert.equal(unchangedAsset.headers.get("cache-control"), immutableCacheControl)
+    assert.equal(await unchangedAsset.text(), "")
   }
+
+  const icon = await fetch(`${origin}/favicon-32x32.png`, { signal: AbortSignal.timeout(5_000) })
+  assert.equal(icon.status, 200)
+  assert.equal(icon.headers.get("cache-control"), "no-cache",
+    "Fixed-name assets must revalidate after image upgrades")
+  assert.ok((await icon.arrayBuffer()).byteLength > 0)
 
   const site = await fetch(`${origin}/api/site`, { signal: AbortSignal.timeout(5_000) })
   assert.equal(site.status, 200)
@@ -100,15 +132,19 @@ try {
   const settings = await site.json() as { siteName: string }
   assert.equal(typeof settings.siteName, "string", "API routing must retain database-backed site settings")
 
-  for (const path of ["/api/not-a-route", "/assets/not-a-bundle.js"]) {
+  for (const path of ["/api/not-a-route", "/assets/not-a-bundle.js", "/assets/missing-a1b2C3_d.js"]) {
     const missing = await fetch(`${origin}${path}`, { signal: AbortSignal.timeout(5_000) })
     assert.equal(missing.status, 404, `${path} must not fall back to the Web entry point`)
+    if (path.startsWith("/assets/")) {
+      assert.equal(missing.headers.get("cache-control"), "no-store",
+        "Missing assets must not be cached, including content-hashed filenames")
+    }
     assert.notEqual(await missing.text(), html)
   }
   docker("stop", "--time", "15", server)
   assert.equal(docker("inspect", "--format", "{{.State.ExitCode}}", server), "0",
     "Server did not shut down gracefully")
-  console.log("Server image: non-root startup, PostgreSQL migrations, same-origin Web/API routing, bundled assets, 404s, and shutdown passed")
+  console.log("Server image: non-root startup, PostgreSQL migrations, same-origin Web/API routing, asset caching and revalidation, 404s, and shutdown passed")
 } catch (error) {
   for (const container of [server, database]) {
     const logs = spawnSync("docker", ["logs", container], { encoding: "utf8", timeout: 10_000 })

@@ -124,6 +124,16 @@ Application navigation otherwise uses URL hashes. Static files are served from
 the configured directory; missing assets and unknown `/api/*` routes retain
 404 responses rather than returning the SPA page.
 
+HTML entry points and fixed-name files such as favicons use
+`Cache-Control: no-cache`, allowing browsers to store them but requiring
+revalidation before reuse. Vite assets under `/assets/` whose filenames end in
+an eight-character content hash use
+`Cache-Control: public, max-age=31536000, immutable`. Their URLs change when their
+contents change, so browsers can reuse them for one year without revalidation.
+Both policies apply to `GET`, `HEAD`, and conditional `304` responses; ETag and
+Last-Modified validators remain available. Static-file errors use `no-store`,
+including missing hashed assets. API and health routes retain their own policies.
+
 The Web build uses its serving origin unless `VITE_DESKFLEET_SERVER_URL` was
 set at build time. Leave that variable unset for the bundled image. Runtime
 environment changes do not rewrite the bundle, including its optional Statsig
@@ -174,7 +184,8 @@ mise exec -- node scripts/smoke-server-image.ts deskfleet-server:local
 Use `amd64` for a Linux x64 binary. The smoke script starts an isolated,
 temporary PostgreSQL container, verifies non-root server startup, migrations,
 HTTP health, the Web entry point and assets, authentication-page fallback,
-missing API/asset responses, and signal-driven shutdown, then removes its
+cache policies and conditional requests, missing API/asset responses, and
+signal-driven shutdown, then removes its
 containers and network.
 
 ## Authentication and API
