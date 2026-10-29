@@ -277,7 +277,20 @@
     "reconnect": "再接続", "interrupted": "シェルが中断されました。シェルを終了するまでは保存済みの履歴を確認できます。",
     "ended": "プロセスが終了しました", "exited": "プロセスが終了しました ({code})",
     "sessionPanel": "セッションのターミナル", "resizePanel": "ターミナルパネルのサイズを変更",
-    "showPanel": "ターミナルを表示", "hidePanel": "ターミナルを非表示"
+    "showPanel": "ターミナルを表示", "hidePanel": "ターミナルを非表示",
+    "searchLabel": "ターミナル内を検索", "searchShortcut": "ターミナル内を検索 (Ctrl/Cmd+F)",
+    "searchPlaceholder": "ターミナル内を検索…", "searchCaseSensitive": "大文字と小文字を区別",
+    "searchWholeWord": "単語単位で検索", "searchRegex": "正規表現を使用",
+    "searchPrevious": "前の検索結果", "searchNext": "次の検索結果",
+    "searchClose": "検索を閉じる", "searchNoResults": "一致する結果はありません",
+    "searchInvalidRegex": "無効な正規表現です", "searchResults": "{count} 件中 {index} 件目",
+    "searchManyResults": "{count} 件以上の一致", "copySelection": "選択範囲をコピー",
+    "copyFailed": "コピーできませんでした。もう一度お試しください。", "clipboardRequest": "プログラムからのコピー要求:",
+    "copyRequested": "コピー", "dismissClipboard": "コピー要求を閉じる",
+    "exportBuffer": "ターミナルのバッファをエクスポート", "exportAnsi": "ANSI 形式の出力をダウンロード",
+    "exportHtml": "書式付き HTML をダウンロード", "progressRunning": "実行中 · {value}%",
+    "progressError": "失敗 · {value}%", "progressIndeterminate": "実行中…",
+    "progressPaused": "一時停止中 · {value}%"
   },
   "remoteControl": {
     "terminal": "ターミナル", "desktop": "デスクトップ",
