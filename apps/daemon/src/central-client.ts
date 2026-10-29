@@ -187,6 +187,8 @@ export class CentralClient {
     socket.addEventListener("close", event => {
       if (this.#socket !== socket) return
       this.#socket = undefined; this.#connected = false; this.#sync.disable(); clearInterval(this.#heartbeat)
+      // 4401/4403 are durable credential rejection. Other codes (including 1012 for an
+      // interrupted pre-auth hello) reconnect with the same machine identity.
       if (event.code === 4401 || event.code === 4403) {
         void this.#revoked().catch(error => console.error("Revoked machine cleanup failed", error))
       } else if (!this.#stopping && !this.#closed) {

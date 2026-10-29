@@ -58,14 +58,22 @@ async fn connect(
                 Ok(Some(Ok(actix_ws::AggregatedMessage::Text(text)))) => {
                     match serde_json::from_str::<ControlMessage>(&text) {
                         Ok(ControlMessage::Authenticate { token }) if token.len() < 512 => token,
+                        // Rejected shape: the peer must stop using this token.
                         _ => {
-                            let _ = session.close(Some(close_reason(4401))).await;
+                            let _ = session
+                                .close(Some(close_reason(pre_auth_close(PreAuthOutcome::Reject))))
+                                .await;
                             return;
                         }
                     }
                 }
+                // Timeout, disconnect, or non-text first frame: retry without revoking.
+                // Daemons persist 4401/4403 as a permanent local logout; a later re-enrollment
+                // would mint a new machine while the old server row stays offline forever.
                 _ => {
-                    let _ = session.close(Some(close_reason(4401))).await;
+                    let _ = session
+                        .close(Some(close_reason(pre_auth_close(PreAuthOutcome::Retry))))
+                        .await;
                     return;
                 }
             }
@@ -240,6 +248,14 @@ async fn send_json(
         .map_err(|_| ())
 }
 
+/// Outcome of waiting for the first control frame before credentials are decided.
+enum PreAuthOutcome {
+    /// Invalid authenticate payload. Daemons treat 4401 as a permanent local logout.
+    Reject,
+    /// Handshake interrupted before a credential decision. Daemons must reconnect.
+    Retry,
+}
+
 fn close_reason(code: u16) -> CloseReason {
     CloseReason {
         code: CloseCode::from(code),
@@ -255,6 +271,18 @@ fn store_failure_close(error: &deskfleet_control_store::Error, revoked_code: u16
     }
 }
 
+/// Map the pre-authentication wait outcome to a WebSocket close code.
+///
+/// Only an authenticate text frame that fails validation is a credential rejection.
+/// Timeouts and transport failures must return 1012 so a network blip cannot
+/// permanently retire a still-valid machine credential.
+fn pre_auth_close(outcome: PreAuthOutcome) -> u16 {
+    match outcome {
+        PreAuthOutcome::Reject => 4401,
+        PreAuthOutcome::Retry => 1012,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -265,6 +293,20 @@ mod tests {
         assert_eq!(
             super::store_failure_close(&Error::Invalid("temporary fixture failure"), 4403),
             1012
+        );
+    }
+
+    #[test]
+    fn interrupted_auth_handshake_retries_instead_of_revoking() {
+        assert_eq!(
+            super::pre_auth_close(super::PreAuthOutcome::Retry),
+            1012,
+            "network drop mid-hello must not use the daemon revocation close codes"
+        );
+        assert_eq!(
+            super::pre_auth_close(super::PreAuthOutcome::Reject),
+            4401,
+            "invalid authenticate payload still rejects the credential"
         );
     }
 }

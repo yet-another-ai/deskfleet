@@ -255,6 +255,139 @@ test("explicit credential rejection persists logout without treating transport l
   assert.equal(requests, 1, "A revoked registration must not upload again after restart")
 })
 
+/** Minimal WebSocket server that upgrades, then closes with an application code. */
+function closeAfterUpgrade(code: number, onAuthenticate?: (token: string) => void) {
+  const server = createServer((_request, response) => response.setHeader("content-type", "application/json").end("{}"))
+  let upgraded!: import("node:stream").Duplex
+  let resolveClosed!: () => void
+  const closed = new Promise<void>(resolve => { resolveClosed = resolve })
+  const closeFrame = (value: number) => {
+    const body = Buffer.alloc(2)
+    body.writeUInt16BE(value, 0)
+    return Buffer.concat([Buffer.from([0x88, body.length]), body])
+  }
+  server.on("upgrade", (request, socket) => {
+    upgraded = socket
+    const accept = createHash("sha1").update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64")
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+    let received = Buffer.alloc(0)
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      socket.write(closeFrame(code))
+      socket.end()
+      resolveClosed()
+    }
+    if (!onAuthenticate) {
+      finish()
+      return
+    }
+    socket.on("data", chunk => {
+      if (finished) return
+      received = Buffer.concat([received, chunk])
+      while (received.length >= 2) {
+        const opcode = received[0]! & 0x0f
+        const length = received[1]! & 0x7f
+        const masked = (received[1]! & 0x80) !== 0
+        const header = 2 + (masked ? 4 : 0)
+        if (length >= 126 || received.length < header + length) return
+        const body = Buffer.from(received.subarray(header, header + length))
+        if (masked) {
+          const mask = received.subarray(2, 6)
+          for (let index = 0; index < body.length; index++) body[index] = body[index]! ^ mask[index % 4]!
+        }
+        received = received.subarray(header + length)
+        if (opcode !== 1) continue
+        const message = JSON.parse(body.toString()) as { type?: string; token?: string }
+        if (message.type === "authenticate" && message.token) onAuthenticate(message.token)
+        finish()
+        return
+      }
+    })
+  })
+  return { server, closed, socket: () => upgraded }
+}
+
+test("network drop mid-hello reconnects with the same machine credentials instead of revoking", { timeout: 5_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-hello-retry-"))
+  const { server, closed, socket } = closeAfterUpgrade(1012)
+  server.listen(0, "127.0.0.1"); await once(server, "listening")
+  const credentials = {
+    serverId: "server", machineId: "machine-keep", teamId: "team",
+    serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, token: "durable-secret",
+  }
+  const path = join(directory, "central.json")
+  await writeFile(path, JSON.stringify(credentials))
+  const unsubscribe = () => () => {}
+  const operations = {
+    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
+    providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
+  } as unknown as MachineOperations
+  const central = new CentralClient(directory, operations, {} as ControlPeers)
+  context.after(async () => {
+    await central.close()
+    socket()?.destroy()
+    await server[Symbol.asyncDispose]()
+    await rm(directory, { recursive: true, force: true })
+  })
+  await central.init()
+  await closed
+  await setImmediate()
+  assert.equal(central.status().revoked, false, "1012 is a retryable hello failure, not credential rejection")
+  assert.equal(central.status().machineId, "machine-keep")
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), credentials)
+  await central.stop()
+})
+
+test("credential rejection close still persists local revocation", { timeout: 5_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-hello-reject-"))
+  const tokens: string[] = []
+  const { server, closed, socket } = closeAfterUpgrade(4401, token => tokens.push(token))
+  server.listen(0, "127.0.0.1"); await once(server, "listening")
+  const credentials = {
+    serverId: "server", machineId: "machine-old", teamId: "team",
+    serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, token: "rejected-secret",
+  }
+  const path = join(directory, "central.json")
+  await writeFile(path, JSON.stringify(credentials))
+  const unsubscribe = () => () => {}
+  const operations = {
+    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
+    providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
+  } as unknown as MachineOperations
+  const central = new CentralClient(directory, operations, {} as ControlPeers)
+  context.after(async () => {
+    await central.close()
+    socket()?.destroy()
+    await server[Symbol.asyncDispose]()
+    await rm(directory, { recursive: true, force: true })
+  })
+  await central.init()
+  await closed
+  await waitForRevoked(central, path)
+  assert.deepEqual(tokens, ["rejected-secret"])
+  assert.equal(central.status().revoked, true)
+  assert.equal(JSON.parse(await readFile(path, "utf8")).machineId, "machine-old")
+  await central.stop()
+})
+
+async function waitForRevoked(central: CentralClient, path: string): Promise<void> {
+  const deadline = Date.now() + 2_000
+  while (Date.now() < deadline) {
+    if (central.status().revoked) {
+      try {
+        if (JSON.parse(await readFile(path, "utf8")).revoked === true) return
+      } catch { /* rename still in flight */ }
+    }
+    await new Promise(resolve => setTimeout(resolve, 10).unref())
+  }
+  assert.equal(central.status().revoked, true)
+  assert.equal(JSON.parse(await readFile(path, "utf8")).revoked, true)
+}
+
 test("real Node WebSocket closes malformed control traffic without unhandled failures", { timeout: 5_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-failure-"))
   const errors: string[] = []
