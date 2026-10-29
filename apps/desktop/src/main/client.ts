@@ -5,7 +5,7 @@ import { installLocalChannels } from "./local-channels.ts"
 import { installLocalApplications } from "./applications.ts"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { join } from "node:path"
-import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
+import { desktopDaemonDirectory } from "./daemon-directory.ts"
 import { AppearanceSettingsController } from "./appearance-settings.ts"
 import { installAppearance } from "./appearance.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
@@ -58,7 +58,7 @@ function start(): void {
     powerMonitor.on("shutdown", () => lifecycle.quit())
     const localAgent = new LocalAgentController(
       join(app.getPath("userData"), "settings.json"),
-      createLocalAgentRuntime({ directory: daemonControlDirectory() }),
+      createLocalAgentRuntime({ directory: desktopDaemonDirectory() }),
       publishLocalAgentState,
     )
     const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), powerSaveBlocker)
@@ -71,7 +71,7 @@ function start(): void {
     const notificationSettings = new NotificationSettingsController(join(app.getPath("userData"), "notifications.json"))
     const notifications = new DesktopNotifications(notificationSettings, show)
     const notificationMonitor = new TaskNotificationMonitor(central, notification => notifications.notify(notification), console.error)
-    installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(daemonControlDirectory()))
+    installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(desktopDaemonDirectory()))
     if (process.platform === "win32") app.setAppUserModelId("io.github.yet-another-ai.deskfleet")
     void notificationMonitor.start().catch(console.error)
     // The hosted daemon outlives windows but not the app. Exit once it has

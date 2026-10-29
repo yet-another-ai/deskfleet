@@ -447,6 +447,13 @@ app waits for its cleanup before exiting. The app never spawns a separate daemon
 process. The standalone Node.js SEA is the headless distribution of the same
 daemon and runs independently of any desktop app.
 
+The desktop host places daemon discovery and data in `<userData>/daemon`, using
+Electron's existing profile selection, including `--user-data-dir`. All desktop
+daemon consumers use that directory. Standalone headless daemons default to
+`~/.deskfleet`, with `DESKFLEET_DAEMON_DIRECTORY` as an override. The desktop host
+ignores that environment variable and does not import data from the headless
+directory.
+
 Desktop first-run setup uses a welcome page: platform-specific permissions, then
 account sign-in. macOS guides Full Disk Access, screen/system-audio recording,
 and Accessibility. Linux Wayland guides screen sharing and keyboard/mouse
@@ -488,10 +495,10 @@ backend choice; Wayland environments never fall back to Xwayland. See
 requirements. Settings displays OS permission status separately from daemon
 availability; capture and encoding start only on explicit use.
 
-Startup reuses an authenticated daemon already owning the discovery directory,
-such as a standalone SEA, instead of hosting another. Explicitly disabling the
-preference sends authenticated shutdown and waits for the discovery lease to be
-released after cleanup. It ends live terminal processes but retains catalog and
+Startup reuses an authenticated standalone daemon only when it was explicitly
+configured to own the same `<userData>/daemon` discovery directory. Explicitly
+disabling the preference sends authenticated shutdown and waits for the discovery
+lease to be released after cleanup. It ends live terminal processes but retains catalog and
 terminal history. Quitting the app closes the daemon it hosts in the same way;
 a reused standalone daemon is only disconnected. Disabling auto-start does not
 kill a separately started daemon when the app next launches. Startup/shutdown

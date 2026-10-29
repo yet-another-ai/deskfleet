@@ -303,8 +303,8 @@ display and stream settings. Returning to Desktop requires reconnecting manually
 Leaving the Remote control page also releases capture. The daemon keeps running.
 
 Electron's main process discovers the local daemon through
-`~/.deskfleet/daemon.json`. Set `DESKFLEET_DAEMON_DIRECTORY` in both processes to
-use an isolated instance. The preload carries signaling and control only;
+`<userData>/daemon/daemon.json`, using the app's existing Electron profile.
+The preload carries signaling and control only;
 Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Remote signaling goes through the backend; keyboard/mouse control remains separate work.
 
 See [media integration](../../agents/docs/media.md) for supported capture
@@ -424,9 +424,9 @@ use the same welcome design for account sign-in.
 **Settings → Preferences → Run local Agent** is enabled by default. The main process stores
 `localAgentEnabled` in `settings.json` under Electron's `userData` directory.
 Enabling it starts the bundled daemon library in the app's main process, or
-reuses the authenticated daemon already serving the same discovery directory,
-such as a standalone SEA. There is no separate Node.js or daemon installation
-to configure, and the app starts no separate daemon process.
+reuses an authenticated standalone daemon explicitly configured to serve the
+same `<userData>/daemon` directory. There is no separate Node.js or daemon
+installation to configure, and the app starts no separate daemon process.
 
 Creating the local Agent checks OS access without opening permission dialogs;
 the welcome flow guides explicit requests one at a time. Local Session file
@@ -446,8 +446,11 @@ Closing the window keeps the app in the tray and the daemon running. Quitting
 the app from the tray, ending the OS session, or sending a termination signal
 shuts the hosted daemon down and waits for its cleanup before exiting; a reused
 standalone daemon is only disconnected. Daemon logs go to the app's output;
-discovery, SQLite data, and terminal history retain their usual locations. `DESKFLEET_DAEMON_DIRECTORY` selects an
-isolated instance for both the client and its bundled daemon.
+discovery, SQLite data, provider settings, and terminal history live under
+`<userData>/daemon`. The app uses its existing Electron `userData` directory,
+including a `--user-data-dir` override, and ignores `DESKFLEET_DAEMON_DIRECTORY`.
+Headless daemons still default to `~/.deskfleet` and support that environment
+override. The desktop app does not import data from the headless directory.
 
 ## Localization
 
@@ -597,8 +600,8 @@ drives the production Vapor Workspace form, folder picker, and preload, changes 
 reordering paths, opens a real shell in that directory, and reopens the client to
 verify the saved catalog before deleting it.
 
-The local Agent smoke uses a temporary profile and daemon directory with the real
-built renderer, preload, Settings controller, and hosted daemon. It verifies
+The local Agent smoke uses a temporary profile and its daemon directory with the
+real built renderer, preload, Settings controller, and hosted daemon. It verifies
 default startup, switching off and on, catalog refresh, terminal interruption on
 shutdown, notification category choices and master-switch persistence across
 restart, the daemon surviving its window but not the app, a fresh daemon on

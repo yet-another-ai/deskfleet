@@ -59,13 +59,21 @@ An active registration cannot be overwritten. Old history, Provider settings,
 and Workspaces are not imported into the new registration.
 
 The daemon publishes a private Unix socket or Windows named pipe through
-`~/.deskfleet/daemon.json`. `DESKFLEET_DAEMON_DIRECTORY` selects another directory.
+`<daemon directory>/daemon.json`.
 Only one live daemon can own it. The discovery token permits host setup,
 enrollment, capabilities, and shutdown; it does not grant resource access.
 Production resource operations go through the backend's authenticated APIs.
 Local control is available only to explicit in-process test fixtures.
 
 ## Storage and process ownership
+
+Standalone daemons default to `~/.deskfleet`; `DESKFLEET_DAEMON_DIRECTORY` selects
+another directory. Electron passes `<userData>/daemon` to the hosted library and
+uses it for local discovery and data, following the app's existing profile
+selection and `--user-data-dir` override. Electron ignores
+`DESKFLEET_DAEMON_DIRECTORY` and does not import existing headless data. It can
+reuse a standalone daemon only when that daemon is explicitly configured to use
+the same `<userData>/daemon` directory.
 
 The first production machine uses `<daemon directory>/machine/`. A subsequent
 registration uses a fresh `machines/<uuid>/` directory, selected by the host's

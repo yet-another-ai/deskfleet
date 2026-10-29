@@ -185,9 +185,9 @@ Stripe publishable-key environment variable in this Checkout flow.
 - Redis: configure private reachability and credentials for both coturn and the
   API. There is no DeskFleet-defined Redis-server password variable. Pub/Sub has
   no replay; separate Redis instances isolate environments, not database indices.
-- Test machines: `DESKFLEET_DAEMON_DIRECTORY` optionally selects the daemon data
-  directory (default `~/.deskfleet`). Enroll using `--server-url` and the issued
-  credential on stdin. Provider credentials belong on that machine.
+- Headless test machines: `DESKFLEET_DAEMON_DIRECTORY` optionally selects the
+  daemon data directory (default `~/.deskfleet`). Enroll using `--server-url` and
+  the issued credential on stdin. Provider credentials belong on that machine.
 
 ## Build and tag configuration
 

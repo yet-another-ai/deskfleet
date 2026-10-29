@@ -7,9 +7,11 @@ import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { promisify } from "node:util"
 import { DaemonClient } from "../../daemon/src/control-client.ts"
+import { startDaemon } from "../../daemon/src/daemon.ts"
 import { connectAcpProcess } from "../../daemon/src/agents/acp.ts"
 import { createPeer } from "../../../crates/node/index.ts"
 import { onboardingPermissions, type OnboardingState } from "../../../packages/client/src/onboarding.ts"
+import type { LocalEnrollment } from "../../../packages/client/src/central.ts"
 
 // Exercise the real package entry, including its static imports and startup
 // routing. Feature fixtures replace main and cannot detect import-time crashes.
@@ -17,9 +19,10 @@ const appPath = resolve(import.meta.dirname, "..")
 const executable = createRequire(import.meta.url)("electron") as string
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-startup-smoke-")))
 const profile = join(directory, "profile")
-const daemonDirectory = join(directory, "daemon")
+const daemonDirectory = join(profile, "daemon")
+const headlessDirectory = join(directory, "headless")
 const screenshotDirectory = process.env.DESKFLEET_STARTUP_SCREENSHOTS
-const env: NodeJS.ProcessEnv = { ...process.env, DESKFLEET_DAEMON_DIRECTORY: daemonDirectory }
+const env: NodeJS.ProcessEnv = { ...process.env, DESKFLEET_DAEMON_DIRECTORY: headlessDirectory }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.DESKFLEET_RENDERER_URL
 let client: ChildProcess | undefined
@@ -27,6 +30,7 @@ let exited: Promise<void> | undefined
 let socket: WebSocket | undefined
 let diagnostics = ""
 let nextId = 0
+let headless: Awaited<ReturnType<typeof startDaemon>> | undefined
 
 function launch(args: string[]): void {
   diagnostics = ""
@@ -143,14 +147,15 @@ async function requestQuit(): Promise<void> {
 }
 
 /** The app hosts the daemon in its own process and stops it when it quits. */
-async function probeHostedDaemon(): Promise<void> {
+async function probeHostedDaemon(otherIdentity: LocalEnrollment["identity"]): Promise<void> {
   const hostProfile = join(directory, "host-profile")
+  const hostDaemonDirectory = join(hostProfile, "daemon")
   await mkdir(hostProfile)
   await writeFile(join(hostProfile, "settings.json"), JSON.stringify({ localAgentEnabled: true }))
   await writeFile(join(hostProfile, "onboarding.json"), JSON.stringify({ step: "complete" }))
   launch([`--user-data-dir=${hostProfile}`, ...process.platform === "win32" ? ["--inspect=0"] : []])
   const control = await until(async () => {
-    try { return await DaemonClient.connect(() => {}, () => {}, daemonDirectory) }
+    try { return await DaemonClient.connect(() => {}, () => {}, hostDaemonDirectory) }
     catch (error) {
       if (error instanceof Error && "code" in error && ["ENOENT", "ECONNREFUSED"].includes(String(error.code))) return undefined
       throw error
@@ -161,6 +166,7 @@ async function probeHostedDaemon(): Promise<void> {
     const status = await control.call("centralStatus", {})
     assert.equal(status.configured, false)
     assert.ok(status.identity.originId && status.identity.machineId)
+    assert.notDeepEqual(status.identity, otherIdentity, "Distinct Electron profiles must own distinct daemon identities")
     await peer.createDataChannel("deskfleet-acp")
     await assert.rejects(control.call("agentOffer", { sessionId: "unauthorized-agent", sdp: await peer.createOffer() }), /central|backend|authorized/iu)
     await assert.rejects(control.call("catalogList", {}), /central|backend|authorized/iu)
@@ -171,11 +177,19 @@ async function probeHostedDaemon(): Promise<void> {
   const timer = setTimeout(() => client?.kill("SIGKILL"), 15_000)
   try { await requestQuit(); await exited } finally { clearTimeout(timer) }
   assert.equal(client!.exitCode, 0, "Quitting the app must finish its daemon's shutdown")
-  await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
+  await assert.rejects(stat(join(hostDaemonDirectory, "daemon.json")), { code: "ENOENT" })
 }
 
 try {
   await stat(join(appPath, "out/main/index.js"))
+  // A desktop launch must ignore the independently running headless daemon,
+  // even when its discovery directory is inherited through the environment.
+  headless = await startDaemon(0, {
+    controlDirectory: headlessDirectory, permissionPlatform: "darwin",
+    requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null,
+  })
+  const headlessIdentity = headless.central.status().identity
+  const headlessDiscovery = await readFile(join(headlessDirectory, "daemon.json"), "utf8")
   await mkdir(profile)
   await inspectRenderer()
   const onboarding = await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")
@@ -188,6 +202,8 @@ try {
   assert.equal(await evaluate("document.querySelector('input[name=server-url]') === null && !('saveServer' in window.deskfleet.onboarding)"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   await stat(join(daemonDirectory, "daemon.json"))
+  const identity = (await evaluate<LocalEnrollment>("window.deskfleet.central.localEnrollment()")).identity
+  assert.notDeepEqual(identity, headlessIdentity, "Desktop IPC must use the profile daemon rather than headless discovery")
   await screenshot("welcome-initial")
   // OS permission dialogs require manual interaction; skip them through
   // their production API so this smoke does not change machine permissions.
@@ -202,6 +218,7 @@ try {
   assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "account")
   assert.equal(await evaluate("document.querySelector('input[type=url]') === null"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
+  assert.deepEqual((await evaluate<LocalEnrollment>("window.deskfleet.central.localEnrollment()")).identity, identity, "The profile daemon identity must survive an app restart")
   await screenshot("welcome-account")
   // The UI completes this after browser authentication; exercise persisted host progress here.
   assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.complete()")).step, "complete")
@@ -235,12 +252,17 @@ try {
     assert.equal(pi.initialization.agentInfo?.name, "pi-acp")
     assert.equal(pi.initialization.agentInfo?.version, dependencies["pi-acp"])
   } finally { await pi.close() }
-  await probeHostedDaemon()
-  console.log("Electron startup smoke passed: welcome without server configuration, saved progress, disabled auto-start, Codex, Claude Code, and Pi adapters, hosted daemon identity, and authenticated management boundary")
+  await probeHostedDaemon(identity)
+  const headlessClient = await DaemonClient.connect(() => {}, () => {}, headlessDirectory)
+  try { assert.deepEqual((await headlessClient.call("centralStatus", {})).identity, headlessIdentity) }
+  finally { headlessClient.close() }
+  assert.equal(await readFile(join(headlessDirectory, "daemon.json"), "utf8"), headlessDiscovery, "Desktop startup, disable, and shutdown must leave headless discovery untouched")
+  console.log("Electron startup smoke passed: welcome without server configuration, saved progress, disabled auto-start, Codex, Claude Code, and Pi adapters, isolated profile daemon identities, untouched headless daemon, and authenticated management boundary")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error
 } finally {
   await stop()
+  await headless?.close()
   await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

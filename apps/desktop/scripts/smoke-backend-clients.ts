@@ -19,6 +19,7 @@ import { until } from "../../../scripts/fixtures/backend-peer.ts"
 import type { BackendClientsContext } from "./fixtures/backend-clients-main.ts"
 
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-clients-smoke-")))
+const localDaemonDirectory = join(directory, "profile-electron", "daemon")
 const root = resolve(import.meta.dirname, "../../..")
 const executable = createRequire(import.meta.url)("electron") as string
 const execute = promisify(execFile)
@@ -80,12 +81,12 @@ async function stopClient(): Promise<void> {
 async function launch(mode: BackendClientsContext["mode"]): Promise<void> {
   const context: BackendClientsContext = {
     mode, backend: fixture.backend, webUrl, credentials: fixture.auth.credentials(identity), rendererDirectory: join(root, "apps/desktop/out/renderer"), preloadPath: join(root, "apps/desktop/out/preload/index.cjs"),
-    daemonDirectory: join(directory, "daemon-0"), profileDirectory: join(directory, `profile-${mode}`), machines, sessionId: sessions[0]!, forceRelay: process.env.DESKFLEET_SMOKE_FORCE_RELAY === "1",
+    daemonDirectory: localDaemonDirectory, profileDirectory: join(directory, `profile-${mode}`), machines, sessionId: sessions[0]!, forceRelay: process.env.DESKFLEET_SMOKE_FORCE_RELAY === "1",
     teamId: teamId!, localProbePath: join(directory, "local-probe.js"),
   }
   await mkdir(context.profileDirectory, { recursive: true })
   await writeFile(join(context.profileDirectory, "settings.json"), JSON.stringify({ localAgentEnabled: false }))
-  const env: NodeJS.ProcessEnv = { ...process.env, DESKFLEET_DAEMON_DIRECTORY: context.daemonDirectory }
+  const env: NodeJS.ProcessEnv = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
   electron = spawn(executable, [join(directory, "client.mjs"), `--backend-client-context=${JSON.stringify(context)}`], {
     cwd: root, env, stdio: ["ignore", "ignore", "pipe", "ipc"],
@@ -125,7 +126,7 @@ try {
     await execute("git", ["-C", repository, "add", "."])
     await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
     const provider = new BackendAgent(); providers.push(provider)
-    const daemon = await startDaemon(0, { controlDirectory: join(directory, `daemon-${index}`), agentProvider: provider, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false, requestFullDiskAccess: async () => null }); daemons.push(daemon)
+    const daemon = await startDaemon(0, { controlDirectory: index === 0 ? localDaemonDirectory : join(directory, `daemon-${index}`), agentProvider: provider, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false, requestFullDiskAccess: async () => null }); daemons.push(daemon)
     const { identity } = daemon.central.status()
     const enrollment = await request<{ machine: { id: string }; token: string }>(`/teams/${teamId}/machines`, { name: `Machine ${index}`, originId: identity.originId, localMachineId: identity.machineId })
     machines.push(enrollment.machine.id)
@@ -138,7 +139,7 @@ try {
   }
   assert.equal(sessions[0], sessions[1])
   await launch("web")
-  daemons[0] = await startDaemon(0, { controlDirectory: join(directory, "daemon-0"), agentProvider: providers[0]!, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false, requestFullDiskAccess: async () => null })
+  daemons[0] = await startDaemon(0, { controlDirectory: localDaemonDirectory, agentProvider: providers[0]!, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false, requestFullDiskAccess: async () => null })
   await until(() => daemons[0]!.central.status(), status => status.connected, "daemon restart")
   await launch("electron")
   assert.deepEqual(providers[0]!.prompts, ["Prompt from web", "Prompt from electron"])

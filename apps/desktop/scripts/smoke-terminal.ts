@@ -13,13 +13,13 @@ import { rendererContentSecurityPolicy } from "../src/shared/renderer-csp.ts"
 const directory = await mkdtemp(join(tmpdir(), "deskfleet-terminal-smoke-"))
 const fixtures = join(import.meta.dirname, "fixtures")
 const executable = createRequire(import.meta.url)("electron") as string
-const controlDirectory = join(directory, "daemon")
+const profileDirectory = join(directory, "profile")
+const controlDirectory = join(profileDirectory, "daemon")
 const imagePath = join(directory, "terminal image.png")
 let daemon: Awaited<ReturnType<typeof startDaemon>> | undefined
 let electron: ChildProcess | undefined
 let exited: Promise<void> | undefined
 let diagnostics = ""
-let clientNumber = 0
 
 async function stopClient(): Promise<void> {
   if (!electron || electron.exitCode !== null || electron.signalCode !== null) return
@@ -30,9 +30,9 @@ async function stopClient(): Promise<void> {
 }
 
 async function launchClient(context: Record<string, unknown>): Promise<Record<string, unknown>> {
-  electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${join(directory, `profile-${++clientNumber}`)}`, `--terminal-smoke-context=${JSON.stringify(context)}`], {
+  electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${profileDirectory}`, `--terminal-smoke-context=${JSON.stringify(context)}`], {
     cwd: resolve(import.meta.dirname, "../../.."),
-    env: { ...process.env, DESKFLEET_DAEMON_DIRECTORY: controlDirectory },
+    env: process.env,
     stdio: ["ignore", "ignore", "pipe", "ipc"],
   })
   exited = new Promise(resolveExit => { electron!.once("exit", () => resolveExit()); electron!.once("error", () => resolveExit()) })

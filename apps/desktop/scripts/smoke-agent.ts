@@ -18,7 +18,8 @@ type ConfigOptions = NonNullable<Awaited<ReturnType<AgentConnection["newSession"
 const execute = promisify(execFile)
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-agent-smoke-")))
 const executable = createRequire(import.meta.url)("electron") as string
-const controlDirectory = join(directory, "daemon")
+const profileDirectory = join(directory, "profile")
+const controlDirectory = join(profileDirectory, "daemon")
 const repository = join(directory, "repository")
 const rendererDirectory = resolve(import.meta.dirname, "../out/renderer")
 const preloadPath = join(directory, "local-preload.cjs")
@@ -29,7 +30,6 @@ let daemon: Awaited<ReturnType<typeof startDaemon>> | undefined
 let electron: ChildProcess | undefined
 let exited: Promise<void> | undefined
 let diagnostics = ""
-let clientNumber = 0
 
 /** Deterministic provider behavior, with no external agent process or credentials. */
 class ScriptedProvider implements AgentProvider {
@@ -157,8 +157,8 @@ async function stopClient(): Promise<void> {
 
 async function launchClient(phase: AgentSmokeContext["phase"], previous?: AgentSmokeResult): Promise<AgentSmokeResult> {
   const context: AgentSmokeContext = { phase, rendererDirectory, preloadPath, repository, screenshotPath, questionScreenshotPath, completionScreenshotPath, ...previous }
-  electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${join(directory, `profile-${++clientNumber}`)}`, `--agent-smoke-context=${JSON.stringify(context)}`], {
-    cwd: resolve(import.meta.dirname, "../../.."), env: { ...process.env, DESKFLEET_DAEMON_DIRECTORY: controlDirectory }, stdio: ["ignore", "ignore", "pipe", "ipc"],
+  electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${profileDirectory}`, `--agent-smoke-context=${JSON.stringify(context)}`], {
+    cwd: resolve(import.meta.dirname, "../../.."), env: process.env, stdio: ["ignore", "ignore", "pipe", "ipc"],
   })
   exited = new Promise(resolveExit => { electron!.once("exit", () => resolveExit()); electron!.once("error", () => resolveExit()) })
   electron.stderr?.setEncoding("utf8").on("data", (data: string) => { diagnostics += data })

@@ -524,7 +524,9 @@ production major upgrade has the same constraint.
 Build Electron and the headless daemon for each computer that will execute
 agents. Supported targets are Linux x64, Linux arm64, macOS arm64, and Windows
 x64. The daemon's SQLite catalog, provider configuration, and terminal history
-stay in its data directory (`~/.deskfleet`, or `DESKFLEET_DAEMON_DIRECTORY`).
+stay in its data directory: `<userData>/daemon` for Electron, or `~/.deskfleet`
+for the headless daemon. `DESKFLEET_DAEMON_DIRECTORY` overrides only the headless
+directory.
 
 Build the clients for the API origin (`https://api.example.com` or the shared
 hostname) as described above. On the welcome screen, sign in with a verified DeskFleet

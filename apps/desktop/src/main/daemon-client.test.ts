@@ -1,22 +1,30 @@
 import { createServer, type Socket } from "node:net"
 import { once } from "node:events"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { afterEach, expect, test, vi } from "vitest"
+import { app } from "electron"
+import { daemonControlDirectory } from "../../../daemon/src/control-discovery.ts"
 import { DaemonClient } from "./daemon-client.ts"
+
+vi.mock("electron", () => ({ app: { getPath: vi.fn() } }))
 
 const cleanups: Array<() => Promise<unknown> | void> = []
 afterEach(async () => {
   for (const cleanup of cleanups.reverse()) await cleanup()
   cleanups.length = 0
+  vi.unstubAllEnvs()
 })
 
 async function fixture() {
-  const directory = await mkdtemp(join(tmpdir(), "df-client-"))
-  cleanups.push(() => rm(directory, { recursive: true, force: true }))
-  const endpoint = process.platform === "win32" ? `\\\\.\\pipe\\df-${randomUUID()}` : join(directory, "control.sock")
+  const profile = await mkdtemp(join(tmpdir(), "df-client-"))
+  cleanups.push(() => rm(profile, { recursive: true, force: true }))
+  vi.mocked(app.getPath).mockReturnValue(profile)
+  const directory = join(profile, "daemon")
+  await mkdir(directory)
+  const endpoint = process.platform === "win32" ? `\\\\.\\pipe\\df-${randomUUID()}` : join(profile, "control.sock")
   const token = "a".repeat(64)
   await writeFile(join(directory, "daemon.json"), JSON.stringify({ endpoint, token }))
   const sockets = new Set<Socket>()
@@ -45,13 +53,13 @@ async function fixture() {
     for (const socket of sockets) socket.destroy()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   })
-  return { directory, token, requests, sockets }
+  return { profile, directory, token, requests, sockets }
 }
 
 test("local IPC authenticates before operations and delivers fragmented trickle ICE", async () => {
   const server = await fixture()
   const event = vi.fn()
-  const client = await DaemonClient.connect(event, vi.fn(), server.directory)
+  const client = await DaemonClient.connect(event, vi.fn())
   cleanups.push(() => client.close())
   expect(server.requests[0]).toMatchObject({ method: "hello", params: { token: server.token } })
   expect(client.info).toEqual({ name: "local fixture", desktop: true })
@@ -67,7 +75,7 @@ test("local IPC authenticates before operations and delivers fragmented trickle 
 test("losing the daemon rejects outstanding operations and reports disconnection once", async () => {
   const server = await fixture()
   const disconnected = vi.fn()
-  const client = await DaemonClient.connect(vi.fn(), disconnected, server.directory)
+  const client = await DaemonClient.connect(vi.fn(), disconnected)
   cleanups.push(() => client.close())
   const socket = [...server.sockets][0]!
   socket.removeAllListeners("data")
@@ -80,4 +88,29 @@ test("losing the daemon rejects outstanding operations and reports disconnection
   await rejected
   expect(disconnected).toHaveBeenCalledTimes(1)
   expect(client.closed).toBe(true)
+})
+
+test("desktop discovery follows the current profile without changing headless discovery", async () => {
+  const headless = await fixture()
+  const desktop = await fixture()
+  vi.stubEnv("DESKFLEET_DAEMON_DIRECTORY", headless.directory)
+  const client = await DaemonClient.connect(vi.fn(), vi.fn())
+  cleanups.push(() => client.close())
+  expect(headless.requests).toHaveLength(0)
+  expect(desktop.requests[0]?.method).toBe("hello")
+  expect(app.getPath).toHaveBeenCalledWith("userData")
+  expect(daemonControlDirectory()).toBe(headless.directory)
+
+  vi.mocked(app.getPath).mockReturnValue(headless.profile)
+  const other = await DaemonClient.connect(vi.fn(), vi.fn())
+  cleanups.push(() => other.close())
+  expect(headless.requests[0]?.method).toBe("hello")
+})
+
+test("a profile without a daemon never falls back to a running headless daemon", async () => {
+  const headless = await fixture()
+  vi.stubEnv("DESKFLEET_DAEMON_DIRECTORY", headless.directory)
+  vi.mocked(app.getPath).mockReturnValue(join(headless.profile, "empty-profile"))
+  await expect(DaemonClient.connect(vi.fn(), vi.fn())).rejects.toMatchObject({ code: "ENOENT" })
+  expect(headless.requests).toHaveLength(0)
 })

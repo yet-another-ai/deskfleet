@@ -10,7 +10,8 @@ import type { CatalogSmokeContext, CatalogSmokeResult } from "./fixtures/catalog
 
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-catalog-smoke-")))
 const executable = createRequire(import.meta.url)("electron") as string
-const controlDirectory = join(directory, "daemon")
+const profileDirectory = join(directory, "profile")
+const controlDirectory = join(profileDirectory, "daemon")
 const rendererDirectory = resolve(import.meta.dirname, "../out/renderer")
 const preloadPath = join(directory, "local-preload.cjs")
 const checkoutPath = join(directory, "checkout")
@@ -20,7 +21,6 @@ let daemon: Awaited<ReturnType<typeof startDaemon>> | undefined
 let electron: ChildProcess | undefined
 let exited: Promise<void> | undefined
 let diagnostics = ""
-let clientNumber = 0
 
 function ancestors(path: string): string[] {
   const paths = [path]
@@ -44,9 +44,9 @@ async function launchClient(phase: CatalogSmokeContext["phase"], previous?: Cata
     updatedAncestors: ancestors(updatedPath),
     ...previous,
   }
-  electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${join(directory, `profile-${++clientNumber}`)}`, `--catalog-smoke-context=${JSON.stringify(context)}`], {
+  electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${profileDirectory}`, `--catalog-smoke-context=${JSON.stringify(context)}`], {
     cwd: resolve(import.meta.dirname, "../../.."),
-    env: { ...process.env, DESKFLEET_DAEMON_DIRECTORY: controlDirectory },
+    env: process.env,
     stdio: ["ignore", "ignore", "pipe", "ipc"],
   })
   exited = new Promise(resolveExit => { electron!.once("exit", () => resolveExit()); electron!.once("error", () => resolveExit()) })

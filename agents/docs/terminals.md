@@ -272,8 +272,9 @@ does not pass that output through ConPTY.
 
 The daemon saves the full output byte stream under
 `<active machine directory>/terminals/<terminal ID>/output.bin`, with session metadata in
-`session.json`. The default daemon directory is `~/.deskfleet`; the existing
-`DESKFLEET_DAEMON_DIRECTORY` override also selects history storage. Directories
+`session.json`. Electron uses `<userData>/daemon` as the daemon directory.
+Standalone daemons default to `~/.deskfleet`; `DESKFLEET_DAEMON_DIRECTORY`
+overrides their directory, including history storage. Directories
 and files use private permissions. Output is flushed to disk before its offset
 is published to viewers. Metadata is replaced atomically, and creation/deletion
 use staged directories so incomplete operations cannot break recovery.

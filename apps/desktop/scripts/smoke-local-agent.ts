@@ -15,8 +15,8 @@ import type { LocalAgentSmokeContext, LocalAgentSmokeResult } from "./fixtures/l
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-agent-smoke-")))
 const executable = createRequire(import.meta.url)("electron") as string
 const appPath = resolve(import.meta.dirname, "..")
-const daemonDirectory = join(directory, "daemon")
 const profileDirectory = join(directory, "profile")
+const daemonDirectory = join(profileDirectory, "daemon")
 const checkoutPath = join(directory, "checkout")
 const rendererDirectory = join(appPath, "out/renderer")
 const preloadPath = join(directory, "local-preload.cjs")
@@ -35,7 +35,7 @@ async function stopClient(): Promise<void> {
 
 async function launchClient(phase: LocalAgentSmokeContext["phase"], previous?: LocalAgentSmokeResult): Promise<LocalAgentSmokeResult> {
   const context: LocalAgentSmokeContext = { phase, rendererDirectory, preloadPath, mainEntry, profileDirectory, daemonDirectory, checkoutPath, ...previous }
-  const env: NodeJS.ProcessEnv = { ...process.env, DESKFLEET_DAEMON_DIRECTORY: daemonDirectory }
+  const env: NodeJS.ProcessEnv = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
   electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${profileDirectory}`, `--local-agent-smoke-context=${JSON.stringify(context)}`], {
     cwd: resolve(import.meta.dirname, "../../.."), env, stdio: ["ignore", "ignore", "pipe", "ipc"],
@@ -106,7 +106,7 @@ try {
   assert.equal(JSON.parse(await readFile(join(profileDirectory, "keep-awake.json"), "utf8")).enabled, false)
   await launchClient("disabled")
   assert.equal(await discoveryExists(), false, "Persisted disabled preference must prevent daemon startup")
-  // A standalone daemon, such as the headless executable, is reused and outlives the app.
+  // A separately started daemon explicitly using this profile is reused and outlives the app.
   const external = await startDaemon(0, { allowLocalControlForTests: true, controlDirectory: daemonDirectory, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false, requestFullDiskAccess: async () => null })
   try {
     const identity = createHash("sha256").update(JSON.stringify(await readDaemonDiscovery(daemonDirectory))).digest("hex")
@@ -115,7 +115,7 @@ try {
     try { assert.equal((await observer.call("catalogList", {})).workspaces[0]?.id, created.workspaceId, "Quitting the app must leave a separate daemon running") }
     finally { observer.close() }
   } finally { await external.close() }
-  console.log("Production Electron local Agent: provider creation/editing/removal, a failed provider test, icon selection and restart persistence, startup permission denial, Settings off/on, Keep Awake persistence and window-independent lifetime, catalog refresh, terminal interruption, window-independent and app-bound lifetime, standalone daemon reuse, and disabled startup passed")
+  console.log("Production Electron local Agent: provider creation/editing/removal, a failed provider test, icon selection and restart persistence, startup permission denial, Settings off/on, Keep Awake persistence and window-independent lifetime, catalog refresh, terminal interruption, window-independent and app-bound lifetime, same-profile daemon reuse, and disabled startup passed")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   const log = await readFile(join(daemonDirectory, "daemon.log"), "utf8").catch(() => "")

@@ -276,9 +276,12 @@ restarting with changed desktop settings; create a new peer to change codecs.
 
 `startDaemon()` returns `peers: PeerSessions`. The CLI also starts an authenticated
 local control socket (Unix-domain socket or Windows named pipe). Its private
-`~/.deskfleet/daemon.json` discovery record contains the endpoint and a random
-per-run token; `DESKFLEET_DAEMON_DIRECTORY` overrides the directory for both daemon
-and Electron. A live daemon prevents a second process from replacing its record.
+`<daemon directory>/daemon.json` discovery record contains the endpoint and a
+random per-run token. Standalone daemons default to `~/.deskfleet`, with
+`DESKFLEET_DAEMON_DIRECTORY` as an override. Electron uses `<userData>/daemon`
+and ignores that override. It can reuse a standalone daemon only when that daemon
+is explicitly configured to use the same directory. A live daemon prevents a
+second process from replacing its record.
 The health endpoint remains read-only and does not expose signaling or capture.
 
 The local contract in `apps/daemon/src/control-protocol.ts` carries authentication,

@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, type WebContents } from "electron"
-import { daemonControlDirectory } from "@deskfleet/daemon"
+import { desktopDaemonDirectory } from "./daemon-directory.ts"
 import type { CentralApi } from "@deskfleet/client/central"
 import { FILES_CHANGED_EVENT, FILES_IPC_CHANNEL, type FileAttachmentUploadRequest, type FileConflict, type FileLocation, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer } from "@deskfleet/client/files"
 import { activeMachineDirectory } from "../../../daemon/src/machine-directory.ts"
@@ -81,7 +81,7 @@ export async function localSessionDirectory(sessionId: string): Promise<string> 
 
 export async function localSessionAttachmentDirectory(sessionId: string): Promise<string> {
   await localSessionDirectory(sessionId)
-  const machineDirectory = await activeMachineDirectory(daemonControlDirectory())
+  const machineDirectory = await activeMachineDirectory(desktopDaemonDirectory())
   return new SessionAttachments(machineDirectory).directory(sessionId)
 }
 
