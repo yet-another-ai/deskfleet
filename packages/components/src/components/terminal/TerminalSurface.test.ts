@@ -17,6 +17,7 @@ const terminals: FakeTerminal[] = []
 const fits: { fit: ReturnType<typeof vi.fn> }[] = []
 const ligatureAddons: { dispose: ReturnType<typeof vi.fn> }[] = []
 const webglAddons: FakeWebglAddon[] = []
+const imageAddons: FakeImageAddon[] = []
 let webglFactory: () => FakeWebglAddon = () => new FakeWebglAddon()
 
 class FakeWebglAddon {
@@ -31,6 +32,15 @@ class FakeWebglAddon {
     },
   }
   constructor() { webglAddons.push(this) }
+}
+
+class FakeImageAddon {
+  dispose = vi.fn()
+  options: Record<string, unknown>
+  constructor(options: Record<string, unknown> = {}) {
+    this.options = options
+    imageAddons.push(this)
+  }
 }
 
 class FakeTerminal {
@@ -78,6 +88,11 @@ vi.mock("@xterm/addon-webgl", () => ({
     constructor() { return webglFactory() }
   },
 }))
+vi.mock("@xterm/addon-image", () => ({
+  ImageAddon: class {
+    constructor(options: Record<string, unknown> = {}) { return new FakeImageAddon(options) }
+  },
+}))
 
 const { default: TerminalSurface } = await import("./TerminalSurface.vue")
 
@@ -86,6 +101,7 @@ test("opens a read-only xterm.js terminal that fits its container", () => {
   const [terminal] = terminals
   const [fit] = fits
   const [webgl] = webglAddons
+  const [image] = imageAddons
 
   // Input stays disabled until a session transport exists.
   expect(terminal!.options.disableStdin).toBe(true)
@@ -94,6 +110,12 @@ test("opens a read-only xterm.js terminal that fits its container", () => {
   expect(terminal!.loadAddon).toHaveBeenCalledWith(fit)
   expect(terminal!.open).toHaveBeenCalledWith(wrapper.element)
   expect(terminal!.loadAddon).toHaveBeenCalledWith(webgl)
+  expect(terminal!.loadAddon).toHaveBeenCalledWith(image)
+  expect(image!.options).toEqual({
+    enableSizeReports: true,
+    pixelLimit: 16_777_216,
+    storageLimit: 64,
+  })
   expect(webgl!.onContextLoss).toHaveBeenCalledOnce()
   expect(fit!.fit).toHaveBeenCalled()
   expect(terminal!.write).toHaveBeenNthCalledWith(1, "\x1b[?25l")
@@ -102,6 +124,7 @@ test("opens a read-only xterm.js terminal that fits its container", () => {
   expect(wrapper.emitted("ready")).toEqual([[{ cols: 100, rows: 30 }]])
 
   wrapper.unmount()
+  expect(image!.dispose).toHaveBeenCalledOnce()
   expect(webgl!.dispose).toHaveBeenCalledOnce()
   expect(webgl!.loseContext).toHaveBeenCalledOnce()
   expect(webgl!._renderer._gl.getExtension).toHaveBeenCalledWith("WEBGL_lose_context")
@@ -110,16 +133,21 @@ test("opens a read-only xterm.js terminal that fits its container", () => {
 
 test("keeps the default renderer when WebGL fails to attach", () => {
   const initialWebgl = webglAddons.length
+  const initialImages = imageAddons.length
   webglFactory = () => { throw new Error("WebGL2 unavailable") }
   const wrapper = mount(TerminalSurface, { props: { banner: "fallback" } })
   const terminal = terminals.at(-1)!
   const fit = fits.at(-1)!
+  const image = imageAddons.at(-1)!
   expect(webglAddons).toHaveLength(initialWebgl)
+  expect(imageAddons).toHaveLength(initialImages + 1)
   expect(terminal.open).toHaveBeenCalledWith(wrapper.element)
   expect(terminal.loadAddon).toHaveBeenCalledWith(fit)
+  expect(terminal.loadAddon).toHaveBeenCalledWith(image)
   expect(terminal.write).toHaveBeenCalledWith("fallback")
   expect(wrapper.emitted("ready")).toEqual([[{ cols: 100, rows: 30 }]])
   wrapper.unmount()
+  expect(image.dispose).toHaveBeenCalledOnce()
 })
 
 test("releases the WebGL context when loadAddon fails after constructing the addon", () => {
@@ -158,17 +186,36 @@ test("disposes the WebGL addon on context loss so the canvas renderer remains", 
 test("releases each remounted surface's WebGL context so tab switches do not accumulate GPU slots", () => {
   const first = mount(TerminalSurface)
   const firstWebgl = webglAddons.at(-1)!
+  const firstImage = imageAddons.at(-1)!
   first.unmount()
   expect(firstWebgl.dispose).toHaveBeenCalledOnce()
   expect(firstWebgl.loseContext).toHaveBeenCalledOnce()
+  expect(firstImage.dispose).toHaveBeenCalledOnce()
 
   const second = mount(TerminalSurface)
   const secondWebgl = webglAddons.at(-1)!
+  const secondImage = imageAddons.at(-1)!
   expect(secondWebgl).not.toBe(firstWebgl)
+  expect(secondImage).not.toBe(firstImage)
   second.unmount()
   expect(secondWebgl.dispose).toHaveBeenCalledOnce()
   expect(secondWebgl.loseContext).toHaveBeenCalledOnce()
+  expect(secondImage.dispose).toHaveBeenCalledOnce()
   expect(firstWebgl.loseContext).toHaveBeenCalledOnce()
+  expect(firstImage.dispose).toHaveBeenCalledOnce()
+})
+
+test("loads the image addon after WebGL and disposes it on unmount", () => {
+  const wrapper = mount(TerminalSurface)
+  const terminal = terminals.at(-1)!
+  const webgl = webglAddons.at(-1)!
+  const image = imageAddons.at(-1)!
+  const loaded = terminal.loadAddon.mock.calls.map(([addon]) => addon)
+  expect(loaded.indexOf(webgl)).toBeGreaterThan(-1)
+  expect(loaded.indexOf(image)).toBeGreaterThan(loaded.indexOf(webgl))
+  expect(image.options.enableSizeReports).toBe(true)
+  wrapper.unmount()
+  expect(image.dispose).toHaveBeenCalledOnce()
 })
 
 test("forwards terminal input and size changes and enables input only when attached", async () => {
