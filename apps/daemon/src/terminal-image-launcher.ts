@@ -1,8 +1,10 @@
 import { chmod, mkdir, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { userInfo } from "node:os"
+import { basename, join } from "node:path"
 import type { AgentProcess } from "./agents/acp.ts"
 import { hostedProcess } from "./agents/adapter-host.ts"
 import { ICAT_ARGUMENT } from "./terminal-images.ts"
+import { zshImageEnvironment } from "./terminal-shell-integration.ts"
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
@@ -38,5 +40,8 @@ export async function terminalImageEnvironment(historyDirectory: string): Promis
   const hostEnvironment = process.platform === "win32"
     ? Object.fromEntries([host.command, ...host.args ?? []].map((argument, index) => [`DESKFLEET_ICAT_ARG_${index}`, argument]))
     : {}
-  return { ...hostEnvironment, PATH: `${directory}${process.platform === "win32" ? ";" : ":"}${inheritedPath}`, TERM_PROGRAM: "deskfleet" }
+  const shellEnvironment = process.platform !== "win32" && basename(process.env.SHELL || userInfo().shell || "") === "zsh"
+    ? await zshImageEnvironment(historyDirectory)
+    : {}
+  return { ...hostEnvironment, ...shellEnvironment, PATH: `${directory}${process.platform === "win32" ? ";" : ":"}${inheritedPath}`, TERM_PROGRAM: "deskfleet" }
 }

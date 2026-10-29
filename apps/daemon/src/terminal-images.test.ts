@@ -69,7 +69,7 @@ test("JPEG frame and GIF logical dimensions accept supported static images", () 
   assert.ok(terminalImageSequence(jpegHeader, "one.jpg").includes(`:${jpegHeader.toString("base64")}\x07`))
 })
 
-test("new terminal helper uses the bundled runtime and survives login shell initialization", async context => {
+test("new terminal helper runs through PATH using the bundled runtime", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-icat-shell-"))
   context.after(() => rm(directory, { recursive: true, force: true }))
   const env = await terminalImageEnvironment(directory)
@@ -85,12 +85,11 @@ test("new terminal helper uses the bundled runtime and survives login shell init
     const launcher = await readFile(join(directory, ".shell-bin", "icat.cmd"), "utf8")
     assert.ok(launcher.includes("%DESKFLEET_ICAT_ARG_0%"))
   } else {
-    for (const shell of process.platform === "darwin" ? ["/bin/zsh", "/bin/bash"] : ["/bin/bash"]) {
-      const result = await exec(shell, ["-lic", 'icat "$DESKFLEET_TEST_IMAGE"'], {
-        env: { ...process.env, ...env, DESKFLEET_TEST_IMAGE: path },
-      })
-      assert.ok(result.stdout.endsWith(`:${png.toString("base64")}\x07\n`), shell)
-    }
+    // Login initialization is covered with isolated zsh startup files in terminal-shell.test.ts.
+    const result = await exec("/bin/sh", ["-c", 'icat "$DESKFLEET_TEST_IMAGE"'], {
+      env: { ...process.env, ...env, DESKFLEET_TEST_IMAGE: path },
+    })
+    assert.ok(result.stdout.endsWith(`:${png.toString("base64")}\x07\n`))
     const launcher = await readFile(join(directory, ".shell-bin", "icat"), "utf8")
     assert.ok(launcher.includes(process.execPath))
     assert.ok(launcher.includes("--deskfleet-icat"))
