@@ -81,7 +81,8 @@ async function readAll(sessions: TerminalSessions, id: string): Promise<Buffer> 
   return Buffer.concat(chunks)
 }
 
-test("full output survives detached clients and daemon restart until explicit hangup", { timeout: 10_000 }, async context => {
+// Windows CI datasyncs each 16 KiB append under parallel suite load; 10s is sometimes tight.
+test("full output survives detached clients and daemon restart until explicit hangup", { timeout: process.platform === "win32" ? 30_000 : 10_000 }, async context => {
   const f = await fixture(context)
   const terminal = await f.sessions.dial({ mode: "create", terminalId: "long-session", cols: 80, rows: 24 })
   const pieces = Array.from({ length: 40 }, (_, index) => Buffer.alloc(16 * 1024, index))
