@@ -1,7 +1,7 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
-import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import App from "./App.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
@@ -25,6 +25,12 @@ function link(wrapper: VueWrapper, text: string) { return wrapper.findAll("a").f
 function button(wrapper: VueWrapper, text: string) { return wrapper.findAll("button").find(entry => entry.text() === text)! }
 const chips = (wrapper: VueWrapper) => wrapper.findAll("[data-composer-context]").map(chip => chip.text())
 function panel(wrapper: VueWrapper) { return wrapper.get<HTMLElement>('aside[aria-label="Changes"]') }
+
+// Compile lazy route modules during setup so a cold Session import cannot outlive
+// a navigation test's deadline and complete during the following test.
+beforeAll(async () => {
+  await Promise.all([import("./views/SessionView.vue"), import("./views/WorktreeView.vue")])
+})
 
 beforeEach(() => {
   window.localStorage.clear()
