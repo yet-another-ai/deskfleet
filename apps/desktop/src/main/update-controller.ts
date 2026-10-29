@@ -44,7 +44,10 @@ export class UpdateController {
     this.#checking = this.#driver.check().then(version => {
       this.#update(version ? { status: "available", version } : { status: "idle" })
     }).catch(error => {
-      this.#fail(error)
+      // Background checks must not look like a failed install: the notice treats
+      // every error as Retry → install(), which would shut down the hosted daemon.
+      const version = this.#state.version
+      this.#update(version ? { status: "available", version } : { status: "idle" })
       throw error
     }).finally(() => { this.#checking = undefined })
     return this.#checking

@@ -55,7 +55,7 @@ test("unsupported builds do not start timers or allow installation", async () =>
   await expect(controller.install()).rejects.toThrow("unavailable")
 })
 
-test("slow checks do not overlap and a failed check retains the available version", async () => {
+test("slow checks do not overlap and a failed check keeps the available update without Retry", async () => {
   vi.useFakeTimers()
   const { controller, driver } = setup()
   await controller.check()
@@ -67,10 +67,33 @@ test("slow checks do not overlap and a failed check retains the available versio
   expect(controller.get()).toEqual({ status: "checking", version: "0.2.0" })
   checking.reject(new Error("Offline"))
   await vi.advanceTimersByTimeAsync(0)
-  expect(controller.get()).toMatchObject({ status: "error", version: "0.2.0", error: "Offline" })
+  // Check failures must stay on available: error would show Retry and call install().
+  expect(controller.get()).toEqual({ status: "available", version: "0.2.0" })
   await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL)
   expect(driver.check).toHaveBeenCalledTimes(3)
   expect(controller.get()).toEqual({ status: "available", version: "0.2.0" })
+})
+
+test("a failed first check returns to idle instead of an install error", async () => {
+  const { controller, driver } = setup()
+  driver.check.mockRejectedValueOnce(new Error("Offline"))
+  await expect(controller.check()).rejects.toThrow("Offline")
+  expect(controller.get()).toEqual({ status: "idle" })
+  expect(driver.download).not.toHaveBeenCalled()
+})
+
+test("a check failure during an install click still surfaces as an install error", async () => {
+  const { controller, driver } = setup()
+  await controller.check()
+  const checking = deferred<string | null>()
+  driver.check.mockReturnValueOnce(checking.promise)
+  const check = controller.check()
+  const install = controller.install()
+  checking.reject(new Error("Offline"))
+  await expect(check).rejects.toThrow("Offline")
+  await expect(install).rejects.toThrow("Offline")
+  expect(controller.get()).toMatchObject({ status: "error", version: "0.2.0", error: "Offline" })
+  expect(driver.download).not.toHaveBeenCalled()
 })
 
 test("one click downloads, reports bounded progress, and waits for service shutdown before install", async () => {
