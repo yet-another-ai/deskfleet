@@ -55,7 +55,7 @@ try {
   assert.equal((await admin<{ user: { id: string } }>("/me")).user.id, alice.user.id)
   const team = await admin<{ id: string; role: string }>("/teams", { name: `Backend smoke ${randomUUID()}` })
   teamId = team.id
-  assert.equal(team.role, "admin")
+  assert.equal(team.role, "owner")
   console.log("Mailbox verification, password login, and native proof exchange passed")
 
   const providers: BackendAgent[] = []
