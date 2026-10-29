@@ -9,10 +9,10 @@ export interface OnboardingState {
   linuxDesktopBackend?: DesktopPermissionsState["linuxDesktopBackend"]
 }
 
-/** Permission guidance follows the desktop host's platform. */
+/** Permission guidance follows the desktop host's platform. Linux Portal consent is Wayland-only. */
 export function onboardingPermissions(platform: string, backend?: DesktopPermissionsState["linuxDesktopBackend"]): readonly OnboardingPermission[] {
   if (platform === "darwin") return ONBOARDING_PERMISSIONS
-  if (platform === "linux" && backend !== "x11" && backend !== null) return ["screenCapture", "accessibility"]
+  if (platform === "linux" && backend === "wayland") return ["screenCapture", "accessibility"]
   return []
 }
 

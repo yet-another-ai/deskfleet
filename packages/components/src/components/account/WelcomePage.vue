@@ -25,8 +25,17 @@ const permissions = ref<Partial<DesktopPermissionsState>>({})
 let permissionRevision = 0
 let currentBackend = props.state.linuxDesktopBackend
 let reconcileNeeded = false
-const wayland = computed(() => props.host.platform === "linux" && props.state.linuxDesktopBackend !== "x11" && props.state.linuxDesktopBackend !== null)
-const permissionSteps = computed(() => onboardingPermissions(props.host.platform, props.state.linuxDesktopBackend))
+const wayland = computed(() => props.host.platform === "linux" && (
+  props.state.linuxDesktopBackend === "wayland"
+  || props.state.linuxDesktopBackend === undefined && ONBOARDING_PERMISSIONS.includes(step.value as OnboardingPermission)
+))
+const permissionSteps = computed(() => {
+  const backend = props.state.linuxDesktopBackend === undefined
+    && ONBOARDING_PERMISSIONS.includes(step.value as OnboardingPermission)
+    ? "wayland"
+    : props.state.linuxDesktopBackend
+  return onboardingPermissions(props.host.platform, backend)
+})
 const permission = computed(() => permissionSteps.value.find(value => value === step.value))
 const currentPermission = computed(() => permission.value ? permissions.value[`${permission.value}Permission`] : undefined)
 const granted = computed(() => ["granted", "not-required"].includes(currentPermission.value?.status ?? ""))

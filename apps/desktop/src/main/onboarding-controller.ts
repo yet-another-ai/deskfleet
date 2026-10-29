@@ -55,13 +55,21 @@ export class OnboardingController {
         } else return this.#save(this.#initialStep())
       }
     }
+    // Unknown backend keeps a saved Wayland consent step; only a known non-Wayland backend drops it.
     if (ONBOARDING_PERMISSIONS.includes(this.#state.step as OnboardingPermission)
+      && this.#options.localAgent.state.linuxDesktopBackend !== undefined
       && !this.#permissionSteps().includes(this.#state.step as OnboardingPermission)) return this.#save("account")
     return this.#snapshot(this.#state)
   }
 
   #permissionSteps() {
-    return onboardingPermissions(this.#options.platform, this.#options.localAgent.state.linuxDesktopBackend)
+    const backend = this.#options.localAgent.state.linuxDesktopBackend
+    // Fresh Linux starts wait for hello; a saved Portal step may continue while reconnecting.
+    if (backend === undefined && this.#state
+      && ONBOARDING_PERMISSIONS.includes(this.#state.step as OnboardingPermission)) {
+      return onboardingPermissions(this.#options.platform, "wayland")
+    }
+    return onboardingPermissions(this.#options.platform, backend)
   }
 
   #snapshot(state: OnboardingState): OnboardingState {
@@ -83,14 +91,27 @@ export class OnboardingController {
 
   requestPermission(permission: OnboardingPermission) {
     return this.#run(async () => {
-      await this.#requireStep(permission)
+      const current = await this.get()
+      if (current.step !== permission) {
+        if ((current.step === "account" || current.step === "complete")
+          && !this.#permissionSteps().includes(permission)) {
+          throw new Error("Welcome setup is not on a permission step")
+        }
+        throw new Error("Welcome setup step has changed")
+      }
       return this.#options.localAgent.requestPermission(permission)
     })
   }
 
   advancePermission(permission: OnboardingPermission): Promise<OnboardingState> {
     return this.#run(async () => {
-      await this.#requireStep(permission)
+      const current = await this.get()
+      // X11 hello can rewrite a provisional Portal step; Skip/Continue must reach account.
+      if (current.step !== permission) {
+        if ((current.step === "account" || current.step === "complete")
+          && !this.#permissionSteps().includes(permission)) return current
+        throw new Error("Welcome setup step has changed")
+      }
       const permissions = this.#permissionSteps()
       const index = permissions.indexOf(permission)
       return this.#save(permissions[index + 1] ?? "account")

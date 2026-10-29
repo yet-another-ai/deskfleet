@@ -199,6 +199,7 @@ test("a permission refresh that reconnects to X11 normalizes and persists the ac
   const f = await fixture("linux")
   f.localAgent.state.linuxDesktopBackend = undefined
   f.localAgent.state.status = "error"
+  await writeFile(f.path, JSON.stringify({ step: "screenCapture" }))
   expect(await f.controller.get()).toEqual({ step: "screenCapture" })
   f.localAgent.refreshPermissions.mockImplementationOnce(async () => {
     f.localAgent.state.linuxDesktopBackend = "x11"
@@ -220,14 +221,29 @@ test("a temporarily disconnected Wayland daemon preserves its saved permission s
   f.localAgent.state.error = "Local Agent disconnected"
   expect(await f.restart().get()).toEqual({ step: "accessibility" })
   expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "accessibility" })
+  expect(await f.restart().advancePermission("accessibility")).toEqual({ step: "account" })
 })
 
-test("a fresh Linux Agent startup failure retains permission guidance while its backend is unknown", async () => {
+test("a fresh Linux Agent does not assume Wayland Portal steps before hello", async () => {
   const f = await fixture("linux")
   f.localAgent.state.linuxDesktopBackend = undefined
   f.localAgent.state.status = "error"
   f.localAgent.state.error = "Daemon startup failed"
-  expect(await f.controller.get()).toEqual({ step: "screenCapture" })
-  await f.controller.requestPermission("screenCapture")
-  expect(f.localAgent.requestPermission).toHaveBeenCalledExactlyOnceWith("screenCapture")
+  expect(await f.controller.get()).toEqual({ step: "account" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "account" })
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+  expect(await f.controller.complete()).toEqual({ step: "complete" })
+})
+
+test("X11 hello after a missing-backend Portal step lets Skip reach account", async () => {
+  const f = await fixture("linux")
+  f.localAgent.state.linuxDesktopBackend = undefined
+  await writeFile(f.path, JSON.stringify({ step: "screenCapture" }))
+  const controller = f.restart()
+  expect(await controller.get()).toEqual({ step: "screenCapture" })
+  f.localAgent.state.linuxDesktopBackend = "x11"
+  expect(await controller.advancePermission("screenCapture")).toEqual({ step: "account", linuxDesktopBackend: "x11" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "account" })
+  await expect(controller.requestPermission("screenCapture")).rejects.toThrow("permission step")
+  expect(await controller.complete()).toEqual({ step: "complete", linuxDesktopBackend: "x11" })
 })
