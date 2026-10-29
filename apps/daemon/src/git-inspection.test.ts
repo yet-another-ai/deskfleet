@@ -80,6 +80,115 @@ test("directory bindings share a checkout while independent worktrees, non-Git a
   assert.match(snapshot.directories[4]!.error!, /ENOENT/u)
 })
 
+test("linked worktree status and diffs stay on that checkout while the primary is dirty", async context => {
+  const base = await fixture(context)
+  const primary = join(base, "primary")
+  const session = join(base, "session")
+  await repository(primary)
+  const head = await git(primary, "rev-parse", "HEAD")
+  await git(primary, "worktree", "add", "--detach", session, head)
+  await writeFile(join(primary, "source.txt"), "primary-dirty\n")
+  await writeFile(join(session, "source.txt"), "session-edit\n")
+  await writeFile(join(session, "only-session.txt"), "new\n")
+
+  const primarySnapshot = await inspection.status("primary", [primary])
+  const sessionSnapshot = await inspection.status("session", [session])
+  assert.notEqual(primarySnapshot.repositories[0]!.id, sessionSnapshot.repositories[0]!.id)
+  assert.equal(sessionSnapshot.repositories[0]!.root, await realpath(session))
+  assert.equal(sessionSnapshot.repositories[0]!.head, head)
+  assert.equal(sessionSnapshot.repositories[0]!.branch, null)
+  assert.equal(sessionSnapshot.repositories[0]!.changes.some(change => change.path === "source.txt" && change.kind === "unstaged"), true)
+  assert.equal(sessionSnapshot.repositories[0]!.changes.some(change => change.path === "only-session.txt" && change.kind === "untracked"), true)
+
+  const sessionDiff = await inspection.diff(request(sessionSnapshot, "source.txt", "unstaged"), [session])
+  assert.match(sessionDiff.patch, /\+session-edit/u)
+  assert.doesNotMatch(sessionDiff.patch, /primary-dirty/u)
+  const primaryDiff = await inspection.diff(request(primarySnapshot, "source.txt", "unstaged"), [primary])
+  assert.match(primaryDiff.patch, /\+primary-dirty/u)
+  assert.doesNotMatch(primaryDiff.patch, /session-edit/u)
+})
+
+test("subdirectory session bindings inspect the linked worktree toplevel, not the primary checkout", async context => {
+  const base = await fixture(context)
+  const primary = join(base, "primary")
+  const session = join(base, "session")
+  await mkdir(join(primary, "frontend"), { recursive: true })
+  await mkdir(join(primary, "backend"), { recursive: true })
+  await repository(primary, false)
+  await writeFile(join(primary, "frontend", "app.ts"), "frontend-v1\n")
+  await writeFile(join(primary, "backend", "api.ts"), "backend-v1\n")
+  await git(primary, "add", ".")
+  await git(primary, "commit", "--no-gpg-sign", "-m", "tree")
+  const head = await git(primary, "rev-parse", "HEAD")
+  await git(primary, "worktree", "add", "--detach", session, head)
+  await writeFile(join(primary, "frontend", "app.ts"), "frontend-primary\n")
+  await writeFile(join(session, "frontend", "app.ts"), "frontend-session\n")
+
+  const bindings = [join(session, "frontend"), join(session, "backend")]
+  const snapshot = await inspection.status("session", bindings)
+  assert.equal(snapshot.repositories.length, 1)
+  assert.equal(snapshot.repositories[0]!.root, await realpath(session))
+  assert.equal(snapshot.directories[0]!.repositoryId, snapshot.directories[1]!.repositoryId)
+  assert.deepEqual(snapshot.repositories[0]!.changes.map(change => change.path), ["frontend/app.ts"])
+  const diff = await inspection.diff(request(snapshot, "frontend/app.ts", "unstaged"), bindings)
+  assert.match(diff.patch, /-frontend-v1\n\+frontend-session/u)
+  assert.doesNotMatch(diff.patch, /frontend-primary/u)
+})
+
+test("a worktree pinned to an older revision diffs against that HEAD after the primary advances", async context => {
+  const base = await fixture(context)
+  const primary = join(base, "primary")
+  const session = join(base, "session")
+  await repository(primary, false)
+  await writeFile(join(primary, "source.txt"), "first\n")
+  await git(primary, "add", ".")
+  await git(primary, "commit", "--no-gpg-sign", "-m", "first")
+  const first = await git(primary, "rev-parse", "HEAD")
+  await writeFile(join(primary, "source.txt"), "second\n")
+  await git(primary, "commit", "-am", "advance", "--no-gpg-sign")
+  await git(primary, "worktree", "add", "--detach", session, first)
+  await writeFile(join(session, "source.txt"), "from-first\n")
+
+  const snapshot = await inspection.status("session", [session])
+  assert.equal(snapshot.repositories[0]!.head, first)
+  assert.notEqual(snapshot.repositories[0]!.head, await git(primary, "rev-parse", "HEAD"))
+  const diff = await inspection.diff(request(snapshot, "source.txt", "unstaged"), [session])
+  assert.match(diff.patch, /-first\n\+from-first/u)
+  assert.doesNotMatch(diff.patch, /second/u)
+})
+
+test("host GIT_DIR and GIT_WORK_TREE do not redirect linked worktree inspection", async context => {
+  const base = await fixture(context)
+  const primary = join(base, "primary")
+  const session = join(base, "session")
+  await repository(primary)
+  await git(primary, "worktree", "add", "--detach", session, "HEAD")
+  await writeFile(join(primary, "source.txt"), "via-env-primary\n")
+  await writeFile(join(session, "source.txt"), "via-session\n")
+  const previous = {
+    GIT_DIR: process.env.GIT_DIR,
+    GIT_WORK_TREE: process.env.GIT_WORK_TREE,
+    GIT_COMMON_DIR: process.env.GIT_COMMON_DIR,
+    GIT_INDEX_FILE: process.env.GIT_INDEX_FILE,
+  }
+  process.env.GIT_DIR = join(primary, ".git")
+  process.env.GIT_WORK_TREE = primary
+  process.env.GIT_COMMON_DIR = join(primary, ".git")
+  process.env.GIT_INDEX_FILE = join(primary, ".git", "index")
+  try {
+    const snapshot = await inspection.status("session", [session])
+    assert.equal(snapshot.repositories[0]!.root, await realpath(session))
+    const diff = await inspection.diff(request(snapshot, "source.txt", "unstaged"), [session])
+    assert.match(diff.patch, /\+via-session/u)
+    assert.doesNotMatch(diff.patch, /via-env-primary/u)
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
+
 test("unborn repositories and untracked text, binary and empty files have useful previews", async context => {
   const root = await fixture(context)
   await repository(root, false)
