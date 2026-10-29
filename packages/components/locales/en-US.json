@@ -893,6 +893,7 @@
       "missingDetail": "Install the official CLI on {machine}.",
       "invalid": "Can't use this executable",
       "install": "Install",
+      "reinstall": "Reinstall",
       "login": "Log in",
       "refresh": "Check again",
       "setPath": "Set path",

@@ -38,7 +38,7 @@ const terminal = computed(() => {
 })
 const custom = computed(() => props.provider?.template === "acp")
 const actionsDisabled = computed(() => busy.value || probing.value || !!props.disabled)
-const canInstall = computed(() => !custom.value && !!result.value && result.value.status !== "found" && result.value.installable)
+const canInstall = computed(() => !custom.value && !!result.value?.installable)
 const canLogin = computed(() => !custom.value && result.value?.status === "found" && result.value.loginAvailable)
 const canSetPath = computed(() => !!result.value && result.value.status !== "found" && !canInstall.value)
 
@@ -204,7 +204,7 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
       <div v-if="!running" class="flex shrink-0 items-center gap-1.5">
         <IconButton :icon="RotateCw" :label="t('providers.setup.refresh')" :disabled="actionsDisabled || !provider" data-provider-probe @click="probe()" />
         <UiButton variant="ghost" size="sm" v-if="canSetPath" type="button" class="cursor-pointer hover:bg-ui-hover" :disabled="busy || disabled" data-provider-set-path @click="emit('editPath')">{{ t("providers.setup.setPath") }}</UiButton>
-        <UiButton v-if="canInstall" type="button" :disabled="actionsDisabled" data-provider-install @click="start('install')">{{ t("providers.setup.install") }}</UiButton>
+        <UiButton v-if="canInstall" type="button" :variant="result?.status === 'found' ? 'ghost' : 'default'" :size="result?.status === 'found' ? 'sm' : 'default'" :disabled="actionsDisabled" data-provider-install @click="start('install')">{{ t(result?.status === "found" ? "providers.setup.reinstall" : "providers.setup.install") }}</UiButton>
         <UiButton v-if="canLogin" :variant="result?.auth === 'authenticated' ? 'ghost' : 'default'" :size="result?.auth === 'authenticated' ? 'sm' : 'default'" :disabled="actionsDisabled" data-provider-login @click="start('login')">{{ t("providers.setup.login") }}</UiButton>
       </div>
     </div>

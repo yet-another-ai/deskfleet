@@ -219,8 +219,10 @@ environment overrides in a collapsed Advanced section unless the provider
 already overrides either.
 
 Missing built-in CLIs offer **Install**, using the vendor's official installer
-on supported platforms. **Log in** is a separate action once the CLI is found.
-Both actions run in dedicated machine-owned terminals, with output, interactive
+on supported platforms. Installed CLIs offer **Reinstall** to run that installer
+again for updates or repairs, regardless of sign-in status. **Log in** is a
+separate action once the CLI is found.
+Installation and login run in dedicated machine-owned terminals, with output, interactive
 input, and explicit cancellation in the dialog. Output closes after a successful
 exit once the refreshed status appears, and remains after a failure. The daemon selects the command
 and passes environment overrides directly to the process. Installation does not

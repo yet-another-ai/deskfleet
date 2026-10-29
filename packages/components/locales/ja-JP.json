@@ -526,6 +526,7 @@
       "signedOut": "未ログイン", "signedOutDetail": "セッションを開始する前にログインしてください。",
       "missing": "未インストール", "missingDetail": "{machine} に公式 CLI をインストールしてください。",
       "invalid": "この実行ファイルは使用できません", "install": "インストール",
+      "reinstall": "再インストール",
       "login": "ログイン", "refresh": "再確認",
       "setPath": "パスを設定", "starting": "起動中…",
       "installing": "インストール中…", "loggingIn": "ログインを待っています。以下の案内に従ってください。",

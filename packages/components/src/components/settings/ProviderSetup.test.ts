@@ -58,10 +58,14 @@ test("debounces changed launch settings and discards a previous template's late 
   expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ binaryPath: "/tools/grok", env: { PATH: "/tools" } }))
 })
 
-test("installs in its own terminal, then discovers and emits the installed absolute path", async () => {
-  const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>().mockResolvedValueOnce(missing).mockResolvedValue(found)
+test("installs and reinstalls in separate terminals, refreshing the installed path and version each time", async () => {
+  const updated: ProviderProbeResult = { ...found, binaryPath: "/tools/codex", version: "codex-cli 2.0", auth: "authenticated" }
+  const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>()
+    .mockResolvedValueOnce(missing).mockResolvedValueOnce(found).mockResolvedValue(updated)
   const input = { ...provider, binaryPath: "/missing/codex" }
   const { view, install, login, terminals } = render(probe, input)
+  const reinstallTerminal = { ...terminal, id: "setup-2" }
+  install.mockResolvedValueOnce(terminal).mockResolvedValueOnce(reinstallTerminal)
   await flushPromises()
   await view.get("[data-provider-install]").trigger("click")
   await flushPromises()
@@ -80,23 +84,44 @@ test("installs in its own terminal, then discovers and emits the installed absol
   expect(view.emitted("busy")?.at(-1)).toEqual([false])
   expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
   expect(view.find("[data-provider-terminal]").exists()).toBe(false)
+  expect(view.get("[data-provider-install]").text()).toBe("Reinstall")
+
+  await view.get("[data-provider-install]").trigger("click")
+  await flushPromises()
+  expect(install).toHaveBeenCalledTimes(2)
+  expect(install).toHaveBeenLastCalledWith(input)
+  expect(view.find("[data-provider-terminal]").exists()).toBe(true)
+  expect(view.find("[data-provider-install]").exists()).toBe(false)
+  expect(view.find("[data-provider-login]").exists()).toBe(false)
+  terminals.sessions.push({ ...reinstallTerminal, status: "exited", exitCode: 0 })
+  await flushPromises()
+  expect(probe).toHaveBeenCalledTimes(3)
+  expect(probe).toHaveBeenLastCalledWith({ ...input, binaryPath: undefined })
+  expect(view.emitted("binaryPath")).toEqual([[found.binaryPath], [updated.binaryPath]])
+  expect(view.emitted("resolved")?.at(-1)).toEqual([updated.binaryPath])
+  expect(view.get("[data-provider-status]").text()).toBe("Readycodex-cli 2.0")
+  expect(view.get("[data-provider-install]").text()).toBe("Reinstall")
+  expect(view.find("[data-provider-terminal]").exists()).toBe(false)
+  expect(view.emitted("busy")?.at(-1)).toEqual([false])
 })
 
 test("login runs independently and refreshes auth without assuming a successful exit means signed in", async () => {
   const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>().mockResolvedValueOnce(found).mockResolvedValue({ ...found, auth: "unknown" })
   const { view, install, login, terminals } = render(probe)
   await flushPromises()
-  expect(view.find("[data-provider-install]").exists()).toBe(false)
+  expect(view.get("[data-provider-install]").text()).toBe("Reinstall")
   await view.get("[data-provider-login]").trigger("click")
   await flushPromises()
   expect(login).toHaveBeenCalledExactlyOnceWith({ ...provider, binaryPath: found.binaryPath })
   expect(install).not.toHaveBeenCalled()
+  expect(view.find("[data-provider-install]").exists()).toBe(false)
   expect(view.find("[data-provider-login-hint]").exists()).toBe(false)
   terminals.sessions.push({ ...terminal, status: "exited", exitCode: 0 })
   await flushPromises()
   expect(probe).toHaveBeenCalledTimes(2)
   // An unknown status is not reported as signed in or signed out.
   expect(view.get("[data-provider-status]").text()).toBe("Installedcodex-cli 1.0")
+  expect(view.get("[data-provider-install]").text()).toBe("Reinstall")
 })
 
 test.each([
@@ -158,6 +183,18 @@ test("generic ACP and unsupported platforms do not offer install or login, and p
   expect(view.get("[data-provider-status-detail]").text()).toBe("This platform has no installer.")
   expect(view.find("[data-provider-install]").exists()).toBe(false)
   expect(view.find("[data-provider-set-path]").exists()).toBe(true)
+})
+
+test("installed custom ACP and providers without an installer do not offer reinstallation", async () => {
+  const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>().mockResolvedValue(found)
+  const { view } = render(probe, { ...provider, template: "acp" })
+  await flushPromises()
+  expect(view.find("[data-provider-install]").exists()).toBe(false)
+  expect(view.find("[data-provider-login]").exists()).toBe(false)
+  probe.mockResolvedValue({ ...found, installable: false })
+  await view.setProps({ provider })
+  await flushPromises()
+  expect(view.find("[data-provider-install]").exists()).toBe(false)
 })
 
 test("disabling for a connection test keeps the discovered executable", async () => {
