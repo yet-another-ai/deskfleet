@@ -195,6 +195,22 @@ test("switching from Wayland to X11 skips saved Portal consent steps", async () 
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })
 
+test("a permission refresh that reconnects to X11 normalizes and persists the account step", async () => {
+  const f = await fixture("linux")
+  f.localAgent.state.linuxDesktopBackend = undefined
+  f.localAgent.state.status = "error"
+  expect(await f.controller.get()).toEqual({ step: "screenCapture" })
+  f.localAgent.refreshPermissions.mockImplementationOnce(async () => {
+    f.localAgent.state.linuxDesktopBackend = "x11"
+    f.localAgent.state.status = "running"
+    return { linuxDesktopBackend: "x11", fullDiskAccessPermission: { status: "not-required" }, screenCapturePermission: { status: "not-required" }, accessibilityPermission: { status: "not-required" } }
+  })
+  expect(await f.controller.permissions()).toMatchObject({ linuxDesktopBackend: "x11" })
+  expect(await f.controller.get()).toEqual({ step: "account", linuxDesktopBackend: "x11" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "account" })
+  expect(await f.controller.complete()).toEqual({ step: "complete", linuxDesktopBackend: "x11" })
+})
+
 
 test("a temporarily disconnected Wayland daemon preserves its saved permission step", async () => {
   const f = await fixture("linux")
