@@ -52,9 +52,10 @@ const stepLabel = (value: OnboardingStep) => t(wayland.value && (value === "scre
   ? `welcome.wayland.${value}.title` : `welcome.steps.${value}`)
 
 function move(next: OnboardingState): void {
+  // Keep act/refresh errors when reconcile only records a late Linux backend.
+  if (next.step !== step.value) error.value = undefined
   step.value = next.step
   currentBackend = next.linuxDesktopBackend
-  error.value = undefined
   emit("change", next)
 }
 

@@ -363,6 +363,34 @@ test("Linux welcome reconciles a late X11 hello after a failed permission refres
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
 })
 
+test("Linux account keeps a sign-in error when reconcile only discovers the backend", async () => {
+  const app = setup("account", false, "linux")
+  app.state.linuxDesktopBackend = undefined
+  app.permissions.linuxDesktopBackend = undefined
+  app.permissions.screenCapturePermission = { status: "not-required" }
+  app.permissions.accessibilityPermission = { status: "not-required" }
+  app.mount()
+  await flushPromises()
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
+  app.fake.central.login.mockRejectedValueOnce(new Error("Sign-in cancelled"))
+  const reads = app.onboarding.get.mock.calls.length
+  // Failed first-run acts always reconcile; a late hello may only add the backend.
+  app.onboarding.get.mockImplementationOnce(async () => {
+    app.state.linuxDesktopBackend = "x11"
+    return { ...app.state }
+  })
+  await submit()
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
+  expect(view!.get('[role="alert"]').text()).toBe("Sign-in cancelled")
+  expect(app.onboarding.get).toHaveBeenCalledTimes(reads + 1)
+  expect(app.onboarding.complete).not.toHaveBeenCalled()
+
+  app.permissions.linuxDesktopBackend = "x11"
+  app.changed()
+  await flushPromises()
+  expect(view!.get('[role="alert"]').text()).toBe("Sign-in cancelled")
+})
+
 test("Linux welcome retains Wayland retry guidance while its backend is unknown", async () => {
   const app = setup("accessibility", false, "linux")
   app.state.linuxDesktopBackend = undefined
