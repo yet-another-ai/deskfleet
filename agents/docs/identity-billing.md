@@ -93,7 +93,7 @@ documents. The server checks acceptance before sending the verification link,
 including resends. With both URLs empty, registration has no agreement checkbox
 or acceptance requirement. Password recovery remains available without it.
 
-Account closure must preserve the final-Team-administrator invariant and resolve
+Account closure must preserve the unique-Team-owner invariant and resolve
 machine ownership and billing responsibilities. Closure and retention policy are
 open decisions, not an implicit cascading deletion.
 
@@ -159,10 +159,23 @@ The Team owns its billing profile and provider customer/subscription mappings.
 Changing a payment contact or removing the purchaser does not transfer or erase
 the subscription.
 
-**Permission mapping:** Team administrators manage purchases, plan
-changes, cancellation, payment methods, and invoices. Members see the effective
-plan and usage. Delegated Agent/MCP credentials cannot perform billing changes.
-A separate billing role has not been requested.
+**Permission mapping:** Each Team has exactly one owner, initially its creator.
+Only the owner manages purchases, plan changes, cancellation, payment methods,
+and invoices, deletes the Team, or transfers ownership. Administrators retain
+ordinary Team/member/machine management; administrators and members see the
+effective plan and usage. Delegated Agent/MCP credentials cannot perform billing
+changes. A separate billing role is not required.
+
+The owner cannot be removed or demoted through ordinary member operations and
+must transfer ownership before leaving. Transfer selects an existing active,
+verified member and atomically makes that member the owner and the former owner
+an administrator. Subscription/customer mappings stay attached to the same Team.
+Transfer does not change the card, billing contact, or renewal; the confirmation
+must make continued charging of the existing payment method clear.
+
+Migration 12 assigns each existing Team's first administrator, ordered by user
+ID, as its owner. This deterministic backfill is accepted for the current
+deployment's single test Team; no historical creator reconstruction is required.
 
 ### Monthly usage periods
 
@@ -217,7 +230,7 @@ members or archive Sessions automatically.
 
 Only a current Site Admin can grant/revoke Enterprise for a hosted Team.
 Enterprise unlocks every product allowance, including TURN. It is not sold via
-Checkout or selectable by Team administrators. When
+Checkout or selectable by Team owners. When
 `DESKFLEET_ENTERPRISE_CONTACT_EMAIL` is set, Plans & Usage shows a Contact us
 mailto action for Teams that are not already on Enterprise; when unset, that
 offer is omitted.
@@ -236,7 +249,7 @@ authority does not confer access to Team machines or conversations.
 
 ### Team members
 
-All joined members, including administrators, occupy seats; pending invitations
+All joined members, including owners and administrators, occupy seats; pending invitations
 do not. Accepting an invitation atomically checks capacity and inserts membership.
 Concurrent acceptances cannot exceed the limit, and retries cannot consume a
 second seat for an existing member.
@@ -404,7 +417,7 @@ names remain implementation details. Separate microservices are not required.
   Unlimited and unavailable are distinct from numeric zero. Team settings keep
   team details, members, and machines separate from subscription management.
 - Billing: checkout progress, renewal/cancellation state, payment methods,
-  invoices, and recovery actions for authorized administrators.
+  invoices, and recovery actions for the Team owner.
 - Session: consumed/remaining Free turns including inherited usage, capacity
   errors, paused inputs, and archive/upgrade actions.
 - Site administration: find the Team metadata needed for Enterprise grants,

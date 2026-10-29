@@ -112,7 +112,7 @@ test("Free shows finite limits, relay as not included, and no billing actions fo
   expect(metric("traffic").find("[data-team-usage-amount]").exists()).toBe(false)
   expect(metric("turns").text()).toContain("30 per Session")
   expect(usage().find("[data-billing-offer]").exists()).toBe(false)
-  expect(usage().text()).toContain("A Team admin can upgrade this Team.")
+  expect(usage().text()).toContain("The Team owner can upgrade this Team.")
 })
 
 test("metered relay shows the remaining allowance and next reset", async () => {
@@ -202,7 +202,7 @@ test("Enterprise contact does not replace the member upgrade hint", async () => 
   }))
   expect(usage().get('[data-billing-offer="enterprise"]').get("a").attributes("href")).toBe("mailto:sales@example.test")
   expect(usage().find("[data-billing-offer='go']").exists()).toBe(false)
-  expect(usage().text()).toContain("A Team admin can upgrade this Team.")
+  expect(usage().text()).toContain("The Team owner can upgrade this Team.")
 })
 
 test("Enterprise contact is hidden when unset or already granted", async () => {

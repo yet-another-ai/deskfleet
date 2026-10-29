@@ -90,6 +90,7 @@ impl Policy for TeamCreationPolicy {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TeamRole {
+    Owner,
     Admin,
     Member,
 }
@@ -97,6 +98,7 @@ pub enum TeamRole {
 impl TeamRole {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Owner => "owner",
             Self::Admin => "admin",
             Self::Member => "member",
         }
@@ -108,6 +110,7 @@ impl std::str::FromStr for TeamRole {
 
     fn from_str(role: &str) -> Result<Self> {
         match role {
+            "owner" => Ok(Self::Owner),
             "admin" => Ok(Self::Admin),
             "member" => Ok(Self::Member),
             _ => Err(Error::Invalid("invalid team role")),
@@ -125,6 +128,8 @@ pub enum TeamAction {
     Rename,
     Delete,
     ManageMembers,
+    ManageBilling,
+    TransferOwnership,
 }
 
 /// Membership must be loaded for the operation's target Team.
@@ -153,8 +158,11 @@ impl Policy for TeamPolicy {
             | TeamAction::ReadUsage
             | TeamAction::ReadMachines
             | TeamAction::EnrollMachine => self.role.is_some(),
-            TeamAction::Rename | TeamAction::Delete | TeamAction::ManageMembers => {
-                self.role == Some(TeamRole::Admin)
+            TeamAction::Rename | TeamAction::ManageMembers => {
+                matches!(self.role, Some(TeamRole::Owner | TeamRole::Admin))
+            }
+            TeamAction::Delete | TeamAction::ManageBilling | TeamAction::TransferOwnership => {
+                self.role == Some(TeamRole::Owner)
             }
         }
     }
@@ -190,7 +198,9 @@ impl Policy for MachinePolicy {
             | MachineAction::Rename
             | MachineAction::Manage
             | MachineAction::Connect => self.team_role.is_some(),
-            MachineAction::Remove => self.team_role == Some(TeamRole::Admin),
+            MachineAction::Remove => {
+                matches!(self.team_role, Some(TeamRole::Owner | TeamRole::Admin))
+            }
         }
     }
 }

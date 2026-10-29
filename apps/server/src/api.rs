@@ -64,6 +64,23 @@ pub async fn delete_team(
     s.store.delete_team(&a.user.id, &p).await?;
     Ok(web::Json(json!({})))
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Ownership {
+    user_id: String,
+}
+pub async fn transfer_ownership(
+    req: HttpRequest,
+    s: web::Data<AppState>,
+    p: web::Path<String>,
+    b: web::Json<Ownership>,
+) -> Result<web::Json<Value>> {
+    let a = auth::user(&req, &s).await?;
+    s.store
+        .transfer_team_ownership(&a.user.id, &p, &b.user_id)
+        .await?;
+    Ok(web::Json(json!({})))
+}
 pub async fn members(
     req: HttpRequest,
     s: web::Data<AppState>,

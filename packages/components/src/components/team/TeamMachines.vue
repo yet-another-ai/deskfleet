@@ -12,7 +12,7 @@ import IconButton from "../common/IconButton.vue"
 const { t, locale } = useI18n()
 const id = useId()
 const session = useAccountSession()!
-const admin = computed(() => session.team.value?.role === "admin")
+const admin = computed(() => session.team.value?.role === "owner" || session.team.value?.role === "admin")
 const removing = ref<Machine>()
 // Every member can rename a machine; only one is edited at a time.
 const editing = ref<string>()

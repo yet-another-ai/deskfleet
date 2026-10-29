@@ -4,7 +4,7 @@ import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import { desktopApi } from "./api.ts"
 
 const central = Object.fromEntries([
-  "status", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "aiUsage", "aiUsageSessions", "openAccountSettings", "billing", "checkout", "billingPortal", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "machines", "renameMachine", "removeMachine", "localEnrollment", "enrollLocal", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
+  "status", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "aiUsage", "aiUsageSessions", "openAccountSettings", "billing", "checkout", "billingPortal", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "transferOwnership", "machines", "renameMachine", "removeMachine", "localEnrollment", "enrollLocal", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
 ].map(method => [method, (...args: unknown[]) => ipcRenderer.invoke("deskfleet:central", method, args)])) as unknown as CentralApi
 central.onEvent = listener => {
   const handler = (_event: Electron.IpcRendererEvent, value: CentralEvent) => listener(value)

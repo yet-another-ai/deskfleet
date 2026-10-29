@@ -91,6 +91,10 @@ pub fn configure(config: &mut ServiceConfig) {
             .route("/teams", web::post().to(api::create_team))
             .route("/teams/{teamId}", web::patch().to(api::rename_team))
             .route("/teams/{teamId}", web::delete().to(api::delete_team))
+            .route(
+                "/teams/{teamId}/ownership",
+                web::post().to(api::transfer_ownership),
+            )
             .route("/teams/{teamId}/usage", web::get().to(api::team_usage))
             .route("/teams/{teamId}/ai-usage", web::get().to(ai_usage::summary))
             .route(
@@ -166,6 +170,9 @@ async fn health() -> web::Json<HealthResponse> {
 
 #[cfg(test)]
 mod integration_tests;
+
+#[cfg(test)]
+mod ownership_tests;
 
 #[cfg(test)]
 mod realtime_tests;

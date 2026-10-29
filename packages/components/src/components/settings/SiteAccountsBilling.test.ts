@@ -15,17 +15,57 @@ test("granting Enterprise states that the Team's paid subscription keeps billing
   const { central } = fakeCentral()
   central.billingTeams.mockResolvedValue([{
     id: "team-1", name: "Design team",
+    owner: { id: "user-1", name: "Ada", email: "ada@example.test" },
     billing: { ...billingFixture(), plan: "go", subscription: { plan: "go", status: "active", paidThrough: "2026-11-28T00:00:00Z", cancelAtPeriodEnd: false } },
-  }] as never)
+  }])
   view = mount(EnterpriseTeams, { props: { api: central, confirmed }, global: { plugins: [i18n] }, attachTo: document.body })
   await flushPromises()
   expect(view.get("[data-enterprise-team]").text()).toContain("Go subscription · active")
   await button(view, "Grant Enterprise").trigger("click"); await flushPromises()
   const dialog = body().get('[role="dialog"]')
-  expect(dialog.text()).toContain("Its Go subscription keeps billing until a Team admin cancels it.")
+  expect(dialog.text()).toContain("Its Go subscription keeps billing until the Team owner cancels it.")
   await button(dialog, "Grant Enterprise").trigger("click"); await flushPromises()
   expect(central.setEnterprise).toHaveBeenCalledExactlyOnceWith("team-1", true)
   expect(central.billingTeams).toHaveBeenCalledTimes(2)
+})
+
+test("same-name Teams show their owner accounts and can be filtered by name or email", async () => {
+  const { central } = fakeCentral()
+  central.billingTeams.mockResolvedValue([
+    { id: "team-1", name: "Design team", owner: { id: "user-1", name: "Ada", email: "ada@first.example" }, billing: billingFixture() },
+    { id: "team-2", name: "Design team", owner: { id: "user-2", name: "Grace", email: "grace@example.test" }, billing: billingFixture() },
+  ])
+  view = mount(EnterpriseTeams, { props: { api: central, confirmed }, global: { plugins: [i18n] } })
+  await flushPromises()
+  expect(view.get('[data-enterprise-team="team-1"]').text()).toContain("Owner: Ada (ada@first.example)")
+  expect(view.get('[data-enterprise-team="team-2"]').text()).toContain("Owner: Grace (grace@example.test)")
+  const filter = view.get('input[name="team-filter"]')
+  await filter.setValue("Design")
+  expect(view.findAll("[data-enterprise-team]")).toHaveLength(2)
+  await filter.setValue("Grace")
+  expect(view.findAll("[data-enterprise-team]").map(row => row.attributes("data-enterprise-team"))).toEqual(["team-2"])
+  await filter.setValue("  ADA@FIRST.EXAMPLE  ")
+  expect(view.findAll("[data-enterprise-team]").map(row => row.attributes("data-enterprise-team"))).toEqual(["team-1"])
+  await filter.setValue("")
+  expect(view.findAll("[data-enterprise-team]")).toHaveLength(2)
+})
+
+test.each([false, true])("Enterprise confirmation identifies the selected same-name Team's accounts (override=%s)", async enterpriseOverride => {
+  const { central } = fakeCentral()
+  central.billingTeams.mockResolvedValue([
+    { id: "team-1", name: "Design team", owner: { id: "user-1", name: "Ada", email: "ada@first.example" }, billing: billingFixture() },
+    { id: "team-2", name: "Design team", owner: { id: "user-2", name: "Ada", email: "ada@second.example" }, billing: { ...billingFixture(), enterpriseOverride } },
+  ])
+  view = mount(EnterpriseTeams, { props: { api: central, confirmed }, global: { plugins: [i18n] }, attachTo: document.body })
+  await flushPromises()
+  const label = enterpriseOverride ? "Revoke Enterprise" : "Grant Enterprise"
+  await button(view.get('[data-enterprise-team="team-2"]'), label).trigger("click"); await flushPromises()
+  const dialog = body().get('[role="dialog"]')
+  expect(dialog.text()).toContain("Owner: Ada (ada@second.example)")
+  expect(dialog.text()).not.toContain("ada@first.example")
+  expect(central.setEnterprise).not.toHaveBeenCalled()
+  await button(dialog, label).trigger("click"); await flushPromises()
+  expect(central.setEnterprise).toHaveBeenCalledExactlyOnceWith("team-2", !enterpriseOverride)
 })
 
 test("disabling an account is confirmed first; enabling it again is immediate", async () => {

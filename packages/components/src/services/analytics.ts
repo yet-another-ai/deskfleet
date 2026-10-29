@@ -2,6 +2,7 @@ import { StatsigClient, type StatsigUser } from "@statsig/js-client"
 import { computed, ref } from "vue"
 import { STATSIG_INITIALIZE_URL, STATSIG_LOG_EVENT_URL } from "@deskfleet/client/analytics-config"
 import type { BillingPlan } from "@deskfleet/client/billing"
+import type { Team } from "@deskfleet/client/central"
 import type { PeerTelemetryEvents } from "@deskfleet/client/peer-telemetry"
 import type { BillingAnalyticsEvents } from "./billing-events.ts"
 import type { EntitlementAnalyticsEvents } from "./entitlement-events.ts"
@@ -28,7 +29,7 @@ interface AnalyticsConfiguration {
 let sdk: StatsigClient | undefined
 let platform: AnalyticsConfiguration["platform"] = "web"
 let userId: string | undefined
-let team: { id: string; role: "admin" | "member" } | undefined
+let team: Pick<Team, "id" | "role"> | undefined
 let plan: BillingPlan | undefined
 let planRevision = 0
 const revision = ref(0)
@@ -63,7 +64,7 @@ export function initializeAnalytics(configuration: AnalyticsConfiguration): void
 }
 
 /** Replace the identity on login/logout; never merge account name or email into it. */
-export function identifyAnalytics(nextUserId?: string, nextTeam?: { id: string; role: "admin" | "member" }): void {
+export function identifyAnalytics(nextUserId?: string, nextTeam?: Pick<Team, "id" | "role">): void {
   if (!nextUserId) nextTeam = undefined
   if (userId === nextUserId && team?.id === nextTeam?.id && team?.role === nextTeam?.role) return
   planRevision++

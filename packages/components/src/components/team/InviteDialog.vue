@@ -3,7 +3,7 @@ import UiButton from "../common/UiButton.vue"
 import { DialogTitle, RadioGroupRoot, RadioGroupItem, RadioGroupIndicator } from "reka-ui"
 import { computed, nextTick, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { Team, TeamMember } from "@deskfleet/client/central"
+import type { Team } from "@deskfleet/client/central"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { captureAnalyticsContext } from "../../services/analytics.ts"
@@ -16,7 +16,7 @@ const { t, locale } = useI18n()
 const central = useAccountSession()!.central
 const code = useTemplateRef<InstanceType<typeof CopyField>>("code")
 const email = ref("")
-const role = ref<TeamMember["role"]>("member")
+const role = ref<"admin" | "member">("member")
 const pending = ref(false)
 const error = ref<string>()
 const invite = ref<{ token: string; expiresAt: string }>()

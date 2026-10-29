@@ -291,7 +291,13 @@ The `/api` routes cover:
 - `/peers` creation, immutable offer/answer exchange, ICE candidate forwarding,
   desktop stream start, and revocation.
 
-Admins manage members/roles and remove machines. All members can enroll their
+Each Team has one owner, initially the creator. Owners alone manage billing,
+delete the Team, and transfer ownership. Owners and admins manage members/roles
+and remove machines. `POST /api/teams/{teamId}/ownership` with `{ "userId": "..." }`
+transfers ownership to an existing active, verified member and makes the former
+owner an admin. The owner cannot be removed or demoted through member endpoints.
+Transfer keeps the existing subscription, payment methods, billing contact, and
+renewal; update billing separately when the payer changes. All members can enroll their
 machines, rename team machines, and operate resources on them. A machine's Team
 name is chosen at enrollment, where clients default it to the daemon's hostname.
 Catalog reads report that name as `snapshot.machineName` in place of the

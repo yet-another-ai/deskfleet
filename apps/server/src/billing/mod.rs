@@ -15,7 +15,7 @@ pub use handlers::configure;
 
 use crate::error::{ApiError, Result};
 use actix_web::http::StatusCode;
-use deskfleet_control_store::{ControlStore, billing::CheckoutAttempt};
+use deskfleet_control_store::{ControlStore, billing::CheckoutAttempt, policies::TeamAction};
 use gateway::{hosted_url, stripe_id};
 use reqwest::Method;
 use serde_json::Value;
@@ -101,6 +101,9 @@ impl BillingService {
         interval: &str,
         request_id: &str,
     ) -> Result<String> {
+        store
+            .authorize_team(actor, team, TeamAction::ManageBilling)
+            .await?;
         self.require_enabled()?;
         deskfleet_control_store::billing::Plan::paid(plan)?;
         if !matches!(interval, "month" | "year") {

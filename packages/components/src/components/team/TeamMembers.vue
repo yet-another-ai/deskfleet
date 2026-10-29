@@ -10,20 +10,25 @@ import ConfirmDialog from "../common/ConfirmDialog.vue"
 import IconButton from "../common/IconButton.vue"
 import UserAvatar from "../common/UserAvatar.vue"
 import InviteDialog from "./InviteDialog.vue"
+import TransferOwnershipDialog from "./TransferOwnershipDialog.vue"
 
 const props = defineProps<{ team: Team; userId?: string }>()
 const { t } = useI18n()
 const id = useId()
-const central = useAccountSession()!.central
+const session = useAccountSession()!
+const central = session.central
 const members = ref<TeamMember[]>([])
 const loading = ref(true)
 const error = ref<string>()
 const updating = ref<string>()
 const removing = ref<TeamMember>()
 const inviting = ref(false)
-const admin = computed(() => props.team.role === "admin")
+const transferring = ref(false)
+const owner = computed(() => props.team.role === "owner")
+const admin = computed(() => owner.value || props.team.role === "admin")
+const successors = computed(() => members.value.filter(member => member.role !== "owner"))
 // Administrators cannot change or remove themselves here; another administrator can.
-const manageable = (member: TeamMember) => admin.value && member.userId !== props.userId
+const manageable = (member: TeamMember) => admin.value && member.role !== "owner" && member.userId !== props.userId
 
 async function load(): Promise<void> {
   loading.value = true
@@ -33,7 +38,7 @@ async function load(): Promise<void> {
   finally { loading.value = false }
 }
 async function changeRole(member: TeamMember, value: string): Promise<void> {
-  const role = value as TeamMember["role"]
+  const role = value as "admin" | "member"
   if (updating.value || member.role === role) return
   updating.value = member.userId
   error.value = undefined
@@ -48,6 +53,20 @@ async function remove(member: TeamMember): Promise<void> {
   await central.removeMember(props.team.id, member.userId)
   members.value = members.value.filter(value => value.userId !== member.userId)
 }
+async function transfer(userId: string): Promise<void> {
+  await central.transferOwnership(props.team.id, userId)
+  // The mutation is complete even if a follow-up read fails. Never retry a
+  // successful transfer with the former Owner's now-reduced permissions.
+  const team = session.teams.value.find(team => team.id === props.team.id)
+  if (team) team.role = "admin"
+  for (const member of members.value) {
+    if (member.role === "owner") member.role = "admin"
+    if (member.userId === userId) member.role = "owner"
+  }
+  session.members.value = members.value.map(member => ({ ...member }))
+  try { await session.reload(); await load() }
+  catch (reason) { session.notice.value = reason instanceof Error ? reason.message : String(reason) }
+}
 onMounted(load)
 </script>
 
@@ -57,9 +76,12 @@ onMounted(load)
       <h2 :id="`${id}-title`" class="ui-section-title">
         {{ t("team.members") }}<span v-if="!loading && !error" class="ml-1.5 text-ui-text-faint">{{ members.length }}</span>
       </h2>
-      <UiButton v-if="admin" type="button" class="shrink-0" @click="inviting = true">
-        <UserPlus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("team.invite") }}
-      </UiButton>
+      <div v-if="admin" class="flex flex-wrap justify-end gap-2">
+        <UiButton v-if="owner && successors.length" type="button" @click="transferring = true">{{ t("team.transferOwnership") }}</UiButton>
+        <UiButton type="button" @click="inviting = true">
+          <UserPlus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("team.invite") }}
+        </UiButton>
+      </div>
     </div>
     <div v-if="error" class="mb-3 flex items-center justify-between gap-4">
       <p role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
@@ -78,13 +100,14 @@ onMounted(load)
         <div v-if="manageable(member)" class="w-28 shrink-0">
           <UiSelect :aria-label="t('team.roleFor', { name: member.name })" :model-value="member.role" :options="[{ value: 'member', label: t('team.member') }, { value: 'admin', label: t('team.admin') }]" :disabled="!!updating" @update:model-value="changeRole(member, $event)" />
         </div>
-        <span v-else class="ui-badge shrink-0">{{ t(member.role === "admin" ? "team.admin" : "team.member") }}</span>
+        <span v-else class="ui-badge shrink-0">{{ t(`team.${member.role}`) }}</span>
         <IconButton v-if="manageable(member)" :icon="Trash2" :label="t('team.removeMemberLabel', { name: member.name })" :disabled="!!updating" @click="removing = member" />
         <span v-else-if="admin" class="w-7 shrink-0" aria-hidden="true" />
       </li>
     </ul>
   </section>
   <InviteDialog v-if="inviting" :team="team" @close="inviting = false" />
+  <TransferOwnershipDialog v-if="transferring" :members="successors" :transfer="transfer" @close="transferring = false" />
   <ConfirmDialog
     v-if="removing"
     :title="t('team.removeMemberTitle', { name: removing.name })"

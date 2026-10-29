@@ -104,7 +104,7 @@ URL, or viewing an active subscription never emits a client-side paid event.
 | `billing_checkout_opened` | Checkout API and external-page opening completed; same attempt dimensions |
 | `billing_checkout_failed` | The attempt failed; same dimensions plus an allowlisted reason, never exception text |
 | `billing_portal_started` / `billing_portal_opened_client` / `billing_portal_failed` | Billing management or payment-recovery action; `source=manage`/`payment_recovery` |
-| `billing_payment_recovery_viewed` | Once per payment-problem status per view for a billing admin; `past_due`, `unpaid`, or `incomplete` |
+| `billing_payment_recovery_viewed` | Once per payment-problem status per view for the Team owner; `past_due`, `unpaid`, or `incomplete` |
 | `billing_returned` | Allowlisted `checkout_success`, `checkout_cancel`, or `portal` return marker for an accessible Team; navigation only |
 | `billing_enterprise_contact_clicked` | Contact-link intent; no mailbox/address is sent |
 

@@ -84,7 +84,7 @@ impl ControlStore {
         ))
         .await?;
         tx.execute_raw(sql(
-            "INSERT INTO cp_members VALUES($1,$2,'admin')",
+            "INSERT INTO cp_members VALUES($1,$2,'owner')",
             vec![id.into(), user_id.into()],
         ))
         .await?;
@@ -92,7 +92,7 @@ impl ControlStore {
         Ok(Team {
             id: id.to_string(),
             name: value.to_owned(),
-            role: "admin".into(),
+            role: "owner".into(),
         })
     }
     pub async fn rename_team(&self, user_id: &str, team_id: &str, value: &str) -> Result<Team> {
@@ -108,7 +108,7 @@ impl ControlStore {
         Ok(Team {
             id: team_id.into(),
             name: value.into(),
-            role: "admin".into(),
+            role: self.team_role(user_id, team_id).await?,
         })
     }
     pub async fn delete_team(&self, user_id: &str, team_id: &str) -> Result<()> {
@@ -178,17 +178,10 @@ impl ControlStore {
         )
         .await?
         .try_get::<String>("", "role")?;
-        if current == "admin" && role != Some("admin") {
-            let count = one(
-                &tx,
-                "SELECT count(*) AS n FROM cp_members WHERE team_id=$1 AND role='admin'",
-                vec![id.into()],
-            )
-            .await?
-            .try_get::<i64>("", "n")?;
-            if count <= 1 {
-                return Err(Error::Conflict("team must retain an administrator"));
-            }
+        if current == "owner" {
+            return Err(Error::Conflict(
+                "transfer team ownership before changing the owner",
+            ));
         }
         if let Some(role) = role {
             tx.execute_raw(sql(
@@ -203,6 +196,55 @@ impl ControlStore {
             ))
             .await?;
         }
+        tx.commit().await?;
+        Ok(())
+    }
+    /// Transfer the unique ownership to an existing active Team member.
+    ///
+    /// The previous owner remains an administrator; billing records stay with
+    /// the Team, including the existing payment method and subscription.
+    ///
+    /// # Errors
+    /// Returns an error unless the actor is the current owner, the target is
+    /// another active verified member, and the transaction can commit.
+    pub async fn transfer_team_ownership(
+        &self,
+        actor: &str,
+        team_id: &str,
+        target_user_id: &str,
+    ) -> Result<()> {
+        let tx = self.db.begin().await?;
+        let id = resource_id(team_id)?;
+        one(
+            &tx,
+            "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
+            vec![id.into()],
+        )
+        .await?;
+        authorize(
+            &team_policy(&tx, actor, team_id).await?,
+            TeamAction::TransferOwnership,
+        )?;
+        if actor == target_user_id {
+            return Err(Error::Invalid("target is already the team owner"));
+        }
+        if tx.query_one_raw(sql(
+            "SELECT m.user_id FROM cp_members m JOIN cp_users u ON u.id=m.user_id WHERE m.team_id=$1 AND m.user_id=$2 AND u.email_verified AND NOT u.disabled",
+            vec![id.into(), target_user_id.into()],
+        )).await?.is_none() {
+            return Err(Error::Invalid("new owner must be an active verified team member"));
+        }
+        // Demote first so the unique owner index holds throughout the transaction.
+        tx.execute_raw(sql(
+            "UPDATE cp_members SET role='admin' WHERE team_id=$1 AND user_id=$2",
+            vec![id.into(), actor.into()],
+        ))
+        .await?;
+        tx.execute_raw(sql(
+            "UPDATE cp_members SET role='owner' WHERE team_id=$1 AND user_id=$2",
+            vec![id.into(), target_user_id.into()],
+        ))
+        .await?;
         tx.commit().await?;
         Ok(())
     }

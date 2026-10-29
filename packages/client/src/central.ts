@@ -11,8 +11,9 @@ import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization,
 export type AccountUser = Omit<User, "email"> & { email?: User["email"] }
 export interface AccountState { serverUrl: string; user?: AccountUser; siteAdmin: boolean }
 export type { SiteSettings } from "../../../crates/protocol/control.ts"
-export type Team = Omit<WireTeam, "role"> & { role: "admin" | "member" }
-export interface TeamMember { userId: string; name: string; email?: string | null; role: "admin" | "member" }
+export type TeamRole = "owner" | "admin" | "member"
+export type Team = Omit<WireTeam, "role"> & { role: TeamRole }
+export interface TeamMember { userId: string; name: string; email?: string | null; role: TeamRole }
 export interface TeamUsage { relayedBytes: string; activeSessionCount: number; memberCount: number }
 export type Machine = Omit<WireMachine, "capabilities" | "lastSeenAt"> & { capabilities: Record<string, unknown>; lastSeenAt?: WireMachine["lastSeenAt"] }
 export interface LocalEnrollment {
@@ -71,6 +72,7 @@ export interface CentralApi {
   acceptInvite(token: string): Promise<Team>
   setMemberRole(teamId: string, userId: string, role: "admin" | "member"): Promise<void>
   removeMember(teamId: string, userId: string): Promise<void>
+  transferOwnership(teamId: string, userId: string): Promise<void>
   machines(teamId: string): Promise<Machine[]>
   /** Any Team member can rename a machine; its daemon's hostname is unchanged. */
   renameMachine(machineId: string, name: string): Promise<Machine>

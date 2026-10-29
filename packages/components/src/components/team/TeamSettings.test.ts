@@ -1,6 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { Team } from "@deskfleet/client/central"
+import type { Team, TeamMember } from "@deskfleet/client/central"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
 import { i18n } from "../../i18n/index.ts"
 import { fakeCentral, machineFixture } from "../../test/central.ts"
@@ -15,9 +15,10 @@ let session: AccountSession | undefined
 beforeEach(() => vi.mocked(trackEvent).mockClear())
 afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined })
 const button = (text: string) => view!.findAll("button").find(value => value.text() === text)
-async function setup(role: Team["role"] = "admin") {
+async function setup(role: Team["role"] = "admin", members?: TeamMember[]) {
   const fake = fakeCentral({
     teams: [{ id: "team-1", name: "Design team", role }],
+    members,
     machines: [machineFixture("m1", "team-1", "Build server"), machineFixture("m2", "team-1", "Laptop", false)],
   })
   session = createAccountSession(fake.central)
@@ -184,4 +185,58 @@ test("ordinary members see the roster and machines without administration contro
   // Every member can add their own machines.
   await button("Add machine")!.trigger("click")
   expect(session!.dialog.value).toBe("add-machine")
+})
+
+const ownerMembers: TeamMember[] = [
+  { userId: "user-1", name: "Ada", email: "ada@example.test", role: "owner" },
+  { userId: "user-2", name: "Bob", email: "bob@example.test", role: "member" },
+  { userId: "user-3", name: "Grace", email: "grace@example.test", role: "admin" },
+]
+
+test("Owners retain administration controls and transfer ownership to the selected member", async () => {
+  const fake = await setup("owner", structuredClone(ownerMembers))
+  expect(view!.text()).toContain("You are the owner of this team.")
+  expect(view!.find('[name="team-name"]').exists()).toBe(true)
+  expect(view!.find('[aria-label="Remove Laptop"]').exists()).toBe(true)
+  expect(view!.get('[data-member-id="user-1"]').text()).toContain("Owner")
+  expect(view!.find('[aria-label="Remove Ada"]').exists()).toBe(false)
+  await button("Transfer ownership")!.trigger("click"); await flushPromises()
+  const dialog = view!.get('[role="dialog"]')
+  expect(dialog.text()).toContain("Existing payment methods are kept and can continue to be charged for renewals.")
+  expect(fake.central.transferOwnership).not.toHaveBeenCalled()
+  await selectOption(view!, '[role="dialog"] [role="combobox"]', "Grace (grace@example.test)")
+  await dialog.get("form").trigger("submit"); await flushPromises()
+  expect(fake.central.transferOwnership).toHaveBeenCalledExactlyOnceWith("team-1", "user-3")
+  expect(session!.team.value?.role).toBe("admin")
+  expect(view!.text()).toContain("You are an admin of this team.")
+  expect(view!.get('[data-member-id="user-3"]').text()).toContain("Owner")
+  expect(view!.find('[role="combobox"][aria-label="Role for Grace"]').exists()).toBe(false)
+  expect(view!.find('[aria-label="Remove Grace"]').exists()).toBe(false)
+  expect(button("Transfer ownership")).toBeUndefined()
+  expect(view!.find('[role="dialog"]').exists()).toBe(false)
+})
+
+test("administrators cannot change the Owner or transfer ownership", async () => {
+  const members = structuredClone(ownerMembers)
+  members[0]!.role = "admin"; members[2]!.role = "owner"
+  await setup("admin", members)
+  expect(view!.get('[data-member-id="user-3"]').text()).toContain("Owner")
+  expect(view!.find('[role="combobox"][aria-label="Role for Grace"]').exists()).toBe(false)
+  expect(view!.find('[aria-label="Remove Grace"]').exists()).toBe(false)
+  expect(button("Transfer ownership")).toBeUndefined()
+  expect(button("Invite")).toBeDefined()
+})
+
+test("a refresh failure after transfer closes the dialog without offering to repeat the completed mutation", async () => {
+  const fake = await setup("owner", structuredClone(ownerMembers))
+  fake.central.teams.mockRejectedValueOnce(new Error("Could not refresh teams"))
+  await button("Transfer ownership")!.trigger("click"); await flushPromises()
+  await view!.get('[role="dialog"] form').trigger("submit"); await flushPromises()
+  expect(fake.central.transferOwnership).toHaveBeenCalledExactlyOnceWith("team-1", "user-2")
+  expect(session!.team.value?.role).toBe("admin")
+  expect(session!.members.value.find(member => member.userId === "user-2")?.role).toBe("owner")
+  expect(session!.notice.value).toBe("Could not refresh teams")
+  expect(view!.get('[data-member-id="user-2"]').text()).toContain("Owner")
+  expect(view!.find('[role="dialog"]').exists()).toBe(false)
+  expect(button("Transfer ownership")).toBeUndefined()
 })

@@ -151,6 +151,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   acceptInvite(token: string) { return this.request<Team>("POST", "/api/invites/accept", { token }) }
   async setMemberRole(teamId: string, userId: string, role: "admin" | "member") { await this.request("PATCH", `/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`, { role }) }
   async removeMember(teamId: string, userId: string) { await this.request("DELETE", `/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`) }
+  async transferOwnership(teamId: string, userId: string) { await this.request("POST", `/api/teams/${encodeURIComponent(teamId)}/ownership`, { userId }) }
   machines(teamId: string) { return this.request<Machine[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines`) }
   renameMachine(machineId: string, name: string) { return this.request<Machine>("PATCH", `/api/machines/${encodeURIComponent(machineId)}`, { name }) }
   async removeMachine(machineId: string) { await this.request("DELETE", `/api/machines/${encodeURIComponent(machineId)}`) }

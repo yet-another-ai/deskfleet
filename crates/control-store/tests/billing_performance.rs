@@ -294,6 +294,10 @@ async fn admin_billing_pages_are_bounded_and_preserve_summary_values() {
     for team in &first.teams {
         let id = team["id"].as_str().unwrap();
         assert_eq!(team["billing"], store.billing_summary(id).await.unwrap());
+        assert_eq!(
+            team["owner"],
+            json!({"id":owner,"name":"Owner","email":"owner@billing.test"})
+        );
     }
     let second = store
         .admin_billing_teams(&owner, first.next_cursor.as_deref(), 100)
@@ -308,5 +312,57 @@ async fn admin_billing_pages_are_bounded_and_preserve_summary_values() {
             .await
             .is_err()
     );
+    cleanup(store, db, schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn admin_billing_identifies_current_owner_for_same_name_teams() {
+    let (store, db, schema, owner) = fixture().await;
+    store.grant_site_admin(&owner).await.unwrap();
+    let other = store
+        .verified_user("other@billing.test", "Owner")
+        .await
+        .unwrap();
+    let member = store
+        .verified_user("member@billing.test", "Member")
+        .await
+        .unwrap();
+    let first = store.create_team(&owner, "Same name").await.unwrap();
+    let second = store.create_team(&other.id, "Same name").await.unwrap();
+    for (user, role) in [(&other, "admin"), (&member, "member")] {
+        let invite = store
+            .invite(&owner, &first.id, user.email.as_deref().unwrap(), role)
+            .await
+            .unwrap();
+        store
+            .accept_invite(&user.id, invite["token"].as_str().unwrap())
+            .await
+            .unwrap();
+    }
+    let page = store.admin_billing_teams(&owner, None, 100).await.unwrap();
+    assert_eq!(page.teams.len(), 2);
+    assert_eq!(page.teams[0]["id"], first.id);
+    assert_eq!(page.teams[1]["id"], second.id);
+    assert_eq!(
+        page.teams[0]["owner"],
+        json!({"id":owner,"name":"Owner","email":"owner@billing.test"})
+    );
+    let remaining = json!({"id":other.id,"name":"Owner","email":"other@billing.test"});
+    assert_eq!(page.teams[1]["owner"], remaining);
+
+    // Owner identity follows an explicit transfer, even after the creator leaves.
+    store
+        .transfer_team_ownership(&owner, &first.id, &other.id)
+        .await
+        .unwrap();
+    let page = store.admin_billing_teams(&owner, None, 100).await.unwrap();
+    assert_eq!(page.teams[0]["owner"], remaining);
+    store
+        .change_member(&other.id, &first.id, &owner, None)
+        .await
+        .unwrap();
+    let page = store.admin_billing_teams(&owner, None, 100).await.unwrap();
+    assert_eq!(page.teams[0]["owner"], remaining);
     cleanup(store, db, schema).await;
 }

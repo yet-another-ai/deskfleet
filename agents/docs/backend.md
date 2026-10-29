@@ -31,9 +31,13 @@ ownership and explicit Site Admin boundary.
   no legacy OIDC identity/data migration is required.
 - Require login and Team selection before resource creation. Enroll each machine
   into its Team; the automatically created local Team is development scaffolding.
-- Members can operate every machine in their Team. Administrators manage members
-  and roles and remove machines. Members can enroll their own machines, rename
-  Team machines (the name defaults to the hostname), configure
+- Each Team has exactly one owner, initially its creator. The owner alone manages
+  billing, deletes the Team, and transfers ownership. Owners and administrators
+  manage members and roles and remove machines. Ownership transfers to an existing
+  active, verified member; the former owner becomes an administrator. Owners
+  cannot be removed or demoted through ordinary member operations.
+- Members can operate every machine in their Team, enroll their own machines,
+  rename Team machines (the name defaults to the hostname), configure
   Providers, create or delete Workspaces, and create, archive, or restore Sessions.
 - Use PostgreSQL for the central server and SQLite for each daemon.
 - Keep site administration separate from Team roles. Explicit operator commands
@@ -89,7 +93,7 @@ ownership and explicit Site Admin boundary.
 | --- | --- | --- |
 | Identity | Owned accounts, email verification/password recovery, password and Passkey login, application sessions/revocation, and client/device identity | Electron and Web implement their login entry points; daemon credentials are separate from user login |
 | Subscriptions and quotas | Team billing, verified paid coverage, monthly TURN periods, Enterprise grants/audit, and atomic member/Session capacity admission | Daemon checks effective per-Session turn limits and persists fork-inherited consumption; clients display limits and billing state |
-| Teams | Team creation and selection, membership/invitations, administrator/member roles, member removal, and authorization | Clients display the selected Team and available actions |
+| Teams | Team creation and selection, membership/invitations, owner/administrator/member roles, atomic ownership transfer, member removal, and authorization | Clients display the selected Team and available actions |
 | Site administration | Explicit site grants, site name/announcement/Team-creation settings, per-operation policies, and transactional site audit | Deployment operators bootstrap and recover grants through the server CLI; Web exposes a Team-independent administration page; Web and Electron display public site settings and apply the Team-creation setting |
 | Machine enrollment | Bind an installation identity and catalog origin to a Team, issue machine credentials, and support administrator removal/revocation | Daemon stores its credentials and proves its identity on outbound connections |
 | Presence | Authenticated daemon connections, online status, last observed time, and machine capabilities | Daemon reports actual runtime/capture/provider capabilities; a peer connection has its own state |

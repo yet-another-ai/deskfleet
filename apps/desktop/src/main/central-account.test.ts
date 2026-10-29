@@ -79,6 +79,16 @@ test("restores an encrypted account using the async decryption result", async ()
   expect(f.fetch).toHaveBeenCalledWith(`${serverUrl}/api/me`, expect.objectContaining({ headers: { Authorization: "Bearer restored-token" } }))
 })
 
+test("the desktop account bridge forwards ownership transfer to the selected Team", async () => {
+  const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
+  await f.install()
+  const handler = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
+  await handler({} as Electron.IpcMainInvokeEvent, "transferOwnership", ["team/1", "user-2"])
+  expect(f.fetch).toHaveBeenCalledWith(`${serverUrl}/api/teams/team%2F1/ownership`, expect.objectContaining({
+    method: "POST", body: JSON.stringify({ userId: "user-2" }),
+  }))
+})
+
 test("a fresh profile uses the compiled backend without account configuration", async () => {
   const f = await setup()
   await rm(f.path)

@@ -13,4 +13,10 @@ export interface TeamBilling {
   /** Sales mailbox for Enterprise contact. Null/undefined when unset. */
   enterpriseContactEmail?: string | null
 }
-export interface AdminTeamBilling { id: string; name: string; billing: TeamBilling }
+export interface AdminTeamBilling {
+  id: string
+  name: string
+  /** The Team Owner, for identifying Teams with the same name. */
+  owner: { id: string; name: string; email: string }
+  billing: TeamBilling
+}

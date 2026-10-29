@@ -61,7 +61,7 @@ impl ControlStore {
             })
             .collect();
         let usage = self.db.query_all_raw(sql(
-            "SELECT p.team_id,t.name,(SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machines m ON m.id=a.machine_id WHERE a.team_id=p.team_id AND a.status<>'released' AND NOT m.revoked) AS sessions,(SELECT COUNT(*) FROM cp_members WHERE team_id=p.team_id) AS members,cp_turn_sent_bytes(p.team_id,p.start_at,p.end_at)::text AS bytes FROM jsonb_to_recordset($1) AS p(team_id bigint,start_at bigint,end_at bigint) JOIN cp_teams t ON t.id=p.team_id ORDER BY p.team_id",
+            "SELECT p.team_id,t.name,jsonb_build_object('id',u.id,'name',u.name,'email',u.email) AS owner,(SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machines m ON m.id=a.machine_id WHERE a.team_id=p.team_id AND a.status<>'released' AND NOT m.revoked) AS sessions,(SELECT COUNT(*) FROM cp_members WHERE team_id=p.team_id) AS members,cp_turn_sent_bytes(p.team_id,p.start_at,p.end_at)::text AS bytes FROM jsonb_to_recordset($1) AS p(team_id bigint,start_at bigint,end_at bigint) JOIN cp_teams t ON t.id=p.team_id JOIN cp_members o ON o.team_id=t.id AND o.role='owner' JOIN cp_users u ON u.id=o.user_id ORDER BY p.team_id",
             vec![json!(periods).into()],
         )).await?;
         let meter = one(
@@ -78,7 +78,7 @@ impl ControlStore {
         for row in usage {
             let id = row.try_get::<i64>("", "team_id")?.to_string();
             if let Some(p) = by_id.remove(&id) {
-                teams.push(json!({"id":id,"name":row.try_get::<String>("", "name")?,"billing":summary_value(p,&row,&meter,self.hosted,now)?}));
+                teams.push(json!({"id":id,"name":row.try_get::<String>("", "name")?,"owner":row.try_get::<Value>("", "owner")?,"billing":summary_value(p,&row,&meter,self.hosted,now)?}));
             }
         }
         Ok(AdminBillingPage { teams, next_cursor })

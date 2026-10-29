@@ -19,8 +19,9 @@ const changing = ref<AdminTeamBilling>()
 const { state: teams, isLoading, error, executeImmediate: load } = useAsyncState(() => props.api.billingTeams(), [])
 const visible = computed(() => {
   const needle = filter.value.trim().toLocaleLowerCase()
-  return needle ? teams.value.filter(team => team.name.toLocaleLowerCase().includes(needle)) : teams.value
+  return needle ? teams.value.filter(team => [team.name, team.owner.name, team.owner.email].some(value => value.toLocaleLowerCase().includes(needle))) : teams.value
 })
+const ownerAccount = (team: AdminTeamBilling) => t("billing.teamOwnerAccount", { name: team.owner.name, email: team.owner.email })
 const date = (value: string) => new Intl.DateTimeFormat(intlLocale(locale.value as AppLocale), { dateStyle: "medium" }).format(new Date(value))
 const plan = (value: string) => t(`billing.plan.${value}`)
 /** A subscription still billing or paying for coverage, which an Enterprise grant leaves running. */
@@ -66,6 +67,7 @@ async function toggle(team: AdminTeamBilling): Promise<void> {
       <li v-for="team in visible" :key="team.id" class="ui-card-row py-3" :data-enterprise-team="team.id">
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 text-sm"><span class="truncate">{{ team.name }}</span><span class="ui-badge shrink-0" :class="team.billing.enterpriseOverride && 'bg-ui-accent/12 text-ui-accent'">{{ plan(team.billing.plan) }}</span></div>
+          <div class="break-words text-[13px] text-ui-text-muted">{{ ownerAccount(team) }}</div>
           <div class="truncate text-[13px] text-ui-text-muted">{{ subscriptionSummary(team) }}</div>
         </div>
         <UiButton class="shrink-0" :variant="team.billing.enterpriseOverride ? 'danger' : 'default'" @click="changing = team">{{ t(team.billing.enterpriseOverride ? "billing.revokeEnterprise" : "billing.grantEnterprise") }}</UiButton>
@@ -75,8 +77,9 @@ async function toggle(team: AdminTeamBilling): Promise<void> {
   </section>
   <ConfirmDialog
     v-if="changing"
+    class="break-words"
     :title="t(changing.billing.enterpriseOverride ? 'billing.revokeTitle' : 'billing.grantTitle', { team: changing.name })"
-    :description="description(changing)"
+    :description="`${ownerAccount(changing)}. ${description(changing)}`"
     :confirm-label="t(changing.billing.enterpriseOverride ? 'billing.revokeEnterprise' : 'billing.grantEnterprise')"
     :tone="changing.billing.enterpriseOverride ? 'danger' : 'primary'"
     :confirm="() => toggle(changing!)"

@@ -40,12 +40,12 @@ export const storybookProviderProfiles: AgentProviderConfig[] = [
 ]
 
 export const storybookTeams: Team[] = [
-  { id: "team-1", name: "Core Engineering", role: "admin" },
+  { id: "team-1", name: "Core Engineering", role: "owner" },
   { id: "team-2", name: "Design Systems", role: "member" },
 ]
 
 export const storybookMembers: TeamMember[] = [
-  { userId: "user-1", name: "Ada Lovelace", email: "ada@deskfleet.dev", role: "admin" },
+  { userId: "user-1", name: "Ada Lovelace", email: "ada@deskfleet.dev", role: "owner" },
   { userId: "user-2", name: "Grace Hopper", email: "grace@deskfleet.dev", role: "admin" },
   { userId: "user-3", name: "Alan Turing", email: "alan@deskfleet.dev", role: "member" },
 ]
@@ -632,8 +632,8 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       return { ...site }
     },
     billingTeams: async () => [
-      { id: "team-1", name: "Core Engineering", billing: structuredClone(storybookBilling) },
-      { id: "team-2", name: "Design Systems", billing: { ...structuredClone(storybookBilling), plan: "free", enterpriseOverride: true } },
+      { id: "team-1", name: "Core Engineering", owner: { id: "user-1", name: "Ada Lovelace", email: "ada@deskfleet.dev" }, billing: structuredClone(storybookBilling) },
+      { id: "team-2", name: "Design Systems", owner: { id: "user-2", name: "Grace Hopper", email: "grace@deskfleet.dev" }, billing: { ...structuredClone(storybookBilling), plan: "free", enterpriseOverride: true } },
     ],
     setEnterprise: async () => {},
     registrationPolicy: async () => ({ registrationEnabled }),
@@ -647,7 +647,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     reauthenticate: async () => {},
     teams: async () => structuredClone(teams),
     createTeam: async (name: string) => {
-      const created: Team = { id: `team-${teams.length + 1}`, name, role: "admin" }
+      const created: Team = { id: `team-${teams.length + 1}`, name, role: "owner" }
       teams.push(created)
       return created
     },
@@ -691,6 +691,14 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       if (m) m.role = role
     },
     removeMember: async () => {},
+    transferOwnership: async (teamId: string, userId: string) => {
+      const found = teams.find(team => team.id === teamId)
+      if (found) found.role = "admin"
+      for (const member of members) {
+        if (member.role === "owner") member.role = "admin"
+        if (member.userId === userId) member.role = "owner"
+      }
+    },
     machines: async () => structuredClone(machines),
     renameMachine: async (machineId: string, name: string) => {
       const m = machines.find(item => item.id === machineId) ?? machines[0]!

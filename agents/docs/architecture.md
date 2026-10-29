@@ -143,9 +143,13 @@ Headless machines need enrollment into that Team before accepting
 resource creation; their ongoing server connection uses machine credentials,
 separate from a user's interactive login.
 
-Team members can operate all machines in their Team by default. The initial
-roles are administrator and member. Administrators manage members and roles and
-remove machines. Members can enroll their own machines, configure Providers,
+Team members can operate all machines in their Team by default. The roles are
+owner, administrator, and member. Each Team has exactly one owner, initially its
+creator. Only the owner manages billing, deletes the Team, or transfers ownership.
+Owners and administrators manage members and roles and remove machines.
+Administrators cannot remove or demote the owner; the owner must transfer
+ownership to an existing active, verified member before leaving. The former owner
+becomes an administrator. Members can enroll their own machines, configure Providers,
 create or delete Workspaces, and create, archive, or restore Sessions. The first
 release does not expose Session deletion to users. Per-Workspace sharing rules are not
 part of the initial role model. Server and daemon authorization still checks the
@@ -167,7 +171,7 @@ target resource's actual Team; `SitePolicy` receives the current site grant.
 live alongside central store operations and do not depend on HTTP, so management,
 signaling, and delegated Agent operations share the same Team rules. Existing
 transaction checks, peer expiry/revocation, and daemon delegation bounds remain
-part of authorization. Rules such as retaining a Team's final administrator are
+part of authorization. Rules such as retaining a Team's unique owner are
 transactional business invariants in addition to policy checks.
 
 PostgreSQL owns runtime site name, announcement, Team-creation policy, and optional
@@ -207,6 +211,10 @@ member/Session capacity admission. Enterprise overrides a paid subscription
 without cancelling it. Self-hosted installations use the same authentication
 system with unlimited allowances and no payment integration. The
 [plan matrix](identity-billing.md#plan-matrix) owns exact limits.
+
+Owner transfers change billing authority without changing the Team's provider
+customer, subscription, payment methods, or billing contact. Existing payment
+methods can continue to be charged until explicitly updated in billing.
 
 The daemon remains the sole owner of Session execution. It obtains central
 capacity admission before creating, forking, or restoring Sessions, including

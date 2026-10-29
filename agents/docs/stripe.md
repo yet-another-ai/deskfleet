@@ -133,9 +133,13 @@ A replacement subscription adopts its own anchor. Enterprise traffic remains
 counted and consumes a restored paid allowance after revocation. Enterprise
 assignment does not cancel Stripe billing.
 Only Site Admin can change the override, after recent authentication, with an audit
-record. Team administrators manage payments; other members can inspect usage.
+record. Only the Team owner manages payments; administrators and other members
+can inspect usage. Transferring ownership leaves the same customer, subscription,
+payment methods, and billing contact in place; it does not stop existing renewal
+charges.
 
 The Site Admin Team endpoint uses an ID cursor and a maximum page size of 100.
+Each row includes the owner's name and email to distinguish Teams with the same name.
 Profiles and usage summaries are read in batches, with one shared collector-state
 read per page. The shared client follows the cursor to preserve the existing
 administration view.

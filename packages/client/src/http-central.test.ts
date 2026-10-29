@@ -75,7 +75,8 @@ test("loads a targeted Session summary using the indexed collection filter", asy
 
 test("collects paginated billing Teams while retaining the administration array API", async () => {
   const f = setup()
-  const first = { id: "first", name: "First Team" }, second = { id: "second", name: "Second Team" }
+  const first = { id: "first", name: "Design team", owner: { id: "ada", name: "Ada", email: "ada@example.test" } }
+  const second = { id: "second", name: "Design team", owner: { id: "bob", name: "Bob", email: "bob@example.test" } }
   f.responses.push({ teams: [first], nextCursor: "team/a?b" }, { teams: [second], nextCursor: null })
   expect(await f.client.billingTeams()).toEqual([first, second])
   expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/admin/teams?limit=100", expect.anything())
@@ -88,6 +89,12 @@ test("reports API errors and falls back to HTTP status for non-JSON failures", a
   await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 503, message: "target machine is unavailable" })
   f.fetch.mockResolvedValueOnce(new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }))
   await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" })
+})
+
+test("transfers Team ownership with the encoded Team ID and selected member", async () => {
+  const f = setup()
+  await f.client.transferOwnership("team/1", "member-2")
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/teams/team%2F1/ownership", expect.objectContaining({ method: "POST", body: JSON.stringify({ userId: "member-2" }) }))
 })
 
 test("signing out notifies account-owned connections and retains the configured backend", async () => {

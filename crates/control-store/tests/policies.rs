@@ -16,18 +16,16 @@ fn team_policy_separates_member_operations_from_administration() {
         TeamAction::ReadMachines,
         TeamAction::EnrollMachine,
     ];
-    let admin_actions = [
-        TeamAction::Rename,
-        TeamAction::Delete,
-        TeamAction::ManageMembers,
-    ];
+    let admin_actions = [TeamAction::Rename, TeamAction::ManageMembers];
     let outsider = TeamPolicy::new(None);
     let member = TeamPolicy::new(Some(TeamRole::Member));
     let admin = TeamPolicy::new(Some(TeamRole::Admin));
+    let owner = TeamPolicy::new(Some(TeamRole::Owner));
 
     for action in member_actions {
         assert!(authorize(&member, action).is_ok());
         assert!(authorize(&admin, action).is_ok());
+        assert!(authorize(&owner, action).is_ok());
         assert!(matches!(
             authorize(&outsider, action),
             Err(Error::Forbidden)
@@ -35,11 +33,22 @@ fn team_policy_separates_member_operations_from_administration() {
     }
     for action in admin_actions {
         assert!(authorize(&admin, action).is_ok());
+        assert!(authorize(&owner, action).is_ok());
         assert!(matches!(authorize(&member, action), Err(Error::Forbidden)));
         assert!(matches!(
             authorize(&outsider, action),
             Err(Error::Forbidden)
         ));
+    }
+    for action in [
+        TeamAction::Delete,
+        TeamAction::ManageBilling,
+        TeamAction::TransferOwnership,
+    ] {
+        assert!(authorize(&owner, action).is_ok());
+        for policy in [&admin, &member, &outsider] {
+            assert!(matches!(authorize(policy, action), Err(Error::Forbidden)));
+        }
     }
 }
 
@@ -47,6 +56,7 @@ fn team_policy_separates_member_operations_from_administration() {
 fn machine_policy_uses_target_team_membership_and_limits_removal() {
     let member = MachinePolicy::new(Some(TeamRole::Member));
     let admin = MachinePolicy::new(Some(TeamRole::Admin));
+    let owner = MachinePolicy::new(Some(TeamRole::Owner));
     let outsider = MachinePolicy::new(None);
 
     for action in [
@@ -57,12 +67,14 @@ fn machine_policy_uses_target_team_membership_and_limits_removal() {
     ] {
         assert!(authorize(&member, action).is_ok());
         assert!(authorize(&admin, action).is_ok());
+        assert!(authorize(&owner, action).is_ok());
         assert!(matches!(
             authorize(&outsider, action),
             Err(Error::Forbidden)
         ));
     }
     assert!(authorize(&admin, MachineAction::Remove).is_ok());
+    assert!(authorize(&owner, MachineAction::Remove).is_ok());
     assert!(matches!(
         authorize(&member, MachineAction::Remove),
         Err(Error::Forbidden)

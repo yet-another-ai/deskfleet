@@ -11,7 +11,7 @@ const { t } = useI18n()
 const id = useId()
 const session = useAccountSession()
 const team = computed(() => session?.team.value)
-const admin = computed(() => team.value?.role === "admin")
+const admin = computed(() => team.value?.role === "owner" || team.value?.role === "admin")
 const name = ref(team.value?.name ?? "")
 const saving = ref(false)
 const error = ref<string>()
@@ -32,7 +32,7 @@ async function rename(): Promise<void> {
   <template v-if="session && team">
     <header class="mb-8">
       <h1 class="ui-page-title truncate">{{ team.name }}</h1>
-      <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t(admin ? "team.youAreAdmin" : "team.youAreMember") }}</p>
+      <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t(team.role === "owner" ? "team.youAreOwner" : admin ? "team.youAreAdmin" : "team.youAreMember") }}</p>
     </header>
     <section v-if="admin" :aria-labelledby="`${id}-general`" class="mb-8">
       <h2 :id="`${id}-general`" class="ui-section-title mb-2">{{ t("team.general") }}</h2>

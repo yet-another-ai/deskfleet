@@ -196,7 +196,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
           </div>
         </div>
       </div>
-      <p v-else-if="state.plan === 'free' && state.paymentsAvailable && !state.canManageBilling" class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.askAdmin") }}</p>
+      <p v-else-if="state.plan === 'free' && state.paymentsAvailable && !state.canManageBilling" class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.askOwner") }}</p>
       <div v-if="enterpriseContact" class="ui-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" data-billing-offer="enterprise">
         <div class="min-w-0">
           <p class="m-0 text-sm font-semibold">{{ t("billing.plan.enterprise") }}</p>

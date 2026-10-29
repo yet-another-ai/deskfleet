@@ -1,5 +1,5 @@
 import { vi } from "vitest"
-import type { TeamBilling } from "../../../client/src/billing.ts"
+import type { AdminTeamBilling, TeamBilling } from "../../../client/src/billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "../../../client/src/central.ts"
 
@@ -57,7 +57,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     billing: vi.fn(async (_teamId: string) => billingFixture({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
     checkout: vi.fn(async (_teamId: string, _plan: "go" | "pro", _requestId: string, _interval?: "month" | "year") => {}),
     billingPortal: vi.fn(async (_teamId: string) => {}),
-    billingTeams: vi.fn(async () => []),
+    billingTeams: vi.fn(async (): Promise<AdminTeamBilling[]> => []),
     setEnterprise: vi.fn(async (_teamId: string, _enabled: boolean) => {}),
     registrationPolicy: vi.fn(async () => ({ registrationEnabled: true })),
     updateRegistration: vi.fn(async (_enabled: boolean) => {}),
@@ -66,7 +66,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     reauthenticate: vi.fn(async (_password?: string) => {}),
     teams: vi.fn(async () => state.teams.map(team => ({ ...team }))),
     createTeam: vi.fn(async (name: string) => {
-      const team = { id: `team-${state.teams.length + 1}`, name, role: "admin" as const }
+      const team = { id: `team-${state.teams.length + 1}`, name, role: "owner" as const }
       state.teams.push(team)
       return { ...team }
     }),
@@ -84,13 +84,20 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     teamUsage: vi.fn(async (_teamId: string) => ({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
     aiUsage: vi.fn(async (_teamId: string, query: AiUsageQuery) => aiUsageFixture(query)),
     aiUsageSessions: vi.fn(async (_teamId: string, query: { date: string; timeZone: string }): Promise<TeamAiUsageSessions> => ({ ...query, sessions: [], truncated: false })),
-    setMemberRole: vi.fn(async (_teamId: string, userId: string, role: TeamMember["role"]) => {
+    setMemberRole: vi.fn(async (_teamId: string, userId: string, role: "admin" | "member") => {
       state.members.find(member => member.userId === userId)!.role = role
     }),
     removeMember: vi.fn(async (_teamId: string, userId: string) => {
       state.members = state.members.filter(member => member.userId !== userId)
     }),
-    invite: vi.fn(async (_teamId: string, _email: string, _role: TeamMember["role"]) => ({ token: "invitation-token", expiresAt: "2026-11-20T12:00:00Z" })),
+    transferOwnership: vi.fn(async (teamId: string, userId: string) => {
+      state.teams.find(team => team.id === teamId)!.role = "admin"
+      for (const member of state.members) {
+        if (member.role === "owner") member.role = "admin"
+        if (member.userId === userId) member.role = "owner"
+      }
+    }),
+    invite: vi.fn(async (_teamId: string, _email: string, _role: "admin" | "member") => ({ token: "invitation-token", expiresAt: "2026-11-20T12:00:00Z" })),
     machines: vi.fn(async (teamId: string) => state.machines.filter(machine => machine.teamId === teamId).map(machine => ({ ...machine }))),
     renameMachine: vi.fn(async (machineId: string, name: string) => {
       const machine = state.machines.find(value => value.id === machineId)!

@@ -3,12 +3,15 @@ use super::{
     gateway::{hosted_url, stripe_id},
 };
 use crate::error::{ApiError, Result};
-use deskfleet_control_store::ControlStore;
+use deskfleet_control_store::{ControlStore, policies::TeamAction};
 use reqwest::Method;
 use serde_json::Value;
 
 impl BillingService {
     pub async fn portal(&self, store: &ControlStore, team: &str, actor: &str) -> Result<String> {
+        store
+            .authorize_team(actor, team, TeamAction::ManageBilling)
+            .await?;
         self.require_enabled()?;
         let profile = store.billing_profile(team).await?;
         let customer = profile

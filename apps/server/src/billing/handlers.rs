@@ -45,7 +45,7 @@ async fn summary(
     let role = s.store.team_role(&user.user.id, &team).await?;
     let mut summary = s.store.billing_summary(&team).await?;
     summary["paymentsAvailable"] = json!(s.billing.enabled());
-    summary["canManageBilling"] = json!(role == "admin");
+    summary["canManageBilling"] = json!(role == "owner");
     summary["enterpriseContactEmail"] = json!(s.billing.enterprise_contact_email());
     Ok(web::Json(summary))
 }
@@ -67,7 +67,6 @@ async fn checkout(
     body: web::Json<Checkout>,
 ) -> Result<web::Json<Value>> {
     let user = auth::user(&req, &s).await?;
-    s.store.require_admin(&user.user.id, &team).await?;
     Ok(web::Json(
         json!({"url":s.billing.checkout(&s.store,&team,&user.user.id,&body.plan,&body.interval,&body.request_id).await?}),
     ))
@@ -78,7 +77,6 @@ async fn portal(
     team: web::Path<String>,
 ) -> Result<web::Json<Value>> {
     let user = auth::user(&req, &s).await?;
-    s.store.require_admin(&user.user.id, &team).await?;
     Ok(web::Json(
         json!({"url":s.billing.portal(&s.store,&team,&user.user.id).await?}),
     ))
