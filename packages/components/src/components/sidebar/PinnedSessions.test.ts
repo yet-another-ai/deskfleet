@@ -34,12 +34,12 @@ afterEach(async () => {
 })
 
 async function render(withAccount = false) {
+  const remoteSnapshot = agentSnapshot()
+  remoteSnapshot.session = { ...remoteSnapshot.session, title: "Remote investigation", archiveState: "active" }
   if (withAccount) {
     const fake = fakeCentral({ machines: [machineFixture("first", "team-1", "Laptop"), machineFixture("second", "team-1", "Build server", false)] })
     fake.central.session = vi.fn(async () => {
-      const snapshot = agentSnapshot()
-      snapshot.session = { ...snapshot.session, title: "Archived remote investigation", archiveState: "archived" }
-      return { snapshot, lastEventSeq: "0", lastObservedAt: "2026-10-28T00:00:00Z" }
+      return { snapshot: structuredClone(remoteSnapshot), lastEventSeq: "0", lastObservedAt: "2026-10-28T00:00:00Z" }
     })
     account = createAccountSession(fake.central)
     await flushPromises()
@@ -59,11 +59,11 @@ async function render(withAccount = false) {
   fleet.localDesktopTarget.online = true
   fleet.localDesktopTarget.name = "Laptop"
   const agents = useAgentSessionsStore()
-  agents.sessions["30"] = { ...agentSnapshot().session, title: "Current investigation", archiveState: "archived" }
-  return { pins, agents, router, machineId: fleet.targetId }
+  agents.sessions["30"] = { ...agentSnapshot().session, title: "Current investigation", archiveState: "active" }
+  return { pins, agents, router, machineId: fleet.targetId, remoteSnapshot }
 }
 
-test("Pinned appears in pin order with current titles and archived sessions from every Team machine", async () => {
+test("Pinned appears in pin order with current titles from every Team machine", async () => {
   const { pins, agents } = await render(true)
   expect(wrapper!.find("[data-pinned-sessions]").exists()).toBe(false)
   pins.pin("second", "30", "Cached remote title")
@@ -71,7 +71,7 @@ test("Pinned appears in pin order with current titles and archived sessions from
   await flushPromises()
   expect(wrapper!.get("h2").text()).toBe("Pinned")
   expect(wrapper!.findAll("[data-pinned-machine]").map(item => item.attributes("data-pinned-machine"))).toEqual(["second", "first"])
-  expect(row("second").text()).toContain("Archived remote investigation")
+  expect(row("second").text()).toContain("Remote investigation")
   expect(row("second").text()).toContain("Offline")
   expect(row("first").text()).toContain("Current investigation")
   expect(row("first").text()).not.toContain("Offline")
@@ -79,6 +79,42 @@ test("Pinned appears in pin order with current titles and archived sessions from
   agents.sessions["30"] = { ...agents.sessions["30"]!, title: "Renamed investigation" }
   await flushPromises()
   expect(row("first").text()).toContain("Renamed investigation")
+})
+
+test("archived local sessions are unpinned and restoring does not pin them again", async () => {
+  const { pins, agents, machineId } = await render()
+  pins.pin(machineId, "30", "Cached title"); await flushPromises()
+  expect(row(machineId).text()).toContain("Current investigation")
+
+  agents.sessions["30"]!.archiveState = "archiving"
+  await flushPromises()
+  expect(row(machineId).text()).toContain("Current investigation")
+
+  agents.sessions["30"]!.archiveState = "archived"
+  await flushPromises()
+  expect(wrapper!.find("[data-pinned-sessions]").exists()).toBe(false)
+  expect(pins.isPinned(machineId, "30")).toBe(false)
+
+  agents.sessions["30"]!.archiveState = "active"
+  await flushPromises()
+  expect(wrapper!.find("[data-pinned-sessions]").exists()).toBe(false)
+  expect(pins.isPinned(machineId, "30")).toBe(false)
+})
+
+test("archived remote sessions are unpinned without removing another machine's matching pin", async () => {
+  const { pins, remoteSnapshot } = await render(true)
+  remoteSnapshot.session.archiveState = "archived"
+  pins.pin("second", "30", "Cached remote title")
+  pins.pin("first", "30", "Cached local title")
+  await flushPromises()
+  expect(wrapper!.find('[data-pinned-machine="second"]').exists()).toBe(false)
+  expect(row("first").text()).toContain("Current investigation")
+  expect(pins.isPinned("second", "30")).toBe(false)
+
+  remoteSnapshot.session.archiveState = "active"
+  await pins.refresh(); await flushPromises()
+  expect(wrapper!.findAll("[data-pinned-machine]").map(item => item.attributes("data-pinned-machine"))).toEqual(["first"])
+  expect(pins.isPinned("second", "30")).toBe(false)
 })
 
 test("account pins use their owning machine for navigation and active state when local IDs match", async () => {
@@ -113,7 +149,7 @@ test("unpinning a remote row keeps the matching local ID pinned and permits offl
   const items = page().findAll('[role="menuitem"]')
   const remove = items.find(item => item.text() === "Unpin session")!
   expect(remove.attributes("data-disabled")).toBeUndefined()
-  expect(items.find(item => item.text() === "Restore session")!.attributes("data-disabled")).toBeDefined()
+  expect(items.find(item => item.text() === "Archive session")!.attributes("data-disabled")).toBeDefined()
   await remove.trigger("click"); await flushPromises()
   expect(unpin).toHaveBeenCalledExactlyOnceWith("second", "30")
   expect(wrapper!.find('[data-pinned-machine="second"]').exists()).toBe(false)

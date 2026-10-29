@@ -59,11 +59,14 @@ ACP `session_info_update` titles, including after daemon restart or restore.
 
 ### Pinned Sessions
 
-The Session context menu offers Pin and Unpin, including for archived Sessions and
+The Session context menu offers Pin and Unpin for unarchived Sessions, including on
 offline machines. Pinned Sessions appear together above Workspaces in the sidebar;
-their original Workspace or machine association is unchanged. The section is hidden
-when there are no visible pins. Opening a pin switches to its owning machine when
-needed, then opens that Session in the machine's isolated application scope.
+their original Workspace or machine association is unchanged. Completed archives
+automatically remove the saved pin once local or retained remote metadata confirms
+the archive. Archived Sessions cannot be pinned, and restoring does not re-pin them.
+The section is hidden when there are no visible pins. Opening a pin switches to its
+owning machine when needed, then opens that Session in the machine's isolated
+application scope.
 
 Pins are personal preferences stored on the current device, scoped by server,
 account, and Team. Each entry uses the central machine ID together with the local
@@ -111,14 +114,19 @@ error on retry. The UI refreshes the catalog and opens the resulting Session.
 ## Archive and restore in the backend release
 
 The sidebar footer links to `/sessions/archived`, a dedicated page for the selected
-machine's archived Sessions. The page supports direct navigation and browser history;
-changing machines keeps the archive route and loads the new machine's list. It hides
+machine's archived Sessions. Completed archives are hidden from the machine,
+Workspace, and Pinned sidebar lists and the Workspace page's Session list; they
+remain available through this archive page. Sessions still archiving remain in
+their ordinary lists so failed archive cleanup can be retried. Restoring a Session
+returns it to the ordinary machine and Workspace lists. The page supports direct
+navigation and browser history; changing machines keeps the archive route and loads
+the new machine's list. It hides
 the resource details panel and retains the last Conversations destination within the
 mounted machine scope. A fresh machine scope resets that destination to New session.
 Reading a Session opens its history without restoring it. The restore action confirms
 before restoring and opening the Session; failures retain the confirmation for retry.
-Rows keep the Session context menu, including Pin/Unpin and Rename. Offline history
-remains readable, while restoration and other daemon mutations require the machine
+Rows keep Rename and Restore in the Session context menu, without Pin/Unpin. Offline
+history remains readable, while restoration and other daemon mutations require the machine
 online. The page shows loading, empty, and retry states for list reads.
 
 Archive is the normal user action for ending active use of a Session. It is

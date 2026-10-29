@@ -7,7 +7,6 @@ import { accountSessionKey, createAccountSession, type AccountSession } from "..
 import { i18n } from "../i18n/index.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useFleetStore } from "../stores/fleet.ts"
-import { usePinnedSessionsStore } from "../stores/pinned-sessions.ts"
 import { agentSnapshot } from "../test/agent.ts"
 import { catalogFixture, sessionId, workspaceId } from "../test/catalog.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
@@ -138,7 +137,7 @@ test("restore failure remains in the confirmation for retry and cancellation lea
   expect(router.currentRoute.value.params.sessionId).toBe(sessionId)
 })
 
-test("offline history can still be opened and pinned while restore and rename remain disabled", async () => {
+test("offline archived history can be opened without pin actions while restore and rename remain disabled", async () => {
   const { router, restore } = await render({ online: false })
   expect(wrapper!.get(`[data-restore-session="${sessionId}"]`).attributes("aria-disabled")).toBe("true")
   await wrapper!.get(`[data-restore-session="${sessionId}"]`).trigger("click"); await flushPromises()
@@ -147,11 +146,10 @@ test("offline history can still be opened and pinned while restore and rename re
   const link = wrapper!.get('a[aria-label="Open Ship archive UI"]')
   await link.trigger("contextmenu", { button: 2 }); await flushPromises()
   const items = page().findAll('[role="menuitem"]')
-  expect(items.map(item => item.text())).toEqual(["Pin session", "Rename session", "Restore session"])
+  expect(items.map(item => item.text())).toEqual(["Rename session", "Restore session"])
   expect(items.find(item => item.text() === "Rename session")!.attributes("data-disabled")).toBeDefined()
   expect(items.find(item => item.text() === "Restore session")!.attributes("data-disabled")).toBeDefined()
-  await items.find(item => item.text() === "Pin session")!.trigger("click"); await flushPromises()
-  expect(usePinnedSessionsStore().isPinned("local-daemon", sessionId)).toBe(true)
+  await page().get('[role="menu"]').trigger("keydown", { key: "Escape" }); await flushPromises()
   await link.trigger("click"); await flushPromises()
   expect(router.currentRoute.value.params.sessionId).toBe(sessionId)
   expect(restore).not.toHaveBeenCalled()

@@ -3,6 +3,7 @@ import UiButton from "../components/common/UiButton.vue"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 
 import { SquarePen } from "@lucide/vue"
+import { useArrayFilter } from "@vueuse/core"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
@@ -24,6 +25,7 @@ const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const router = useRouter()
 const location = computed(() => fleet.findWorkspace(props.workspaceId))
+const visibleSessions = useArrayFilter(() => location.value?.workspace.sessions ?? [], session => session.archiveState !== "archived")
 const editable = computed(() => fleet.canManageCatalog && location.value?.machine.online)
 const directories = computed(() => location.value?.workspace.directories ?? [])
 const applicationTarget = computed(() => platformClient.platform !== "web" && location.value?.machine.local && platformClient.applications
@@ -76,8 +78,8 @@ async function remove(): Promise<void> {
             <SquarePen :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("workspace.newSession") }}
           </UiButton>
         </div>
-        <ul v-if="location.workspace.sessions.length" class="ui-card">
-          <li v-for="session in location.workspace.sessions" :key="session.id">
+        <ul v-if="visibleSessions.length" class="ui-card">
+          <li v-for="session in visibleSessions" :key="session.id">
             <RouterLink :to="{ name: 'session', params: { sessionId: session.id } }" class="ui-card-row hover:bg-ui-hover">
               <span class="min-w-0 flex-1 truncate">{{ sessionLabel(session) }}</span>
               <span v-if="session.provider" class="ui-badge shrink-0">{{ session.provider }}</span>

@@ -5,8 +5,10 @@ import { afterEach, expect, test, vi } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import type { LocalApplication } from "../../../client/src/applications.ts"
 import { i18n } from "../i18n/index.ts"
+import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useFleetStore } from "../stores/fleet.ts"
-import { catalogFixture, workspaceId } from "../test/catalog.ts"
+import { agentSnapshot } from "../test/agent.ts"
+import { catalogFixture, sessionId, workspaceId } from "../test/catalog.ts"
 import WorkspaceView from "./WorkspaceView.vue"
 
 const originalClient = getClient()
@@ -25,7 +27,7 @@ const installed: LocalApplication[] = [
   { id: "file-manager", name: "Host file manager", kind: "fileManager" },
 ]
 
-async function setup(options: { local?: boolean; platform?: "linux" | "web"; applications?: boolean; online?: boolean } = {}) {
+async function setup(options: { local?: boolean; platform?: "linux" | "web"; applications?: boolean; online?: boolean; sessions?: ReturnType<typeof agentSnapshot>["session"][] } = {}) {
   const applications = {
     scan: vi.fn(async (): Promise<LocalApplication[]> => installed),
     openWorkspace: vi.fn(async () => {}),
@@ -41,6 +43,8 @@ async function setup(options: { local?: boolean; platform?: "linux" | "web"; app
   const pinia = createPinia()
   setActivePinia(pinia)
   const fleet = useFleetStore()
+  const agents = useAgentSessionsStore()
+  for (const session of options.sessions ?? []) agents.sessions[session.id] = session
   await fleet.refreshLocal()
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/workspaces/:workspaceId", name: "workspace", component: WorkspaceView },
@@ -53,7 +57,7 @@ async function setup(options: { local?: boolean; platform?: "linux" | "web"; app
     global: { plugins: [pinia, router, i18n] },
   })
   cleanup.push(() => { wrapper.unmount(); disposePinia(pinia) })
-  return { wrapper, applications }
+  return { wrapper, applications, agents, fleet }
 }
 
 const page = () => new DOMWrapper(document.body)
@@ -70,6 +74,39 @@ async function choose(name: string): Promise<void> {
   await item.trigger("keydown", { key: "Enter" })
   await flushPromises()
 }
+
+test("the workspace lists active and archiving sessions while retaining archived sessions in the fleet", async () => {
+  const session = { ...agentSnapshot().session, workspaceId }
+  const { wrapper, fleet } = await setup({ sessions: [
+    { ...session, id: "30", title: "Active chat", archiveState: "active" },
+    { ...session, id: "31", title: "Archiving chat", archiveState: "archiving" },
+    { ...session, id: "32", title: "Archived chat", archiveState: "archived" },
+  ] })
+  expect(wrapper.findAll('a[href^="/sessions/"]').map(link => link.attributes("href"))).toEqual([
+    `/sessions/${sessionId}`, "/sessions/30", "/sessions/31",
+  ])
+  expect(wrapper.text()).not.toContain("Archived chat")
+  expect(fleet.findSession("32")?.session.archiveState).toBe("archived")
+})
+
+test("archiving the last workspace session shows the empty state and restoring brings it back", async () => {
+  const { wrapper, agents } = await setup({ sessions: [
+    { ...agentSnapshot().session, id: sessionId, workspaceId, title: "Workspace chat" },
+  ] })
+  const sessionLink = () => wrapper.find(`a[href="/sessions/${sessionId}"]`)
+  expect(sessionLink().text()).toBe("Workspace chat")
+  agents.sessions[sessionId]!.archiveState = "archiving"
+  await flushPromises()
+  expect(sessionLink().exists()).toBe(true)
+  agents.sessions[sessionId]!.archiveState = "archived"
+  await flushPromises()
+  expect(sessionLink().exists()).toBe(false)
+  expect(wrapper.text()).toContain("No sessions yet.")
+  agents.sessions[sessionId]!.archiveState = "active"
+  await flushPromises()
+  expect(sessionLink().text()).toBe("Workspace chat")
+  expect(wrapper.text()).not.toContain("No sessions yet.")
+})
 
 test.each([
   { name: "remote machine with a host API", local: false },

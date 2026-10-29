@@ -10,6 +10,7 @@ import {
   SquarePen,
   SquareTerminal,
 } from "@lucide/vue"
+import { useArrayFilter } from "@vueuse/core"
 import { computed, ref } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
@@ -39,6 +40,11 @@ const selected = computed(() => !account || account.machineId.value === props.ma
 const addingWorkspace = ref(false)
 const archiving = ref(new Set<string>())
 const archiveErrors = ref<Record<string, string>>({})
+const sessions = useArrayFilter(() => props.machine.sessions, session => session.archiveState !== "archived")
+const workspaces = computed(() => props.machine.workspaces.map(workspace => ({
+  ...workspace,
+  sessions: workspace.sessions.filter(session => session.archiveState !== "archived"),
+})))
 
 async function archiveSession(sessionId: string): Promise<void> {
   if (archiving.value.has(sessionId)) return
@@ -123,7 +129,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
           :depth="0"
         />
       </li>
-      <li v-for="session in machine.sessions" :key="session.id">
+      <li v-for="session in sessions" :key="session.id">
         <SessionContextMenu :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
           <TreeLink
             :machine-id="machine.id"
@@ -151,10 +157,10 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
         </SessionContextMenu>
         <p v-if="archiveErrors[session.id]" role="alert" class="m-0 px-2.5 pb-1 pl-6 text-xs text-ui-danger break-words">{{ archiveErrors[session.id] }}</p>
       </li>
-      <li v-if="machine.workspaces.length === 0 && machine.sessions.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
+      <li v-if="workspaces.length === 0 && sessions.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
         {{ t("machine.noWorkspaces") }}
       </li>
-      <CollapsibleRoot v-for="workspace in machine.workspaces" :key="workspace.id" v-slot="{ open }" as="li" default-open class="flex flex-col gap-1">
+      <CollapsibleRoot v-for="workspace in workspaces" :key="workspace.id" v-slot="{ open }" as="li" default-open class="flex flex-col gap-1">
         <RouterLink v-slot="{ href, navigate, isActive, isExactActive }" :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" custom>
           <div class="workspace-row ui-nav-item relative" :class="selected && isActive && 'ui-nav-active'">
             <a :href="href" :aria-current="selected && isExactActive ? 'page' : undefined" class="flex h-full min-w-0 flex-1 items-center gap-2.5 pl-2.5 pr-9" @click="openWorkspace(workspace.id, $event, navigate)">

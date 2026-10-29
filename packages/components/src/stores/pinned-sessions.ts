@@ -41,17 +41,22 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
   let disposed = false
   const machines = computed(() => account ? account.machines.value : fleet.machines)
 
+  function sessionMetadata(machineId: string, sessionId: string): Partial<Metadata> {
+    const loaded = fleet.machines.find(machine => machine.id === machineId)
+    const local = machineId === fleet.targetId ? agents.sessions[sessionId] : undefined
+    const summary = loaded?.sessions.find(session => session.id === sessionId)
+      ?? loaded?.workspaces.flatMap(workspace => workspace.sessions).find(session => session.id === sessionId)
+    const remote = metadata.value[key(machineId, sessionId)]
+    return { title: local?.title ?? summary?.title ?? remote?.title,
+      archiveState: local?.archiveState ?? summary?.archiveState ?? remote?.archiveState,
+    }
+  }
   const items = computed<PinnedSessionItem[]>(() => pins.value.flatMap(pin => {
     const machine = machines.value.find(machine => machine.id === pin.machineId)
     if (!machine) return []
-    const loaded = fleet.machines.find(machine => machine.id === pin.machineId)
-    const local = pin.machineId === fleet.targetId ? agents.sessions[pin.sessionId] : undefined
-    const summary = loaded?.sessions.find(session => session.id === pin.sessionId)
-      ?? loaded?.workspaces.flatMap(workspace => workspace.sessions).find(session => session.id === pin.sessionId)
-    const remote = metadata.value[key(pin.machineId, pin.sessionId)]
-    return [{ ...pin, title: local?.title ?? summary?.title ?? remote?.title ?? pin.title,
-      archiveState: local?.archiveState ?? summary?.archiveState ?? remote?.archiveState,
-      machineName: machine.name, online: machine.online, loaded: !!loaded }]
+    const current = sessionMetadata(pin.machineId, pin.sessionId)
+    return [{ ...pin, title: current.title ?? pin.title, archiveState: current.archiveState,
+      machineName: machine.name, online: machine.online, loaded: fleet.machines.some(machine => machine.id === pin.machineId) }]
   }))
 
   function isPinned(machineId: string, sessionId: string): boolean {
@@ -63,6 +68,7 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
   }
   function pin(machineId: string, sessionId: string, title: string): void {
     if (account && !scope.value || !machines.value.some(machine => machine.id === machineId) || isPinned(machineId, sessionId)) return
+    if (sessionMetadata(machineId, sessionId).archiveState === "archived") return
     save([...pins.value, { machineId, sessionId, title }])
   }
   function unpin(machineId: string, sessionId: string): void {
@@ -78,6 +84,9 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
         const { snapshot } = await account.central.session(item.machineId, item.sessionId)
         if (disposed || selected !== scope.value || current !== revision || !isPinned(item.machineId, item.sessionId)) return
         metadata.value[key(item.machineId, item.sessionId)] = { title: snapshot.session.title, archiveState: snapshot.session.archiveState }
+        if (snapshot.session.archiveState === "archived") {
+          save(pins.value.filter(pin => pin.machineId !== item.machineId || pin.sessionId !== item.sessionId))
+        }
       } catch { /* Keep the cached title when this machine's retained history is unavailable. */ }
     }))
   }
@@ -86,11 +95,18 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
   watch(() => JSON.stringify([scope.value, pins.value.map(pin => key(pin.machineId, pin.sessionId)),
     machines.value.map(machine => machine.id), fleet.machines.map(machine => machine.id)]), () => { void refresh() }, { immediate: true })
   watch(items, values => {
-    const titles = new Map(values.map(item => [key(item.machineId, item.sessionId), item.title]))
-    if (pins.value.some(pin => titles.has(key(pin.machineId, pin.sessionId)) && titles.get(key(pin.machineId, pin.sessionId)) !== pin.title)) {
-      save(pins.value.map(pin => ({ ...pin, title: titles.get(key(pin.machineId, pin.sessionId)) ?? pin.title })))
+    const current = new Map(values.map(item => [key(item.machineId, item.sessionId), item]))
+    const remaining = pins.value
+      .filter(pin => {
+        const item = current.get(key(pin.machineId, pin.sessionId))
+        // Remote pins are removed only by a fresh read; another scope may have restored and re-pinned them.
+        return !item?.loaded || item.archiveState !== "archived"
+      })
+      .map(pin => ({ ...pin, title: current.get(key(pin.machineId, pin.sessionId))?.title ?? pin.title }))
+    if (remaining.length !== pins.value.length || remaining.some((pin, index) => pin.title !== pins.value[index]!.title)) {
+      save(remaining)
     }
-  })
+  }, { immediate: true })
   const unsubscribe = account?.central.onEvent(event => {
     if (event.type === "connection" && event.connected
       || event.type === "catalogChanged" && pins.value.some(pin => pin.machineId === event.machineId && (!event.sessionId || pin.sessionId === event.sessionId))) {

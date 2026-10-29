@@ -66,7 +66,7 @@ async function confirm(): Promise<void> {
     <ContextMenuTrigger ref="trigger" as="div" @keydown="keyboardOpen"><slot /></ContextMenuTrigger>
     <ContextMenuPortal>
       <ContextMenuContent :aria-label="t('agent.sessionActions')" :collision-padding="8" class="ui-menu z-50 flex w-44 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
-        <ContextMenuItem as="button" type="button" class="ui-menu-item" @select="togglePin"><component :is="pinned ? PinOff : Pin" :size="14" aria-hidden="true" />{{ t(pinned ? 'agent.unpin' : 'agent.pin') }}</ContextMenuItem>
+        <ContextMenuItem v-if="archiveState !== 'archived'" as="button" type="button" class="ui-menu-item" @select="togglePin"><component :is="pinned ? PinOff : Pin" :size="14" aria-hidden="true" />{{ t(pinned ? 'agent.unpin' : 'agent.pin') }}</ContextMenuItem>
         <ContextMenuItem as="button" type="button" class="ui-menu-item" :disabled="disabled || !archiveState" @select="choose('rename')"><Pencil :size="14" aria-hidden="true" />{{ t('agent.rename') }}</ContextMenuItem>
         <ContextMenuItem v-if="archiveState === 'archived'" as="button" type="button" class="ui-menu-item" :disabled="disabled" @select="choose('restore')"><ArchiveRestore :size="14" aria-hidden="true" />{{ t('agent.restore') }}</ContextMenuItem>
         <ContextMenuItem v-else as="button" type="button" class="ui-menu-item" :disabled="disabled || !archiveState" @select="choose('archive')"><Archive :size="14" aria-hidden="true" />{{ t(archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive') }}</ContextMenuItem>

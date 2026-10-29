@@ -85,6 +85,16 @@ test("pinning and unpinning target the clicked session without navigation or con
   expect(router.currentRoute.value.params.sessionId).toBe("31")
 })
 
+test.each([false, true])("archiving removes the pin action from an open menu (pinned: %s)", async pinned => {
+  const { row } = await render()
+  if (pinned) usePinnedSessionsStore().pin("local-daemon", "30", "Investigate failing checks")
+  await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toContain(pinned ? "Unpin session" : "Pin session")
+
+  await wrapper!.setProps({ archiveState: "archived" }); await flushPromises()
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Rename session", "Restore session"])
+})
+
 test.each([{ key: "F10", shiftKey: true }, { key: "ContextMenu" }])("keyboard context menu supports $key and Escape returns focus", async keys => {
   const { row } = await render()
   row.element.focus()
@@ -120,6 +130,7 @@ test.each(["active", "archived"] as const)("%s session confirms its archive acti
   const { router, row, archive, restore } = await render(false, false, archiveState)
   const action = archiveState === "archived" ? "Restore session" : "Archive session"
   await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  if (archiveState === "archived") expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Rename session", "Restore session"])
   await item(action).trigger("click"); await flushPromises()
   expect(archive).not.toHaveBeenCalled()
   expect(restore).not.toHaveBeenCalled()

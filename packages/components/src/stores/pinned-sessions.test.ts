@@ -29,7 +29,7 @@ async function accountFixture() {
     machines: [machineFixture("m1", "team-1", "Laptop"), machineFixture("m2", "team-1", "Server", false), machineFixture("m3", "team-2", "Second Team")],
   })
   const snapshot = agentSnapshot()
-  snapshot.session = { ...snapshot.session, title: "Remote investigation", archiveState: "archived" }
+  snapshot.session = { ...snapshot.session, title: "Remote investigation", archiveState: "active" }
   const session = vi.fn(async () => ({ snapshot: structuredClone(snapshot), lastEventSeq: "0", lastObservedAt: "now" }))
   fake.central.session = session
   const account = createAccountSession(fake.central)
@@ -59,7 +59,7 @@ test("pins distinguish equal Session IDs on different machines, persist across m
   expect(first.store.pins).toHaveLength(2)
   expect(first.store.items.map(item => [item.machineId, item.title, item.loaded, item.online, item.archiveState])).toEqual([
     ["m1", "Laptop investigation", true, true, "active"],
-    ["m2", "Remote investigation", false, false, "archived"],
+    ["m2", "Remote investigation", false, false, "active"],
   ])
   expect(session).toHaveBeenCalledExactlyOnceWith("m2", "30")
   disposePinia(first.pinia)
@@ -115,6 +115,101 @@ test("live local titles update pins immediately and their cached titles survive 
   await flushPromises()
   expect(second.store.items[0]?.title).toBe("Renamed locally")
   expect(second.store.items[0]?.loaded).toBe(false)
+})
+
+test("completed local archives persistently unpin, cannot be pinned, and do not re-pin on restore", async () => {
+  const { account } = await accountFixture()
+  const first = fixture(account)
+  first.agents.sessions["30"] = { ...agentSnapshot().session, workspaceId: undefined }
+  first.store.pin("m1", "30", "Local investigation")
+  first.agents.sessions["30"]!.archiveState = "archiving"
+  await flushPromises()
+  expect(first.store.isPinned("m1", "30")).toBe(true)
+  first.agents.sessions["30"]!.archiveState = "archived"
+  await flushPromises()
+  expect(first.store.pins).toEqual([])
+  expect(first.store.items).toEqual([])
+  first.store.pin("m1", "30", "Cannot pin archived")
+  expect(first.store.isPinned("m1", "30")).toBe(false)
+  first.agents.sessions["30"]!.archiveState = "active"
+  await flushPromises()
+  expect(first.store.isPinned("m1", "30")).toBe(false)
+  disposePinia(first.pinia)
+  const second = fixture(account, "m2")
+  expect(second.store.pins).toEqual([])
+})
+
+test("remote archive notifications unpin only that machine's Session and prevent pinning it again", async () => {
+  const { account, fake, snapshot } = await accountFixture()
+  const { store, agents } = fixture(account)
+  agents.sessions["30"] = { ...agentSnapshot().session, workspaceId: undefined, title: "Local investigation" }
+  store.pin("m1", "30", "Local investigation")
+  store.pin("m2", "30", "Remote investigation")
+  await flushPromises()
+  expect(store.pins).toHaveLength(2)
+  snapshot.session.archiveState = "archived"
+  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  await flushPromises()
+  expect(store.pins.map(pin => [pin.machineId, pin.sessionId])).toEqual([["m1", "30"]])
+  store.pin("m2", "30", "Cannot pin archived")
+  expect(store.isPinned("m2", "30")).toBe(false)
+  snapshot.session.archiveState = "active"
+  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  await flushPromises()
+  expect(store.isPinned("m1", "30")).toBe(true)
+  expect(store.isPinned("m2", "30")).toBe(false)
+})
+
+test("retained machine scopes preserve an explicit pin after the Session is restored", async () => {
+  const { account, fake, snapshot } = await accountFixture()
+  const first = fixture(account, "m1")
+  first.store.pin("m2", "30", "Remote investigation")
+  await flushPromises()
+  snapshot.session.archiveState = "archived"
+  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  await flushPromises()
+  expect(first.store.isPinned("m2", "30")).toBe(false)
+
+  // Switching machines keeps the first scope and its retained remote metadata alive.
+  const second = fixture(account, "m2")
+  second.agents.sessions["30"] = { ...snapshot.session, workspaceId: undefined }
+  snapshot.session.archiveState = "active"
+  second.agents.sessions["30"]!.archiveState = "active"
+  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  await flushPromises()
+  expect(first.store.isPinned("m2", "30")).toBe(false)
+  expect(second.store.isPinned("m2", "30")).toBe(false)
+
+  second.store.pin("m2", "30", "Remote investigation")
+  await flushPromises()
+  expect(first.store.isPinned("m2", "30")).toBe(true)
+  expect(second.store.isPinned("m2", "30")).toBe(true)
+  expect(first.store.items[0]?.archiveState).toBe("active")
+  expect(second.store.items[0]?.archiveState).toBe("active")
+  const scope = JSON.stringify(["https://fleet.example", "user-1", "team-1"])
+  expect(JSON.parse(localStorage.getItem("deskfleet.pinned-sessions")!)[scope]).toEqual([
+    { machineId: "m2", sessionId: "30", title: "Remote investigation" },
+  ])
+})
+
+test("previously saved pins are pruned when retained remote history reveals an archived Session", async () => {
+  const { account, session, snapshot } = await accountFixture()
+  const scope = JSON.stringify(["https://fleet.example", "user-1", "team-1"])
+  localStorage.setItem("deskfleet.pinned-sessions", JSON.stringify({
+    [scope]: [{ machineId: "m2", sessionId: "30", title: "Saved investigation" }],
+  }))
+  snapshot.session.archiveState = "archived"
+  const response = deferred<Awaited<ReturnType<typeof session>>>()
+  session.mockReturnValueOnce(response.promise)
+  const first = fixture(account)
+  expect(first.store.isPinned("m2", "30")).toBe(true)
+  expect(first.store.items[0]?.archiveState).toBeUndefined()
+  response.resolve({ snapshot, lastEventSeq: "0", lastObservedAt: "now" })
+  await flushPromises()
+  expect(first.store.pins).toEqual([])
+  disposePinia(first.pinia)
+  const second = fixture(account, "m2")
+  expect(second.store.pins).toEqual([])
 })
 
 test("catalog notifications refresh pinned remote history and removed machines leave the visible section", async () => {

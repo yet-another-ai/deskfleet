@@ -1,10 +1,11 @@
 import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
 import { expect, test } from "vitest"
+import { reactive } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
 import { agentSnapshot } from "../../test/agent.ts"
-import type { MachineSummary } from "../../stores/fleet-types.ts"
+import type { AgentSessionSummary, MachineSummary } from "../../stores/fleet-types.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import MachineSection from "./MachineSection.vue"
@@ -133,5 +134,37 @@ test("session rows show a working indicator while a live turn is projected", asy
   }
   await flushPromises()
   expect(wrapper.findAll("[data-session-working]")).toHaveLength(0)
+  wrapper.unmount()
+})
+
+test.each(["machine", "workspace"])("%s session rows hide completed archives and reappear after restore", async scope => {
+  const sessions = reactive<AgentSessionSummary[]>([
+    { id: "active", title: "Active chat", archiveState: "active" },
+    { id: "archiving", title: "Closing chat", archiveState: "archiving" },
+    { id: "archived", title: "Archived chat", archiveState: "archived" },
+    { id: "pending" },
+  ])
+  const { wrapper, router } = await setup(scope === "machine" ? { sessions } : {
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions }],
+  })
+  const visibleIds = () => wrapper.findAll('a[href^="/sessions/"]').map(link => link.attributes("href"))
+  expect(visibleIds()).toEqual(["/sessions/active", "/sessions/archiving", "/sessions/pending"])
+  expect(wrapper.find('button[aria-label="Retry archive"]').exists()).toBe(true)
+
+  await router.push("/sessions/archived"); await flushPromises()
+  expect(wrapper.find('a[href="/sessions/archived"]').exists()).toBe(false)
+  sessions[0]!.archiveState = "archived"
+  await flushPromises()
+  expect(visibleIds()).toEqual(["/sessions/archiving", "/sessions/pending"])
+  sessions[2]!.archiveState = "active"
+  await flushPromises()
+  expect(visibleIds()).toEqual(["/sessions/archiving", "/sessions/archived", "/sessions/pending"])
+  wrapper.unmount()
+})
+
+test("a machine containing only archived sessions shows its empty state", async () => {
+  const { wrapper } = await setup({ sessions: [{ id: "archived", title: "Archived chat", archiveState: "archived" }] })
+  expect(wrapper.text()).toContain("No workspaces")
+  expect(wrapper.find('a[href="/sessions/archived"]').exists()).toBe(false)
   wrapper.unmount()
 })
