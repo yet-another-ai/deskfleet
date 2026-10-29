@@ -42,6 +42,9 @@ function setup(platform: DeskfleetDesktopApi["platform"] = "darwin", localAgent 
     changed(change: Partial<LocalAgentState> = {}) {
       for (const listener of listeners) listener({ enabled: localAgent, status: localAgent ? "running" : "stopped", ...permissions, ...change })
     },
+    changedSnapshot(state: LocalAgentState) {
+      for (const listener of listeners) listener(state)
+    },
   }
 }
 
@@ -116,6 +119,65 @@ test("keeps newer permission events when an older refresh response arrives", asy
   expect(app.listeners.size).toBe(0)
 })
 
+test.each(["starting", "stopped", "error"] as const)("a %s lifecycle snapshot preserves known permission decisions", async status => {
+  const app = setup()
+  app.mount()
+  await flushPromises()
+  // LocalAgentController clears these fields during startup, shutdown, and errors.
+  app.changedSnapshot({
+    enabled: true, status, linuxDesktopBackend: undefined,
+    fullDiskAccessPermission: undefined, screenCapturePermission: undefined, accessibilityPermission: undefined,
+  })
+  await flushPromises()
+  expect(card("fullDiskAccess").get('[role="status"]').text()).toBe("Access is not enabled yet")
+  expect(card("accessibility").get('[role="status"]').text()).toBe("Access enabled")
+})
+
+test("a lifecycle-only event does not invalidate a pending permission refresh", async () => {
+  const app = setup()
+  app.mount()
+  await flushPromises()
+  let resolve!: (permissions: OnboardingPermissionsState) => void
+  app.onboarding.permissions.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(app.onboarding.permissions).toHaveBeenCalledTimes(2)
+  app.changedSnapshot({ enabled: true, status: "starting" })
+  resolve({ ...app.permissions, fullDiskAccessPermission: { status: "granted" } })
+  await flushPromises()
+  expect(card("fullDiskAccess").get('[role="status"]').text()).toBe("Access enabled")
+  expect(card("screenCapture").get('[role="status"]').text()).toBe("Access is not enabled yet")
+})
+
+test("disabling the local agent during a pending configuration read hides daemon cards despite its stale result", async () => {
+  const app = setup()
+  app.mount()
+  await flushPromises()
+  let resolve!: (state: OnboardingState) => void
+  app.onboarding.get.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(app.onboarding.get).toHaveBeenCalledTimes(2)
+  app.changedSnapshot({ enabled: false, status: "stopped" })
+  await flushPromises()
+  expect(view!.findAll("h2").map(title => title.text())).toEqual(["Local network"])
+  resolve({ ...app.state })
+  await flushPromises()
+  expect(view!.findAll("h2").map(title => title.text())).toEqual(["Local network"])
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+})
+
+test("a partial permission event updates its supplied decision and preserves the others", async () => {
+  const app = setup()
+  app.mount()
+  await flushPromises()
+  app.changedSnapshot({ enabled: true, status: "running", screenCapturePermission: { status: "granted" } })
+  await flushPromises()
+  expect(card("screenCapture").get('[role="status"]').text()).toBe("Access enabled")
+  expect(card("fullDiskAccess").get('[role="status"]').text()).toBe("Access is not enabled yet")
+  expect(card("accessibility").get('[role="status"]').text()).toBe("Access enabled")
+})
+
 test("keeps newer daemon events during a permission request and retains the host network result", async () => {
   const app = setup()
   app.mount()
@@ -168,11 +230,11 @@ test("Linux follows late backend events and does not restore Wayland cards from 
   app.onboarding.permissions.mockImplementationOnce(() => new Promise(done => { resolve = done }))
   app.mount()
   await flushPromises()
-  app.changed({ linuxDesktopBackend: "x11" })
+  app.changedSnapshot({ enabled: true, status: "running", linuxDesktopBackend: "x11" })
   resolve({ ...app.permissions })
   await flushPromises()
   expect(view!.findAll("h2")).toHaveLength(0)
-  app.changed({ linuxDesktopBackend: "wayland" })
+  app.changedSnapshot({ enabled: true, status: "running", linuxDesktopBackend: "wayland" })
   await flushPromises()
   expect(view!.findAll("h2")).toHaveLength(2)
 })

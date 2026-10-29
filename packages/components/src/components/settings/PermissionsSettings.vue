@@ -78,10 +78,16 @@ async function openLocalNetworkSettings(): Promise<void> {
 }
 
 const unsubscribe = onboarding ? client.settings.onChanged(state => {
-  ++revision
-  for (const kind of DESKTOP_ONBOARDING_PERMISSIONS) permissions.value[`${kind}Permission`] = state[`${kind}Permission`]
   if (state.linuxDesktopBackend !== undefined) backend.value = state.linuxDesktopBackend
-  permissionSteps.value = onboardingPermissions(client.platform, backend.value, state.enabled || state.status === "running")
+  const nextSteps = onboardingPermissions(client.platform, backend.value, state.enabled || state.status === "running")
+  const stepsChanged = nextSteps.length !== permissionSteps.value.length || nextSteps.some((kind, index) => kind !== permissionSteps.value[index])
+  // Missing permission data in a lifecycle event is not a new access decision.
+  if (stepsChanged || state.linuxDesktopBackend !== undefined || DESKTOP_ONBOARDING_PERMISSIONS.some(kind => state[`${kind}Permission`])) ++revision
+  for (const kind of DESKTOP_ONBOARDING_PERMISSIONS) {
+    const value = state[`${kind}Permission`]
+    if (value !== undefined) permissions.value[`${kind}Permission`] = value
+  }
+  permissionSteps.value = nextSteps
 }) : undefined
 useEventListener(window, "focus", () => { void refresh() })
 onMounted(() => { void refresh() })
