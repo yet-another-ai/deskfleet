@@ -9,7 +9,9 @@ machine enrollment, access grants, and synchronized catalog/history. Electron
 and the Web app share the Vue UI and authenticated client operations. Each
 TypeScript daemon connects outbound to the backend and keeps
 its execution journal in SQLite through napi-rs. Management uses authenticated
-backend APIs; Agent interaction, Git, files, terminals, and desktop streams use WebRTC.
+backend APIs. Remote Agent interaction, Git, files, terminals, and desktop
+streams use WebRTC. Electron uses a direct authenticated channel for Agent, Git,
+and terminal messages on its registered local machine.
 
 The daemon runs from source, as a SEA executable, or inside the Electron main
 process. It owns ACP providers, the shared backlog, steering, permissions,
@@ -25,6 +27,7 @@ flowchart LR
     Client["Electron / Web client"] <-->|"HTTPS / WebSocket: catalog, history, signaling"| Server["Actix Web server"]
     Server <-->|"Outbound connection: presence, history, signaling"| Daemon["Machine daemon"]
     Client <-->|"WebRTC: operations, files, terminal, media"| Daemon
+    Client <-->|"Electron local IPC: Agent, Git, terminal messages"| Daemon
     Daemon <-->|"ACP"| Agent["Agent process / adapter"]
     Agent <-->|"MCP tools"| MCP["DeskFleet MCP facade"]
     MCP <-->|"Operations on a target machine"| Target["Target daemon"]
@@ -93,7 +96,8 @@ after a failed negotiation. These routing records are transient coordination
 state, separate from durable conversation history.
 
 The cross-instance inbox stores RPC parameters and results, including provider
-environment values when a management operation carries them. Synchronized
+environment values and one-use local-channel claim secrets when their operations
+carry them. Synchronized
 provider catalog rows continue to omit those values. Inbox payloads expire after
 120 seconds and are deleted on consumption or expiry cleanup, without being
 logged by the router. Database backups can retain these operation payloads after
@@ -404,8 +408,10 @@ address in browser storage.
 Both use the selected central Machine identity for routes, caches, drafts, and
 commands; integer local IDs do
 not identify resources across machines. The UI displays synchronized history
-while a machine is offline and attaches through WebRTC for live Agent, Git, and
-terminal operations. The working directory remains separate from terminal
+while a machine is offline and attaches through WebRTC for remote live Agent,
+Git, and terminal operations. The local transport below replaces
+WebRTC for those messages when Electron operates its own machine.
+The working directory remains separate from terminal
 ownership. Failed Session provisioning remains visible without a fabricated
 Worktree; terminal transcripts stay solely on the daemon.
 
@@ -584,7 +590,7 @@ not advertise terminal capabilities. Managed Agent Sessions additionally provide
 ACP v1 terminal callbacks using the daemon's terminal service. Those command
 terminals belong to the Session's Worktree, retain their transcripts after ACP
 release, and expose only read-only output to human viewers. The terminal
-DataChannel carries their output without copying it into conversation history.
+message transport carries their output without copying it into conversation history.
 
 ACP capability negotiation determines which operations an adapter supports.
 Pi is a further integration candidate. Managed
@@ -594,13 +600,14 @@ a tmux connection can expose the CLI without providing structured ACP control.
 
 The [Agent Session service](agent-sessions.md) persists provider identity,
 inputs, execution turns, command audit, permissions, user questions, and an ordered event journal
-in the daemon's SQLite catalog. Clients connect to a daemon ACP facade over
-DataChannel; the daemon remains the sole ACP client toward each provider process.
+in the daemon's SQLite catalog. Clients connect to a daemon ACP facade through
+the remote DataChannel or local message channel; the daemon remains
+the sole ACP client toward each provider process.
 Credentials remain on the executing machine. ACP approval callbacks do not confine
 agents that execute tools directly.
 
 The composer discovers model, reasoning, and mode choices from the provider through the
-same ACP DataChannel facade. Draft discovery uses a temporary provider session in
+same ACP facade. Draft discovery uses a temporary provider session in
 the Workspace's default directory without creating a managed Session or Worktree.
 Session creation applies the selected configuration before delivering prompts;
 existing Session controls change these choices between turns on that Session's
@@ -643,14 +650,68 @@ created on demand.
 | Authentication, enrollment, catalog, and history | HTTPS |
 | Workspace, Provider, and machine-settings management | HTTPS API; server authorizes and forwards to the owning daemon |
 | Presence, history synchronization, and WebRTC signaling | Authenticated WebSocket or HTTPS streams |
-| Terminal dial, hangup, catalog and lifecycle events | Authenticated signaling; IPC for the local client |
-| Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel |
-| Agent prompts, steering, permissions, and live Session events | ACP and DeskFleet extensions over WebRTC DataChannel |
+| Terminal dial, hangup, catalog and lifecycle events | Authenticated backend management and notifications |
+| Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel remotely; direct authenticated channel locally |
+| Agent prompts, steering, permissions, and live Session events | ACP and DeskFleet extensions over the remote DataChannel or local channel |
 | File browsing, transfer, and Agent file references | Independently authorized files WebRTC DataChannel |
 | Desktop loopback TCP port forwarding | Independently authorized ports WebRTC DataChannel; byte transport stays in Rust |
 | Desktop video/audio | WebRTC media tracks |
 | Desktop input | WebRTC DataChannel |
-| Local discovery, catalog operations, and signaling | Authenticated IPC; Agent and terminal streams use DataChannels |
+| Local discovery, host setup, and enrollment | Authenticated IPC; discovery credentials do not authorize Team resources |
+
+### Local message channel
+
+Electron selects a direct message channel when the selected Machine matches the
+local daemon's active registration on the signed-in server and selected Team.
+Locality follows that registration, never a hostname, loopback API URL, or LAN
+address. Web clients and other machines use WebRTC.
+
+The shared [DataChannel interface](../../packages/client/src/data-channel.ts)
+covers `readyState`, `binaryType`, `bufferedAmount`,
+`bufferedAmountLowThreshold`, `send`, `close`, and open/message/error/close and
+`bufferedamountlow` events. Browser RTCDataChannels and
+[`LocalDataChannel`](../../packages/client/src/local-channels.ts) implement this
+message surface. Agent and terminal clients share their framing and operation
+handlers across both transports; the interface does not emulate unrelated
+PeerConnection or RTC statistics APIs.
+
+The local channel carries Agent requests and live events, Git reads and
+invalidations, and terminal attachment, input, output, resize, and replay without
+creating a PeerConnection, negotiating SDP/ICE, or allocating TURN. Payloads cross
+the narrow Electron preload bridge to a main-process adapter, then an
+authenticated Unix-domain socket or Windows named pipe to the daemon. The
+Electron-hosted daemon remains in the main process; no extra daemon process is
+started for this path. Interactive payloads never pass through the central server.
+
+Main requests a `transport: "local"` Agent or terminal grant from
+`POST /api/peers/local`. The central server independently delivers the grant and a
+one-use claim secret to the daemon over its trusted control link. Main keeps the
+secret private and claims it on its dedicated discovery-authenticated socket.
+The daemon binds that socket to the verified user/device, server, Team, Machine,
+purpose, actions, and expiry. Discovery credentials and renderer-supplied
+identities cannot authorize Team access. The same `AuthorizedPeers` service owns
+local and remote action checks, actor attribution, revocation, reconciliation,
+and maximum 24-hour grant expiry, including outgoing events. See
+[local authorization](webrtc-security.md#local-channel-authorization).
+
+Messages preserve string/binary form and ordering, with a 64 KiB frame limit,
+1 MiB byte budgets, and bounded pending-message counts. Daemon output waits for a
+preload delivery acknowledgement before the next frame; a five-second delivery
+deadline releases stalled viewers. The existing Agent and terminal service
+queues remain bounded, and terminal consumption acknowledgements still wait for
+xterm separately. One viewer cannot hold up another viewer or the Agent process.
+
+Closing a channel, navigating or losing a renderer, or changing accounts releases
+its viewers while Agents and shells continue. Reconnection uses existing
+operation receipts and journal/transcript cursors without resubmitting accepted
+commands. A local failure is reported through the local adapter and never falls
+back silently to WebRTC. Management APIs, central history synchronization,
+separately authorized file transfer and TCP forwarding, and desktop media keep
+their existing transports. The
+[backend acceptance criteria](backend.md#local-message-channel-acceptance)
+cover both transports.
+
+### Remote WebRTC transport
 
 Deploy STUN and TURN alongside signaling. TURN provides relay access when peers
 cannot connect directly. Desktop streaming, terminal traffic, and bulk results
@@ -686,7 +747,8 @@ authorization and endpoint-generated certificates, distinct from login and
 machine enrollment credentials. No additional application encryption protocol
 or independently verified device-pairing mechanism is part of the first release.
 
-Electron terminals use a data-only peer on the same signaling infrastructure.
+Remote terminals use a data-only peer on the same signaling infrastructure;
+local Electron terminals use the direct message channel described above.
 The daemon owns native PTYs independently of their viewers; disconnect detaches,
 and an existing terminal can be listed and reattached without restarting its
 shell. The UI supports local machine-scoped terminals. See
@@ -697,7 +759,7 @@ Git inspection uses the Git CLI's machine-readable output on the owning daemon.
 Session-scoped queries resolve the captured directories to their checkouts and
 retrieve branch, HEAD, staged/unstaged/untracked status, and file diffs. Several
 bindings in one checkout share its result; non-Git directories remain usable and
-are identified separately. Queries use the existing ACP DataChannel and do not
+are identified separately. Queries use the ACP message transport and do not
 write history or change the index. The visible Changes panel subscribes to
 transient Git invalidations over that channel. The daemon shares filesystem
 observation and status reads by canonical checkout root, including the working
@@ -794,14 +856,15 @@ remain attributable to their initiating user/session and target resource.
 The first backend release assumes the central service is available for login,
 enrollment, authorization, and management. It does not add offline resource
 creation or a separate offline-authorization system. An established, authorized
-WebRTC connection can continue working when its signaling connection is lost,
-within its existing grant. A grant ends on peer closure, explicit revocation,
+WebRTC connection, or the local message channel, can continue working
+within its existing grant when its central control connection is lost.
+A grant ends on connection closure, explicit revocation,
 or 24 hours after issuance, whichever comes first. The daemon enforces expiry
 even without signaling, and reconnecting signaling does not extend it. Renewal
-uses current authentication and a new peer. Logout, membership removal, and
-machine removal revoke the affected peers; notices take effect when delivered,
+uses current authentication and a new connection. Logout, membership removal, and
+machine removal revoke the affected connections; notices take effect when delivered,
 with expiry bounding access if the control connection is unavailable. Revoking
-access or expiring a peer detaches viewers without cancelling Agent execution,
+access or expiring a connection detaches viewers without cancelling Agent execution,
 terminating shells, or archiving a Session. Details are owned by the
 [peer authorization lifecycle](webrtc-security.md#authorization-lifetime-and-revocation).
 

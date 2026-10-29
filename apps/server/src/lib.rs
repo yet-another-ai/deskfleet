@@ -150,6 +150,7 @@ pub fn configure(config: &mut ServiceConfig) {
             .route("/daemon/ws", web::get().to(websocket::daemon))
             .route("/client/ws", web::get().to(websocket::client))
             .route("/peers", web::post().to(peers::create))
+            .route("/peers/local", web::post().to(peers::create_local))
             .route("/peers/{peerId}", web::delete().to(peers::close))
             .route("/peers/{peerId}/offer", web::post().to(peers::offer))
             .route(

@@ -6,6 +6,7 @@ import type { DesktopEvent, DesktopOffer, DesktopStart, IceCandidate } from "./d
 import type { TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts"
 import type { AgentMethod, AgentMethods } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { TerminalSummary } from "./terminal.ts"
+import { LocalDataChannel } from "./local-channels.ts"
 
 interface Peer { id: string; relayDeniedReason?: RelayDeniedReason | null; timer: ReturnType<typeof setTimeout>; telemetry: PeerConnectionTelemetry }
 const management = new Set<string>([
@@ -15,7 +16,9 @@ const management = new Set<string>([
 ])
 
 /** One selected machine owns this adapter; the host replaces its Pinia scope on target changes. */
-export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine): { api: DeskfleetDesktopApi; dispose(): void } {
+export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine, options: { local?: boolean } = {}): { api: DeskfleetDesktopApi; setLocal(local: boolean): void; dispose(): void } {
+  let local = options.local === true && host.platform !== "web"
+  const localChannels = new Map<string, LocalDataChannel>()
   const peers = new Map<string, Peer>()
   const events = new Set<(event: DesktopEvent) => void>()
   const catalogEvents = new Set<(sessionId?: string) => void>()
@@ -47,7 +50,16 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       for (const listener of catalogEvents) listener()
     }
   })
+  const connectChannel = (purpose: "agent" | "terminal") => (sessionId: string) => {
+    if (disposed) throw new Error("Machine connection was closed")
+    if (!host.localChannels) throw new Error("Local message channels are unavailable")
+    const channel = new LocalDataChannel(host.localChannels, { connectionId: sessionId, teamId: machine.teamId, machineId: machine.id, purpose })
+    localChannels.set(sessionId, channel)
+    channel.addEventListener("close", () => { localChannels.delete(sessionId) }, { once: true })
+    return channel
+  }
   const signaling = (purpose: "agent" | "terminal" | "desktop") => ({
+    ...(local && purpose !== "desktop" ? { connectChannel: connectChannel(purpose) } : {}),
     async prepare(sessionId: string): Promise<RTCIceServer[]> {
       const grant = await central.createPeer(machine.teamId, machine.id, purpose)
       if (disposed) { await central.closePeer(grant.peerId); throw new Error("Machine connection was closed") }
@@ -73,6 +85,8 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       await central.candidatePeer(peer.id, candidate)
     },
     async close(sessionId: string): Promise<void> {
+      const channel = localChannels.get(sessionId)
+      if (channel) { channel.close(); return }
       const peer = peers.get(sessionId)
       if (!peer) return
       peers.delete(sessionId); clearTimeout(peer.timer)
@@ -83,7 +97,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
   const rpc = <T>(method: string, params: unknown = {}) => central.rpc<T>(machine.id, method, params)
   const api: DeskfleetDesktopApi = {
     ...host,
-    target: { id: machine.id, local: false, lastSeen: machine.lastSeenAt ?? undefined },
+    target: { id: machine.id, local, lastSeen: machine.lastSeenAt ?? undefined },
     catalog: {
       list: async () => {
         const { snapshot } = await central.catalog(machine.id)
@@ -108,7 +122,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     },
     agent: {
       ...signaling("agent"),
-      control: <M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]) => management.has(method) ? rpc<AgentMethods[M]["result"]>(method, params) : undefined,
+      control: <M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]) => management.has(method) && !(local && method === "_deskfleet/git/branches") ? rpc<AgentMethods[M]["result"]>(method, params) : undefined,
       history: {
         available: () => online,
         list: async () => (await central.sessions(machine.id)).map(snapshot => snapshot.session),
@@ -138,5 +152,15 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       },
     },
   }
-  return { api, dispose() { disposed = true; unsubscribe(); for (const [id] of peers) void api.agent.close(id).catch(() => {}); events.clear(); catalogEvents.clear(); providerEvents.clear() } }
+  return {
+    api,
+    // The surface detaches its viewers first; management subscriptions and caches stay in place.
+    setLocal(value) {
+      local = value && host.platform !== "web"
+      api.target!.local = local
+      api.agent.connectChannel = local ? connectChannel("agent") : undefined
+      api.terminal.connectChannel = local ? connectChannel("terminal") : undefined
+    },
+    dispose() { disposed = true; unsubscribe(); for (const channel of localChannels.values()) channel.close(); for (const [id] of peers) void api.agent.close(id).catch(() => {}); events.clear(); catalogEvents.clear(); providerEvents.clear() },
+  }
 }

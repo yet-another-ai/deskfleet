@@ -1,12 +1,16 @@
-# Terminals over WebRTC
+# Terminal transport and lifecycle
 
-The shared Electron/Web terminal uses xterm.js and a reliable, ordered WebRTC DataChannel.
+The shared Electron/Web terminal uses xterm.js and a reliable, ordered message
+transport. Remote connections use a WebRTC DataChannel. Electron connections to
+the registered local machine use the
+[direct message channel](architecture.md#local-message-channel). Both implement
+the same DataChannel-compatible interface consumed by `TerminalClient`.
 `TerminalSurface` prefers the `@xterm/addon-webgl` renderer after the terminal opens
 and falls back to xterm's default DOM renderer when WebGL2 is unavailable,
 fails to create a context, or reports context loss. On unmount (including tab
 remounts) it force-releases the WebGL2 context via `WEBGL_lose_context`, because
 addon `dispose()` alone leaves zombie contexts that can exhaust Chromium's per-page
-cap. It negotiates a data-only peer:
+cap. The WebRTC transport negotiates a data-only peer:
 no video/audio tracks, capture devices, codec selection, or screen-recording
 permission are involved. SDP and ICE reuse the authenticated central signaling
 service used by desktop streaming.
@@ -55,7 +59,7 @@ The remaining official addons are not enabled:
 | Unicode graphemes 0.4.0 | Upstream still marks grapheme clustering experimental. Unicode 11 remains the active width provider. |
 | Program status 0.1.0 | Its [published package](https://registry.npmjs.org/@xterm%2Faddon-program-status/0.1.0) requires xterm `^6.1.0-beta.316`. |
 | Web fonts 0.1.0 | Its [published package](https://registry.npmjs.org/@xterm%2Faddon-web-fonts/0.1.0) requires xterm `^6.1.0-beta.86`; terminal fonts use the existing appearance settings. |
-| Attach 0.12.0 | Connects a WebSocket directly; DeskFleet's terminal transport is the flow-controlled WebRTC DataChannel. |
+| Attach 0.12.0 | Connects a WebSocket directly; DeskFleet uses a flow-controlled DataChannel interface over WebRTC or local IPC. |
 | Canvas 0.7.0 | Removed in the [xterm 6.0 release](https://github.com/xtermjs/xterm.js/releases/tag/6.0.0), which recommends DOM or WebGL rendering. |
 
 See the pinned upstream APIs for [search](https://github.com/xtermjs/xterm.js/blob/6.0.0/addons/addon-search/typings/addon-search.d.ts),
@@ -182,7 +186,7 @@ The daemon enforces these restrictions as well as the UI. Multiple viewers may
 attach concurrently without claiming the interactive controller. Ordinary shells
 and setup terminals retain their existing interactive behavior.
 
-Output uses the existing terminal DataChannel and daemon-local history files;
+Output uses the terminal message channel and daemon-local history files;
 it is not copied into the Agent event journal or synchronized to central history.
 Release, Session archive, and daemon restart retain read-only replay while the
 machine is available. Session restoration does not restart these commands.
@@ -195,12 +199,15 @@ catalog, `terminalDial` creates or resumes a stable terminal ID, and
 `terminalHangup` ends it. Creation uses a client-selected ID so retrying a dial
 cannot create a duplicate shell. Resume requires an existing ID. Session changes
 and hangups trigger central catalog notifications so clients refresh their tabs.
-Hangup works without a live WebRTC data peer.
+Hangup works without a live message channel.
 
 The `deskfleet-terminal` channel carries attach, detach, input and resize requests
 plus output, replay-ready, exit and hangup events. A terminal must already exist
-on the target machine; the peer's authenticated grant authorizes its attachment.
-Terminal input and output never cross the Electron preload or signaling socket.
+on the target machine; the connection's authenticated grant authorizes its attachment.
+Remote terminal input and output use the DataChannel. The local adapter
+carries these same messages through the narrow Electron preload bridge and
+authenticated local connection, without SDP/ICE or central payload forwarding.
+Both paths preserve attachment ownership, permissions, and grant expiry/revocation.
 A desktop media peer cannot invoke the terminal dispatcher.
 
 Output and input preserve raw bytes using base64 in JSON messages. This also
@@ -216,6 +223,15 @@ published only after their preceding output has been consumed.
 Input is chunked and waits for each PTY write; the
 renderer bounds queued paste/input to 256 KiB. Resize sends terminal columns and
 rows, not pixel dimensions.
+
+The local adapter preserves these queue bounds, cumulative acknowledgements,
+replay ordering, and input limits. Its separate preload delivery acknowledgement
+bounds messages still crossing Electron IPC; it does not replace xterm's consumed
+byte-offset acknowledgement. Incoming local requests enter the same
+`TerminalChannel`, whose pending-input budget is 256 KiB and whose ordered PTY
+operations do not block receipt of output acknowledgements. A blocked or closed
+viewer detaches without terminating the PTY. Reconnection attaches to the same
+terminal ID and transcript; transport selection never creates another shell.
 
 ## Inline images
 
@@ -302,7 +318,8 @@ restart recovery, incomplete creation/deletion, and hangup while a PTY write is
 blocked. `mise run daemon:smoke` also exercises the bundled image encoder with
 no Node executable on `PATH`.
 
-The UI uses local signaling and direct ICE. The native transport accepts
-STUN/TURN configuration. Selecting another machine in the UI requires integrating
-cross-machine enrollment, scoped remote authorization, central signaling, and
-client TURN configuration.
+`mise exec -- node --test apps/daemon/src/local-channel.test.ts` verifies Agent
+and terminal IPC with WebRTC creation disabled, including input, output, resize,
+replay after disconnect, socket ownership, and delivery credit. Remote machines
+and Web clients use authenticated central signaling and server-provided STUN/TURN
+configuration; Electron's registered local machine uses the direct adapter.

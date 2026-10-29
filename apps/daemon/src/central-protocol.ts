@@ -37,6 +37,12 @@ export interface PeerOffer {
   options?: { codec?: "h264" | "h265" | "av1"; audio?: boolean }
 }
 
+export interface LocalPeerGrant {
+  peerId: string
+  authorization: PeerAuthorization
+  token: string
+}
+
 export type PeerSignal =
   | { kind: "iceCandidate"; candidate: IceCandidate }
   | { kind: "stateChanged"; state: string }

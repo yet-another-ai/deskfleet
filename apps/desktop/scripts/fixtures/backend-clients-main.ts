@@ -1,8 +1,9 @@
 import { app, BrowserWindow, net, powerSaveBlocker, protocol } from "electron"
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { installCentralAccount } from "../../src/main/central-account.ts"
+import { installLocalChannels } from "../../src/main/local-channels.ts"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
@@ -27,6 +28,8 @@ export interface BackendClientsContext {
   machines: string[]
   sessionId: string
   forceRelay: boolean
+  teamId: string
+  localProbePath: string
 }
 
 /** Operates the shipped shared Vue UI; no application APIs or stores are replaced. */
@@ -72,6 +75,8 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   // Unselected Team machines are collapsed sidebar groups; opening one switches machines.
   const machineRow = (index: number) => document.querySelector<HTMLButtonElement>(`aside button[data-machine-id="${context.machines[index]}"]`)
   async function selectMachine(index: number): Promise<void> {
+    const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean } }).__deskfleetRtcGuard
+    guard.blocked = context.mode === "electron" && index === 0
     await until(() => context.machines.some((_, other) => other !== index && !!machineRow(other)) || !!machineRow(index), "team machines")
     machineRow(index)?.click()
     await until(() => !machineRow(index), "selected machine")
@@ -108,7 +113,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   const textarea = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]')!
   textarea.value = `Prompt from ${context.mode}`
   textarea.dispatchEvent(new Event("input", { bubbles: true }))
-  await until(() => !button("Send").disabled, "authenticated Agent WebRTC peer")
+  await until(() => !button("Send").disabled, "authenticated Agent channel")
   button("Send").click()
   await until(() => !!document.querySelector("main")?.textContent?.includes("Fixture Agent is waiting for approval"), "streaming Agent message")
   await until(() => !!document.querySelector("main")?.textContent?.includes("Read fixture file"), "Agent tool call")
@@ -272,6 +277,7 @@ void app.whenReady().then(async () => {
   const authorizations: BrowserWindow[] = []
   let controller: LocalAgentController | undefined
   let keepAwake: KeepAwakeController | undefined
+  let localChannels: ReturnType<typeof installLocalChannels> | undefined
   if (context.mode === "electron") {
     installDesktopMediaIpc()
     controller = new LocalAgentController(join(context.profileDirectory, "settings.json"), createLocalAgentRuntime({ directory: context.daemonDirectory }), publishLocalAgentState)
@@ -279,13 +285,14 @@ void app.whenReady().then(async () => {
     installSettings(controller, keepAwake, new NotificationSettingsController(join(app.getPath("userData"), "notifications.json")), new WorktreeRootSettingsController(context.daemonDirectory))
     keepAwake.get()
     await controller.initialize()
-    await installCentralAccount({ openAuthorization: async url => {
+    const central = await installCentralAccount({ openAuthorization: async url => {
       const browser = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } })
       authorizations.push(browser)
       browser.webContents.on("console-message", (event) => { if (event.level === "error") process.stderr.write(`${event.message}\n`) })
       await browser.loadURL(url)
       await authenticateWindow(browser, context, true)
     } })
+    localChannels = installLocalChannels(central)
     // This fixture exercises signed-in clients; smoke-startup covers first-run setup.
     const onboardingPath = join(context.profileDirectory, "onboarding.json")
     await writeFile(onboardingPath, JSON.stringify({ step: "complete" }))
@@ -306,7 +313,10 @@ void app.whenReady().then(async () => {
   // Force TURN at the native browser boundary, leaving the app's signaling and ICE servers untouched.
   await window.loadURL("about:blank")
   window.webContents.debugger.attach("1.3")
-  await window.webContents.debugger.sendCommand("Page.addScriptToEvaluateOnNewDocument", { source: `Object.defineProperty(navigator,'languages',{get:()=>['en-US']});${context.forceRelay ? "const NativePeer=window.RTCPeerConnection;window.RTCPeerConnection=class extends NativePeer{constructor(config){super({...config,iceTransportPolicy:'relay'})}};" : ""}` })
+  await window.webContents.debugger.sendCommand("Page.enable")
+  // Use xterm's supported DOM fallback so PTY output is observable without canvas OCR.
+  const domTerminal = "const nativeContext=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){return /^webgl2?$/.test(type)?null:nativeContext.call(this,type,...args)};"
+  await window.webContents.debugger.sendCommand("Page.addScriptToEvaluateOnNewDocument", { source: `Object.defineProperty(navigator,'languages',{get:()=>['en-US']});${domTerminal}window.__deskfleetRtcGuard={blocked:${context.mode === "electron"},forbiddenAttempts:0,connections:0};const NativePeer=window.RTCPeerConnection;window.RTCPeerConnection=class extends NativePeer{constructor(config){const guard=window.__deskfleetRtcGuard;if(guard.blocked){guard.forbiddenAttempts++;throw new Error('WebRTC is disabled for the local channel smoke');}super(${context.forceRelay ? "{...config,iceTransportPolicy:'relay'}" : "config"});guard.connections++;}};` })
   await window.loadURL(context.mode === "web" ? context.webUrl : BUNDLED_RENDERER_URL)
   await window.webContents.executeJavaScript(`(async () => { const end=Date.now()+15000; while(!document.querySelector('form button[type="submit"]:not(:disabled)')) { [...document.querySelectorAll('button')].find(button => button.textContent === 'Skip for now')?.click(); if(Date.now()>end)throw new Error('Login form unavailable at '+location.href+': '+document.body.innerText);await new Promise(r=>setTimeout(r,25)); } })()`)
   await window.webContents.executeJavaScript(`(() => { if(document.querySelector('input[name="server-url"]'))throw new Error('Backend configuration must not be exposed in the UI');document.querySelector('form').requestSubmit(); })()`)
@@ -318,6 +328,10 @@ void app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 50))
   }
   const result = await window.webContents.executeJavaScript(`(${exercise.toString()})(${JSON.stringify(context)})`)
+  if (context.mode === "electron") {
+    const probe = await readFile(context.localProbePath, "utf8")
+    result.localChannels = await window.webContents.executeJavaScript(`${probe}\nlocalChannelSmoke.exercise(${JSON.stringify({ teamId: context.teamId, machineId: context.machines[0], sessionId: context.sessionId })})`)
+  }
   await captureScreenshots(window, context)
   await window.webContents.executeJavaScript(`(${openTerminal.toString()})(${JSON.stringify(context.machines[0])},${context.mode === "electron"})`)
   const terminalTitle = `DF_${context.mode}_REMOTE_PTY`
@@ -325,9 +339,9 @@ void app.whenReady().then(async () => {
   await window.webContents.executeJavaScript(`(()=>{const data=new DataTransfer();data.setData('text/plain',${JSON.stringify(command)});document.querySelector('.xterm-helper-textarea').dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));})()`)
   window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" })
   window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" })
-  await window.webContents.executeJavaScript(`(async()=>{const end=Date.now()+20000;while(!document.querySelector('.xterm-rows')?.textContent.includes(${JSON.stringify(terminalTitle)})){if(Date.now()>end)throw new Error('Terminal PTY output did not return over WebRTC: '+document.body.innerText);await new Promise(r=>setTimeout(r,25));}})()`)
+  await window.webContents.executeJavaScript(`(async()=>{const end=Date.now()+20000;while(!document.querySelector('.xterm-rows')?.textContent.includes(${JSON.stringify(terminalTitle)})){if(Date.now()>end)throw new Error('Terminal PTY output did not return: '+document.body.innerText);await new Promise(r=>setTimeout(r,25));}if(window.__deskfleetRtcGuard.forbiddenAttempts)throw new Error('Local interaction attempted WebRTC');})()`)
   process.send?.({ phase: "online", result })
-  const exit = () => { void Promise.resolve(controller?.close()).finally(() => { keepAwake?.close(); app.exit(0) }) }
+  const exit = () => { void Promise.all([localChannels?.close(), controller?.close()]).finally(() => { keepAwake?.close(); app.exit(0) }) }
   process.on("message", message => {
     if (message && typeof message === "object" && "offline" in message) {
       void window.webContents.executeJavaScript(`(${exercise.toString()})(${JSON.stringify(context)},true)`).then(result => process.send?.({ result }), error => process.send?.({ error: String(error) }))

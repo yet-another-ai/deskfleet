@@ -38,6 +38,7 @@ async fn peer(store: &ControlStore, auth: &AuthSession, expires: i64) -> PeerAut
             local_machine_id: "1".into(),
         },
         purpose: "agent".into(),
+        transport: deskfleet_protocol::control::PeerTransport::Webrtc,
         actions: vec!["agent:read".into()],
         issued_at: timestamp(now_ms() - 2000),
         expires_at: timestamp(expires),

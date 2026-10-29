@@ -71,6 +71,7 @@ async fn peer(store: &ControlStore, owner: &str) -> (String, String) {
             local_machine_id: "1".into(),
         },
         purpose: "agent".into(),
+        transport: deskfleet_protocol::control::PeerTransport::Webrtc,
         actions: vec!["agent:read".into()],
         issued_at: timestamp(now_ms()),
         expires_at: timestamp(now_ms() + 60_000),

@@ -29,7 +29,7 @@ function disconnectError(error: NodeJS.ErrnoException): Error {
   return error
 }
 
-/** One authenticated connection owns only this window's transient media peers. */
+/** One authenticated connection owns this window's transient peers and local viewers. */
 export class DaemonClient {
   readonly #socket: Socket
   readonly #pending = new Map<number, PendingRequest>()
@@ -85,6 +85,9 @@ export class DaemonClient {
     const line = `${JSON.stringify({ id, method, params })}\n`
     if (Buffer.byteLength(line) > MAX_CONTROL_MESSAGE_BYTES) {
       return Promise.reject(new Error("Daemon request is too large"))
+    }
+    if (method === "localSend" && (this.#pending.size >= 128 || this.#socket.writableLength + Buffer.byteLength(line) > MAX_CONTROL_MESSAGE_BYTES * 4)) {
+      return Promise.reject(new Error("Local channel backpressure: send buffer is full"))
     }
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {

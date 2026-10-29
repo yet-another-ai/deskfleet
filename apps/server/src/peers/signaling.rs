@@ -1,6 +1,6 @@
 //! Shared SDP exchanges without retaining SQL locks while awaiting a daemon.
 
-use super::{authorize, binding, grant_ice_servers, normalize_candidate};
+use super::{authorize_webrtc, binding, grant_ice_servers, normalize_candidate};
 use crate::{
     AppState,
     error::{ApiError, Result},
@@ -28,7 +28,7 @@ pub async fn offer(
     p: web::Path<String>,
     b: web::Json<Offer>,
 ) -> Result<web::Json<Value>> {
-    let authorization = authorize(&req, &s, &p).await?;
+    let authorization = authorize_webrtc(&req, &s, &p).await?;
     binding(&b.sdp)?;
     let state = s.store.prepare_peer_offer(&p, &b.sdp, &b.options).await?;
     let answer = match state {
@@ -64,7 +64,7 @@ pub async fn offer(
         }
     };
     // The grant can be revoked while the first request waits on another host.
-    authorize(&req, &s, &p).await?;
+    authorize_webrtc(&req, &s, &p).await?;
     Ok(web::Json(json!({"sdp":answer})))
 }
 
@@ -136,7 +136,7 @@ pub async fn candidate(
     p: web::Path<String>,
     b: web::Json<Candidate>,
 ) -> Result<web::Json<Value>> {
-    let authorization = authorize(&req, &s, &p).await?;
+    let authorization = authorize_webrtc(&req, &s, &p).await?;
     let text = b
         .candidate
         .get("candidate")

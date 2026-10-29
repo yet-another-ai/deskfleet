@@ -1,10 +1,11 @@
 import type { NativePeer } from "@deskfleet/native"
+import { timingSafeEqual } from "node:crypto"
 import { isDeepStrictEqual } from "node:util"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
 import { AGENT_CHANNEL, type AgentMethod } from "./agent-protocol.ts"
 import type { ControlPeers } from "./control-server.ts"
 import { desktopErrorEvent, desktopStartupCleanupFailure, encoderFailure, type DesktopStart, type IceCandidate } from "./control-protocol.ts"
-import type { MachineCredentials, PeerAuthorization, PeerOffer, PeerSignal } from "./central-protocol.ts"
+import type { LocalPeerGrant, MachineCredentials, PeerAuthorization, PeerOffer, PeerSignal } from "./central-protocol.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
 import { DesktopInputChannel } from "./desktop-input.ts"
@@ -27,15 +28,26 @@ const AGENT_EXECUTE = new Set<AgentMethod>([
 
 interface AuthorizedPeer {
   authorization: PeerAuthorization
-  native: Promise<NativePeer>
+  native?: Promise<NativePeer>
   timer: ReturnType<typeof setTimeout>
-  remoteSdp: string
+  remoteSdp?: string
   localSdp?: string
   terminal?: TerminalChannel
   agent?: AgentChannel
   files?: FilesChannel
   input?: DesktopInputChannel
   desktopStart?: "starting" | "started"
+  local?: {
+    token?: string
+    claimBy: number
+    owner?: object
+    close?: (error?: string) => void
+  }
+}
+
+export interface LocalPeerSink {
+  send(data: Buffer, isString: boolean): Promise<void>
+  close(error?: string): void
 }
 
 /** Resolve the empty mid emitted by native WebRTC from the authenticated SDP. */
@@ -100,6 +112,7 @@ export class AuthorizedPeers {
 
   async offer(params: PeerOffer): Promise<{ sdp: string }> {
     this.#validate(params.authorization)
+    if (params.authorization.transport !== "webrtc") throw new Error("A WebRTC authorization is required")
     if (params.peerId !== params.authorization.peerId || !params.peerId) throw new Error("Peer ID does not match its authorization")
     for (const [id, expires] of this.#used) if (expires <= this.#now()) this.#used.delete(id)
     if (this.#used.has(params.peerId)) throw new Error("Create a new peer for another negotiation")
@@ -123,40 +136,8 @@ export class AuthorizedPeers {
         this.#signal(params.peerId, { kind: "error", error: error instanceof Error ? error.message : String(error) })
         void this.close(params.peerId).catch(cleanup => console.error("Peer cleanup failed", cleanup))
       }
-      if (purpose === "agent") {
-        const sessions: AgentChannelSessions = {
-          journal: this.#agents.journal,
-          onEvent: listener => this.#agents.onEvent(event => {
-            try { this.#live(params.peerId, "agent:read"); listener(event) } catch { /* expiry closes subscriptions */ }
-          }),
-          watchGit: async (sessionId, _actor, listener) => {
-            this.#live(params.peerId, "git:read")
-            if (!this.#agents.watchGit) throw new Error("Git observation is unavailable")
-            return this.#agents.watchGit(sessionId, owned.authorization.actor, error => {
-              try { this.#live(params.peerId, "git:read"); listener(error) } catch { /* expiry closes subscriptions */ }
-            })
-          },
-          handle: (method, value) => {
-            const scope = AGENT_READ.has(method) ? "agent:read" : AGENT_EXECUTE.has(method) ? "agent:execute" : method.startsWith("_deskfleet/git/") ? "git:read" : undefined
-            if (!scope) return Promise.reject(new Error("Manage Sessions through the backend API"))
-            this.#live(params.peerId, scope)
-            return this.#agents.handle(method, value, owned.authorization.actor)
-          },
-        }
-        owned.agent = new AgentChannel(sessions, owned.authorization.actor, bytes => {
-          this.#live(params.peerId, "agent:read")
-          return peer.sendData(AGENT_CHANNEL, Buffer.from(bytes))
-        }, failure)
-      }
-      if (purpose === "terminal") {
-        owned.terminal = new TerminalChannel(this.#terminals, text => {
-          this.#live(params.peerId, "terminal:read")
-          return peer.sendText(TERMINAL_CHANNEL, text)
-        }, failure, id => {
-          this.#live(params.peerId, "terminal:write")
-          return this.#terminals.list().some(terminal => terminal.id === id)
-        })
-      }
+      this.#channels(params.peerId, owned, (data, isString) => isString
+        ? peer.sendText(TERMINAL_CHANNEL, data.toString("utf8")) : peer.sendData(AGENT_CHANNEL, data), failure)
       if (purpose === "files") {
         owned.files = new FilesChannel(
           new FilesService(
@@ -183,14 +164,113 @@ export class AuthorizedPeers {
     } catch (error) { await this.close(params.peerId); throw error }
   }
 
+  #channels(id: string, owned: AuthorizedPeer, send: LocalPeerSink["send"], failure: (error: unknown) => void): void {
+    if (owned.authorization.purpose === "agent") {
+      const sessions: AgentChannelSessions = {
+        journal: this.#agents.journal,
+        onEvent: listener => this.#agents.onEvent(event => {
+          try { this.#live(id, "agent:read"); listener(event) } catch { /* expiry closes subscriptions */ }
+        }),
+        watchGit: async (sessionId, _actor, listener) => {
+          this.#live(id, "git:read")
+          if (!this.#agents.watchGit) throw new Error("Git observation is unavailable")
+          return this.#agents.watchGit(sessionId, owned.authorization.actor, error => {
+            try { this.#live(id, "git:read"); listener(error) } catch { /* expiry closes subscriptions */ }
+          })
+        },
+        handle: (method, value) => {
+          const scope = AGENT_READ.has(method) ? "agent:read" : AGENT_EXECUTE.has(method) ? "agent:execute" : method.startsWith("_deskfleet/git/") ? "git:read" : undefined
+          if (!scope) return Promise.reject(new Error("Manage Sessions through the backend API"))
+          this.#live(id, scope)
+          return this.#agents.handle(method, value, owned.authorization.actor)
+        },
+      }
+      owned.agent = new AgentChannel(sessions, owned.authorization.actor, bytes => {
+        this.#live(id, "agent:read")
+        return send(Buffer.from(bytes), false)
+      }, failure)
+    }
+    if (owned.authorization.purpose === "terminal") {
+      owned.terminal = new TerminalChannel(this.#terminals, text => {
+        this.#live(id, "terminal:read")
+        return send(Buffer.from(text), true)
+      }, failure, terminalId => {
+        this.#live(id, "terminal:write")
+        return this.#terminals.list().some(terminal => terminal.id === terminalId)
+      })
+    }
+  }
+
+  /** Only the authenticated central control link may prepare a local grant. */
+  prepareLocal(params: LocalPeerGrant): void {
+    this.#validate(params.authorization)
+    if (params.authorization.transport !== "local" || !["agent", "terminal"].includes(params.authorization.purpose)) {
+      throw new Error("A local Agent or terminal authorization is required")
+    }
+    if (!params.peerId || params.peerId !== params.authorization.peerId) throw new Error("Peer ID does not match its authorization")
+    if (typeof params.token !== "string" || params.token.length < 32 || params.token.length > 256) throw new Error("Invalid local channel claim token")
+    for (const [id, expires] of this.#used) if (expires <= this.#now()) this.#used.delete(id)
+    if (this.#used.has(params.peerId)) throw new Error("Create a new peer for another connection")
+    const expires = Date.parse(params.authorization.expiresAt)
+    const claimBy = Math.min(expires, this.#now() + 30_000)
+    const timer = setTimeout(() => { void this.close(params.peerId).catch(() => {}) }, claimBy - this.#now())
+    timer.unref()
+    this.#used.set(params.peerId, expires)
+    this.#peers.set(params.peerId, {
+      authorization: structuredClone(params.authorization), timer,
+      local: { token: params.token, claimBy },
+    })
+  }
+
+  openLocal(id: string, token: string, owner: object, sink: LocalPeerSink): void {
+    const owned = this.#live(id), local = owned.local
+    if (!local || local.owner || !local.token) throw new Error("Local channel claim is unavailable")
+    if (local.claimBy <= this.#now()) {
+      void this.close(id).catch(() => {})
+      throw new Error("Local channel claim has expired")
+    }
+    const actual = Buffer.from(token), expected = Buffer.from(local.token)
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new Error("Invalid local channel claim token")
+    // Consume the one-use secret before creating any subscriptions.
+    local.token = undefined; local.owner = owner; local.close = sink.close
+    clearTimeout(owned.timer)
+    owned.timer = setTimeout(() => { void this.close(id).catch(() => {}) }, Date.parse(owned.authorization.expiresAt) - this.#now())
+    owned.timer.unref()
+    this.#channels(id, owned, sink.send, error => {
+      const detail = error instanceof Error ? error.message : String(error)
+      void this.close(id, detail).catch(() => {})
+    })
+  }
+
+  sendLocal(id: string, owner: object, data: Buffer, isString: boolean): void {
+    const owned = this.#live(id)
+    if (!owned.local || owned.local.owner !== owner) throw new Error("Unknown local channel on this connection")
+    if (owned.agent) owned.agent.receive(data, isString)
+    if (owned.terminal) {
+      this.#live(id, "terminal:write")
+      // TerminalChannel keeps ordered operations while accepting output ACKs.
+      void owned.terminal.receive(data, isString).catch(error => {
+        void this.close(id, error instanceof Error ? error.message : String(error)).catch(() => {})
+      })
+    }
+  }
+
+  async closeLocal(id: string, owner: object): Promise<void> {
+    const owned = this.#peers.get(id)
+    if (!owned) return
+    if (!owned.local || owned.local.owner !== owner) throw new Error("Unknown local channel on this connection")
+    await this.close(id)
+  }
+
   async candidate(id: string, candidate: IceCandidate): Promise<void> {
     const owned = this.#live(id)
+    if (!owned.native || !owned.remoteSdp) throw new Error("A WebRTC peer is required")
     await (await owned.native).addIceCandidate(normalizeCandidate(candidate, owned.remoteSdp))
   }
 
   async start(id: string, options: Omit<DesktopStart, "sessionId">): Promise<void> {
     const owned = this.#live(id, "desktop:stream")
-    if (owned.authorization.purpose !== "desktop") throw new Error("A desktop peer is required")
+    if (owned.authorization.purpose !== "desktop" || !owned.native) throw new Error("A desktop peer is required")
     if (options.control) this.#live(id, "desktop:control")
     if (owned.desktopStart) throw new Error(`Desktop stream is already ${owned.desktopStart}`)
     owned.desktopStart = "starting"
@@ -253,7 +333,7 @@ export class AuthorizedPeers {
     } finally { await this.close(id).catch(error => console.error("Peer cleanup failed", error)) }
   }
 
-  async close(id: string): Promise<void> {
+  async close(id: string, error?: string): Promise<void> {
     const closing = this.#closing.get(id)
     if (closing) return closing
     const peer = this.#peers.get(id)
@@ -262,7 +342,8 @@ export class AuthorizedPeers {
     clearTimeout(peer.timer)
     peer.agent?.close(); peer.terminal?.close()
     peer.input?.close()
-    const pending = Promise.allSettled([peer.files?.close(), this.#native.close(id)]).then(results => {
+    peer.local?.close?.(error)
+    const pending = Promise.allSettled([peer.files?.close(), peer.native ? this.#native.close(id) : undefined]).then(results => {
       const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
       if (failures.length) throw new AggregateError(failures, "Failed to close authorized peer")
     })

@@ -73,6 +73,7 @@ async fn postgres_reconciliation_repairs_missed_revocation_and_precedes_new_offe
             local_machine_id: machine.local_machine_id.clone(),
         },
         purpose: "agent".into(),
+        transport: deskfleet_protocol::control::PeerTransport::Webrtc,
         actions: vec!["agent:read".into()],
         issued_at: deskfleet_control_store::timestamp(deskfleet_control_store::now_ms()),
         expires_at: deskfleet_control_store::timestamp(expires),

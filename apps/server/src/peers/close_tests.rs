@@ -82,6 +82,7 @@ async fn inactive_desktop_close_keeps_owner_checks_and_waits_for_daemon_cleanup(
                 local_machine_id: "1".into(),
             },
             purpose: "desktop".into(),
+            transport: PeerTransport::Webrtc,
             actions: vec!["desktop:stream".into(), "desktop:control".into()],
             issued_at: timestamp(now - 60_000),
             expires_at: timestamp(expires),

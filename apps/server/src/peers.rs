@@ -6,8 +6,8 @@ use crate::{
 };
 use actix_web::{HttpRequest, web};
 use base64::Engine;
-use deskfleet_control_store::{now_ms, policies::MachineAction, timestamp};
-use deskfleet_protocol::control::{IceServer, PeerAuthorization, PeerTarget};
+use deskfleet_control_store::{AuthSession, now_ms, policies::MachineAction, timestamp};
+use deskfleet_protocol::control::{IceServer, PeerAuthorization, PeerTarget, PeerTransport};
 use hmac::{Hmac, KeyInit, Mac};
 use sdp::description::{common::Attribute, session::SessionDescription};
 use serde::Deserialize;
@@ -15,7 +15,9 @@ use serde_json::{Value, json};
 use sha1::Sha1;
 use std::io::Cursor;
 
+mod local;
 mod signaling;
+pub use local::create as create_local;
 pub(crate) use signaling::daemon_event;
 pub use signaling::{candidate, offer};
 
@@ -31,7 +33,24 @@ pub async fn create(
     s: web::Data<AppState>,
     b: web::Json<Create>,
 ) -> Result<web::Json<Value>> {
-    let a = auth::user(&req, &s).await?;
+    let (authorization, a, expires) = create_grant(&req, &s, &b, PeerTransport::Webrtc).await?;
+    let id = &authorization.peer_id;
+    let relay_denied_reason = s.store.relay_denied_reason(&b.team_id).await?;
+    let relay_allowed = relay_denied_reason.is_none();
+    s.store.save_peer(&authorization, &a.id, expires).await?;
+    s.store.save_peer_relay_decision(id, relay_allowed).await?;
+    Ok(web::Json(
+        json!({"peerId":id,"authorization":authorization,"iceServers":grant_ice_servers(&s.config,id,expires,relay_allowed)?,"relayAllowed":relay_allowed,"relayDeniedReason":relay_denied_reason}),
+    ))
+}
+
+async fn create_grant(
+    req: &HttpRequest,
+    s: &AppState,
+    b: &Create,
+    transport: PeerTransport,
+) -> Result<(PeerAuthorization, AuthSession, i64)> {
+    let a = auth::user(req, s).await?;
     let machine = s
         .store
         .authorize_machine(&a.user.id, &b.machine_id, MachineAction::Connect)
@@ -63,18 +82,13 @@ pub async fn create(
             origin_id: machine.origin_id,
             local_machine_id: machine.local_machine_id,
         },
+        transport,
         purpose: b.purpose.clone(),
         actions: actions.into_iter().map(str::to_owned).collect(),
         issued_at: timestamp(now),
         expires_at: timestamp(expires),
     };
-    let relay_denied_reason = s.store.relay_denied_reason(&b.team_id).await?;
-    let relay_allowed = relay_denied_reason.is_none();
-    s.store.save_peer(&authorization, &a.id, expires).await?;
-    s.store.save_peer_relay_decision(&id, relay_allowed).await?;
-    Ok(web::Json(
-        json!({"peerId":id,"authorization":authorization,"iceServers":grant_ice_servers(&s.config,&id,expires,relay_allowed)?,"relayAllowed":relay_allowed,"relayDeniedReason":relay_denied_reason}),
-    ))
+    Ok((authorization, a, expires))
 }
 fn grant_ice_servers(
     config: &ServerConfig,
@@ -121,6 +135,13 @@ async fn authorize(req: &HttpRequest, s: &AppState, id: &str) -> Result<PeerAuth
         .authorize_machine(&a.user.id, &p.target_machine.id, MachineAction::Connect)
         .await?;
     Ok(p)
+}
+async fn authorize_webrtc(req: &HttpRequest, s: &AppState, id: &str) -> Result<PeerAuthorization> {
+    let grant = authorize(req, s, id).await?;
+    if grant.transport != PeerTransport::Webrtc {
+        return Err(ApiError::forbidden());
+    }
+    Ok(grant)
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

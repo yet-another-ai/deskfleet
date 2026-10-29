@@ -1,4 +1,4 @@
-import { DESKTOP_PERMISSION_KINDS, type ControlMethod, type ControlMethods, type ControlRequest, type DesktopStart } from "./control-protocol.ts"
+import { DESKTOP_PERMISSION_KINDS, MAX_LOCAL_MESSAGE_BYTES, type ControlMethod, type ControlMethods, type ControlRequest, type DesktopStart } from "./control-protocol.ts"
 import { resourceId, validateCatalogParams } from "./catalog-protocol.ts"
 import { validateProviderParams } from "./provider-protocol.ts"
 
@@ -76,6 +76,26 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
       for (const key of ["serverUrl", "machineId", "teamId", "token"]) {
         if (typeof params[key] !== "string" || !params[key] || (params[key] as string).length > 8192) throw new Error(`Invalid enrollment ${key}`)
       }
+      break
+    case "localOpen":
+      sessionId(params.peerId)
+      if (typeof params.token !== "string" || params.token.length < 32 || params.token.length > 256) throw new Error("Invalid local channel claim token")
+      break
+    case "localSend":
+      sessionId(params.peerId)
+      if (typeof params.data !== "string" || typeof params.isString !== "boolean") throw new Error("Invalid local channel message")
+      if (params.isString) {
+        if (Buffer.byteLength(params.data) > MAX_LOCAL_MESSAGE_BYTES) throw new Error("Local channel message is too large")
+      } else if (params.data.length > Math.ceil(MAX_LOCAL_MESSAGE_BYTES / 3) * 4 ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(params.data) ||
+        Buffer.from(params.data, "base64").length > MAX_LOCAL_MESSAGE_BYTES) throw new Error("Invalid local channel binary message")
+      break
+    case "localClose":
+      sessionId(params.peerId)
+      break
+    case "localAck":
+      sessionId(params.peerId)
+      if (!Number.isSafeInteger(params.sequence) || (params.sequence as number) < 1) throw new Error("Invalid local channel acknowledgement")
       break
     case "centralStatus":
     case "centralPrepareEnrollment":

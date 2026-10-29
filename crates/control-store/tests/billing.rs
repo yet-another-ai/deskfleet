@@ -280,6 +280,7 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
             local_machine_id: "1".into(),
         },
         purpose: "agent".into(),
+        transport: deskfleet_protocol::control::PeerTransport::Webrtc,
         actions: vec!["agent:read".into()],
         issued_at: timestamp(now),
         expires_at: timestamp(now + 60_000),

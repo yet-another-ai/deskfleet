@@ -20,6 +20,8 @@ export interface LocalEnrollment {
   identity: { originId: string; machineId: string }; machineName: string
 }
 export interface PeerGrant { peerId: string; authorization: PeerAuthorization; iceServers: RTCIceServer[]; relayDeniedReason?: RelayDeniedReason | null }
+/** Kept in Electron main; the one-use token binds a grant to a local IPC connection. */
+export interface LocalPeerGrant { peerId: string; authorization: PeerAuthorization; token: string }
 /** List and notification state without conversation content or request payloads. */
 export interface AgentSessionSummary {
   session: AgentSnapshot["session"]

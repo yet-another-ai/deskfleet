@@ -3,9 +3,10 @@ import type { CentralApi, CentralEvent, Machine } from "./central.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { remoteMachineClient } from "./remote.ts"
 import { setPeerTelemetrySink } from "./peer-telemetry.ts"
+import type { LocalChannelsApi } from "./local-channels.ts"
 const disposers: (() => void)[] = []
 afterEach(() => { for (const dispose of disposers.splice(0)) dispose(); setPeerTelemetrySink(undefined); vi.useRealTimers() })
-function fixture() {
+function fixture(host: Partial<DeskfleetDesktopApi> = {}, local = false) {
   let listener!: (event: CentralEvent) => void
   const central = {
     onEvent: (value: typeof listener) => { listener = value; return () => {} },
@@ -16,10 +17,61 @@ function fixture() {
     sessions: vi.fn(async () => [{ session: { id: "1" } }] as never),
   } as unknown as CentralApi
   const machine: Machine = { id: "central7", teamId: "team2", name: "Remote", originId: "origin", localMachineId: "1", capabilities: {}, online: false }
-  const remote = remoteMachineClient({ platform: "web", locale: "en-US" } as DeskfleetDesktopApi, central, machine)
+  const remote = remoteMachineClient({ platform: "web", locale: "en-US", ...host } as DeskfleetDesktopApi, central, machine, { local })
   disposers.push(remote.dispose)
   return { remote, central, emit: (event: CentralEvent) => listener(event) }
 }
+
+test("verified local targets use direct Agent/Git and terminal channels, while desktop retains WebRTC", async () => {
+  const bridge: LocalChannelsApi = { open: vi.fn(async () => {}), send: vi.fn(async () => {}), close: vi.fn(async () => {}), onEvent: () => () => {} }
+  const f = fixture({ platform: "darwin", localChannels: bridge }, true)
+  const agent = f.remote.api.agent.connectChannel!("agent"), terminal = f.remote.api.terminal.connectChannel!("terminal")
+  await vi.waitFor(() => { expect(agent.readyState).toBe("open"); expect(terminal.readyState).toBe("open") })
+  expect(bridge.open).toHaveBeenCalledWith({ connectionId: "agent", teamId: "team2", machineId: "central7", purpose: "agent" })
+  expect(bridge.open).toHaveBeenCalledWith({ connectionId: "terminal", teamId: "team2", machineId: "central7", purpose: "terminal" })
+  expect(f.central.createPeer).not.toHaveBeenCalled()
+  expect(f.remote.api.target?.local).toBe(true)
+  expect(f.remote.api.agent.control!("_deskfleet/git/branches", { workspaceId: "1" })).toBeUndefined()
+  await f.remote.api.desktop.prepare!("desktop")
+  expect(f.central.createPeer).toHaveBeenCalledWith("team2", "central7", "desktop")
+  f.remote.dispose()
+  expect(agent.readyState).toBe("closed")
+  expect(terminal.readyState).toBe("closed")
+})
+
+test("Web and unverified desktop targets never select the local bridge", () => {
+  const bridge = { open: vi.fn() } as unknown as LocalChannelsApi
+  const web = fixture({ localChannels: bridge }, true), remote = fixture({ platform: "darwin", localChannels: bridge })
+  expect(web.remote.api.agent.connectChannel).toBeUndefined()
+  expect(remote.remote.api.terminal.connectChannel).toBeUndefined()
+  expect(bridge.open).not.toHaveBeenCalled()
+})
+
+test("a selected local target reports a missing bridge instead of falling back to WebRTC", () => {
+  const f = fixture({ platform: "darwin" }, true)
+  expect(() => f.remote.api.agent.connectChannel!("agent")).toThrow("Local message channels are unavailable")
+  expect(f.central.createPeer).not.toHaveBeenCalled()
+})
+
+test("locality changes update existing signaling objects and keep management subscriptions", async () => {
+  const bridge: LocalChannelsApi = { open: vi.fn(async () => {}), send: vi.fn(async () => {}), close: vi.fn(async () => {}), onEvent: () => () => {} }
+  const f = fixture({ platform: "darwin", localChannels: bridge }), agent = f.remote.api.agent, terminal = f.remote.api.terminal, catalog = vi.fn()
+  f.remote.api.catalog.onChanged(catalog)
+  f.remote.setLocal(true)
+  const channel = agent.connectChannel!("direct")
+  await vi.waitFor(() => expect(channel.readyState).toBe("open"))
+  expect(terminal.connectChannel).toBeTypeOf("function")
+  expect(agent.control!("_deskfleet/git/branches", { workspaceId: "1" })).toBeUndefined()
+  channel.close()
+  f.remote.setLocal(false)
+  expect(agent.connectChannel).toBeUndefined()
+  expect(terminal.connectChannel).toBeUndefined()
+  expect(f.remote.api.target?.local).toBe(false)
+  await agent.control!("_deskfleet/git/branches", { workspaceId: "1" })
+  expect(f.central.rpc).toHaveBeenCalledWith("central7", "_deskfleet/git/branches", { workspaceId: "1" })
+  f.emit({ type: "catalogChanged", machineId: "central7" })
+  expect(catalog).toHaveBeenCalledOnce()
+})
 test("passes TURN config to the browser, preserves peers during signaling loss, and closes authorization at 24 hours", async () => {
   vi.useFakeTimers(); const f = fixture(); const events = vi.fn()
   f.remote.api.agent.onEvent(events)

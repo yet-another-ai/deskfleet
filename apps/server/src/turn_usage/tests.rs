@@ -8,7 +8,7 @@ use std::{
 
 use actix_web::{App, http::StatusCode, test, web};
 use deskfleet_control_store::{AuthSession, ControlStore, now_ms, timestamp};
-use deskfleet_protocol::control::{PeerActor, PeerAuthorization, PeerTarget};
+use deskfleet_protocol::control::{PeerActor, PeerAuthorization, PeerTarget, PeerTransport};
 use redis::aio::MultiplexedConnection;
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use serde_json::json;
@@ -60,6 +60,7 @@ async fn peer(store: &ControlStore, auth: &AuthSession) -> PeerAuthorization {
             local_machine_id: "1".into(),
         },
         purpose: "agent".into(),
+        transport: PeerTransport::Webrtc,
         actions: vec!["agent:read".into()],
         issued_at: timestamp(now_ms()),
         expires_at: timestamp(expires),

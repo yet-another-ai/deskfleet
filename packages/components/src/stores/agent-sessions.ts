@@ -547,6 +547,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       throw reason
     }
   }
-  onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); client.close() })
-  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, composerReferences, resolveComposerReferences, gitBranches, gitStatus, gitDiff, watchGit }
+  const closeTransport = () => client.close()
+  onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); closeTransport() })
+  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, composerReferences, resolveComposerReferences, gitBranches, gitStatus, gitDiff, watchGit, closeTransport }
 })

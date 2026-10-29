@@ -10,6 +10,7 @@ import AccountShell from "./AccountShell.vue"
 import { agentEvent, agentInput, agentSnapshot } from "./test/agent.ts"
 import { fakeCentral, machineFixture } from "./test/central.ts"
 import * as analytics from "./services/analytics.ts"
+import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 
 const host = getClient()
 const page = () => new DOMWrapper(document.body)
@@ -124,6 +125,37 @@ function withEmptyCatalogs({ central, state }: ReturnType<typeof fakeCentral>): 
     rpc: vi.fn(async () => { throw new Error("Offline") }),
   })
 }
+
+test("late local enrollment switches the same machine's channel without losing its route or draft", async () => {
+  const fake = fakeCentral({
+    machines: [machineFixture("mine", "team-1", "This computer", false)],
+    enrollment: { configured: true, connected: true, revoked: false, serverUrl: "https://fleet.example", teamId: "team-1", machineId: "mine", identity: { originId: "origin-mine", machineId: "1" }, machineName: "This computer" },
+  })
+  withEmptyCatalogs(fake)
+  fake.central.localEnrollment!.mockRejectedValueOnce(new Error("Daemon is starting"))
+  mountShell(fake.central)
+  await settled(() => expect(getClient().target?.id).toBe("mine"))
+  const api = getClient()
+  expect(api.agent.connectChannel).toBeUndefined()
+  const agents = useAgentSessionsStore()
+  agents.drafts["machine:mine"] = "Keep this unsent message"
+  await router.push("/settings/preferences")
+  const session = view!.getComponent({ name: "MachineSurface" }).props("session") as AccountSession
+  await session.refreshMachines()
+  await settled(() => expect(api.agent.connectChannel).toBeTypeOf("function"))
+  expect(getClient()).toBe(api)
+  expect(router.currentRoute.value.path).toBe("/settings/preferences")
+  expect(useAgentSessionsStore()).toBe(agents)
+  expect(agents.drafts["machine:mine"]).toBe("Keep this unsent message")
+  fake.central.localEnrollment!.mockRejectedValueOnce(new Error("Daemon discovery is temporarily unavailable"))
+  await session.refreshMachines()
+  expect(api.agent.connectChannel).toBeTypeOf("function")
+  fake.state.enrollment!.revoked = true
+  await session.refreshMachines()
+  await settled(() => expect(api.agent.connectChannel).toBeUndefined())
+  expect(router.currentRoute.value.path).toBe("/settings/preferences")
+  expect(agents.drafts["machine:mine"]).toBe("Keep this unsent message")
+})
 
 test("keeps archived lists and their Conversations return path scoped to the selected machine", async () => {
   const fake = fakeCentral({ machines: [

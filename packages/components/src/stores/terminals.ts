@@ -122,6 +122,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     delete titles.value[sessionId]
   }
 
-  onScopeDispose(() => { unsubscribe(); client?.close() })
-  return { sessions, state, error, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup }
+  function closeTransport(): void { client?.close(); client = null }
+  onScopeDispose(() => { unsubscribe(); closeTransport() })
+  return { sessions, state, error, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup, closeTransport }
 })

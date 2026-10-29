@@ -14,6 +14,7 @@ import type { SystemApi } from "./system.ts"
 import type { AppearanceApi } from "./appearance.ts"
 import type { LocalApplicationsApi } from "./applications.ts"
 import type { UpdateApi } from "./updates.ts"
+import type { LocalChannelsApi } from "./local-channels.ts"
 
 /** The preload bridge exposed to the main renderer as `window.deskfleet`. */
 export interface DeskfleetDesktopApi {
@@ -27,6 +28,7 @@ export interface DeskfleetDesktopApi {
   updates?: UpdateApi
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
+  localChannels?: LocalChannelsApi
   locale: AppLocale
   settings: SettingsApi
   catalog: CatalogApi

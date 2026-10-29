@@ -50,7 +50,12 @@ await once(web, "listening")
 const webUrl = `http://localhost:${(web.address() as AddressInfo).port}/`
 const fixture = await startBackendFixture({ returnTo: [webUrl, "http://127.0.0.1:*/auth/callback"], allowedOrigins: [webUrl.slice(0, -1)] })
 const identity = { subject: `client-${randomUUID()}`, name: "Client smoke", email: "client@example.invalid" }
-const login = await fixture.auth.login(fixture.backend, identity)
+const login = await fixture.auth.login(fixture.backend, identity).catch(async error => {
+  console.error(fixture.diagnostics())
+  await fixture.close(); await web[Symbol.asyncDispose]()
+  await rm(directory, { recursive: true, force: true })
+  throw error
+})
 async function request<T>(path: string, body?: unknown, method = body === undefined ? "GET" : "POST"): Promise<T> {
   const response = await fetch(`${fixture.backend}/api${path}`, { method, headers: { authorization: `Bearer ${login.token}`, "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
   const text = await response.text()
@@ -76,11 +81,14 @@ async function launch(mode: BackendClientsContext["mode"]): Promise<void> {
   const context: BackendClientsContext = {
     mode, backend: fixture.backend, webUrl, credentials: fixture.auth.credentials(identity), rendererDirectory: join(root, "apps/desktop/out/renderer"), preloadPath: join(root, "apps/desktop/out/preload/index.cjs"),
     daemonDirectory: join(directory, "daemon-0"), profileDirectory: join(directory, `profile-${mode}`), machines, sessionId: sessions[0]!, forceRelay: process.env.DESKFLEET_SMOKE_FORCE_RELAY === "1",
+    teamId: teamId!, localProbePath: join(directory, "local-probe.js"),
   }
   await mkdir(context.profileDirectory, { recursive: true })
   await writeFile(join(context.profileDirectory, "settings.json"), JSON.stringify({ localAgentEnabled: false }))
+  const env: NodeJS.ProcessEnv = { ...process.env, DESKFLEET_DAEMON_DIRECTORY: context.daemonDirectory }
+  delete env.ELECTRON_RUN_AS_NODE
   electron = spawn(executable, [join(directory, "client.mjs"), `--backend-client-context=${JSON.stringify(context)}`], {
-    cwd: root, env: { ...process.env, DESKFLEET_DAEMON_DIRECTORY: context.daemonDirectory }, stdio: ["ignore", "ignore", "pipe", "ipc"],
+    cwd: root, env, stdio: ["ignore", "ignore", "pipe", "ipc"],
   })
   electron.stderr?.setEncoding("utf8").on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-20_000); process.stderr.write(chunk) })
   try {
@@ -92,6 +100,7 @@ async function launch(mode: BackendClientsContext["mode"]): Promise<void> {
       electron!.on("message", (message: { phase?: string; result?: unknown; error?: string }) => {
         if (message.error) fail(new Error(`${mode}: ${message.error}`))
         else if (message.phase === "online") {
+          if (mode === "electron") console.log(`Electron local transport evidence: ${JSON.stringify(message.result)}`)
           void (async () => {
             const snapshot = await until(() => request<{ snapshot: AgentSnapshot }>(`/machines/${machines[0]}/sessions/${sessions[0]}`), value => value.snapshot.session.archiveState === "active" && value.snapshot.inputs.some(input => input.content.some(block => block.type === "text" && block.text === `Prompt from ${mode}`)), "central archive/restore synchronization")
             assert.equal(snapshot.snapshot.session.archiveState, "active")
@@ -108,6 +117,7 @@ try {
   const define = { "import.meta.env.VITE_DESKFLEET_SERVER_URL": JSON.stringify(fixture.backend) }
   await buildWeb({ root: join(root, "apps/web"), configFile: join(root, "apps/web/vite.config.ts"), define, build: { outDir: webDirectory, emptyOutDir: true } })
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/backend-clients-main.ts")], outfile: join(directory, "client.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24", define })
+  await build({ entryPoints: [join(import.meta.dirname, "fixtures/local-channels-renderer.ts")], outfile: join(directory, "local-probe.js"), bundle: true, platform: "browser", format: "iife", globalName: "localChannelSmoke", target: "chrome140" })
   const team = await request<{ id: string }>("/teams", { name: `Clients ${randomUUID()}` }); teamId = team.id
   for (let index = 0; index < 2; index++) {
     const repository = join(directory, `repo-${index}`); await mkdir(repository)
@@ -132,7 +142,7 @@ try {
   await until(() => daemons[0]!.central.status(), status => status.connected, "daemon restart")
   await launch("electron")
   assert.deepEqual(providers[0]!.prompts, ["Prompt from web", "Prompt from electron"])
-  console.log("Production Web and Electron: owned email/password authentication, team/machine selection, Agent and terminal WebRTC, streaming/tool events, PTY output, archive/restore, equal-local-ID isolation and offline central history passed")
+  console.log("Production Web and Electron: owned authentication, remote WebRTC, local Agent/Git/terminal with WebRTC disabled, Git invalidations, terminal replay, session reattachment, transport timing, archive/restore, equal-local-ID isolation and offline central history passed")
 } catch (error) { console.error(diagnostics); console.error(fixture.diagnostics()); throw error }
 finally {
   await stopClient(); await Promise.allSettled(daemons.map(daemon => daemon.close()))

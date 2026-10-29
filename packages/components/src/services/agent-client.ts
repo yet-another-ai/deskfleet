@@ -1,5 +1,6 @@
 import type { AgentSignalingApi } from "../../../client/src/agent.ts"
 import type { IceCandidate } from "../../../client/src/desktop-media.ts"
+import { DataChannelErrorEvent, type DataChannel } from "../../../client/src/data-channel.ts"
 import { AGENT_CHANNEL, AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { AgentMessageDecoder } from "./agent-stream.ts"
 
@@ -14,8 +15,8 @@ interface PendingRequest {
 }
 interface PeerSession {
   id: string
-  peer: RTCPeerConnection
-  channel: RTCDataChannel
+  peer: RTCPeerConnection | undefined
+  channel: DataChannel
   unsubscribe(): void
   timeout: ReturnType<typeof setTimeout>
   resolve(): void
@@ -33,7 +34,7 @@ interface PeerSession {
 const errorOf = (value: unknown): Error => value instanceof Error ? value : new Error(String(value))
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value)
 
-/** One ACP facade peer multiplexes Sessions. Closing a viewer never stops their providers. */
+/** One ACP channel multiplexes Sessions. Closing a viewer never stops their providers. */
 export class AgentClient {
   readonly #api: AgentSignalingApi
   readonly #state: (state: AgentConnectionState, error?: string) => void
@@ -69,43 +70,45 @@ export class AgentClient {
         reject(new Error("Connection was cancelled")); return
       }
       try {
-        const peer = new RTCPeerConnection({ iceServers })
-        const channel = peer.createDataChannel(AGENT_CHANNEL, { ordered: true })
+        const peer = this.#api.connectChannel ? undefined : new RTCPeerConnection({ iceServers })
+        const channel: DataChannel = this.#api.connectChannel?.(id) ?? peer!.createDataChannel(AGENT_CHANNEL, { ordered: true })
         channel.binaryType = "arraybuffer"
         channel.bufferedAmountLowThreshold = 64 * 1024
         const session: PeerSession = {
           id, peer, channel, unsubscribe: () => {}, resolve, reject,
           timeout: setTimeout(() => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection timed out")), 20_000),
-          offered: false, remoteReady: false, localCandidates: [], remoteCandidates: [],
+          offered: false, remoteReady: !peer, localCandidates: [], remoteCandidates: [],
           localSending: Promise.resolve(), remoteAdding: Promise.resolve(), sending: Promise.resolve(), queuedBytes: 0,
           decoder: new AgentMessageDecoder(message => this.#message(session, message)),
         }
         this.#current = session
-        session.unsubscribe = this.#api.onEvent(event => {
-          if (event.sessionId !== session.id || this.#current !== session) return
-          if (event.kind === "iceCandidate") {
-            session.remoteCandidates.push(event.candidate)
-            this.#addCandidates(session)
-          } else if (event.kind === "error") this.#fail(session, new Error(event.error))
-          else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
-        })
-        peer.onicecandidate = ({ candidate }) => {
-          if (!candidate || this.#current !== session) return
-          const value = candidate.toJSON()
-          session.localCandidates.push({
-            candidate: value.candidate ?? "",
-            ...(value.sdpMid != null ? { sdpMid: value.sdpMid } : {}),
-            ...(value.sdpMLineIndex != null ? { sdpMlineIndex: value.sdpMLineIndex } : {}),
-            ...(value.usernameFragment != null ? { usernameFragment: value.usernameFragment } : {}),
+        if (peer) {
+          session.unsubscribe = this.#api.onEvent(event => {
+            if (event.sessionId !== session.id || this.#current !== session) return
+            if (event.kind === "iceCandidate") {
+              session.remoteCandidates.push(event.candidate)
+              this.#addCandidates(session)
+            } else if (event.kind === "error") this.#fail(session, new Error(event.error))
+            else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
           })
-          this.#sendCandidates(session)
-        }
-        peer.onconnectionstatechange = () => {
-          if (["failed", "closed", "disconnected"].includes(peer.connectionState)) this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
+          peer.onicecandidate = ({ candidate }) => {
+            if (!candidate || this.#current !== session) return
+            const value = candidate.toJSON()
+            session.localCandidates.push({
+              candidate: value.candidate ?? "",
+              ...(value.sdpMid != null ? { sdpMid: value.sdpMid } : {}),
+              ...(value.sdpMLineIndex != null ? { sdpMlineIndex: value.sdpMLineIndex } : {}),
+              ...(value.usernameFragment != null ? { usernameFragment: value.usernameFragment } : {}),
+            })
+            this.#sendCandidates(session)
+          }
+          peer.onconnectionstatechange = () => {
+            if (["failed", "closed", "disconnected"].includes(peer.connectionState)) this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
+          }
         }
         channel.onopen = () => this.#ready(session)
         channel.onclose = () => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
-        channel.onerror = () => this.#fail(session, new Error("Agent DataChannel failed"))
+        channel.onerror = event => this.#fail(session, event instanceof DataChannelErrorEvent ? event.error : new Error("Agent DataChannel failed"))
         channel.onmessage = ({ data }) => {
           if (this.#current !== session) return
           try {
@@ -114,10 +117,11 @@ export class AgentClient {
             session.decoder.write(new Uint8Array(data))
           } catch (error) { this.#fail(session, errorOf(error)) }
         }
-        void this.#negotiate(session).catch(error => this.#fail(session, errorOf(error)))
+        if (peer) void this.#negotiate(session).catch(error => this.#fail(session, errorOf(error)))
+        else this.#ready(session)
       } catch (error) { this.#state("error", errorOf(error).message); reject(errorOf(error)) }
       }
-      if (this.#api.prepare) void this.#api.prepare(id).then(begin, error => { this.#state("error", errorOf(error).message); reject(errorOf(error)) })
+      if (!this.#api.connectChannel && this.#api.prepare) void this.#api.prepare(id).then(begin, error => { this.#state("error", errorOf(error).message); reject(errorOf(error)) })
       else begin([])
     })
     this.#connecting = connecting
@@ -126,15 +130,16 @@ export class AgentClient {
   }
 
   async #negotiate(session: PeerSession): Promise<void> {
-    const offer = await session.peer.createOffer()
+    const peer = session.peer!
+    const offer = await peer.createOffer()
     if (this.#current !== session) return
-    await session.peer.setLocalDescription(offer)
+    await peer.setLocalDescription(offer)
     if (this.#current !== session) return
     const answer = await this.#api.offer({ sessionId: session.id, sdp: offer.sdp! })
     if (this.#current !== session) { await this.#api.close(session.id); return }
     session.offered = true
     this.#sendCandidates(session)
-    await session.peer.setRemoteDescription({ type: "answer", sdp: answer.sdp })
+    await peer.setRemoteDescription({ type: "answer", sdp: answer.sdp })
     if (this.#current !== session) return
     session.remoteReady = true
     this.#addCandidates(session)
@@ -162,7 +167,7 @@ export class AgentClient {
     session.remoteAdding = session.remoteAdding.then(async () => {
       for (const candidate of candidates) {
         if (this.#current !== session) return
-        await session.peer.addIceCandidate({ candidate: candidate.candidate, sdpMid: candidate.sdpMid, sdpMLineIndex: candidate.sdpMlineIndex, usernameFragment: candidate.usernameFragment })
+        await session.peer!.addIceCandidate({ candidate: candidate.candidate, sdpMid: candidate.sdpMid, sdpMLineIndex: candidate.sdpMlineIndex, usernameFragment: candidate.usernameFragment })
       }
     }).catch(error => this.#fail(session, errorOf(error)))
   }
@@ -195,7 +200,7 @@ export class AgentClient {
     if (session.queuedBytes + bytes.length > AGENT_MESSAGE_BYTES + 1) return Promise.reject(new Error("Agent send queue is full"))
     session.queuedBytes += bytes.length
     const sending = session.sending.then(async () => {
-      const negotiated = session.peer.sctp?.maxMessageSize
+      const negotiated = session.peer?.sctp?.maxMessageSize
       const chunkSize = negotiated && Number.isFinite(negotiated) ? Math.min(AGENT_CHUNK_BYTES, negotiated) : AGENT_CHUNK_BYTES
       for (let offset = 0; offset < bytes.length; offset += chunkSize) {
         await this.#capacity(session)
@@ -263,11 +268,13 @@ export class AgentClient {
     this.#connecting = null
     clearTimeout(session.timeout)
     session.unsubscribe()
-    session.peer.onicecandidate = null
-    session.peer.onconnectionstatechange = null
+    if (session.peer) {
+      session.peer.onicecandidate = null
+      session.peer.onconnectionstatechange = null
+    }
     session.channel.onopen = session.channel.onclose = session.channel.onerror = session.channel.onmessage = null
     session.channel.close()
-    session.peer.close()
+    session.peer?.close()
     session.reject(error)
     for (const pending of this.#pending.values()) { clearTimeout(pending.timeout); pending.reject(error) }
     this.#pending.clear()

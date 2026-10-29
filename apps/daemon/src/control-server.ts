@@ -50,6 +50,11 @@ interface OwnedPeer {
   desktopStart?: "starting" | "started"
 }
 
+interface LocalDelivery {
+  peerId: string
+  finish(error?: Error): void
+}
+
 class ControlConnection {
   readonly #socket: Socket
   readonly #token: string
@@ -67,6 +72,10 @@ class ControlConnection {
   readonly #allowLocalControlForTests: boolean
   readonly #sessions = new Map<string, OwnedPeer>()
   readonly #closingSessions = new Map<string, Promise<void>>()
+  readonly #localPeers = new Map<string, CentralClient>()
+  readonly #localDeliveries = new Map<number, LocalDelivery>()
+  #nextLocalSequence = 0
+  #localDeliveryBytes = 0
   readonly #dialed = new Set<string>()
   readonly #unsubscribe: () => void
   #authenticated = false
@@ -115,6 +124,34 @@ class ControlConnection {
       return
     }
     this.#socket.write(data)
+  }
+
+  #sendLocal(peerId: string, data: Buffer, isString: boolean): Promise<void> {
+    if (this.#closing || this.#socket.destroyed || this.#socket.writableEnded) return Promise.reject(new Error("Local channel connection closed"))
+    const sequence = ++this.#nextLocalSequence
+    const line = JSON.stringify({ event: { kind: "localChannelMessage", peerId, sequence, data: data.toString(isString ? "utf8" : "base64"), isString } }) + "\n"
+    const bytes = Buffer.byteLength(line)
+    if (this.#socket.writableLength + bytes > MAX_CONTROL_MESSAGE_BYTES * 4 || this.#localDeliveryBytes + bytes > MAX_CONTROL_MESSAGE_BYTES * 4) {
+      return Promise.reject(new Error("Local channel backpressure: send buffer is full"))
+    }
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => finish(new Error("Local channel delivery acknowledgement timed out")), 5_000)
+      const finish = (error?: Error) => {
+        if (!this.#localDeliveries.delete(sequence)) return
+        this.#localDeliveryBytes -= bytes
+        clearTimeout(timeout)
+        if (error) reject(error); else resolve()
+      }
+      this.#localDeliveryBytes += bytes
+      this.#localDeliveries.set(sequence, { peerId, finish })
+      this.#socket.write(line, error => { if (error) finish(error) })
+    })
+  }
+
+  #closeLocalDeliveries(peerId?: string): void {
+    for (const delivery of this.#localDeliveries.values()) {
+      if (peerId === undefined || delivery.peerId === peerId) delivery.finish(new Error("Local channel connection closed"))
+    }
   }
 
   async run(): Promise<void> {
@@ -180,7 +217,7 @@ class ControlConnection {
     }
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")
     if (this.#closing) throw new Error("Local daemon connection is closed")
-    if (!this.#allowLocalControlForTests && !["shutdown", "capabilities", "centralStatus", "centralEnroll", "centralPrepareEnrollment", "permissionsRefresh", "permissionRequest"].includes(request.method)) {
+    if (!this.#allowLocalControlForTests && !["shutdown", "capabilities", "centralStatus", "centralEnroll", "centralPrepareEnrollment", "permissionsRefresh", "permissionRequest", "localOpen", "localSend", "localAck", "localClose"].includes(request.method)) {
       throw new Error("Sign in and select a team; manage machine resources through the backend API")
     }
     switch (request.method) {
@@ -189,6 +226,38 @@ class ControlConnection {
       case "centralStatus": return this.#central().status()
       case "centralPrepareEnrollment": return this.#prepareEnrollment()
       case "centralEnroll": return this.#central().enroll(request.params)
+      case "localOpen": {
+        const { peerId, token } = request.params
+        if (this.#localPeers.size >= 16) throw new Error("Too many local channels on this connection")
+        const central = this.#central()
+        central.openLocal(peerId, token, this, {
+          send: (data, isString) => this.#sendLocal(peerId, data, isString),
+          close: error => {
+            this.#localPeers.delete(peerId)
+            this.#closeLocalDeliveries(peerId)
+            this.#send({ event: { kind: "localChannelClosed", peerId, ...(error ? { error } : {}) } })
+          },
+        })
+        this.#localPeers.set(peerId, central)
+        return null
+      }
+      case "localSend": {
+        const { peerId, data, isString } = request.params
+        const central = this.#localPeers.get(peerId)
+        if (!central) throw new Error("Unknown local channel on this connection")
+        central.sendLocal(peerId, this, Buffer.from(data, isString ? "utf8" : "base64"), isString)
+        return null
+      }
+      case "localClose": {
+        const { peerId } = request.params
+        await this.#localPeers.get(peerId)?.closeLocal(peerId, this)
+        return null
+      }
+      case "localAck": {
+        const delivery = this.#localDeliveries.get(request.params.sequence)
+        if (delivery?.peerId === request.params.peerId) delivery.finish()
+        return null
+      }
       case "providerList":
         return this.#providers.snapshot()
       case "providerCreate":
@@ -389,7 +458,11 @@ class ControlConnection {
     this.#socket.destroy()
     this.#unsubscribe()
     this.#dialed.clear()
-    this.#closing ??= Promise.allSettled([...new Set([...this.#sessions.keys(), ...this.#closingSessions.keys()])].map(id => this.#closeSession(id))).then(results => {
+    this.#closeLocalDeliveries()
+    this.#closing ??= Promise.allSettled([
+      ...[...new Set([...this.#sessions.keys(), ...this.#closingSessions.keys()])].map(id => this.#closeSession(id)),
+      ...[...this.#localPeers].map(([id, central]) => central.closeLocal(id, this)),
+    ]).then(results => {
       const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
       if (errors.length) throw new AggregateError(errors, "Failed to close desktop sessions")
     })
