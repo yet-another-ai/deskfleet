@@ -50,12 +50,13 @@ stack owns receive-side decoding and playback.
 | macOS | ScreenCaptureKit / IOSurface | VideoToolbox H.264/H.265/AV1, subject to runtime support | ScreenCaptureKit → Opus |
 | Windows | DXGI Desktop Duplication / D3D11 | NVENC H.264/H.265/AV1; Media Foundation hardware H.264 fallback, subject to GPU/driver support | Unsupported |
 | Linux Wayland | RemoteDesktop + ScreenCast portal / PipeWire | GStreamer VA-API or NVENC H.264/H.265/AV1, subject to GPU/driver support | Unsupported |
+| Linux X11 | RandR / GetImage with XFixes cursor | Same GStreamer hardware encoders as Wayland | Unsupported |
 
 WebRTC DataChannels and Opus encoding work without a display. Loading the addon,
 creating a peer does not enumerate displays or probe video encoders. On Linux,
-daemon capability discovery checks the optional media runtime and portal
-interfaces without requesting consent. `captureDisplays()`, `supportedVideoCodecs(displayId)`, and
-`startDesktop()` are explicit operations. Capture requires an interactive
+daemon capability discovery checks the selected desktop backend and optional
+hardware encoding runtime without requesting consent. `captureDisplays()`,
+`supportedVideoCodecs(displayId)`, and `startDesktop()` are explicit operations. Capture requires an interactive
 graphical session and any platform recording permission.
 
 On Windows, capture creates its D3D11 device on the adapter that owns the
@@ -103,8 +104,25 @@ The native checks and requests run on Rust workers, without starting capture or
 initializing input. Screen Recording also covers the current ScreenCaptureKit
 system-audio stream. Pending or denied permission does not block agents,
 terminals, catalog operations, or daemon cleanup. Windows returns `not-required`
-without prompting. Linux uses the combined authorization described below and
-does not require Full Disk Access.
+without prompting. Linux uses the backend-specific access checks described below
+and does not require Full Disk Access.
+
+### Linux desktop selection
+
+`deskfleet-linux-desktop` selects one backend for native access, capture, and
+input for the lifetime of the daemon process. `XDG_SESSION_TYPE=wayland` or a
+nonempty `WAYLAND_DISPLAY` selects Wayland, including when `DISPLAY` also points
+to Xwayland. Otherwise a nonempty `DISPLAY` selects X11. No graphical environment
+means desktop access is unavailable. Restart the daemon after changing its
+session environment. Failed Wayland authorization never falls back to Xwayland;
+the X11 connection also rejects servers advertising the XWAYLAND extension.
+
+The authenticated local `hello` and permission snapshots carry
+`linuxDesktopBackend` (`wayland`, `x11`, or `null`). Wayland retains its two welcome
+permission steps. X11 skips those Portal steps and silently checks the user's
+X server access; successful checks report `not-required`. Connection errors
+remain visible in Desktop Settings. Neither backend starts capture or input
+while checking permissions.
 
 ### Wayland authorization and media
 
@@ -112,7 +130,7 @@ Linux supports the current user's logged-in, unlocked Wayland desktop through
 RemoteDesktop portal v2, ScreenCast, PipeWire, and EIS. The portal backend must
 support keyboard and pointer access and monitor capture; a ScreenCast-only
 backend is insufficient. GNOME and KDE provide these interfaces. Login-screen
-access, remote unlock, X11, clipboard, and system audio are outside this backend.
+access, remote unlock, clipboard, and system audio are outside this backend.
 
 After discovery and local IPC are ready, both standalone and Electron-hosted
 daemons request screen and input access together. This runs asynchronously so a
@@ -183,6 +201,48 @@ Daemon shutdown ends that watch; a later daemon
 in the same process watches again. An input controller never closes another
 viewer's portal session. Portal closure still ends capture and input together.
 
+### X11 capture and input
+
+`deskfleet-x11` uses x11rb's Rust transport with the logged-in user's `DISPLAY`
+and Xauthority credentials over a local Unix socket (`:N.S` or `unix:N.S`).
+TCP and SSH-forwarded displays are unsupported. Connection, authentication,
+and discovery have a shared two-second deadline: expiration interrupts the
+socket and joins the watchdog, so an unresponsive X server cannot hold daemon
+capability queries indefinitely. It requires an accessible X server with a
+TrueColor root visual and XFixes for the default visible cursor.
+RandR 1.3 enumerates active CRTCs, their refresh rates, and
+root-relative monitor bounds; a server without active RandR outputs exposes its
+root screen instead. Capture and input share those source IDs and bounds,
+including multiple X screens. A monitor moving, resizing, disappearing, or a
+root-size change invalidates that source; reconnect after refreshing displays.
+
+Capture reads the selected root rectangle with GetImage and converts the server's
+pixel layout to packed BGRA. When requested, XFixes supplies the cursor image for
+compositing. Each stream owns a paced producer and one replaceable queued frame;
+consumer polling honors its timeout, and stopping discards pending frames and
+interrupts any outstanding capture reply before joining its producer.
+This path has CPU copies and does not use MIT-SHM or XDamage. The BGRA frames feed
+the same GStreamer hardware encoder and WebRTC pipeline as Wayland. X11 capture
+does not require PipeWire, a Portal grant, libei, or Xlib initialization.
+
+XTEST injects keys and mouse buttons. Physical DOM keys map through evdev to the
+server's XKB key names, so the remote keyboard layout determines characters.
+Pointer positions use the captured monitor's root-relative bounds. Pixel wheel
+deltas accumulate into X11 wheel button steps. The existing exclusive-controller
+and held-input cleanup rules apply; stale sources reject new input while held
+keys and buttons can still be released. A server without the required input
+extensions remains viewable. Input and capture connections belong to their
+workers, not to a daemon-wide authorization session. Input events and held-state
+cleanup each have a two-second transport deadline, so a stalled server cannot
+hold the input worker's shutdown indefinitely. Release is best-effort if the
+server stops responding or the connection is lost.
+
+Run the daemon inside the user's X11 session with its display credentials.
+This backend does not create an X server, provide remote login/unlock, or capture
+system audio. Hardware encoding remains required for desktop streaming.
+
+### Permission status and stream lifecycle
+
 The authenticated `hello` response includes `fullDiskAccessPermission`,
 `screenCapturePermission`, and `accessibilityPermission`.
 `desktopPermissionsChanged` events publish the combined snapshot to connected
@@ -237,8 +297,9 @@ from the codecs that display and the browser share, and shows the choice as
 status text. On macOS, the daemon process
 needs Screen Recording permission; system audio can be enabled explicitly.
 Windows supports NVENC video and the hardware H.264 fallback described above.
-Linux Wayland supports the negotiated AV1, HEVC, or H.264 video and optional
-mouse/keyboard control after the local portal grant described above.
+Linux Wayland and X11 support the negotiated AV1, HEVC, or H.264 video and optional
+mouse/keyboard control. Wayland uses the local Portal grant; X11 uses access to
+the existing X server.
 
 The Electron main process reads discovery/authentication data and proxies a narrow
 preload API. Calls are accepted only from the registered main renderer frame.
@@ -289,7 +350,8 @@ system shortcuts intercepted by the viewer's OS are outside this contract.
 `deskfleet-input` owns validation, held state and platform injection behind one
 backend interface. Windows uses SendInput scan codes and physical virtual-desktop
 coordinates; macOS uses CoreGraphics events and display bounds in points, including
-Retina and displays with negative origins. Native platform state lives on one
+Retina and displays with negative origins. Linux uses Wayland EIS or X11 XTEST
+with shared capture-source coordinates. Native platform state lives on one
 dedicated input thread; napi only forwards bounded messages asynchronously.
 Loading the addon and viewing a desktop do not initialize input. One controller
 per daemon process is allowed; additional peers may continue viewing.
@@ -345,8 +407,9 @@ CI sets `LIBCLANG_PATH` to the hosted runner's LLVM installation. No NVIDIA SDK
 binary is redistributed.
 
 Linux media libraries are optional at runtime: GStreamer 1.x core, app and video
-libraries, GLib, `pipewiresrc`, `videoconvert`, `appsrc`, and `appsink`, plus at
-least one available hardware codec and its parser:
+libraries, GLib, `videoconvert`, `appsrc`, and `appsink`, plus at least one
+available hardware codec and its parser. Wayland capture additionally requires
+`pipewiresrc`; X11 capture uses the X protocol directly:
 
 | Codec | VA-API factories | NVENC factories | Parser |
 | --- | --- | --- | --- |
@@ -359,8 +422,8 @@ plugin does not disable other codecs. The [VA-API](https://gstreamer.freedesktop
 and [NVENC](https://gstreamer.freedesktop.org/documentation/nvcodec/index.html)
 plugins generally come from the distribution's GStreamer bad package, alongside
 the base and PipeWire packages. The addon has no ELF dependency on
-GStreamer, PipeWire, or libei; EIS uses the Rust `reis` implementation. Machines
-without the desktop runtime still load the addon and run data-only services.
+GStreamer, PipeWire, libei, or Xlib; EIS uses the Rust `reis` implementation and
+X11 uses x11rb. Machines without the desktop runtime still load the addon and run data-only services.
 
 `mise run check` covers Rust/TypeScript checks and tests, including two real
 local WebRTC peers, binary/text DataChannel delivery, SDP profile and H.265
@@ -372,6 +435,17 @@ Run the macOS capture and hardware-encoder tests on a graphical host with:
 mise exec -- cargo test -p deskfleet-capture -- --ignored
 mise exec -- cargo test -p deskfleet-encoder -- --ignored
 ```
+
+Linux CI also runs the X11 capture and input integration tests against Xvfb,
+without hardware encoding or a user desktop. Run the same checks locally with:
+
+```sh
+xvfb-run -a env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 mise exec -- cargo test -p deskfleet-x11 -p deskfleet-capture --locked x11_ -- --ignored --test-threads=1
+```
+
+These checks validate real X protocol capture, input, and stream cleanup. Real
+Xorg multi-monitor layouts, display changes, cursor rendering, and GPU encoding
+still need acceptance checks on the target desktop.
 
 `mise run desktop:smoke-media` uses a test-only native sender and a small generated
 H.264 fixture to exercise Chromium negotiation and video decoding without screen
@@ -423,15 +497,16 @@ This mode uses synthetic frames and opens no Portal dialog. A codec absent from
 Chromium's receive capabilities is reported as skipped; advertised codecs that
 fail hardware initialization or decoding fail the smoke test.
 
-On the actual Wayland desktop, verify portal consent, EIS controller reuse, and
-real screen decoding with:
+On the actual Wayland or X11 desktop, verify real screen decoding with:
 
 ```sh
 DESKFLEET_SMOKE_CAPTURE=1 mise run desktop:smoke-media
 ```
 
-This allows two minutes for local consent, uses temporary token storage, and
-streams to a hidden Chromium window without saving screen pixels. It opens and
-releases the input controller twice without injecting keys or pointer events.
-Persistent restoration across daemon restarts, monitor coordinate mapping, and
-compositor revocation still require acceptance checks on the target desktop.
+This streams to a hidden Chromium window without saving screen pixels and
+opens/releases the input controller twice without injecting keys or pointer
+events. On Wayland it allows two minutes for local consent and uses temporary
+token storage; on X11 it checks the current X server without opening a Portal
+dialog. Monitor coordinate mapping and display changes require acceptance checks
+on the target desktop. Wayland also needs persistent restoration across daemon
+restarts and compositor revocation checks.

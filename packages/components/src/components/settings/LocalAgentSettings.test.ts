@@ -151,12 +151,12 @@ test("groups independent screen and input permission changes without changing Ag
 
 test("Linux permission notices describe desktop consent without macOS settings or system audio", async () => {
   platformClient.platform = "linux"
-  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })
+  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, linuxDesktopBackend: "wayland", screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })
   const view = render()
   await flushPromises()
   expect(view.get('[data-screen-capture-permission="requesting"]').text()).toBe("Waiting for permission to share the desktop…")
   expect(view.get('[data-accessibility-permission="requesting"]').text()).toBe("Waiting for permission to control the mouse and keyboard…")
-  changed({ ...running, screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "denied" } })
+  changed({ ...running, linuxDesktopBackend: "wayland", screenCapturePermission: { status: "denied" }, accessibilityPermission: { status: "denied" } })
   await flushPromises()
   expect(view.get('[data-screen-capture-permission="denied"]').text()).toContain("approve the desktop sharing dialog")
   expect(view.get('[data-accessibility-permission="denied"]').text()).toContain("approve remote control")
@@ -240,4 +240,22 @@ test("localizes permission errors and shows native errors separately from Agent 
   expect(fullDiskAccess.text()).toContain("Full Disk Access request failed")
   expect(view.get('[role="status"]').text()).toBe("运行中")
   expect(view.find("button.ui-button").exists()).toBe(false)
+})
+
+
+test("X11 access failures keep the Agent running and never suggest Portal consent", async () => {
+  platformClient.platform = "linux"
+  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, linuxDesktopBackend: "x11",
+    screenCapturePermission: { status: "error", error: "Cannot connect to the X server" },
+    accessibilityPermission: { status: "denied" },
+  })
+  const view = render()
+  await flushPromises()
+  expect(view.get('[data-screen-capture-permission="error"][role="alert"]').text()).toContain("Cannot connect to the X server")
+  expect(view.get('[data-accessibility-permission="denied"]').text()).toContain("signed-in graphical session")
+  expect(view.text()).not.toMatch(/sharing dialog|approve remote control|macOS/u)
+  expect(view.get('span[role="status"]').text()).toBe("Running")
+  changed({ ...running, linuxDesktopBackend: "x11", screenCapturePermission: { status: "not-required" }, accessibilityPermission: { status: "not-required" } })
+  await flushPromises()
+  expect(view.find("[data-desktop-permissions]").exists()).toBe(false)
 })

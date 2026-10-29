@@ -325,6 +325,8 @@
     "retryLoad": "重新加载设置",
     "screenCaptureRequesting": "正在请求屏幕与系统音频录制权限…",
     "screenCaptureDenied": "请在 macOS 系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许访问，然后关闭并重新开启本地 Agent。",
+    "linuxScreenCaptureUnavailable": "无法捕获屏幕。请在已登录的图形会话中启动本地 Agent。",
+    "linuxControlUnavailable": "无法控制鼠标和键盘。请在已登录的图形会话中启动本地 Agent。",
     "waylandScreenCaptureRequesting": "正在等待桌面共享授权…",
     "waylandScreenCaptureDenied": "桌面共享尚未获准。请解锁桌面，关闭并重新开启本地 Agent，然后在桌面共享对话框中允许访问。",
     "waylandScreenCaptureError": "桌面共享授权失败。",

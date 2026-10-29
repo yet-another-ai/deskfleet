@@ -26,7 +26,7 @@ function unavailable(error: unknown): boolean {
     && (error.code === "ENOENT" || error.code === "ECONNREFUSED")
 }
 
-const clearedPermissions = { fullDiskAccessPermission: undefined, screenCapturePermission: undefined, accessibilityPermission: undefined }
+const clearedPermissions = { linuxDesktopBackend: undefined, fullDiskAccessPermission: undefined, screenCapturePermission: undefined, accessibilityPermission: undefined }
 
 /** The preference owns explicit start/stop actions; quitting the app stops the daemon it hosts. */
 export class LocalAgentController {

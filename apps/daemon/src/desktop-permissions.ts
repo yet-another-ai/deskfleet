@@ -1,4 +1,4 @@
-import { DESKTOP_PERMISSION_KINDS, type DesktopPermission, type DesktopPermissionKind, type DesktopPermissionsState } from "./control-protocol.ts"
+import { DESKTOP_PERMISSION_KINDS, type DesktopPermission, type DesktopPermissionKind, type DesktopPermissionsState, type LinuxDesktopBackend } from "./control-protocol.ts"
 
 export type PermissionAccess = Record<DesktopPermissionKind, () => Promise<boolean | null>>
 
@@ -21,8 +21,13 @@ export class DesktopPermissions {
   readonly #revisions = { fullDiskAccess: 0, screenCapture: 0, accessibility: 0 }
   readonly #listeners = new Set<(permissions: DesktopPermissionsState) => void>()
 
+  constructor(backend?: LinuxDesktopBackend) {
+    if (backend !== undefined) this.#state.linuxDesktopBackend = backend
+  }
+
   get state(): DesktopPermissionsState {
     return {
+      ...(this.#state.linuxDesktopBackend !== undefined ? { linuxDesktopBackend: this.#state.linuxDesktopBackend } : {}),
       screenCapturePermission: { ...this.#state.screenCapturePermission },
       accessibilityPermission: { ...this.#state.accessibilityPermission },
       fullDiskAccessPermission: { ...this.#state.fullDiskAccessPermission },

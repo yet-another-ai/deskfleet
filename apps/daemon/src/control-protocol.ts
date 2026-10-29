@@ -86,7 +86,11 @@ export interface DesktopPermission {
   error?: string
 }
 
+export type LinuxDesktopBackend = "wayland" | "x11" | null
+
 export interface DesktopPermissionsState {
+  /** Selected by the daemon; undefined on other operating systems. */
+  linuxDesktopBackend?: LinuxDesktopBackend
   screenCapturePermission: DesktopPermission
   accessibilityPermission: DesktopPermission
   fullDiskAccessPermission: DesktopPermission

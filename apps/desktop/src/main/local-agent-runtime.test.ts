@@ -118,3 +118,14 @@ test("a remote shutdown of the hosted daemon is awaited and lets it start again"
   expect(first.close).not.toHaveBeenCalled()
   expect(second.close).toHaveBeenCalledOnce()
 })
+
+
+test("hello carries the daemon-selected X11 backend before any permission event", async () => {
+  const client = { closed: false, info: { name: "machine", desktop: true, linuxDesktopBackend: "x11",
+    fullDiskAccessPermission: { status: "not-required" }, screenCapturePermission: { status: "not-required" }, accessibilityPermission: { status: "not-required" },
+  }, call: vi.fn(), close: vi.fn() }
+  mocks.connect.mockResolvedValue(client)
+  const runtime = createLocalAgentRuntime({ directory: "/daemon" })
+  const connection = await runtime.connect(vi.fn(), vi.fn())
+  expect(connection.desktopPermissions.linuxDesktopBackend).toBe("x11")
+})

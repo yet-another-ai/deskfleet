@@ -325,6 +325,8 @@
     "retryLoad": "Reload settings",
     "screenCaptureRequesting": "Requesting access to record the screen and system audio…",
     "screenCaptureDenied": "Allow access in macOS System Settings → Privacy & Security → Screen & System Audio Recording, then turn the local Agent off and on.",
+    "linuxScreenCaptureUnavailable": "Screen capture is unavailable. Start the local Agent in your signed-in graphical session.",
+    "linuxControlUnavailable": "Mouse and keyboard control is unavailable. Start the local Agent in your signed-in graphical session.",
     "waylandScreenCaptureRequesting": "Waiting for permission to share the desktop…",
     "waylandScreenCaptureDenied": "Screen sharing is not authorized. Unlock your desktop, turn the local Agent off and on, and approve the desktop sharing dialog.",
     "waylandScreenCaptureError": "Desktop sharing authorization failed.",

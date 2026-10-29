@@ -32,8 +32,10 @@ nix.workspace = true
 windows = { workspace = true, features = ["Win32_System_Threading"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+deskfleet-linux-desktop.workspace = true
 deskfleet-wayland.workspace = true
 deskfleet-linux-media.workspace = true
+deskfleet-x11.workspace = true
 
 [dev-dependencies]
 serde.workspace = true

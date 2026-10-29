@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // real capture smoke deliberately follows daemon startup authorization,
     // while continuing to consume close/signaling commands during consent.
     let mut authorizing =
-        (capture && cfg!(target_os = "linux")).then(|| tokio::spawn(authorize_wayland_capture()));
+        (capture && cfg!(target_os = "linux")).then(|| tokio::spawn(authorize_linux_capture()));
     let mut authorized = authorizing.is_none();
     println!("{}", json!({ "kind": "ready" }));
     let result: Result<(), Box<dyn std::error::Error>> = async {
@@ -205,7 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Also cancels a portal request whose awaiting task was aborted above. Do
     // this even when capture startup/cleanup failed so no consent dialog remains.
     let access_closed = if capture {
-        deskfleet_native::desktop_access::close_wayland().await
+        deskfleet_native::desktop_access::close_linux().await
     } else {
         Ok(())
     };
@@ -217,13 +217,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn authorize_wayland_capture() -> Result<(), MediaError> {
+async fn authorize_linux_capture() -> Result<(), MediaError> {
     #[cfg(target_os = "linux")]
     {
-        let directory = std::env::var_os("DESKFLEET_SMOKE_PORTAL_DIRECTORY").ok_or(
-            MediaError::InvalidConfig("media smoke needs a private temporary portal directory"),
-        )?;
-        let access = deskfleet_wayland::request_access(directory.into())
+        let directory = if deskfleet_native::desktop_access::linux_backend() == Some("wayland") {
+            std::env::var("DESKFLEET_SMOKE_PORTAL_DIRECTORY").map_err(|_| {
+                MediaError::InvalidConfig("media smoke needs a private temporary portal directory")
+            })?
+        } else {
+            String::new()
+        };
+        let access = deskfleet_native::desktop_access::request_linux(directory)
             .await
             .map_err(|error| deskfleet_capture::CaptureError::Platform(error.to_string()))?;
         if !access.screen_capture {

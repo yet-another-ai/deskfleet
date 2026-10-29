@@ -1397,8 +1397,10 @@ name = "deskfleet-capture"
 version = "0.1.1"
 dependencies = [
  "block2",
+ "deskfleet-linux-desktop",
  "deskfleet-linux-media",
  "deskfleet-wayland",
+ "deskfleet-x11",
  "dispatch2",
  "objc2",
  "objc2-core-audio-types",
@@ -1451,7 +1453,9 @@ dependencies = [
 name = "deskfleet-input"
 version = "0.1.1"
 dependencies = [
+ "deskfleet-linux-desktop",
  "deskfleet-wayland",
+ "deskfleet-x11",
  "objc2-core-foundation",
  "objc2-core-graphics",
  "serde",
@@ -1460,6 +1464,10 @@ dependencies = [
  "tracing",
  "windows",
 ]
+
+[[package]]
+name = "deskfleet-linux-desktop"
+version = "0.1.1"
 
 [[package]]
 name = "deskfleet-linux-media"
@@ -1496,8 +1504,10 @@ dependencies = [
  "deskfleet-capture",
  "deskfleet-encoder",
  "deskfleet-input",
+ "deskfleet-linux-desktop",
  "deskfleet-linux-media",
  "deskfleet-wayland",
+ "deskfleet-x11",
  "filedescriptor",
  "nix 0.31.3",
  "portable-pty",
@@ -1615,6 +1625,16 @@ dependencies = [
  "tokio",
  "tracing",
  "zbus",
+]
+
+[[package]]
+name = "deskfleet-x11"
+version = "0.1.1"
+dependencies = [
+ "socket2",
+ "thiserror 2.0.21",
+ "tracing",
+ "x11rb",
 ]
 
 [[package]]
@@ -1963,6 +1983,16 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "gethostname"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
+dependencies = [
+ "rustix",
+ "windows-link",
 ]
 
 [[package]]
@@ -5965,6 +5995,23 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "x11rb"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9993aa5be5a26815fe2c3eacfc1fde061fc1a1f094bf1ad2a18bf9c495dd7414"
+dependencies = [
+ "gethostname",
+ "rustix",
+ "x11rb-protocol",
+]
+
+[[package]]
+name = "x11rb-protocol"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "x509-parser"

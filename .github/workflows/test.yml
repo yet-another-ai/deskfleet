@@ -91,6 +91,13 @@ jobs:
       - name: Run tests
         run: mise run test
 
+      - name: Verify X11 capture and input
+        if: runner.os == 'Linux'
+        run: >-
+          xvfb-run -a env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11
+          mise exec -- cargo test -p deskfleet-x11 -p deskfleet-capture
+          --locked x11_ -- --ignored --test-threads=1
+
       - name: Report shared compiler cache health
         if: ${{ always() && steps.setup_build.outcome == 'success' }}
         run: mise run ci:report:sccache

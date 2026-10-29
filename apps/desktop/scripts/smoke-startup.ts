@@ -9,6 +9,7 @@ import { promisify } from "node:util"
 import { DaemonClient } from "../../daemon/src/control-client.ts"
 import { connectAcpProcess } from "../../daemon/src/agents/acp.ts"
 import { createPeer } from "../../../crates/node/index.ts"
+import { onboardingPermissions, type OnboardingState } from "../../../packages/client/src/onboarding.ts"
 
 // Exercise the real package entry, including its static imports and startup
 // routing. Feature fixtures replace main and cannot detect import-time crashes.
@@ -177,8 +178,13 @@ try {
   await stat(join(appPath, "out/main/index.js"))
   await mkdir(profile)
   await inspectRenderer()
-  const permissionSteps = process.platform === "darwin" ? ["fullDiskAccess", "screenCapture", "accessibility"] : process.platform === "linux" ? ["screenCapture", "accessibility"] : []
-  assert.deepEqual(await evaluate("window.deskfleet.onboarding.get()"), { step: permissionSteps[0] ?? "account" })
+  const onboarding = await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")
+  const permissionSteps = onboardingPermissions(process.platform, onboarding.linuxDesktopBackend)
+  assert.equal(onboarding.step, permissionSteps[0] ?? "account")
+  if (onboarding.linuxDesktopBackend === "x11") {
+    assert.equal(await evaluate("document.querySelectorAll('ol li').length"), 1)
+    assert.equal(await evaluate("document.body.innerText.includes('desktop sharing dialog')"), false)
+  }
   assert.equal(await evaluate("document.querySelector('input[name=server-url]') === null && !('saveServer' in window.deskfleet.onboarding)"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   await stat(join(daemonDirectory, "daemon.json"))
@@ -193,17 +199,17 @@ try {
 
   // An unfinished welcome resumes at account without a backend address field.
   await inspectRenderer()
-  assert.deepEqual(await evaluate("window.deskfleet.onboarding.get()"), { step: "account" })
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "account")
   assert.equal(await evaluate("document.querySelector('input[type=url]') === null"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   await screenshot("welcome-account")
   // The UI completes this after browser authentication; exercise persisted host progress here.
-  assert.deepEqual(await evaluate("window.deskfleet.onboarding.complete()"), { step: "complete" })
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.complete()")).step, "complete")
   await evaluate("window.deskfleet.settings.setLocalAgentEnabled(false)")
   await stop()
 
   await inspectRenderer()
-  assert.deepEqual(await evaluate("window.deskfleet.onboarding.get()"), { step: "complete" })
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "complete")
   assert.deepEqual(await evaluate("window.deskfleet.settings.get()"), { enabled: false, status: "stopped" })
   await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
   await stop()

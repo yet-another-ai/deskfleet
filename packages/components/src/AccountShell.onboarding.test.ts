@@ -13,14 +13,14 @@ afterEach(() => { view?.unmount(); view = undefined; vi.restoreAllMocks() })
 
 function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false, platform: DeskfleetDesktopApi["platform"] = "darwin") {
   const fake = fakeCentral({ signedIn, teams: [] })
-  const state: OnboardingState = { step: initialStep }
+  const state: OnboardingState = { step: initialStep, ...(platform === "linux" ? { linuxDesktopBackend: "wayland" as const } : {}) }
   const permissions: DesktopPermissionsState = {
     fullDiskAccessPermission: { status: platform === "linux" ? "not-required" : "denied" },
     screenCapturePermission: { status: "denied" },
     accessibilityPermission: { status: "denied" },
   }
   const listeners = new Set<(state: LocalAgentState) => void>()
-  const order = onboardingPermissions(platform)
+  const order = onboardingPermissions(platform, state.linuxDesktopBackend)
   const next = (step: OnboardingStep) => { state.step = step; return { ...state } }
   const onboarding = {
     get: vi.fn(async () => ({ ...state })),
@@ -294,4 +294,20 @@ for (const platform of ["darwin", "linux"] as const) test(`${platform} permissio
   expect(view!.get('[role="status"]').text()).toBe("Access enabled")
   await click("Continue")
   expect(view!.get("h1").text()).toBe(platform === "linux" ? "Mouse and keyboard control" : "Screen recording")
+})
+
+
+test.each(["x11", null] as const)("Linux %s welcome goes directly to account without Portal guidance", async backend => {
+  const app = setup("account", false, "linux")
+  app.state.linuxDesktopBackend = backend
+  app.permissions.linuxDesktopBackend = backend
+  app.permissions.screenCapturePermission = { status: "not-required" }
+  app.permissions.accessibilityPermission = { status: "not-required" }
+  app.mount()
+  await flushPromises()
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
+  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Your account"])
+  expect(view!.text()).not.toMatch(/desktop authorization|sharing dialog|Screen sharing|Mouse and keyboard control/u)
+  expect(app.onboarding.permissions).not.toHaveBeenCalled()
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
 })

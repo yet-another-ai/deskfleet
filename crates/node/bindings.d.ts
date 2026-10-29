@@ -103,17 +103,17 @@ export declare function checkAccessibilityAccess(): Promise<boolean | null>
  */
 export declare function checkFullDiskAccess(): Promise<boolean | null>
 
+/** Check Linux desktop access without prompting or starting capture. */
+export declare function checkLinuxDesktopAccess(): Promise<LinuxDesktopAccess>
+
 /**
  * Check screen/system-audio access without prompting or starting capture.
  * Resolves with null on platforms without an upfront permission request.
  */
 export declare function checkScreenCaptureAccess(): Promise<boolean | null>
 
-/** Read the current Wayland authorization without prompting. */
-export declare function checkWaylandDesktopAccess(): Promise<WaylandDesktopAccess>
-
-/** Cancel pending authorization and close shared Wayland resources on daemon shutdown. */
-export declare function closeWaylandDesktopAccess(): Promise<void>
+/** Cancel pending Linux authorization and close shared resources on daemon shutdown. */
+export declare function closeLinuxDesktopAccess(): Promise<void>
 
 /** Create a transport without accessing a display or initializing an encoder. */
 export declare function createPeer(config: PeerConfig): Promise<NativePeer>
@@ -151,6 +151,14 @@ export interface IceServer {
   username?: string
   credential?: string
 }
+
+export interface LinuxDesktopAccess {
+  screenCapture: boolean
+  control: boolean
+}
+
+/** Identify the selected Linux session without connecting or prompting. */
+export declare function linuxDesktopBackend(): 'wayland' | 'x11' | null
 
 export interface LocalApplication {
   id: string
@@ -214,14 +222,14 @@ export declare function requestAccessibilityAccess(): Promise<boolean | null>
  */
 export declare function requestFullDiskAccess(): Promise<boolean | null>
 
+/** Request Linux desktop access; only Wayland opens a Portal authorization dialog. */
+export declare function requestLinuxDesktopAccess(directory: string): Promise<LinuxDesktopAccess>
+
 /**
  * Request this process's screen/system-audio access without starting capture.
  * Resolves with null on platforms without an upfront permission request.
  */
 export declare function requestScreenCaptureAccess(): Promise<boolean | null>
-
-/** Authorize screen and input together, persisting restoration under the daemon directory. */
-export declare function requestWaylandDesktopAccess(directory: string): Promise<WaylandDesktopAccess>
 
 export declare function scanLocalApplications(): Promise<Array<LocalApplication>>
 
@@ -264,10 +272,5 @@ export interface TerminalEvent {
 
 export type VideoCodec = 'h264' | 'h265' | 'av1'
 
-/** Wait until the shared Wayland grant changes. `None` means the runtime stopped. */
-export declare function waitWaylandDesktopAccessChange(seen: number): Promise<number | null>
-
-export interface WaylandDesktopAccess {
-  screenCapture: boolean
-  control: boolean
-}
+/** Wait for Linux authorization changes; X11 has no retained Portal grant. */
+export declare function waitLinuxDesktopAccessChange(seen: number): Promise<number | null>

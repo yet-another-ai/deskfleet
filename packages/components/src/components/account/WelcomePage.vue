@@ -23,21 +23,21 @@ const error = ref(session.notice.value)
 const permissions = ref<Partial<DesktopPermissionsState>>({})
 // Permission events can arrive before an older IPC snapshot resolves.
 let permissionRevision = 0
-const linux = computed(() => props.host.platform === "linux")
-const permissionSteps = computed(() => onboardingPermissions(props.host.platform))
+const wayland = computed(() => props.host.platform === "linux" && props.state.linuxDesktopBackend !== "x11" && props.state.linuxDesktopBackend !== null)
+const permissionSteps = computed(() => onboardingPermissions(props.host.platform, props.state.linuxDesktopBackend))
 const permission = computed(() => permissionSteps.value.find(value => value === step.value))
 const currentPermission = computed(() => permission.value ? permissions.value[`${permission.value}Permission`] : undefined)
 const granted = computed(() => ["granted", "not-required"].includes(currentPermission.value?.status ?? ""))
-const requesting = computed(() => currentPermission.value?.status === "requesting" || linux.value
+const requesting = computed(() => currentPermission.value?.status === "requesting" || wayland.value
   && permissionSteps.value.some(kind => permissions.value[`${kind}Permission`]?.status === "requesting"))
-const canRequest = computed(() => !granted.value && !requesting.value && (!linux.value
+const canRequest = computed(() => !granted.value && !requesting.value && (!wayland.value
   || !refreshing.value && currentPermission.value?.status !== "checking"))
-const permissionMessages = computed(() => `welcome.${linux.value ? "wayland" : "permissions"}.${permission.value}`)
+const permissionMessages = computed(() => `welcome.${wayland.value ? "wayland" : "permissions"}.${permission.value}`)
 const steps = computed<OnboardingStep[]>(() => [...(firstRun ? permissionSteps.value : []), "account"])
 const icons = { fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, account: KeyRound, complete: Check }
 const currentIndex = computed(() => steps.value.indexOf(step.value))
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
-const stepLabel = (value: OnboardingStep) => t(linux.value && (value === "screenCapture" || value === "accessibility")
+const stepLabel = (value: OnboardingStep) => t(wayland.value && (value === "screenCapture" || value === "accessibility")
   ? `welcome.wayland.${value}.title` : `welcome.steps.${value}`)
 
 function move(next: OnboardingState): void {
@@ -132,16 +132,16 @@ onBeforeUnmount(() => { unsubscribe?.() })
           <h1 class="m-0 text-xl font-semibold">{{ stepLabel(permission) }}</h1>
           <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.description`) }}</p>
           <div class="my-6 rounded-lg border border-ui-border bg-ui-sidebar p-4">
-            <p class="m-0 text-xs font-medium">{{ t(linux ? "welcome.wayland.dialog" : "welcome.systemSettings") }}</p>
-            <p class="m-0 mt-2 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.${linux ? 'instructions' : 'path'}`) }}</p>
-            <p class="m-0 mt-3 text-xs leading-relaxed text-ui-text-muted">{{ t(linux ? "welcome.wayland.shared" : "welcome.permissionRestart") }}</p>
+            <p class="m-0 text-xs font-medium">{{ t(wayland ? "welcome.wayland.dialog" : "welcome.systemSettings") }}</p>
+            <p class="m-0 mt-2 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.${wayland ? 'instructions' : 'path'}`) }}</p>
+            <p class="m-0 mt-3 text-xs leading-relaxed text-ui-text-muted">{{ t(wayland ? "welcome.wayland.shared" : "welcome.permissionRestart") }}</p>
           </div>
           <p role="status" class="m-0 mb-4 text-sm" :class="granted ? 'text-ui-text' : 'text-ui-text-muted'">
-            {{ t(linux && requesting ? 'welcome.wayland.requesting' : `welcome.permissionStatus.${currentPermission?.status ?? 'checking'}`) }}
+            {{ t(wayland && requesting ? 'welcome.wayland.requesting' : `welcome.permissionStatus.${currentPermission?.status ?? 'checking'}`) }}
           </p>
           <p v-if="error || currentPermission?.error" role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ error || currentPermission?.error }}</p>
           <div class="flex flex-wrap gap-2">
-            <UiButton variant="primary" v-if="!granted" type="button" :disabled="pending || !canRequest" @click="requestPermission(permission)">{{ t(linux ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
+            <UiButton variant="primary" v-if="!granted" type="button" :disabled="pending || !canRequest" @click="requestPermission(permission)">{{ t(wayland ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
             <UiButton type="button" :disabled="pending || refreshing" @click="refreshPermissions">{{ t(refreshing ? "welcome.checking" : "welcome.checkAgain") }}</UiButton>
             <UiButton variant="primary" v-if="granted" type="button" class="ml-auto" :disabled="pending" @click="advancePermission(permission)">{{ t("welcome.continue") }}<ChevronRight :size="15" aria-hidden="true" /></UiButton>
           </div>

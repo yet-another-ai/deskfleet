@@ -439,9 +439,10 @@ daemon and runs independently of any desktop app.
 
 Desktop first-run setup uses a welcome page: platform-specific permissions, then
 account sign-in. macOS guides Full Disk Access, screen/system-audio recording,
-and Accessibility. Linux guides screen sharing
-and keyboard/mouse control through its desktop authorization dialog, without
-Full Disk Access or macOS System Settings instructions. The host saves
+and Accessibility. Linux Wayland guides screen sharing and keyboard/mouse
+control through its desktop authorization dialog. Linux X11 checks access to the
+existing X server and skips Portal permission steps. Linux has no Full Disk
+Access or macOS System Settings instructions. The host saves
 the current step in `onboarding.json` under its user-data directory and resumes
 it after restart. A profile that already has an account or desktop settings, but
 no welcome file, is treated as finished so sign-in is not repeated and the local
@@ -467,9 +468,13 @@ authorization and existing grants, and offers an explicit retry after denial.
 Refreshing or advancing the guide does not request another grant. The session
 and local restore token allow unattended viewer reconnects while the
 user's desktop is logged in and unlocked. Viewer lifetimes do not own that grant;
-daemon shutdown closes it. See [native media](media.md) for restoration and
-runtime requirements. Settings displays OS permission status separately from
-daemon availability; capture and encoding start only on explicit use.
+daemon shutdown closes it. Linux X11 uses authenticated access to the current
+X server without a Portal session or saved grant, and reports successful access
+as `not-required`. Native access, capture, and input share the process-wide Linux
+backend choice; Wayland environments never fall back to Xwayland. See
+[native media](media.md) for backend selection, restoration, and runtime
+requirements. Settings displays OS permission status separately from daemon
+availability; capture and encoding start only on explicit use.
 
 Startup reuses an authenticated daemon already owning the discovery directory,
 such as a standalone SEA, instead of hosting another. Explicitly disabling the
@@ -841,8 +846,12 @@ The Rust workspace contains:
 | `deskfleet-control-store` | PostgreSQL central identity, authorization, catalog, and history persistence |
 | `deskfleet-native` | Native capabilities independent of Node.js |
 | `deskfleet-capture` | Native display capture and retained GPU surfaces |
-| `deskfleet-input` | Display-relative desktop input, held-state cleanup, and macOS/Windows injection |
-| `deskfleet-encoder` | VideoToolbox/NVENC/Media Foundation hardware video encoding and Opus audio encoding |
+| `deskfleet-input` | Display-relative desktop input, held-state cleanup, and platform dispatch |
+| `deskfleet-linux-desktop` | Shared Linux session backend selection for permissions, capture, and input |
+| `deskfleet-wayland` | Daemon-owned Portal authorization, PipeWire source IDs, and EIS input |
+| `deskfleet-x11` | X server access, shared RandR source geometry, GetImage capture, and XTEST/XKB input |
+| `deskfleet-linux-media` | Optional GStreamer PipeWire capture and hardware video encoding |
+| `deskfleet-encoder` | VideoToolbox/NVENC/Media Foundation/GStreamer hardware video encoding and Opus audio encoding |
 | `deskfleet-nvenc` | Windows NVENC session and D3D11 resource ownership |
 | `deskfleet-nvenc-sys` | Windows NVENC FFI and runtime driver loading |
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
@@ -851,7 +860,9 @@ The Rust workspace contains:
 Dependencies flow `server -> protocol -> model`, `server -> control-store -> protocol`,
 `node -> store -> model/migration` for local catalog persistence,
 `node -> native -> capture/encoder/input`, and
-`@deskfleet/daemon -> @deskfleet/native`. The pnpm workspace contains the daemon,
+`@deskfleet/daemon -> @deskfleet/native`. Linux capture/input delegate to
+`linux-desktop`, `wayland`, and `x11`; capture and encoding share `linux-media`.
+The pnpm workspace contains the daemon,
 Electron and Web applications, the native package, `packages/client` for shared
 contracts/transports, `packages/components` for Vue UI, stores, and routes, and
 `packages/mcp` for the independent Agent tool server.
@@ -880,8 +891,8 @@ restores the Session view, and synchronized history remains available while the
 machine is offline. Validate direct and TURN-relayed connections.
 
 Cross-machine MCP coordination follows that workflow. Bundling provider binaries,
-additional terminal backends, and Linux capture/encoding remain
-separate follow-up work.
+additional terminal backends, and Linux system audio remain separate follow-up
+work. Linux Wayland and X11 capture share the existing hardware encoding path.
 
 ## References
 

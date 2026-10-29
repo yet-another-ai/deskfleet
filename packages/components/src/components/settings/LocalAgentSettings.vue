@@ -46,6 +46,9 @@ const permissions = computed(() => {
   ] as const
   return values.flatMap(({ kind, permission }) => {
     if (!permission || permission.status === "not-required" || permission.status === "granted" || permission.status === "checking") return []
+    if (platformClient.platform === "linux" && state.value?.linuxDesktopBackend !== "wayland" && kind !== "fullDiskAccess") {
+      return [{ kind, permission, label: t(kind === "screenCapture" ? "settings.linuxScreenCaptureUnavailable" : "settings.linuxControlUnavailable"), needsAction: permission.status === "denied" || permission.status === "error" }]
+    }
     const messageKind = platformClient.platform === "linux" && kind !== "fullDiskAccess"
       ? kind === "screenCapture" ? "waylandScreenCapture" : "waylandControl" : kind
     const label = permission.status === "requesting" ? t(`settings.${messageKind}Requesting`)

@@ -202,9 +202,9 @@ test("hosted Wayland startup authorizes screen and input once while IPC remains 
   let closes = 0
   let access = { screenCapture: true, control: true }
   const daemon = await startDaemon(0, {
-    permissionPlatform: "linux", permissionMode: "guided", controlDirectory: directory,
+    permissionPlatform: "linux", linuxDesktopBackend: "wayland", permissionMode: "guided", controlDirectory: directory,
     agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name),
-    waylandDesktopAccess: {
+    linuxDesktopAccess: {
       request: path => { requested.push(path); return consent.promise },
       check: async () => { checks++; return access },
       close: async () => { closes++ },
@@ -255,9 +255,9 @@ for (const beforeConsentSettles of [false, true]) test(`connected clients learn 
   let notify = () => {}
   let access = { screenCapture: true, control: true }
   const daemon = await startDaemon(0, {
-    permissionPlatform: "linux", controlDirectory: directory,
+    permissionPlatform: "linux", linuxDesktopBackend: "wayland", controlDirectory: directory,
     agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, openCatalog: (_path, name) => openInMemoryCatalog(name),
-    waylandDesktopAccess: {
+    linuxDesktopAccess: {
       request: path => { requested.push(path); return consent.promise },
       check: async () => { checks++; return access },
       close: async () => {},
@@ -297,9 +297,9 @@ test("Wayland shutdown cancels the owning Portal request before awaiting peer cl
   const requested = deferred<void>()
   const cleanup: string[] = []
   const daemon = await startDaemon(0, {
-    permissionPlatform: "linux", controlDirectory: directory,
+    permissionPlatform: "linux", linuxDesktopBackend: "wayland", controlDirectory: directory,
     openCatalog: (_path, name) => openInMemoryCatalog(name),
-    waylandDesktopAccess: {
+    linuxDesktopAccess: {
       request: () => { requested.resolve(); return consent.promise },
       check: async () => ({ screenCapture: false, control: false }),
       close: async () => { cleanup.push("portal"); consent.reject(new Error("Portal request cancelled")) },
@@ -402,3 +402,29 @@ for (const permissionKey of permissionKeys) {
     })
   }
 }
+
+
+test("X11 daemon publishes its backend and probes access without Portal consent", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-daemon-x11-"))
+  let requested = 0
+  let watched = 0
+  let access = { screenCapture: true, control: true }
+  const daemon = await startDaemon(0, {
+    permissionPlatform: "linux", linuxDesktopBackend: "x11", controlDirectory: directory,
+    openCatalog: (_path, name) => openInMemoryCatalog(name),
+    linuxDesktopAccess: {
+      request: async () => { requested++; return access }, check: async () => access, close: async () => {},
+      subscribe: () => { watched++; return () => {} },
+    },
+  })
+  context.after(async () => { await daemon.close(); await rm(directory, { recursive: true, force: true }) })
+  const client = await DaemonClient.connect(() => {}, () => {}, directory)
+  context.after(() => client.close())
+  assert.equal(client.info?.linuxDesktopBackend, "x11")
+  assert.equal(client.info?.screenCapturePermission.status, "not-required")
+  assert.equal(client.info?.accessibilityPermission.status, "not-required")
+  access = { screenCapture: true, control: false }
+  assert.equal((await client.call("permissionsRefresh", {})).accessibilityPermission.status, "denied")
+  assert.equal(requested, 0)
+  assert.equal(watched, 0)
+})

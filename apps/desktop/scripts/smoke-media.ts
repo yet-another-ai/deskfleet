@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createInterface } from "node:readline"
 import ts from "typescript"
+import { linuxDesktopBackend } from "@deskfleet/native"
 import { rendererContentSecurityPolicy } from "../src/shared/renderer-csp.ts"
 
 // The default fixture needs no capture permission. DESKFLEET_SMOKE_CAPTURE=1
@@ -25,7 +26,7 @@ assert.ok(!hardware || process.platform === "linux", "generated hardware smoke r
 assert.ok(!(capture && hardware), "select either capture or generated hardware smoke")
 assert.ok(hardware || codec === "h264", "codec selection requires generated hardware smoke")
 const source = capture ? "desktop" : hardware ? "hardware" : "fixture"
-const waylandCapture = capture && process.platform === "linux"
+const waylandCapture = capture && process.platform === "linux" && linuxDesktopBackend() === "wayland"
 const executable = createRequire(import.meta.url)("electron") as string
 const nativeExecutable = join(root, "target/debug/examples", process.platform === "win32" ? "media_smoke.exe" : "media_smoke")
 const directory = await mkdtemp(join(tmpdir(), "deskfleet-media-smoke-"))

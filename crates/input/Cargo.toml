@@ -21,6 +21,8 @@ objc2-core-graphics.workspace = true
 objc2-core-foundation.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+deskfleet-linux-desktop.workspace = true
+deskfleet-x11.workspace = true
 deskfleet-wayland.workspace = true
 
 [dev-dependencies]

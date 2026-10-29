@@ -1,53 +1,62 @@
-//! EIS input shares the daemon's authorized Wayland session with screen capture.
+//! Input follows the selected Linux desktop backend and its capture source IDs.
 
-use deskfleet_wayland::InputConnection;
+use deskfleet_linux_desktop::{Backend, backend};
 
-use crate::{InputError, Result, linux_keys};
+use crate::{InputError, Result};
 
-pub(super) struct PlatformInput {
-    connection: InputConnection,
+mod wayland;
+mod x11;
+
+pub(super) enum PlatformInput {
+    Wayland(wayland::WaylandInput),
+    X11(Box<x11::X11Input>),
 }
 
 impl PlatformInput {
     pub(super) fn new(display_id: u32) -> Result<Self> {
-        Ok(Self {
-            connection: InputConnection::new(display_id).map_err(platform_error)?,
-        })
+        match backend() {
+            Backend::Wayland => wayland::WaylandInput::new(display_id).map(Self::Wayland),
+            Backend::X11 => x11::X11Input::new(display_id).map(Box::new).map(Self::X11),
+            Backend::Unavailable => Err(InputError::Unsupported("no Linux desktop session")),
+        }
     }
 
     pub(super) fn move_pointer(&mut self, x: f64, y: f64) -> Result<()> {
-        self.connection.move_pointer(x, y).map_err(platform_error)
+        match self {
+            Self::Wayland(input) => input.move_pointer(x, y),
+            Self::X11(input) => input.move_pointer(x, y),
+        }
     }
 
     pub(super) fn button(&mut self, button: u8, pressed: bool) -> Result<()> {
-        let code = match button {
-            0 => 0x110, // BTN_LEFT
-            1 => 0x112, // BTN_MIDDLE
-            2 => 0x111, // BTN_RIGHT
-            3 => 0x113, // BTN_SIDE (browser back)
-            4 => 0x114, // BTN_EXTRA (browser forward)
-            _ => return Err(InputError::InvalidEvent("unknown mouse button")),
-        };
-        self.connection
-            .button(code, pressed)
-            .map_err(platform_error)
+        match self {
+            Self::Wayland(input) => input.button(button, pressed),
+            Self::X11(input) => input.button(button, pressed),
+        }
     }
 
     pub(super) fn wheel(&mut self, dx: f64, dy: f64) -> Result<()> {
-        self.connection.wheel(dx, dy).map_err(platform_error)
+        match self {
+            Self::Wayland(input) => input.wheel(dx, dy),
+            Self::X11(input) => input.wheel(dx, dy),
+        }
     }
 
     pub(super) fn key(&mut self, code: &str, pressed: bool, repeat: bool) -> Result<()> {
-        let code = linux_keys::keycode(code).ok_or(InputError::UnsupportedKey)?;
-        // Wayland clients repeat held keys using the compositor's keymap/repeat
-        // settings. Repeated browser keydown events are not additional presses.
-        if repeat && pressed {
-            return Ok(());
+        match self {
+            Self::Wayland(input) => input.key(code, pressed, repeat),
+            Self::X11(input) => input.key(code, pressed, repeat),
         }
-        self.connection.key(code, pressed).map_err(platform_error)
     }
 }
 
-fn platform_error(error: impl std::fmt::Display) -> InputError {
-    InputError::Platform(error.to_string())
+fn button_code(button: u8) -> Result<u32> {
+    match button {
+        0 => Ok(0x110), // BTN_LEFT
+        1 => Ok(0x112), // BTN_MIDDLE
+        2 => Ok(0x111), // BTN_RIGHT
+        3 => Ok(0x113), // BTN_SIDE (browser back)
+        4 => Ok(0x114), // BTN_EXTRA (browser forward)
+        _ => Err(InputError::InvalidEvent("unknown mouse button")),
+    }
 }

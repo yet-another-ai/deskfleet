@@ -16,8 +16,8 @@ pub use catalog::{
     NativeCatalog, open_catalog, open_in_memory_catalog,
 };
 pub use desktop_access::{
-    WaylandDesktopAccess, check_wayland_desktop_access, close_wayland_desktop_access,
-    desktop_supported, request_wayland_desktop_access, wait_wayland_desktop_access_change,
+    LinuxDesktopAccess, check_linux_desktop_access, close_linux_desktop_access, desktop_supported,
+    linux_desktop_backend, request_linux_desktop_access, wait_linux_desktop_access_change,
 };
 pub use local_applications::{
     LocalApplication, LocalApplicationKind, open_local_application, scan_local_applications,

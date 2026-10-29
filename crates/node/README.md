@@ -5,13 +5,17 @@ This crate exposes `deskfleet-native` through napi-rs. Its private pnpm package,
 OS/architecture, `createPeer()` for WebRTC, and explicit
 `captureDisplays()` / `supportedVideoCodecs(displayId)` capability queries.
 
-`desktopSupported()` probes runtime support without a consent dialog. On Linux,
-the daemon calls `requestWaylandDesktopAccess(directory)` at startup to establish
-one shared portal grant, `checkWaylandDesktopAccess()` to read current consent,
-and `closeWaylandDesktopAccess()` at shutdown. `waitWaylandDesktopAccessChange()`
-wakes that daemon when the grant changes, including when remote input disconnects.
-Viewer peer cleanup does not own that shared session. The directory stores only
-the local opaque restore token; it is never sent to viewers.
+`desktopSupported()` probes capture and hardware encoding without a consent
+dialog. `linuxDesktopBackend()` identifies the selected `wayland`, `x11`, or
+unavailable (`null`) session without opening a display. The daemon uses
+`requestLinuxDesktopAccess(directory)`, `checkLinuxDesktopAccess()`, and
+`closeLinuxDesktopAccess()` for both Linux backends. Wayland retains one shared
+Portal grant; `waitLinuxDesktopAccessChange()` wakes its owner when that grant
+changes, including when remote input disconnects. Viewer cleanup does not own
+the grant. Its directory stores only the local restore token, never sent to viewers.
+X11 checks the user's X server access without a Portal dialog or token; capture
+and input workers own their connections, and the authorization watch returns
+`null`. Blocking X11 checks run off Node's event loop.
 
 `createTerminal({ cwd, cols, rows })` starts the OS user's default shell in a
 native PTY. Terminals provide async byte `write()`, `resize()`, `nextEvent()`, and

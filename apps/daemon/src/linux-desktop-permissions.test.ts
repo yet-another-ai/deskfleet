@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { DesktopPermissions } from "./desktop-permissions.ts"
-import { WaylandDesktopPermissions, type WaylandDesktopAccess } from "./wayland-desktop-permissions.ts"
+import { LinuxDesktopPermissions, type LinuxDesktopAccess } from "./linux-desktop-permissions.ts"
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -11,10 +11,10 @@ function deferred<T>() {
 }
 
 test("screen and control share one Portal request and refresh never requests consent", async () => {
-  const access = deferred<WaylandDesktopAccess>()
+  const access = deferred<LinuxDesktopAccess>()
   const requested: string[] = []
   let checks = 0
-  const native = new WaylandDesktopPermissions("/daemon", {
+  const native = new LinuxDesktopPermissions("/daemon", {
     request: directory => { requested.push(directory); return access.promise },
     check: async () => { checks++; return { screenCapture: true, control: false } },
     close: async () => {},
@@ -42,7 +42,7 @@ test("screen and control share one Portal request and refresh never requests con
 
 test("requesting either linked permission refreshes both from the same Portal response", async () => {
   let requests = 0
-  const native = new WaylandDesktopPermissions("/daemon", {
+  const native = new LinuxDesktopPermissions("/daemon", {
     request: async () => { requests++; return { screenCapture: true, control: true } },
     check: async () => ({ screenCapture: false, control: false }),
     close: async () => {},
@@ -63,11 +63,11 @@ test("requesting either linked permission refreshes both from the same Portal re
 })
 
 test("closing cancels a pending Portal dialog and prevents another request", async () => {
-  const access = deferred<WaylandDesktopAccess>()
+  const access = deferred<LinuxDesktopAccess>()
   const started = deferred<void>()
   let requests = 0
   let closes = 0
-  const native = new WaylandDesktopPermissions("/daemon", {
+  const native = new LinuxDesktopPermissions("/daemon", {
     request: () => { requests++; started.resolve(); return access.promise },
     check: async () => ({ screenCapture: true, control: true }),
     close: async () => { closes++; access.reject(new Error("Portal request cancelled")) },
@@ -87,7 +87,7 @@ test("access changes refresh permissions until the portal closes", async () => {
   let notify = () => {}
   let updates = 0
   let access = { screenCapture: true, control: true }
-  const native = new WaylandDesktopPermissions("/daemon", {
+  const native = new LinuxDesktopPermissions("/daemon", {
     request: async () => access,
     check: async () => access,
     close: async () => {},
@@ -121,11 +121,11 @@ test("access changes refresh permissions until the portal closes", async () => {
 })
 
 test("closing during a queued access refresh cancels consent without checking or requesting again", async () => {
-  const consent = deferred<WaylandDesktopAccess>()
+  const consent = deferred<LinuxDesktopAccess>()
   const started = deferred<void>()
   let requests = 0
   let checks = 0
-  const native = new WaylandDesktopPermissions("/daemon", {
+  const native = new LinuxDesktopPermissions("/daemon", {
     request: () => { requests++; started.resolve(); return consent.promise },
     check: async () => { checks++; return { screenCapture: true, control: true } },
     close: async () => { consent.reject(new Error("Portal request cancelled")) },
@@ -147,7 +147,7 @@ test("closing during a queued access refresh cancels consent without checking or
 
 test("closing before the request microtask runs cannot reopen the Portal", async () => {
   let requests = 0
-  const native = new WaylandDesktopPermissions("/daemon", {
+  const native = new LinuxDesktopPermissions("/daemon", {
     request: async () => { requests++; return { screenCapture: true, control: true } },
     check: async () => ({ screenCapture: false, control: false }),
     close: async () => {},
@@ -156,4 +156,47 @@ test("closing before the request microtask runs cannot reopen the Portal", async
   await native.close()
   await pending
   assert.equal(requests, 0)
+})
+
+
+test("X11 silently probes capture and input without Portal requests or watches", async () => {
+  let requested = 0
+  let watched = 0
+  let checks = 0
+  let access = { screenCapture: true, control: true }
+  const native = new LinuxDesktopPermissions("/daemon", {
+    request: async () => { requested++; return access },
+    check: async () => { checks++; return access },
+    subscribe: () => { watched++; return () => {} },
+    close: async () => {},
+  }, "x11")
+  const permissions = new DesktopPermissions("x11")
+  permissions.initialize(native.requests, native.checks, "guided", { refreshOnRead: true })
+  native.onAccessChanged(() => {})
+  assert.deepEqual(await permissions.refresh(), {
+    linuxDesktopBackend: "x11", fullDiskAccessPermission: { status: "not-required" },
+    screenCapturePermission: { status: "not-required" }, accessibilityPermission: { status: "not-required" },
+  })
+  access = { screenCapture: true, control: false }
+  assert.equal((await permissions.readState()).accessibilityPermission.status, "denied")
+  assert.equal(await native.requests.screenCapture(), null)
+  assert.equal(requested, 0)
+  assert.equal(watched, 0)
+  assert.equal(checks, 3)
+  await native.close()
+})
+
+test("missing X11 access is reported as an error and unavailable Linux never opens a Portal", async () => {
+  for (const backend of ["x11", null] as const) {
+    const native = new LinuxDesktopPermissions("/daemon", {
+      request: async () => { throw new Error("Unexpected Portal request") },
+      check: async () => { throw new Error("Cannot connect to the X server") },
+      close: async () => {},
+    }, backend)
+    const permissions = new DesktopPermissions(backend)
+    permissions.initialize(native.requests, native.checks, "guided")
+    assert.deepEqual((await permissions.refresh()).screenCapturePermission, { status: "error", error: "Cannot connect to the X server" })
+    await assert.rejects(native.requests.accessibility(), /Cannot connect to the X server/u)
+    await native.close()
+  }
 })

@@ -4,12 +4,15 @@ export const ONBOARDING_CHANNEL = "deskfleet:onboarding"
 export const ONBOARDING_PERMISSIONS = ["fullDiskAccess", "screenCapture", "accessibility"] as const
 export type OnboardingPermission = typeof ONBOARDING_PERMISSIONS[number]
 export type OnboardingStep = OnboardingPermission | "account" | "complete"
-export interface OnboardingState { step: OnboardingStep }
+export interface OnboardingState {
+  step: OnboardingStep
+  linuxDesktopBackend?: DesktopPermissionsState["linuxDesktopBackend"]
+}
 
 /** Permission guidance follows the desktop host's platform. */
-export function onboardingPermissions(platform: string): readonly OnboardingPermission[] {
+export function onboardingPermissions(platform: string, backend?: DesktopPermissionsState["linuxDesktopBackend"]): readonly OnboardingPermission[] {
   if (platform === "darwin") return ONBOARDING_PERMISSIONS
-  if (platform === "linux") return ["screenCapture", "accessibility"]
+  if (platform === "linux" && backend !== "x11" && backend !== null) return ["screenCapture", "accessibility"]
   return []
 }
 

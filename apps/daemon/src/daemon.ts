@@ -2,12 +2,12 @@ import type { AgentQuotaAuthority } from "./agent-quotas.ts"
 import { once } from "node:events"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { checkAccessibilityAccess, checkFullDiskAccess, checkScreenCaptureAccess, checkWaylandDesktopAccess, closeWaylandDesktopAccess, nativeInfo, requestAccessibilityAccess, requestFullDiskAccess, requestScreenCaptureAccess, requestWaylandDesktopAccess, waitWaylandDesktopAccessChange } from "@deskfleet/native"
+import { checkAccessibilityAccess, checkFullDiskAccess, checkScreenCaptureAccess, checkLinuxDesktopAccess, closeLinuxDesktopAccess, linuxDesktopBackend, nativeInfo, requestAccessibilityAccess, requestFullDiskAccess, requestScreenCaptureAccess, requestLinuxDesktopAccess, waitLinuxDesktopAccessChange } from "@deskfleet/native"
 import { PeerSessions } from "./peers.ts"
 import { startControlServer } from "./control-server.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
 import { DesktopPermissions } from "./desktop-permissions.ts"
-import { WaylandDesktopPermissions, type WaylandDesktopPermissionApi } from "./wayland-desktop-permissions.ts"
+import { LinuxDesktopPermissions, type LinuxDesktopPermissionApi } from "./linux-desktop-permissions.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 
@@ -23,7 +23,8 @@ export async function startDaemon(port = 0, options: {
   permissionMode?: "automatic" | "guided"
   /** In-process permission fixtures; production uses the current platform. */
   permissionPlatform?: NodeJS.Platform
-  waylandDesktopAccess?: WaylandDesktopPermissionApi
+  linuxDesktopAccess?: LinuxDesktopPermissionApi
+  linuxDesktopBackend?: "wayland" | "x11" | null
   agentProvider?: AgentProvider
   agentQuotas?: AgentQuotaAuthority
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
@@ -31,14 +32,16 @@ export async function startDaemon(port = 0, options: {
   allowLocalControlForTests?: boolean
 } = {}) {
   const native = nativeInfo()
-  const permissions = new DesktopPermissions()
+  const isLinux = (options.permissionPlatform ?? process.platform) === "linux"
+  const backend = isLinux ? options.linuxDesktopBackend !== undefined ? options.linuxDesktopBackend : linuxDesktopBackend() : undefined
+  const permissions = new DesktopPermissions(backend)
   const peers = new PeerSessions()
   const controlDirectory = options.controlDirectory ?? daemonControlDirectory()
-  const wayland = (options.permissionPlatform ?? process.platform) === "linux"
-    ? new WaylandDesktopPermissions(controlDirectory, options.waylandDesktopAccess ?? {
-      request: requestWaylandDesktopAccess, check: checkWaylandDesktopAccess, close: closeWaylandDesktopAccess,
-      subscribe: watchWaylandDesktopAccess,
-    }) : undefined
+  const linux = isLinux
+    ? new LinuxDesktopPermissions(controlDirectory, options.linuxDesktopAccess ?? {
+      request: requestLinuxDesktopAccess, check: checkLinuxDesktopAccess, close: closeLinuxDesktopAccess,
+      subscribe: watchLinuxDesktopAccess,
+    }, backend) : undefined
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/healthz") {
       response.writeHead(200, { "content-type": "application/json" })
@@ -66,7 +69,7 @@ export async function startDaemon(port = 0, options: {
       void (async () => {
         const failures: unknown[] = []
         for (const cleanup of [
-          () => wayland?.close(),
+          () => linux?.close(),
           () => control?.stop(),
           () => peers.closeAll(),
           () => server[Symbol.asyncDispose](),
@@ -99,18 +102,18 @@ export async function startDaemon(port = 0, options: {
         fullDiskAccessPermission.error ?? "")
     }
   })
-  permissions.initialize(wayland?.requests ?? {
+  permissions.initialize(linux?.requests ?? {
     screenCapture: options.requestScreenCaptureAccess ?? requestScreenCaptureAccess,
     accessibility: options.requestAccessibilityAccess ?? requestAccessibilityAccess,
     fullDiskAccess: options.requestFullDiskAccess ?? requestFullDiskAccess,
-  }, wayland?.checks ?? {
+  }, linux?.checks ?? {
     screenCapture: options.checkScreenCaptureAccess ?? checkScreenCaptureAccess,
     accessibility: options.checkAccessibilityAccess ?? checkAccessibilityAccess,
     fullDiskAccess: options.checkFullDiskAccess ?? checkFullDiskAccess,
-  }, wayland ? "automatic" : options.permissionMode, wayland ? {
-    linked: [["screenCapture", "accessibility"]], refreshOnRead: true,
+  }, isLinux ? backend === "wayland" ? "automatic" : "guided" : options.permissionMode, linux ? {
+    linked: backend === "wayland" ? [["screenCapture", "accessibility"]] : [], refreshOnRead: true,
   } : {})
-  wayland?.onAccessChanged(() => { void permissions.refreshAfterChange() })
+  linux?.onAccessChanged(() => { void permissions.refreshAfterChange() })
   return {
     address: `http://127.0.0.1:${address.port}`,
     peers,
@@ -122,12 +125,12 @@ export async function startDaemon(port = 0, options: {
   }
 }
 
-function watchWaylandDesktopAccess(listener: () => void): () => void {
+function watchLinuxDesktopAccess(listener: () => void): () => void {
   let stopped = false
   let seen = 0
   const run = async () => {
     while (!stopped) {
-      const generation = await waitWaylandDesktopAccessChange(seen)
+      const generation = await waitLinuxDesktopAccessChange(seen)
       if (stopped || generation === null) return
       seen = generation
       listener()
@@ -135,7 +138,7 @@ function watchWaylandDesktopAccess(listener: () => void): () => void {
   }
   void run().catch(error => {
     if (stopped) return
-    console.error("Wayland desktop permission watch failed:", error instanceof Error ? error.message : error)
+    console.error("Linux desktop permission watch failed:", error instanceof Error ? error.message : error)
   })
   return () => { stopped = true }
 }

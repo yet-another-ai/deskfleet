@@ -39,6 +39,7 @@ export function createLocalAgentRuntime(options: LocalAgentRuntimeOptions): Loca
         // Events can arrive alongside hello, before connect() resolves.
         get desktopPermissions() {
           return permissions ?? {
+            ...(client.info!.linuxDesktopBackend !== undefined ? { linuxDesktopBackend: client.info!.linuxDesktopBackend } : {}),
             fullDiskAccessPermission: client.info!.fullDiskAccessPermission,
             screenCapturePermission: client.info!.screenCapturePermission,
             accessibilityPermission: client.info!.accessibilityPermission,

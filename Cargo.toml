@@ -5,6 +5,7 @@ members = [
     "crates/capture",
     "crates/encoder",
     "crates/input",
+    "crates/linux-desktop",
     "crates/linux-media",
     "crates/model",
     "crates/migration",
@@ -15,6 +16,7 @@ members = [
     "crates/protocol",
     "crates/store",
     "crates/wayland",
+    "crates/x11",
 ]
 exclude = [".agents/skills/rust-skills/checks"]
 resolver = "3"
@@ -31,8 +33,10 @@ publish = false
 deskfleet-capture = { path = "crates/capture" }
 deskfleet-encoder = { path = "crates/encoder" }
 deskfleet-input = { path = "crates/input" }
+deskfleet-linux-desktop = { path = "crates/linux-desktop" }
 deskfleet-linux-media = { path = "crates/linux-media" }
 deskfleet-wayland = { path = "crates/wayland" }
+deskfleet-x11 = { path = "crates/x11" }
 deskfleet-nvenc = { path = "crates/nvenc" }
 deskfleet-nvenc-sys = { path = "crates/nvenc-sys" }
 deskfleet-model = { path = "crates/model" }
@@ -66,6 +70,7 @@ socket2 = "0.6.5"
 filedescriptor = "0.8"
 nix = { version = "0.31", features = ["signal"] }
 libloading = "0.9"
+x11rb = { version = "0.13.2", features = ["randr", "xfixes", "xtest", "xkb"] }
 
 block2 = "0.6"
 dispatch2 = "0.3"

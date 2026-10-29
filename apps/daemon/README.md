@@ -142,12 +142,29 @@ including when hosted by Electron. The logged-in user approves the portal dialog
 once; the daemon keeps that session alive across viewer disconnects and saves an
 opaque restoration token in `<daemon directory>/wayland-restore-token` with mode
 `0600`. Subsequent starts use the token while the compositor retains the grant.
-Shutdown cancels pending consent and releases the session. The first backend
+Shutdown cancels pending consent and releases the session. This backend
 supports logged-in, unlocked GNOME/KDE desktops, with PipeWire capture, EIS input,
 and hardware AV1, H.265, or H.264 through optional GStreamer VA-API/NVENC plugins.
 The viewer negotiates AV1 → H.265 → H.264 from the host's runtime capabilities
 and its own decoder support. It does not provide remote login or unlock.
-See [Linux runtime requirements](../../agents/docs/media.md#wayland-authorization-and-media).
+
+On Linux X11, the daemon connects to the user's existing X server using `DISPLAY`
+and Xauthority credentials over a local Unix socket. TCP/SSH-forwarded displays
+are unsupported. Discovery has a two-second deadline, so an unresponsive X
+server does not indefinitely block capability queries. RandR supplies display bounds, GetImage captures
+pixels with optional XFixes cursor compositing, and XTEST/XKB provide mouse and
+physical-key input. Successful access checks report `not-required`; the welcome
+page skips Portal permission steps. X11 uses the same optional GStreamer hardware
+encoders as Wayland, but capture needs no PipeWire or Portal runtime. Display
+changes invalidate active sources so viewers refresh and reconnect. Run the
+daemon in the logged-in user's session; this does not create a remote login or
+unlock service. Headless Agent and terminal use remains independent of these
+optional desktop backends.
+
+Native access, capture, and input share one Linux backend selected at process
+startup. A Wayland environment takes precedence over `DISPLAY`, and failed
+Wayland access never falls back to Xwayland. See
+[Linux runtime requirements](../../agents/docs/media.md#linux-desktop-selection).
 
 The library exports `startDaemon()`, `close()`, and a `closed` promise. Importing
 it does not launch the CLI. Electron hosts the daemon in its main process and

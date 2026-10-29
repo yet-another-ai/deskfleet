@@ -30,11 +30,21 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Probe runtime libraries and capture/encoder factories without opening a portal.
+/// Probe the PipeWire capture runtime without opening a portal.
 #[must_use]
-pub fn is_available() -> bool {
+pub fn capture_available() -> bool {
     ffi::api().is_ok_and(|api| {
-        ["pipewiresrc", "videoconvert", "appsink", "appsrc"]
+        ["pipewiresrc", "videoconvert", "appsink"]
+            .iter()
+            .all(|name| api.has_factory(name))
+    })
+}
+
+/// Probe shared hardware encoding independently of the desktop capture backend.
+#[must_use]
+pub fn encoding_available() -> bool {
+    ffi::api().is_ok_and(|api| {
+        ["videoconvert", "appsink", "appsrc"]
             .iter()
             .all(|name| api.has_factory(name))
             && Codec::ALL

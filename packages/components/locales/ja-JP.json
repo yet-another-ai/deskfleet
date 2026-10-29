@@ -195,6 +195,8 @@
     "runningSeparately": "別プロセスで実行中", "retryStart": "起動を再試行",
     "retryStop": "停止を再試行", "retryLoad": "設定を再読み込み",
     "screenCaptureRequesting": "画面とシステムオーディオの収録権限を要求中…", "screenCaptureDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「画面収録とシステムオーディオ録音」でアクセスを許可してから、ローカルエージェントをオフにして再度オンにしてください。",
+    "linuxScreenCaptureUnavailable": "画面をキャプチャできません。ログイン済みのグラフィカルセッションでローカルエージェントを起動してください。",
+    "linuxControlUnavailable": "マウスとキーボードを操作できません。ログイン済みのグラフィカルセッションでローカルエージェントを起動してください。",
     "waylandScreenCaptureRequesting": "デスクトップ共有の許可を待っています…", "waylandScreenCaptureDenied": "画面共有が許可されていません。デスクトップのロックを解除し、ローカルエージェントをオフにして再度オンにしてから、デスクトップ共有のダイアログで許可してください。",
     "waylandScreenCaptureError": "デスクトップ共有の許可を取得できませんでした。", "waylandControlRequesting": "マウスとキーボードの操作許可を待っています…",
     "waylandControlDenied": "マウスとキーボードの操作が許可されていません。デスクトップのロックを解除し、ローカルエージェントをオフにして再度オンにしてから、デスクトップ共有のダイアログでリモート操作を許可してください。", "waylandControlError": "マウスとキーボードの操作許可を取得できませんでした。",

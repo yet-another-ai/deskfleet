@@ -55,13 +55,24 @@ export class OnboardingController {
         } else return this.#save(this.#initialStep())
       }
     }
-    return { ...this.#state }
+    if (ONBOARDING_PERMISSIONS.includes(this.#state.step as OnboardingPermission)
+      && !this.#permissionSteps().includes(this.#state.step as OnboardingPermission)) return this.#save("account")
+    return this.#snapshot(this.#state)
+  }
+
+  #permissionSteps() {
+    return onboardingPermissions(this.#options.platform, this.#options.localAgent.state.linuxDesktopBackend)
+  }
+
+  #snapshot(state: OnboardingState): OnboardingState {
+    const backend = this.#options.localAgent.state.linuxDesktopBackend
+    return this.#options.platform === "linux" && backend !== undefined ? { ...state, linuxDesktopBackend: backend } : { ...state }
   }
 
   #initialStep(): OnboardingStep {
     const local = this.#options.localAgent.state
     return local.enabled || local.status === "running"
-      ? onboardingPermissions(this.#options.platform)[0] ?? "account" : "account"
+      ? this.#permissionSteps()[0] ?? "account" : "account"
   }
 
   async permissions() {
@@ -80,7 +91,7 @@ export class OnboardingController {
   advancePermission(permission: OnboardingPermission): Promise<OnboardingState> {
     return this.#run(async () => {
       await this.#requireStep(permission)
-      const permissions = onboardingPermissions(this.#options.platform)
+      const permissions = this.#permissionSteps()
       const index = permissions.indexOf(permission)
       return this.#save(permissions[index + 1] ?? "account")
     })
@@ -111,6 +122,6 @@ export class OnboardingController {
     await writeFile(`${path}.tmp`, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 })
     await rename(`${path}.tmp`, path)
     this.#state = state
-    return { ...state }
+    return this.#snapshot(state)
   }
 }

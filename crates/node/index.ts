@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
-import type { DisplayInfo, LocalApplication, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, SystemStatus, TerminalConfig, WaylandDesktopAccess } from "./bindings.d.ts"
+import type { DisplayInfo, LocalApplication, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
 
-export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, WaylandDesktopAccess } from "./bindings.d.ts"
+export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, LinuxDesktopAccess } from "./bindings.d.ts"
 export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
 export type { SystemStatus } from "./bindings.d.ts"
 export type { LocalApplication, LocalApplicationKind } from "./bindings.d.ts"
@@ -119,24 +119,29 @@ export function requestAccessibilityAccess(): Promise<boolean | null> {
   return (bindings ??= loadBindings()).requestAccessibilityAccess()
 }
 
-/** Authorize or restore one shared screen/input Portal session during startup. */
-export function requestWaylandDesktopAccess(directory: string): Promise<WaylandDesktopAccess> {
-  return (bindings ??= loadBindings()).requestWaylandDesktopAccess(directory)
+/** The native-selected desktop backend; absent outside an interactive Linux session. */
+export function linuxDesktopBackend(): "wayland" | "x11" | null {
+  return (bindings ??= loadBindings()).linuxDesktopBackend()
 }
 
-/** Check the existing Portal session without opening a consent dialog. */
-export function checkWaylandDesktopAccess(): Promise<WaylandDesktopAccess> {
-  return (bindings ??= loadBindings()).checkWaylandDesktopAccess()
+/** Authorize Wayland or check X11 screen/input access during daemon startup. */
+export function requestLinuxDesktopAccess(directory: string): Promise<LinuxDesktopAccess> {
+  return (bindings ??= loadBindings()).requestLinuxDesktopAccess(directory)
 }
 
-/** Wait until the shared Portal grant changes, or until desktop shutdown. */
-export function waitWaylandDesktopAccessChange(seen: number): Promise<number | null> {
-  return (bindings ??= loadBindings()).waitWaylandDesktopAccessChange(seen)
+/** Check Linux desktop access without opening a consent dialog. */
+export function checkLinuxDesktopAccess(): Promise<LinuxDesktopAccess> {
+  return (bindings ??= loadBindings()).checkLinuxDesktopAccess()
 }
 
-/** Cancel pending Portal requests and close the daemon's shared desktop session. */
-export function closeWaylandDesktopAccess(): Promise<void> {
-  return (bindings ??= loadBindings()).closeWaylandDesktopAccess()
+/** Wait until Wayland access changes, or until desktop shutdown. */
+export function waitLinuxDesktopAccessChange(seen: number): Promise<number | null> {
+  return (bindings ??= loadBindings()).waitLinuxDesktopAccessChange(seen)
+}
+
+/** Close the daemon's Linux desktop access resources. */
+export function closeLinuxDesktopAccess(): Promise<void> {
+  return (bindings ??= loadBindings()).closeLinuxDesktopAccess()
 }
 
 /** Discover platform desktop support without opening a consent dialog. */
