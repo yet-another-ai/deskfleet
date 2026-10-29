@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
-import type { CatalogApplication } from "@deskfleet/client/platform"
+import type { LocalApplication } from "@deskfleet/client/applications"
 import ApplicationIcon from "./ApplicationIcon.vue"
 
-const sampleApplications: CatalogApplication[] = [
+const sampleApplications = [
   { id: "vscode", name: "Visual Studio Code", kind: "editor" },
   { id: "cursor", name: "Cursor", kind: "editor" },
   { id: "zed", name: "Zed", kind: "editor" },
@@ -10,7 +10,7 @@ const sampleApplications: CatalogApplication[] = [
   { id: "terminal", name: "Terminal", kind: "terminal" },
   { id: "finder", name: "Finder", kind: "fileManager" },
   { id: "custom-ide", name: "Custom IDE", kind: "editor" },
-]
+] satisfies LocalApplication[]
 
 const meta = {
   title: "Foundational/Display & Badges/ApplicationIcon",
