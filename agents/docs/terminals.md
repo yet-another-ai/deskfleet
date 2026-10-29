@@ -249,7 +249,8 @@ directory on their `PATH`. The launcher uses the bundled runtime in source,
 standalone SEA, and Electron installations; it does not require another Node.js
 installation. For Zsh, including the default macOS shell, daemon-managed
 `ZDOTDIR` wrappers load the user's startup files in their normal order and
-prepend the helper directory after startup. This keeps `icat` available when
+move the helper directory to the front of `PATH` after startup, keeping a single
+entry even when system startup reorders the inherited path. This keeps `icat` available when
 login configuration replaces `PATH`, including when the packaged app starts
 from Finder with a different environment from a development shell. The wrappers
 preserve changes to the user's `ZDOTDIR` and restore it when startup completes;

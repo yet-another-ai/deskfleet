@@ -17,21 +17,25 @@ function zsh(): string | undefined {
 const shell = zsh()
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==", "base64")
 
-for (const startup of ["custom", "redirected", "home"]) {
+for (const startup of ["custom", "redirected", "home", "reordered"]) {
   test(`default zsh terminals retain icat with ${startup} startup configuration`, {
     skip: shell ? false : "zsh is unavailable", timeout: 15_000,
   }, async context => {
-    const directory = await mkdtemp(join(tmpdir(), "df-terminal-shell-"))
+    const directory = await mkdtemp(join(tmpdir(), startup === "reordered" ? "df-terminal-shell-[ab]*?-" : "df-terminal-shell-"))
     const startupDirectory = join(directory, "startup 空格 ' quote")
     const redirectsZdotdir = startup === "redirected"
     const finalStartupDirectory = redirectsZdotdir ? join(startupDirectory, "relocated") : startupDirectory
     await mkdir(finalStartupDirectory, { recursive: true })
     const replacePath = startup === "home" ? "" : 'export PATH=/usr/bin:/bin\n'
+    // Model macOS path_helper moving the inherited helper behind system paths.
+    const loginPath = startup === "reordered"
+      ? 'export PATH="/usr/bin::/opt/[literal]*?:$DESKFLEET_TEST_SHELL_BIN:/usr/bin:$DESKFLEET_TEST_SHELL_BIN-other:/bin:"\n'
+      : replacePath
     const files = new Map([
       [join(startupDirectory, ".zshenv"), 'export DF_STARTUP="env"\n' + (redirectsZdotdir ? 'export ZDOTDIR="$ZDOTDIR/relocated"\n' : "")],
       [join(finalStartupDirectory, ".zprofile"), 'DF_STARTUP="$DF_STARTUP>profile"\n' + replacePath],
       [join(finalStartupDirectory, ".zshrc"), 'DF_STARTUP="$DF_STARTUP>rc"\nPROMPT="deskfleet-test> "\n' + replacePath],
-      [join(finalStartupDirectory, ".zlogin"), 'DF_STARTUP="$DF_STARTUP>login"\n' + replacePath],
+      [join(finalStartupDirectory, ".zlogin"), 'DF_STARTUP="$DF_STARTUP>login"\n' + loginPath],
     ])
     for (const [path, content] of files) await writeFile(path, content)
     await writeFile(join(directory, "image 空格.png"), png)
@@ -42,8 +46,12 @@ for (const startup of ["custom", "redirected", "home"]) {
     else process.env.ZDOTDIR = startupDirectory
     const sessions = new TerminalSessions({
       directory: join(directory, "terminals"),
-      // Isolate the child shell's default startup directory without changing this process's HOME.
-      factory: startup === "home" ? config => createTerminal({ ...config, env: { ...config.env, HOME: startupDirectory } }) : undefined,
+      // Keep fixture paths independent of macOS /var -> /private/var cwd normalization.
+      factory: config => createTerminal({ ...config, env: {
+        ...config.env,
+        ...(startup === "home" ? { HOME: startupDirectory } : {}),
+        DESKFLEET_TEST_SHELL_BIN: join(directory, "terminals", ".shell-bin"),
+      } }),
     })
     context.after(async () => {
       if (originalShell === undefined) delete process.env.SHELL
@@ -73,7 +81,8 @@ for (const startup of ["custom", "redirected", "home"]) {
     const path = output.split("\n").find(line => line.startsWith("DF_PATH:"))?.slice("DF_PATH:".length).split(":")
     assert.equal(path?.[0], bin, output)
     assert.equal(path?.filter(entry => entry === bin).length, 1, output)
-    if (startup !== "home") assert.deepEqual(path, [bin, "/usr/bin", "/bin"])
+    if (startup === "reordered") assert.deepEqual(path, [bin, "/usr/bin", "", "/opt/[literal]*?", "/usr/bin", `${bin}-other`, "/bin", ""])
+    else if (startup !== "home") assert.deepEqual(path, [bin, "/usr/bin", "/bin"])
     else assert.ok(output.includes("\nDF_CHILD:env\n"), output)
     assert.ok(output.includes("Usage: icat [--] [FILE|-]"), output)
     assert.ok(output.includes(`;size=${png.length};inline=1;preserveAspectRatio=1:${png.toString("base64")}\x07`), output)

@@ -42,10 +42,17 @@ if [[ -o rcs ]] && ${moreFiles}; then
   _deskfleet_zdotdir=\${ZDOTDIR-}
   export ZDOTDIR=${shellQuote(directory)}
 else
-  if [[ $PATH != ${shellQuote(bin)} && $PATH != ${shellQuote(`${bin}:`)}* ]]; then
-    export PATH=${shellQuote(bin)}:$PATH
-  fi
-  unset _deskfleet_zdotdir _deskfleet_zdotdir_set
+  # macOS startup can move the inherited helper behind system directories.
+  # Move only this exact entry to the front, preserving the rest of PATH.
+  _deskfleet_path=(${shellQuote(bin)})
+  for _deskfleet_entry in "\${path[@]}"; do
+    if [[ $_deskfleet_entry != ${shellQuote(bin)} ]]; then
+      _deskfleet_path+=("$_deskfleet_entry")
+    fi
+  done
+  path=("\${_deskfleet_path[@]}")
+  export PATH
+  unset _deskfleet_zdotdir _deskfleet_zdotdir_set _deskfleet_path _deskfleet_entry
 fi
 `
     await writeFile(join(directory, file), script, { mode: 0o600 })
