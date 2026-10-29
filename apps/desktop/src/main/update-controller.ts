@@ -14,6 +14,7 @@ export class UpdateController {
   readonly #driver: UpdateDriver | null
   readonly #publish: (state: UpdateState) => void
   readonly #beforeInstall: () => Promise<void>
+  readonly #currentVersion: string | undefined
   #state: UpdateState
   #timer: ReturnType<typeof setInterval> | undefined
   #checking: Promise<void> | undefined
@@ -21,14 +22,17 @@ export class UpdateController {
   #downloaded = false
   #closed = false
 
-  constructor(driver: UpdateDriver | null, publish: (state: UpdateState) => void, beforeInstall: () => Promise<void>) {
+  constructor(driver: UpdateDriver | null, publish: (state: UpdateState) => void, beforeInstall: () => Promise<void>, currentVersion?: string) {
     this.#driver = driver
     this.#publish = publish
     this.#beforeInstall = beforeInstall
+    this.#currentVersion = currentVersion
     this.#state = { status: driver ? "idle" : "disabled" }
   }
 
-  get(): UpdateState { return { ...this.#state } }
+  get(): UpdateState {
+    return { ...this.#state, ...(this.#currentVersion ? { currentVersion: this.#currentVersion } : {}) }
+  }
 
   start(): void {
     if (this.#closed || !this.#driver || this.#timer) return

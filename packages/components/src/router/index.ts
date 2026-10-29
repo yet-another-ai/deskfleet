@@ -103,6 +103,16 @@ export const router = createRouter({
           component: () => import("../components/settings/NotificationsSettings.vue"),
         },
         {
+          path: "permissions",
+          name: "settings-permissions",
+          component: () => import("../components/settings/PermissionsSettings.vue"),
+        },
+        {
+          path: "updates",
+          name: "settings-updates",
+          component: () => import("../components/settings/UpdatesSettings.vue"),
+        },
+        {
           path: "agents",
           name: "settings-agents",
           component: () => import("../components/settings/AgentsSettings.vue"),

@@ -180,6 +180,7 @@ do not receive prereleases. Publish complete releases with a higher version;
 never replace assets on an existing published release.
 
 The Electron main process checks for updates on startup and every 30 minutes.
+Settings → Updates shows the installed version and can trigger a check on demand.
 An available update appears at the bottom left; clicking it downloads the update,
 stops the embedded daemon, then installs and restarts the app. Automatic checks
 do not download or install, and ordinary app exit does not install an update.

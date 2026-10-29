@@ -509,6 +509,14 @@ backend choice; Wayland environments never fall back to Xwayland. See
 requirements. Settings displays OS permission status separately from daemon
 availability; capture and encoding start only on explicit use.
 
+Settings → Permissions revisits the applicable permission checks and requests
+after welcome setup is complete, without resetting its saved progress. It checks
+silently on entry, on an explicit recheck, and when the window regains focus.
+Only a permission action opens authorization or requests access. These controls
+belong to this computer even when a remote Machine is selected. Local Network
+retains its request-attempt status and links to System Settings for confirmation;
+Wayland screen and input permissions share the same authorization session.
+
 Startup reuses an authenticated standalone daemon only when it was explicitly
 configured to own the same `<userData>/daemon` discovery directory. Explicitly
 disabling the preference sends authenticated shutdown and waits for the discovery
@@ -524,7 +532,10 @@ Closing its window or using an ordinary quit command hides it. The tray menu,
 OS session end, or a termination signal quits the app and its hosted daemon.
 
 Packaged Electron clients check the public GitHub release feed at startup and
-every 30 minutes, including while hidden in the tray. The main process owns
+every 30 minutes, including while hidden in the tray. Settings → Updates displays
+the installed version and offers an explicit check against the same feed. Opening
+the page only reads updater state; manual checks do not download or install.
+The main process owns
 the updater and its state; the sandboxed renderer reads snapshots and subscribes
 through a narrow preload API. The lower-left sidebar offers an update only when
 a newer stable version is available. Clicking downloads the update, reports

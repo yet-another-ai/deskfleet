@@ -1,4 +1,24 @@
 {
+  "permissionsSettings": {
+    "title": "Permissions",
+    "description": "Review the access DeskFleet needs on this computer. You can change permissions and check their status here at any time.",
+    "unavailable": "Permission settings are available in the desktop app.",
+    "noPermissions": "No additional system permissions are needed for the current configuration.",
+    "refresh": "Check permissions",
+    "refreshing": "Checking permissions…",
+    "restart": "Enable DeskFleet in System Settings. If macOS asks you to quit and reopen the app, restart it to apply the change.",
+    "waylandShared": "Screen sharing and mouse and keyboard control use the same desktop authorization."
+  },
+  "updatesSettings": {
+    "title": "Updates",
+    "description": "Check for a newer version of DeskFleet and install it when you’re ready.",
+    "currentVersion": "Current version",
+    "ready": "Check for a newer version of DeskFleet.",
+    "upToDate": "You’re up to date.",
+    "check": "Check for updates",
+    "checkFailed": "Could not check for updates. Try again.",
+    "unavailable": "Updates are unavailable in this build."
+  },
   "updates": {
     "available": "Version {version} is available",
     "install": "Update and restart",

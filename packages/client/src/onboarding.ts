@@ -28,7 +28,9 @@ export function onboardingPermissions(platform: string, backend?: DesktopPermiss
 /** The desktop host owns setup and client network access; the daemon owns capture/file/input access. */
 export interface OnboardingApi {
   get(): Promise<OnboardingState>
+  /** Silent checks for the active welcome step, or all applicable permissions after setup. */
   permissions(): Promise<OnboardingPermissionsState>
+  /** Completed setup allows revisiting any applicable permission without changing progress. */
   requestPermission(permission: OnboardingPermission): Promise<OnboardingPermissionsState>
   openLocalNetworkSettings(): Promise<void>
   advancePermission(permission: OnboardingPermission): Promise<OnboardingState>

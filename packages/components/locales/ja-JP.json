@@ -1,4 +1,24 @@
 {
+  "permissionsSettings": {
+    "title": "権限",
+    "description": "このコンピューターで DeskFleet に必要な権限を確認します。いつでも権限を変更し、状態を再確認できます。",
+    "unavailable": "権限はデスクトップアプリで設定できます。",
+    "noPermissions": "現在の構成では、追加のシステム権限は必要ありません。",
+    "refresh": "権限を確認",
+    "refreshing": "権限を確認中…",
+    "restart": "システム設定で DeskFleet の権限を有効にしてください。macOS からアプリの再起動を求められた場合は、再起動して変更を適用してください。",
+    "waylandShared": "画面共有とマウス・キーボード操作は、同じデスクトップ認証を使用します。"
+  },
+  "updatesSettings": {
+    "title": "アップデート",
+    "description": "DeskFleet の新しいバージョンを確認し、準備ができたらインストールできます。",
+    "currentVersion": "現在のバージョン",
+    "ready": "DeskFleet の新しいバージョンを確認します。",
+    "upToDate": "最新のバージョンです。",
+    "check": "アップデートを確認",
+    "checkFailed": "アップデートを確認できませんでした。もう一度お試しください。",
+    "unavailable": "このビルドではアップデートを利用できません。"
+  },
   "updates": {
     "available": "バージョン {version} が利用可能です", "install": "更新して再起動",
     "retry": "更新を再試行", "checking": "更新を確認中…",

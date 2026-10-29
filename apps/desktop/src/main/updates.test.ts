@@ -7,7 +7,7 @@ import type { UpdateController } from "./update-controller.ts"
 import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
 
 const { handle, app, loadUpdater, createDriver, driver } = vi.hoisted(() => ({
-  handle: vi.fn(), app: { isPackaged: false }, loadUpdater: vi.fn(), createDriver: vi.fn(),
+  handle: vi.fn(), app: { isPackaged: false, getVersion: () => "0.1.0" }, loadUpdater: vi.fn(), createDriver: vi.fn(),
   driver: { check: vi.fn(), download: vi.fn(), install: vi.fn(), close: vi.fn() },
 }))
 vi.mock("electron", () => ({ ipcMain: { handle }, app }))
@@ -47,6 +47,7 @@ function renderer() {
 function installIpc() {
   const controller = {
     get: vi.fn((): UpdateState => ({ status: "available", version: "0.2.0" })),
+    check: vi.fn().mockResolvedValue(undefined),
     install: vi.fn().mockResolvedValue(undefined),
   }
   installUpdateIpc(controller as unknown as UpdateController)
@@ -62,7 +63,7 @@ function lifecycle(): BackgroundLifecycle {
 test("development installs disabled IPC without importing or creating the updater", async () => {
   const controller = await installUpdates(lifecycle(), vi.fn())
   controllers.push(controller)
-  expect(controller.get()).toEqual({ status: "disabled" })
+  expect(controller.get()).toEqual({ status: "disabled", currentVersion: "0.1.0" })
   expect(loadUpdater).not.toHaveBeenCalled()
   expect(createDriver).not.toHaveBeenCalled()
   expect(handle).toHaveBeenCalledWith(UPDATES_CHANNEL, expect.any(Function))
@@ -74,12 +75,12 @@ test("extracted Linux bundles are disabled while AppImage installs can update", 
   vi.stubEnv("APPIMAGE", "")
   const extracted = await installUpdates(lifecycle(), vi.fn())
   controllers.push(extracted)
-  expect(extracted.get()).toEqual({ status: "disabled" })
+  expect(extracted.get()).toEqual({ status: "disabled", currentVersion: "0.1.0" })
   expect(createDriver).not.toHaveBeenCalled()
   vi.stubEnv("APPIMAGE", "/opt/deskfleet.AppImage")
   const appImage = await installUpdates(lifecycle(), vi.fn())
   controllers.push(appImage)
-  expect(appImage.get()).toEqual({ status: "idle" })
+  expect(appImage.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
   expect(createDriver).toHaveBeenCalledOnce()
 })
 
@@ -110,6 +111,18 @@ test("IPC rejects unknown operations and returns controller errors", async () =>
   await expect(invoke(main.event, "get")).resolves.toEqual({ ok: false, error: "Unavailable" })
   controller.install.mockRejectedValueOnce(new Error("Shutdown failed"))
   await expect(invoke(main.event, "install")).resolves.toEqual({ ok: false, error: "Shutdown failed" })
+})
+
+test("manual check IPC returns the checked state without authorizing installation", async () => {
+  const { invoke, controller } = installIpc()
+  const main = renderer()
+  attachUpdates(main.window)
+  await expect(invoke(main.event, "check")).resolves.toEqual({ ok: true, value: { status: "available", version: "0.2.0" } })
+  expect(controller.check).toHaveBeenCalledOnce()
+  expect(controller.install).not.toHaveBeenCalled()
+  controller.check.mockRejectedValueOnce(new Error("Offline"))
+  await expect(invoke(main.event, "check")).resolves.toEqual({ ok: false, error: "Offline" })
+  expect(controller.install).not.toHaveBeenCalled()
 })
 
 test("state broadcasts reach attached live renderers and stop after destruction", () => {

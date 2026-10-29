@@ -1,4 +1,24 @@
 {
+  "permissionsSettings": {
+    "title": "权限配置",
+    "description": "查看 DeskFleet 在本机所需的权限，随时调整配置并重新检查状态。",
+    "unavailable": "请在桌面应用中配置本机权限。",
+    "noPermissions": "当前配置无需额外的系统权限。",
+    "refresh": "检查权限",
+    "refreshing": "正在检查权限…",
+    "restart": "请在系统设置中为 DeskFleet 开启权限。如果 macOS 要求退出并重新打开应用，请重启以使更改生效。",
+    "waylandShared": "屏幕共享与鼠标键盘控制使用同一次桌面授权。"
+  },
+  "updatesSettings": {
+    "title": "应用更新",
+    "description": "检查 DeskFleet 新版本，并在准备好后安装。",
+    "currentVersion": "当前版本",
+    "ready": "检查是否有 DeskFleet 新版本。",
+    "upToDate": "已是最新版本。",
+    "check": "检查更新",
+    "checkFailed": "无法检查更新，请重试。",
+    "unavailable": "此版本不支持应用更新。"
+  },
   "updates": {
     "available": "新版本 {version} 已可用",
     "install": "更新并重启",

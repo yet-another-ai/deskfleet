@@ -824,7 +824,7 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
     central,
     siteAdministration: central,
     onboarding: {
-      get: async () => ({ step: "complete", permissionSteps: [] }),
+      get: async () => ({ step: "complete", permissionSteps: ["localNetwork", "fullDiskAccess", "screenCapture", "accessibility"] }),
       permissions: async () => ({
         localNetwork: "attempted",
         screenCapturePermission: { status: "granted" },
@@ -860,7 +860,8 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
       openWorkspace: async () => {},
     },
     updates: {
-      get: async () => ({ status: "downloaded", version: "0.4.2", percent: 100 }),
+      get: async () => ({ status: "downloaded", currentVersion: "0.2.0", version: "0.4.2", percent: 100 }),
+      check: async () => ({ status: "downloaded", currentVersion: "0.2.0", version: "0.4.2", percent: 100 }),
       install: async () => {},
       onChanged: subscribe,
     },
@@ -1043,6 +1044,8 @@ export function createStorybookRouter() {
       { path: "/settings/preferences", name: "settings-preferences", component: { template: "<div />" } },
       { path: "/settings/appearance", name: "settings-appearance", component: { template: "<div />" } },
       { path: "/settings/notifications", name: "settings-notifications", component: { template: "<div />" } },
+      { path: "/settings/permissions", name: "settings-permissions", component: { template: "<div />" } },
+      { path: "/settings/updates", name: "settings-updates", component: { template: "<div />" } },
       { path: "/settings/agents", name: "settings-agents", component: { template: "<div />" } },
       { path: "/settings/mcp-servers", name: "settings-mcp-servers", component: { template: "<div />" } },
       { path: "/team/settings", name: "team-settings", component: { template: "<div />" } },

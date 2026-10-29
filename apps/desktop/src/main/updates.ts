@@ -27,6 +27,10 @@ export function installUpdateIpc(controller: UpdateController): void {
     }
     try {
       if (method === "get") return { ok: true, value: controller.get() }
+      if (method === "check") {
+        await controller.check()
+        return { ok: true, value: controller.get() }
+      }
       if (method !== "install") throw new Error("Unknown update operation")
       await controller.install()
       return { ok: true, value: undefined }
@@ -56,7 +60,7 @@ export async function installUpdates(lifecycle: BackgroundLifecycle, beforeInsta
       },
     }
   }
-  const controller = new UpdateController(driver, publishUpdateState, beforeInstall)
+  const controller = new UpdateController(driver, publishUpdateState, beforeInstall, app.getVersion())
   installUpdateIpc(controller)
   return controller
 }

@@ -22,7 +22,7 @@ beforeEach(() => {
   get.mockReset().mockResolvedValue({ status: "available", version: "0.2.0" })
   install.mockReset().mockResolvedValue(undefined)
   unsubscribe.mockReset()
-  api = { get, install, onChanged: listener => { publish = listener; return unsubscribe } }
+  api = { get, check: vi.fn(async () => ({ status: "idle" as const })), install, onChanged: listener => { publish = listener; return unsubscribe } }
   configureClient({ ...host, updates: api })
   i18n.global.locale.value = "en-US"
 })

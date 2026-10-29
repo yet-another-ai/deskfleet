@@ -1,4 +1,4 @@
-import { client as platformClient } from "@deskfleet/client/platform"
+import { client as platformClient, configureClient, getClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
@@ -11,6 +11,7 @@ import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspace
 import type { LocalAgentState } from "../../client/src/local-agent.ts"
 
 const mounted: { wrapper: VueWrapper; pinia: ReturnType<typeof createPinia> }[] = []
+const host = getClient()
 async function mountApp(path = "/", pinia = createPinia()) {
   await router.push(path)
   const wrapper = mount(App, {
@@ -38,6 +39,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const { wrapper, pinia } of mounted.splice(0)) { wrapper.unmount(); disposePinia(pinia) }
   vi.restoreAllMocks()
+  configureClient(host)
   i18n.global.locale.value = "en-US"
 })
 
@@ -317,6 +319,50 @@ test("notifications have a dedicated settings section and retain the return dest
   expect(view.findAll('main [role="switch"]')).toHaveLength(3)
   await button(view, "Back to app").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
+})
+
+test("completed desktop setup exposes permission and update pages and retains the return destination", async () => {
+  const check = vi.fn(async () => ({ status: "idle" as const, currentVersion: "0.2.0" }))
+  const permissions = vi.fn(async () => ({ localNetwork: "not-requested" as const, fullDiskAccessPermission: { status: "granted" as const }, screenCapturePermission: { status: "denied" as const }, accessibilityPermission: { status: "granted" as const } }))
+  const requestPermission = vi.fn(async () => ({}))
+  configureClient({
+    ...host, platform: "darwin",
+    onboarding: {
+      get: async () => ({ step: "complete", permissionSteps: ["localNetwork", "fullDiskAccess", "screenCapture", "accessibility"] }),
+      permissions, requestPermission, openLocalNetworkSettings: vi.fn(),
+      advancePermission: vi.fn(), complete: vi.fn(),
+    },
+    updates: { get: async () => ({ status: "idle", currentVersion: "0.2.0" }), check, install: vi.fn(), onChanged: () => () => {} },
+  })
+  const view = await mountApp(`/workspaces/${workspaceId}`)
+  await view.get('button[aria-label="Settings"]').trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-preferences"))
+  await view.get('main nav a[href="#/settings/permissions"]').trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-permissions"))
+  await flushPromises()
+  expect(view.get("main h1").text()).toBe("Permissions")
+  expect(view.findAll("[data-permission]")).toHaveLength(4)
+  expect(permissions).toHaveBeenCalledOnce()
+  expect(requestPermission).not.toHaveBeenCalled()
+  await view.get('main nav a[href="#/settings/updates"]').trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-updates"))
+  await flushPromises()
+  expect(view.get("main h1").text()).toBe("Updates")
+  expect(view.text()).toContain("0.2.0")
+  expect(check).not.toHaveBeenCalled()
+  await button(view, "Check for updates").trigger("click")
+  await flushPromises()
+  expect(check).toHaveBeenCalledOnce()
+  expect(view.text()).toContain("You’re up to date.")
+  await button(view, "Back to app").trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
+})
+
+test("Web settings hide desktop update and system permission sections", async () => {
+  configureClient({ ...host, platform: "web" })
+  const view = await mountApp("/settings/preferences")
+  expect(view.find('main nav a[href="#/settings/permissions"]').exists()).toBe(false)
+  expect(view.find('main nav a[href="#/settings/updates"]').exists()).toBe(false)
 })
 
 test("returning focus to the window refreshes the local machine", async () => {

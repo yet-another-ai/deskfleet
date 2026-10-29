@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
-import { Bell, Bot, Palette, Plug, SlidersHorizontal } from "@lucide/vue"
+import { Bell, Bot, Download, Palette, Plug, ShieldCheck, SlidersHorizontal } from "@lucide/vue"
 import SettingsLayout from "./SettingsLayout.vue"
 import SidebarLink from "../sidebar/SidebarLink.vue"
 
@@ -14,7 +14,7 @@ const meta = {
   render: (args) => ({
     components: { SettingsLayout, SidebarLink },
     setup() {
-      return { args, SlidersHorizontal, Palette, Bell, Bot, Plug }
+      return { args, SlidersHorizontal, Palette, Bell, Bot, Plug, ShieldCheck, Download }
     },
     template: `
       <div class="h-[480px] flex border border-ui-border rounded-xl overflow-hidden bg-ui-canvas">
@@ -23,8 +23,10 @@ const meta = {
             <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" label="Preferences" />
             <SidebarLink :to="{ name: 'settings-appearance' }" :icon="Palette" label="Appearance" />
             <SidebarLink :to="{ name: 'settings-notifications' }" :icon="Bell" label="Notifications" />
+            <SidebarLink :to="{ name: 'settings-permissions' }" :icon="ShieldCheck" label="Permissions" />
             <SidebarLink :to="{ name: 'settings-agents' }" :icon="Bot" label="Agents" />
             <SidebarLink :to="{ name: 'settings-mcp-servers' }" :icon="Plug" label="MCP Servers" />
+            <SidebarLink :to="{ name: 'settings-updates' }" :icon="Download" label="Updates" />
           </template>
           <h1 class="ui-page-title mb-4">Preferences</h1>
           <p class="text-sm text-ui-text-muted">Configure local machine behavior, startup options, and worktree storage locations.</p>

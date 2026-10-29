@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
-import type { LocalAgentState, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
+import type { LocalAgentState, DesktopPermissionKind, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
 import type { LocalNetworkAccessRequest } from "../../../../packages/client/src/onboarding.ts"
 import { establishedDesktopProfile, OnboardingController } from "./onboarding-controller.ts"
 
@@ -20,7 +20,7 @@ async function fixture(platform: NodeJS.Platform = "darwin") {
   const localAgent = {
     state,
     refreshPermissions: vi.fn(async () => permissions),
-    requestPermission: vi.fn(async () => permissions),
+    requestPermission: vi.fn(async (_permission: DesktopPermissionKind) => permissions),
   }
   const localNetwork = {
     request: vi.fn(async (): Promise<LocalNetworkAccessRequest> => "attempted"),
@@ -104,7 +104,8 @@ test("an already completed profile does not restart for the added local network 
   const f = await fixture()
   await writeFile(f.path, JSON.stringify({ step: "complete" }))
   expect(await f.controller.get()).toEqual({ ...macPermissions, step: "complete" })
-  await expect(f.controller.openLocalNetworkSettings()).rejects.toThrow("step has changed")
+  await f.controller.openLocalNetworkSettings()
+  expect(f.localNetwork.openSettings).toHaveBeenCalledOnce()
   expect(f.localNetwork.request).not.toHaveBeenCalled()
 })
 
@@ -198,7 +199,7 @@ test.each(["darwin", "linux", "win32"] as const)("old server setup progress resu
   expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step })
 })
 
-test("permissions cannot be requested out of order or after setup completes", async () => {
+test("permission settings revisit completed setup while first-run requests remain ordered", async () => {
   const f = await fixture()
   await expect(f.controller.complete()).rejects.toThrow("step has changed")
   await expect(f.controller.requestPermission("accessibility")).rejects.toThrow("step has changed")
@@ -210,8 +211,48 @@ test("permissions cannot be requested out of order or after setup completes", as
   await f.controller.advancePermission("screenCapture")
   await f.controller.advancePermission("accessibility")
   await f.controller.complete()
-  await expect(f.controller.permissions()).rejects.toThrow("permission step")
-  await expect(f.controller.requestPermission("fullDiskAccess")).rejects.toThrow("step has changed")
+  expect(await f.controller.permissions()).toMatchObject({ localNetwork: "not-requested", fullDiskAccessPermission: { status: "denied" } })
+  expect(f.localNetwork.request).not.toHaveBeenCalled()
+  await f.controller.requestPermission("accessibility")
+  await f.controller.requestPermission("fullDiskAccess")
+  expect(f.localAgent.requestPermission.mock.calls.map(([permission]) => permission)).toEqual(["accessibility", "fullDiskAccess"])
+  expect(await f.controller.requestPermission("localNetwork")).toEqual({ localNetwork: "attempted" })
+  expect(await f.controller.permissions()).toMatchObject({ localNetwork: "attempted" })
+  await f.controller.openLocalNetworkSettings()
+  expect(f.localNetwork.openSettings).toHaveBeenCalledOnce()
+  await expect(f.controller.advancePermission("fullDiskAccess")).rejects.toThrow("step has changed")
+  expect(await f.restart().get()).toEqual({ ...macPermissions, step: "complete" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "complete" })
+})
+
+test("completed settings keep client network access available with the local Agent disabled", async () => {
+  const f = await fixture()
+  await writeFile(f.path, JSON.stringify({ step: "complete" }))
+  f.localAgent.state.enabled = false
+  f.localAgent.state.status = "stopped"
+  expect(await f.controller.permissions()).toEqual({ localNetwork: "not-requested" })
+  expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
+  await f.controller.requestPermission("localNetwork")
+  await expect(f.controller.requestPermission("screenCapture")).rejects.toThrow("unavailable")
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+})
+
+test.each(["linux", "win32"] as const)("completed %s settings only request applicable permissions", async platform => {
+  const f = await fixture(platform)
+  await writeFile(f.path, JSON.stringify({ step: "complete" }))
+  expect(await f.controller.permissions()).toMatchObject(platform === "linux" ? { screenCapturePermission: { status: "denied" } } : {})
+  expect(f.localAgent.refreshPermissions).toHaveBeenCalledTimes(platform === "linux" ? 1 : 0)
+  if (platform === "linux") {
+    await f.controller.requestPermission("accessibility")
+    await f.controller.requestPermission("screenCapture")
+    expect(f.localAgent.requestPermission).toHaveBeenCalledTimes(2)
+  }
+  await expect(f.controller.requestPermission("fullDiskAccess")).rejects.toThrow("unavailable")
+  await expect(f.controller.requestPermission("localNetwork")).rejects.toThrow("unavailable")
+  await expect(f.controller.openLocalNetworkSettings()).rejects.toThrow("step has changed")
+  expect(f.localNetwork.request).not.toHaveBeenCalled()
+  expect(f.localNetwork.openSettings).not.toHaveBeenCalled()
+  expect((await f.restart().get()).step).toBe("complete")
 })
 
 test("failed progress writes preserve the active step", async () => {

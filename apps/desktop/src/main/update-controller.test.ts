@@ -52,7 +52,30 @@ test("unsupported builds do not start timers or allow installation", async () =>
   controller.start()
   expect(controller.get()).toEqual({ status: "disabled" })
   expect(vi.getTimerCount()).toBe(0)
+  await controller.check()
+  expect(controller.get()).toEqual({ status: "disabled" })
   await expect(controller.install()).rejects.toThrow("unavailable")
+})
+
+test("manual checks share an in-flight check and keep the installed version in snapshots", async () => {
+  const checking = deferred<string | null>()
+  const driver = {
+    check: vi.fn(() => checking.promise), download: vi.fn(), install: vi.fn(), close: vi.fn(),
+  }
+  const publish = vi.fn()
+  const controller = new UpdateController(driver, publish, vi.fn(), "0.1.0")
+  controllers.push(controller)
+  expect(controller.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
+  const first = controller.check()
+  expect(controller.check()).toBe(first)
+  expect(controller.get()).toEqual({ status: "checking", currentVersion: "0.1.0" })
+  checking.resolve("0.2.0")
+  await first
+  expect(controller.get()).toEqual({ status: "available", version: "0.2.0", currentVersion: "0.1.0" })
+  expect(publish).toHaveBeenLastCalledWith(controller.get())
+  expect(driver.check).toHaveBeenCalledOnce()
+  expect(driver.download).not.toHaveBeenCalled()
+  expect(driver.install).not.toHaveBeenCalled()
 })
 
 test("slow checks do not overlap and a failed check keeps the available update without Retry", async () => {

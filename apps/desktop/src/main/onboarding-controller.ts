@@ -92,7 +92,15 @@ export class OnboardingController {
   }
 
   async permissions(): Promise<OnboardingPermissionsState> {
-    const { step } = await this.get()
+    const { step, permissionSteps } = await this.get()
+    if (step === "complete") {
+      const desktop = permissionSteps.some(permission => permission !== "localNetwork")
+        ? await this.#options.localAgent.refreshPermissions() : {}
+      return {
+        ...desktop,
+        ...(permissionSteps.includes("localNetwork") ? { localNetwork: this.#localNetwork } : {}),
+      }
+    }
     if (!ONBOARDING_PERMISSIONS.includes(step as OnboardingPermission)) throw new Error("Welcome setup is not on a permission step")
     if (step === "localNetwork") return { localNetwork: this.#localNetwork }
     return this.#options.localAgent.refreshPermissions()
@@ -101,9 +109,10 @@ export class OnboardingController {
   requestPermission(permission: OnboardingPermission): Promise<OnboardingPermissionsState> {
     return this.#run(async () => {
       const current = await this.get()
-      if (current.step !== permission) {
-        if ((current.step === "account" || current.step === "complete")
-          && !this.#permissionSteps().includes(permission)) {
+      if (current.step === "complete") {
+        if (!current.permissionSteps.includes(permission)) throw new Error("Permission is unavailable in the current configuration")
+      } else if (current.step !== permission) {
+        if (current.step === "account" && !this.#permissionSteps().includes(permission)) {
           throw new Error("Welcome setup is not on a permission step")
         }
         throw new Error("Welcome setup step has changed")
@@ -118,7 +127,10 @@ export class OnboardingController {
 
   openLocalNetworkSettings(): Promise<void> {
     return this.#run(async () => {
-      await this.#requireStep("localNetwork")
+      const current = await this.get()
+      if (current.step !== "localNetwork" && !(current.step === "complete" && current.permissionSteps.includes("localNetwork"))) {
+        throw new Error("Welcome setup step has changed")
+      }
       await this.#options.localNetwork.openSettings()
     })
   }
