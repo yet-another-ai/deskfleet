@@ -38,7 +38,9 @@ test("headless daemon serves information from the Rust addon", async context => 
 test("authenticated shutdown acknowledges before cleanup and releases discovery last", { timeout: 15_000 }, async context => {
   const began = performance.now()
   const pending = new Map<symbol, { name: string; began: number }>()
+  const completed: string[] = []
   let bodyFinished = false
+  let reported = false
   const phase = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
     const id = Symbol(name)
     const began = performance.now()
@@ -46,17 +48,18 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
     try { return await operation() }
     finally {
       pending.delete(id)
-      context.diagnostic(`shutdown phase: ${name} (${(performance.now() - began).toFixed(1)} ms)`)
+      completed.push(`${name} (${(performance.now() - began).toFixed(1)} ms)`)
     }
   }
   const reportAbort = () => {
-    if (bodyFinished) return
+    if (bodyFinished || reported) return
+    reported = true
     const now = performance.now()
     // Emit immediately: teardown can still be waiting on the stalled resource.
-    console.error(`Authenticated shutdown test aborted after ${(now - began).toFixed(1)} ms; pending: ${[...pending.values()].map(value => `${value.name} (${(now - value.began).toFixed(1)} ms)`).join(", ") || "test assertions"}`)
+    console.error(`Authenticated shutdown test did not finish after ${(now - began).toFixed(1)} ms; pending: ${[...pending.values()].map(value => `${value.name} (${(now - value.began).toFixed(1)} ms)`).join(", ") || "test assertions"}; completed: ${completed.join("; ")}`)
   }
   context.signal.addEventListener("abort", reportAbort, { once: true })
-  context.after(() => { bodyFinished = true; context.signal.removeEventListener("abort", reportAbort) })
+  context.after(() => { reportAbort(); bodyFinished = true; context.signal.removeEventListener("abort", reportAbort) })
   const directory = await phase("create control directory", () => mkdtemp(join(tmpdir(), "df-daemon-shutdown-")))
   const options = (label: string): Parameters<typeof startDaemon>[1] => ({
     agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory,
