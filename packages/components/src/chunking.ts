@@ -29,7 +29,7 @@ export const clientCodeSplitting = {
     },
     {
       name: "markdown",
-      test: /[\\/]node_modules[\\/](?:markdown-it|katex|shiki|@shikijs)[\\/]/,
+      test: /[\\/]node_modules[\\/](?:markstream-vue|markstream-core|stream-markdown-parser|markdown-it-ts|katex|shiki|@shikijs)[\\/]/,
       priority: 30,
       maxSize: 500_000,
       // Mermaid's math renderer must not pull in the Markdown highlighter.

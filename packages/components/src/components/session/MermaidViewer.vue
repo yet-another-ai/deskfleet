@@ -13,7 +13,7 @@ import { useAppearanceStore } from "../../stores/appearance.ts"
 import { broadcastMermaidLocate, locateMermaidInMainView, openMermaidSidebarTab, useLayoutStore, type MermaidSource } from "../../stores/layout.ts"
 import IconButton from "../common/IconButton.vue"
 
-const props = withDefaults(defineProps<{ code: string; mode?: "inline" | "focus" | "sidebar" | "window"; source?: MermaidSource }>(), { mode: "inline" })
+const props = withDefaults(defineProps<{ code: string; mode?: "inline" | "focus" | "sidebar" | "window"; source?: MermaidSource; loading?: boolean }>(), { mode: "inline", loading: false })
 const { t } = useI18n()
 const platform = platformClient.platform
 const { isDark } = storeToRefs(useAppearanceStore())
@@ -28,14 +28,36 @@ const menuOpen = ref(false)
 const copied = ref(false)
 let dragStartX = 0, dragStartY = 0, generation = 0, disposed = false
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
+let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
-watchImmediate([() => props.code, isDark], ([code, dark]) => {
-  const version = ++generation
-  svg.value = undefined
-  if (!code.trim()) return
-  void renderMermaidDiagram(code.trim(), dark)
+function triggerRender(code: string, dark: boolean, isStreaming: boolean, version: number): void {
+  const trimmed = code.trim()
+  if (!trimmed) {
+    svg.value = undefined
+    return
+  }
+  void renderMermaidDiagram(trimmed, dark)
     .then(rendered => { if (!disposed && version === generation) svg.value = rendered })
-    .catch(() => { if (!disposed && version === generation) svg.value = undefined })
+    .catch(() => {
+      // During streaming, keep the last valid SVG instead of flashing back to <pre><code> on incomplete syntax.
+      if (!disposed && version === generation && !isStreaming) svg.value = undefined
+    })
+}
+
+watchImmediate([() => props.code, isDark, () => props.loading], ([code, dark, isStreaming]) => {
+  const version = ++generation
+  clearTimeout(debounceTimer)
+  if (!code.trim()) {
+    svg.value = undefined
+    return
+  }
+  if (isStreaming) {
+    debounceTimer = setTimeout(() => {
+      if (!disposed && version === generation) triggerRender(code, dark, true, version)
+    }, 120)
+  } else {
+    triggerRender(code, dark, false, version)
+  }
 })
 
 function resolvedSource(): MermaidSource {
@@ -102,7 +124,7 @@ async function locateOriginalMessage(): Promise<void> {
   }
   await locateMermaidInMainView(props.code, source)
 }
-onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(copiedTimer) })
+onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(copiedTimer); clearTimeout(debounceTimer) })
 </script>
 
 <template>

@@ -6,7 +6,7 @@ import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.t
 import AgentMarkdown from "./AgentMarkdown.vue"
 import AgentResourceLink from "./AgentResourceLink.vue"
 /** `markdown` renders agent-authored text; user text is shown as typed. */
-defineProps<{ content: AgentInput["content"]; markdown?: boolean }>()
+defineProps<{ content: AgentInput["content"]; markdown?: boolean; final?: boolean }>()
 const { t } = useI18n()
 const expanded = ref(new Set<number>())
 
@@ -31,7 +31,7 @@ function lineCount(text: string): number {
   <div class="flex min-w-0 flex-col gap-3 break-words select-text">
     <template v-for="(block, index) in content" :key="index">
       <template v-if="block.type === 'text'">
-        <AgentMarkdown v-if="markdown" :text="block.text" />
+        <AgentMarkdown v-if="markdown" :text="block.text" :final="final" />
         <div v-else class="whitespace-pre-wrap">{{ block.text }}</div>
       </template>
       <img v-else-if="block.type === 'image'" :src="`data:${block.mimeType};base64,${block.data}`" :alt="t('agent.image')" class="max-h-96 max-w-full self-start rounded-lg object-contain" />

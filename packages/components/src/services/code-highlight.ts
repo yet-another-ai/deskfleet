@@ -49,7 +49,7 @@ for (const grammar of grammars.flat()) {
   for (const alias of grammar.aliases ?? []) languageNames.set(alias, grammar.displayName)
 }
 
-const highlighter = createHighlighterCoreSync({
+export const highlighter = createHighlighterCoreSync({
   themes: [githubLight, githubDark],
   langs: grammars,
   engine: createJavaScriptRegexEngine(),
@@ -59,15 +59,6 @@ const loadedLanguages = new Set(highlighter.getLoadedLanguages())
 
 export function codeLanguageName(language: string): string | undefined {
   return language ? languageNames.get(language) : undefined
-}
-
-export function highlightFence(code: string, language: string): string {
-  return highlighter.codeToHtml(code, {
-    lang: language,
-    themes: { light: "github-light", dark: "github-dark" },
-    defaultColor: "light-dark()",
-    structure: "inline",
-  })
 }
 
 export function canHighlight(language: string): boolean {

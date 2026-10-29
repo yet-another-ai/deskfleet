@@ -185,3 +185,58 @@ test("renders Mermaid with the selected application theme and updates existing d
   expect(renderDiagram).toHaveBeenLastCalledWith("graph TD\n  A --> B", false)
   expect(renderDiagram).toHaveBeenCalledTimes(3)
 })
+
+test("filesystem links and line references become application resources while rejecting script schemes", async () => {
+  const readResource = vi.fn(() => new Promise<never>(() => {}))
+  const view = render(
+    { readResource },
+    '![Chart](/tmp/chart.png) ![Remote](https://example.org/a.png) [Read](file:///tmp/report.md) [Code](./src/main.ts#L12) [line](main.ts:12:4) [path](/src/main.ts:12) [file](</tmp/a"b.txt>) [bad](javascript:alert(1)) [bad](data:text/html,test) [bad](javascript:12) [site](https://example.org/a)',
+  )
+  await flushPromises()
+  const html = view.html()
+  expect(html).not.toContain('src="/tmp/chart.png"')
+  expect(html).toContain('src="https://example.org/a.png"')
+  expect(html).toContain('data-resource-link="file:///tmp/report.md"')
+  expect(html).toContain('data-resource-link="./src/main.ts#L12"')
+  expect(html).toContain('data-resource-link="main.ts:12:4"')
+  expect(html).toContain('data-resource-link="/src/main.ts:12"')
+  expect(html).toContain('data-resource-link="/tmp/a%22b.txt"')
+  expect(html).not.toContain('href="file:')
+  expect(html).not.toContain('href="javascript:')
+  expect(html).not.toContain('href="data:')
+  expect(html).not.toContain('data-resource-link="javascript:')
+  expect(html).toContain('href="https://example.org/a"')
+})
+
+test("renders LaTeX inline, display, and fenced blocks while ignoring plain currency and invalid TeX", async () => {
+  const view = render(
+    {},
+    [
+      "Inline $E = mc^2$ and \\(a^2 + b^2 = c^2\\), prices like $10 and $20, escaped \\$30.",
+      "",
+      "$$",
+      "\\int_0^1 x^2 \\, dx = \\frac{1}{3}",
+      "$$",
+      "",
+      "\\[",
+      "\\sum_{i=1}^n i",
+      "\\]",
+      "",
+      "```latex",
+      "\\alpha + \\beta",
+      "```",
+      "",
+      "Broken $\\invalidcommand{$ fallback.",
+    ].join("\n"),
+  )
+  await flushPromises()
+  const html = view.html()
+  expect(html).toContain("data-math-inline")
+  expect(html).toContain("data-math-block")
+  expect(html).toContain('data-math-copy="\\int_0^1 x^2 \\, dx = \\frac{1}{3}"')
+  expect(html).toContain('data-math-copy="\\alpha + \\beta"')
+  expect(html).toContain('class="katex"')
+  expect(html).toContain('class="katex-display"')
+  expect(html).toContain("prices like $10 and $20, escaped $30.")
+  expect(html).toContain('class="ui-math-fallback"')
+})

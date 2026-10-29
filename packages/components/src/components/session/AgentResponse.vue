@@ -66,7 +66,7 @@ watchImmediate([pendingMermaidLocate, steps], ([target, currentSteps]) => {
       <p v-else-if="duration" class="m-0 text-ui-text-muted">{{ t('agent.workedFor', { duration }) }}</p>
     </template>
     <CollapsibleContent v-if="steps.length" class="flex flex-col gap-2" :class="response.turn && !response.live && 'border-l border-ui-border pl-4'">
-      <div v-for="step in steps" :key="step.id" :data-conversation-entry="step.id">
+      <div v-for="(step, idx) in steps" :key="step.id" :data-conversation-entry="step.id">
         <AgentToolCall v-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="response.live" />
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
         <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
@@ -74,12 +74,12 @@ watchImmediate([pendingMermaidLocate, steps], ([target, currentSteps]) => {
           <CollapsibleTrigger type="button" class="group/thought inline-flex cursor-pointer items-center gap-1 hover:text-ui-text">
             {{ t('agent.thinking') }}<ChevronRight :size="14" :stroke-width="2" class="opacity-0 transition-transform group-hover/thought:opacity-100" :class="thoughts.has(step.id) && 'rotate-90 opacity-100'" aria-hidden="true" />
           </CollapsibleTrigger>
-          <CollapsibleContent><AgentContent :content="step.content" markdown class="mt-1" /></CollapsibleContent>
+          <CollapsibleContent><AgentContent :content="step.content" markdown :final="!response.live || idx < steps.length - 1" class="mt-1" /></CollapsibleContent>
         </CollapsibleRoot>
-        <AgentContent v-else :content="step.content" markdown class="py-1" />
+        <AgentContent v-else :content="step.content" markdown :final="!response.live || idx < steps.length - 1" class="py-1" />
       </div>
     </CollapsibleContent>
-    <AgentContent v-if="answer" :content="answer.content" markdown :data-conversation-entry="answer.id" />
+    <AgentContent v-if="answer" :content="answer.content" markdown :final="true" :data-conversation-entry="answer.id" />
     <p v-if="summary.length" class="m-0 text-ui-text-muted">{{ summary.join(' \u00b7 ') }}</p>
     <div v-if="outcome" class="flex items-start gap-1.5 text-sm" :class="outcome.state === 'failed' ? 'text-ui-danger' : 'text-ui-text-muted'">
       <CircleX v-if="outcome.state === 'failed'" :size="15" :stroke-width="2" class="mt-0.5 shrink-0" aria-hidden="true" />
