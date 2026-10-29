@@ -5,6 +5,7 @@ import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspa
 import type { LocalDesktopTarget } from "../../../client/src/desktop-media.ts"
 import type { AgentSessionSummary, MachineSummary, TerminalSessionSummary, WorkspaceSummary, WorktreeSummary } from "./fleet-types.ts"
 import { useAccountSession } from "../composables/useAccountSession.ts"
+import { captureAnalyticsContext } from "../services/analytics.ts"
 import { useTerminalsStore } from "./terminals.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
 import { useProvidersStore } from "./providers.ts"
@@ -223,12 +224,14 @@ export const useFleetStore = defineStore("fleet", () => {
   }
   async function createWorkspace(name: string, directories: CatalogDirectory[]): Promise<CatalogWorkspace> {
     requireLocalCatalog()
+    const track = captureAnalyticsContext()
     const value = await platformClient.catalog.createWorkspace(name, directories)
     const workspaces = catalog.value!.workspaces
     const index = workspaces.findIndex(workspace => workspace.id === value.id)
     if (index === -1) workspaces.push(value)
     else workspaces[index] = value
     targetWorkspaceId.value = value.id
+    track("workspace_created", { directory_count: directories.length })
     return value
   }
   async function updateWorkspace(id: string, name: string, directories: CatalogDirectory[]): Promise<void> {

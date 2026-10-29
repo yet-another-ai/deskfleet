@@ -414,7 +414,7 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
     const previous = await readDaemonDiscovery(directory)
-    if (await endpointIsLive(previous.endpoint)) throw new Error("A local deskfleet daemon is already running")
+    if (await endpointIsLive(previous.endpoint)) throw new Error("A local DeskFleet daemon is already running")
     // Only replace the stale record we inspected; publication itself remains exclusive.
     const current = await readDaemonDiscovery(directory)
     if (current.token !== previous.token) throw new Error("Local daemon discovery changed during startup; retry")

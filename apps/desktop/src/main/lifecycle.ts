@@ -13,6 +13,8 @@ export interface BackgroundLifecycle {
   readonly quitting: boolean
   /** Ends the client process. Only the tray menu, the OS session, and signals call it. */
   quit(): void
+  /** Let the updater close windows and quit after hosted services have stopped. */
+  setInstallingUpdate(installing: boolean): void
 }
 
 /**
@@ -25,22 +27,26 @@ export function keepRunningInBackground(
   hideWindows: () => void,
 ): BackgroundLifecycle {
   let quitting = false
+  let installingUpdate = false
 
   // Without a listener, Electron quits once the last window closes.
   application.on("window-all-closed", () => {})
   application.on("before-quit", (event) => {
-    if (quitting) return
+    if (quitting || installingUpdate) return
     event.preventDefault()
     hideWindows()
   })
 
   return {
     get quitting() {
-      return quitting
+      return quitting || installingUpdate
     },
     quit() {
       quitting = true
       application.quit()
+    },
+    setInstallingUpdate(installing) {
+      installingUpdate = installing
     },
   }
 }

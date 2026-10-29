@@ -1,6 +1,6 @@
-# 欢迎使用 deskfleet
+# 欢迎使用 DeskFleet
 
-deskfleet 把运行在团队不同电脑上的 Agent 带到一个共同的工作现场。继续使用熟悉的 Agent，与同事共同推进同一个任务，随时参与它们的工作。
+DeskFleet 把运行在团队不同电脑上的 Agent 带到一个共同的工作现场。继续使用熟悉的 Agent，与同事共同推进同一个任务，随时参与它们的工作。
 
 ## 先动手试试
 
@@ -14,7 +14,7 @@ deskfleet 把运行在团队不同电脑上的 Agent 带到一个共同的工作
 
 团队成员可以共同阅读会话、补充要求和回应审批。任务既可以使用独立的 Git worktree，也可以直接在现有目录中工作。
 
-- [配置并运行 deskfleet](./getting-started)
+- [配置并运行 DeskFleet](./getting-started)
 - [了解 Agent 与协作](./agents)
 - [阅读隐私和数据承诺](/zh/privacy)
 

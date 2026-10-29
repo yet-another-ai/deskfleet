@@ -13,7 +13,30 @@ fn settings(row: &QueryResult) -> Result<SiteSettings> {
         site_name: row.try_get("", "site_name")?,
         announcement: row.try_get("", "announcement")?,
         allow_team_creation: row.try_get("", "allow_team_creation")?,
+        terms_of_service_url: row.try_get("", "terms_of_service_url")?,
+        privacy_terms_url: row.try_get("", "privacy_terms_url")?,
     })
+}
+
+fn terms_url(value: &str) -> Result<&str> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(value);
+    }
+    let invalid =
+        || Error::Invalid("terms URLs must be absolute HTTP or HTTPS URLs without credentials");
+    let url = url::Url::parse(value).map_err(|_| invalid())?;
+    if !matches!(url.scheme(), "http" | "https")
+        || value
+            .split_once("://")
+            .is_none_or(|(scheme, _)| !scheme.eq_ignore_ascii_case(url.scheme()))
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(invalid());
+    }
+    Ok(value)
 }
 
 impl ControlStore {
@@ -67,6 +90,8 @@ impl ControlStore {
             .is_some();
         authorize(&SitePolicy::new(is_admin), SiteAction::UpdateSettings)?;
         let site_name = name(&input.site_name)?;
+        let terms_of_service_url = terms_url(&input.terms_of_service_url)?;
+        let privacy_terms_url = terms_url(&input.privacy_terms_url)?;
         if input.announcement.len() > 10_000 {
             return Err(Error::Invalid(
                 "announcement must contain at most 10000 bytes",
@@ -84,10 +109,12 @@ impl ControlStore {
             site_name: site_name.into(),
             announcement: input.announcement.clone(),
             allow_team_creation: input.allow_team_creation,
+            terms_of_service_url: terms_of_service_url.into(),
+            privacy_terms_url: privacy_terms_url.into(),
         };
         tx.execute_raw(sql(
-            "UPDATE cp_site_settings SET site_name=$1, announcement=$2, allow_team_creation=$3 WHERE singleton",
-            vec![site_name.into(), input.announcement.clone().into(), input.allow_team_creation.into()],
+            "UPDATE cp_site_settings SET site_name=$1, announcement=$2, allow_team_creation=$3, terms_of_service_url=$4, privacy_terms_url=$5 WHERE singleton",
+            vec![site_name.into(), input.announcement.clone().into(), input.allow_team_creation.into(), terms_of_service_url.into(), privacy_terms_url.into()],
         ))
         .await?;
         tx.execute_raw(sql(
@@ -161,5 +188,47 @@ impl ControlStore {
         }
         tx.commit().await?;
         Ok(changed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::terms_url;
+
+    #[test]
+    fn terms_urls_allow_empty_or_absolute_web_links_without_credentials() {
+        for (input, expected) in [
+            ("", ""),
+            ("  ", ""),
+            (
+                " https://example.test/terms?v=2#content ",
+                "https://example.test/terms?v=2#content",
+            ),
+            (
+                "http://localhost:8080/privacy",
+                "http://localhost:8080/privacy",
+            ),
+        ] {
+            assert_eq!(terms_url(input).unwrap(), expected);
+        }
+        for input in [
+            "/terms",
+            "//example.test/privacy",
+            "https:example.test/terms",
+            "https:example.test/path://terms",
+            "not a URL",
+            "javascript:alert(1)",
+            "data:text/html,test",
+            "file:///terms",
+            "ftp://example.test/terms",
+            "https://",
+            "https://user@example.test/terms",
+            "https://user:secret@example.test/privacy",
+        ] {
+            assert!(
+                terms_url(input).is_err(),
+                "accepted invalid terms URL {input}"
+            );
+        }
     }
 }

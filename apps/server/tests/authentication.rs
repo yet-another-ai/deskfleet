@@ -104,7 +104,7 @@ async fn mailbox_proof_cookies_csrf_recovery_desktop_and_disable() {
             .is_none(),
         "registration does not attach any unverified credential"
     );
-    let token = mail_token(&directory, "Verify your deskfleet email");
+    let token = mail_token(&directory, "Verify your DeskFleet email");
     let response=test::call_service(&app,request(Method::POST,"/api/auth/verify",csrf,None).set_json(json!({"token":token,"name":"Verified owner","password":"A distinctive initial password 738"})).to_request()).await;
     assert_eq!(response.status(), StatusCode::OK);
     let session_cookie = response
@@ -342,7 +342,7 @@ async fn mailbox_proof_cookies_csrf_recovery_desktop_and_disable() {
     .await;
     assert_eq!(unknown.status(), known.status());
     assert_eq!(known.status(), StatusCode::ACCEPTED);
-    let reset = mail_token(&directory, "Reset your deskfleet password");
+    let reset = mail_token(&directory, "Reset your DeskFleet password");
     let result = test::call_service(
         &app,
         request(Method::POST, "/api/auth/recovery/complete", &csrf, None)
@@ -407,7 +407,7 @@ async fn mailbox_proof_cookies_csrf_recovery_desktop_and_disable() {
             .as_deref(),
         Some(email.as_str())
     );
-    let proof = mail_token(&directory, "Verify your new deskfleet email");
+    let proof = mail_token(&directory, "Verify your new DeskFleet email");
     let verified = test::call_service(
         &app,
         request(Method::POST, "/api/auth/email/verify", &csrf, Some(&fresh))

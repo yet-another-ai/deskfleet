@@ -1,4 +1,5 @@
 import { relayFailureMessage, type RelayDeniedReason } from "./relay.ts"
+import { observePeerGrant, type PeerConnectionTelemetry } from "./peer-telemetry.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import type { CentralApi, CentralEvent, Machine } from "./central.ts"
 import type { DesktopEvent, DesktopOffer, DesktopStart, IceCandidate } from "./desktop-media.ts"
@@ -6,7 +7,7 @@ import type { TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts
 import type { AgentMethod, AgentMethods } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { TerminalSummary } from "./terminal.ts"
 
-interface Peer { id: string; relayDeniedReason?: RelayDeniedReason | null; timer: ReturnType<typeof setTimeout> }
+interface Peer { id: string; relayDeniedReason?: RelayDeniedReason | null; timer: ReturnType<typeof setTimeout>; telemetry: PeerConnectionTelemetry }
 const management = new Set<string>([
   "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure",
   "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/command/get",
@@ -29,7 +30,14 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     if (event.type === "peerEvent" || event.type === "peerRevoked") {
       const local = [...peers.entries()].find(([, peer]) => peer.id === event.peerId)
       if (!local) return
-      if (event.type === "peerEvent") emit({ ...event.event, sessionId: local[0] } as DesktopEvent)
+      if (event.type === "peerEvent") {
+        if (event.event.kind === "stateChanged" && "state" in event.event) {
+          const state = String(event.event.state).toLowerCase()
+          if (state === "connected") local[1].telemetry.connected()
+          else if (state === "failed") local[1].telemetry.failed()
+        } else if (event.event.kind === "error") local[1].telemetry.failed()
+        emit({ ...event.event, sessionId: local[0] } as DesktopEvent)
+      }
       else emit({ sessionId: local[0], kind: "error", error: event.reason })
     } else if (event.type === "catalogChanged" && event.machineId === machine.id) {
       for (const listener of catalogEvents) listener(event.sessionId)
@@ -49,14 +57,15 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         throw new Error("Peer authorization has expired")
       }
       const timer = setTimeout(() => emit({ sessionId, kind: "error", error: "Peer authorization has expired. Reconnect to continue." }), expiresAt - Date.now())
-      peers.set(sessionId, { id: grant.peerId, timer, relayDeniedReason: grant.relayDeniedReason })
+      peers.set(sessionId, { id: grant.peerId, timer, relayDeniedReason: grant.relayDeniedReason, telemetry: observePeerGrant(purpose, grant, machine.teamId) })
       return grant.iceServers
     },
     connectionFailure: (sessionId: string) => relayFailureMessage(peers.get(sessionId)?.relayDeniedReason),
     async offer(options: TerminalOffer | DesktopOffer): Promise<{ sdp: string }> {
       const peer = peers.get(options.sessionId)
       if (!peer) throw new Error("Peer authorization is missing")
-      return central.offerPeer(peer.id, options.sdp, options)
+      try { return await central.offerPeer(peer.id, options.sdp, options) }
+      catch (error) { peer.telemetry.failed(); throw error }
     },
     async candidate(sessionId: string, candidate: IceCandidate): Promise<void> {
       const peer = peers.get(sessionId)

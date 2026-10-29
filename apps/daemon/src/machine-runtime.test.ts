@@ -30,7 +30,7 @@ async function seed(directory: string, revoked = true): Promise<void> {
   await writeFile(join(directory, "machine", "central.json"), JSON.stringify({ ...credentials, revoked }))
 }
 
-test("explicit registration reset stops resources and preserves their original paths and durable records", async context => {
+test("explicit registration reset stops resources and preserves their original paths and durable records", { timeout: 120_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-"))
   const provider = new BackendAgent()
   let runtime = new MachineRuntime(directory, { ...options, agentProvider: provider })
@@ -67,12 +67,18 @@ test("explicit registration reset stops resources and preserves their original p
   await until(() => previous.terminals.read(terminalId, 0, 64 * 1024), value => value.includes("retained-machine-transcript"), "terminal transcript")
   assert.equal(provider.closes, 0)
   const closeTerminals = previous.terminals.close.bind(previous.terminals)
-  let closingTerminals = false
+  let terminalClosing!: () => void
+  const closingTerminals = new Promise<void>(resolve => { terminalClosing = resolve })
   const gate = new Promise<void>(resolve => { release = resolve })
-  previous.terminals.close = async () => { closingTerminals = true; await gate; await closeTerminals() }
+  previous.terminals.close = async () => { terminalClosing(); await gate; await closeTerminals() }
   const preparing = runtime.prepareEnrollment()
   assert.equal(runtime.prepareEnrollment(), preparing, "Concurrent resets share one operation")
-  await until(() => closingTerminals, Boolean, "terminal shutdown")
+  // Opening the replacement file catalog can be slow on Windows CI. Observe
+  // the shutdown barrier directly instead of imposing a separate storage deadline.
+  await Promise.race([
+    closingTerminals,
+    preparing.then(() => { throw new Error("Registration reset completed without closing the previous terminals") }),
+  ])
   assert.equal(runtime.current, previous)
   assert.equal(await activeMachineDirectory(directory), join(directory, "machine"), "The active directory changes only after resource shutdown")
   release()

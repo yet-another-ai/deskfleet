@@ -8,9 +8,12 @@ impl BillingService {
         let inbox_service = self.clone();
         let inbox_store = store.clone();
         let repair_service = self.clone();
+        let analytics_service = self.clone();
+        let analytics_store = store.clone();
         BillingWorker([
             tokio::spawn(async move { inbox_service.run_inbox(inbox_store).await }),
             tokio::spawn(async move { repair_service.run_repairs(store).await }),
+            tokio::spawn(async move { analytics_service.run_analytics(analytics_store).await }),
         ])
     }
 
@@ -163,14 +166,20 @@ mod tests {
                 stripe_webhook_secret: Some("whsec_fixture".into()),
                 go_price_id: Some("price_go".into()),
                 pro_price_id: Some("price_pro".into()),
-                portal_configuration_id: Some("bpc_fixture".into()),
+                go_yearly_price_id: Some("price_go_year".into()),
+                pro_yearly_price_id: Some("price_pro_year".into()),
+                portal_configuration_id: Some("bpc_month".into()),
+                yearly_portal_configuration_id: Some("bpc_year".into()),
+                enterprise_contact_email: None,
+                statsig_server_key: None,
+                statsig_environment: None,
             },
             "https://web.test".into(),
         )
         .unwrap();
         service.api_base = format!("http://{address}/v1");
         store
-            .receive_payment_event("event_fast", "invoice.paid", "invoice_fast")
+            .receive_payment_event("event_fast", "invoice.paid", "invoice_fast", None, None)
             .await
             .unwrap();
         let worker = service.start_worker(store.clone());

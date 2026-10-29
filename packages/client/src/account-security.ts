@@ -2,7 +2,7 @@ import { HttpError, type HttpCentralClient } from "./http-central.ts"
 import { authenticatePasskey, registerPasskey } from "./passkeys.ts"
 
 type Transport = Pick<HttpCentralClient, "request">
-export interface AuthConfig { webUrl: string; registrationEnabled: boolean }
+export interface AuthConfig { webUrl: string; registrationEnabled: boolean; termsOfServiceUrl: string; privacyTermsUrl: string }
 export interface LoginSession { id: string; deviceId: string; createdAt: string; expiresAt: string; current: boolean }
 export interface Passkey { id: string; name: string; createdAt: number }
 
@@ -18,7 +18,7 @@ export function accountAuthentication(api: Transport) {
     login: (email: string, password: string) => post("login", { email, password }),
     loginWithPasskey: (email: string) => authenticatePasskey(api, "login", email),
     /** Sending again is the resend action; known addresses receive the same response. */
-    register: (email: string) => post("register", { email }),
+    register: (email: string, acceptedTerms: boolean) => post("register", { email, acceptedTerms }),
     verify: (token: string, name: string, password: string) => post("verify", { token, name, password }),
     requestRecovery: (email: string) => post("recovery", { email }),
     completeRecovery: (token: string, password: string) => post("recovery/complete", { token, password }),

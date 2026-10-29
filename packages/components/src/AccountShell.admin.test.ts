@@ -1,6 +1,6 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, type Pinia } from "pinia"
-import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import { configureClient, getClient } from "@deskfleet/client/platform"
 import { HttpError } from "@deskfleet/client/http-central"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
@@ -15,6 +15,28 @@ const host = getClient()
 const page = () => new DOMWrapper(document.body)
 const button = (text: string) => page().findAll("button").find(value => value.text() === text)!
 beforeEach(() => { pinia = createPinia(); configureClient({ ...host, platform: "web" }) })
+// These routes load on demand. vi.waitFor only polls for 1s, which misses the form while Vite is still compiling them.
+beforeAll(async () => {
+  await Promise.all([
+    import("./views/SiteAdminView.vue"),
+    import("./views/NewSessionView.vue"),
+    import("./components/account/MachineSurface.vue"),
+  ])
+})
+/** Check the shell as soon as its microtasks render, instead of on a real-time interval. */
+async function settled(probe: () => void): Promise<void> {
+  let failure: unknown
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      probe()
+      return
+    } catch (reason) {
+      failure = reason
+    }
+    await flushPromises()
+  }
+  throw failure
+}
 afterEach(async () => { view?.unmount(); view = undefined; disposePinia(pinia); configureClient(host); await router.replace("/"); vi.restoreAllMocks() })
 function mountShell(fake: ReturnType<typeof fakeCentral>, platform: DeskfleetDesktopApi["platform"] = "web"): void {
   const adapter = { ...host, platform, central: fake.central, siteAdministration: platform === "web" ? fake.central : undefined }
@@ -31,30 +53,52 @@ test("a site administrator without any Team opens administration from the accoun
   await flushPromises()
   await page().get('button[aria-label="Ada"]').trigger("click")
   await button("Site administration").trigger("click")
-  await vi.waitFor(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
+  await settled(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
   expect(router.currentRoute.value.path).toBe("/admin")
   expect(page().get("h1").text()).toBe("Site administration")
   expect(fake.central.siteSettings).toHaveBeenCalledOnce()
   await page().get('[name="site-name"]').setValue("  Studio fleet  ")
   await page().get('[name="announcement"]').setValue("Maintenance on Sunday")
+  await page().get('[name="terms-of-service-url"]').setValue("  https://example.test/terms  ")
+  await page().get('[name="privacy-terms-url"]').setValue("https://example.test/privacy")
   await page().get('[role="switch"]').trigger("click")
   fake.central.updateSiteSettings.mockRejectedValueOnce(new Error("Unable to save settings"))
   await page().get("form").trigger("submit")
   await flushPromises()
   expect(page().get('[role="alert"]').text()).toBe("Unable to save settings")
-  expect(document.title).toBe("deskfleet")
+  expect(document.title).toBe("DeskFleet")
   await page().get("form").trigger("submit")
   await flushPromises()
-  expect(fake.central.updateSiteSettings).toHaveBeenLastCalledWith({ siteName: "Studio fleet", announcement: "Maintenance on Sunday", allowTeamCreation: false })
+  expect(fake.central.updateSiteSettings).toHaveBeenLastCalledWith({ siteName: "Studio fleet", announcement: "Maintenance on Sunday", allowTeamCreation: false, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy" })
   expect(view!.text()).toContain("Site settings saved.")
   expect(document.title).toBe("Studio fleet")
   expect(view!.text()).toContain("Maintenance on Sunday")
   await button("Back to app").trigger("click")
-  await flushPromises()
-  await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/"))
+  await settled(() => expect(router.currentRoute.value.path).toBe("/"))
   expect(view!.text()).toContain("Join a team using an invitation")
   expect(view!.text()).not.toContain("Create a team")
   expect(fake.central.members).not.toHaveBeenCalled()
+})
+
+test("terms URLs can be configured independently and cleared without changing other site settings", async () => {
+  const fake = fakeCentral({ siteAdmin: true, teams: [], site: { termsOfServiceUrl: "https://example.test/terms" } })
+  await router.push("/admin")
+  mountShell(fake)
+  await flushPromises()
+  expect(page().get<HTMLInputElement>('[name="terms-of-service-url"]').element.value).toBe("https://example.test/terms")
+  expect(button("Save").attributes("disabled")).toBeDefined()
+  await page().get('[name="terms-of-service-url"]').setValue("")
+  await page().get('[name="privacy-terms-url"]').setValue("https://example.test/privacy")
+  expect(button("Save").attributes("disabled")).toBeUndefined()
+  await page().get("form").trigger("submit")
+  await flushPromises()
+  expect(fake.central.updateSiteSettings).toHaveBeenLastCalledWith({ siteName: "DeskFleet", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "https://example.test/privacy" })
+  expect(button("Save").attributes("disabled")).toBeDefined()
+  await page().get('[name="privacy-terms-url"]').setValue("")
+  await page().get("form").trigger("submit")
+  await flushPromises()
+  expect(fake.state.site.termsOfServiceUrl).toBe("")
+  expect(fake.state.site.privacyTermsUrl).toBe("")
 })
 
 test("an ordinary Team admin has no site menu entry and direct navigation never loads admin settings", async () => {
@@ -133,7 +177,7 @@ test("direct administration navigation is preserved when an existing machine mou
   })
   await router.push("/admin")
   mountShell(fake)
-  await vi.waitFor(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
+  await settled(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
   expect(router.currentRoute.value.path).toBe("/admin")
   expect(fake.central.siteSettings).toHaveBeenCalledOnce()
 })

@@ -17,6 +17,6 @@ const metadata = JSON.parse(
 assert.equal(
   realpathSync(metadata.workspace_root),
   realpathSync(harness),
-  "Keep .agents/skills/rust-skills/checks excluded from the deskfleet Cargo workspace",
+  "Keep .agents/skills/rust-skills/checks excluded from the DeskFleet Cargo workspace",
 );
 console.log("rust-skills example harness is a standalone Cargo workspace");

@@ -1,6 +1,6 @@
 # Continuous integration
 
-deskfleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
+DeskFleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
 one orchestrator, reusable Test and Build workflows, a shared setup action, and
 a stable `Gate` result for branch protection.
 
@@ -23,15 +23,24 @@ a stable `Gate` result for branch protection.
   actual login, remote execution, archive/restore, and offline history flows.
   It installs Electron's Linux sandbox helper with root ownership and mode 4755
   before launching the clients.
-- `.github/workflows/build.yml` builds release artifacts using
-  `mise run build ::: desktop:release-build`, then packages Electron installers.
+- `.github/workflows/build.yml` builds artifacts, then packages Electron
+  installers. Ordinary CI runs use `mise run ci:build`; tagged releases build
+  Web and Electron separately to give only Electron a fixed API origin.
+  Its shared Rust task runs one napi-driven Cargo workspace build for the server
+  and native addon,
+  using the host target for both. SEA and Electron bundling consume that addon
+  without compiling it again. The server is read from
+  `target/<host-triple>/release/`, where `rustc --print host-tuple` identifies the
+  native runner's triple.
   Pull requests use a Linux x64 smoke build; main and manual runs use the full
   platform matrix. Packaging keeps Cargo's parallel release codegen: 16 units,
   LTO off, no debug info, and stripped symbols. Each target packages and verifies
   the standalone SEA daemon.
   The same matrix packages Electron installers and smoke-tests the backend
-  container on each native Linux runner. macOS signing is enabled only by the
-  Publish caller. It supports reusable calls and manual runs.
+  container on each native Linux runner. The Publish caller enables production
+  configuration and macOS signing. PR, main, and manual Build runs do not bind
+  the production environment: Statsig stays disabled, and Electron defaults to
+  `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
   creates a draft GitHub Release and pushes the backend image to GHCR after
   both workflows succeed.
@@ -41,10 +50,12 @@ a stable `Gate` result for branch protection.
 The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each archive
 contains `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
 Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
-Linux x64/arm64 AppImage installers. PRs exercise packaging on Linux x64.
+Linux x64/arm64 AppImage installers, plus updater YAML and blockmaps. PRs
+exercise packaging on Linux x64.
 The Linux x64 job also uploads `deskfleet-web` with the static Vue application.
-Its default API origin is the hosting origin; deployments with a separate API
-origin build with `VITE_DESKFLEET_SERVER_URL` as described in the Web guide.
+Its API origin is the hosting origin, including tagged release artifacts;
+deployments with a separate API origin build with `VITE_DESKFLEET_SERVER_URL`
+as described in the Web guide.
 
 Smoke tests copy the daemon executable alone to an unrelated temporary directory,
 clear Node's environment overrides and PATH, then check native information,
@@ -82,7 +93,32 @@ before publishing. The Build workflow keeps read-only repository access;
 only the release job receives `contents: write`, and only the image job receives
 `packages: write`.
 
-Configure these GitHub Actions repository secrets before the first tag:
+Before the first tag, create the `production` environment under Repository
+Settings → Environments. Set its deployment branch and tag policy to
+**Selected branches and tags**, add a **Tag** rule matching `v*`, and allow no
+branches. Store production values in this environment, removing any copies from
+repository or organization variables and secrets.
+
+Configure these environment variables:
+
+| Variable | Value |
+| --- | --- |
+| `VITE_DESKFLEET_SERVER_URL` | Required official API origin for Electron, such as `https://fleet.example.com`. A missing or empty value fails the release build. |
+| `VITE_STATSIG_CLIENT_KEY` | Optional Statsig client-public SDK key for Web and Electron. Missing or blank disables analytics. |
+| `VITE_STATSIG_ENVIRONMENT` | Optional Statsig environment for both clients; defaults to the Vite mode, `production`. |
+
+The reusable Build workflow binds its packaging job to `production` only when
+Publish requests a production release. The caller passes the signing secret
+names explicitly; the bound environment supplies their values. The official
+API origin is injected only into Electron's build, so the Web artifact stays
+same-origin.
+
+Keep production compilation in separate steps using each runner's native shell
+(PowerShell on Windows). Running it through Git Bash selects Git's bundled Perl
+instead of Strawberry Perl and can break the vendored OpenSSL build. The Bash
+configuration check runs before either build and does not compile code.
+
+Configure these secrets in the same environment:
 
 | Secret | Value |
 | --- | --- |
@@ -97,16 +133,41 @@ failure prevents publication. PR, main, and manual Build runs package without
 those credentials. Windows installers are unsigned in this initial pipeline.
 
 Each tag produces a **draft** GitHub Release containing the five desktop
-installers and four server/daemon archives. Review its generated notes and
-assets, then publish it in GitHub. Prerelease tags create prerelease drafts.
+installers, four server/daemon archives, updater metadata and blockmaps. Review
+its generated notes and assets, then publish it in GitHub. Prerelease tags create
+prerelease drafts.
 Reruns can replace assets on a draft; they refuse to modify an already published
-release. There is no client auto-updater in this pipeline.
+release.
 
 The website reads GitHub's public `releases/latest` API in the browser and selects
 the matching published stable release asset for the chosen platform and
 architecture. Publishing a stable release makes it discoverable without another
 Pages build. Drafts and prereleases do not replace the website's stable downloads;
 failed requests and unavailable assets retain a link to GitHub Releases.
+
+### Desktop updates
+
+Electron uses `electron-updater` with the public GitHub provider for
+`yet-another-ai/deskfleet`. Packaging generates `latest.yml`, `latest-mac.yml`,
+`latest-linux.yml` and `latest-linux-arm64.yml`; the release job requires all four,
+the macOS update ZIP and the Windows/ZIP blockmaps before creating its draft.
+Each release carries its own metadata, including prereleases. GitHub's release
+status controls discovery, so a draft cannot trigger an update and stable clients
+do not receive prereleases. Publish complete releases with a higher version;
+never replace assets on an existing published release.
+
+The Electron main process checks for updates on startup and every 30 minutes.
+An available update appears at the bottom left; clicking it downloads the update,
+stops the embedded daemon, then installs and restarts the app. Automatic checks
+do not download or install, and ordinary app exit does not install an update.
+Windows uses NSIS, macOS uses the signed update ZIP, and Linux requires running
+the AppImage. Development runs do not check for updates.
+
+Installed upgrades still need platform release testing: metadata generation and
+unit tests do not demonstrate a successful installation on Windows, signed macOS
+or either Linux architecture.
+
+### Backend image
 
 The same successful tag build pushes
 `ghcr.io/yet-another-ai/deskfleet-server:<version>` as one Linux amd64/arm64 image.
@@ -208,18 +269,16 @@ restores `@electron/get`'s default cache, and the PostgreSQL job saves it after
 `install-electron` on main and tags. Installed `node_modules` directories are
 rebuilt from the lockfile.
 
-All jobs use sccache 0.19.0 through the pinned `sccache-action` release and share
-its GitHub Actions cache namespace. The tool version stays pinned because it
-participates in that cache version. Main and tag runs can write that cache;
-pull requests and other branches read it. A miss compiles normally. Service
-errors are written to a runner log and `SCCACHE_LOG` is `warn`. Dependency and
-tool caches follow the same producer policy, with Cargo target caches saved
-from main only.
+All jobs use sccache 0.19.0 through the pinned `sccache-action` release.
+Its directory is local to the job and is not stored in the GitHub Actions
+cache. One Actions object per compilation filled the repository quota and
+evicted the Windows Cargo target cache. `SCCACHE_LOG` is `warn`. Cargo target
+caches are still saved from main only.
 
 `mise run ci:report:sccache` reports cache hit, miss, write, and error counters.
 
 Heron's Nix, coverage upload, Playwright, plug-in SDK, signing, and symbol-upload
-jobs are not part of this workflow. Deskfleet keeps the orchestrator, the reusable
+jobs are not part of this workflow. DeskFleet keeps the orchestrator, the reusable
 Test and Build workflows, and this cache policy.
 
 ## Local validation

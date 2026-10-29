@@ -3,7 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
 import { HttpCentralClient, serverAddress, type SavedAccount } from "@deskfleet/client/http-central"
-import type { LocalEnrollment } from "@deskfleet/client/central"
+import type { CentralEvent, LocalEnrollment } from "@deskfleet/client/central"
+import { setPeerTelemetrySink } from "@deskfleet/client/peer-telemetry"
 import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { enrollLocalMachine } from "./local-enrollment.ts"
@@ -45,7 +46,7 @@ async function authorize(client: HttpCentralClient, openAuthorization: (url: str
     const origin = `http://127.0.0.1:${address.port}`
     if (request.method === "GET" && request.url?.startsWith("/auth/callback")) {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'" })
-      response.end(`<!doctype html><html><meta charset="utf-8"><title>deskfleet</title><body><p id="status">deskfleet</p><script>const code=new URLSearchParams(location.hash.slice(1)).get('loginCode');history.replaceState(null,'','/auth/callback');if(code)fetch('/auth/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})}).then(r=>{document.getElementById('status').textContent=r.ok?'Signed in. You can close this tab.':'Sign-in failed.'});</script></body></html>`)
+      response.end(`<!doctype html><html><meta charset="utf-8"><title>DeskFleet</title><body><p id="status">DeskFleet</p><script>const code=new URLSearchParams(location.hash.slice(1)).get('loginCode');history.replaceState(null,'','/auth/callback');if(code)fetch('/auth/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})}).then(r=>{document.getElementById('status').textContent=r.ok?'Signed in. You can close this tab.':'Sign-in failed.'});</script></body></html>`)
       return
     }
     if (request.method !== "POST" || request.url !== "/auth/complete" || request.headers.origin !== origin) { response.writeHead(404).end(); return }
@@ -94,7 +95,10 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
     if (!isDesktopMediaSender(event) || typeof method !== "string" || !Array.isArray(args) || !Object.hasOwn(methods, method)) throw new Error("Invalid account operation")
     return await methods[method]!(...args as never[])
   })
-  client.onEvent(event => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(CENTRAL_EVENT, event) })
-  app.once("will-quit", () => client.dispose())
+  const broadcast = (event: CentralEvent) => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(CENTRAL_EVENT, event) }
+  client.onEvent(broadcast)
+  // File and port peers live in main; the renderer owns the analytics SDK.
+  const stopTelemetry = setPeerTelemetrySink(event => broadcast({ type: "peerTelemetry", event }))
+  app.once("will-quit", () => { stopTelemetry(); client.dispose() })
   return client
 }

@@ -40,3 +40,33 @@ test("the lifecycle quit path exits", () => {
   expect(application.quit).toHaveReturnedWith(false)
   expect(hideWindows).not.toHaveBeenCalled()
 })
+
+test("the installer may close windows and quit after services stop", () => {
+  const application = new FakeApplication()
+  const hideWindows = vi.fn()
+  const lifecycle = keepRunningInBackground(application, hideWindows)
+
+  lifecycle.setInstallingUpdate(true)
+  expect(lifecycle.quitting).toBe(true)
+  expect(application.quit).not.toHaveBeenCalled()
+  expect(application.quit()).toBe(false)
+  expect(hideWindows).not.toHaveBeenCalled()
+})
+
+test("a failed install restores background behavior without cancelling an explicit exit", () => {
+  const application = new FakeApplication()
+  const hideWindows = vi.fn()
+  const lifecycle = keepRunningInBackground(application, hideWindows)
+
+  lifecycle.setInstallingUpdate(true)
+  lifecycle.setInstallingUpdate(false)
+  expect(lifecycle.quitting).toBe(false)
+  expect(application.quit()).toBe(true)
+  expect(hideWindows).toHaveBeenCalledOnce()
+
+  lifecycle.setInstallingUpdate(true)
+  lifecycle.quit()
+  lifecycle.setInstallingUpdate(false)
+  expect(lifecycle.quitting).toBe(true)
+  expect(application.quit()).toBe(false)
+})

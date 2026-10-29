@@ -1,4 +1,5 @@
 import { relayFailureMessage } from "./relay.ts"
+import { observePeerGrant } from "./peer-telemetry.ts"
 import type { CentralApi } from "./central.ts"
 import type { IceCandidate } from "./desktop-media.ts"
 import type { FileTarget } from "./files.ts"
@@ -30,6 +31,7 @@ export async function connectFilePeer(
   receive: (bytes: Uint8Array) => void, failed: (error: Error) => void,
 ): Promise<FileTransport> {
   const grant = await central.createPeer(target.teamId, target.machineId, "files")
+  const telemetry = observePeerGrant("files", grant, target.teamId)
   let peer: FilePeer | undefined
   let closed = false, opened = false, remoteReady = false, offered = false
   let localSdp = "", remoteSdp = ""
@@ -48,8 +50,9 @@ export async function connectFilePeer(
     rejectReady(new Error("File connection is closed"))
     await Promise.allSettled([peer?.close(), central.closePeer(grant.peerId)])
   }
-  function fail(error: Error): void {
+  function fail(error: Error, connectionFailure = true): void {
     if (closed) return
+    if (connectionFailure) telemetry.failed()
     rejectReady(error); failed(error)
     void close()
   }
@@ -58,7 +61,7 @@ export async function connectFilePeer(
     fail(detail ? new Error(detail) : error)
   }
   function checkReady(): void {
-    if (opened && remoteReady && !closed) { clearTimeout(setup); resolveReady() }
+    if (opened && remoteReady && !closed) { clearTimeout(setup); telemetry.connected(); resolveReady() }
   }
   function flushLocal(): void {
     if (!offered || closed) return
@@ -81,9 +84,9 @@ export async function connectFilePeer(
     }).catch(error => fail(error instanceof Error ? error : new Error(String(error))))
   }
   unsubscribe = central.onEvent(event => {
-    if (event.type === "accountChanged") { fail(new Error("Account changed; reconnect files")); return }
+    if (event.type === "accountChanged") { fail(new Error("Account changed; reconnect files"), false); return }
     if ((event.type !== "peerEvent" && event.type !== "peerRevoked") || event.peerId !== grant.peerId) return
-    if (event.type === "peerRevoked") { fail(new Error(event.reason)); return }
+    if (event.type === "peerRevoked") { fail(new Error(event.reason), false); return }
     const value = event.event
     if (value.kind === "iceCandidate" && "candidate" in value) { remoteCandidates.push(value.candidate as IceCandidate); flushRemote() }
     else if (value.kind === "error") fail(new Error("error" in value ? String(value.error) : "File peer failed"))
@@ -92,7 +95,7 @@ export async function connectFilePeer(
   async function negotiate(): Promise<void> {
     const expires = Date.parse(grant.authorization.expiresAt)
     if (!Number.isFinite(expires) || expires <= Date.now()) throw new Error("File authorization expired")
-    lifetime = setTimeout(() => fail(new Error("File authorization expired; reconnect to continue")), expires - Date.now())
+    lifetime = setTimeout(() => fail(new Error("File authorization expired; reconnect to continue"), false), expires - Date.now())
     peer = await factory(grant.iceServers, {
       data: bytes => { if (!closed) receive(bytes) },
       candidate: candidate => { localCandidates.push(candidate); flushLocal() },
@@ -113,5 +116,5 @@ export async function connectFilePeer(
     // the setup deadline. A late factory result is closed by negotiate above.
     await Promise.race([negotiate(), ready])
     return { async send(bytes) { if (closed) throw new Error("File connection is closed"); await peer!.send(bytes) }, close }
-  } catch (error) { void close(); throw error }
+  } catch (error) { if (!closed) telemetry.failed(); void close(); throw error }
 }

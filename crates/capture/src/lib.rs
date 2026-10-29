@@ -1,4 +1,4 @@
-//! Screen capture and native surfaces for deskfleet.
+//! Screen capture and native surfaces for DeskFleet.
 //!
 //! Ported from dsh0416/desk-fleet (e4b963274b4afae8a7b8065d9efe5c6770bf9339),
 //! rust/capture. Capture starts only when explicitly requested.

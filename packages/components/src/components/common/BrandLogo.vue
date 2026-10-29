@@ -10,7 +10,7 @@ const source = new URL("../../assets/deskfleet.png", import.meta.url).href
 <template>
   <img
     :src="source"
-    :alt="decorative ? '' : 'deskfleet'"
+    :alt="decorative ? '' : 'DeskFleet'"
     :aria-hidden="decorative || undefined"
     :width="size"
     :height="size"

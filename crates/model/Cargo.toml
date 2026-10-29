@@ -1,6 +1,6 @@
 [package]
 name = "deskfleet-model"
-description = "Shared machine, workspace, worktree, and session models for deskfleet"
+description = "Shared machine, workspace, worktree, and session models for DeskFleet"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

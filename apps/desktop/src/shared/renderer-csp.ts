@@ -1,6 +1,12 @@
+import { STATSIG_CONNECT_ORIGINS } from "@deskfleet/client/analytics-config"
+
 export const CSP_PLACEHOLDER = "__DESKFLEET_CONTENT_SECURITY_POLICY__"
 
-export function rendererContentSecurityPolicy(production: boolean): string {
+export function rendererContentSecurityPolicy(production: boolean, statsigEnabled = false): string {
+  const connectSources = [
+    ...(production ? [] : ["'self'", "ws://127.0.0.1:5173"]),
+    ...(statsigEnabled ? STATSIG_CONNECT_ORIGINS : []),
+  ]
   return [
     "default-src 'none'",
     "script-src 'self'",
@@ -9,8 +15,8 @@ export function rendererContentSecurityPolicy(production: boolean): string {
     "img-src 'self' data: blob: https://gravatar.com",
     "font-src 'self'",
     "media-src 'self' blob:",
-    // Vite's HMR client is the only development connection.
-    production ? "connect-src 'none'" : "connect-src 'self' ws://127.0.0.1:5173",
+    // API traffic stays in main; configured analytics runs in the renderer.
+    `connect-src ${connectSources.length ? connectSources.join(" ") : "'none'"}`,
     "object-src 'none'",
     "frame-src 'none'",
     "form-action 'none'",
@@ -18,9 +24,9 @@ export function rendererContentSecurityPolicy(production: boolean): string {
   ].join("; ")
 }
 
-export function injectRendererContentSecurityPolicy(html: string, production: boolean): string {
+export function injectRendererContentSecurityPolicy(html: string, production: boolean, statsigEnabled = false): string {
   if (!html.includes(CSP_PLACEHOLDER)) {
     throw new Error("Renderer HTML is missing the CSP placeholder")
   }
-  return html.replaceAll(CSP_PLACEHOLDER, rendererContentSecurityPolicy(production))
+  return html.replaceAll(CSP_PLACEHOLDER, rendererContentSecurityPolicy(production, statsigEnabled))
 }

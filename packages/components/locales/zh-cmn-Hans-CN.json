@@ -1,4 +1,13 @@
 {
+  "updates": {
+    "available": "新版本 {version} 已可用",
+    "install": "更新并重启",
+    "retry": "重试更新",
+    "checking": "正在检查更新…",
+    "downloading": "正在下载 {percent}%",
+    "installing": "正在重启…",
+    "failed": "更新失败，请重试，或退出并重新打开 DeskFleet。"
+  },
   "aiUsage": {
     "title": "AI 用量",
     "period": "统计时段",
@@ -52,9 +61,12 @@
   },
   "siteAdmin": {
     "title": "站点管理",
-    "description": "管理此 deskfleet 站点的配置。",
+    "description": "管理此 DeskFleet 站点的配置。",
     "forbidden": "此页面需要站点管理员权限。",
     "siteName": "站点名称",
+    "termsOfServiceUrl": "服务条款 URL",
+    "privacyTermsUrl": "隐私条款 URL",
+    "termsDescription": "请填写完整的 HTTP 或 HTTPS 地址。新用户注册前必须同意已配置的条款。URL 留空则隐藏对应链接。",
     "announcement": "站点公告",
     "announcementDescription": "向使用此站点的所有人显示。留空则隐藏公告。",
     "allowTeamCreation": "允许创建团队",
@@ -270,9 +282,9 @@
     "appearance": "外观",
     "notifications": "通知",
     "notificationsEnabled": "桌面通知",
-    "notificationsDescription": "允许 deskfleet 在本机发送通知。",
+    "notificationsDescription": "允许 DeskFleet 在本机发送通知。",
     "browserNotificationsEnabled": "浏览器通知",
-    "browserNotificationsDescription": "允许 deskfleet 在页面保持打开时发送通知。",
+    "browserNotificationsDescription": "允许 DeskFleet 在页面保持打开时发送通知。",
     "notificationPermission": "浏览器权限",
     "enableBrowserNotifications": "启用通知",
     "notificationPermissionStatus": {
@@ -287,10 +299,10 @@
     "notificationTaskNeedsInputDescription": "智能体因等待问题回答或操作批准而暂停时通知我。",
     "thisComputer": "本机",
     "launchAtStartup": "开机自启",
-    "launchAtStartupDescription": "登录系统时自动打开 deskfleet。",
+    "launchAtStartupDescription": "登录系统时自动打开 DeskFleet。",
     "launchAtStartupUnavailable": "适用于 macOS 和 Windows 上已安装的应用。",
     "keepAwake": "保持唤醒",
-    "keepAwakeDescription": "deskfleet 运行时阻止本机因空闲而休眠，关闭到托盘后仍然有效。屏幕仍可自动关闭。",
+    "keepAwakeDescription": "DeskFleet 运行时阻止本机因空闲而休眠，关闭到托盘后仍然有效。屏幕仍可自动关闭。",
     "worktreeRoot": "工作树根目录",
     "worktreeRootDescription": "本机新建会话的工作树将存储在此目录。已有文件保留在原位置。",
     "chooseWorktreeRoot": "选择文件夹…",
@@ -567,8 +579,8 @@
     "gitUnknown": "尚未检查 Git 状态。"
   },
   "tray": {
-    "show": "显示 deskfleet",
-    "quit": "退出 deskfleet"
+    "show": "显示 DeskFleet",
+    "quit": "退出 DeskFleet"
   },
   "catalog": {
     "local": "本地",
@@ -870,8 +882,8 @@
     }
   },
   "account": {
-    "signIn": "登录 deskfleet",
-    "signInDescription": "使用你的账号登录 deskfleet 服务器，然后选择团队。",
+    "signIn": "登录 DeskFleet",
+    "signInDescription": "使用你的账号登录 DeskFleet 服务器，然后选择团队。",
     "signingIn": "正在登录…",
     "signOut": "退出登录",
     "signalingOffline": "服务器连接中断。现有对等连接可继续使用，直到授权到期。",
@@ -882,7 +894,7 @@
     "openMachine": "打开 {name}",
     "thisComputer": "此电脑",
     "done": "完成",
-    "continueSignIn": "登录 deskfleet"
+    "continueSignIn": "登录 DeskFleet"
   },
   "team": {
     "label": "团队",
@@ -1008,11 +1020,11 @@
     "showHidden": "显示隐藏项目"
   },
   "welcome": {
-    "title": "欢迎使用 deskfleet",
+    "title": "欢迎使用 DeskFleet",
     "description": "按步骤完成这台电脑的设置，然后登录团队。",
     "notificationsTitle": "及时了解任务动态",
     "notificationsDescription": "智能体完成任务或需要你回应时，接收通知提醒。",
-    "notificationsDetails": "允许浏览器通知后，只要 deskfleet 保持打开，切换到其他标签页也能收到任务动态。你可以稍后在设置中更改。",
+    "notificationsDetails": "允许浏览器通知后，只要 DeskFleet 保持打开，切换到其他标签页也能收到任务动态。你可以稍后在设置中更改。",
     "progress": "设置进度",
     "steps": {
       "fullDiskAccess": "完全磁盘访问权限",
@@ -1024,13 +1036,13 @@
     "continue": "继续",
     "continueAs": "以 {name} 的身份继续",
     "systemSettings": "macOS 系统设置",
-    "permissionRestart": "在列表中为 deskfleet 开启权限。如果 macOS 要求退出并重新打开应用，设置流程会从这里继续。",
+    "permissionRestart": "在列表中为 DeskFleet 开启权限。如果 macOS 要求退出并重新打开应用，设置流程会从这里继续。",
     "openSettings": "开启权限",
     "checking": "正在检查…",
     "checkAgain": "重新检查",
     "skip": "暂时跳过",
     "retry": "重试",
-    "loading": "正在加载 deskfleet…",
+    "loading": "正在加载 DeskFleet…",
     "permissionStatus": {
       "checking": "正在检查权限…",
       "requesting": "正在等待 macOS 授权…",
@@ -1046,7 +1058,7 @@
       "retry": "重试访问",
       "screenCapture": {
         "title": "屏幕共享",
-        "description": "允许 deskfleet 在远程桌面会话中共享这台电脑的屏幕。",
+        "description": "允许 DeskFleet 在远程桌面会话中共享这台电脑的屏幕。",
         "instructions": "在桌面环境的授权对话框中选择要共享的屏幕，并允许访问。",
         "skip": "授权之前，无法使用远程屏幕共享。你可以先跳过此步骤，稍后再开启权限。"
       },
@@ -1064,7 +1076,7 @@
         "skip": "你可以先使用有限的文件访问功能，稍后在系统设置中开启此权限。"
       },
       "screenCapture": {
-        "description": "允许 deskfleet 在远程桌面会话中共享这台电脑的屏幕和系统音频。",
+        "description": "允许 DeskFleet 在远程桌面会话中共享这台电脑的屏幕和系统音频。",
         "path": "隐私与安全性 → 屏幕与系统录音",
         "skip": "开启此权限之前，无法使用远程屏幕共享。你可以稍后在系统设置中开启。"
       },
@@ -1089,10 +1101,10 @@
   },
   "auth": {
     "signIn": "登录",
-    "signInTitle": "登录 deskfleet",
+    "signInTitle": "登录 DeskFleet",
     "accountSignInDescription": "登录后管理密码、Passkey 和已登录的设备。",
     "emailSignInDescription": "请使用当前邮箱登录，以确认新邮箱地址。",
-    "desktopSignInTitle": "登录 deskfleet 桌面端",
+    "desktopSignInTitle": "登录 DeskFleet 桌面端",
     "desktopSignInDescription": "登录后，此页面会将会话交回桌面应用。",
     "email": "邮箱",
     "name": "显示名称",
@@ -1109,12 +1121,16 @@
     "createAccount": "创建账号",
     "continue": "继续",
     "loading": "加载中…",
-    "unavailable": "无法连接 deskfleet",
+    "unavailable": "无法连接 DeskFleet",
     "retry": "重试",
     "backToSignIn": "返回登录",
     "registerTitle": "创建账号",
     "registerDescription": "输入邮箱，我们会先发送验证链接，验证后再设置密码。",
     "registrationClosed": "此站点暂不接受新账号注册，请联系管理员获取访问权限。",
+    "agreeToTerms": "我已阅读并同意",
+    "termsAnd": "和",
+    "termsOfService": "服务条款",
+    "privacyTerms": "隐私条款",
     "registerSent": "验证链接已发送至 {email}，一小时内有效。",
     "recoveryTitle": "重置密码",
     "recoveryDescription": "输入账号邮箱，我们会发送设置新密码的链接。",
@@ -1134,7 +1150,7 @@
     "linkInvalid": "此链接无法使用",
     "linkInvalidDescription": "链接可能不完整或已使用，请重新获取邮件。",
     "requestNewLink": "获取新链接",
-    "desktopTitle": "继续登录 deskfleet 桌面端",
+    "desktopTitle": "继续登录 DeskFleet 桌面端",
     "desktopDescription": "打开此页面的桌面应用将以此账号登录。",
     "desktopAttemptMissing": "请从桌面应用重新发起登录。",
     "continueDesktop": "继续登录桌面端",
@@ -1149,7 +1165,7 @@
     "usePasskeyInstead": "使用 Passkey",
     "confirm": "确认",
     "security": "账号安全",
-    "back": "返回 deskfleet",
+    "back": "返回 DeskFleet",
     "signInMethods": "登录方式",
     "change": "更改",
     "passwordRowDescription": "修改后所有设备将退出登录。",
@@ -1207,8 +1223,19 @@
     },
     "offer": {
       "go": "每月 2 GiB TURN 中继 · Session、轮数和成员不限",
-      "pro": "每月 20 GiB TURN 中继 · Session、轮数和成员不限"
+      "pro": "每月 20 GiB TURN 中继 · Session、轮数和成员不限",
+      "enterprise": "额度不限，并由运营方提供部署支持。联系我们了解 Enterprise。"
     },
+    "offerInterval": {
+      "month": "按月计费",
+      "year": "按年计费"
+    },
+    "interval": {
+      "month": "月付",
+      "year": "年付"
+    },
+    "chooseInterval": "计费周期",
+    "contactEnterprise": "联系我们",
     "upgradeTo": "升级到 {plan}",
     "askAdmin": "Team 管理员可以为此 Team 升级套餐。",
     "checkoutOpened": "请在新打开的页面完成付款。付款确认后，套餐会自动更新。",

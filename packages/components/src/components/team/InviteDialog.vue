@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n"
 import type { Team, TeamMember } from "@deskfleet/client/central"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { captureAnalyticsContext } from "../../services/analytics.ts"
 import CopyField from "../common/CopyField.vue"
 import UiDialog from "../common/UiDialog.vue"
 
@@ -28,11 +29,18 @@ async function submit(): Promise<void> {
   if (pending.value) return
   pending.value = true
   error.value = undefined
+  const invitedRole = role.value
+  const track = captureAnalyticsContext()
+  track("member_invite_action", { outcome: "attempt", invited_role: invitedRole })
   try {
-    invite.value = await central.invite(props.team.id, email.value.trim(), role.value)
+    invite.value = await central.invite(props.team.id, email.value.trim(), invitedRole)
+    track("member_invite_action", { outcome: "success", invited_role: invitedRole })
     await nextTick()
     code.value?.focus()
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
+  } catch (reason) {
+    track("member_invite_action", { outcome: "failure", invited_role: invitedRole })
+    error.value = reason instanceof Error ? reason.message : String(reason)
+  }
   finally { pending.value = false }
 }
 </script>

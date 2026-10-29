@@ -1,6 +1,6 @@
 # Development environment
 
-deskfleet follows [Heron's development workflow](https://github.com/minori-live/heron/blob/main/AGENTS.md):
+DeskFleet follows [Heron's development workflow](https://github.com/minori-live/heron/blob/main/AGENTS.md):
 mise owns tool versions and the task graph, APM owns repository-local skills,
 and local validation uses the same tasks as CI.
 
@@ -105,7 +105,9 @@ peer streaming recorded product screens (`demo-desktop-light.png` and
 `demo-desktop-dark.png`). These screenshots are media fixtures, not a separate
 implementation of the application UI.
 
-The supplied brand master lives in `packages/components/src/assets/deskfleet.png`;
+Use **DeskFleet** for the product's display name; package names, commands, URLs,
+and other technical identifiers remain lowercase. The supplied Arctic fox brand
+master lives in `packages/components/src/assets/deskfleet.png`;
 `mise exec -- pnpm --filter @deskfleet/desktop icons` regenerates the application,
 tray, Web favicon, and website assets from it.
 
@@ -238,6 +240,24 @@ See [native media](media.md) for static linkage and platform support.
 After changing a tool declaration, run `mise lock` and `mise install --locked`,
 then include the configuration and lockfile changes together.
 
+### Client bundles
+
+Web and Electron renderer builds share the Rolldown groups in
+`packages/components/src/chunking.ts`. Heavy library groups split at module
+boundaries with a 500,000-byte pre-minification target. Mermaid
+and Markdown also preserve entry usage so diagram-specific code, layout engines,
+and the highlighter are not merged across their loading boundaries. Both builds
+enable `strictExecutionOrder` so dependent Shiki grammars initialize in order
+after splitting.
+
+Vite's default chunk-size warning remains enabled. Mermaid's upstream bundled
+ELK engine and generated parser, plus Shiki's C++ grammar, each exceed the warning
+threshold as a single module; the group size target cannot split them further.
+The Mermaid chunks stay behind its dynamic imports; the grammar loads with the
+Session Markdown renderer. When changing the groups, build both clients
+and exercise Markdown, diagrams, charts, and terminals from production bundles
+to check module initialization order as well as file sizes.
+
 ## Task boundaries
 
 | Command | Purpose |
@@ -264,6 +284,7 @@ then include the configuration and lockfile changes together.
 | `mise run check-fast` | Run Rust formatting, dependency usage, Clippy, and tests |
 | `mise run test` | Run repository script, daemon, desktop, and Rust tests |
 | `mise run build` | Build the release server and standalone SEA daemon |
+| `mise run ci:build` | Build all release bundles with one shared Rust workspace build |
 | `mise run daemon:pack` | Package the daemon as a standalone SEA executable |
 | `mise run daemon:smoke` | Run the SEA executable alone with no Node on PATH |
 | `mise run native:debug` / `native:release` | Build the napi-rs addon and regenerate TypeScript declarations |
@@ -275,6 +296,13 @@ then include the configuration and lockfile changes together.
 Public tasks compose focused tasks in `mise.toml`. Independent checks can run in
 parallel. Cargo operations sharing `target/` use mise's `wait_for` ordering when
 they appear in the same run, avoiding repeated builds and lock contention.
+
+The full release build uses napi to compile the Cargo workspace once with an
+explicit host target, then emit the addon and its TypeScript declarations.
+`build` and the CI desktop bundle share this preparation task. The server is in
+`target/<host-triple>/release/`; obtain the triple with
+`mise exec -- rustc --print host-tuple`. Standalone `native:release`,
+`daemon:pack`, and `desktop:release-build` keep their addon-only Rust build.
 
 The pnpm workspace contains `apps/daemon`, `apps/desktop`, `apps/web`,
 `packages/client`, `packages/components`, and `crates/node`.
@@ -374,5 +402,5 @@ hand.
 
 The Rust skill includes an upstream example crate and its own toolchain file.
 Those files are preserved as dependency content. The example crate is excluded
-from the deskfleet Cargo workspace, and the static checks verify that boundary;
-deskfleet builds use the root mise toolchain.
+from the DeskFleet Cargo workspace, and the static checks verify that boundary;
+DeskFleet builds use the root mise toolchain.

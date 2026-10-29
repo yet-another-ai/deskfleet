@@ -1,4 +1,12 @@
-# deskfleet desktop
+# DeskFleet desktop
+
+The desktop display name is **DeskFleet**, configured in `electron-builder.yml`
+and the native window, menu, and About labels. The runtime `productName` in
+`package.json` remains `deskfleet`: Electron uses it for the default profile
+directory and macOS/Linux secure-storage identity. Keeping that internal name
+preserves existing settings, encrypted sign-in tokens, and explicit
+`--user-data-dir` overrides. Release artifact filenames retain the `deskfleet-`
+prefix.
 
 `@deskfleet/desktop` is the Electron client for the machine daemon, which it hosts
 in its main process. Closing the window leaves the app in the tray with the daemon
@@ -40,6 +48,24 @@ Vite embeds the address in the main-process bundle. Changing the backend require
 rebuilding the app; environment variables set only when launching a built app
 do not override it. The UI has no backend-address setting. The server address
 stored with an account only scopes its saved credentials to the compiled backend.
+
+Statsig behavioral events and UI experiments run in the renderer when
+`VITE_STATSIG_CLIENT_KEY` is set before development or building. Use a Statsig
+**client-public** SDK key, never a server secret: this value is embedded in the
+renderer bundle. An unset or blank key disables Statsig.
+`VITE_STATSIG_ENVIRONMENT` optionally selects the Statsig environment and defaults
+to Vite's mode (`development` or `production`). The renderer reads `.env` files
+from `apps/desktop/src/renderer/`, including mode-specific files; process
+environment values take precedence. Rebuild the app after changing either value.
+
+The renderer's Content Security Policy adds only the three configured Statsig
+origins (`https://featureassets.org`, `https://prodregistryv2.org`, and
+`https://statsigapi.net`) when a client key is present. Without it, production
+retains `connect-src 'none'`. Account and machine API traffic remains in the
+main process. Statsig gates and experiments control frontend experience only;
+the server and daemon continue to enforce authorization, entitlements, and quotas.
+See the [analytics guide](../../agents/docs/analytics.md) for identity, events,
+and the shared API.
 
 ## Layout
 
@@ -93,7 +119,7 @@ On this client's local machine, a Workspace's **Open with** menu opens its defau
 directory in VS Code, Cursor, VSCodium, Zed, an external Terminal, or the system
 file manager. Additional directories have their own menu. Only installed
 applications appear; opening the menu or choosing **Rescan** scans
-again. The existing terminal actions continue to open deskfleet's integrated
+again. The existing terminal actions continue to open DeskFleet's integrated
 terminal. Remote machines and Web clients do not expose these local launchers.
 
 The maintained discovery list lives in
@@ -239,16 +265,20 @@ submission is confirmed. `AgentClient` carries ACP JSON-RPC over the ordered
 
 ## Terminal
 
-`TerminalSurface` wraps xterm.js and its fit addon. It fits the terminal to its
-container on resize and disposes of it on unmount. The terminal view remounts it
-for each terminal session. The real local machine lists its machine-scoped
-sessions in tabs and supports dialing new or existing shells, live input/output, resize,
-reattachment, and explicit hangup. Switching tabs, leaving the view or closing
-the window leaves shells running. Closing a tab hangs up only its shell and removes
-its daemon history. Daemon shutdown terminates processes while preserving their
-history; after restart they appear interrupted and read-only. xterm.js uses an injected
-stylesheet, which the renderer CSP's `style-src 'unsafe-inline'` permits. It
-loads only with the terminal route's chunk.
+`TerminalSurface` wraps xterm.js with its fit, ligatures, and WebGL addons. It
+attaches `@xterm/addon-webgl` after open when WebGL2 is available, and falls back
+to the default canvas renderer when WebGL is missing, fails to initialize, or
+loses its context. Unmount force-releases the WebGL2 context so tab remounts do
+not accumulate GPU contexts past Chromium's limit. It fits the terminal to its
+container on resize and disposes of it on unmount. The terminal view remounts it for each terminal session. The
+real local machine lists its machine-scoped sessions in tabs and supports dialing
+new or existing shells, live input/output, resize, reattachment, and explicit
+hangup. Switching tabs, leaving the view or closing the window leaves shells
+running. Closing a tab hangs up only its shell and removes its daemon history.
+Daemon shutdown terminates processes while preserving their history; after restart
+they appear interrupted and read-only. xterm.js uses an injected stylesheet, which
+the renderer CSP's `style-src 'unsafe-inline'` permits. It loads only with the
+terminal route's chunk.
 
 The data-only connection reuses authenticated SDP/ICE signaling without media
 tracks or screen capture. Dial/hangup uses signaling and remains available without
@@ -298,7 +328,7 @@ only while the window is.
 
 The process exits only through:
 
-- **Quit deskfleet** in the tray menu;
+- **Quit DeskFleet** in the tray menu;
 - OS logout or shutdown (`powerMonitor` `shutdown` on macOS and Linux, window
   `session-end` on Windows);
 - SIGINT or SIGTERM.
@@ -315,7 +345,7 @@ user logs in. Packaged macOS and Windows apps use Electron's
 preference, and Settings reads it again after each change. Windows also honors
 startup entries disabled in Task Manager. The switch is unavailable on Linux
 and in development runs, which use Electron's executable instead of an installed
-deskfleet app. macOS login items require a signed and notarized app to work
+DeskFleet app. macOS login items require a signed and notarized app to work
 reliably; see [Electron's login item documentation](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings-macos-windows).
 
 This launches the client with its normal window and respects the separate
@@ -453,8 +483,9 @@ repository content are untrusted display data.
 Bundled builds load from the privileged `deskfleet-app://bundle/` scheme, which
 serves only files inside `out/renderer`. Development builds accept only the fixed
 loopback Vite URL. Each build injects its Content Security Policy into
-`index.html`. Production builds forbid renderer HTTP/WebSocket connections;
-WebRTC carries peer media and a narrow preload API carries authorized central signaling. The
+`index.html`. Production builds forbid renderer HTTP/WebSocket connections except
+for the three fixed Statsig origins when analytics is configured. WebRTC carries
+peer media and a narrow preload API carries authorized central signaling. The
 media policy permits local streams.
 The window denies renderer navigation and new Electron windows. Explicit HTTP(S)
 links requesting a new window open in the system browser; other schemes remain
@@ -497,7 +528,20 @@ and fuses, with the final Developer ID signature applied after the fuse changes.
 The app and helpers receive the V8 JIT entitlement. The bundled native addon is
 signed with the app; loading it does not require disabling library validation.
 
-Configure these GitHub Actions secrets before pushing a release tag:
+Before pushing a release tag, create the GitHub `production` environment with
+deployment access restricted to tags matching `v*` and no branches. Set its
+`VITE_DESKFLEET_SERVER_URL` variable to the official API origin; a missing or
+empty value fails the release build. Optional `VITE_STATSIG_CLIENT_KEY` and
+`VITE_STATSIG_ENVIRONMENT` variables configure analytics. The workflow supplies
+the API origin only to Electron; the Web artifact stays same-origin.
+
+PR, main, and manual Build runs do not bind this environment: their installers
+use the localhost backend, leave Statsig disabled, and skip release signing.
+Keep production values out of repository and organization variables and secrets.
+See [release configuration](../../agents/docs/ci.md#tagged-releases) for the
+environment settings.
+
+Configure these secrets in the same environment:
 
 | Secret | Value |
 | --- | --- |

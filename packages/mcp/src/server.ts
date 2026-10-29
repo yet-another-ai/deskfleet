@@ -6,13 +6,13 @@ import { DESKFLEET_TOOLS } from "./tools.ts"
 export type ToolInvoker = (name: string, args: Record<string, unknown>) => Promise<unknown>
 
 export function createMcpServer(invoke: ToolInvoker): Server {
-  const server = new Server({ name: "deskfleet", version: "0.1.0" }, { capabilities: { tools: {} } })
+  const server = new Server({ name: "deskfleet", title: "DeskFleet", version: "0.1.0" }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: DESKFLEET_TOOLS.map(({ method: _method, ...tool }) => tool),
   }))
   server.setRequestHandler(CallToolRequestSchema, async request => {
     try {
-      if (!DESKFLEET_TOOLS.some(tool => tool.name === request.params.name)) throw new Error("Unknown deskfleet tool")
+      if (!DESKFLEET_TOOLS.some(tool => tool.name === request.params.name)) throw new Error("Unknown DeskFleet tool")
       const value = await invoke(request.params.name, request.params.arguments ?? {})
       return { content: [{ type: "text", text: JSON.stringify(value ?? null) }] }
     } catch (error) {
@@ -36,7 +36,7 @@ export function gatewayInvoker(endpoint: string, token: string, request: typeof 
       body: JSON.stringify({ name, arguments: args }),
     })
     const result = await response.json() as { result?: unknown; error?: string }
-    if (!response.ok) throw new Error(result.error ?? `deskfleet request failed (${response.status})`)
+    if (!response.ok) throw new Error(result.error ?? `DeskFleet request failed (${response.status})`)
     return result.result
   }
 }

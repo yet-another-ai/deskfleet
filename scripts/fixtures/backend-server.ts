@@ -31,7 +31,11 @@ export async function startBackendFixture(options: { databaseUrl?: string; binar
         ...process.env, DATABASE_URL: databaseUrl, DESKFLEET_BIND_ADDR: `127.0.0.1:${port}`, DESKFLEET_PUBLIC_URL: publicUrl,
         DESKFLEET_AUTH_WEB_URL: webOrigin, DESKFLEET_MAIL_DIRECTORY: mailDirectory, DESKFLEET_SMTP_HOST: undefined,
         DESKFLEET_DEPLOYMENT_MODE: "self-hosted", DESKFLEET_STRIPE_SECRET_KEY: undefined, DESKFLEET_STRIPE_WEBHOOK_SECRET: undefined,
-        DESKFLEET_STRIPE_GO_PRICE_ID: undefined, DESKFLEET_STRIPE_PRO_PRICE_ID: undefined, DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID: undefined,
+        DESKFLEET_STRIPE_GO_PRICE_ID: undefined, DESKFLEET_STRIPE_PRO_PRICE_ID: undefined,
+        DESKFLEET_STRIPE_GO_YEARLY_PRICE_ID: undefined, DESKFLEET_STRIPE_PRO_YEARLY_PRICE_ID: undefined,
+        DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID: undefined,
+        DESKFLEET_STRIPE_YEARLY_PORTAL_CONFIGURATION_ID: undefined,
+        DESKFLEET_ENTERPRISE_CONTACT_EMAIL: undefined,
         DESKFLEET_WEB_ORIGINS: (options.allowedOrigins ?? []).join(","), RUST_LOG: "warn",
       },
     })

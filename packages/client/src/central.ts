@@ -1,6 +1,7 @@
 import type { RelayDeniedReason } from "./relay.ts"
+import type { PeerTelemetryEvent } from "./peer-telemetry.ts"
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { TeamBilling, AdminTeamBilling } from "./billing.ts"
+import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
@@ -27,6 +28,7 @@ export interface AgentSessionSummary {
   elicitations: Array<Pick<AgentSnapshot["elicitations"][number], "id" | "state" | "createdAt">>
 }
 export type CentralEvent =
+  | { type: "peerTelemetry"; event: PeerTelemetryEvent }
   | { type: "peerEvent"; peerId: string; event: Omit<DesktopEvent, "sessionId"> }
   | Extract<ControlMessage, { type: "peerRevoked" | "catalogChanged" | "machinesChanged" | "presence" }>
   | { type: "connection"; connected: boolean }
@@ -53,7 +55,7 @@ export interface CentralApi {
   logout(): Promise<void>
   openAccountSettings(): Promise<void>
   billing(teamId: string): Promise<TeamBilling>
-  checkout(teamId: string, plan: "go" | "pro", requestId: string): Promise<void>
+  checkout(teamId: string, plan: "go" | "pro", requestId: string, interval?: BillingInterval): Promise<void>
   billingPortal(teamId: string): Promise<void>
   site(): Promise<SiteSettings>
   teams(): Promise<Team[]>

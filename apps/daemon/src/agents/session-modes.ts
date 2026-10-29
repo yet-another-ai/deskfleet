@@ -19,7 +19,7 @@ export function withRestoredSessionMode(live: acp.SessionConfigOption[], saved: 
   return [...live, { ...legacy, currentValue: "" }]
 }
 
-/** Projects advertised ACP session modes into the configuration used by deskfleet. */
+/** Projects advertised ACP session modes into the configuration used by DeskFleet. */
 export class AcpSessionModes {
   readonly #sessions = new Map<string, SessionConfiguration>()
 

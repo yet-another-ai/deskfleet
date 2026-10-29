@@ -1,4 +1,4 @@
-# deskfleet server
+# DeskFleet server
 
 An API-only Actix Web control plane backed by PostgreSQL. It owns verified accounts and credentials,
 application sessions, Teams and roles, machine enrollment, management RPC routing,
@@ -61,6 +61,8 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_SMTP_USERNAME`, `DESKFLEET_SMTP_PASSWORD`, `DESKFLEET_MAIL_FROM` | Mail relay credentials and sender. |
 | `DESKFLEET_MAIL_DIRECTORY` | Local-only mail sink; defaults to `.local/mail`. Messages contain one-use secrets and are ignored by Git. |
 | `DESKFLEET_DEPLOYMENT_MODE` | `self-hosted` (default): unlimited allowances and no Stripe; or `hosted`. |
+| `DESKFLEET_STATSIG_SERVER_KEY` | Optional Statsig server secret for verified billing events. Unset disables event production and delivery. Never expose it through a frontend `VITE_*` variable. |
+| `DESKFLEET_STATSIG_ENVIRONMENT` | Statsig environment tier, default `production`; match the frontend project and tier. See [analytics](../../agents/docs/analytics.md#payment-funnel). |
 | `DESKFLEET_WEB_ORIGINS` | Comma-separated browser origins permitted by CORS. |
 | `DESKFLEET_STUN_URLS` | Optional comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Empty means no STUN; there is no public default. Change the list and restart to update new grants. |
 | `DESKFLEET_TURN_URLS` | Optional comma-separated `turn:`/`turns:` URLs advertised on peer grants. Change the list and restart to update new grants. |
@@ -118,7 +120,8 @@ platform selects the binary. On a Linux build host, for example:
 
 ```sh
 mkdir -p dist/server-image/arm64
-cp target/release/deskfleet-server dist/server-image/arm64/
+host_target=$(mise exec -- rustc --print host-tuple)
+cp "target/$host_target/release/deskfleet-server" dist/server-image/arm64/
 docker build --platform linux/arm64 -f apps/server/Dockerfile \
   --tag deskfleet-server:local dist/server-image
 mise exec -- node scripts/smoke-server-image.ts deskfleet-server:local
@@ -158,16 +161,21 @@ interactive user.
 `GET /api/me` returns the current `siteAdmin` flag. Administrators can open
 **Site administration** from the Web client's account menu, including when they
 have no Team. The administration UI is Web-only.
-`GET /api/site` publicly returns only `siteName`, `announcement`, and
-`allowTeamCreation`; the defaults are `deskfleet`, an empty announcement, and
-`true`. Web and Electron display the name/announcement and honor the creation
+`GET /api/site` publicly returns `siteName`, `announcement`, `allowTeamCreation`,
+`termsOfServiceUrl`, and `privacyTermsUrl`. The defaults are `DeskFleet`, an empty
+announcement, `true`, and two empty URLs. Web and Electron display the name/announcement and honor the creation
 switch. Closing Team creation applies to all users, including site administrators;
 existing Teams and invitation acceptance are unaffected.
+The brand-name migration updates the original `deskfleet` site name to
+`DeskFleet` once; other configured names are preserved.
 
 `GET /api/admin/site-settings` and `PATCH /api/admin/site-settings` require the
-current site grant. PATCH accepts all three settings fields, rejects unknown
+current site grant. PATCH accepts all five settings fields, rejects unknown
 fields, and returns the saved settings. Names are trimmed and must contain
-1–200 UTF-8 bytes; announcements allow up to 10,000 UTF-8 bytes. Configuration
+1–200 UTF-8 bytes; announcements allow up to 10,000 UTF-8 bytes. Legal URLs are
+trimmed and must be empty or absolute HTTP/HTTPS URLs without credentials.
+Configure either or both links in Site administration; leave both empty to omit
+the registration agreement. Configuration
 and grant/revoke changes write `cp_site_audit` in the same transaction, recording
 source, actor or target user, time, and previous/new values. Subsequent requests
 read updated settings and grants without restarting the backend or logging in
@@ -191,6 +199,14 @@ purpose-bound, one-use, and expire after one hour. Recovery and password/email
 changes revoke all login sessions and peer grants without deleting Machines or
 stopping accepted execution. Ordinary recovery retains Passkeys. Security
 changes require a password or Passkey confirmation within ten minutes.
+
+`GET /api/auth/config` exposes the current `termsOfServiceUrl` and
+`privacyTermsUrl`. When either is configured, registration displays an unchecked
+agreement checkbox linking to the configured documents. `POST /api/auth/register`
+requires `acceptedTerms: true` before issuing a verification challenge or sending
+mail; missing or false consent returns `terms_acceptance_required`. With both URLs
+empty, the existing email-only request remains valid. Resending a registration
+link includes the same acceptance; password recovery is unaffected.
 
 Public registration is a separate persisted policy (`PATCH /api/auth/registration`),
 independent of Team creation. Site administrators can search accounts through

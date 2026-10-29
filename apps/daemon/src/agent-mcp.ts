@@ -86,7 +86,7 @@ export class AgentMcp {
     const value = body as Record<string, unknown>
     if (Object.keys(value).some(key => key !== "name" && key !== "arguments")) throw new Error("MCP request cannot supply authority")
     const tool = DESKFLEET_TOOLS.find(tool => tool.name === value.name)
-    if (!tool) throw new Error("Unknown deskfleet tool")
+    if (!tool) throw new Error("Unknown DeskFleet tool")
     const args = value.arguments ?? {}
     if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("Expected tool arguments")
     // Central authorization is intentionally repeated for each operation.

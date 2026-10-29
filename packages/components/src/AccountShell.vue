@@ -16,10 +16,14 @@ import TeamAccessDialog from "./components/account/TeamAccessDialog.vue"
 import TeamOnboarding from "./components/account/TeamOnboarding.vue"
 import AccountFooter from "./components/sidebar/AccountFooter.vue"
 import AccountNotices from "./components/sidebar/AccountNotices.vue"
+import AppUpdateNotice from "./components/sidebar/AppUpdateNotice.vue"
 import TeamSwitcher from "./components/sidebar/TeamSwitcher.vue"
 import { router } from "./router/index.ts"
 import { accountSessionKey, createAccountSession } from "./composables/useAccountSession.ts"
 import { useBrowserNotifications } from "./composables/useBrowserNotifications.ts"
+import { useAccountAnalytics } from "./composables/useAccountAnalytics.ts"
+import { trackEvent } from "./services/analytics.ts"
+import { billingReturn } from "./services/billing-events.ts"
 
 const loadMachineSurface = () => import("./components/account/MachineSurface.vue")
 const MachineSurface = defineAsyncComponent(loadMachineSurface)
@@ -34,6 +38,7 @@ const browserNotificationOnboardingComplete = props.host.platform === "web"
 const browserNotificationPermission = ref(props.host.platform === "web" ? getBrowserNotificationPermission() : undefined)
 const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
+useAccountAnalytics(session)
 const { ready, account, site, teams, team, machine, dialog } = session
 const route = router.currentRoute
 const returnParams = new URLSearchParams(location.search)
@@ -42,8 +47,11 @@ let billingReturnTeam: string | undefined
 function finishBillingReturn(machineId?: string): void {
   if (!billingReturnTeam || team.value?.id !== billingReturnTeam || (machine.value && machine.value.id !== machineId)) return
   billingReturnTeam = undefined
+  const source = billingReturn(returnParams.get("billing_return"))
+  if (source && returnParams.get("team") === team.value?.id) trackEvent("billing_returned", { source })
   session.openSettings("plans")
   returnParams.delete("team"); returnParams.delete("settings")
+  returnParams.delete("billing_return")
   const search = returnParams.toString()
   history.replaceState(null, "", location.pathname + (search ? `?${search}` : "") + location.hash)
 }
@@ -56,7 +64,7 @@ watch([ready, account], async () => {
   // A Machine surface initializes its own route before it signals readiness.
   if (!machine.value) finishBillingReturn()
 }, { immediate: true })
-useTitle(() => site.value?.siteName ?? "deskfleet")
+useTitle(() => site.value?.siteName ?? "DeskFleet")
 useEventListener(window, "focus", () => {
   if (props.host.platform === "web") browserNotificationPermission.value = getBrowserNotificationPermission()
   void session.reload().catch((reason: unknown) => { session.notice.value = reason instanceof Error ? reason.message : String(reason) })
@@ -77,7 +85,7 @@ if (props.host.onboarding) void loadOnboarding()
   <div class="flex h-full flex-col overflow-hidden bg-ui-canvas text-ui-text">
     <p v-if="site?.announcement" role="status" class="m-0 max-h-32 shrink-0 overflow-y-auto whitespace-pre-wrap break-words border-b border-ui-border bg-ui-surface px-5 py-2 text-sm">{{ site.announcement }}</p>
     <template v-if="ready && onboarding">
-      <BrowserNotificationOnboarding v-if="!browserNotificationOnboardingComplete && browserNotificationPermission === 'default'" :site-name="site?.siteName ?? 'deskfleet'" @complete="browserNotificationOnboardingComplete = true" />
+      <BrowserNotificationOnboarding v-if="!browserNotificationOnboardingComplete && browserNotificationPermission === 'default'" :site-name="site?.siteName ?? 'DeskFleet'" @complete="browserNotificationOnboardingComplete = true" />
       <WelcomePage v-else-if="onboarding.step !== 'complete' || !account.user" :host="host" :state="onboarding" @change="onboarding = $event" />
       <!-- Each selected machine runs in its own application scope; see MachineSurface. -->
       <MachineSurface v-else-if="machine" :key="machine.id" :host="host" :session="session" :machine="machine" @ready="finishBillingReturn" />
@@ -88,6 +96,7 @@ if (props.host.onboarding) void loadOnboarding()
           <TeamSwitcher v-if="teams.length" />
           <div class="flex-1" />
           <AccountNotices />
+          <AppUpdateNotice />
           <AccountFooter />
         </aside>
         <main class="flex min-w-0 flex-1 flex-col">

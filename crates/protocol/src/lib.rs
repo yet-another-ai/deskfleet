@@ -1,4 +1,4 @@
-//! Transport-independent contracts shared by deskfleet components.
+//! Transport-independent contracts shared by DeskFleet components.
 //!
 //! Until the first explicit protocol freeze, evolve contracts in place at version 1.
 

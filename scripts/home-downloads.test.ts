@@ -1,10 +1,14 @@
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import { fetchLatestRelease, findDownload, releasesPage, type LatestRelease } from "../docs/.vitepress/theme/components/home/home-downloads.ts"
 
 const assetNames = [
   "deskfleet-0.2.0-mac-arm64.dmg", "deskfleet-0.2.0-mac-arm64.zip", "deskfleet-0.2.0-win-x64.exe",
-  "deskfleet-0.2.0-linux-x64.AppImage", "deskfleet-0.2.0-linux-arm64.AppImage",
+  "deskfleet-0.2.0-linux-x86_64.AppImage", "deskfleet-0.2.0-linux-arm64.AppImage",
   "deskfleet-macos-arm64.tar.gz", "deskfleet-windows-x64.tar.gz", "deskfleet-linux-x64.tar.gz", "deskfleet-linux-arm64.tar.gz",
 ]
 const release: LatestRelease = {
@@ -18,9 +22,60 @@ test("download selection distinguishes installers, archives, and Linux architect
   assert.equal(findDownload(release, "headless", "macos", "x64")?.name, "deskfleet-macos-arm64.tar.gz")
   assert.equal(findDownload(release, "headless", "windows", "arm64")?.name, "deskfleet-windows-x64.tar.gz")
   for (const arch of ["x64", "arm64"] as const) {
-    assert.equal(findDownload(release, "desktop", "linux", arch)?.name, `deskfleet-0.2.0-linux-${arch}.AppImage`)
+    const appImageArchitecture = arch === "x64" ? "x86_64" : "arm64"
+    assert.equal(findDownload(release, "desktop", "linux", arch)?.name, `deskfleet-0.2.0-linux-${appImageArchitecture}.AppImage`)
     assert.equal(findDownload(release, "headless", "linux", arch)?.name, `deskfleet-linux-${arch}.tar.gz`)
   }
+})
+
+test("release verification requires installers and update metadata for stable and prerelease builds", context => {
+  const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/publish.yml"), "utf8").replace(/\r\n/g, "\n")
+  const block = yaml.match(/^      - name: Verify release assets\n[\s\S]*?^        run: \|\n((?:          .*\n)+)/m)?.[1]
+  assert.ok(block, "Missing release asset verification step")
+  const directory = mkdtempSync(join(tmpdir(), "deskfleet-release-assets-"))
+  context.after(() => rmSync(directory, { recursive: true, force: true }))
+  mkdirSync(join(directory, "release-assets"))
+  const updaterAssets = [
+    "latest.yml", "latest-mac.yml", "latest-linux.yml", "latest-linux-arm64.yml",
+    "deskfleet-0.2.0-mac-arm64.zip.blockmap", "deskfleet-0.2.0-win-x64.exe.blockmap",
+  ]
+  const bash = process.platform === "win32"
+    ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+    : "bash"
+  const verify = (version: string) => spawnSync(bash, ["-eo", "pipefail", "-c", block.replace(/^ {10}/gm, "")], {
+    cwd: directory, env: { ...process.env, VERSION: version }, encoding: "utf8",
+  })
+  for (const version of [release.version, "0.2.0-beta.1"]) {
+    const names = [...assetNames, ...updaterAssets].map(name => name.replace("0.2.0", version))
+    for (const name of names) writeFileSync(join(directory, "release-assets", name), "fixture")
+    const result = verify(version)
+    assert.ifError(result.error)
+    assert.equal(result.status, 0, result.stderr)
+    for (const required of [`deskfleet-${version}-linux-x86_64.AppImage`, "latest-linux-arm64.yml", `deskfleet-${version}-mac-arm64.zip.blockmap`]) {
+      const path = join(directory, "release-assets", required)
+      unlinkSync(path)
+      assert.notEqual(verify(version).status, 0, `Missing ${required} must prevent publication`)
+      writeFileSync(path, "")
+      assert.notEqual(verify(version).status, 0, `Empty ${required} must prevent publication`)
+      writeFileSync(path, "fixture")
+    }
+    const dmgBlockmap = join(directory, "release-assets", `deskfleet-${version}-mac-arm64.dmg.blockmap`)
+    writeFileSync(dmgBlockmap, "fixture")
+    assert.equal(verify(version).status, 0, "A DMG blockmap may accompany the ZIP update target")
+    unlinkSync(dmgBlockmap)
+    for (const name of names) unlinkSync(join(directory, "release-assets", name))
+  }
+})
+
+test("the macOS ZIP alternative resolves independently of the primary installer", () => {
+  const archive = findDownload(release, "desktop", "macos", "x64", "archive")
+  assert.equal(archive?.name, "deskfleet-0.2.0-mac-arm64.zip")
+  assert.equal(archive?.url, `${releasesPage.replace("/latest", "")}/download/v0.2.0/deskfleet-0.2.0-mac-arm64.zip`)
+  const withoutArchive = { ...release, files: release.files.filter(file => !file.name.endsWith(".zip")) }
+  assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64", "archive"), undefined)
+  assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64")?.name, "deskfleet-0.2.0-mac-arm64.dmg")
+  assert.equal(findDownload(release, "headless", "macos", "x64", "archive"), undefined)
+  assert.equal(findDownload(release, "desktop", "linux", "x64", "archive"), undefined)
 })
 
 test("missing packages fall back to the release page without selecting another architecture", () => {

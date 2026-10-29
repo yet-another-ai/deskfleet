@@ -203,7 +203,7 @@ export class ComposerReferences {
       } else {
         const { session } = await this.#journal.read(reference.sessionId)
         if (session.workspaceId !== context.workspaceId || session.lifecycle === "deleting") throw new Error("Referenced Session is outside this Workspace or unavailable")
-        blocks.push({ type: "text", text: `Referenced deskfleet Session: ${JSON.stringify({ ...reference, title: session.title })}.\nFirst inspect its current snapshot with deskfleet_session({"sessionId":${JSON.stringify(session.id)}}). From the returned session.lastEventSeq, compute afterSeq as the decimal string for max(0, BigInt(session.lastEventSeq) - 100n). Call deskfleet_session_history with sessionId ${JSON.stringify(session.id)}, that afterSeq, and limit 100 to read its latest recorded context. Request earlier pages only if more context is needed.` })
+        blocks.push({ type: "text", text: `Referenced DeskFleet Session: ${JSON.stringify({ ...reference, title: session.title })}.\nFirst inspect its current snapshot with deskfleet_session({"sessionId":${JSON.stringify(session.id)}}). From the returned session.lastEventSeq, compute afterSeq as the decimal string for max(0, BigInt(session.lastEventSeq) - 100n). Call deskfleet_session_history with sessionId ${JSON.stringify(session.id)}, that afterSeq, and limit 100 to read its latest recorded context. Request earlier pages only if more context is needed.` })
       }
     }
     return blocks

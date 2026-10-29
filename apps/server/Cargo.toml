@@ -1,6 +1,6 @@
 [package]
 name = "deskfleet-server"
-description = "The deskfleet control-plane HTTP server"
+description = "The DeskFleet control-plane HTTP server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

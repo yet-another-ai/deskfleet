@@ -40,7 +40,27 @@ impl BillingService {
         };
         let customer = stripe_id(&object["customer"]).ok_or_else(ApiError::internal)?;
         let profile = store.billing_profile_by_customer(customer).await?;
-        self.reconcile_team(store, &profile.team_id).await
+        // Commit verified coverage before any extra historical analytics reads.
+        // A later analytics failure keeps this inbox event retryable.
+        self.reconcile_team(store, &profile.team_id).await?;
+        if self.config.statsig_server_key.is_some() && event.event_type.starts_with("invoice.") {
+            let subscription_id = stripe_id(&object["subscription"])
+                .or_else(|| stripe_id(&object["parent"]["subscription_details"]["subscription"]));
+            if let Some(id) = subscription_id {
+                let subscription = self
+                    .stripe(Method::GET, &format!("subscriptions/{id}"), vec![], None)
+                    .await?;
+                if let Some(fact) = self
+                    .invoice_analytics(store, &profile, &subscription, &object, Some(event), None)
+                    .await?
+                {
+                    store
+                        .record_billing_analytics(&profile.team_id, &[fact])
+                        .await?;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(super) async fn reconcile_team(&self, store: &ControlStore, team: &str) -> Result<()> {
@@ -99,6 +119,7 @@ impl BillingService {
                         &attempt.request_id,
                         session_id,
                         "expired",
+                        &[],
                     )
                     .await?;
             }
@@ -154,17 +175,19 @@ impl BillingService {
                 .filter(|v| v.len() == 1)
                 .and_then(|v| stripe_id(&v[0]["price"]))
                 .ok_or_else(ApiError::internal)?;
-            let plan = if self.config.go_price_id.as_deref() == Some(price_id) {
-                "go"
-            } else if self.config.pro_price_id.as_deref() == Some(price_id) {
-                "pro"
-            } else {
-                return Err(billing_error(
+            let plan = self.config.plan_for_price(price_id).ok_or_else(|| {
+                billing_error(
                     "unknown_subscription_price",
                     "The subscription price is not configured",
-                ));
-            };
-            let price = self.configured_price(plan).await?;
+                )
+            })?;
+            let interval = self.config.interval_for_price(price_id).ok_or_else(|| {
+                billing_error(
+                    "unknown_subscription_price",
+                    "The subscription price is not configured",
+                )
+            })?;
+            let price = self.configured_price(plan, interval).await?;
             let mut invoice = subscription["latest_invoice"].clone();
             if let Some(id) = invoice.as_str() {
                 invoice = self
@@ -172,7 +195,27 @@ impl BillingService {
                     .await?;
             }
             let projection = verified_projection(&profile, &subscription, &invoice, &price, plan)?;
-            store.apply_subscription(team, lease, &projection).await?;
+            let mut events = self
+                .subscription_analytics(store, &profile, &subscription, &projection)
+                .await?;
+            if let Some(fact) = self
+                .invoice_analytics(store, &profile, &subscription, &invoice, None, Some(&price))
+                .await?
+            {
+                events.push(fact);
+            }
+            // Completion also repairs a provider-created Checkout whose atomic
+            // session/outbox transaction never committed locally.
+            if let Some(request) = subscription["metadata"]["deskfleet_request_id"].as_str()
+                && let Some(attempt) = store.checkout_attempt(request).await?
+                && attempt.team_id == team
+                && let Some(fact) = self.checkout_analytics(&attempt)
+            {
+                events.push(fact);
+            }
+            store
+                .apply_subscription(team, lease, &projection, &events)
+                .await?;
             if let Some(request) = subscription["metadata"]["deskfleet_request_id"].as_str() {
                 store
                     .complete_checkout_request(team, lease, request)
@@ -180,7 +223,7 @@ impl BillingService {
             }
             if let Some((request, session)) = completed {
                 store
-                    .update_checkout_attempt(team, lease, &request, &session, "complete")
+                    .update_checkout_attempt(team, lease, &request, &session, "complete", &[])
                     .await?;
             }
         }

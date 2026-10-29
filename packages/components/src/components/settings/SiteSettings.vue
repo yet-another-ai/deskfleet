@@ -27,10 +27,15 @@ const changed = computed(() => !!form.value?.siteName.trim() && (
   form.value.siteName.trim() !== current.value?.siteName
   || form.value.announcement !== current.value?.announcement
   || form.value.allowTeamCreation !== current.value?.allowTeamCreation
+  || form.value.termsOfServiceUrl.trim() !== current.value?.termsOfServiceUrl
+  || form.value.privacyTermsUrl.trim() !== current.value?.privacyTermsUrl
 ))
 const { isLoading: saving, isReady: saved, error: saveError, executeImmediate: save } = useAsyncState(
   async () => {
-    const settings = await props.api.updateSiteSettings({ ...form.value!, siteName: form.value!.siteName.trim() })
+    const settings = await props.api.updateSiteSettings({
+      ...form.value!, siteName: form.value!.siteName.trim(),
+      termsOfServiceUrl: form.value!.termsOfServiceUrl.trim(), privacyTermsUrl: form.value!.privacyTermsUrl.trim(),
+    })
     current.value = settings
     form.value = { ...settings }
     session.site.value = settings
@@ -63,6 +68,17 @@ function submit(): void {
         <template #description>{{ t("siteAdmin.allowTeamCreationDescription") }}</template>
         <UiSwitch v-model="form.allowTeamCreation" :aria-labelledby="`${id}-teams`" name="allow-team-creation" :disabled="saving" />
       </SettingsRow>
+      <label class="ui-setting flex min-h-14 flex-col gap-2 py-3 text-sm lg:flex-row lg:items-center lg:justify-between lg:gap-6" :for="`${id}-terms`">
+        {{ t("siteAdmin.termsOfServiceUrl") }}
+        <input :id="`${id}-terms`" v-model="form.termsOfServiceUrl" class="ui-input w-full lg:w-64" type="url" name="terms-of-service-url" autocomplete="off" :disabled="saving" />
+      </label>
+      <label class="ui-setting flex flex-col gap-2 py-3 text-sm" :for="`${id}-privacy`">
+        <span class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+          {{ t("siteAdmin.privacyTermsUrl") }}
+          <input :id="`${id}-privacy`" v-model="form.privacyTermsUrl" class="ui-input w-full lg:w-64" type="url" name="privacy-terms-url" autocomplete="off" :disabled="saving" />
+        </span>
+        <span class="text-[13px] text-ui-text-muted">{{ t("siteAdmin.termsDescription") }}</span>
+      </label>
       <label class="flex flex-col gap-2 py-4 text-sm" :for="`${id}-announcement`">
         {{ t("siteAdmin.announcement") }}
         <textarea :id="`${id}-announcement`" v-model="form.announcement" class="ui-input min-h-28 resize-y" name="announcement" maxlength="10000" rows="4" :disabled="saving" />

@@ -10,6 +10,7 @@ CREATE TABLE cp_billing_profiles (
 CREATE TABLE cp_checkout_attempts (
  request_id TEXT PRIMARY KEY, team_id BIGINT NOT NULL REFERENCES cp_teams(id),
  plan TEXT NOT NULL CHECK(plan IN ('go','pro')),
+ billing_interval TEXT NOT NULL DEFAULT 'month' CHECK(billing_interval IN ('month','year')),
  session_id TEXT UNIQUE, status TEXT NOT NULL CHECK(status IN ('pending','open','complete','expired')),
  created_at BIGINT NOT NULL
 );

@@ -125,7 +125,13 @@ export interface ConversationResponse {
 }
 export type TranscriptEntry = Extract<ConversationEntry, { kind: "input" }> | ConversationResponse
 
-const liveTurnStates: AgentTurn["state"][] = ["starting", "running", "cancelling"]
+/** Turn states that mean the agent is still producing work for a Session. */
+export const liveTurnStates: AgentTurn["state"][] = ["starting", "running", "cancelling"]
+
+/** Whether a snapshot currently has a live turn (starting, running, or cancelling). */
+export function snapshotIsWorking(snapshot: Pick<AgentSnapshot, "turns"> | null | undefined): boolean {
+  return !!snapshot?.turns.some(turn => liveTurnStates.includes(turn.state))
+}
 
 /** Groups projected entries into user messages and the agent responses that follow them. */
 export function groupTranscript(entries: ConversationEntry[], snapshot: AgentSnapshot): TranscriptEntry[] {

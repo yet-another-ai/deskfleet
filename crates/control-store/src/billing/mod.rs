@@ -1,10 +1,12 @@
 //! Team-owned subscriptions, manual overrides, and authoritative usage admission.
 mod admin;
 mod admissions;
+mod analytics;
 mod payments;
 mod period;
 
 pub use admin::AdminBillingPage;
+pub use analytics::{BillingAnalyticsDelivery, BillingAnalyticsEvent};
 pub use payments::{CheckoutAttempt, PaymentEvent, SubscriptionProjection};
 pub use period::period_at;
 

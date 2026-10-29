@@ -2,8 +2,9 @@ import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi, CentralEvent, Machine } from "./central.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { remoteMachineClient } from "./remote.ts"
+import { setPeerTelemetrySink } from "./peer-telemetry.ts"
 const disposers: (() => void)[] = []
-afterEach(() => { for (const dispose of disposers.splice(0)) dispose(); vi.useRealTimers() })
+afterEach(() => { for (const dispose of disposers.splice(0)) dispose(); setPeerTelemetrySink(undefined); vi.useRealTimers() })
 function fixture() {
   let listener!: (event: CentralEvent) => void
   const central = {
@@ -41,6 +42,31 @@ test("revokes only the matching peer and sends management over the central RPC",
   expect(f.central.rpc).toHaveBeenCalledWith("central7", "_deskfleet/session/rename", { sessionId: "1", operationId: "rename-op", title: "Investigate payment errors" })
   expect(f.remote.api.agent.control!("_deskfleet/input/submit", { sessionId: "1", operationId: "prompt", content: [], delivery: "backlog" })).toBeUndefined()
   expect(await f.remote.api.agent.history!.list()).toEqual([{ id: "1" }])
+})
+
+test.each(["agent", "terminal", "desktop"] as const)("records %s grants and the first observed connection outcome", async feature => {
+  const f = fixture(), sink = vi.fn()
+  setPeerTelemetrySink(sink)
+  await f.remote.api[feature].prepare!("local-peer")
+  const connected = { kind: "stateChanged", state: "connected" } as const
+  f.emit({ type: "peerEvent", peerId: "other-peer", event: connected })
+  f.emit({ type: "peerEvent", peerId: "peer1", event: connected })
+  f.emit({ type: "peerEvent", peerId: "peer1", event: connected })
+  const failed = { kind: "stateChanged", state: "failed" } as const
+  f.emit({ type: "peerEvent", peerId: "peer1", event: failed })
+  expect(sink.mock.calls.map(([event]) => event)).toEqual([
+    { name: "peer_granted", teamId: "team2", metadata: { feature, relay: "allowed" } },
+    { name: "peer_connection", teamId: "team2", metadata: { feature, relay: "allowed", outcome: "connected", transport: "unknown" } },
+  ])
+})
+
+test("an offer failure records a failed attempt without exporting its error", async () => {
+  const f = fixture(), sink = vi.fn()
+  setPeerTelemetrySink(sink)
+  await f.remote.api.agent.prepare!("local-peer")
+  vi.mocked(f.central.offerPeer).mockRejectedValueOnce(new Error("Sensitive server details"))
+  await expect(f.remote.api.agent.offer({ sessionId: "local-peer", sdp: "offer" })).rejects.toThrow("Sensitive server details")
+  expect(sink).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "team2", metadata: { feature: "agent", relay: "allowed", outcome: "failed", transport: "unknown" } })
 })
 
 test("retains known terminal tabs during a daemon signaling outage", async () => {

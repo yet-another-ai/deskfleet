@@ -1,4 +1,5 @@
 import { relayFailureMessage, type RelayDeniedReason } from "./relay.ts"
+import { observePeerGrant, type PeerConnectionTelemetry } from "./peer-telemetry.ts"
 import type { CentralApi } from "./central.ts"
 import type { IceCandidate } from "./desktop-media.ts"
 
@@ -35,6 +36,7 @@ export async function connectPortPeer(
 ): Promise<PortConnection> {
   let peerId: string | undefined, peer: PortPeer | undefined
   let relayDeniedReason: RelayDeniedReason | null | undefined
+  let telemetry: PeerConnectionTelemetry | undefined
   let closed = false, opened = false, remoteReady = false, offered = false, grantClosed = false
   let localSdp = "", remoteSdp = ""
   let localSending = Promise.resolve(), remoteAdding = Promise.resolve()
@@ -66,19 +68,20 @@ export async function connectPortPeer(
     closing = closeNative()
     return closing
   }
-  function fail(error: Error): void {
+  function fail(error: Error, connectionFailure = true): void {
     if (closed) return
+    if (connectionFailure) telemetry?.failed()
     rejectReady(error)
     void close().catch(() => {})
     failed(error)
   }
-  function abort(): void { fail(new Error("Port connection was cancelled")) }
+  function abort(): void { fail(new Error("Port connection was cancelled"), false) }
   function connectionFailed(error: Error): void {
     const detail = relayFailureMessage(relayDeniedReason)
     fail(detail ? new Error(detail) : error)
   }
   function checkReady(): void {
-    if (opened && remoteReady && !closed) { clearTimeout(setup); resolveReady() }
+    if (opened && remoteReady && !closed) { clearTimeout(setup); telemetry?.connected(); resolveReady() }
   }
   function flushLocal(): void {
     if (!offered || closed) return
@@ -101,9 +104,9 @@ export async function connectPortPeer(
     }).catch(error => fail(asError(error)))
   }
   unsubscribe = central.onEvent(event => {
-    if (event.type === "accountChanged") { fail(new Error("Account changed; reconnect ports")); return }
+    if (event.type === "accountChanged") { fail(new Error("Account changed; reconnect ports"), false); return }
     if ((event.type !== "peerEvent" && event.type !== "peerRevoked") || event.peerId !== peerId) return
-    if (event.type === "peerRevoked") { fail(new Error(event.reason)); return }
+    if (event.type === "peerRevoked") { fail(new Error(event.reason), false); return }
     const value = event.event
     if (value.kind === "iceCandidate" && "candidate" in value) {
       remoteCandidates.push(value.candidate as IceCandidate); flushRemote()
@@ -120,9 +123,10 @@ export async function connectPortPeer(
     peerId = grant.peerId
     relayDeniedReason = grant.relayDeniedReason
     if (closed) { closeGrant(); return }
+    telemetry = observePeerGrant("ports", grant, target.teamId)
     const expires = Date.parse(grant.authorization.expiresAt)
     if (!Number.isFinite(expires) || expires <= Date.now()) throw new Error("Port authorization expired")
-    lifetime = setTimeout(() => fail(new Error("Port authorization expired; reconnect to continue")), expires - Date.now())
+    lifetime = setTimeout(() => fail(new Error("Port authorization expired; reconnect to continue"), false), expires - Date.now())
     peer = await factory(grant.iceServers, {
       candidate: value => { localCandidates.push(value); flushLocal() },
       open: () => { opened = true; checkReady() }, fail: connectionFailed,
@@ -143,6 +147,7 @@ export async function connectPortPeer(
     if (closed || !peer) throw new Error("Port connection is closed")
     return { localPort: peer.localPort, close }
   } catch (error) {
+    if (!closed) telemetry?.failed()
     void close().catch(() => {})
     throw error
   }

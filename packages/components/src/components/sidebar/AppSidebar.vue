@@ -12,6 +12,7 @@ import { useLayoutStore } from "../../stores/layout.ts"
 import WindowToolbar from "../chrome/WindowToolbar.vue"
 import IconButton from "../common/IconButton.vue"
 import AccountNotices from "./AccountNotices.vue"
+import AppUpdateNotice from "./AppUpdateNotice.vue"
 import MachineSection from "./MachineSection.vue"
 import PinnedSessions from "./PinnedSessions.vue"
 import SidebarFooter from "./SidebarFooter.vue"
@@ -105,6 +106,7 @@ function refresh(): void {
     </div>
 
     <AccountNotices />
+    <AppUpdateNotice />
     <SidebarFooter />
   </aside>
 </template>

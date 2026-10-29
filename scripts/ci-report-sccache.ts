@@ -23,7 +23,8 @@ try {
     ["Hit rate", hits + misses ? `${(100 * hits / (hits + misses)).toFixed(1)}%` : "n/a"],
     ["Writes", stats.cache_writes], ["Read errors", stats.cache_read_errors], ["Write errors", stats.cache_write_errors]
   ]
-  const mode = process.env.SCCACHE_GHA_RW_MODE === "READ_WRITE" ? "READ_WRITE" : "READ_ONLY"
+  const gha = ["1", "true", "on"].includes(process.env.SCCACHE_GHA_ENABLED ?? "")
+  const mode = !gha ? "local" : process.env.SCCACHE_GHA_RW_MODE === "READ_WRITE" ? "READ_WRITE" : "READ_ONLY"
   const report = [
     "### Compiler cache", "", `Mode: ${mode}`, "", "| Metric | Value |", "| --- | ---: |",
     ...rows.map(([label, value]) => `| ${label} | ${value} |`), ""

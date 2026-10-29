@@ -1,9 +1,12 @@
-import { mount } from "@vue/test-utils"
+import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
 import { expect, test } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
+import { agentSnapshot } from "../../test/agent.ts"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
+import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
+import { useFleetStore } from "../../stores/fleet.ts"
 import MachineSection from "./MachineSection.vue"
 
 async function setup(machine: Partial<MachineSummary> = {}) {
@@ -12,6 +15,7 @@ async function setup(machine: Partial<MachineSummary> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: "/", name: "new-session", component: {} },
       { path: "/machines/:machineId/control", name: "machine-control", component: {} },
       { path: "/workspaces/:workspaceId", name: "workspace", component: {} },
       { path: "/sessions/:sessionId", name: "session", component: {} },
@@ -47,8 +51,28 @@ test.each([
   wrapper.unmount()
 })
 
-test("machine tool consolidation preserves Workspace and Session navigation", async () => {
-  const { wrapper } = await setup({
+test("new session buttons select their workspace, including from the creation page", async () => {
+  const { wrapper, router } = await setup({
+    workspaces: ["first", "second"].map(id => ({ id, name: id, directories: [{ path: `/${id}` }], sessions: [], terminals: [] })),
+  })
+  const fleet = useFleetStore()
+  const folder = wrapper.get('button[aria-label="first"]')
+  await folder.trigger("click")
+  const buttons = wrapper.findAll('button[aria-label="New session"]')
+  await buttons[0]!.trigger("click")
+  await flushPromises()
+  expect(fleet.targetWorkspaceId).toBe("first")
+  expect(router.currentRoute.value.name).toBe("new-session")
+  expect(folder.attributes("aria-expanded")).toBe("false")
+  await buttons[1]!.trigger("click")
+  await flushPromises()
+  expect(fleet.targetWorkspaceId).toBe("second")
+  expect(router.currentRoute.value.name).toBe("new-session")
+  wrapper.unmount()
+})
+
+test("workspace rows navigate while their icon buttons fold terminals and sessions", async () => {
+  const { wrapper, router } = await setup({
     desktop: true,
     workspaces: [{
       id: "workspace", name: "Project", directories: [{ path: "/project" }],
@@ -62,6 +86,52 @@ test("machine tool consolidation preserves Workspace and Session navigation", as
     ["Workspace shell", "/terminals/workspace-shell"],
     ["Implement feature", "/sessions/session"],
   ])
+  const folder = wrapper.get('button[aria-label="Project"]')
+  await wrapper.get('a[href="/workspaces/workspace"]').trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.name).toBe("workspace")
+  expect(folder.attributes("aria-expanded")).toBe("true")
+  const path = router.currentRoute.value.fullPath
+  expect(folder.attributes("aria-expanded")).toBe("true")
+  await folder.trigger("click")
+  expect(folder.attributes("aria-expanded")).toBe("false")
+  expect(wrapper.find('a[href="/sessions/session"]').exists()).toBe(false)
+  expect(wrapper.find('a[href="/terminals/workspace-shell"]').exists()).toBe(false)
+  expect(router.currentRoute.value.fullPath).toBe(path)
+  await folder.trigger("click")
+  expect(folder.attributes("aria-expanded")).toBe("true")
+  expect(wrapper.get('a[href="/sessions/session"]').text()).toBe("Implement feature")
+  expect(wrapper.get('a[href="/terminals/workspace-shell"]').text()).toBe("Workspace shell")
   expect(wrapper.text()).not.toContain("Machine shell")
+  wrapper.unmount()
+})
+
+test("session rows show a working indicator while a live turn is projected", async () => {
+  const { wrapper } = await setup({
+    sessions: [{ id: "machine-session", title: "Machine chat", provider: "Codex", archiveState: "active" }],
+    workspaces: [{
+      id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [],
+      sessions: [{ id: "workspace-session", title: "Implement feature", provider: "Codex", archiveState: "active" }],
+    }],
+  })
+  expect(wrapper.findAll("[data-session-working]")).toHaveLength(0)
+  const agents = useAgentSessionsStore()
+  const live = agentSnapshot()
+  live.session.id = "workspace-session"
+  live.turns = [{ id: "70", sessionId: "workspace-session", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
+  agents.views["workspace-session"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+  await flushPromises()
+  const working = wrapper.findAll("[data-session-working]")
+  expect(working).toHaveLength(1)
+  expect(working[0]!.attributes("role")).toBe("status")
+  expect(working[0]!.text()).toContain("Working")
+  expect(wrapper.get('a[href="/sessions/workspace-session"]').find("[data-session-working]").exists()).toBe(true)
+  expect(wrapper.find('a[href="/sessions/machine-session"] [data-session-working]').exists()).toBe(false)
+  agents.views["workspace-session"] = {
+    ...agents.views["workspace-session"]!,
+    snapshot: { ...live, turns: [{ ...live.turns[0]!, state: "completed", endedAt: "now" }] },
+  }
+  await flushPromises()
+  expect(wrapper.findAll("[data-session-working]")).toHaveLength(0)
   wrapper.unmount()
 })

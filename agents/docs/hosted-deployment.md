@@ -29,7 +29,7 @@ gate and cannot establish that Go/Pro billing works.
 | Test machines | End-to-end acceptance | Install Electron and/or the standalone daemon, Git, and an authenticated real Agent CLI on the execution machines. |
 
 The API contains its billing reconciliation worker and TURN collector; neither
-needs a separate worker service. Accounts are deskfleet-owned, so no OIDC service
+needs a separate worker service. Accounts are DeskFleet-owned, so no OIDC service
 is required. There is no central object store. Workspaces, Agent credentials,
 SQLite journals, and terminal transcripts remain on enrolled machines.
 Replicas need no new routing environment variables or Redis broker. Configure
@@ -125,20 +125,26 @@ is not a supported retargeting procedure.
 
 ### Stripe test-mode environment
 
-Leave all five variables unset during the initial Free/Enterprise pass. To test
-payments, configure all five from the same Stripe test environment:
+Leave all Stripe payment variables unset during the initial Free/Enterprise pass.
+To test payments, configure all eight from the same Stripe test environment:
 
 ```dotenv
 DESKFLEET_STRIPE_SECRET_KEY=REPLACE_STRIPE_TEST_SECRET_KEY
 DESKFLEET_STRIPE_WEBHOOK_SECRET=REPLACE_STRIPE_TEST_WEBHOOK_SECRET
 DESKFLEET_STRIPE_GO_PRICE_ID=REPLACE_GO_MONTHLY_PRICE_ID
 DESKFLEET_STRIPE_PRO_PRICE_ID=REPLACE_PRO_MONTHLY_PRICE_ID
-DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID=REPLACE_PORTAL_CONFIGURATION_ID
+DESKFLEET_STRIPE_GO_YEARLY_PRICE_ID=REPLACE_GO_YEARLY_PRICE_ID
+DESKFLEET_STRIPE_PRO_YEARLY_PRICE_ID=REPLACE_PRO_YEARLY_PRICE_ID
+DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID=REPLACE_MONTHLY_PORTAL_CONFIGURATION_ID
+DESKFLEET_STRIPE_YEARLY_PORTAL_CONFIGURATION_ID=REPLACE_YEARLY_PORTAL_CONFIGURATION_ID
+# Optional Enterprise sales mailbox on Plans & Usage:
+# DESKFLEET_ENTERPRISE_CONTACT_EMAIL=sales@example.com
 ```
 
-Partial Stripe configuration fails startup. The two Prices must be distinct,
-monthly, positive fixed amounts, on the same Product and currency, with Go
-cheaper than Pro. Configure Portal price changes and cancellation according to
+Partial Stripe configuration fails startup. The four Prices must be distinct,
+positive fixed amounts (monthly and yearly recurring), on the same Product and
+currency, with Go cheaper than Pro in each interval. Use two Portal
+configurations (monthly Prices only, yearly Prices only) as described in
 [Stripe operations](stripe.md#billing-portal). Register
 `https://fleet.example.com/api/billing/stripe/webhook` using the supported events
 in [the webhook handler](../../apps/server/src/billing/webhook.rs). There is no
@@ -156,7 +162,7 @@ frontend Stripe publishable-key environment variable in this Checkout flow.
   Compose loopback address, development secret, and `allow-loopback-peers` are
   local fixtures, not public deployment values.
 - Redis: configure private reachability and credentials for both coturn and the
-  API. There is no deskfleet-defined Redis-server password variable. Pub/Sub has
+  API. There is no DeskFleet-defined Redis-server password variable. Pub/Sub has
   no replay; separate Redis instances isolate environments, not database indices.
 - Test machines: `DESKFLEET_DAEMON_DIRECTORY` optionally selects the daemon data
   directory (default `~/.deskfleet`). Enroll using `--server-url` and the issued
@@ -170,12 +176,48 @@ it unset for the same-origin production Web layout above. For split hosts, build
 `DESKFLEET_AUTH_WEB_URL=https://app.example.com` and
 `DESKFLEET_WEB_ORIGINS=https://app.example.com`. Changing the static host's runtime
 environment does not rewrite an existing bundle. Electron defaults to
-`http://localhost:8080`; build the official desktop artifacts with
-`VITE_DESKFLEET_SERVER_URL=https://fleet.example.com`. Neither client exposes
-a backend-address setting. Changing a compiled API origin requires rebuilding
-that client; an unset production Web build follows the origin serving its page.
+`http://localhost:8080`. Set `VITE_DESKFLEET_SERVER_URL=https://fleet.example.com`
+in the GitHub `production` environment for official desktop artifacts; the tag
+build rejects a missing or empty value and injects it only into Electron. The
+tagged Web artifact stays same-origin. Neither client exposes a backend-address
+setting. Changing a compiled API origin requires rebuilding that client; an
+unset production Web build follows the origin serving its page.
 
-The tag workflow requires these GitHub Actions secrets, separate from API secrets:
+Create the `production` environment under Repository Settings → Environments.
+Use **Selected branches and tags** with a **Tag** rule matching `v*` and no
+allowed branches. Store production variables and secrets only in this
+environment, removing repository and organization copies. PR, main, and manual
+Build runs do not bind it: Statsig stays disabled, and Electron retains its
+localhost backend. See [tagged releases](ci.md#tagged-releases) for the complete
+configuration.
+
+Statsig is optional and configured at build time for both Web and Electron. The
+tag build workflow reads the `production` environment variables
+`VITE_STATSIG_CLIENT_KEY` and `VITE_STATSIG_ENVIRONMENT`; neither is required. Use a
+Statsig client-public SDK key, which is included in the distributed JavaScript,
+never a server secret key. An unset or blank key disables the integration. The
+environment defaults to the Vite mode when its value is absent or blank; set it
+explicitly when a build mode should report to a different Statsig environment.
+Local builds accept the same process environment variables. A change requires
+rebuilding and redistributing the affected clients, not restarting the API.
+
+For verified payment conversions, separately configure the API runtime with
+`DESKFLEET_STATSIG_SERVER_KEY` and `DESKFLEET_STATSIG_ENVIRONMENT` (default
+`production`) for the same Statsig project/tier. This server key is secret and
+must never enter a frontend build. Migration 10 adds the durable billing event
+outbox; its delivery worker is independent of Stripe reconciliation. The
+[analytics guide](analytics.md#payment-funnel) defines conversion metrics and
+delivery guarantees. Both frontend and backend analytics are optional.
+
+When enabled, allow `https://featureassets.org`, `https://prodregistryv2.org`, and
+`https://statsigapi.net` in the Web host's `connect-src` policy. The Electron
+build adds these origins only when its key is configured. Statsig owns behavioral
+analytics and frontend experiments; API/daemon authorization and quota admission
+remain authoritative. See the [Web](../../apps/web/README.md) and
+[desktop](../../apps/desktop/README.md) guides for environment-file locations.
+
+The tag workflow requires these secrets in the GitHub `production` environment,
+separate from API secrets:
 
 | Secret | Purpose |
 | --- | --- |
@@ -206,12 +248,7 @@ Before tagging, account for these current behaviors:
    assets. It does not deploy the API or Web application. `deskfleet-web` is a
    same-origin Actions artifact retained for 14 days, not a GitHub Release asset;
    retain and deploy the build from the selected tag.
-4. The tag build workflow currently does not supply `VITE_DESKFLEET_SERVER_URL`.
-   Before tagging, configure its Electron build steps with the official API
-   origin. Without that change, desktop artifacts target `http://localhost:8080`,
-   and testers cannot change that address in the welcome screen. Keep the Web
-   build variable unset if its artifact should remain same-origin.
-5. The repository has no production Compose stack. The server image contains
+4. The repository has no production Compose stack. The server image contains
    only the API, runs as UID/GID `10001:10001`, and needs no application data
    volume. PostgreSQL and execution-machine data need persistent storage.
 
@@ -262,8 +299,9 @@ Before tagging, account for these current behaviors:
    operations only after checking their receipts. Temporarily deny an instance's
    database access and confirm it closes signaling rather than continuing to
    trust local routes; restore access and confirm recovery.
-9. Enable the five Stripe test settings. Complete Checkout, confirm the webhook
-   and paid entitlement, then test Portal upgrade, downgrade, and cancellation.
+9. Enable the eight Stripe test settings. Complete monthly and yearly Checkout,
+   confirm the webhook and paid entitlement, then test Portal upgrade, downgrade,
+   and cancellation within each interval (Portal does not switch intervals).
    Use a Go/Pro Team to verify relay and usage. Missing/stale metering must deny
    new metered relay credentials (`metering_unavailable`); exhausting allowance
    must deny new relay (`turn_quota_exhausted`). Existing grants retain their

@@ -227,7 +227,7 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
         cancel_at_period_end: false,
     };
     store
-        .apply_subscription(&team, &lease, &projection)
+        .apply_subscription(&team, &lease, &projection, &[])
         .await
         .unwrap();
     store
@@ -357,7 +357,7 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
         ..projection
     };
     store
-        .apply_subscription(&team, &lease, &upgraded)
+        .apply_subscription(&team, &lease, &upgraded, &[])
         .await
         .unwrap();
     store
@@ -486,11 +486,11 @@ async fn payment_inbox_and_profile_leases_fence_stale_workers() {
     let (store, _, team, _) = fixture().await;
     let id = format!("evt_{}", uuid::Uuid::new_v4());
     store
-        .receive_payment_event(&id, "invoice.paid", "in_test")
+        .receive_payment_event(&id, "invoice.paid", "in_test", None, None)
         .await
         .unwrap();
     store
-        .receive_payment_event(&id, "invoice.paid", "in_test")
+        .receive_payment_event(&id, "invoice.paid", "in_test", None, None)
         .await
         .unwrap();
     let event = store.claim_payment_event().await.unwrap().unwrap();
