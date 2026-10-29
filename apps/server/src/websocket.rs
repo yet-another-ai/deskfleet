@@ -150,7 +150,8 @@ async fn connect(
             Ok::<_, ()>(())
         }
         .await;
-        let mut close_code = 1000;
+        // A failed initial reconciliation is a service failure, not a normal close.
+        let mut close_code = if setup.is_ok() { 1000 } else { 1012 };
         let mut heartbeat = tokio::time::interval(Duration::from_secs(20));
         let mut last_pong = std::time::Instant::now();
         while setup.is_ok() {

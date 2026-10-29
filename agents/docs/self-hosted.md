@@ -475,6 +475,22 @@ Version 6 backfills summaries and TURN aggregates, so its first startup performs
 work proportional to existing history and holds the usage write lock during
 that backfill. Subsequent starts do not repeat it.
 
+Version 11 backfills `transport: "webrtc"` in stored peer authorizations created
+before local IPC channels were introduced. Existing explicit transports are
+preserved. This includes expired and revoked authorizations because close and
+revocation operations also read them. Without this migration, an active old
+authorization can fail decoding during daemon reconnection and leave its
+machine repeatedly reconnecting and appearing offline.
+
+Application logs distinguish control-plane database errors from stored JSON
+decoding failures. Database diagnostics include the error phase and SQLSTATE
+when the driver provides one; JSON diagnostics include the category, position,
+and missing field name when available. These logs omit database messages and
+record contents. Reconnection errors from peer reconciliation include the
+`reconcile_daemon` span and machine
+ID. A failed initial reconciliation closes the control socket with code `1012`
+so the daemon retries without revoking its registration.
+
 The provisional OIDC database is not compatible with this schema. That database
 contained development data and must be rebuilt; see the
 [development reset](environment.md#fresh-development-database-and-reset).

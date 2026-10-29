@@ -11,6 +11,7 @@ impl Hub {
         self.send_current(machine, connection, message).await
     }
 
+    #[tracing::instrument(skip_all, fields(machine_id = machine))]
     pub(crate) async fn reconcile_daemon(&self, machine: &str, connection: &str) -> Result<()> {
         // A peer offer must not overtake a snapshot that predates its grant.
         // The same gate also fences local connection replacement and lease reset.
