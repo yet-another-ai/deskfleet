@@ -90,6 +90,10 @@ mod tests {
     }
 
     async fn provider(req: HttpRequest, state: web::Data<Provider>) -> HttpResponse {
+        assert_eq!(
+            req.headers().get("Stripe-Version").unwrap(),
+            "2026-09-30.endive"
+        );
         if req.path() == "/v1/invoices/invoice_fast" {
             // The inbox's first tick can claim this event immediately, but its
             // provider response waits until periodic repair is demonstrably blocked.
@@ -168,8 +172,7 @@ mod tests {
                 pro_price_id: Some("price_pro".into()),
                 go_yearly_price_id: Some("price_go_year".into()),
                 pro_yearly_price_id: Some("price_pro_year".into()),
-                portal_configuration_id: Some("bpc_month".into()),
-                yearly_portal_configuration_id: Some("bpc_year".into()),
+                portal_configuration_id: Some("bpc_deskfleet".into()),
                 enterprise_contact_email: None,
                 statsig_server_key: None,
                 statsig_environment: None,

@@ -14,6 +14,7 @@ struct Provider {
     historical_invoices: HashMap<String, Value>,
     price_reads: Vec<String>,
     price_reads_remaining: Option<usize>,
+    portal_configurations: Vec<String>,
     created: usize,
     expired: usize,
 }
@@ -22,7 +23,10 @@ async fn provider(
     body: web::Bytes,
     state: web::Data<Mutex<Provider>>,
 ) -> HttpResponse {
-    assert_eq!(req.headers().get("Stripe-Version").unwrap(), "2024-06-20");
+    assert_eq!(
+        req.headers().get("Stripe-Version").unwrap(),
+        "2026-09-30.endive"
+    );
     let fields: HashMap<String, String> = url::form_urlencoded::parse(&body).into_owned().collect();
     let path = req.path();
     let mut state = state.lock().unwrap();
@@ -36,7 +40,34 @@ async fn provider(
         }
         let yearly = plan.ends_with("_year");
         let base = plan.trim_end_matches("_year");
-        json!({"id":format!("price_{plan}"),"active":true,"type":"recurring","recurring":{"interval":if yearly{"year"}else{"month"},"interval_count":1},"unit_amount":if base=="go"{if yearly{5000}else{500}}else{if yearly{15000}else{1500}},"currency":"usd","product":"prod_deskfleet"})
+        json!({"id":format!("price_{plan}"),"active":true,"type":"recurring","recurring":{"interval":if yearly{"year"}else{"month"},"interval_count":1},"unit_amount":if base=="go"{if yearly{5000}else{500}}else{if yearly{15000}else{1500}},"currency":"usd","product":format!("prod_{base}")})
+    } else if path == "/v1/billing_portal/configurations/bpc_deskfleet" {
+        json!({
+            "id":"bpc_deskfleet","active":true,
+            "features":{
+                "subscription_update":{
+                    "enabled":true,"default_allowed_updates":["price"],
+                    "proration_behavior":"always_invoice",
+                    "schedule_at_period_end":{"conditions":[]},
+                    "products":[
+                        {"product":"prod_go","prices":["price_go","price_go_year"]},
+                        {"product":"prod_pro","prices":["price_pro","price_pro_year"]}
+                    ]
+                },
+                "subscription_cancel":{"enabled":true,"mode":"at_period_end"},
+                "invoice_history":{"enabled":true},
+                "payment_method_update":{"enabled":true}
+            }
+        })
+    } else if path == "/v1/billing_portal/sessions" && req.method() == "POST" {
+        assert_eq!(fields["customer"], state.customer);
+        assert!(fields["return_url"].starts_with("https://web.example.test/"));
+        assert!(fields["return_url"].ends_with("billing_return=portal"));
+        state
+            .portal_configurations
+            .push(fields["configuration"].clone());
+        let id = format!("bps_{}", uuid::Uuid::new_v4());
+        json!({"id":id,"url":format!("https://billing.stripe.com/p/session/{id}")})
     } else if path == "/v1/customers" {
         state.team = fields["metadata[deskfleet_team_id]"].clone();
         if state.customer.is_empty() {
@@ -45,6 +76,7 @@ async fn provider(
         json!({"id":state.customer})
     } else if path == "/v1/checkout/sessions" && req.method() == "POST" {
         assert_eq!(fields["mode"], "subscription");
+        assert_eq!(fields["subscription_data[billing_mode][type]"], "flexible");
         assert_eq!(fields["line_items[0][quantity]"], "1");
         assert_eq!(fields["customer"], state.customer);
         assert!(fields["success_url"].starts_with("https://web.example.test/"));
@@ -95,6 +127,22 @@ async fn provider(
     HttpResponse::Ok().json(value)
 }
 
+fn fixture_config() -> BillingConfig {
+    BillingConfig {
+        hosted: true,
+        stripe_secret_key: Some("sk_test_fixture".into()),
+        stripe_webhook_secret: Some("whsec_fixture".into()),
+        go_price_id: Some("price_go".into()),
+        pro_price_id: Some("price_pro".into()),
+        go_yearly_price_id: Some("price_go_year".into()),
+        pro_yearly_price_id: Some("price_pro_year".into()),
+        portal_configuration_id: Some("bpc_deskfleet".into()),
+        enterprise_contact_email: None,
+        statsig_server_key: Some("secret-fixture".into()),
+        statsig_environment: None,
+    }
+}
+
 #[actix_web::test]
 #[ignore = "requires PostgreSQL TEST_DATABASE_URL; Stripe is replaced by a local HTTP fixture"]
 async fn checkout_recovery_and_verified_payment_projection() {
@@ -125,20 +173,7 @@ async fn checkout_recovery_and_verified_payment_projection() {
     .run();
     let handle = server.handle();
     let task = actix_web::rt::spawn(server);
-    let config = BillingConfig {
-        hosted: true,
-        stripe_secret_key: Some("sk_test_fixture".into()),
-        stripe_webhook_secret: Some("whsec_fixture".into()),
-        go_price_id: Some("price_go".into()),
-        pro_price_id: Some("price_pro".into()),
-        go_yearly_price_id: Some("price_go_year".into()),
-        pro_yearly_price_id: Some("price_pro_year".into()),
-        portal_configuration_id: Some("bpc_month".into()),
-        yearly_portal_configuration_id: Some("bpc_year".into()),
-        enterprise_contact_email: None,
-        statsig_server_key: Some("secret-fixture".into()),
-        statsig_environment: None,
-    };
+    let config = fixture_config();
     let mut service = BillingService::new(config, "https://web.example.test".into()).unwrap();
     service.api_base = format!("http://{address}/v1");
     let first = uuid::Uuid::new_v4().to_string();
@@ -185,9 +220,20 @@ async fn checkout_recovery_and_verified_payment_projection() {
             .sessions
             .get_mut(&format!("cs_{}_2", team.id))
             .unwrap()["subscription"] = json!(sub);
-        state.subscription = Some(
-            json!({"id":sub,"customer":customer,"metadata":{"deskfleet_team_id":team.id,"deskfleet_request_id":second},"items":{"data":[{"price":{"id":"price_go"},"quantity":1}]},"status":"active","current_period_end":now+86_400,"billing_cycle_anchor":now-10,"cancel_at_period_end":false,"latest_invoice":{"id":format!("in_{}_initial",team.id),"subscription":sub,"customer":customer,"status":"open","paid":false,"currency":"usd","billing_reason":"subscription_create","amount_due":500,"lines":{"data":[{"price":{"id":"price_go"},"period":{"end":now+86_400},"amount":500}]}}}),
-        );
+        state.subscription = Some(json!({
+            "id":sub,"customer":customer,
+            "metadata":{"deskfleet_team_id":team.id,"deskfleet_request_id":second},
+            "items":{"data":[{"price":{"id":"price_go"},"quantity":1,"current_period_end":now+86_400}]},
+            "status":"active","billing_mode":{"type":"flexible"},
+            "billing_cycle_anchor":now-10,"cancel_at_period_end":false,"cancel_at":null,
+            "latest_invoice":{
+                "id":format!("in_{}_initial",team.id),
+                "parent":{"type":"subscription_details","subscription_details":{"subscription":sub}},
+                "customer":customer,"status":"open","currency":"usd",
+                "billing_reason":"subscription_create","amount_due":500,
+                "lines":{"data":[{"pricing":{"type":"price_details","price_details":{"price":"price_go"}},"period":{"end":now+86_400},"amount":500}]}
+            }
+        }));
     }
     assert!(
         service
@@ -241,7 +287,6 @@ async fn checkout_recovery_and_verified_payment_projection() {
     {
         let mut state = provider_state.lock().unwrap();
         let subscription = state.subscription.as_mut().unwrap();
-        subscription["latest_invoice"]["paid"] = json!(true);
         subscription["latest_invoice"]["status"] = json!("paid");
         subscription["latest_invoice"]["amount_paid"] = json!(500);
         subscription["latest_invoice"]["status_transitions"]["paid_at"] = json!(now);
@@ -290,8 +335,8 @@ async fn checkout_recovery_and_verified_payment_projection() {
             .insert(paid_event.object_id.clone(), original);
         let subscription = state.subscription.as_mut().unwrap();
         subscription["items"]["data"][0]["price"]["id"] = json!("price_pro");
-        subscription["latest_invoice"]["lines"]["data"][0]["price"]["id"] = json!("price_pro");
-        subscription["latest_invoice"]["paid"] = json!(false);
+        subscription["latest_invoice"]["lines"]["data"][0]["pricing"]["price_details"]["price"] =
+            json!("price_pro");
         subscription["latest_invoice"]["status"] = json!("open");
         subscription["latest_invoice"]["id"] = json!(format!("in_{}_upgrade", team.id));
         subscription["latest_invoice"]["billing_reason"] = json!("subscription_update");
@@ -304,7 +349,6 @@ async fn checkout_recovery_and_verified_payment_projection() {
     {
         let mut state = provider_state.lock().unwrap();
         let subscription = state.subscription.as_mut().unwrap();
-        subscription["latest_invoice"]["paid"] = json!(true);
         subscription["latest_invoice"]["status"] = json!("paid");
     }
     service.reconcile_team(&store, &team.id).await.unwrap();
@@ -339,7 +383,9 @@ async fn checkout_recovery_and_verified_payment_projection() {
         .unwrap();
     {
         let mut state = provider_state.lock().unwrap();
-        let invoice = &mut state.subscription.as_mut().unwrap()["latest_invoice"];
+        let subscription = state.subscription.as_mut().unwrap();
+        subscription["items"]["data"][0]["current_period_end"] = json!(now + 172_800);
+        let invoice = &mut subscription["latest_invoice"];
         invoice["id"] = json!(format!("in_{}_renewal", team.id));
         invoice["billing_reason"] = json!("subscription_cycle");
         invoice["amount_paid"] = json!(1500);
@@ -349,21 +395,38 @@ async fn checkout_recovery_and_verified_payment_projection() {
     }
     service.reconcile_team(&store, &team.id).await.unwrap();
     service.reconcile_team(&store, &team.id).await.unwrap();
+    assert_eq!(
+        store.billing_profile(&team.id).await.unwrap().paid_through,
+        Some((now + 172_800) * 1000)
+    );
+    {
+        let mut state = provider_state.lock().unwrap();
+        let subscription = state.subscription.as_mut().unwrap();
+        subscription["cancel_at"] = subscription["items"]["data"][0]["current_period_end"].clone();
+    }
+    service.reconcile_team(&store, &team.id).await.unwrap();
+    service.reconcile_team(&store, &team.id).await.unwrap();
+    assert!(
+        store
+            .billing_profile(&team.id)
+            .await
+            .unwrap()
+            .cancel_at_period_end
+    );
     provider_state
         .lock()
         .unwrap()
         .subscription
         .as_mut()
-        .unwrap()["cancel_at_period_end"] = json!(true);
+        .unwrap()["cancel_at"] = json!(null);
     service.reconcile_team(&store, &team.id).await.unwrap();
-    service.reconcile_team(&store, &team.id).await.unwrap();
-    provider_state
-        .lock()
-        .unwrap()
-        .subscription
-        .as_mut()
-        .unwrap()["cancel_at_period_end"] = json!(false);
-    service.reconcile_team(&store, &team.id).await.unwrap();
+    assert!(
+        !store
+            .billing_profile(&team.id)
+            .await
+            .unwrap()
+            .cancel_at_period_end
+    );
     provider_state
         .lock()
         .unwrap()
@@ -429,6 +492,202 @@ async fn checkout_recovery_and_verified_payment_projection() {
             1
         );
     }
+    handle.stop(true).await;
+    task.await.unwrap().unwrap();
+}
+
+/// Model Stripe's authoritative subscription and its credit/debit proration lines.
+fn subscription_update(
+    state: &web::Data<Mutex<Provider>>,
+    price: &str,
+    end: i64,
+    credit: i64,
+    debit: i64,
+    paid: bool,
+) {
+    let mut state = state.lock().unwrap();
+    let subscription = state.subscription.as_mut().unwrap();
+    let previous_price = subscription["items"]["data"][0]["price"]["id"].clone();
+    let previous_end = subscription["items"]["data"][0]["current_period_end"].clone();
+    subscription["items"]["data"][0]["price"]["id"] = json!(price);
+    subscription["items"]["data"][0]["current_period_end"] = json!(end);
+    subscription["status"] = json!(if paid { "active" } else { "past_due" });
+    subscription["latest_invoice"] = json!({
+        "id":format!("in_{}",uuid::Uuid::new_v4()),
+        "parent":{"type":"subscription_details","subscription_details":{"subscription":subscription["id"]}},
+        "customer":subscription["customer"],
+        "status":if paid {"paid"}else{"open"},"currency":"usd",
+        "billing_reason":"subscription_update","total":credit+debit,
+        "amount_due":(credit+debit).max(0),
+        "amount_paid":if paid {(credit+debit).max(0)}else{0},
+        "lines":{"has_more":false,"data":[
+            {"pricing":{"type":"price_details","price_details":{"price":previous_price}},"period":{"end":previous_end},"amount":credit},
+            {"pricing":{"type":"price_details","price_details":{"price":price}},"period":{"end":end},"amount":debit}
+        ]}
+    });
+}
+
+#[actix_web::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL; Stripe is replaced by a local HTTP fixture"]
+async fn one_portal_applies_paid_plan_and_interval_changes_without_resetting_usage() {
+    let store =
+        ControlStore::connect(&std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL"))
+            .await
+            .unwrap()
+            .with_hosted_mode(true);
+    let user = store
+        .verified_user(
+            &format!("portal-changes-{}@example.test", uuid::Uuid::new_v4()),
+            "Owner",
+        )
+        .await
+        .unwrap();
+    let team = store.create_team(&user.id, "Portal changes").await.unwrap();
+    let customer = format!("cus_{}", uuid::Uuid::new_v4());
+    let lease = store
+        .claim_billing_operation(&team.id)
+        .await
+        .unwrap()
+        .unwrap();
+    store
+        .billing_customer(&team.id, &lease, &customer)
+        .await
+        .unwrap();
+    store
+        .release_billing_operation(&team.id, &lease)
+        .await
+        .unwrap();
+    let now = deskfleet_control_store::now_ms() / 1000;
+    let anchor = now - 86_400;
+    let month_end = now + 29 * 86_400;
+    let year_end = now + 365 * 86_400;
+    let subscription = format!("sub_{}", uuid::Uuid::new_v4());
+    let provider_state = web::Data::new(Mutex::new(Provider {
+        customer: customer.clone(),
+        team: team.id.clone(),
+        subscription: Some(json!({
+            "id":subscription,"customer":customer,"metadata":{"deskfleet_team_id":team.id},
+            "items":{"data":[{"quantity":1,"price":{"id":"price_go"},"current_period_end":month_end}]},
+            "status":"active","billing_mode":{"type":"flexible"},"billing_cycle_anchor":anchor,
+            "cancel_at_period_end":false,"cancel_at":null,
+            "latest_invoice":{
+                "id":format!("in_{}",uuid::Uuid::new_v4()),
+                "parent":{"type":"subscription_details","subscription_details":{"subscription":subscription}},
+                "customer":customer,"status":"paid","currency":"usd",
+                "amount_paid":500,"total":500,
+                "lines":{"data":[{"pricing":{"type":"price_details","price_details":{"price":"price_go"}},"period":{"end":month_end},"amount":500}]}
+            }
+        })),
+        ..Provider::default()
+    }));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server_state = provider_state.clone();
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(server_state.clone())
+            .default_service(web::route().to(provider))
+    })
+    .listen(listener)
+    .unwrap()
+    .run();
+    let handle = server.handle();
+    let task = actix_web::rt::spawn(server);
+    let mut config = fixture_config();
+    config.statsig_server_key = None;
+    let mut service = BillingService::new(config, "https://web.example.test".into()).unwrap();
+    service.api_base = format!("http://{address}/v1");
+    service.reconcile_team(&store, &team.id).await.unwrap();
+    assert_eq!(
+        store.team_entitlements(&team.id).await.unwrap()["plan"],
+        "go"
+    );
+
+    // Seed already collected usage in a complete minute before any interval switch.
+    // Switching billing intervals must not make this paid-period usage disappear.
+    store
+        .database()
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO cp_turn_usage_minutes(team_id,minute_at,sent_bytes) VALUES($1,$2,1234)",
+            vec![
+                team.id.parse::<i64>().unwrap().into(),
+                ((now - 300) / 60 * 60_000).into(),
+            ],
+        ))
+        .await
+        .unwrap();
+    let summary = store.billing_summary(&team.id).await.unwrap();
+    assert_eq!(summary["usage"]["relayedBytes"], "1234");
+    assert!(
+        service
+            .portal(&store, &team.id, &user.id)
+            .await
+            .unwrap()
+            .starts_with("https://billing.stripe.com/")
+    );
+
+    // Even if Stripe's subscription item has already changed, an unpaid upgrade
+    // must retain the last paid plan and deadline.
+    subscription_update(&provider_state, "price_pro", month_end, -250, 750, false);
+    service.reconcile_team(&store, &team.id).await.unwrap();
+    let unpaid = store.billing_profile(&team.id).await.unwrap();
+    assert_eq!(unpaid.plan.as_deref(), Some("go"));
+    assert_eq!(unpaid.paid_through, Some(month_end * 1000));
+    {
+        let mut state = provider_state.lock().unwrap();
+        let subscription = state.subscription.as_mut().unwrap();
+        subscription["status"] = json!("active");
+        subscription["latest_invoice"]["status"] = json!("paid");
+        subscription["latest_invoice"]["amount_paid"] = json!(500);
+    }
+    service.reconcile_team(&store, &team.id).await.unwrap();
+    assert_eq!(
+        store.team_entitlements(&team.id).await.unwrap()["plan"],
+        "pro"
+    );
+
+    for (price, plan, end, credit, debit) in [
+        ("price_go", "go", month_end, -750, 250),
+        ("price_go_year", "go", year_end, -250, 5000),
+        ("price_pro_year", "pro", year_end, -2500, 7500),
+        ("price_pro", "pro", month_end + 86_400, -7500, 1500),
+        ("price_go", "go", month_end + 86_400, -750, 250),
+        ("price_pro_year", "pro", year_end + 20, -250, 15000),
+        ("price_go", "go", month_end + 30, -15000, 500),
+    ] {
+        let initially_paid = price != "price_go_year";
+        subscription_update(&provider_state, price, end, credit, debit, initially_paid);
+        if !initially_paid {
+            let before = store.billing_profile(&team.id).await.unwrap();
+            service.reconcile_team(&store, &team.id).await.unwrap();
+            let unpaid = store.billing_profile(&team.id).await.unwrap();
+            assert_eq!(unpaid.plan, before.plan);
+            assert_eq!(unpaid.paid_through, before.paid_through);
+            assert_eq!(unpaid.period_anchor, before.period_anchor);
+            let mut state = provider_state.lock().unwrap();
+            let subscription = state.subscription.as_mut().unwrap();
+            subscription["status"] = json!("active");
+            subscription["latest_invoice"]["status"] = json!("paid");
+            subscription["latest_invoice"]["amount_paid"] = json!((credit + debit).max(0));
+        }
+        service.reconcile_team(&store, &team.id).await.unwrap();
+        let profile = store.billing_profile(&team.id).await.unwrap();
+        assert_eq!(profile.plan.as_deref(), Some(plan), "{price}");
+        assert_eq!(profile.paid_through, Some(end * 1000), "{price}");
+        assert_eq!(profile.period_anchor, anchor * 1000, "{price}");
+        let updated = store.billing_summary(&team.id).await.unwrap();
+        assert_eq!(updated["plan"], plan, "{price}");
+        assert_eq!(updated["usage"]["relayedBytes"], "1234", "{price}");
+        assert_eq!(updated["period"], summary["period"], "{price}");
+        if price == "price_go_year" {
+            service.portal(&store, &team.id, &user.id).await.unwrap();
+        }
+    }
+    assert_eq!(
+        provider_state.lock().unwrap().portal_configurations,
+        ["bpc_deskfleet", "bpc_deskfleet"]
+    );
     handle.stop(true).await;
     task.await.unwrap().unwrap();
 }

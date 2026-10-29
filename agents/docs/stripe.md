@@ -9,7 +9,7 @@ contains no live keys or provisioned Stripe objects.
 
 Set `DESKFLEET_DEPLOYMENT_MODE=hosted` to enforce Free/Go/Pro limits. With no Stripe
 configuration, hosted Free and manually assigned Enterprise still work. To enable
-payments, configure all of:
+payments, configure all seven settings:
 
 | Variable | Value |
 | --- | --- |
@@ -19,18 +19,20 @@ payments, configure all of:
 | `DESKFLEET_STRIPE_PRO_PRICE_ID` | Active monthly recurring Price for Pro |
 | `DESKFLEET_STRIPE_GO_YEARLY_PRICE_ID` | Active yearly recurring Price for Go |
 | `DESKFLEET_STRIPE_PRO_YEARLY_PRICE_ID` | Active yearly recurring Price for Pro |
-| `DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID` | Billing Portal configuration for monthly Go/Pro only |
-| `DESKFLEET_STRIPE_YEARLY_PORTAL_CONFIGURATION_ID` | Billing Portal configuration for yearly Go/Pro only |
+| `DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID` | One Billing Portal configuration containing all four Go/Pro Prices |
 
-All four Prices must belong to the same Product, share the same currency, use
-quantity one, and have a positive fixed amount. Go must be cheaper than Pro for
-each interval. The four Price IDs must be distinct, and the two Portal
-configuration IDs must be distinct. Go includes 2 GiB and Pro 20 GiB of TURN per
+Create two Stripe Products: Go and Pro. Each Product has one monthly and one
+yearly recurring Price. The four Price IDs must be distinct, share the same
+currency, use quantity one, and have a positive fixed amount. Go must be cheaper
+than Pro for each interval. Go includes 2 GiB and Pro 20 GiB of TURN per
 monthly usage period (anchored to the subscription); neither limits members,
 Sessions, or turns. Checkout accepts `interval` of `month` or `year` and selects
 the matching Price. No trials, quantity-based seat charges, or metered overage
 are exposed. Create and validate these objects separately in test mode before
 providing live configuration.
+
+Checkout explicitly sets `subscription_data[billing_mode][type]=flexible`.
+This integration targets Stripe API `2026-09-30.endive` and flexible subscriptions.
 
 Optional Enterprise sales contact (independent of Stripe; works for self-hosters
 too):
@@ -45,41 +47,52 @@ no entitlements; only a server-verified paid invoice can establish paid coverage
 
 ## Billing Portal
 
-Create two Portal configurations—one monthly and one yearly—each with:
+Create one Portal configuration with:
 
 - `subscription_update.enabled=true` and `default_allowed_updates=["price"]`.
-- Exactly the two configured Prices for that interval on their shared Product
-  (monthly Go/Pro, or yearly Go/Pro). Do not mix intervals in one configuration:
-  Stripe schedules or invoices using raw `unit_amount`, so a yearly Price is
-  usually larger than a monthly Price and would invert Go↔Pro upgrade/downgrade
-  timing across intervals.
+- Exactly the four configured Prices under their two Products: Go monthly/yearly
+  under Go, and Pro monthly/yearly under Pro.
 - `subscription_update.proration_behavior="always_invoice"`.
-- `subscription_update.schedule_at_period_end.conditions` containing
-  `{ "type": "decreasing_item_amount" }`.
+- No scheduled updates: `subscription_update.schedule_at_period_end.conditions=[]`.
 - `subscription_cancel.enabled=true` and `mode="at_period_end"`.
 - `invoice_history.enabled=true` and `payment_method_update.enabled=true`.
 
-When opening the Portal, the server selects the configuration that matches the
-Team's current subscription interval. Plan changes inside the Portal therefore
-stay on the same monthly or yearly cadence. Changing billing interval requires
-cancelling (at period end) and starting a new Checkout for the other interval.
-
-The server validates the selected configuration before issuing a Portal session.
-Stripe only supports scheduled price downgrades on the same Product; see
+The server validates this configuration before issuing a Portal session. Customers
+can change both plan and monthly/yearly interval in that same Portal. Upgrades
+and downgrades apply immediately with Stripe's native proration; cancellation
+remains scheduled for period end. See
 [Portal configuration](https://docs.stripe.com/customer-management/configure-portal).
-Paid upgrades can take effect after invoice confirmation; downgrades and
-cancellation retain the current paid plan until period end. A failed payment must
-not grant the newly selected plan, even when Stripe's descriptive subscription
-status or items have already changed. See
-[subscription pending updates](https://docs.stripe.com/billing/subscriptions/pending-updates).
+
+With flexible billing, the Portal records the scheduled cancellation in the
+subscription's numeric `cancel_at` timestamp while Stripe's
+`cancel_at_period_end` remains false. DeskFleet derives its cancellation indicator
+from `cancel_at`; removing the scheduled cancellation clears that timestamp.
+
+`always_invoice` makes the change produce an immediate proration invoice for
+payment confirmation. Stripe calculates charges for the new selection and
+credits for unused time. DeskFleet applies the selected plan and paid-through
+deadline only after verifying the matching paid invoice, including a zero-total
+invoice settled by credits. A failed upgrade retains the previous verified plan
+and coverage; changing Stripe's descriptive status or subscription item alone
+does not grant paid access. See
+[subscription changes](https://docs.stripe.com/billing/subscriptions/change-price)
+and [prorations](https://docs.stripe.com/billing/subscriptions/prorations).
 
 ## Webhooks and reconciliation
 
 Register `POST /api/billing/stripe/webhook` for Checkout completion, subscription
 changes/deletion, and invoice payment success/failure. The supported event list is
 in `apps/server/src/billing/webhook.rs`. The gateway pins Stripe API version
-`2024-06-20`; event payloads are used as object identifiers, then current objects
-are retrieved and checked. Preserve the webhook's original request bytes.
+`2026-09-30.endive` for all requests; configure the webhook endpoint to the same
+version using snapshot events. Event payloads supply object identifiers, then
+current objects are retrieved and checked. Preserve the webhook's original
+request bytes.
+
+Reconciliation reads the subscription item's `current_period_end`, the invoice's
+`parent.subscription_details.subscription`, and each line's
+`pricing.price_details.price`. Invoice `status=paid` establishes settlement;
+this API version has no invoice `paid` boolean. The Portal's returned
+scheduled-update conditions must be empty for immediate changes.
 
 The endpoint verifies Stripe's HMAC signature with a five-minute timestamp
 window, checks test/live mode, and stores supported events in PostgreSQL before
@@ -106,10 +119,19 @@ Existing data and accepted work remain, while subsequent work uses Free limits.
 
 ## Usage and administration
 
-The subscription's billing anchor determines monthly UTC boundaries, clamping a
-missing day to month end without losing the original day. Plan changes preserve
-current usage; Enterprise traffic remains counted and consumes a restored paid
-allowance after revocation. Enterprise assignment does not cancel Stripe billing.
+DeskFleet stores a monthly TURN usage anchor when it first adopts a subscription.
+Its UTC boundaries clamp a missing day to month end without losing the original
+day. Flexible billing retains Stripe's numeric `billing_cycle_anchor` when the
+billing interval changes; the subscription item's `current_period_end` determines
+the period that its matching paid invoice must cover. DeskFleet retains its own
+stored usage anchor for the same subscription. Plan and interval changes preserve
+the current usage period and its accumulated bytes; they do not grant a fresh
+monthly allowance. See
+[flexible billing behavior](https://docs.stripe.com/billing/subscriptions/billing-mode/compare).
+
+A replacement subscription adopts its own anchor. Enterprise traffic remains
+counted and consumes a restored paid allowance after revocation. Enterprise
+assignment does not cancel Stripe billing.
 Only Site Admin can change the override, after recent authentication, with an audit
 record. Team administrators manage payments; other members can inspect usage.
 
@@ -139,12 +161,17 @@ coverage expiry, overrides, event deduplication, and operation leases. A local
 Stripe HTTP fixture verifies Checkout retries/replacement and paid/unpaid plan
 changes without contacting Stripe. Webhook tests verify raw-body signatures and
 replay timing. These tests do not replace a Stripe test-mode checkout against the
-operator's actual Prices, Portal configuration, and webhook setup.
+operator's actual Prices, Portal configuration, and webhook setup. Include
+immediate upgrades and downgrades, monthly-to-yearly and yearly-to-monthly changes,
+cross-plan interval changes, credit-settled invoices, failed upgrade payments,
+preserved TURN usage, and cancellation at period end. Confirm Checkout creates a
+flexible subscription and Portal cancellation sets and clears `cancel_at`.
 
 No live payment is performed during development checks. Monitor reconciliation
 warnings and metering freshness. Refunds/disputes and account closure are managed
-by the operator in this first release; there is no automatic refund or credit
-balance. Team deletion is rejected once the Team owns a Stripe customer/subscription
+by the operator in this first release. Stripe may apply native invoice credits
+from proration; DeskFleet has no custom wallet or automatic refund workflow.
+Team deletion is rejected once the Team owns a Stripe customer/subscription
 mapping or a checkout attempt, or while a billing operation is active. This
 retains financial records even after cancellation. A separate financial closure
 workflow is required before removing such a Team.

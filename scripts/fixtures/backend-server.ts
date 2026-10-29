@@ -34,7 +34,6 @@ export async function startBackendFixture(options: { databaseUrl?: string; binar
         DESKFLEET_STRIPE_GO_PRICE_ID: undefined, DESKFLEET_STRIPE_PRO_PRICE_ID: undefined,
         DESKFLEET_STRIPE_GO_YEARLY_PRICE_ID: undefined, DESKFLEET_STRIPE_PRO_YEARLY_PRICE_ID: undefined,
         DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID: undefined,
-        DESKFLEET_STRIPE_YEARLY_PORTAL_CONFIGURATION_ID: undefined,
         DESKFLEET_ENTERPRISE_CONTACT_EMAIL: undefined,
         DESKFLEET_WEB_ORIGINS: (options.allowedOrigins ?? []).join(","), RUST_LOG: "warn",
       },

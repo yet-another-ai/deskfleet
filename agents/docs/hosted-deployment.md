@@ -25,7 +25,7 @@ gate and cannot establish that Go/Pro billing works.
 | SMTP relay | Public registration and recovery | Authenticated STARTTLS delivery, normally port 587. Public deployments cannot use the local mail-file sink. |
 | coturn | Public relay and cross-network smoke tests | Public STUN/TURN endpoints, REST shared-secret authentication, reachable relay ports. TURN traffic goes directly between peers and coturn. |
 | Redis | TURN usage collection and Go/Pro relay | Receive coturn statistics via Pub/Sub; the API persists usage to PostgreSQL. This is not a general application cache or job queue. |
-| Stripe | Payment acceptance tests | External test-mode service with Product, Go/Pro Prices, Portal configuration, and webhook endpoint. Optional until payment testing begins. |
+| Stripe | Payment acceptance tests | External test-mode service with Go and Pro Products, monthly/yearly Prices for each, one Portal configuration, and a webhook endpoint. Optional until payment testing begins. |
 | Test machines | End-to-end acceptance | Install Electron and/or the standalone daemon, Git, and an authenticated real Agent CLI on the execution machines. |
 
 The API contains its billing reconciliation worker and TURN collector; neither
@@ -127,7 +127,7 @@ is not a supported retargeting procedure.
 ### Stripe test-mode environment
 
 Leave all Stripe payment variables unset during the initial Free/Enterprise pass.
-To test payments, configure all eight from the same Stripe test environment:
+To test payments, configure all seven from the same Stripe test environment:
 
 ```dotenv
 DESKFLEET_STRIPE_SECRET_KEY=REPLACE_STRIPE_TEST_SECRET_KEY
@@ -136,20 +136,22 @@ DESKFLEET_STRIPE_GO_PRICE_ID=REPLACE_GO_MONTHLY_PRICE_ID
 DESKFLEET_STRIPE_PRO_PRICE_ID=REPLACE_PRO_MONTHLY_PRICE_ID
 DESKFLEET_STRIPE_GO_YEARLY_PRICE_ID=REPLACE_GO_YEARLY_PRICE_ID
 DESKFLEET_STRIPE_PRO_YEARLY_PRICE_ID=REPLACE_PRO_YEARLY_PRICE_ID
-DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID=REPLACE_MONTHLY_PORTAL_CONFIGURATION_ID
-DESKFLEET_STRIPE_YEARLY_PORTAL_CONFIGURATION_ID=REPLACE_YEARLY_PORTAL_CONFIGURATION_ID
+DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID=REPLACE_PORTAL_CONFIGURATION_ID
 # Optional Enterprise sales mailbox on Plans & Usage:
 # DESKFLEET_ENTERPRISE_CONTACT_EMAIL=sales@example.com
 ```
 
-Partial Stripe configuration fails startup. The four Prices must be distinct,
-positive fixed amounts (monthly and yearly recurring), on the same Product and
-currency, with Go cheaper than Pro in each interval. Use two Portal
-configurations (monthly Prices only, yearly Prices only) as described in
+Partial Stripe configuration fails startup. Create separate Go and Pro Products,
+each with monthly and yearly recurring Prices. The four Prices must be distinct,
+positive fixed amounts in the same currency, with Go cheaper than Pro in each
+interval. Use one Portal configuration containing all four Prices, immediate
+prorated plan/interval changes, and cancellation at period end as described in
 [Stripe operations](stripe.md#billing-portal). Register
 `https://fleet.example.com/api/billing/stripe/webhook` using the supported events
-in [the webhook handler](../../apps/server/src/billing/webhook.rs). There is no
-frontend Stripe publishable-key environment variable in this Checkout flow.
+in [the webhook handler](../../apps/server/src/billing/webhook.rs), configured as
+snapshot events on API version `2026-09-30.endive` to match the server's pinned
+version. Checkout explicitly creates flexible subscriptions. There is no frontend
+Stripe publishable-key environment variable in this Checkout flow.
 
 ### Configuration owned by other services
 
@@ -301,9 +303,14 @@ Before tagging, account for these current behaviors:
    operations only after checking their receipts. Temporarily deny an instance's
    database access and confirm it closes signaling rather than continuing to
    trust local routes; restore access and confirm recovery.
-9. Enable the eight Stripe test settings. Complete monthly and yearly Checkout,
-   confirm the webhook and paid entitlement, then test Portal upgrade, downgrade,
-   and cancellation within each interval (Portal does not switch intervals).
+9. Enable the seven Stripe test settings. Complete monthly and yearly Checkout,
+   and confirm both create flexible subscriptions on `2026-09-30.endive`.
+   Confirm the webhook and paid entitlement, then test Portal upgrade, downgrade,
+   monthly/yearly interval changes, and combined plan/interval changes. Verify
+   immediate proration, credit-settled invoices, failed upgrade payments retaining
+   existing paid coverage, and cancellation at period end through `cancel_at`
+   while Stripe's `cancel_at_period_end` stays false. Confirm changes keep
+   the current monthly TURN usage period and accumulated usage.
    Use a Go/Pro Team to verify relay and usage. Missing/stale metering must deny
    new metered relay credentials (`metering_unavailable`); exhausting allowance
    must deny new relay (`turn_quota_exhausted`). Existing grants retain their

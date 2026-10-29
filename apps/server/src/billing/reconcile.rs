@@ -44,8 +44,8 @@ impl BillingService {
         // A later analytics failure keeps this inbox event retryable.
         self.reconcile_team(store, &profile.team_id).await?;
         if self.config.statsig_server_key.is_some() && event.event_type.starts_with("invoice.") {
-            let subscription_id = stripe_id(&object["subscription"])
-                .or_else(|| stripe_id(&object["parent"]["subscription_details"]["subscription"]));
+            let subscription_id =
+                stripe_id(&object["parent"]["subscription_details"]["subscription"]);
             if let Some(id) = subscription_id {
                 let subscription = self
                     .stripe(Method::GET, &format!("subscriptions/{id}"), vec![], None)
@@ -256,9 +256,8 @@ fn verified_projection(
             "Subscription ownership or price does not match",
         ));
     }
-    let end = subscription["current_period_end"]
+    let end = item["current_period_end"]
         .as_i64()
-        .or_else(|| item["current_period_end"].as_i64())
         .ok_or_else(ApiError::internal)?;
     let anchor = subscription["billing_cycle_anchor"]
         .as_i64()
@@ -266,19 +265,17 @@ fn verified_projection(
     let status = subscription["status"]
         .as_str()
         .ok_or_else(ApiError::internal)?;
-    let invoice_subscription = stripe_id(&invoice["subscription"])
-        .or_else(|| stripe_id(&invoice["parent"]["subscription_details"]["subscription"]));
+    let invoice_subscription =
+        stripe_id(&invoice["parent"]["subscription_details"]["subscription"]);
     let paid = status != "trialing"
         && invoice["status"] == "paid"
-        && invoice["paid"] == true
         && invoice_subscription == Some(id)
         && stripe_id(&invoice["customer"]) == Some(customer)
         && invoice["currency"] == price["currency"]
         && invoice["lines"]["has_more"] != true
         && invoice["lines"]["data"].as_array().is_some_and(|lines| {
             lines.iter().any(|line| {
-                let line_price = stripe_id(&line["price"])
-                    .or_else(|| stripe_id(&line["pricing"]["price_details"]["price"]));
+                let line_price = stripe_id(&line["pricing"]["price_details"]["price"]);
                 line_price == stripe_id(price)
                     && line["period"]["end"].as_i64() == Some(end)
                     && line["amount"].as_i64().is_some_and(|amount| amount >= 0)
@@ -296,9 +293,9 @@ fn verified_projection(
             None
         },
         period_anchor: anchor.checked_mul(1000).ok_or_else(ApiError::internal)?,
-        cancel_at_period_end: subscription["cancel_at_period_end"]
-            .as_bool()
-            .unwrap_or(false),
+        // Flexible-mode Portal cancellation uses cancel_at, while Stripe's
+        // cancel_at_period_end boolean stays false.
+        cancel_at_period_end: subscription["cancel_at"].as_i64().is_some(),
     })
 }
 
@@ -318,8 +315,20 @@ mod tests {
             cancel_at_period_end: false,
             enterprise: false,
         };
-        let subscription = json!({"id":"sub","customer":"cus","metadata":{"deskfleet_team_id":"1"},"items":{"data":[{"quantity":1,"price":{"id":"price_pro"}}]},"current_period_end":2000,"billing_cycle_anchor":100,"status":"active","cancel_at_period_end":false});
-        let invoice = json!({"id":"in","customer":"cus","subscription":"sub","status":"paid","paid":true,"currency":"usd","lines":{"data":[{"price":{"id":"price_pro"},"period":{"end":2000},"amount":1000}]}});
+        let subscription = json!({
+            "id":"sub","customer":"cus","metadata":{"deskfleet_team_id":"1"},
+            "items":{"data":[{"quantity":1,"price":{"id":"price_pro"},"current_period_end":2000}]},
+            "billing_mode":{"type":"flexible"},
+            "billing_cycle_anchor":100,"status":"active","cancel_at":null
+        });
+        let invoice = json!({
+            "id":"in","customer":"cus","status":"paid","currency":"usd",
+            "parent":{"type":"subscription_details","subscription_details":{"subscription":"sub"}},
+            "lines":{"data":[{
+                "pricing":{"type":"price_details","price_details":{"price":"price_pro"}},
+                "period":{"end":2000},"amount":1000
+            }]}
+        });
         (
             profile,
             subscription,
@@ -330,7 +339,6 @@ mod tests {
     #[test]
     fn active_subscription_does_not_prove_payment() {
         let (p, s, mut i, price) = data();
-        i["paid"] = json!(false);
         i["status"] = json!("open");
         let result = verified_projection(&p, &s, &i, &price, "pro").unwrap();
         assert!(result.paid_plan.is_none());
@@ -344,9 +352,52 @@ mod tests {
         assert_eq!(result.paid_through, Some(2_000_000));
     }
     #[test]
+    fn flexible_portal_cancellation_tracks_the_cancel_at_timestamp() {
+        let (p, mut s, i, price) = data();
+        s["cancel_at_period_end"] = json!(false);
+        s["cancel_at"] = json!(2000);
+        let scheduled = verified_projection(&p, &s, &i, &price, "pro").unwrap();
+        assert!(scheduled.cancel_at_period_end);
+        assert_eq!(scheduled.paid_through, Some(2_000_000));
+        s["cancel_at"] = Value::Null;
+        assert!(
+            !verified_projection(&p, &s, &i, &price, "pro")
+                .unwrap()
+                .cancel_at_period_end
+        );
+    }
+    #[test]
+    fn paid_credit_invoice_applies_immediate_downgrade_without_a_cash_payment() {
+        let (mut profile, mut subscription, mut invoice, mut price) = data();
+        profile.plan = Some("pro".into());
+        subscription["items"]["data"][0]["price"]["id"] = json!("price_go");
+        price["id"] = json!("price_go");
+        invoice["amount_paid"] = json!(0);
+        invoice["amount_due"] = json!(0);
+        for debit in [0, 250, 750] {
+            invoice["total"] = json!(-750 + debit);
+            invoice["lines"]["data"] = json!([
+                {"pricing":{"type":"price_details","price_details":{"price":"price_pro"}},"period":{"end":2000},"amount":-750},
+                {"pricing":{"type":"price_details","price_details":{"price":"price_go"}},"period":{"end":2000},"amount":debit}
+            ]);
+            let result =
+                verified_projection(&profile, &subscription, &invoice, &price, "go").unwrap();
+            assert_eq!(result.paid_plan.as_deref(), Some("go"));
+            assert_eq!(result.paid_through, Some(2_000_000));
+        }
+    }
+    #[test]
+    fn a_credit_for_the_current_price_alone_does_not_establish_paid_coverage() {
+        let (profile, subscription, mut invoice, price) = data();
+        invoice["lines"]["data"][0]["amount"] = json!(-1000);
+        let result = verified_projection(&profile, &subscription, &invoice, &price, "pro").unwrap();
+        assert!(result.paid_plan.is_none());
+        assert!(result.paid_through.is_none());
+    }
+    #[test]
     fn old_price_or_wrong_customer_cannot_grant_upgrade() {
         let (p, s, mut i, price) = data();
-        i["lines"]["data"][0]["price"]["id"] = json!("price_go");
+        i["lines"]["data"][0]["pricing"]["price_details"]["price"] = json!("price_go");
         assert!(
             verified_projection(&p, &s, &i, &price, "pro")
                 .unwrap()

@@ -5,7 +5,7 @@ use std::{net::TcpListener, sync::Mutex};
 
 fn invoice() -> Value {
     json!({
-        "status":"paid", "paid":true, "amount_paid":4500, "amount_due":4500,
+        "status":"paid", "amount_paid":4500, "amount_due":4500,
         "currency":"usd", "billing_reason":"subscription_create",
         "status_transitions":{"paid_at":1700000000},
         "customer_email":"private@example.test", "description":"private billing details"
@@ -30,11 +30,30 @@ fn paid_fact_requires_payment_evidence_and_preserves_money_timestamp_identity() 
     assert_eq!(fact.value, Some(4500));
     assert_eq!(fact.metadata["interval"], "year");
     assert_eq!(fact.metadata["billing_reason"], "subscription_create");
-    value["paid"] = json!(false);
-    assert!(invoice_fact(&value, "in_123", None, "go", "year", None).is_none());
-    value["paid"] = json!(true);
     value["status"] = json!("open");
+    value["amount_paid"] = json!(2000);
     assert!(invoice_fact(&value, "in_123", None, "go", "year", None).is_none());
+    value["status"] = json!("paid");
+    value["status_transitions"]["paid_at"] = Value::Null;
+    assert!(invoice_fact(&value, "in_123", None, "go", "year", None).is_none());
+}
+
+#[test]
+fn paid_invoice_with_no_cash_payment_remains_a_verified_payment_fact() {
+    let mut value = invoice();
+    value["amount_paid"] = json!(0);
+    value["amount_due"] = json!(0);
+    value["billing_reason"] = json!("subscription_update");
+    let fact = invoice_fact(&value, "in_credit", None, "go", "month", None).unwrap();
+    assert_eq!(fact.name, "billing_invoice_paid");
+    assert_eq!(fact.value, Some(0));
+    assert_eq!(fact.metadata["billing_reason"], "subscription_update");
+    assert_eq!(fact.metadata["attribution"], "team_only");
+
+    value["amount_paid"] = json!(-1);
+    assert!(invoice_fact(&value, "in_credit", None, "go", "month", None).is_none());
+    value["amount_paid"] = Value::Null;
+    assert!(invoice_fact(&value, "in_credit", None, "go", "month", None).is_none());
 }
 
 #[test]

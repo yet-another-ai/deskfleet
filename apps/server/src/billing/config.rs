@@ -9,10 +9,8 @@ pub struct BillingConfig {
     pub pro_price_id: Option<String>,
     pub go_yearly_price_id: Option<String>,
     pub pro_yearly_price_id: Option<String>,
-    /// Portal configuration listing only the monthly Go and Pro Prices.
+    /// Portal configuration listing both monthly and yearly Go and Pro Prices.
     pub portal_configuration_id: Option<String>,
-    /// Portal configuration listing only the yearly Go and Pro Prices.
-    pub yearly_portal_configuration_id: Option<String>,
     /// Optional sales contact for Enterprise. Independent of Stripe configuration.
     pub enterprise_contact_email: Option<String>,
     /// Optional server-only Statsig key; payment processing never waits on Statsig.
@@ -40,9 +38,6 @@ impl BillingConfig {
             go_yearly_price_id: optional("DESKFLEET_STRIPE_GO_YEARLY_PRICE_ID"),
             pro_yearly_price_id: optional("DESKFLEET_STRIPE_PRO_YEARLY_PRICE_ID"),
             portal_configuration_id: optional("DESKFLEET_STRIPE_PORTAL_CONFIGURATION_ID"),
-            yearly_portal_configuration_id: optional(
-                "DESKFLEET_STRIPE_YEARLY_PORTAL_CONFIGURATION_ID",
-            ),
             enterprise_contact_email: contact_email("DESKFLEET_ENTERPRISE_CONTACT_EMAIL")?,
             statsig_server_key: optional("DESKFLEET_STATSIG_SERVER_KEY"),
             statsig_environment: optional("DESKFLEET_STATSIG_ENVIRONMENT"),
@@ -59,7 +54,6 @@ impl BillingConfig {
             && self.go_yearly_price_id.is_some()
             && self.pro_yearly_price_id.is_some()
             && self.portal_configuration_id.is_some()
-            && self.yearly_portal_configuration_id.is_some()
     }
     pub fn validate(&self) -> io::Result<()> {
         let configured = [
@@ -70,15 +64,14 @@ impl BillingConfig {
             &self.go_yearly_price_id,
             &self.pro_yearly_price_id,
             &self.portal_configuration_id,
-            &self.yearly_portal_configuration_id,
         ]
         .iter()
         .filter(|value| value.is_some())
         .count();
-        if configured > 0 && (!self.hosted || configured != 8) {
+        if configured > 0 && (!self.hosted || configured != 7) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Stripe requires hosted mode and all eight Stripe settings",
+                "Stripe requires hosted mode and all seven Stripe settings",
             ));
         }
         let prices = [
@@ -95,14 +88,6 @@ impl BillingConfig {
                 "Go and Pro monthly and yearly Stripe Prices must all be distinct",
             ));
         }
-        if self.portal_configuration_id.is_some()
-            && self.portal_configuration_id == self.yearly_portal_configuration_id
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Monthly and yearly Billing Portal configurations must be distinct",
-            ));
-        }
         Ok(())
     }
     pub(super) fn price(&self, plan: &str, interval: &str) -> Option<&str> {
@@ -111,13 +96,6 @@ impl BillingConfig {
             ("pro", "month") => self.pro_price_id.as_deref(),
             ("go", "year") => self.go_yearly_price_id.as_deref(),
             ("pro", "year") => self.pro_yearly_price_id.as_deref(),
-            _ => None,
-        }
-    }
-    pub(super) fn portal_configuration(&self, interval: &str) -> Option<&str> {
-        match interval {
-            "month" => self.portal_configuration_id.as_deref(),
-            "year" => self.yearly_portal_configuration_id.as_deref(),
             _ => None,
         }
     }
@@ -172,8 +150,7 @@ mod tests {
             pro_price_id: Some("price_pro".into()),
             go_yearly_price_id: Some("price_go_year".into()),
             pro_yearly_price_id: Some("price_pro_year".into()),
-            portal_configuration_id: Some("bpc_month".into()),
-            yearly_portal_configuration_id: Some("bpc_year".into()),
+            portal_configuration_id: Some("bpc".into()),
             enterprise_contact_email: None,
             statsig_server_key: None,
             statsig_environment: None,
@@ -190,7 +167,7 @@ mod tests {
         assert!(config.validate().is_err());
     }
     #[test]
-    fn payments_require_monthly_and_yearly_prices_and_portals() {
+    fn payments_require_all_four_prices_and_one_portal() {
         let mut config = complete();
         assert!(config.validate().is_ok());
         assert!(config.enabled());
@@ -198,19 +175,19 @@ mod tests {
         assert!(config.validate().is_err());
         assert!(!config.enabled());
         config = complete();
-        config.yearly_portal_configuration_id = None;
+        config.portal_configuration_id = None;
         assert!(config.validate().is_err());
+        assert!(!config.enabled());
+
+        config = complete();
+        config.hosted = false;
+        assert!(config.validate().is_err());
+        assert!(!config.enabled());
     }
     #[test]
     fn duplicate_price_ids_are_rejected() {
         let mut config = complete();
         config.go_yearly_price_id = Some("price_go".into());
-        assert!(config.validate().is_err());
-    }
-    #[test]
-    fn shared_portal_configuration_ids_are_rejected() {
-        let mut config = complete();
-        config.yearly_portal_configuration_id = config.portal_configuration_id.clone();
         assert!(config.validate().is_err());
     }
     #[test]

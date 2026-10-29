@@ -19,7 +19,7 @@ impl BillingService {
             .client
             .request(method.clone(), format!("{}/{path}", self.api_base))
             .bearer_auth(secret)
-            .header("Stripe-Version", "2024-06-20");
+            .header("Stripe-Version", "2026-09-30.endive");
         if method == Method::GET {
             request = request.query(&fields);
         } else {

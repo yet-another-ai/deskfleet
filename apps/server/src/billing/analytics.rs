@@ -117,11 +117,12 @@ impl BillingService {
         let Some(subscription_id) = stripe_id(subscription) else {
             return Ok(None);
         };
-        let invoice_subscription = stripe_id(&invoice["subscription"])
-            .or_else(|| stripe_id(&invoice["parent"]["subscription_details"]["subscription"]));
+        let invoice_subscription =
+            stripe_id(&invoice["parent"]["subscription_details"]["subscription"]);
         if stripe_id(&invoice["customer"]) != profile.customer_id.as_deref()
             || stripe_id(&subscription["customer"]) != profile.customer_id.as_deref()
             || subscription["metadata"]["deskfleet_team_id"] != profile.team_id
+            || invoice["parent"]["type"] != "subscription_details"
             || invoice_subscription != Some(subscription_id)
             || invoice["lines"]["has_more"] == true
         {
@@ -132,9 +133,9 @@ impl BillingService {
             .into_iter()
             .flatten()
             .filter(|line| line["amount"].as_i64().is_some_and(|amount| amount >= 0))
+            .filter(|line| line["pricing"]["type"] == "price_details")
             .filter_map(|line| {
-                let id = stripe_id(&line["price"])
-                    .or_else(|| stripe_id(&line["pricing"]["price_details"]["price"]))?;
+                let id = stripe_id(&line["pricing"]["price_details"]["price"])?;
                 self.config.plan_for_price(id)?;
                 Some((id, line["amount"].as_i64().unwrap_or(0)))
             })
@@ -319,7 +320,7 @@ fn invoice_fact(
         fact.value = invoice["amount_due"].as_i64().filter(|value| *value >= 0);
         fact
     } else {
-        if invoice["status"] != "paid" || invoice["paid"] != true {
+        if invoice["status"] != "paid" {
             return None;
         }
         let amount = invoice["amount_paid"]

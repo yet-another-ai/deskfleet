@@ -15,7 +15,8 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 - Subscriptions and usage belong to a Team. A person can use a single-member
   Team; membership in several Teams does not combine their plans.
 - Sell platform subscriptions. AI credentials and execution remain on user
-  machines. AI token resale, credit purchases, and wallets are outside this release.
+  machines. AI token resale, credit purchases, and DeskFleet-managed wallets are
+  outside this release; Stripe may apply native invoice credits from proration.
 - Offer Free, Go, Pro, and Enterprise on the hosted service. Go and Pro differ
   only in monthly TURN allowance and are sold as monthly or yearly Stripe
   subscriptions. Enterprise remains a Site Admin grant; Plans & Usage can also
@@ -46,7 +47,7 @@ One GiB is 1,073,741,824 bytes. Go allows 2,147,483,648 bytes and Pro allows
 for display. Checkout sells monthly and yearly recurring Prices for Go and Pro.
 TURN usage periods remain calendar months anchored to the subscription even when
 the Stripe billing interval is yearly. Prices and currency come from the four
-configured Stripe Prices. No paid trial or wallet is offered.
+configured Stripe Prices. No paid trial or DeskFleet-managed wallet is offered.
 
 Free has the four restrictions above; no additional feature exclusions have been
 selected. Direct connectivity remains available. Plans never confer Team
@@ -177,6 +178,12 @@ A new period starts with zero usage. Login, reconnection, and duplicate payment
 notifications never reset usage. Boundaries use UTC
 and retain the original subscription time of day.
 
+The stored usage anchor remains stable for the same subscription. Stripe flexible
+billing also retains its billing-cycle anchor when a customer switches between
+monthly and yearly billing. Paid coverage follows the subscription item's period;
+DeskFleet's monthly usage boundaries and accumulated bytes remain unchanged.
+A replacement subscription adopts its own anchor.
+
 ### Payment coverage and expiry
 
 - First activation and renewal require server-verified payment/subscription
@@ -190,12 +197,15 @@ and retain the original subscription time of day.
   unverified checkout or renewal cannot extend coverage.
 - Accepted work and issued relay access retain the lifetimes specified below.
   This continuation is not a billing grace period.
-- Stripe Portal invoices upgrades immediately; new limits require the paid
-  invoice. Downgrades and cancellation take effect at period end. Portal price
-  changes stay on the subscription's current monthly or yearly interval; changing
-  interval requires cancelling at period end and a new Checkout. Usage is
-  preserved within the existing period. Refunds/disputes are operator-managed
-  in this release and do not introduce a wallet or automatic credit mechanism.
+- One Stripe Portal configuration offers Go and Pro as separate Products, each
+  with monthly and yearly Prices. Plan and interval changes apply immediately
+  with Stripe's native proration and an immediate invoice. DeskFleet applies the
+  selected plan only after verifying its paid invoice, including a zero-total
+  invoice settled by credits. A failed upgrade retains the previous verified
+  plan and coverage. Cancellation remains effective at period end. Usage is
+  preserved within the existing monthly period. Refunds/disputes are
+  operator-managed; Stripe's invoice credits do not introduce a DeskFleet wallet
+  or automatic refund workflow.
 
 **Over-limit fallback:** preserve existing members, Sessions, files, and
 history after a smaller allowance takes effect. Block growth while the relevant
@@ -353,7 +363,13 @@ of paid authority.
 The first implementation uses Stripe subscriptions exclusively, with Checkout
 and Customer Portal. The Rust server owns the integration; daemons and renderers
 never hold payment credentials. Prices and Stripe Price IDs are deployment
-configuration; no second payment provider or credit-wallet integration is included.
+configuration; no second payment provider or custom wallet is included.
+
+The integration targets Stripe API `2026-09-30.endive`, with the same version for
+snapshot webhooks. Checkout explicitly creates flexible subscriptions. Coverage
+uses the subscription item's period end and a matching invoice with `status=paid`.
+Portal cancellation is represented by Stripe's `cancel_at` timestamp; its
+`cancel_at_period_end` boolean remains false for flexible subscriptions.
 
 - A server-controlled offer catalog determines prices and allowances. Clients
   supply Team/offer/request IDs, not authoritative amounts, provider customer
@@ -432,9 +448,11 @@ names remain implementation details. Separate microservices are not required.
 
 ## Deployment and release choices
 
-The implementation uses monthly Go/Pro Stripe Prices, UTC month-end clamping,
-paid upgrades, period-end downgrades, resource-preserving Free fallback, durable
-turn consumption, explicit backlog retry, and retained usage under Enterprise.
+The implementation uses monthly/yearly Go and Pro Prices under two Stripe
+Products and one Portal configuration. Plan and interval changes use immediate
+proration and verified paid invoices; cancellation takes effect at period end.
+It retains UTC month-end clamping, resource-preserving Free fallback, durable
+turn consumption, explicit backlog retry, and usage under Enterprise.
 [Stripe operations](stripe.md) documents the exact Portal configuration, webhook,
 reconciliation, and test/live setup.
 
