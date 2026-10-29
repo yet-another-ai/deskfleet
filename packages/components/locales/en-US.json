@@ -1055,6 +1055,7 @@
     "notificationsDetails": "Allow browser notifications to receive updates while DeskFleet is open, even when you are using another tab. You can change this later in Settings.",
     "progress": "Setup progress",
     "steps": {
+      "localNetwork": "Local network",
       "fullDiskAccess": "Full Disk Access",
       "screenCapture": "Screen recording",
       "accessibility": "Accessibility",
@@ -1098,6 +1099,20 @@
       }
     },
     "permissions": {
+      "localNetwork": {
+        "description": "Allow DeskFleet to connect directly to nearby machines for terminals, agent sessions, and remote desktops.",
+        "path": "Privacy & Security → Local Network",
+        "instructions": "Choose Request access, then allow DeskFleet if macOS asks. If no prompt appears, open System Settings and enable DeskFleet in the list.",
+        "request": "Request access",
+        "openSettings": "Open System Settings",
+        "skip": "You can continue and change this later. Without access, connections to machines on your local network may fail.",
+        "status": {
+          "not-requested": "Ready to request local network access",
+          "attempted": "Request sent. Check System Settings to confirm access is enabled.",
+          "unavailable": "Could not request access. Connect to Wi-Fi or Ethernet and try again, or check access in System Settings.",
+          "not-required": "No additional permission needed"
+        }
+      },
       "fullDiskAccess": {
         "description": "Allow the local agent to work with files in protected folders, including file previews and workspace files.",
         "path": "Privacy & Security → Full Disk Access",

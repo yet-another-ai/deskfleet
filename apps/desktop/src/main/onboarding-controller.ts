@@ -1,12 +1,16 @@
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { ONBOARDING_PERMISSIONS, onboardingPermissions, type OnboardingPermission, type OnboardingState, type OnboardingStep } from "../../../../packages/client/src/onboarding.ts"
+import { ONBOARDING_PERMISSIONS, onboardingPermissions, type LocalNetworkAccessRequest, type OnboardingPermission, type OnboardingPermissionsState, type OnboardingState, type OnboardingStep } from "../../../../packages/client/src/onboarding.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"
 
 interface OnboardingOptions {
   path: string
   platform: NodeJS.Platform
   localAgent: Pick<LocalAgentController, "state" | "refreshPermissions" | "requestPermission">
+  localNetwork: {
+    request(): Promise<LocalNetworkAccessRequest>
+    openSettings(): Promise<void>
+  }
   /** True when this user-data directory already belongs to an install that predates welcome progress. */
   established?: () => boolean | Promise<boolean>
 }
@@ -28,10 +32,11 @@ export async function establishedDesktopProfile(directory: string): Promise<bool
 
 const steps: readonly OnboardingStep[] = [...ONBOARDING_PERMISSIONS, "account", "complete"]
 
-/** The welcome flow records progress; the daemon owns every OS permission action. */
+/** The host requests its own network access; the daemon owns local machine permissions. */
 export class OnboardingController {
   readonly #options: OnboardingOptions
-  #state: OnboardingState | undefined
+  #state: Pick<OnboardingState, "step"> | undefined
+  #localNetwork: OnboardingPermissionsState["localNetwork"] = "not-requested"
   #operation: Promise<unknown> | undefined
 
   constructor(options: OnboardingOptions) { this.#options = options }
@@ -50,7 +55,7 @@ export class OnboardingController {
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
         if (await this.#options.established?.()) {
-          try { this.#state = await this.#save("complete") }
+          try { return await this.#save("complete") }
           catch { this.#state = { step: "complete" } }
         } else return this.#save(this.#initialStep())
       }
@@ -62,33 +67,38 @@ export class OnboardingController {
   }
 
   #permissionSteps() {
-    const backend = this.#options.localAgent.state.linuxDesktopBackend
+    const local = this.#options.localAgent.state
+    const backend = local.linuxDesktopBackend
+    const localAgent = local.enabled || local.status === "running"
     // A saved Portal step may continue while reconnecting; fresh profiles need a known backend.
     if (backend === undefined && this.#state
       && ONBOARDING_PERMISSIONS.includes(this.#state.step as OnboardingPermission)) {
-      return onboardingPermissions(this.#options.platform, "wayland")
+      return onboardingPermissions(this.#options.platform, "wayland", localAgent)
     }
-    return onboardingPermissions(this.#options.platform, backend)
+    return onboardingPermissions(this.#options.platform, backend, localAgent)
   }
 
-  #snapshot(state: OnboardingState): OnboardingState {
+  #snapshot(state: Pick<OnboardingState, "step">): OnboardingState {
     const backend = this.#options.localAgent.state.linuxDesktopBackend
-    return this.#options.platform === "linux" && backend !== undefined ? { ...state, linuxDesktopBackend: backend } : { ...state }
+    return {
+      ...state,
+      permissionSteps: this.#permissionSteps(),
+      ...(this.#options.platform === "linux" && backend !== undefined ? { linuxDesktopBackend: backend } : {}),
+    }
   }
 
   #initialStep(): OnboardingStep {
-    const local = this.#options.localAgent.state
-    return local.enabled || local.status === "running"
-      ? this.#permissionSteps()[0] ?? "account" : "account"
+    return this.#permissionSteps()[0] ?? "account"
   }
 
-  async permissions() {
+  async permissions(): Promise<OnboardingPermissionsState> {
     const { step } = await this.get()
     if (!ONBOARDING_PERMISSIONS.includes(step as OnboardingPermission)) throw new Error("Welcome setup is not on a permission step")
+    if (step === "localNetwork") return { localNetwork: this.#localNetwork }
     return this.#options.localAgent.refreshPermissions()
   }
 
-  requestPermission(permission: OnboardingPermission) {
+  requestPermission(permission: OnboardingPermission): Promise<OnboardingPermissionsState> {
     return this.#run(async () => {
       const current = await this.get()
       if (current.step !== permission) {
@@ -98,7 +108,18 @@ export class OnboardingController {
         }
         throw new Error("Welcome setup step has changed")
       }
+      if (permission === "localNetwork") {
+        this.#localNetwork = await this.#options.localNetwork.request()
+        return { localNetwork: this.#localNetwork }
+      }
       return this.#options.localAgent.requestPermission(permission)
+    })
+  }
+
+  openLocalNetworkSettings(): Promise<void> {
+    return this.#run(async () => {
+      await this.#requireStep("localNetwork")
+      await this.#options.localNetwork.openSettings()
     })
   }
 

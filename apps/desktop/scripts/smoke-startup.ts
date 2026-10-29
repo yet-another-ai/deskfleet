@@ -10,7 +10,7 @@ import { DaemonClient } from "../../daemon/src/control-client.ts"
 import { startDaemon } from "../../daemon/src/daemon.ts"
 import { connectAcpProcess } from "../../daemon/src/agents/acp.ts"
 import { createPeer } from "../../../crates/node/index.ts"
-import { onboardingPermissions, type OnboardingState } from "../../../packages/client/src/onboarding.ts"
+import type { OnboardingState } from "../../../packages/client/src/onboarding.ts"
 import type { LocalEnrollment } from "../../../packages/client/src/central.ts"
 
 // Exercise the real package entry, including its static imports and startup
@@ -193,7 +193,7 @@ try {
   await mkdir(profile)
   await inspectRenderer()
   const onboarding = await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")
-  const permissionSteps = onboardingPermissions(process.platform, onboarding.linuxDesktopBackend)
+  const permissionSteps = onboarding.permissionSteps
   assert.equal(onboarding.step, permissionSteps[0] ?? "account")
   if (onboarding.linuxDesktopBackend === "x11") {
     assert.equal(await evaluate("document.querySelectorAll('ol li').length"), 1)

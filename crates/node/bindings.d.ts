@@ -168,6 +168,8 @@ export interface LocalApplication {
 
 export type LocalApplicationKind = 'editor' | 'terminal' | 'fileManager'
 
+export type LocalNetworkAccessRequest = 'attempted' | 'unavailable' | 'not-required'
+
 /** The capture worker's latest media failure, if `startDesktop` observed it first. */
 export interface MediaFailure {
   message: string
@@ -189,6 +191,9 @@ export declare function openCatalog(databasePath: string, machineName: string): 
 export declare function openInMemoryCatalog(machineName: string): Promise<NativeCatalog>
 
 export declare function openLocalApplication(applicationId: string, directory: string): Promise<void>
+
+/** Open macOS Local Network settings for the calling app; a no-op elsewhere. */
+export declare function openLocalNetworkSettings(): Promise<void>
 
 export interface PeerConfig {
   iceServers?: Array<IceServer>
@@ -224,6 +229,9 @@ export declare function requestFullDiskAccess(): Promise<boolean | null>
 
 /** Request Linux desktop access; only Wayland opens a Portal authorization dialog. */
 export declare function requestLinuxDesktopAccess(directory: string): Promise<LinuxDesktopAccess>
+
+/** Try to trigger macOS local-network consent; never reports a permission grant. */
+export declare function requestLocalNetworkAccess(): Promise<LocalNetworkAccessRequest>
 
 /**
  * Request this process's screen/system-audio access without starting capture.

@@ -1,13 +1,12 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import type { LocalAgentState, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
-import type { OnboardingPermission } from "../../../../packages/client/src/onboarding.ts"
+import type { LocalAgentState, DesktopPermissionKind, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
 
 export interface LocalAgentConnection {
   readonly closed: boolean
   readonly desktopPermissions: DesktopPermissionsState
   refreshPermissions(): Promise<DesktopPermissionsState>
-  requestPermission(permission: OnboardingPermission): Promise<DesktopPermissionsState>
+  requestPermission(permission: DesktopPermissionKind): Promise<DesktopPermissionsState>
   shutdown(): Promise<void>
   close(): void
 }
@@ -90,7 +89,7 @@ export class LocalAgentController {
     return permissions
   }
 
-  async requestPermission(permission: OnboardingPermission): Promise<DesktopPermissionsState> {
+  async requestPermission(permission: DesktopPermissionKind): Promise<DesktopPermissionsState> {
     const connection = await this.#permissionConnection()
     const permissions = await connection.requestPermission(permission)
     if (this.#connection === connection && !connection.closed && this.#state.status === "running") this.#update(permissions)

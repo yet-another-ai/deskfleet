@@ -6,6 +6,7 @@ export function onboardingApi(): OnboardingApi {
     get: () => ipcRenderer.invoke(ONBOARDING_CHANNEL, "get"),
     permissions: () => ipcRenderer.invoke(ONBOARDING_CHANNEL, "permissions"),
     requestPermission: permission => ipcRenderer.invoke(ONBOARDING_CHANNEL, "requestPermission", permission),
+    openLocalNetworkSettings: () => ipcRenderer.invoke(ONBOARDING_CHANNEL, "openLocalNetworkSettings"),
     advancePermission: permission => ipcRenderer.invoke(ONBOARDING_CHANNEL, "advancePermission", permission),
     complete: () => ipcRenderer.invoke(ONBOARDING_CHANNEL, "complete"),
   }

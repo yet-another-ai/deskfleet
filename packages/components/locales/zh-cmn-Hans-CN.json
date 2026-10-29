@@ -1055,6 +1055,7 @@
     "notificationsDetails": "允许浏览器通知后，只要 DeskFleet 保持打开，切换到其他标签页也能收到任务动态。你可以稍后在设置中更改。",
     "progress": "设置进度",
     "steps": {
+      "localNetwork": "本地网络",
       "fullDiskAccess": "完全磁盘访问权限",
       "screenCapture": "屏幕录制",
       "accessibility": "辅助功能",
@@ -1098,6 +1099,20 @@
       }
     },
     "permissions": {
+      "localNetwork": {
+        "description": "允许 DeskFleet 直接连接附近的机器，以使用终端、智能体会话和远程桌面。",
+        "path": "隐私与安全性 → 本地网络",
+        "instructions": "点击“请求权限”，并在 macOS 弹出提示时允许 DeskFleet。如果没有出现提示，请打开系统设置，在列表中开启 DeskFleet。",
+        "request": "请求权限",
+        "openSettings": "打开系统设置",
+        "skip": "你可以先继续，稍后再更改。未开启权限时，可能无法连接本地网络中的机器。",
+        "status": {
+          "not-requested": "可以请求本地网络权限",
+          "attempted": "已发起请求。请在系统设置中确认权限是否开启。",
+          "unavailable": "无法请求权限。请连接 Wi-Fi 或以太网后重试，也可以在系统设置中检查权限。",
+          "not-required": "无需额外权限"
+        }
+      },
       "fullDiskAccess": {
         "description": "允许本地 Agent 访问受保护文件夹中的文件，用于文件预览和工作区操作。",
         "path": "隐私与安全性 → 完全磁盘访问权限",

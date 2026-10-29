@@ -24,8 +24,9 @@ pub use local_applications::{
 };
 pub use media::{DesktopConfig, DisplayInfo, capture_displays, supported_video_codecs};
 pub use permissions::{
-    check_accessibility_access, check_full_disk_access, check_screen_capture_access,
-    request_accessibility_access, request_full_disk_access, request_screen_capture_access,
+    LocalNetworkAccessRequest, check_accessibility_access, check_full_disk_access,
+    check_screen_capture_access, open_local_network_settings, request_accessibility_access,
+    request_full_disk_access, request_local_network_access, request_screen_capture_access,
 };
 pub use rtc::{
     IceCandidate, IceServer, NativePeer, PeerConfig, PeerEvent, VideoCodec, create_peer,

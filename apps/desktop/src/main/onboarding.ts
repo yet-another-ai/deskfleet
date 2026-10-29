@@ -15,6 +15,7 @@ export function installOnboarding(controller: OnboardingController): void {
       case "get": return controller.get()
       case "permissions": return controller.permissions()
       case "requestPermission": return controller.requestPermission(permission(value))
+      case "openLocalNetworkSettings": return controller.openLocalNetworkSettings()
       case "advancePermission": return controller.advancePermission(permission(value))
       case "complete": return controller.complete()
       default: throw new Error("Unknown welcome operation")

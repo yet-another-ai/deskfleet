@@ -401,19 +401,25 @@ signed macOS application; see the [Electron notification documentation](https://
 
 ## Welcome and initial setup
 
-The welcome page guides macOS Full Disk Access, screen/system-audio recording,
-and Accessibility in that order, then signs in to the compiled backend.
+The welcome page guides macOS Local Network access, Full Disk Access,
+screen/system-audio recording, and Accessibility in that order, then signs in
+to the compiled backend. Local Network access supports direct connections to
+other machines and is offered even when the local Agent is disabled.
 The desktop host saves the current step in `onboarding.json` under `userData`;
 closing the window or restarting the app resumes the unfinished step. Startup
 starts or reuses the local Agent when its saved preference is enabled. macOS
 startup checks permissions silently; Wayland requests its combined desktop
 authorization during startup. Clients with local Agent startup disabled and no
-running daemon, and platforms that do not require these permissions, proceed
-directly to sign-in.
+running daemon skip the Agent's permissions. Other platforms without permission
+steps proceed directly to sign-in.
 
 Each permission page explains the capability and provides an explicit request,
-a status refresh, and a way to continue without it. Returning from System
-Settings refreshes permission status silently. Full Disk Access must be enabled
+a way to continue without it, and a status refresh where the OS supports checking.
+Local Network has explicit **Request access** and **Open System Settings** actions;
+macOS does not expose a general permission-status API, so the page does not claim
+that requesting access granted it. If no prompt appears, review DeskFleet under
+**System Settings → Privacy & Security → Local Network**. Returning from System
+Settings refreshes the other permission states silently. Full Disk Access must be enabled
 for the app or executable hosting the Agent; restart that host if macOS requires
 it. Permission denial does not prevent sign-in or unrelated Agent operations.
 Completed setup is not repeated at each launch. Signed-out users and Web clients

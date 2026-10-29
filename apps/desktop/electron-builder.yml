@@ -7,6 +7,8 @@ asarUnpack:
   - out/main/deskfleet.node
 # Vite bundles every renderer and main-process dependency into out/.
 npmRebuild: false
+# Give packaged executables their own macOS Local Network permission identity.
+afterPack: ./scripts/mac-build-uuid.ts
 # Fuses and ASAR integrity harden loading but do not replace platform code signing.
 electronFuses:
   # Flipping fuses changes executable pages. Unsigned Apple Silicon builds need
@@ -45,6 +47,8 @@ files:
 mac:
   category: public.app-category.developer-tools
   hardenedRuntime: true
+  extendInfo:
+    NSLocalNetworkUsageDescription: DeskFleet connects to your other machines for terminals, agent sessions, files, and remote desktops.
   target:
     - dmg
     - zip

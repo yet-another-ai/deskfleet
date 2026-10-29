@@ -1,4 +1,5 @@
 import { app, BrowserWindow, net, powerSaveBlocker, protocol } from "electron"
+import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -295,7 +296,10 @@ void app.whenReady().then(async () => {
     // This fixture exercises signed-in clients; smoke-startup covers first-run setup.
     const onboardingPath = join(context.profileDirectory, "onboarding.json")
     await writeFile(onboardingPath, JSON.stringify({ step: "complete" }))
-    installOnboarding(new OnboardingController({ path: onboardingPath, platform: process.platform, localAgent: controller }))
+    installOnboarding(new OnboardingController({
+      path: onboardingPath, platform: process.platform, localAgent: controller,
+      localNetwork: { request: requestLocalNetworkAccess, openSettings: openLocalNetworkSettings },
+    }))
     protocol.handle(RENDERER_SCHEME, request => {
       const path = resolveRendererResourcePath(request.url, context.rendererDirectory)
       return path ? net.fetch(pathToFileURL(path).toString()) : new Response(null, { status: 400 })

@@ -4,6 +4,7 @@ import { installPorts } from "./ports.ts"
 import { installLocalChannels } from "./local-channels.ts"
 import { installLocalApplications } from "./applications.ts"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
+import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { join } from "node:path"
 import { desktopDaemonDirectory } from "./daemon-directory.ts"
 import { AppearanceSettingsController } from "./appearance-settings.ts"
@@ -65,6 +66,7 @@ function start(): void {
     const userData = app.getPath("userData")
     const onboarding = new OnboardingController({
       path: join(userData, "onboarding.json"), platform: process.platform, localAgent,
+      localNetwork: { request: requestLocalNetworkAccess, openSettings: openLocalNetworkSettings },
       established: () => establishedDesktopProfile(userData),
     })
     installOnboarding(onboarding)

@@ -138,6 +138,23 @@ The release overlay requires signing and notarization; missing credentials or a
 failure prevents publication. PR, main, and manual Build runs package without
 those credentials. Windows installers are unsigned in this initial pipeline.
 
+macOS packaging rewrites the main and helper executables' Mach-O build UUIDs
+before signing, giving each DeskFleet executable its own identity instead of
+reusing Electron's UUIDs. macOS Local Network privacy uses those UUIDs to identify
+the requesting app; collisions can apply an installed app's permission request
+to another Electron app and leave direct WebRTC connections blocked. The bundle
+also declares why DeskFleet needs local network access. Keep this processing
+before code signing and notarization; see Apple's
+[build UUID guidance](https://developer.apple.com/documentation/technotes/tn3178-checking-for-and-resolving-build-uuid-problems)
+and [Local Network privacy guidance](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy).
+
+Release validation on macOS must use the packaged app, because development
+Electron has a separate OS permission identity. Verify direct terminal output
+and live Session events from another machine after granting DeskFleet access in
+**System Settings → Privacy & Security → Local Network**. Successful management
+requests or inbound connections to the hosted daemon do not establish that the
+renderer can initiate a direct peer connection.
+
 Each tag produces a **draft** GitHub Release containing the five desktop
 installers, four server/daemon archives, updater metadata and blockmaps. Review
 its generated notes and assets, then publish it in GitHub. Prerelease tags create

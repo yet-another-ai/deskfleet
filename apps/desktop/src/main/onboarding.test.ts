@@ -10,7 +10,7 @@ vi.mock("electron", () => ({ ipcMain: { handle: mocks.handle } }))
 beforeEach(() => vi.clearAllMocks())
 
 function fixture() {
-  const controller = { get: vi.fn(async () => ({ step: "account" })), permissions: vi.fn(), requestPermission: vi.fn(), advancePermission: vi.fn(), complete: vi.fn() }
+  const controller = { get: vi.fn(async () => ({ step: "account", permissionSteps: [] })), permissions: vi.fn(), requestPermission: vi.fn(), openLocalNetworkSettings: vi.fn(), advancePermission: vi.fn(), complete: vi.fn() }
   installOnboarding(controller as unknown as OnboardingController)
   expect(mocks.handle.mock.calls[0]![0]).toBe(ONBOARDING_CHANNEL)
   const invoke = mocks.handle.mock.calls[0]![1] as (event: IpcMainInvokeEvent, method: unknown, value?: unknown) => Promise<unknown>
@@ -21,15 +21,21 @@ function fixture() {
 
 test("welcome IPC accepts only the main renderer and known permission actions", async () => {
   const f = fixture()
-  expect(await f.invoke(f.event, "get")).toEqual({ step: "account" })
+  expect(await f.invoke(f.event, "get")).toEqual({ step: "account", permissionSteps: [] })
   await f.invoke(f.event, "requestPermission", "screenCapture")
   expect(f.controller.requestPermission).toHaveBeenCalledExactlyOnceWith("screenCapture")
+  await f.invoke(f.event, "requestPermission", "localNetwork")
+  expect(f.controller.requestPermission).toHaveBeenLastCalledWith("localNetwork")
+  await f.invoke(f.event, "openLocalNetworkSettings")
+  expect(f.controller.openLocalNetworkSettings).toHaveBeenCalledOnce()
   await expect(f.invoke(f.event, "requestPermission", "https://example.org/")).rejects.toThrow("Invalid welcome permission")
   await expect(f.invoke(f.event, "saveServer", "https://example.org/")).rejects.toThrow("Unknown welcome operation")
   await expect(f.invoke(f.event, "openExternal", "https://example.org/")).rejects.toThrow("Unknown welcome operation")
   await expect(f.invoke({ ...f.event, senderFrame: null }, "get")).rejects.toThrow("main renderer")
   await expect(f.invoke({ ...f.event, senderFrame: { url: BUNDLED_RENDERER_URL } } as IpcMainInvokeEvent, "get")).rejects.toThrow("main renderer")
   f.mainFrame.url = "https://example.org/"
+  await expect(f.invoke(f.event, "openLocalNetworkSettings")).rejects.toThrow("main renderer")
+  expect(f.controller.openLocalNetworkSettings).toHaveBeenCalledOnce()
   await expect(f.invoke(f.event, "get")).rejects.toThrow("main renderer")
   expect(f.controller.get).toHaveBeenCalledOnce()
 })

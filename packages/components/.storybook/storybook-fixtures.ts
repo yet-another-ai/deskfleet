@@ -824,19 +824,22 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
     central,
     siteAdministration: central,
     onboarding: {
-      get: async () => ({ step: "complete" }),
+      get: async () => ({ step: "complete", permissionSteps: [] }),
       permissions: async () => ({
+        localNetwork: "attempted",
         screenCapturePermission: { status: "granted" },
         accessibilityPermission: { status: "denied" },
         fullDiskAccessPermission: { status: "granted" },
       }),
       requestPermission: async () => ({
+        localNetwork: "attempted",
         screenCapturePermission: { status: "granted" },
         accessibilityPermission: { status: "granted" },
         fullDiskAccessPermission: { status: "granted" },
       }),
-      advancePermission: async () => ({ step: "account" }),
-      complete: async () => ({ step: "complete" }),
+      openLocalNetworkSettings: async () => {},
+      advancePermission: async () => ({ step: "account", permissionSteps: [] }),
+      complete: async () => ({ step: "complete", permissionSteps: [] }),
     },
     appearance: {
       get: async () => ({ ...appearance }),

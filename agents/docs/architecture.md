@@ -455,8 +455,9 @@ ignores that environment variable and does not import data from the headless
 directory.
 
 Desktop first-run setup uses a welcome page: platform-specific permissions, then
-account sign-in. macOS guides Full Disk Access, screen/system-audio recording,
-and Accessibility. Linux Wayland guides screen sharing and keyboard/mouse
+account sign-in. macOS first guides Local Network access for connections to other
+machines, followed by Full Disk Access, screen/system-audio recording,
+and Accessibility for its local Agent. Linux Wayland guides screen sharing and keyboard/mouse
 control through its desktop authorization dialog. Linux X11 checks access to the
 existing X server and skips Portal permission steps. Linux has no Full Disk
 Access or macOS System Settings instructions. The host saves
@@ -464,17 +465,30 @@ the current step in `onboarding.json` under its user-data directory and resumes
 it after restart. A profile that already has an account or desktop settings, but
 no welcome file, is treated as finished so sign-in is not repeated and the local
 Agent still starts. Startup starts or reuses the local Agent according to the
-existing enabled preference. Windows clients skip the OS permission steps, as
-do clients with local Agent startup disabled and no running daemon. macOS retains
+existing enabled preference. Windows clients skip the OS permission steps.
+Clients with local Agent startup disabled and no running daemon skip the
+daemon's permission steps; macOS still offers Local Network access. macOS retains
 permission guidance when an enabled Agent fails to start. Linux preserves a saved
 Portal step while disconnected; a fresh profile with no known backend starts at
 account setup. When a later hello identifies X11, the renderer reloads the host's
 normalized account step after active permission work finishes. Users can defer an individual
 permission without blocking account setup or unrelated Agent work.
 
+Local Network access belongs to the desktop client, independently of its local
+Agent. Its welcome action calls a Rust native helper in Electron's main process.
+Following Apple's [Local Network privacy guidance](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy),
+the helper attempts UDP connections to randomized link-local IPv6 addresses on
+broadcast-capable interfaces without sending packets. This is a best-effort
+request trigger, not a permission-status check. macOS provides neither a general
+silent status API nor a direct request API, so the UI reports only that the
+request was attempted, or that no suitable network was available. It never
+labels an attempted request as granted. The user can open the fixed Local
+Network settings pane, continue, or skip. Opening the page, returning to it, and
+refreshing its state never trigger a network request.
+
 After acquiring discovery and initializing local IPC, a macOS desktop-hosted
 daemon checks permissions without prompting, reporting `checking` while that
-silent inspection is pending. The welcome page requests each permission
+silent inspection is pending. The welcome page requests these daemon permissions
 through authenticated local IPC; native checks and requests run in the owning
 daemon process. Returning from System Settings refreshes checks without opening
 another prompt. Standalone startup requests its permissions automatically.

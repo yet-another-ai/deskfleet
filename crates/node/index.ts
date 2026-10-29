@@ -2,12 +2,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
-import type { DisplayInfo, LocalApplication, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
+import type { DisplayInfo, LocalApplication, LocalNetworkAccessRequest, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
 
 export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, LinuxDesktopAccess } from "./bindings.d.ts"
 export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
 export type { SystemStatus } from "./bindings.d.ts"
 export type { LocalApplication, LocalApplicationKind } from "./bindings.d.ts"
+export type { LocalNetworkAccessRequest } from "./bindings.d.ts"
 
 type Bindings = typeof import("./bindings.d.ts")
 let bindings: Bindings | undefined
@@ -117,6 +118,16 @@ export function requestScreenCaptureAccess(): Promise<boolean | null> {
 /** Request Accessibility in the daemon's process without opening an input controller. */
 export function requestAccessibilityAccess(): Promise<boolean | null> {
   return (bindings ??= loadBindings()).requestAccessibilityAccess()
+}
+
+/** Try to trigger macOS local-network consent; the outcome never confirms a grant. */
+export function requestLocalNetworkAccess(): Promise<LocalNetworkAccessRequest> {
+  return (bindings ??= loadBindings()).requestLocalNetworkAccess()
+}
+
+/** Open macOS Local Network settings for this desktop app; a no-op elsewhere. */
+export function openLocalNetworkSettings(): Promise<void> {
+  return (bindings ??= loadBindings()).openLocalNetworkSettings()
 }
 
 /** The native-selected desktop backend; absent outside an interactive Linux session. */

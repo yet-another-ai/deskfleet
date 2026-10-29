@@ -4,7 +4,7 @@ import { createPinia, disposePinia, type Pinia } from "pinia"
 import { getClient } from "@deskfleet/client/platform"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { DesktopPermissionsState, LocalAgentState } from "@deskfleet/client/local-agent"
-import { onboardingPermissions, type OnboardingApi, type OnboardingPermission, type OnboardingState, type OnboardingStep } from "@deskfleet/client/onboarding"
+import { onboardingPermissions, type OnboardingApi, type OnboardingPermission, type OnboardingPermissionsState, type OnboardingState, type OnboardingStep } from "@deskfleet/client/onboarding"
 import { i18n } from "./i18n/index.ts"
 import AccountShell from "./AccountShell.vue"
 import { fakeCentral } from "./test/central.ts"
@@ -14,28 +14,35 @@ let pinia: Pinia
 beforeEach(() => { pinia = createPinia() })
 afterEach(() => { view?.unmount(); view = undefined; disposePinia(pinia); vi.restoreAllMocks() })
 
-function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false, platform: DeskfleetDesktopApi["platform"] = "darwin") {
+function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false, platform: DeskfleetDesktopApi["platform"] = "darwin", localAgent = true) {
   const fake = fakeCentral({ signedIn, teams: [] })
-  const state: OnboardingState = { step: initialStep, ...(platform === "linux" ? { linuxDesktopBackend: "wayland" as const } : {}) }
-  const permissions: DesktopPermissionsState = {
+  const state: OnboardingState = {
+    step: initialStep,
+    permissionSteps: onboardingPermissions(platform, platform === "linux" ? "wayland" : undefined, localAgent),
+    ...(platform === "linux" ? { linuxDesktopBackend: "wayland" as const } : {}),
+  }
+  const permissions: OnboardingPermissionsState & DesktopPermissionsState = {
+    localNetwork: "not-requested",
     fullDiskAccessPermission: { status: platform === "linux" ? "not-required" : "denied" },
     screenCapturePermission: { status: "denied" },
     accessibilityPermission: { status: "denied" },
   }
   const listeners = new Set<(state: LocalAgentState) => void>()
-  const order = onboardingPermissions(platform, state.linuxDesktopBackend)
+  const order = state.permissionSteps
   const next = (step: OnboardingStep) => { state.step = step; return { ...state } }
   const onboarding = {
     get: vi.fn(async () => ({ ...state })),
     permissions: vi.fn(async () => ({ ...permissions })),
     requestPermission: vi.fn(async (kind: OnboardingPermission) => {
-      permissions[`${kind}Permission`] = { status: "requesting" }
+      if (kind === "localNetwork") permissions.localNetwork = "attempted"
+      else permissions[`${kind}Permission`] = { status: "requesting" }
       if (platform === "linux") {
         permissions.screenCapturePermission = { status: "requesting" }
         permissions.accessibilityPermission = { status: "requesting" }
       }
       return { ...permissions }
     }),
+    openLocalNetworkSettings: vi.fn(async () => {}),
     advancePermission: vi.fn(async (kind: OnboardingPermission) => next(order[order.indexOf(kind) + 1] ?? "account")),
     complete: vi.fn(async () => next("complete")),
   } satisfies OnboardingApi
@@ -62,13 +69,67 @@ async function submit(): Promise<void> {
   await flushPromises()
 }
 
+test("local network access is requested only by its button and an attempt is never shown as granted", async () => {
+  const app = setup("localNetwork")
+  app.mount()
+  await flushPromises()
+  expect(view!.get("h1").text()).toBe("Local network")
+  expect(view!.text()).toContain("Step 1 of 5")
+  expect(view!.findAll("button").map(button => button.text())).not.toContain("Check again")
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+  expect(app.onboarding.permissions).toHaveBeenCalledOnce()
+
+  let resolve!: (permissions: OnboardingPermissionsState & DesktopPermissionsState) => void
+  app.onboarding.requestPermission.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  await click("Request access")
+  expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("localNetwork")
+  app.changed()
+  resolve({ ...app.permissions, localNetwork: "attempted" })
+  await flushPromises()
+  expect(view!.get('[role="status"]').text()).toBe("Request sent. Check System Settings to confirm access is enabled.")
+  expect(view!.get('[role="status"]').text()).not.toBe("Access enabled")
+  await click("Open System Settings")
+  expect(app.onboarding.openLocalNetworkSettings).toHaveBeenCalledOnce()
+  expect(app.onboarding.requestPermission).toHaveBeenCalledOnce()
+  await click("Continue")
+  expect(app.onboarding.advancePermission).toHaveBeenCalledExactlyOnceWith("localNetwork")
+  expect(view!.get("h1").text()).toBe("Full Disk Access")
+})
+
+test("an unavailable local network request can continue setup without a grant", async () => {
+  const app = setup("localNetwork")
+  app.onboarding.requestPermission.mockImplementationOnce(async () => ({ ...app.permissions, localNetwork: "unavailable" }))
+  app.mount()
+  await flushPromises()
+  await click("Request access")
+  expect(view!.get('[role="status"]').text()).toBe("Could not request access. Connect to Wi-Fi or Ethernet and try again, or check access in System Settings.")
+  await click("Continue")
+  expect(view!.get("h1").text()).toBe("Full Disk Access")
+})
+
+test("macOS without a local agent uses the host's network-only steps and can skip the request", async () => {
+  const app = setup("localNetwork", false, "darwin", false)
+  app.mount()
+  await flushPromises()
+  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Local network", "Your account"])
+  await click("Skip for now")
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
+  expect(app.onboarding.advancePermission).toHaveBeenCalledExactlyOnceWith("localNetwork")
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+  await submit()
+  expect(app.onboarding.complete).toHaveBeenCalledOnce()
+  expect(view!.text()).toContain("Welcome, Ada")
+})
+
 test("welcome guides each permission and finishes only after successful sign-in without server configuration", async () => {
   const app = setup()
   app.mount()
   await flushPromises()
   expect(view!.get("h1").text()).toBe("Full Disk Access")
   expect(view!.find('[name="server-url"]').exists()).toBe(false)
-  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Full Disk Access", "Screen recording", "Accessibility", "Your account"])
+  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Local network", "Full Disk Access", "Screen recording", "Accessibility", "Your account"])
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
   await click("Enable access")
   expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("fullDiskAccess")
@@ -279,7 +340,7 @@ test("an account-changed event during login cannot bypass saving completed onboa
   expect(app.onboarding.complete).toHaveBeenCalledOnce()
   expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
   expect(view!.text()).not.toContain("Welcome, Ada")
-  resolve({ step: "complete" })
+  resolve({ step: "complete", permissionSteps: [] })
   await flushPromises()
   expect(view!.text()).toContain("Welcome, Ada")
 })
@@ -313,6 +374,7 @@ for (const platform of ["darwin", "linux"] as const) test(`${platform} permissio
 test.each(["x11", null] as const)("Linux %s welcome goes directly to account without Portal guidance", async backend => {
   const app = setup("account", false, "linux")
   app.state.linuxDesktopBackend = backend
+  app.state.permissionSteps = []
   app.permissions.linuxDesktopBackend = backend
   app.permissions.screenCapturePermission = { status: "not-required" }
   app.permissions.accessibilityPermission = { status: "not-required" }
@@ -335,6 +397,7 @@ test("Linux welcome follows X11 discovered while retrying its initial permission
   expect(view!.get("h1").text()).toBe("Screen sharing")
 
   app.state.linuxDesktopBackend = "x11"
+  app.state.permissionSteps = []
   app.state.step = "account"
   resolve({ ...app.permissions, linuxDesktopBackend: "x11", screenCapturePermission: { status: "not-required" }, accessibilityPermission: { status: "not-required" } })
   await flushPromises()
@@ -356,6 +419,7 @@ test("Linux welcome reconciles a late X11 hello after a failed permission refres
   expect(view!.get('[role="alert"]').text()).toBe("Local Agent startup failed")
 
   app.state.linuxDesktopBackend = "x11"
+  app.state.permissionSteps = []
   app.state.step = "account"
   app.permissions.linuxDesktopBackend = "x11"
   app.changed()
@@ -380,6 +444,7 @@ test("Linux account keeps a sign-in error when reconcile only discovers the back
   // Failed first-run acts always reconcile; a late hello may only add the backend.
   app.onboarding.get.mockImplementationOnce(async () => {
     app.state.linuxDesktopBackend = "x11"
+    app.state.permissionSteps = []
     return { ...app.state }
   })
   await submit()
@@ -421,6 +486,7 @@ test("Linux welcome defers late backend reconciliation until an active permissio
   const reads = app.onboarding.get.mock.calls.length
 
   app.state.linuxDesktopBackend = "x11"
+  app.state.permissionSteps = []
   app.state.step = "account"
   app.permissions.linuxDesktopBackend = "x11"
   app.changed()
@@ -440,6 +506,7 @@ test("Linux welcome recovers when the host normalized its step before the permis
   app.onboarding.permissions.mockImplementationOnce(async () => {
     app.state.step = "account"
     app.state.linuxDesktopBackend = "x11"
+    app.state.permissionSteps = []
     throw new Error("Welcome setup is not on a permission step")
   })
   app.mount()

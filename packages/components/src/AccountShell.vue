@@ -77,7 +77,7 @@ useEventListener(window, "focus", () => {
 })
 provide(accountSessionKey, session)
 onBeforeUnmount(session.dispose)
-const onboarding = ref<OnboardingState | undefined>(props.host.onboarding ? undefined : { step: "complete" })
+const onboarding = ref<OnboardingState | undefined>(props.host.onboarding ? undefined : { step: "complete", permissionSteps: [] })
 const onboardingError = ref<string>()
 async function loadOnboarding(): Promise<void> {
   onboardingError.value = undefined
