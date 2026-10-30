@@ -53,6 +53,19 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
     }, `Button ${label}`)
     button(label)!.click()
   }
+  function workspaceButton(name: string): HTMLButtonElement | undefined {
+    return [...document.querySelectorAll<HTMLButtonElement>("aside .workspace-row button")]
+      .find(element => element.getAttribute("aria-label") === name)
+  }
+  async function workspaceAction(name: string, action: string): Promise<void> {
+    await until(() => !!workspaceButton(name), `Workspace ${name}`)
+    const row = workspaceButton(name)!
+    row.focus()
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }))
+    await until(() => !!document.querySelector('[role="menu"]'), "Workspace context menu")
+    await click(action)
+    await until(() => !!document.querySelector('[role="dialog"][data-state="open"]'), `${action} dialog`)
+  }
   async function fill(name: string, value: string): Promise<HTMLInputElement> {
     await until(() => !!document.querySelector(`input[name="${name}"]`), `Input ${name}`)
     const input = document.querySelector<HTMLInputElement>(`input[name="${name}"]`)!
@@ -97,14 +110,14 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
     const main = workspace.worktrees.find(value => value.id === context.worktreeId)
     require(main && !main.sessionId, "Main worktree did not persist")
     require(main.directories[0]?.path === context.updatedPath && main.directories[1]?.path === context.checkoutPath, "Directory order/default did not persist")
-    await until(() => [...document.querySelectorAll("a")].some(link => link.textContent?.trim() === workspace.name), "Restored sidebar workspace")
-    const link = [...document.querySelectorAll("a")].find(element => element.textContent?.trim() === workspace.name)!
-    link.click()
-    await until(() => location.hash.includes("/workspaces/") && !!document.querySelector("main")?.innerText.includes(context.updatedPath), "Restored workspace directory")
+    await workspaceAction(workspace.name, "Edit workspace")
+    await until(() => !!document.querySelector('[role="dialog"]')?.textContent?.includes(context.updatedPath), "Restored workspace directory")
     require(!button("Add worktree") && !button("Delete worktree"), "Worktrees must not have manual maintenance controls")
     require(!document.querySelector('a[href*="/worktrees/"]'), "The internal main worktree must not appear in workspace navigation")
-    require(document.querySelector("main")!.innerText.includes("No sessions yet."), "A restored workspace without sessions must show its empty session list")
-    await click("Delete workspace")
+    require(!workspaceButton(workspace.name)?.closest("li")?.querySelector('a[href*="/sessions/"]'), "A restored workspace without sessions must have no sidebar session entries")
+    await click("Cancel")
+    await until(() => !document.querySelector('[role="dialog"][data-state="open"]'), "Closing workspace editor")
+    await workspaceAction(workspace.name, "Delete workspace")
     await click("Confirm deletion")
     await until(async () => (await api.catalog.list()).workspaces.length === 0, "Workspace deletion")
     return { workspaceId: workspace.id, worktreeId: main.id, restored: true }
@@ -125,7 +138,7 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   await click("Add directory")
   await chooseFolder(context.initialAncestors)
   workspaceInput.form!.requestSubmit()
-  await until(() => location.hash.includes("/workspaces/") && !!document.querySelector("main")?.innerText.includes("No sessions yet."), "Workspace creation navigation")
+  await until(() => location.hash === "#/" && !document.querySelector('input[name="workspace-name"]') && !!workspaceButton("Catalog smoke workspace"), "Workspace creation navigation")
   const created = (await api.catalog.list()).workspaces[0]!
   require(created.worktrees.length === 1 && !created.worktrees[0]!.sessionId, "Creation must automatically create exactly one main Worktree")
   require(created.worktrees[0]!.directories[0]?.path === context.checkoutPath, "Initial default must be the first configured path")
@@ -133,7 +146,7 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   require(!button("Add worktree"), "Workspace must not expose independent Worktree creation")
   require(!document.querySelector('a[href*="/worktrees/"]'), "Creating a workspace must not expose its internal main worktree")
   require(!document.body.innerText.includes("Main worktree"), "Workspace UI must not label a main worktree")
-  require(document.querySelector("main")!.innerText.includes("No sessions yet."), "New workspaces must show an empty session list")
+  require(!document.querySelector('aside a[href*="/workspaces/"]'), "Workspace names must not link to a details page")
   await click("New session")
   await until(() => location.hash === "#/", "Workspace new session navigation")
   await until(() => !!document.querySelector('a[href="#/settings/agents"]'), "Empty Agent setup")
@@ -142,12 +155,15 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   // Machine, Workspace, the choice of a new Session context, and the empty Agent selection.
   require(targets.length === 4 && targets.includes(created.name) && targets.includes("New worktree") && targets.includes("Agent"), "The composer must target the selected workspace and show an unconfigured Agent selection")
   require(document.querySelector('aside[aria-label="Changes"]')!.textContent?.includes("Git changes are available within a session."), "Composer must not inspect a workspace as a Session Worktree")
-  const workspaceLink = [...document.querySelectorAll("a")].find(element => element.textContent?.trim() === created.name)
-  require(workspaceLink, "Created workspace must remain available in the sidebar")
-  workspaceLink.click()
-  await until(() => location.hash.includes("/workspaces/"), "Returning to workspace")
+  const row = workspaceButton(created.name)
+  require(row, "Created workspace must remain available in the sidebar")
+  row.click()
+  await until(() => row.getAttribute("aria-expanded") === "false", "Collapsing workspace")
+  require(location.hash === "#/", "Workspace collapse must preserve the current page")
+  row.click()
+  await until(() => row.getAttribute("aria-expanded") === "true", "Expanding workspace")
 
-  await click("Edit workspace")
+  await workspaceAction(created.name, "Edit workspace")
   const renameInput = await fill("workspace-name", "Catalog smoke renamed")
   await click("Directory 2")
   await chooseFolder(context.updatedAncestors)

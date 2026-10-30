@@ -18,7 +18,7 @@ const sections = [
 ] as const
 type Section = typeof sections[number]
 /** Named routes that belong under Conversations; Settings and Schedules are excluded. */
-const conversationRouteNames = new Set(["new-session", "session", "workspace", "worktree", "machine-control", "terminal"])
+const conversationRouteNames = new Set(["new-session", "session", "worktree", "machine-control", "terminal"])
 const activeSection = computed(() => sections.find(section => section.routeName === route.name)
   ?? (conversationRouteNames.has(String(route.name)) ? sections[0] : undefined))
 

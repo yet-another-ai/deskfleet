@@ -1,16 +1,18 @@
 import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
 import { expect, test, vi } from "vitest"
-import { reactive } from "vue"
+import { reactive, ref } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
 import { agentSnapshot } from "../../test/agent.ts"
 import type { AgentSessionSummary, MachineSummary } from "../../stores/fleet-types.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
+import { useTerminalsStore } from "../../stores/terminals.ts"
+import { accountSessionKey, type AccountSession } from "../../composables/useAccountSession.ts"
 import MachineSection from "./MachineSection.vue"
 
-async function setup(machine: Partial<MachineSummary> = {}) {
+async function setup(machine: Partial<MachineSummary> = {}, account?: AccountSession) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const router = createRouter({
@@ -18,7 +20,6 @@ async function setup(machine: Partial<MachineSummary> = {}) {
     routes: [
       { path: "/", name: "new-session", component: {} },
       { path: "/machines/:machineId/control", name: "machine-control", component: {} },
-      { path: "/workspaces/:workspaceId", name: "workspace", component: {} },
       { path: "/sessions/:sessionId", name: "session", component: {} },
       { path: "/terminals/:terminalId", name: "terminal", component: {} },
     ],
@@ -29,7 +30,7 @@ async function setup(machine: Partial<MachineSummary> = {}) {
       id: "local-daemon", name: "host", local: true, online: true, desktop: false,
       terminals: [{ id: "shell", title: "Machine shell", cwd: "/home/user" }], sessions: [], workspaces: [], ...machine,
     } },
-    global: { plugins: [pinia, router, i18n] },
+    global: { plugins: [pinia, router, i18n], provide: account ? { [accountSessionKey as symbol]: account } : {} },
   })
   return { wrapper, router }
 }
@@ -72,7 +73,7 @@ test("new session buttons select their workspace, including from the creation pa
   wrapper.unmount()
 })
 
-test("workspace rows navigate while their icon buttons fold terminals and sessions", async () => {
+test("workspace rows fold terminals and sessions without navigating", async () => {
   const { wrapper, router } = await setup({
     desktop: true,
     workspaces: [{
@@ -83,15 +84,10 @@ test("workspace rows navigate while their icon buttons fold terminals and sessio
   })
   expect(wrapper.findAll("a").map(link => [link.text(), link.attributes("href")])).toEqual([
     ["Local control", "/machines/local-daemon/control"],
-    ["Project", "/workspaces/workspace"],
     ["Workspace shell", "/terminals/workspace-shell"],
     ["Implement feature", "/sessions/session"],
   ])
   const folder = wrapper.get('button[aria-label="Project"]')
-  await wrapper.get('a[href="/workspaces/workspace"]').trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.name).toBe("workspace")
-  expect(folder.attributes("aria-expanded")).toBe("true")
   const path = router.currentRoute.value.fullPath
   expect(folder.attributes("aria-expanded")).toBe("true")
   await folder.trigger("click")
@@ -104,6 +100,79 @@ test("workspace rows navigate while their icon buttons fold terminals and sessio
   expect(wrapper.get('a[href="/sessions/session"]').text()).toBe("Implement feature")
   expect(wrapper.get('a[href="/terminals/workspace-shell"]').text()).toBe("Workspace shell")
   expect(wrapper.text()).not.toContain("Machine shell")
+  wrapper.unmount()
+})
+
+test("opening a workspace terminal uses its first directory and leaves the folder collapsed", async () => {
+  const { wrapper, router } = await setup({
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }, { path: "/another" }], terminals: [], sessions: [] }],
+  })
+  const terminal = { id: "workspace-shell", title: "Project shell", cwd: "/project", cols: 80, rows: 24, status: "running" as const }
+  let finish!: (value: typeof terminal) => void
+  const create = vi.spyOn(useTerminalsStore(), "create").mockReturnValue(new Promise(resolve => { finish = resolve }))
+  const folder = wrapper.get('button[aria-label="Project"]')
+  await folder.trigger("click")
+  const button = wrapper.get('button[aria-label="Open terminal in default directory"]')
+  await button.trigger("click")
+  expect(create).toHaveBeenCalledExactlyOnceWith({ cwd: "/project" })
+  expect(button.attributes("aria-disabled")).toBe("true")
+  await button.trigger("click")
+  expect(create).toHaveBeenCalledOnce()
+  finish(terminal)
+  await flushPromises()
+  expect(router.currentRoute.value.name).toBe("terminal")
+  expect(router.currentRoute.value.params.terminalId).toBe(terminal.id)
+  expect(folder.attributes("aria-expanded")).toBe("false")
+  expect(button.attributes("aria-disabled")).toBeUndefined()
+  wrapper.unmount()
+})
+
+test("workspace terminal failures stay visible and allow retry", async () => {
+  const { wrapper, router } = await setup({
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions: [] }],
+  })
+  const create = vi.spyOn(useTerminalsStore(), "create").mockRejectedValueOnce(new Error("Directory unavailable")).mockResolvedValue({
+    id: "shell", title: "shell", cwd: "/project", cols: 80, rows: 24, status: "running",
+  })
+  const button = wrapper.get('button[aria-label="Open terminal in default directory"]')
+  await button.trigger("click"); await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toBe("Directory unavailable")
+  expect(router.currentRoute.value.name).toBe("machine-control")
+  await button.trigger("click"); await flushPromises()
+  expect(create).toHaveBeenCalledTimes(2)
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  expect(router.currentRoute.value.name).toBe("terminal")
+  wrapper.unmount()
+})
+
+test("an offline workspace cannot open a terminal", async () => {
+  const { wrapper } = await setup({
+    online: false,
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions: [] }],
+  })
+  const create = vi.spyOn(useTerminalsStore(), "create")
+  const button = wrapper.get('button[aria-label="Open terminal in default directory"]')
+  expect(button.attributes("aria-disabled")).toBe("true")
+  await button.trigger("click")
+  expect(create).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+test("a workspace terminal on another machine opens that machine's terminal route", async () => {
+  const openMachineRoute = vi.fn()
+  const account = { machineId: ref("selected-machine"), localMachineId: ref("local-daemon"), openMachineRoute } as unknown as AccountSession
+  const { wrapper, router } = await setup({
+    id: "remote-machine", local: false,
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/remote/project" }], terminals: [], sessions: [] }],
+  }, account)
+  const create = vi.spyOn(useTerminalsStore(), "create").mockResolvedValue({
+    id: "remote-shell", title: "shell", cwd: "/remote/project", cols: 80, rows: 24, status: "running",
+  })
+  await wrapper.get('button[aria-label="Open terminal in default directory"]').trigger("click")
+  await flushPromises()
+  expect(create).toHaveBeenCalledExactlyOnceWith({ cwd: "/remote/project" })
+  expect(openMachineRoute).toHaveBeenCalledExactlyOnceWith("remote-machine", { name: "terminal", params: { terminalId: "remote-shell" } })
+  expect(router.currentRoute.value.name).toBe("machine-control")
   wrapper.unmount()
 })
 

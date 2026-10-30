@@ -59,7 +59,7 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
   const keepAwakeToggle = () => document.querySelector<HTMLButtonElement>('main [role="switch"][aria-labelledby="keep-awake-label"]')
   const settingsButton = () => document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]')
   const addWorkspace = () => document.querySelector<HTMLButtonElement>('button[aria-label="Add workspace"]')
-  const sidebarWorkspace = () => [...document.querySelectorAll("aside a")].some(link => link.textContent?.trim() === "Local Agent smoke")
+  const sidebarWorkspace = () => !!document.querySelector('aside .workspace-row button[aria-label="Local Agent smoke"]')
   // Settings replaces the sidebar, so sidebar checks happen after returning to the app.
   async function openSettings(): Promise<void> {
     settingsButton()!.click()

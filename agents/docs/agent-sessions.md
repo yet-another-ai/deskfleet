@@ -115,7 +115,7 @@ error on retry. The UI refreshes the catalog and opens the resulting Session.
 
 The sidebar footer links to `/sessions/archived`, a dedicated page for the selected
 machine's archived Sessions. Completed archives are hidden from the machine,
-Workspace, and Pinned sidebar lists and the Workspace page's Session list; they
+Workspace, and Pinned sidebar lists; they
 remain available through this archive page. Sessions still archiving remain in
 their ordinary lists so failed archive cleanup can be retried. Restoring a Session
 returns it to the ordinary machine and Workspace lists. The page supports direct

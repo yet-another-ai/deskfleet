@@ -181,7 +181,6 @@ machines start collapsed and report when they were last seen.
 | Route | View |
 | --- | --- |
 | `/` | New session: a composer targeting a machine, workspace, and provider |
-| `/workspaces/:workspaceId` | Workspace name, ordered directories, Sessions, default-directory terminal, and deletion |
 | `/worktrees/:worktreeId` | Directory bindings and the owning Session of a session Worktree |
 | `/sessions/:sessionId` | Conversation, tools, permissions, candidate backlog, composer, and agent lifecycle |
 | `/terminals/:terminalId` | Redirects machine terminals to Remote control and Session terminals to their Session's panel |
@@ -192,7 +191,10 @@ machines start collapsed and report when they were last seen.
 | `/team/settings` | Team name, members and roles, and machines |
 | `/team/settings/plans` | The selected Team's plan, usage, and subscription management |
 
-A Workspace page's New session action makes that Workspace the composer's target.
+Workspace rows expand and collapse their Sessions. Their New session action makes
+that Workspace the composer's target, and their Terminal action opens a shell in
+the first configured directory. The context menu provides editing and confirmed
+deletion; the edit dialog retains Open With for the default directory.
 Worktree links and lookups only resolve Session-owned contexts.
 
 Settings routes (`meta.fullWindow`) replace the sidebar and Changes panel with
@@ -210,7 +212,7 @@ previous read, including changes made outside the agent. Closing the panel or
 hiding the window pauses refreshes. Non-Git directories, binary files, large
 truncated diffs, and read errors have explicit states. It is empty for
 machine and workspace terminals and for desktops, which belong to no worktree.
-Workspace and Worktree pages retain their directory information.
+The Workspace edit dialog and Worktree page retain their directory information.
 
 ## Agent sessions
 

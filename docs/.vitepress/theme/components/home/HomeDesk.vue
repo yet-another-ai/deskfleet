@@ -17,7 +17,7 @@ const assembled = ref(false)
 let arrivalFrame = 0
 
 const windows = [
-  { key: "fleet", kind: "agents", route: "/workspaces/201", rect: deskWindows.fleet },
+  { key: "fleet", kind: "agents", route: "/", rect: deskWindows.fleet },
   { key: "providers", kind: "agents", route: "/settings/agents", rect: deskWindows.providers },
   { key: "activity", kind: "team", route: "/sessions/303", rect: deskWindows.activity },
   { key: "session", kind: "session", route: "/sessions/301", rect: deskWindows.session },

@@ -90,8 +90,10 @@ Later cursor queries stay in the stream so the attached terminal can answer
 with the cursor it has rendered.
 
 The UI creates machine-scoped terminals in the daemon user's home directory,
-in a Workspace's first path with **Open terminal in default directory**, or in
-a selected directory with **Open terminal here**.
+or in a Workspace's first path with the sidebar's **Open terminal in default
+directory** button. Workspace rows expand and collapse their Sessions; they do
+not open a separate details page. The row's context menu provides Workspace
+editing and deletion.
 The working directory is independent of resource ownership: those terminals
 remain under the local machine, and editing/deleting a Workspace does not retarget
 or close them.

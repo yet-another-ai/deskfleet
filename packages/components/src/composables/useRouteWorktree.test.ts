@@ -35,7 +35,6 @@ async function setup() {
   const page = defineComponent({ template: "<div />" })
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/", name: "new-session", component: page },
-    { path: "/workspaces/:workspaceId", name: "workspace", component: page },
     { path: "/worktrees/:worktreeId", name: "worktree", component: page },
     { path: "/sessions/:sessionId", name: "session", component: page },
     { path: "/terminals/:terminalId", name: "terminal", component: page },
@@ -56,7 +55,7 @@ test("Git context follows the session, worktree, and its terminal through repeat
       await flushPromises()
       expect(wrapper.vm.worktree).toMatchObject({ session: { id: sessionId }, worktree: { id: sessionWorktreeId } })
     }
-    await router.push(`/workspaces/${workspaceId}`)
+    await router.push("/")
     expect(wrapper.vm.worktree).toBeNull()
   }
 })
@@ -64,7 +63,7 @@ test("Git context follows the session, worktree, and its terminal through repeat
 test("unowned, missing, and provisioning resources never inherit the previous Git context", async () => {
   const { wrapper, router, fleet } = await setup()
   for (const path of [
-    "/", `/workspaces/${workspaceId}`, `/worktrees/${mainWorktreeId}`, "/worktrees/missing",
+    "/", `/worktrees/${mainWorktreeId}`, "/worktrees/missing",
     "/sessions/missing", "/sessions/pending-session", "/terminals/missing", "/terminals/workspace-terminal",
     "/terminals/machine-terminal", "/machines/local-daemon/control?tab=terminal&terminal=session-terminal",
   ]) {

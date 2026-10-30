@@ -88,7 +88,7 @@ test("session usage restores from history, follows committed updates, and remain
   expect(page().get("[data-agent-usage-used]").text()).toBe("16,000 tokens")
   expect(page().find("[data-agent-usage-cost]").exists()).toBe(false)
   expect(wrapper.get('[aria-label="Conversation"]').text()).not.toContain("tokens")
-  await router.push({ name: "workspace", params: { workspaceId } })
+  await router.push({ name: "new-session" })
   await flushPromises()
   expect(wrapper.find("[data-agent-usage]").exists()).toBe(false)
   expect(page().find('[role="dialog"]').exists()).toBe(false)
@@ -140,7 +140,7 @@ test("a workspace prompt creates a Session, keeps shared candidates, streams too
   await flushPromises()
   expect(wrapper.find('[aria-label="Permissions"]').exists()).toBe(false)
   expect(wrapper.get('[aria-label="Conversation"] [data-permission-id="60"]').text()).toContain("Reject · Grace")
-  await router.push({ name: "workspace", params: { workspaceId } }); await flushPromises()
+  await router.push({ name: "new-session" }); await flushPromises()
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/session/stop" || method === "_deskfleet/turn/cancel")).toBe(false)
 })
 
@@ -297,7 +297,7 @@ test("returning to unchanged conversation history scrolls after loading, while l
   snapshot.elicitations = [agentElicitation()]
   emit("elicitation", snapshot.elicitations[0]!)
   await flushPromises()
-  await router.push({ name: "workspace", params: { workspaceId } })
+  await router.push({ name: "new-session" })
   await flushPromises()
 
   const restored = deferred<AgentSnapshot>()
