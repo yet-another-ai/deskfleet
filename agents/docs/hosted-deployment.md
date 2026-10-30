@@ -240,10 +240,11 @@ remain authoritative. See the [Web](../../apps/web/README.md) and
 Sentry error reporting is separately optional for Web and Electron renderers.
 Set `VITE_SENTRY_DSN` to a public DSN in the same `production` environment;
 missing, blank, or invalid values disable reporting. Optional
-`VITE_SENTRY_ENVIRONMENT` defaults to Vite's mode, and `VITE_SENTRY_RELEASE` labels
-the deployed build. These are build-time values, so changing the API's runtime
-environment does not change the clients. Allow the DSN origin in the Web host's
-`connect-src` policy; Electron adds it automatically. The
+`VITE_SENTRY_ENVIRONMENT` defaults to Vite's mode. The tag workflow automatically
+labels both clients with the same release, such as `deskfleet@v0.2.1`; no release
+variable needs configuring. These are build-time values, so changing the API's
+runtime environment does not change the clients. Allow the DSN origin in the
+Web host's `connect-src` policy; Electron adds it automatically. The
 [error-reporting guide](error-reporting.md) defines scope and collected data.
 
 The tag workflow requires these secrets in the GitHub `production` environment,

@@ -12,7 +12,6 @@ the Rust server, daemon, or Electron main process.
 | --- | --- |
 | `VITE_SENTRY_DSN` | Public Sentry DSN. Missing, blank, or invalid values disable reporting. |
 | `VITE_SENTRY_ENVIRONMENT` | Optional environment; defaults to the Vite mode when missing or blank. |
-| `VITE_SENTRY_RELEASE` | Optional release identifier for matching errors to a deployed build. |
 
 Use the project's public DSN, not a Sentry authentication token. Vite embeds
 these values in distributed JavaScript. The DSN must use HTTP or HTTPS, contain
@@ -22,7 +21,6 @@ Self-hosted Sentry origins and path prefixes are supported.
 ```sh
 export VITE_SENTRY_DSN=https://PUBLIC_KEY@sentry.example.com/1
 export VITE_SENTRY_ENVIRONMENT=development
-export VITE_SENTRY_RELEASE=deskfleet-local
 mise run dev
 ```
 
@@ -34,11 +32,16 @@ Changing these values requires rebuilding and redistributing the client.
 Setting variables when starting an already-built server or desktop app does not
 change its frontend configuration.
 
-Tagged releases read these optional variables from the GitHub `production`
-environment for both clients. PR, main, and manual Build runs do not bind that
-environment and leave Sentry disabled. Keep production values out of repository
-and organization variables. See [release configuration](ci.md#tagged-releases)
-for the environment's tag restrictions.
+Tagged releases read the DSN and environment from the GitHub `production`
+environment for both clients. The workflow automatically sets the same Sentry
+release for Web and Electron from the Git tag, such as `deskfleet@v0.2.1`;
+no release variable needs configuring. Local or custom builds may optionally
+set `VITE_SENTRY_RELEASE` to label their events.
+
+PR, main, and manual Build runs do not bind the production environment and leave
+Sentry disabled. Keep production values out of repository and organization
+variables. See [release configuration](ci.md#tagged-releases) for the
+environment's tag restrictions.
 
 ## Collection and delivery
 
@@ -56,7 +59,7 @@ Electron adds only the configured DSN's origin to its renderer `connect-src`
 policy. Without Sentry or Statsig, production retains `connect-src 'none'`.
 Independent Web hosts must allow the DSN origin in their own `connect-src`
 policy. No Sentry authentication token or source-map upload is part of the
-build. `VITE_SENTRY_RELEASE` labels events; it does not upload source maps.
+build. Release identifiers label events; they do not upload source maps.
 
 For a delivery check, build with a test project's DSN and trigger a test error
 in the Web or Electron renderer. Confirm its platform, environment, and release

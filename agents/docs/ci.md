@@ -114,13 +114,16 @@ Configure these environment variables:
 | `VITE_STATSIG_ENVIRONMENT` | Optional Statsig environment for both clients; defaults to the Vite mode, `production`. |
 | `VITE_SENTRY_DSN` | Optional public Sentry DSN for Web and Electron renderers. Missing, blank, or invalid disables error reporting. |
 | `VITE_SENTRY_ENVIRONMENT` | Optional Sentry environment for both clients; defaults to the Vite mode, `production`. |
-| `VITE_SENTRY_RELEASE` | Optional Sentry release identifier for the deployed build; no source-map upload is configured. |
 
 The reusable Build workflow binds its packaging job to `production` only when
 Publish requests a production release. The caller passes the signing secret
 names explicitly; the bound environment supplies their values. The official
 API origin is injected only into Electron's build, so the Web artifact stays
 same-origin.
+
+Both clients receive the same Sentry release identifier automatically from the
+Git tag, such as `deskfleet@v0.2.1`; no release variable needs configuring.
+Source-map upload is not configured.
 
 Keep production compilation in separate steps using each runner's native shell
 (PowerShell on Windows). Running it through Git Bash selects Git's bundled Perl

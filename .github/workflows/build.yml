@@ -100,7 +100,7 @@ jobs:
           VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_SENTRY_ENVIRONMENT: ${{ vars.VITE_SENTRY_ENVIRONMENT }}
-          VITE_SENTRY_RELEASE: ${{ vars.VITE_SENTRY_RELEASE }}
+          VITE_SENTRY_RELEASE: deskfleet@${{ github.ref_name }}
         run: mise run build
 
       - name: Build production Electron bundles
@@ -111,7 +111,7 @@ jobs:
           VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_SENTRY_ENVIRONMENT: ${{ vars.VITE_SENTRY_ENVIRONMENT }}
-          VITE_SENTRY_RELEASE: ${{ vars.VITE_SENTRY_RELEASE }}
+          VITE_SENTRY_RELEASE: deskfleet@${{ github.ref_name }}
         # Keep Web same-origin; reuse the release addon for Electron's API-specific build.
         run: mise exec -- pnpm --filter @deskfleet/desktop build
 

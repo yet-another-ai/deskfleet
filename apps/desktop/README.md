@@ -70,10 +70,10 @@ and the shared API.
 Sentry error reporting is independently optional in the renderer. Set
 `VITE_SENTRY_DSN` to a public Sentry DSN before development or building;
 missing, blank, or invalid values disable reporting. `VITE_SENTRY_ENVIRONMENT`
-defaults to Vite's mode and `VITE_SENTRY_RELEASE` optionally labels the deployed
-build. These values use the same environment-file location and rebuild rules as
-Statsig. The renderer CSP adds only the configured DSN's origin. See the
-[error-reporting guide](../../agents/docs/error-reporting.md) for scope and data
+defaults to Vite's mode. These values use the same environment-file location and
+rebuild rules as Statsig. Tagged builds automatically use the same Sentry release
+as Web, such as `deskfleet@v0.2.1`. The renderer CSP adds only the configured DSN's
+origin. See the [error-reporting guide](../../agents/docs/error-reporting.md) for scope and data
 collection.
 
 ## Layout
@@ -555,9 +555,9 @@ deployment access restricted to tags matching `v*` and no branches. Set its
 `VITE_DESKFLEET_SERVER_URL` variable to the official API origin; a missing or
 empty value fails the release build. Optional `VITE_STATSIG_CLIENT_KEY` and
 `VITE_STATSIG_ENVIRONMENT` variables configure analytics. Optional
-`VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT`, and `VITE_SENTRY_RELEASE` variables
-configure renderer error reporting. The workflow supplies the API origin only
-to Electron; the Web artifact stays same-origin.
+`VITE_SENTRY_DSN` and `VITE_SENTRY_ENVIRONMENT` variables configure renderer error
+reporting; the workflow derives the Sentry release from the Git tag. The workflow
+supplies the API origin only to Electron; the Web artifact stays same-origin.
 
 PR, main, and manual Build runs do not bind this environment: their installers
 use the localhost backend, leave Statsig and Sentry disabled, and skip release

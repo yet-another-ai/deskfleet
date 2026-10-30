@@ -58,10 +58,11 @@ identity, event metadata, and the shared API.
 
 Sentry error reporting is independently optional. Set `VITE_SENTRY_DSN` to a
 public Sentry DSN before development or building; missing, blank, or invalid
-values disable reporting. `VITE_SENTRY_ENVIRONMENT` defaults to Vite's mode and
-`VITE_SENTRY_RELEASE` optionally labels the deployed build. These values use the
-same environment-file location and rebuild rules as Statsig. Allow the DSN's
-origin in the Web host's `connect-src` policy. See the
+values disable reporting. `VITE_SENTRY_ENVIRONMENT` defaults to Vite's mode.
+These values use the same environment-file location and rebuild rules as Statsig.
+Tagged builds automatically use the same Sentry release as Electron, such as
+`deskfleet@v0.2.1`. Allow the DSN's origin in the Web host's `connect-src` policy.
+See the
 [error-reporting guide](../../agents/docs/error-reporting.md) for scope and data
 collection.
 
