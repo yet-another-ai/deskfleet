@@ -3,7 +3,7 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { computed, ref } from "vue"
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
-import type { FilesApi } from "../../../../client/src/files.ts"
+import type { FileResourceRequest, FilesApi } from "../../../../client/src/files.ts"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { agentResourceContextKey, type AgentResourceContext } from "../../services/agent-resources.ts"
@@ -187,6 +187,28 @@ test("renders Mermaid with the selected application theme and updates existing d
   await flushPromises()
   expect(renderDiagram).toHaveBeenLastCalledWith("graph TD\n  A --> B", false)
   expect(renderDiagram).toHaveBeenCalledTimes(3)
+})
+
+test("Markdown file links send cloneable requests and highlight the requested remote lines", async () => {
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const resolveResource = vi.fn(async (request: FileResourceRequest) => {
+    structuredClone(request)
+    return { name: "main.ts", path: "/work/src/main.ts", kind: "file" as const, size: 18, modifiedAt: 0 }
+  })
+  const readResource = vi.fn(async (request: FileResourceRequest) => {
+    structuredClone(request)
+    return { name: "main.ts", data: new TextEncoder().encode("first\nsecond\nthird"), mimeType: "text/plain" }
+  })
+  const view = render({ resolveResource, readResource }, "[Source](./src/main.ts#L2-L3)")
+  await flushPromises()
+  await view.get("a[data-resource-link]").trigger("click")
+  await flushPromises()
+  expect(view.findAll("pre .bg-ui-hover").map(line => line.text())).toEqual(["second", "third"])
+  expect(scroll).toHaveBeenCalledWith({ block: "center" })
+  const expected = { target: { kind: "machine", machineId: "42", teamId: "7" }, sessionId: "12", uri: "./src/main.ts#L2-L3" }
+  expect(resolveResource).toHaveBeenCalledExactlyOnceWith(expected)
+  expect(readResource).toHaveBeenCalledExactlyOnceWith(expected)
+  expect(view.find('[role="alert"]').exists()).toBe(false)
 })
 
 test("filesystem links and line references become application resources while rejecting script schemes", async () => {

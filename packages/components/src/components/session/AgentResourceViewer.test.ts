@@ -43,11 +43,41 @@ test("shows resolution errors without requesting a destination", async () => {
   view.unmount()
 })
 
-test("highlights and scrolls to the requested line", async () => {
+test.each([
+  "main.ts:2", "main.ts:2:4", "main.ts#L2", "main.ts#L2-L2",
+  "C:/work/main.ts:2:4", "file:///work/main.ts#L2", "main.ts:3#L2",
+])("highlights and scrolls to the requested line in %s", async uri => {
   const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
-  const view = render({ resolveResource: vi.fn().mockResolvedValue({ name: "main.ts", path: "/work/main.ts", kind: "file" }), readResource: vi.fn().mockResolvedValue({ name: "main.ts", data: new TextEncoder().encode("first\nsecond\nthird"), mimeType: "text/plain" }) }, { ...request, uri: "main.ts:2:4" })
+  const resolveResource = vi.fn().mockResolvedValue({ name: "main.ts", path: "/work/main.ts", kind: "file" })
+  const readResource = vi.fn().mockResolvedValue({ name: "main.ts", data: new TextEncoder().encode("first\nsecond\nthird"), mimeType: "text/plain" })
+  const selected = { ...request, uri }
+  const view = render({ resolveResource, readResource }, selected)
   await flushPromises()
-  expect(view.get("pre .bg-ui-hover").text()).toContain("second")
-  expect(scroll).toHaveBeenCalledWith({ block: "center" })
+  expect(view.findAll("pre .bg-ui-hover").map(line => line.text())).toEqual(["second"])
+  expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: "center" })
+  expect(scroll.mock.contexts[0]).toBe(view.get("pre .bg-ui-hover").element)
+  expect(resolveResource).toHaveBeenCalledWith(selected)
+  expect(readResource).toHaveBeenCalledWith(selected)
+  view.unmount()
+})
+
+test("highlights a requested line range and scrolls to its first line", async () => {
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const view = render({ resolveResource: vi.fn().mockResolvedValue({ name: "main.ts", path: "/work/main.ts", kind: "file" }), readResource: vi.fn().mockResolvedValue({ name: "main.ts", data: new TextEncoder().encode("first\nsecond\nthird\nfourth"), mimeType: "text/plain" }) }, { ...request, uri: "main.ts#L2-L3" })
+  await flushPromises()
+  const highlighted = view.findAll("pre .bg-ui-hover")
+  expect(highlighted.map(line => line.text())).toEqual(["second", "third"])
+  expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: "center" })
+  expect(scroll.mock.contexts[0]).toBe(highlighted[0]!.element)
+  view.unmount()
+})
+
+test.each(["main.ts#L20", "main.ts#L3-L2", "literal%23L2", "literal%3A2"])("does not select another line for %s", async uri => {
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const view = render({ resolveResource: vi.fn().mockResolvedValue({ name: "main.ts", path: "/work/main.ts", kind: "file" }), readResource: vi.fn().mockResolvedValue({ name: "main.ts", data: new TextEncoder().encode("first\nsecond\nthird"), mimeType: "text/plain" }) }, { ...request, uri })
+  await flushPromises()
+  expect(view.text()).toContain("second")
+  expect(view.find("pre .bg-ui-hover").exists()).toBe(false)
+  expect(scroll).not.toHaveBeenCalled()
   view.unmount()
 })
