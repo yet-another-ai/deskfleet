@@ -221,6 +221,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
 .workspace-collapse-icon,
 .workspace-actions {
   opacity: 0;
+  pointer-events: none;
 }
 
 .workspace-row:is(:hover, :has(:focus-visible)) .workspace-folder-icon {
@@ -229,6 +230,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
 
 .workspace-row:is(:hover, :has(:focus-visible)) :is(.workspace-collapse-icon, .workspace-actions) {
   opacity: 1;
+  pointer-events: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -164,8 +164,14 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
   if (view === "workspace-edit") {
     const row = document.querySelector<HTMLButtonElement>(`aside section[data-machine-id="${context.machines[0]}"] .workspace-row button[aria-expanded]`)
     if (!row) throw new Error("Fixture workspace row is missing")
-    row.focus()
-    row.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }))
+    const bounds = row.getBoundingClientRect()
+    row.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+      clientX: bounds.left + Math.min(24, bounds.width / 2),
+      clientY: bounds.top + bounds.height / 2,
+    }))
     await until(() => !!document.querySelector('[role="menu"]'), "workspace context menu")
     const edit = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === "Edit workspace")
     if (!edit) throw new Error("Edit workspace menu item is missing")

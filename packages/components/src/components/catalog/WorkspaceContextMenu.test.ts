@@ -35,8 +35,17 @@ async function setup(disabled = false, selectedMachine = "local-daemon") {
 }
 
 async function openMenu(wrapper: VueWrapper): Promise<void> {
-  await wrapper.get("button").trigger("contextmenu", { button: 2 }); await flushPromises()
+  await wrapper.get("button").trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 }); await flushPromises()
 }
+
+test("right-click prevents the native menu and opens workspace management", async () => {
+  const { wrapper } = await setup()
+  const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 24, clientY: 48 })
+  wrapper.get("button").element.dispatchEvent(event)
+  await flushPromises()
+  expect(event.defaultPrevented).toBe(true)
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Edit workspace", "Delete workspace"])
+})
 
 test("keyboard workspace management edits the clicked workspace and restores row focus", async () => {
   const { wrapper, update } = await setup()
