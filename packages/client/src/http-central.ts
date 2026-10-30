@@ -6,6 +6,7 @@ import type { IceCandidate } from "./desktop-media.ts"
 import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import { authenticatePasskey } from "./passkeys.ts"
+import { centralRequestFailure } from "./request-diagnostics.ts"
 
 export interface SavedAccount { serverUrl: string; token?: string; user?: AccountUser }
 export interface HttpCentralOptions {
@@ -77,14 +78,19 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   }
   async #save(account: SavedAccount): Promise<void> { await this.#options.persist(account); this.#account = account }
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const requestStack = new Error()
     if (this.#options.cookieAuth && !["GET", "HEAD"].includes(method) && !this.#csrf) {
       await this.request("GET", "/api/auth/config")
     }
-    const response = await (this.#options.fetch ?? fetch)(`${this.#account.serverUrl}${path}`, {
+    const init: RequestInit = {
       method, credentials: this.#options.cookieAuth ? "include" : "omit",
       headers: { ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(this.#options.cookieAuth && this.#csrf ? { "X-CSRF-Token": this.#csrf } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    })
+    }
+    const started = performance.now()
+    let response: Response
+    try { response = await (this.#options.fetch ?? fetch)(`${this.#account.serverUrl}${path}`, init) }
+    catch (cause) { throw centralRequestFailure(cause, { method, path, body, elapsedMs: performance.now() - started }, requestStack.stack) }
     if (!response.ok) {
       const error = await response.json().catch(() => ({})) as { error?: { code: string; message: string; reason?: string } }
       throw new HttpError(response.status, error.error?.message ?? response.statusText, error.error?.reason === "encoder" ? "encoder" : undefined, error.error?.code)

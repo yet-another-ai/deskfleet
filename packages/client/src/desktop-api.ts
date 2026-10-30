@@ -16,7 +16,7 @@ import type { LocalApplicationsApi } from "./applications.ts"
 import type { UpdateApi } from "./updates.ts"
 import type { LocalChannelsApi } from "./local-channels.ts"
 
-/** The preload bridge exposed to the main renderer as `window.deskfleet`. */
+/** The host platform adapter configured for the shared application. */
 export interface DeskfleetDesktopApi {
   platform: "darwin" | "linux" | "win32" | "web"
   central?: CentralApi

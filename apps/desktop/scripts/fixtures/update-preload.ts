@@ -1,5 +1,4 @@
 import { contextBridge } from "electron"
-import type { CentralApi } from "../../../../packages/client/src/central.ts"
 import { desktopApi } from "../../src/preload/api.ts"
 import { isMainRendererUrl } from "../../src/shared/renderer-security.ts"
 
@@ -22,13 +21,17 @@ api.settings.getLaunchAtStartup = async () => ({ available: false, enabled: fals
 api.settings.getKeepAwake = async () => ({ enabled: false })
 api.settings.getWorktreeRoot = async () => ({ root: null, defaultRoot: "/projects/worktrees" })
 if (process.argv.includes("--updates-account")) {
-  api.central = {
+  const methods: Record<string, () => Promise<unknown>> = {
     status: async () => ({ serverUrl: "https://fleet.example", siteAdmin: false, user: { id: "user-1", name: "Ada", email: "ada@example.test" } }),
     site: async () => ({ siteName: "DeskFleet", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "" }),
     teams: async () => [{ id: "team-1", name: "Design team", role: "admin" }],
     machines: async () => [],
     members: async () => [],
+  }
+  api.centralBridge = {
+    invoke: async method => ({ ok: true, value: await methods[method]!() }),
+    context: async () => ({ os: { name: "fixture", version: "fixture" }, architecture: process.arch, appVersion: "0.2.2", electronVersion: process.versions.electron, nodeVersion: process.versions.node, chromeVersion: process.versions.chrome }),
     onEvent: () => () => {},
-  } as unknown as CentralApi
+  }
 }
 if (isMainRendererUrl(globalThis.location.href)) contextBridge.exposeInMainWorld("deskfleet", api)

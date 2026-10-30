@@ -202,7 +202,7 @@ try {
   assert.equal(await evaluate("document.querySelector('input[name=server-url]') === null && !('saveServer' in window.deskfleet.onboarding)"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   await stat(join(daemonDirectory, "daemon.json"))
-  const identity = (await evaluate<LocalEnrollment>("window.deskfleet.central.localEnrollment()")).identity
+  const identity = (await evaluate<LocalEnrollment>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).identity
   assert.notDeepEqual(identity, headlessIdentity, "Desktop IPC must use the profile daemon rather than headless discovery")
   await screenshot("welcome-initial")
   // OS permission dialogs require manual interaction; skip them through
@@ -218,7 +218,7 @@ try {
   assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "account")
   assert.equal(await evaluate("document.querySelector('input[type=url]') === null"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
-  assert.deepEqual((await evaluate<LocalEnrollment>("window.deskfleet.central.localEnrollment()")).identity, identity, "The profile daemon identity must survive an app restart")
+  assert.deepEqual((await evaluate<LocalEnrollment>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).identity, identity, "The profile daemon identity must survive an app restart")
   await screenshot("welcome-account")
   // The UI completes this after browser authentication; exercise persisted host progress here.
   assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.complete()")).step, "complete")
