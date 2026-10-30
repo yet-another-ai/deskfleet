@@ -1,3 +1,4 @@
+import { snapshotIsWorking } from "../services/agent-conversation.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
@@ -55,6 +56,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const api = platformClient.agent
   const providers = useProvidersStore()
   const sessions = ref<Record<string, AgentSessionRecord>>({})
+  const activity = ref<Record<string, { seq: string; working: boolean }>>({})
   const views = ref<Record<string, AgentSessionView>>({})
   const drafts = ref<Record<string, string>>({})
   const draftAttachments = ref<Record<string, ComposerAttachment[]>>({})
@@ -78,6 +80,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const gitSubscriptions = new Map<string, { sessionId: string; listener(error?: string): void }>()
   let connectionGeneration = 0
   let initialized: Promise<void> | null = null
+  let refreshPending = false
   let refreshing: Promise<void> | null = null
   let activeSessionId: string | undefined
   let disposed = false
@@ -287,19 +290,40 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     return client.call<AgentMethods[M]["result"]>(method, params)
   }
   function refresh(sessionId?: string): Promise<void> {
-    const listedBefore = new Map(Object.values(sessions.value).map(session => [session.id, session.lastEventSeq]))
-    const list = (refreshing ??= call("_deskfleet/session/list", {}).then(records => {
-      const received = new Map(records.map(session => [session.id, session]))
-      for (const current of Object.values(sessions.value)) {
-        const record = received.get(current.id)
-        if (record ? sequenceCompare(current.lastEventSeq, record.lastEventSeq) > 0 : !listedBefore.has(current.id) || sequenceCompare(current.lastEventSeq, listedBefore.get(current.id)!) > 0) received.set(current.id, current)
-      }
-      sessions.value = Object.fromEntries(received)
-    }).catch(reason => { error.value = messageOf(reason) }).finally(() => { refreshing = null }))
+    refreshPending = true
+    const list = (refreshing ??= refreshList().catch(reason => { error.value = messageOf(reason) }).finally(() => { refreshing = null }))
     return list.then(() => {
       const id = sessionId ?? activeSessionId
       if (id && id === activeSessionId && sessions.value[id]) return open(id, false)
     })
+  }
+  async function refreshList(): Promise<void> {
+    do {
+      refreshPending = false
+      const listedBefore = new Map(Object.values(sessions.value).map(session => [session.id, session.lastEventSeq]))
+      // Catalog activity must not depend on opening every conversation's live channel.
+      const records: (AgentSessionRecord & { working?: boolean })[] = await (api.history ? api.history.list() : call("_deskfleet/session/list", {}))
+      if (disposed) return
+      const received = new Map(records.map(session => [session.id, session]))
+      for (const record of records) {
+        const previous = activity.value[record.id]
+        if (record.working !== undefined && (!previous || sequenceCompare(record.lastEventSeq, previous.seq) >= 0)) {
+          activity.value[record.id] = { seq: record.lastEventSeq, working: record.working }
+        }
+      }
+      for (const current of Object.values(sessions.value)) {
+        const record = received.get(current.id)
+        if (record ? sequenceCompare(current.lastEventSeq, record.lastEventSeq) > 0 : !!views.value[current.id]?.snapshot || !listedBefore.has(current.id) || sequenceCompare(current.lastEventSeq, listedBefore.get(current.id)!) > 0) received.set(current.id, current)
+      }
+      sessions.value = Object.fromEntries(received)
+      for (const id of Object.keys(activity.value)) if (!received.has(id)) delete activity.value[id]
+    } while (refreshPending && !disposed)
+  }
+  function isWorking(id: string): boolean {
+    const live = views.value[id]?.snapshot
+    const summary = activity.value[id]
+    if (summary && (!live || sequenceCompare(summary.seq, live.session.lastEventSeq) > 0)) return summary.working
+    return snapshotIsWorking(live)
   }
   function readHistory(id: string): Promise<void> {
     const existing = reads.get(id)
@@ -573,5 +597,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => client.close()
   onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); closeTransport() })
-  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, gitStatus, gitDiff, watchGit, closeTransport }
+  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, gitStatus, gitDiff, watchGit, closeTransport }
 })

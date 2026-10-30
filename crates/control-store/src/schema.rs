@@ -209,6 +209,19 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
         tx.execute_unprepared("INSERT INTO cp_migrations (version) VALUES (15)")
             .await?;
     }
+    if tx
+        .query_one_raw(sql(
+            "SELECT version FROM cp_migrations WHERE version=16",
+            vec![],
+        ))
+        .await?
+        .is_none()
+    {
+        tx.execute_unprepared(include_str!("session_activity.sql"))
+            .await?;
+        tx.execute_unprepared("INSERT INTO cp_migrations (version) VALUES (16)")
+            .await?;
+    }
     tx.commit().await?;
     Ok(())
 }
