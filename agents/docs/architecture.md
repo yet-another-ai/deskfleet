@@ -64,6 +64,13 @@ Experiment decisions never grant authorization, subscription entitlements, or
 quota capacity; those remain server and daemon responsibilities. The
 [analytics guide](analytics.md) owns identity, event scope, and configuration.
 
+Optional Sentry error reporting also belongs to the shared Vue frontend. Web
+and Electron renderers use a build-time public DSN; an absent or invalid DSN
+disables reporting. Each renderer captures Vue and unhandled JavaScript errors,
+including errors from its separate machine-surface applications. Electron permits
+only the DSN's origin through its renderer Content Security Policy. The
+[error-reporting guide](error-reporting.md) owns configuration and collected data.
+
 ### Multiple API instances
 
 API instances share one PostgreSQL database and the same public service origin.

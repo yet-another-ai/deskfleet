@@ -208,8 +208,8 @@ Create the `production` environment under Repository Settings → Environments.
 Use **Selected branches and tags** with a **Tag** rule matching `v*` and no
 allowed branches. Store production variables and secrets only in this
 environment, removing repository and organization copies. PR, main, and manual
-Build runs do not bind it: Statsig stays disabled, and Electron retains its
-localhost backend. See [tagged releases](ci.md#tagged-releases) for the complete
+Build runs do not bind it: Statsig and Sentry stay disabled, and Electron retains
+its localhost backend. See [tagged releases](ci.md#tagged-releases) for the complete
 configuration.
 
 Statsig is optional and configured at build time for both Web and Electron. The
@@ -236,6 +236,15 @@ build adds these origins only when its key is configured. Statsig owns behaviora
 analytics and frontend experiments; API/daemon authorization and quota admission
 remain authoritative. See the [Web](../../apps/web/README.md) and
 [desktop](../../apps/desktop/README.md) guides for environment-file locations.
+
+Sentry error reporting is separately optional for Web and Electron renderers.
+Set `VITE_SENTRY_DSN` to a public DSN in the same `production` environment;
+missing, blank, or invalid values disable reporting. Optional
+`VITE_SENTRY_ENVIRONMENT` defaults to Vite's mode, and `VITE_SENTRY_RELEASE` labels
+the deployed build. These are build-time values, so changing the API's runtime
+environment does not change the clients. Allow the DSN origin in the Web host's
+`connect-src` policy; Electron adds it automatically. The
+[error-reporting guide](error-reporting.md) defines scope and collected data.
 
 The tag workflow requires these secrets in the GitHub `production` environment,
 separate from API secrets:

@@ -5,6 +5,7 @@ import { i18n } from "./i18n/index.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
 import { nativeDragPolicy } from "./plugins/native-drag.ts"
 import { installAnalytics } from "./plugins/analytics.ts"
+import { installErrorReporting, shutdownErrorReporting } from "./services/error-reporting.ts"
 import "./styles.css"
 
 export async function mountDeskfleet(target: string | Element = "#root") {
@@ -22,7 +23,8 @@ export async function mountDeskfleet(target: string | Element = "#root") {
         diagramId: params.get("diagramId") || undefined,
       },
     })
-    app.onUnmount(() => disposePinia(state))
+    installErrorReporting(app)
+    app.onUnmount(() => { disposePinia(state); void shutdownErrorReporting() })
     app.use(nativeDragPolicy).use(vaporInteropPlugin).use(state).use((await import("./router/index.ts")).router).use(i18n).mount(target)
     return app
   }
@@ -34,10 +36,11 @@ export async function mountDeskfleet(target: string | Element = "#root") {
   const app = host.central ? createApp(root, { host: { ...host } }) : createApp(root)
   const { router } = await import("./router/index.ts")
   installAnalytics(app, router)
+  installErrorReporting(app)
   app.use(nativeDragPolicy)
   app.use(vaporInteropPlugin)
   app.use(state)
-  app.onUnmount(() => disposePinia(state))
+  app.onUnmount(() => { disposePinia(state); void shutdownErrorReporting() })
   app.use(router)
   app.use(i18n)
   app.mount(target)

@@ -1,8 +1,10 @@
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { browserClient } from "@deskfleet/client/browser"
 import { configureClient } from "@deskfleet/client/platform"
+import { initializeErrorReporting } from "@deskfleet/components/services/error-reporting.ts"
 import "virtual:uno.css"
 
+initializeErrorReporting("web")
 const adapter = await browserClient(import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin))
 configureClient(adapter)
 if (location.pathname.startsWith("/auth/")) {

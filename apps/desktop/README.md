@@ -60,12 +60,21 @@ environment values take precedence. Rebuild the app after changing either value.
 
 The renderer's Content Security Policy adds only the three configured Statsig
 origins (`https://featureassets.org`, `https://prodregistryv2.org`, and
-`https://statsigapi.net`) when a client key is present. Without it, production
-retains `connect-src 'none'`. Account and machine API traffic remains in the
-main process. Statsig gates and experiments control frontend experience only;
+`https://statsigapi.net`) when a client key is present. Without Statsig or Sentry,
+production retains `connect-src 'none'`. Account and machine API traffic remains
+in the main process. Statsig gates and experiments control frontend experience only;
 the server and daemon continue to enforce authorization, entitlements, and quotas.
 See the [analytics guide](../../agents/docs/analytics.md) for identity, events,
 and the shared API.
+
+Sentry error reporting is independently optional in the renderer. Set
+`VITE_SENTRY_DSN` to a public Sentry DSN before development or building;
+missing, blank, or invalid values disable reporting. `VITE_SENTRY_ENVIRONMENT`
+defaults to Vite's mode and `VITE_SENTRY_RELEASE` optionally labels the deployed
+build. These values use the same environment-file location and rebuild rules as
+Statsig. The renderer CSP adds only the configured DSN's origin. See the
+[error-reporting guide](../../agents/docs/error-reporting.md) for scope and data
+collection.
 
 ## Layout
 
@@ -496,8 +505,9 @@ Bundled builds load from the privileged `deskfleet-app://bundle/` scheme, which
 serves only files inside `out/renderer`. Development builds accept only the fixed
 loopback Vite URL. Each build injects its Content Security Policy into
 `index.html`. Production builds forbid renderer HTTP/WebSocket connections except
-for the three fixed Statsig origins when analytics is configured. WebRTC carries
-peer media and a narrow preload API carries authorized central signaling. The
+for the three fixed Statsig origins when analytics is configured and the Sentry
+DSN origin when error reporting is configured. WebRTC carries peer media and a
+narrow preload API carries authorized central signaling. The
 media policy permits local streams.
 The window denies renderer navigation and new Electron windows. Explicit HTTP(S)
 links requesting a new window open in the system browser; other schemes remain
@@ -544,11 +554,14 @@ Before pushing a release tag, create the GitHub `production` environment with
 deployment access restricted to tags matching `v*` and no branches. Set its
 `VITE_DESKFLEET_SERVER_URL` variable to the official API origin; a missing or
 empty value fails the release build. Optional `VITE_STATSIG_CLIENT_KEY` and
-`VITE_STATSIG_ENVIRONMENT` variables configure analytics. The workflow supplies
-the API origin only to Electron; the Web artifact stays same-origin.
+`VITE_STATSIG_ENVIRONMENT` variables configure analytics. Optional
+`VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT`, and `VITE_SENTRY_RELEASE` variables
+configure renderer error reporting. The workflow supplies the API origin only
+to Electron; the Web artifact stays same-origin.
 
 PR, main, and manual Build runs do not bind this environment: their installers
-use the localhost backend, leave Statsig disabled, and skip release signing.
+use the localhost backend, leave Statsig and Sentry disabled, and skip release
+signing.
 Keep production values out of repository and organization variables and secrets.
 See [release configuration](../../agents/docs/ci.md#tagged-releases) for the
 environment settings.

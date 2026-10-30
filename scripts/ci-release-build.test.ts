@@ -35,14 +35,14 @@ function releaseBuild(context: TestContext) {
   writeFileSync(fixture, `import { appendFileSync } from "node:fs"
 appendFileSync(process.env.DESKFLEET_BUILD_LOG, JSON.stringify([
   process.argv.slice(2).join(" "),
-  ...["VITE_DESKFLEET_SERVER_URL", "VITE_STATSIG_CLIENT_KEY", "VITE_STATSIG_ENVIRONMENT"].map(name => process.env[name] ?? "<unset>"),
+  ...["VITE_DESKFLEET_SERVER_URL", "VITE_STATSIG_CLIENT_KEY", "VITE_STATSIG_ENVIRONMENT", "VITE_SENTRY_DSN", "VITE_SENTRY_ENVIRONMENT", "VITE_SENTRY_RELEASE"].map(name => process.env[name] ?? "<unset>"),
 ]) + "\\n")
 `)
   if (process.platform === "win32") writeFileSync(join(directory, "mise.cmd"), '@"%DESKFLEET_TEST_NODE%" "%DESKFLEET_MISE_FIXTURE%" %*\r\n')
   else writeFileSync(join(directory, "mise"), `#!/bin/sh
 exec "$DESKFLEET_TEST_NODE" "$DESKFLEET_MISE_FIXTURE" "$@"
 `, { mode: 0o755 })
-  const excluded = new Set(["PATH", "DESKTOP_SERVER_URL", "VITE_DESKFLEET_SERVER_URL", "VITE_STATSIG_CLIENT_KEY", "VITE_STATSIG_ENVIRONMENT"])
+  const excluded = new Set(["PATH", "DESKTOP_SERVER_URL", "VITE_DESKFLEET_SERVER_URL", "VITE_STATSIG_CLIENT_KEY", "VITE_STATSIG_ENVIRONMENT", "VITE_SENTRY_DSN", "VITE_SENTRY_ENVIRONMENT", "VITE_SENTRY_RELEASE"])
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !excluded.has(name.toUpperCase())))
   const path = Object.entries(process.env).find(([name]) => name.toUpperCase() === "PATH")?.[1] ?? ""
   return {
@@ -79,11 +79,24 @@ test("release build keeps Web same-origin and embeds the API origin only in Elec
     VITE_DESKFLEET_SERVER_URL: "https://api.example.com",
     VITE_STATSIG_CLIENT_KEY: "client-fixture",
     VITE_STATSIG_ENVIRONMENT: "production",
+    VITE_SENTRY_DSN: "https://publickey@sentry.example.com/123",
+    VITE_SENTRY_ENVIRONMENT: "production",
+    VITE_SENTRY_RELEASE: "deskfleet@0.2.1",
   })
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(build.calls(), [
-    "run build", "<unset>", "client-fixture", "production",
-    "exec -- pnpm --filter @deskfleet/desktop build", "https://api.example.com", "client-fixture", "production",
+    "run build", "<unset>", "client-fixture", "production", "https://publickey@sentry.example.com/123", "production", "deskfleet@0.2.1",
+    "exec -- pnpm --filter @deskfleet/desktop build", "https://api.example.com", "client-fixture", "production", "https://publickey@sentry.example.com/123", "production", "deskfleet@0.2.1",
+  ])
+})
+
+test("release builds keep optional telemetry unset when no project is configured", context => {
+  const build = releaseBuild(context)
+  const result = build.run({ VITE_DESKFLEET_SERVER_URL: "https://api.example.com" })
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(build.calls(), [
+    "run build", "<unset>", "", "", "", "", "",
+    "exec -- pnpm --filter @deskfleet/desktop build", "https://api.example.com", "", "", "", "", "",
   ])
 })
 
