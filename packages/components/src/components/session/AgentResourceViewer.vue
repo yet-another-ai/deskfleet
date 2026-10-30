@@ -3,17 +3,20 @@ import { DialogTitle } from "reka-ui"
 import { computed, nextTick, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { FileEntry, FileResourceRequest, FilesApi } from "../../../../client/src/files.ts"
+import { fileResourceLines } from "../../services/agent-resources.ts"
 import UiDialog from "../common/UiDialog.vue"
 import UiButton from "../common/UiButton.vue"
 import FileBrowserPane from "../files/FileBrowserPane.vue"
 
 const props = defineProps<{ api: FilesApi; request: FileResourceRequest }>()
+// Vue proxies cannot cross Electron's context bridge, including nested targets.
+const request: FileResourceRequest = { ...props.request, target: { ...props.request.target } }
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const entry = ref<FileEntry>()
 const content = ref<string>()
 const lines = computed(() => content.value?.split("\n") ?? [])
-const requestedLine = Number(props.request.uri.match(/:(\d+)(?::\d+)?(?:#.*)?$/u)?.[1] ?? 0)
+const requestedLines = fileResourceLines(request.uri)
 const lineElement = ref<HTMLElement>()
 const imageUrl = ref<string>()
 const error = ref<string>()
@@ -22,11 +25,11 @@ const downloading = ref(false)
 let disposed = false
 async function open(): Promise<void> {
   try {
-    const result = await props.api.resolveResource(props.request)
+    const result = await props.api.resolveResource(request)
     if (disposed) return
     entry.value = result
     if (result.kind === "file") {
-      const file = await props.api.readResource(props.request)
+      const file = await props.api.readResource(request)
       if (disposed) return
       if (/^image\/(?:png|jpeg|gif|webp|avif|bmp|vnd\.microsoft\.icon|x-icon)$/u.test(file.mimeType)) {
         imageUrl.value = URL.createObjectURL(new Blob([new Uint8Array(file.data)], { type: file.mimeType }))
@@ -35,7 +38,7 @@ async function open(): Promise<void> {
           const text = new TextDecoder("utf-8", { fatal: true }).decode(file.data)
           if (text.includes("\0")) throw new Error("Binary file")
           content.value = text
-          if (requestedLine > 0) {
+          if (requestedLines) {
             loading.value = false
             await nextTick()
             lineElement.value?.scrollIntoView({ block: "center" })
@@ -49,7 +52,7 @@ async function open(): Promise<void> {
 async function download(): Promise<void> {
   if (downloading.value) return
   downloading.value = true
-  try { await props.api.saveResource(props.request) }
+  try { await props.api.saveResource(request) }
   catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { if (!disposed) downloading.value = false }
 }
@@ -63,7 +66,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     <p v-if="loading" role="status">{{ t('folderPicker.loading') }}</p>
     <FileBrowserPane v-else-if="entry?.kind === 'directory'" :api="api" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
     <img v-else-if="imageUrl" :src="imageUrl" :alt="entry?.name" class="max-h-[60vh] max-w-full object-contain" />
-    <pre v-else-if="content !== undefined" class="max-h-[60vh] overflow-auto whitespace-pre text-xs select-text"><code><span v-for="(line, index) in lines" :key="index" :ref="index + 1 === requestedLine ? (element: any) => { lineElement = element } : undefined" :class="index + 1 === requestedLine && 'bg-ui-hover'">{{ line }}{{ index < lines.length - 1 ? '\n' : '' }}</span></code></pre>
+    <pre v-else-if="content !== undefined" class="max-h-[60vh] overflow-auto whitespace-pre text-xs select-text"><code><span v-for="(line, index) in lines" :key="index" :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined" :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'">{{ line }}{{ index < lines.length - 1 ? '\n' : '' }}</span></code></pre>
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
     <div class="mt-4 flex justify-end gap-2">
       <UiButton v-if="entry" type="button" :disabled="downloading" @click="download">{{ t('files.downloadResource') }}</UiButton>

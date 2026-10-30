@@ -215,7 +215,11 @@ working context remains available. Editing Workspace directories later does not
 retarget those references. Link fragments and trailing `:line[:column]` editor
 locations are removed before URI decoding; encoded filename characters remain
 part of the path. The conversation opens directory links in a file browser and previews supported
-text and image files in a dialog. Text previews highlight a requested line.
+text and image files in a dialog. Text previews highlight the whole line for
+`:line[:column]` and `#Lline` locations, or all lines in an ordered
+`#Lstart-Lend` range, and scroll to the first requested line. Encoded location
+separators remain filename characters. Invalid or unavailable line numbers do
+not select another line.
 Other files can be downloaded from that dialog.
 
 Images are fetched through the same authenticated file endpoint and rendered
