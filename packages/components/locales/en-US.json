@@ -1,4 +1,11 @@
 {
+  "pullRequest": {
+    "indicator": "PR #{number} · {state} · {title}",
+    "draft": "Draft",
+    "open": "Open",
+    "merged": "Merged",
+    "closed": "Closed"
+  },
   "aboutSettings": {
     "title": "About",
     "description": "Your team's AI agents and workspaces, together.",
@@ -316,7 +323,7 @@
     "manageDescription": "Manage the accounts and repositories available to the GitHub App.",
     "manage": "Manage GitHub",
     "actAsYou": "Act as you",
-    "actAsYouDescription": "Authorize your GitHub identity for future pull request actions. Turning this off keeps your authorization.",
+    "actAsYouDescription": "Read pull request status using your GitHub identity. Turning this off keeps your authorization.",
     "authorize": "Authorize",
     "reauthorize": "Reauthorize",
     "authorizedAs": "Authorized as {login}",

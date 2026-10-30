@@ -30,6 +30,7 @@ import SessionContextMenu from "../session/SessionContextMenu.vue"
 import { sessionIsUnread, snapshotIsWorking } from "../../services/agent-conversation.ts"
 import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
+import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
 import TreeLink from "./TreeLink.vue"
 
 const props = defineProps<{ machine: MachineSummary }>()
@@ -140,6 +141,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
               <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
             </template>
             <template #trailing>
+              <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
               <SessionWorkingIndicator v-if="sessionWorking(session.id)" />
               <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
             </template>
@@ -191,6 +193,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
                   <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
                 </template>
                 <template #trailing>
+                  <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
                   <SessionWorkingIndicator v-if="sessionWorking(session.id)" />
                   <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
                 </template>

@@ -8,6 +8,7 @@ import { i18n } from "../../i18n/index.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
+import { usePullRequestsStore } from "../../stores/pull-requests.ts"
 import { agentSnapshot } from "../../test/agent.ts"
 import { fakeCentral, machineFixture } from "../../test/central.ts"
 import PinnedSessions from "./PinnedSessions.vue"
@@ -79,6 +80,19 @@ test("Pinned appears in pin order with current titles from every Team machine", 
   agents.sessions["30"] = { ...agents.sessions["30"]!, title: "Renamed investigation" }
   await flushPromises()
   expect(row("first").text()).toContain("Renamed investigation")
+})
+
+test("pinned rows retain PR status beside their unread indicator", async () => {
+  const { pins, agents, machineId } = await render()
+  vi.spyOn(usePullRequestsStore(), "forSession").mockReturnValue([
+    { number: 78, title: "Add feature", url: "https://github.com/acme/app/pull/78", state: "merged" },
+  ])
+  agents.sessions["30"]!.lastCompletedSeq = "6"
+  agents.sessions["30"]!.lastReadSeq = "5"
+  pins.pin(machineId, "30", "Add feature"); await flushPromises()
+  expect(row(machineId).get("[data-pull-request]").attributes("title")).toBe("PR #78 · Merged · Add feature")
+  expect(row(machineId).find("[data-session-unread]").exists()).toBe(true)
+  expect(row(machineId).get("button").find("button, a").exists()).toBe(false)
 })
 
 test("archived local sessions are unpinned and restoring does not pin them again", async () => {
