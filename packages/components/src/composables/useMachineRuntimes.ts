@@ -10,6 +10,7 @@ import { router } from "../router/index.ts"
 import { appearanceStoreKey, type useAppearanceStore } from "../stores/appearance.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
+import { installErrorReporting } from "../services/error-reporting.ts"
 
 export interface MachineRuntime {
   state: ReturnType<typeof createPinia>
@@ -90,6 +91,7 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
             .provide(machineRuntimesKey, runtimes)
             .use(state).use(router).use(i18n)
           app.config.idPrefix = `machine-${machine.id}-${++viewId}`
+          installErrorReporting(app)
           if (vaporInteropPlugin) app.use(vaporInteropPlugin)
           const unmount = () => { if (views.delete(unmount)) app.unmount() }
           views.add(unmount)

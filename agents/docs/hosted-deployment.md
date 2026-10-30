@@ -208,8 +208,8 @@ Create the `production` environment under Repository Settings → Environments.
 Use **Selected branches and tags** with a **Tag** rule matching `v*` and no
 allowed branches. Store production variables and secrets only in this
 environment, removing repository and organization copies. PR, main, and manual
-Build runs do not bind it: Statsig stays disabled, and Electron retains its
-localhost backend. See [tagged releases](ci.md#tagged-releases) for the complete
+Build runs do not bind it: Statsig and Sentry stay disabled, and Electron retains
+its localhost backend. See [tagged releases](ci.md#tagged-releases) for the complete
 configuration.
 
 Statsig is optional and configured at build time for both Web and Electron. The
@@ -236,6 +236,16 @@ build adds these origins only when its key is configured. Statsig owns behaviora
 analytics and frontend experiments; API/daemon authorization and quota admission
 remain authoritative. See the [Web](../../apps/web/README.md) and
 [desktop](../../apps/desktop/README.md) guides for environment-file locations.
+
+Sentry error reporting is separately optional for Web and Electron renderers.
+Set `VITE_SENTRY_DSN` to a public DSN in the same `production` environment;
+missing, blank, or invalid values disable reporting. Optional
+`VITE_SENTRY_ENVIRONMENT` defaults to Vite's mode. The tag workflow automatically
+labels both clients with the same release, such as `deskfleet@v0.2.1`; no release
+variable needs configuring. These are build-time values, so changing the API's
+runtime environment does not change the clients. Allow the DSN origin in the
+Web host's `connect-src` policy; Electron adds it automatically. The
+[error-reporting guide](error-reporting.md) defines scope and collected data.
 
 The tag workflow requires these secrets in the GitHub `production` environment,
 separate from API secrets:
@@ -314,7 +324,9 @@ Before tagging, account for these current behaviors:
    removed while history survives. Restore it and verify the checkouts return at
    their saved committed HEADs, discarded local changes stay absent, and execution
    remains stopped. Confirm archiving a directory Session leaves source files
-   intact. Take the machine offline and read its
+   intact. On a separate archived Session, verify holding Delete removes its
+   local records and retained worktree refs while leaving source files intact.
+   Take the machine offline and read the retained Session's
    synchronized history. Place the client and daemon sockets on different API
    instances and alternate management and offer/candidate HTTP requests between
    instances. Verify replies, client notifications, logout revocation,

@@ -64,6 +64,13 @@ Experiment decisions never grant authorization, subscription entitlements, or
 quota capacity; those remain server and daemon responsibilities. The
 [analytics guide](analytics.md) owns identity, event scope, and configuration.
 
+Optional Sentry error reporting also belongs to the shared Vue frontend. Web
+and Electron renderers use a build-time public DSN; an absent or invalid DSN
+disables reporting. Each renderer captures Vue and unhandled JavaScript errors,
+including errors from its separate machine-surface applications. Electron permits
+only the DSN's origin through its renderer Content Security Policy. The
+[error-reporting guide](error-reporting.md) owns configuration and collected data.
+
 ### Multiple API instances
 
 API instances share one PostgreSQL database and the same public service origin.
@@ -150,10 +157,11 @@ Owners and administrators manage members and roles and remove machines.
 Administrators cannot remove or demote the owner; the owner must transfer
 ownership to an existing active, verified member before leaving. The former owner
 becomes an administrator. Members can enroll their own machines, configure Providers,
-create or delete Workspaces, and create, archive, or restore Sessions. The first
-release does not expose Session deletion to users. Per-Workspace sharing rules are not
-part of the initial role model. Server and daemon authorization still checks the
-requested action and Team rather than treating a connected peer as authority.
+create or delete Workspaces, and create, archive, restore, or delete Sessions.
+The archived Sessions page exposes deletion after a hold-to-confirm action.
+Per-Workspace sharing rules are not part of the initial role model. Server and
+daemon authorization still checks the requested action and Team rather than
+treating a connected peer as authority.
 
 Site administrators have a separate installation-wide grant attached to their
 existing user account. They manage runtime site settings and the target design's
@@ -305,8 +313,9 @@ and returns it to the active list without starting processes. A later message
 resumes the provider where supported; opening a terminal can create a new shell
 while retaining old terminal history.
 Archived Sessions remain owned by their Workspace and continue to prevent its
-deletion. Session deletion is not a first-release user operation; archive does
-not invoke Session or Worktree record destruction.
+deletion until the Session is deleted. Deletion removes its Session and Worktree
+records, ownership manifest, commit refs, and any remaining generated checkouts.
+Archive does not invoke Session or Worktree record destruction.
 
 For example:
 
@@ -385,11 +394,11 @@ it never imports the previous registration's resources. Valid registrations
 cannot be reset through this flow.
 
 Authenticated backend management exposes catalog queries, Workspace
-create/update/delete, and Session create/archive/restore. The daemon validates
-Workspace paths as absolute, existing directories. There are no manual Worktree
-mutations or user-facing permanent Session deletion. Changes synchronize to the
-central catalog and notify Team clients. Workspace deletion never removes its
-configured source directories, and retained archived Sessions block deletion.
+create/update/delete, and Session create/archive/restore/delete. The daemon
+validates Workspace paths as absolute, existing directories. There are no manual
+Worktree mutations. Changes synchronize to the central catalog and notify Team
+clients. Workspace deletion never removes its configured source directories,
+and retained archived Sessions block deletion.
 
 The shared folder dialog lists directories through backend RPC on the selected
 daemon. It returns the current path, parent, home, roots, and child directories.
@@ -415,8 +424,8 @@ state. It refreshes the retained HEADs after shutdown before removing checkouts;
 restoration uses those saved locations regardless of the current root preference.
 Disconnect never destroys checkouts. Previously archived Sessions are not cleaned
 up in the background; explicitly archiving them again can reclaim retained
-checkouts. Internal destruction remains available for rollback and development
-tests only.
+checkouts. Deletion removes retained manifests and commit refs as well as any
+remaining checkouts; the same destruction path supports provisioning rollback.
 
 Electron reaches the backend through its main-process transport and narrow
 preload bridge. Web uses its browser transport. `VITE_DESKFLEET_SERVER_URL`
@@ -930,10 +939,11 @@ terminating shells, or archiving a Session. Details are owned by the
 The initial design trusts the server with synchronized Agent conversations,
 tool history, and audit. Terminal output remains on the daemon. Archive and
 restore preserve all this data, including content-bearing audit records.
-Permanent Session deletion is deferred from the first user-facing release.
-When introduced, it removes central conversation/tool content, including raw
-content in audit parameters and results; only audit metadata remains, and stale
-uploads must not restore removed content. Keep machine private keys and
+The archived Sessions page exposes daemon-side deletion of local records and
+owned resources. Immutable local command receipts remain. Central content erasure
+is separate work: it must remove conversation/tool content, including raw content
+in audit parameters and results, retain only audit metadata, and prevent stale
+uploads from restoring removed content. Keep machine private keys and
 application credentials out of history and logs. Electron renderers stay
 sandboxed, with narrow preload interfaces; agent output and repository content
 are untrusted display data.

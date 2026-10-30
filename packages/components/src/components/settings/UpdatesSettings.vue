@@ -4,6 +4,7 @@ import { Download, RefreshCw } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
+import { version } from "../../../package.json"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
 import SettingsRow from "./SettingsRow.vue"
@@ -63,15 +64,14 @@ function installUpdate(): void {
 </script>
 
 <template>
-  <h1 class="ui-page-title mb-2">{{ t("updatesSettings.title") }}</h1>
-  <p class="m-0 mb-6 text-sm leading-relaxed text-ui-text-muted">{{ t("updatesSettings.description") }}</p>
+  <h2 class="mb-3 text-base font-semibold">{{ t("aboutSettings.versionAndUpdates") }}</h2>
   <section :aria-label="t('updatesSettings.title')" class="ui-card px-4">
-    <SettingsRow v-if="state?.currentVersion" :label="t('updatesSettings.currentVersion')">
-      <span class="text-sm text-ui-text-muted">{{ state.currentVersion }}</span>
+    <SettingsRow :label="t('updatesSettings.currentVersion')">
+      <span class="text-sm text-ui-text-muted">{{ state?.currentVersion ?? version }}</span>
     </SettingsRow>
     <div v-if="state" class="py-4">
       <p role="status" aria-live="polite" class="m-0 text-sm">{{ status }}</p>
-      <div class="mt-4 flex flex-wrap gap-2">
+      <div v-if="api" class="mt-4 flex flex-wrap gap-2">
         <UiButton :loading="checking || state.status === 'checking'" :disabled="busy || state.status === 'disabled'" @click="checkForUpdates">
           <RefreshCw v-if="!checking && state.status !== 'checking'" :size="14" aria-hidden="true" />
           {{ t("updatesSettings.check") }}

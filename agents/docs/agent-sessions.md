@@ -35,12 +35,12 @@ directories in place, or the home directory when no Workspace is selected. Its
 captured ordered directories are the execution context; the first supplies `cwd`.
 Later Workspace edits do not retarget existing Sessions. Session creation also
 retains a failed provisioning record when Git setup fails or a directory is
-missing. Stopping a provider preserves the Session and its files. The current
-deletion path removes a worktree Session's disposable checkouts and
-`<machine directory>/session-attachments/<sessionId>/` before deleting the
-catalog resource; a directory Session's workspace or home files are never
-removed. The new-session composer offers both contexts when a Workspace is
-selected and remembers the last choice on that device.
+missing. Stopping a provider preserves the Session and its files. The deletion
+path removes a worktree Session's disposable checkouts, retained Git refs,
+ownership manifest, and `<machine directory>/session-attachments/<sessionId>/`
+before deleting the catalog resource. A directory Session's workspace or home
+files are never removed. The new-session composer offers both contexts when a
+Workspace is selected and remembers the last choice on that device.
 
 ### Session titles
 
@@ -125,6 +125,8 @@ the resource details panel and retains the last Conversations destination within
 mounted machine scope. A fresh machine scope resets that destination to New session.
 Reading a Session opens its history without restoring it. The restore action confirms
 before restoring and opening the Session; failures retain the confirmation for retry.
+Each archived row also offers Delete, with a hold-to-confirm button. Deletion
+removes the Session from the list; failures remain in the dialog for retry.
 Rows keep Rename and Restore in the Session context menu, without Pin/Unpin. Offline
 history remains readable, while restoration and other daemon mutations require the machine
 online. The page shows loading, empty, and retry states for list reads.
@@ -135,9 +137,8 @@ disk space. It preserves Session and Worktree identity, directory metadata,
 queued inputs, configuration, conversation/tool history, terminal records, and
 full audit. Compact Git refs and the ownership manifest retain each checkout's
 last committed HEAD for restoration. Directory Sessions leave their Workspace
-source directories untouched. Permanent Session deletion is not exposed by
-first-release user interfaces or user-facing APIs;
-the destructive operations documented below describe existing implementation.
+source directories untouched. The archived Sessions page and authenticated
+management/Agent APIs also expose the separate deletion path documented below.
 
 Archive requires the owning machine online. Before changing archive state, the
 daemon prepares retained commits for every generated checkout. If a checkout has
@@ -452,7 +453,8 @@ Creation atomically allocates the catalog Session, provisioning metadata, and
 command binding before filesystem work. Interrupted create retries return a full
 Session snapshot rather than allocating another Session. Deletion marks the
 Session `deleting`, stops admission, closes the provider and pending permissions,
-removes any owned checkouts and Session attachments, and removes Session records. Incomplete cleanup retains
+removes any owned checkouts, retained Git refs, ownership manifests, and Session
+attachments, and removes Session records. Incomplete cleanup retains
 the deleting resource for an explicit retry. Source checkouts are untouched.
 
 The composer accepts text alongside image (`image`), folded pasted-text (`resource`
@@ -739,6 +741,7 @@ next frame, retaining the existing five-second send deadline.
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
 | `_deskfleet/session/resume`, `/stop` | Explicit provider lifecycle operations; input submission also resumes |
 | `_deskfleet/session/archive`, `/restore` | Backend management operations; reclaim/recreate generated checkouts, preserve history, and require an online daemon |
+| `_deskfleet/session/delete` | Delete local Session records and owned resources, including retained worktree refs; the archived Sessions page requires hold confirmation |
 | `_deskfleet/session/rename` | Rename an active or archived Session through management RPC or ACP; preserve execution and record the customized title |
 
 ACP notifications, including provider Session IDs, are carried in journal
@@ -961,9 +964,9 @@ remains the single journal writer.
 The first backend release synchronizes Agent conversations, tool history, audit,
 and archive/restore state to PostgreSQL. Archive preserves conversation/tool
 content and audit locally and in central replicas while reclaiming generated
-checkouts. Permanent user-facing Session deletion is deferred.
-When added, deletion removes central conversation/tool content and
-content-bearing audit parameters/results, retaining metadata-only audit; stale
-uploads must not restore that content. Local durable receipts continue to serve
-the existing idempotency contract. See [backend implementation scope](backend.md)
-for the delivery plan.
+checkouts. User-facing deletion removes local Session records and owned resources.
+Central content erasure remains separate work: it must remove conversation/tool
+content and content-bearing audit parameters/results, retain metadata-only audit,
+and prevent stale uploads from restoring that content. Local durable receipts
+continue to serve the existing idempotency contract. See the
+[backend implementation scope](backend.md) for the delivery plan.

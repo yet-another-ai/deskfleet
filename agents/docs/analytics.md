@@ -227,11 +227,13 @@ ownership remain enforced by the server and daemon.
 
 `packages/client/src/analytics-config.ts` owns explicit initialization and event
 endpoints. Dynamic endpoint fallbacks are disabled. Configured Electron builds
-permit only the three Statsig origins in addition to the existing development
+permit the three Statsig origins in addition to the existing development
 HMR policy: `https://featureassets.org`, `https://prodregistryv2.org`, and
-`https://statsigapi.net` (SDK exceptions). Without a key, production keeps
-`connect-src 'none'`. A Web host that supplies its own CSP must allow these
-origins alongside the application's API/peer requirements.
+`https://statsigapi.net` (SDK exceptions). Optional
+[Sentry error reporting](error-reporting.md) adds its configured DSN origin.
+Without either integration, production keeps `connect-src 'none'`. A Web host
+that supplies its own CSP must allow these origins alongside the application's
+API/peer requirements.
 
 Focused tests cover disabled configuration, identity replacement and logout,
 initialization failure, reactive/default evaluations, route metadata, root

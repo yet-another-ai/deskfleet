@@ -1,4 +1,15 @@
 {
+  "aboutSettings": {
+    "title": "このアプリについて",
+    "description": "チームの AI エージェントとワークスペースをひとつに。",
+    "versionAndUpdates": "バージョンと更新",
+    "feedback": "フィードバック",
+    "feedbackDescription": "不具合やご提案は GitHub Issues でお知らせください。",
+    "openIssues": "Issues ページを開く",
+    "openSource": "オープンソースソフトウェア",
+    "openSourceDescription": "DeskFleet はオープンソースソフトウェアを利用しています。その主なプロジェクトをご紹介します。",
+    "thanks": "すべてのオープンソース貢献者の皆さまに感謝します。皆さまの活動が DeskFleet を支えています。"
+  },
   "permissionsSettings": {
     "title": "権限",
     "description": "このコンピューターで DeskFleet に必要な権限を確認します。いつでも権限を変更し、状態を再確認できます。",
@@ -177,7 +188,8 @@
     "loading": "アーカイブ済みセッションを読み込み中…", "description": "セッションを復元して作業を再開したり、開いて会話を確認したりできます。",
     "empty": "アーカイブ済みセッションはありません", "emptyDescription": "セッションをアーカイブすると、実行を停止し、会話と作業コンテキストを保持できます。",
     "location": "{machine} / {workspace}", "openLabel": "{title} を開く",
-    "restoreLabel": "{title} を復元"
+    "restoreLabel": "{title} を復元",
+    "deleteLabel": "{title} を削除"
   },
   "appearance": {
     "language": "言語", "theme": "テーマ",
@@ -461,7 +473,8 @@
     },
     "backlogHint": "今送信するメッセージはキューに追加されます。", "addToBacklog": "キューに追加",
     "cancelTurn": "ターンをキャンセル", "stop": "エージェントを停止",
-    "delete": "セッションを削除", "stopQuestion": "このエージェントを停止しますか？会話とワークツリーは残ります。",
+    "delete": "セッションを削除",
+    "holdToConfirm": "長押しして確定", "stopQuestion": "このエージェントを停止しますか？会話とワークツリーは残ります。",
     "deleteQuestion": "このセッションと会話、管理対象のワークツリーを削除しますか？", "loading": "会話を復元中…",
     "disconnected": "接続が切れました。エージェントはマシン上で引き続き実行されています。", "reconnect": "再接続",
     "operationPending": "操作結果の確認が必要です。", "checkResult": "結果を確認",
@@ -630,6 +643,7 @@
     "cancel": "キャンセル", "keepBoth": "両方を保持",
     "skip": "スキップ", "replace": "置き換え",
     "loadingResource": "画像を読み込み中…", "imageUnavailable": "画像を表示できません",
+    "previewUnavailable": "このファイルはプレビューできません。ダウンロードして確認してください。", "downloadResource": "ダウンロード",
     "resourceUnavailable": "このリソースは利用できません。対象のマシンに接続して、もう一度お試しください。", "notImage": "このファイルは画像として表示できません。",
     "state": {
       "queued": "待機中", "preparing": "準備中",

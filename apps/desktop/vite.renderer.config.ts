@@ -8,6 +8,7 @@ import { injectRendererContentSecurityPolicy } from "./src/shared/renderer-csp.t
 
 export default defineConfig(({ command }) => {
   let statsigEnabled = false
+  let sentryDsn: string | undefined
   return {
     base: "./",
     root: resolve(import.meta.dirname, "src/renderer"),
@@ -17,10 +18,11 @@ export default defineConfig(({ command }) => {
         configResolved(config) {
           // Use the same mode, envDir, and process overrides as import.meta.env.
           statsigEnabled = Boolean(config.env.VITE_STATSIG_CLIENT_KEY?.trim())
+          sentryDsn = config.env.VITE_SENTRY_DSN
         },
         transformIndexHtml: {
           order: "pre",
-          handler: (html) => injectRendererContentSecurityPolicy(html, command === "build", statsigEnabled),
+          handler: (html) => injectRendererContentSecurityPolicy(html, command === "build", statsigEnabled, sentryDsn),
         },
       },
       UnoCSS({ configFile: resolve(import.meta.dirname, "uno.config.ts") }),

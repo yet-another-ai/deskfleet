@@ -120,7 +120,7 @@ test("installation failure retains the available version, offers retry, and tran
   expect(view.findAll("button")[1]!.text()).toBe("Retry update")
   i18n.global.locale.value = "zh-cmn-Hans-CN"
   await flushPromises()
-  expect(view.get("h1").text()).toBe(i18n.global.t("updatesSettings.title"))
+  expect(view.get("h2").text()).toBe(i18n.global.t("aboutSettings.versionAndUpdates"))
   expect(view.get('[role="status"]').text()).toBe("新版本 0.2.0 已可用")
   expect(view.findAll("button")[1]!.text()).toBe("重试更新")
   await view.findAll("button")[1]!.trigger("click")

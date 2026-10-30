@@ -6,6 +6,8 @@ import { computed, inject, onBeforeUnmount, provide, reactive, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { agentResourceContextKey, isFileResource } from "../../services/agent-resources.ts"
 import { markdownHostKey, type LoadedImage } from "./markdown/context.ts"
+import AgentResourceViewer from "./AgentResourceViewer.vue"
+import type { FileResourceRequest } from "../../../../client/src/files.ts"
 import MarkdownCodeBlock from "./markdown/MarkdownCodeBlock.vue"
 import MarkdownImageNode from "./markdown/MarkdownImageNode.vue"
 import MarkdownLinkNode from "./markdown/MarkdownLinkNode.vue"
@@ -19,7 +21,7 @@ defineProps<{ text: string; final?: boolean }>()
 const { t } = useI18n()
 const context = inject(agentResourceContextKey, computed(() => undefined))
 const error = ref<string>()
-const saving = ref(false)
+const resource = ref<FileResourceRequest>()
 const files = client.files
 
 const CUSTOM_ID = "deskfleet-markdown"
@@ -37,7 +39,6 @@ const images = reactive(new Map<string, LoadedImage>())
 const diagramIds = new Map<string, string>()
 let nextDiagramId = 0
 let contextKey = ""
-let generation = 0
 let disposed = false
 
 function release(uri: string): void {
@@ -69,11 +70,11 @@ function load(uri: string, refCount = 1): void {
 watchImmediate(context, current => {
   const key = JSON.stringify(current)
   if (contextKey === key) return
-  ++generation
   const retainedEntries = [...images.entries()].filter(([, img]) => img.refCount > 0)
   for (const uri of images.keys()) release(uri)
   contextKey = key
   error.value = undefined
+  resource.value = undefined
   for (const [uri, img] of retainedEntries) {
     load(uri, img.refCount)
   }
@@ -143,25 +144,20 @@ async function click(event: MouseEvent): Promise<void> {
   const link = target?.closest<HTMLAnchorElement>("a[data-resource-link]")
   if (!link) return
   event.preventDefault()
-  if (saving.value) return
   if (!files || !context.value) { error.value = t("files.resourceUnavailable"); return }
-  saving.value = true; error.value = undefined
-  const version = generation
-  try { await files.saveResource({ ...context.value, uri: link.dataset.resourceLink! }) }
-  catch (reason) { if (!disposed && version === generation) error.value = reason instanceof Error ? reason.message : String(reason) }
-  finally { if (!disposed) saving.value = false }
+  error.value = undefined
+  resource.value = { ...context.value, uri: link.dataset.resourceLink! }
 }
 
 onBeforeUnmount(() => {
   disposed = true
-  ++generation
   for (const uri of images.keys()) release(uri)
 })
 </script>
 
 <template>
   <div>
-    <div class="ui-markdown" :aria-busy="saving" @click="click">
+    <div class="ui-markdown" @click="click">
       <MarkdownRender
         :content="text"
         :custom-id="CUSTOM_ID"
@@ -177,6 +173,7 @@ onBeforeUnmount(() => {
         render-as-fragment
       />
     </div>
+    <AgentResourceViewer v-if="resource && files" :key="JSON.stringify(resource)" :api="files" :request="resource" @close="resource = undefined" />
     <p v-if="error" class="mt-2 text-xs text-ui-danger" role="alert">{{ error }}</p>
   </div>
 </template>

@@ -1,4 +1,15 @@
 {
+  "aboutSettings": {
+    "title": "About",
+    "description": "Your team's AI agents and workspaces, together.",
+    "versionAndUpdates": "Version and updates",
+    "feedback": "Feedback",
+    "feedbackDescription": "Found a bug or have an idea? Share it with us on GitHub Issues.",
+    "openIssues": "Open issues page",
+    "openSource": "Open-source software",
+    "openSourceDescription": "DeskFleet is built with open-source software. Here are some of the projects that make it possible.",
+    "thanks": "Thank you to all open-source contributors. Your work makes DeskFleet possible."
+  },
   "permissionsSettings": {
     "title": "Permissions",
     "description": "Review the access DeskFleet needs on this computer. You can change permissions and check their status here at any time.",
@@ -278,7 +289,8 @@
     "emptyDescription": "Archive a session to keep its conversation and working context without active execution.",
     "location": "{machine} / {workspace}",
     "openLabel": "Open {title}",
-    "restoreLabel": "Restore {title}"
+    "restoreLabel": "Restore {title}",
+    "deleteLabel": "Delete {title}"
   },
   "appearance": {
     "language": "Language",
@@ -766,6 +778,7 @@
     "cancelTurn": "Cancel turn",
     "stop": "Stop agent",
     "delete": "Delete session",
+    "holdToConfirm": "Hold to confirm",
     "stopQuestion": "Stop this agent? Its conversation and worktree will remain.",
     "deleteQuestion": "Delete this session, its conversation, and its managed worktree?",
     "loading": "Restoring conversation…",
@@ -1061,6 +1074,7 @@
     "replace": "Replace",
     "loadingResource": "Loading image…",
     "imageUnavailable": "Image unavailable",
+    "previewUnavailable": "Preview is unavailable for this file. You can download it.", "downloadResource": "Download",
     "resourceUnavailable": "This resource is unavailable. Connect to its machine and try again.",
     "notImage": "This file cannot be displayed as an image.",
     "state": {

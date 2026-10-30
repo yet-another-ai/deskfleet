@@ -1,4 +1,15 @@
 {
+  "aboutSettings": {
+    "title": "关于",
+    "description": "连接团队的 AI 智能体与工作空间。",
+    "versionAndUpdates": "版本与更新",
+    "feedback": "问题反馈",
+    "feedbackDescription": "发现问题或有新的建议？欢迎通过 GitHub Issues 告诉我们。",
+    "openIssues": "打开 Issues 页面",
+    "openSource": "引用的开源软件",
+    "openSourceDescription": "DeskFleet 基于开源软件构建，以下是其中的一些主要项目。",
+    "thanks": "感谢所有开源贡献者，你们的付出让 DeskFleet 成为可能。"
+  },
   "permissionsSettings": {
     "title": "权限配置",
     "description": "查看 DeskFleet 在本机所需的权限，随时调整配置并重新检查状态。",
@@ -278,7 +289,8 @@
     "emptyDescription": "归档会话可保留对话和工作环境，同时停止执行。",
     "location": "{machine} / {workspace}",
     "openLabel": "打开 {title}",
-    "restoreLabel": "恢复 {title}"
+    "restoreLabel": "恢复 {title}",
+    "deleteLabel": "删除 {title}"
   },
   "appearance": {
     "language": "语言",
@@ -766,6 +778,7 @@
     "cancelTurn": "取消当前轮次",
     "stop": "停止 Agent",
     "delete": "删除会话",
+    "holdToConfirm": "按住以确认",
     "stopQuestion": "停止此 Agent？对话和工作树会保留。",
     "deleteQuestion": "删除此会话、对话记录及其托管工作树？",
     "loading": "正在恢复对话…",
@@ -1061,6 +1074,7 @@
     "replace": "替换",
     "loadingResource": "正在加载图片…",
     "imageUnavailable": "图片无法加载",
+    "previewUnavailable": "无法预览此文件，可以下载后查看。", "downloadResource": "下载",
     "resourceUnavailable": "此资源暂不可用，请连接所属机器后重试。",
     "notImage": "此文件无法作为图片显示。",
     "state": {

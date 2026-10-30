@@ -38,7 +38,8 @@ ownership and explicit Site Admin boundary.
   cannot be removed or demoted through ordinary member operations.
 - Members can operate every machine in their Team, enroll their own machines,
   rename Team machines (the name defaults to the hostname), configure
-  Providers, create or delete Workspaces, and create, archive, or restore Sessions.
+  Providers, create or delete Workspaces, and create, archive, restore, or delete
+  Sessions.
 - Use PostgreSQL for the central server and SQLite for each daemon.
 - Keep site administration separate from Team roles. Explicit operator commands
   grant or revoke the role for existing users. Site administrators manage
@@ -80,9 +81,10 @@ ownership and explicit Site Admin boundary.
   the same Session to active use without starting processes.
   A subsequent message resumes the provider where supported; a subsequent
   terminal start creates a new shell and preserves prior terminal history.
-- Do not expose permanent Session deletion through first-release user interfaces
-  or user-facing APIs. A future delete operation removes content and retains
-  metadata-only audit; archive retains conversation/tool content and full audit.
+- Expose Session deletion through authenticated APIs and the archived Sessions
+  page's hold confirmation. It removes local Session records and owned resources;
+  archive retains conversation/tool content and full audit. Central content
+  erasure and metadata-only audit are separate work.
 - Treat existing unauthenticated local data as development data. The first
   release does not need a legacy resource/history import flow.
 - Re-enrollment after administrator removal uses a new empty machine directory
@@ -136,7 +138,7 @@ distinct.
 | [Agent](../../packages/components/src/services/agent-client.ts), [terminal](../../packages/components/src/services/terminal-client.ts), and [desktop](../../packages/components/src/composables/useDesktopConnection.ts) peers use empty ICE server lists | Apply server-issued STUN/TURN configuration to both peers and verify relayed access |
 | [Session history](../../packages/components/src/stores/agent-sessions.ts) reads only through the daemon DataChannel | Add backend history reads and reconcile the stored watermark with live subscription without replaying commands |
 | [Catalog notifications](../../apps/daemon/src/catalog.ts) publish immediate `catalogChanged` events | Add synchronization that recovers missed changes and records deletions independently of removed resources |
-| [Session deletion](../../apps/daemon/src/agent-sessions.ts) removes resource rows and their journal | Add archive/restore that reclaims generated checkouts while retaining history, and remove Session deletion from first-release user operations; do not reuse record destruction for archive |
+| [Session deletion](../../apps/daemon/src/agent-sessions.ts) removes resource rows and their journal | Keep deletion separate from archive/restore: archive reclaims generated checkouts while retaining history; deletion also removes local records and retained worktree refs |
 | [Terminal hangup](../../apps/daemon/src/terminals.ts) removes the transcript and metadata | Add a stop-and-retain path for archive; close only Session-owned PTYs and preserve all terminal records |
 | [Provider snapshots](../../apps/daemon/src/agent-providers.ts) include launch settings and environment values | Separate display metadata from configuration; keep secrets out of central replicas, command audit payloads, and logs |
 | [Agent SQL](../../crates/store/src/agent/sql.rs) selects SQLite explicitly; database connections currently use one SQLite-oriented pool configuration | Implement PostgreSQL server persistence |
@@ -185,10 +187,11 @@ state, recorded execution state, and history completeness. Reconnecting attaches
 and fills history gaps without reissuing accepted commands.
 
 Archive/restore preserves local and central conversation/tool content and full
-audit records. A future permanent delete operation must remove conversation
+audit records. Central content erasure must remove conversation
 content embedded in central command parameters/results as well as event history,
 retain metadata-only central audit, and prevent stale uploads from restoring
-deleted content. This permanent-deletion work is outside the first release.
+deleted content. This remains separate from the exposed daemon-side Session
+deletion operation, which retains immutable local command receipts.
 
 ## Team AI usage
 
@@ -257,6 +260,10 @@ use starts the needed processes under the
 existing provider resume rules. An ended PTY is not revived; a newly opened
 terminal gets its own identity while old transcripts remain available.
 Archived Sessions still belong to their Workspace and prevent its deletion.
+The archived Sessions page also offers deletion with hold confirmation. This
+removes the local Session and Worktree records, remaining generated checkouts,
+retained refs/manifests, attachments, and owned terminal records. Directory
+Session source files are untouched.
 
 ## Shared Vue clients
 
@@ -333,14 +340,16 @@ Acceptance also covers:
   Agents or shells. Signaling reconnect does not extend authorization.
   Reconnecting synchronization catches up without duplicating events.
 - Archive requires the machine online and closes the provider and Session-owned
-  PTYs before reporting success. Unrelated terminals keep running. Worktree
-  files, uncommitted/untracked changes, backlog, terminal records, conversation
-  history, and audit remain intact locally and in their existing central copies.
-- Restore preserves identity and data, returns the Session to the active list,
+  PTYs before removing generated checkouts and reporting success. Unrelated
+  terminals keep running. Backlog, terminal records, conversation history, and
+  audit remain intact; generated uncommitted/untracked files are discarded.
+- Restore recreates generated checkouts at saved committed HEADs, preserves
+  identity and history, returns the Session to the active list,
   and starts no processes or backlog dispatch. Subsequent messages or terminal
   use start only the required processes; archived history views never do so.
-- Neither Electron nor Web exposes permanent Session deletion, and first-release
-  user-facing APIs do not offer that operation.
+- Electron and Web expose deletion on the archived Sessions page with hold
+  confirmation. It removes local Session records and owned resources, including
+  retained worktree refs, while leaving source directories untouched.
 - PostgreSQL server integration and SQLite daemon behavior are tested at their
   respective storage boundaries. Browser and Electron exercise the shared UI
   with their actual adapters.

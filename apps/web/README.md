@@ -56,6 +56,16 @@ authorization, subscription entitlements, and quotas remain enforced by the
 server and daemon. See the [analytics guide](../../agents/docs/analytics.md) for
 identity, event metadata, and the shared API.
 
+Sentry error reporting is independently optional. Set `VITE_SENTRY_DSN` to a
+public Sentry DSN before development or building; missing, blank, or invalid
+values disable reporting. `VITE_SENTRY_ENVIRONMENT` defaults to Vite's mode.
+These values use the same environment-file location and rebuild rules as Statsig.
+Tagged builds automatically use the same Sentry release as Electron, such as
+`deskfleet@v0.2.1`. Allow the DSN's origin in the Web host's `connect-src` policy.
+See the
+[error-reporting guide](../../agents/docs/error-reporting.md) for scope and data
+collection.
+
 Register and verify your email, or sign in using your password or Passkey.
 Select a team and a machine, and
 use its synchronized resource catalog. An administrator can create a team,
@@ -98,7 +108,8 @@ history from the backend, including its completeness watermark. Live operations
 remain unavailable. Archiving a Session retains its history and removes generated
 checkouts, including uncommitted and untracked files. Restoring recreates checkouts
 at their saved committed HEADs without starting execution. Directory Sessions
-leave source files untouched. There is no user-facing Session deletion.
+leave source files untouched. The archived Sessions page offers Delete with hold
+confirmation to remove local Session records and owned resources.
 
 Run shared UI and transport tests with
 `mise exec -- pnpm --filter @deskfleet/desktop test`.

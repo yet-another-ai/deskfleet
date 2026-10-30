@@ -79,7 +79,7 @@ function attach(sessions = new Sessions(), identity = actor, send?: (chunk: Uint
   }
 }
 
-test("AgentChannel offers rename, archive, and restore but never exposes destructive Session deletion", async t => {
+test("AgentChannel offers rename, archive, restore, and Session deletion", async t => {
   const h = attach()
   t.after(() => h.channel.close())
   await h.initialize()
@@ -90,9 +90,9 @@ test("AgentChannel offers rename, archive, and restore but never exposes destruc
   h.request("restore", "_deskfleet/session/restore", { sessionId: "1", operationId: "restore" })
   await h.waitFor(message => message.id === "restore")
   h.request("delete", "_deskfleet/session/delete", { sessionId: "1", operationId: "delete" })
-  const rejected = await h.waitFor(message => message.id === "delete")
-  assert.equal(rejected.error?.code, -32601)
-  assert.deepEqual(h.sessions.calls.map(call => call.method), ["_deskfleet/session/rename", "_deskfleet/session/archive", "_deskfleet/session/restore"])
+  const deleted = await h.waitFor(message => message.id === "delete")
+  assert.equal(deleted.result, null)
+  assert.deepEqual(h.sessions.calls.map(call => call.method), ["_deskfleet/session/rename", "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/delete"])
 })
 
 test("AgentChannel reconstructs fragmented Unicode and sends ordered binary chunks", async t => {

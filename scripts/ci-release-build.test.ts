@@ -23,7 +23,7 @@ function releaseBuild(context: TestContext) {
     assert.ok(script, `Missing script for ${name}`)
     const shell = block.match(/^        shell: (.+)$/m)?.[1]
     if (name.startsWith("Build ")) assert.equal(shell, undefined, "Native builds must retain the runner's default shell, including pwsh on Windows")
-    const variables = [...block.matchAll(/^          (\w+): \$\{\{ vars\.(\w+) \}\}$/gm)]
+    const variables = [...block.matchAll(/^          (\w+): (.+)$/gm)]
       .map(match => [match[1]!, match[2]!] as const)
     return [{ name, script, shell, variables }]
   })
@@ -35,18 +35,18 @@ function releaseBuild(context: TestContext) {
   writeFileSync(fixture, `import { appendFileSync } from "node:fs"
 appendFileSync(process.env.DESKFLEET_BUILD_LOG, JSON.stringify([
   process.argv.slice(2).join(" "),
-  ...["VITE_DESKFLEET_SERVER_URL", "VITE_STATSIG_CLIENT_KEY", "VITE_STATSIG_ENVIRONMENT"].map(name => process.env[name] ?? "<unset>"),
+  ...["VITE_DESKFLEET_SERVER_URL", "VITE_STATSIG_CLIENT_KEY", "VITE_STATSIG_ENVIRONMENT", "VITE_SENTRY_DSN", "VITE_SENTRY_ENVIRONMENT", "VITE_SENTRY_RELEASE"].map(name => process.env[name] ?? "<unset>"),
 ]) + "\\n")
 `)
   if (process.platform === "win32") writeFileSync(join(directory, "mise.cmd"), '@"%DESKFLEET_TEST_NODE%" "%DESKFLEET_MISE_FIXTURE%" %*\r\n')
   else writeFileSync(join(directory, "mise"), `#!/bin/sh
 exec "$DESKFLEET_TEST_NODE" "$DESKFLEET_MISE_FIXTURE" "$@"
 `, { mode: 0o755 })
-  const excluded = new Set(["PATH", "DESKTOP_SERVER_URL", "VITE_DESKFLEET_SERVER_URL", "VITE_STATSIG_CLIENT_KEY", "VITE_STATSIG_ENVIRONMENT"])
+  const excluded = new Set(["PATH", "DESKTOP_SERVER_URL", "VITE_DESKFLEET_SERVER_URL", "VITE_STATSIG_CLIENT_KEY", "VITE_STATSIG_ENVIRONMENT", "VITE_SENTRY_DSN", "VITE_SENTRY_ENVIRONMENT", "VITE_SENTRY_RELEASE"])
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !excluded.has(name.toUpperCase())))
   const path = Object.entries(process.env).find(([name]) => name.toUpperCase() === "PATH")?.[1] ?? ""
   return {
-    run: (variables: NodeJS.ProcessEnv) => {
+    run: (variables: NodeJS.ProcessEnv, tag = "v0.2.1") => {
       for (const [index, step] of steps.entries()) {
         const shell = step.shell ?? (process.platform === "win32" ? "pwsh" : "bash")
         const args = shell === "pwsh"
@@ -61,7 +61,9 @@ exec "$DESKFLEET_TEST_NODE" "$DESKFLEET_MISE_FIXTURE" "$@"
           env: {
             ...env, PATH: `${directory}${delimiter}${path}`, DESKFLEET_BUILD_LOG: log,
             DESKFLEET_TEST_NODE: process.execPath, DESKFLEET_MISE_FIXTURE: fixture,
-            ...Object.fromEntries(step.variables.map(([name, variable]) => [name, variables[variable] ?? ""])),
+            ...Object.fromEntries(step.variables.map(([name, value]) => [name, value
+              .replace(/\$\{\{ vars\.(\w+) \}\}/g, (_, variable: string) => variables[variable] ?? "")
+              .replaceAll("${{ github.ref_name }}", tag)])),
           },
         })
         assert.ifError(result.error)
@@ -73,17 +75,29 @@ exec "$DESKFLEET_TEST_NODE" "$DESKFLEET_MISE_FIXTURE" "$@"
   }
 }
 
-test("release build keeps Web same-origin and embeds the API origin only in Electron", context => {
+for (const tag of ["v0.2.1", "v0.3.0-rc.1"]) test(`release ${tag} keeps Web same-origin and automatically labels both clients`, context => {
   const build = releaseBuild(context)
   const result = build.run({
     VITE_DESKFLEET_SERVER_URL: "https://api.example.com",
     VITE_STATSIG_CLIENT_KEY: "client-fixture",
     VITE_STATSIG_ENVIRONMENT: "production",
-  })
+    VITE_SENTRY_DSN: "https://publickey@sentry.example.com/123",
+    VITE_SENTRY_ENVIRONMENT: "production",
+  }, tag)
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(build.calls(), [
-    "run build", "<unset>", "client-fixture", "production",
-    "exec -- pnpm --filter @deskfleet/desktop build", "https://api.example.com", "client-fixture", "production",
+    "run build", "<unset>", "client-fixture", "production", "https://publickey@sentry.example.com/123", "production", `deskfleet@${tag}`,
+    "exec -- pnpm --filter @deskfleet/desktop build", "https://api.example.com", "client-fixture", "production", "https://publickey@sentry.example.com/123", "production", `deskfleet@${tag}`,
+  ])
+})
+
+test("release builds keep optional telemetry unset when no project is configured", context => {
+  const build = releaseBuild(context)
+  const result = build.run({ VITE_DESKFLEET_SERVER_URL: "https://api.example.com" })
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(build.calls(), [
+    "run build", "<unset>", "", "", "", "", "deskfleet@v0.2.1",
+    "exec -- pnpm --filter @deskfleet/desktop build", "https://api.example.com", "", "", "", "", "deskfleet@v0.2.1",
   ])
 })
 

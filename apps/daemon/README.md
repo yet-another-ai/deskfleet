@@ -223,7 +223,8 @@ generated checkouts while preserving conversation history, audit, queued inputs,
 and terminal transcripts. Restore recreates checkouts at their saved paths and
 committed HEADs and returns the same Session to active use without starting
 processes. Uncommitted and untracked files removed by archive are not restored.
-Permanent Session deletion is unavailable through user-facing APIs or clients.
+The archived Sessions page exposes deletion with hold confirmation; authenticated
+APIs invoke the same cleanup of local records, owned resources, and retained refs.
 
 The backend authenticates and binds SDP to a user, login session, Team, target
 machine, and 24-hour peer grant. Conversation operations use the DataChannel
