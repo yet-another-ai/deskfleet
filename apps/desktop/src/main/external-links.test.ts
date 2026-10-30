@@ -19,7 +19,7 @@ test("explicit external-window requests open HTTP(S) in the system browser while
   expect(mocks.openExternal).toHaveBeenCalledTimes(2)
 })
 
-test("allows auxiliary Mermaid viewer windows on the main renderer origin when options are provided", () => {
+test("allows auxiliary preview windows on the main renderer origin when options are provided", () => {
   const contents = { setWindowOpenHandler: vi.fn() }
   attachExternalLinks(contents as unknown as WebContents, () => ({ width: 960, height: 680 }))
   const handler = contents.setWindowOpenHandler.mock.calls[0]![0] as (details: HandlerDetails) => { action: string; overrideBrowserWindowOptions?: unknown }

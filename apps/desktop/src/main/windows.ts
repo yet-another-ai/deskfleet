@@ -69,7 +69,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
   // Windows ends the session through window messages rather than a quit request.
   window.on("session-end", () => lifecycle.quit())
 
-  // The renderer is a single hash-routed document; auxiliary windows open only for standalone Mermaid views.
+  // The renderer is a single hash-routed document; standalone previews open in auxiliary windows.
   attachExternalLinks(window.webContents, () => ({
     title: "DeskFleet",
     width: 960,

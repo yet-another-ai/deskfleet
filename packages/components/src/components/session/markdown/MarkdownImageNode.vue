@@ -3,6 +3,8 @@ import { watchImmediate } from "@vueuse/core"
 import { computed, inject, onBeforeUnmount } from "vue"
 import { useI18n } from "vue-i18n"
 import { isFileResource } from "../../../services/agent-resources.ts"
+import { previewKindFromMime, previewKindFromUri } from "../../../services/preview.ts"
+import PreviewViewer from "../PreviewViewer.vue"
 import { markdownHostKey } from "./context.ts"
 
 const props = defineProps<{
@@ -38,14 +40,25 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <img
+  <PreviewViewer
     v-if="!isLocalResource"
-    :src="uri"
+    :data-preview="uri"
+    :kind="previewKindFromUri(uri) ?? 'image'"
+    :content="uri"
     :alt="alt"
     :title="node.title ?? undefined"
-  >
-  <span v-else-if="state?.url" class="ui-remote-image">
-    <img :src="state.url" :alt="alt">
+    mode="inline"
+  />
+  <span v-else-if="state?.url" class="ui-remote-image block">
+    <PreviewViewer
+      :data-preview="uri"
+      :kind="previewKindFromMime(state.mimeType) ?? 'image'"
+      :content="state.url"
+      :mime-type="state.mimeType"
+      :alt="alt"
+      :title="node.title ?? undefined"
+      mode="inline"
+    />
   </span>
   <span v-else-if="state?.error" class="ui-remote-image">
     <button
