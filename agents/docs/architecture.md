@@ -129,7 +129,8 @@ replica configuration and failure behavior.
 ## Identity and team access
 
 The identity design supports the hosted service and self-hosted installations with
-DeskFleet-owned accounts with public email/password registration and Passkeys.
+DeskFleet-owned accounts with public email/password registration, Passkeys, and
+optional GitHub OAuth login.
 [Identity and billing requirements](identity-billing.md) define the accepted
 plan model, account flows, and enforcement boundaries. Web sessions use HttpOnly
 cookies; Electron exchanges a browser authorization for a secure main-process

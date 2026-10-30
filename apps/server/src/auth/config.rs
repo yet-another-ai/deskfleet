@@ -1,4 +1,4 @@
-//! Deployment-owned origins, WebAuthn RP and mail transport. No provider identity.
+//! Deployment-owned origins, WebAuthn RP, mail transport, and OAuth credentials.
 use std::{env, io, net::IpAddr, path::PathBuf};
 
 #[derive(Clone)]
@@ -15,6 +15,15 @@ pub enum MailConfig {
     },
 }
 #[derive(Clone)]
+pub struct GithubConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub callback_url: String,
+    pub token_url: String,
+    pub user_url: String,
+    pub emails_url: String,
+}
+#[derive(Clone)]
 pub struct AuthConfig {
     pub web_url: String,
     pub allowed_origins: Vec<String>,
@@ -23,6 +32,7 @@ pub struct AuthConfig {
     pub secure_cookies: bool,
     pub trusted_proxy_ips: Vec<IpAddr>,
     pub mail: MailConfig,
+    pub github: Option<GithubConfig>,
 }
 impl AuthConfig {
     pub fn development(public_url: &str) -> Self {
@@ -47,6 +57,7 @@ impl AuthConfig {
                 .into(),
             secure_cookies: origin.is_some_and(|u| u.scheme() == "https"),
             trusted_proxy_ips: vec![],
+            github: None,
             mail: MailConfig::Local {
                 directory: std::env::temp_dir().join("deskfleet-mails"),
             },
@@ -131,6 +142,32 @@ impl AuthConfig {
                 })
                 .collect::<io::Result<Vec<IpAddr>>>()?,
             mail,
+            github: match (
+                env::var("DESKFLEET_GITHUB_CLIENT_ID"),
+                env::var("DESKFLEET_GITHUB_CLIENT_SECRET"),
+            ) {
+                (Err(_), Err(_)) => None,
+                (Ok(client_id), Ok(client_secret))
+                    if !client_id.is_empty() && !client_secret.is_empty() =>
+                {
+                    Some(GithubConfig {
+                        client_id,
+                        client_secret,
+                        token_url: "https://github.com/login/oauth/access_token".into(),
+                        user_url: "https://api.github.com/user".into(),
+                        emails_url: "https://api.github.com/user/emails".into(),
+                        callback_url: format!(
+                            "{}/api/auth/github/callback",
+                            public_url.trim_end_matches('/')
+                        ),
+                    })
+                }
+                _ => {
+                    return Err(invalid(
+                        "both GitHub OAuth client ID and secret are required",
+                    ));
+                }
+            },
         })
     }
 }

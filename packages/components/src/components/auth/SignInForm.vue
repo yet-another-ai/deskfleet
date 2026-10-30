@@ -1,22 +1,26 @@
 <script setup lang="ts">
 import { KeyRound } from "@lucide/vue"
-import { ref, useTemplateRef } from "vue"
+import { ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AccountAuthentication } from "@deskfleet/client/account-security"
+import type { AccountAuthentication, AuthConfig } from "@deskfleet/client/account-security"
 import { passkeysAvailable } from "@deskfleet/client/passkeys"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import UiButton from "../common/UiButton.vue"
+import UiCheckbox from "../common/UiCheckbox.vue"
 import AuthLayout from "./AuthLayout.vue"
 import PasswordField from "./PasswordField.vue"
 
 /** Email/password or Passkey sign-in. Desktop approval opens the other steps in a new tab. */
-const props = defineProps<{ account: AccountAuthentication; title: string; description?: string; registrationEnabled: boolean; newTab?: boolean }>()
+const props = defineProps<{ account: AccountAuthentication; title: string; description?: string; registrationEnabled: boolean; newTab?: boolean; config: AuthConfig; returnTo: string; githubError?: string; emailVerificationToken?: string }>()
 const emit = defineEmits<{ signedIn: [] }>()
 const { t } = useI18n()
 const email = ref("")
 const password = ref("")
-const pending = ref<"password" | "passkey">()
-const error = ref<string>()
+const pending = ref<"password" | "passkey" | "github">()
+const githubErrors: Record<string, string> = { failed: "auth.githubFailed", registration_disabled: "auth.githubRegistrationDisabled", terms_required: "auth.githubTermsRequired", email_conflict: "auth.githubEmailConflict" }
+const error = ref<string | undefined>(props.githubError ? t(githubErrors[props.githubError] ?? "auth.githubFailed") : undefined)
+const acceptedTerms = ref(false)
+const id = useId()
 const emailInput = useTemplateRef("email")
 const target = props.newTab ? "_blank" : undefined
 
@@ -37,6 +41,16 @@ function passkey(): void {
   if (!emailInput.value?.reportValidity()) return
   void run("passkey", () => props.account.loginWithPasskey(email.value))
 }
+async function github(): Promise<void> {
+  if (pending.value) return
+  pending.value = "github"
+  error.value = undefined
+  try {
+    if (props.emailVerificationToken) sessionStorage.setItem("deskfleet-email-verify-token", props.emailVerificationToken)
+    const { authorizationUrl } = await props.account.startGithub(props.returnTo, acceptedTerms.value)
+    location.assign(authorizationUrl)
+  } catch (reason) { sessionStorage.removeItem("deskfleet-email-verify-token"); error.value = failureMessage(reason); pending.value = undefined }
+}
 </script>
 
 <template>
@@ -51,9 +65,19 @@ function passkey(): void {
       </PasswordField>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <UiButton type="submit" variant="primary" class="h-9 text-sm" :loading="pending === 'password'" :disabled="!!pending">{{ t("auth.signIn") }}</UiButton>
-      <template v-if="passkeysAvailable()">
+      <template v-if="passkeysAvailable() || config.githubEnabled">
         <div class="flex items-center gap-3 text-xs text-ui-text-faint" aria-hidden="true"><span class="h-px flex-1 bg-ui-border" />{{ t("auth.or") }}<span class="h-px flex-1 bg-ui-border" /></div>
-        <UiButton class="h-9 text-sm" :loading="pending === 'passkey'" :disabled="!!pending" @click="passkey"><KeyRound :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("auth.signInWithPasskey") }}</UiButton>
+        <UiButton v-if="passkeysAvailable()" class="h-9 text-sm" :loading="pending === 'passkey'" :disabled="!!pending" @click="passkey"><KeyRound :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("auth.signInWithPasskey") }}</UiButton>
+        <div v-if="config.githubEnabled && registrationEnabled && (config.termsOfServiceUrl || config.privacyTermsUrl)" class="flex items-start gap-2.5 text-sm leading-relaxed text-ui-text-muted">
+          <UiCheckbox :id="`${id}-github-terms`" v-model="acceptedTerms" :aria-labelledby="`${id}-github-terms-label`" :disabled="!!pending" class="mt-1" />
+          <span :id="`${id}-github-terms-label`">
+            <label :for="`${id}-github-terms`">{{ `${t("auth.githubAgreeToTerms")} ` }}</label>
+            <a v-if="config.termsOfServiceUrl" :href="config.termsOfServiceUrl" target="_blank" rel="noopener noreferrer" class="text-ui-accent hover:underline">{{ t("auth.termsOfService") }}</a>
+            <template v-if="config.termsOfServiceUrl && config.privacyTermsUrl">{{ ` ${t("auth.termsAnd")} ` }}</template>
+            <a v-if="config.privacyTermsUrl" :href="config.privacyTermsUrl" target="_blank" rel="noopener noreferrer" class="text-ui-accent hover:underline">{{ t("auth.privacyTerms") }}</a>
+          </span>
+        </div>
+        <UiButton v-if="config.githubEnabled" class="h-9 text-sm" :loading="pending === 'github'" :disabled="!!pending" @click="github">{{ t("auth.signInWithGithub") }}</UiButton>
       </template>
     </form>
     <template v-if="registrationEnabled" #footer>

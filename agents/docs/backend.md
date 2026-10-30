@@ -11,14 +11,14 @@ points are the [server guide](../../apps/server/README.md),
 OIDC-only identity decision and define the implemented account/subscription
 contract. Stripe is the first payment provider; [operations](stripe.md) describes
 the required offers, Portal, and webhook configuration.
-The server now owns verified accounts, password/Passkey authentication, and
-browser/native sessions. The implementation preserves the existing resource
+The server now owns verified accounts, password, Passkey, and optional GitHub OAuth authentication, and browser/native
+sessions. The implementation preserves the existing resource
 ownership and explicit Site Admin boundary.
 
 ## Confirmed product decisions
 
 - Prioritize the officially hosted service and replace OIDC with owned accounts,
-  public email/password registration, and Passkeys.
+  public email/password registration, Passkeys, and optional GitHub OAuth login.
 - Make Team the subscription boundary. Free limits members, unarchived Sessions,
   and per-Session turns and has no TURN. Go/Pro remove those quantity limits and
   provide distinct monthly TURN allowances. Only Site Admin can assign the
@@ -96,7 +96,7 @@ ownership and explicit Site Admin boundary.
 
 | Area | Required server behavior | Responsibility retained elsewhere |
 | --- | --- | --- |
-| Identity | Owned accounts, email verification/password recovery, password and Passkey login, application sessions/revocation, and client/device identity | Electron and Web implement their login entry points; daemon credentials are separate from user login |
+| Identity | Owned accounts, email verification/password recovery, password, Passkey, and GitHub OAuth login, application sessions/revocation, and client/device identity | Electron and Web implement their login entry points; daemon credentials are separate from user login |
 | Subscriptions and quotas | Team billing, verified paid coverage, monthly TURN periods, Enterprise grants/audit, and atomic member/Session capacity admission | Daemon checks effective per-Session turn limits and persists fork-inherited consumption; clients display limits and billing state |
 | Teams | Team creation and selection, membership/invitations, owner/administrator/member roles, atomic ownership transfer, member removal, and authorization | Clients display the selected Team and available actions |
 | Site administration | Explicit site grants, site name/announcement/Team-creation settings, per-operation policies, and transactional site audit | Deployment operators bootstrap and recover grants through the server CLI; Web exposes a Team-independent administration page; Web and Electron display public site settings and apply the Team-creation setting |

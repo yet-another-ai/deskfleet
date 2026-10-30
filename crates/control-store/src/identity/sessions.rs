@@ -14,9 +14,41 @@ impl ControlStore {
         user_id: &str,
         version: Option<i64>,
     ) -> Result<Value> {
+        self.new_session_checked(user_id, version, None).await
+    }
+    /// Establish a GitHub session only if no credential revocation followed its start.
+    pub async fn new_session_at_generation(&self, user_id: &str, generation: i64) -> Result<Value> {
+        self.new_session_checked(user_id, None, Some(generation))
+            .await
+    }
+    pub async fn authentication_generation(&self) -> Result<i64> {
         let tx = self.db.begin().await?;
-        let row = one(&tx,"SELECT id,name,email,credential_version FROM cp_users WHERE id=$1 AND NOT disabled AND email_verified FOR SHARE",vec![user_id.into()]).await.map_err(|e| if matches!(e, Error::NotFound){Error::Unauthorized}else{e})?;
+        super::lock_authentication_generation(&tx).await?;
+        let generation = one(
+            &tx,
+            "SELECT nextval('cp_authentication_generation') AS generation",
+            vec![],
+        )
+        .await?
+        .try_get("", "generation")?;
+        tx.commit().await?;
+        Ok(generation)
+    }
+    async fn new_session_checked(
+        &self,
+        user_id: &str,
+        version: Option<i64>,
+        generation: Option<i64>,
+    ) -> Result<Value> {
+        let tx = self.db.begin().await?;
+        let row = one(&tx,"SELECT id,name,email,credential_version,authentication_generation FROM cp_users WHERE id=$1 AND NOT disabled AND email_verified FOR SHARE",vec![user_id.into()]).await.map_err(|e| if matches!(e, Error::NotFound){Error::Unauthorized}else{e})?;
         if version.is_some_and(|v| row.try_get::<i64>("", "credential_version").ok() != Some(v)) {
+            return Err(Error::Unauthorized);
+        }
+        if generation.is_some_and(|v| {
+            row.try_get::<i64>("", "authentication_generation")
+                .map_or(true, |current| current > v)
+        }) {
             return Err(Error::Unauthorized);
         }
         let token = secret();
@@ -71,6 +103,9 @@ impl ControlStore {
         session_id: Option<&str>,
     ) -> Result<Vec<PeerAuthorization>> {
         let tx = self.db.begin().await?;
+        if session_id.is_none() {
+            super::lock_authentication_generation(&tx).await?;
+        }
         one(
             &tx,
             "SELECT id FROM cp_users WHERE id=$1 FOR UPDATE",
@@ -82,7 +117,7 @@ impl ControlStore {
             // Outstanding native codes and login ceremonies must not recreate a
             // session after the owner has explicitly revoked every session.
             tx.execute_raw(sql(
-                "UPDATE cp_users SET credential_version=credential_version+1 WHERE id=$1",
+                "UPDATE cp_users SET credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$1",
                 vec![user_id.into()],
             ))
             .await?;

@@ -12,6 +12,7 @@ impl ControlStore {
         password_hash: &str,
     ) -> Result<(String, Vec<PeerAuthorization>)> {
         let tx = self.db.begin().await?;
+        super::lock_authentication_generation(&tx).await?;
         // Discover the owner without locking the challenge, then serialize with
         // credential changes and revocation before consuming any child record.
         let user_id: String = one(&tx,"SELECT user_id FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='recovery' AND expires_at>$2",vec![secret_hash(token).into(),now_ms().into()]).await.map_err(unauthorized_if_missing)?.try_get("", "user_id")?;
@@ -24,7 +25,7 @@ impl ControlStore {
         let challenge=one(&tx,"DELETE FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='recovery' AND expires_at>$2 RETURNING user_id,record",vec![secret_hash(token).into(),now_ms().into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
         let record: Value = challenge.try_get("", "record")?;
         let version = record["version"].as_i64().ok_or(Error::Unauthorized)?;
-        let updated=tx.execute_raw(sql("UPDATE cp_users SET password_hash=$1,credential_version=credential_version+1 WHERE id=$2 AND NOT disabled AND credential_version=$3",vec![password_hash.into(),user_id.clone().into(),version.into()])).await?;
+        let updated=tx.execute_raw(sql("UPDATE cp_users SET password_hash=$1,credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$2 AND NOT disabled AND credential_version=$3",vec![password_hash.into(),user_id.clone().into(),version.into()])).await?;
         if updated.rows_affected() != 1 {
             return Err(Error::Unauthorized);
         }
@@ -39,8 +40,9 @@ impl ControlStore {
         session_id: &str,
     ) -> Result<Vec<PeerAuthorization>> {
         let tx = self.db.begin().await?;
+        super::lock_authentication_generation(&tx).await?;
         require_recent(&tx, user_id, session_id).await?;
-        let updated=tx.execute_raw(sql("UPDATE cp_users SET password_hash=$1,credential_version=credential_version+1 WHERE id=$2 AND NOT disabled",vec![password_hash.into(),user_id.into()])).await?;
+        let updated=tx.execute_raw(sql("UPDATE cp_users SET password_hash=$1,credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$2 AND NOT disabled",vec![password_hash.into(),user_id.into()])).await?;
         if updated.rows_affected() != 1 {
             return Err(Error::Unauthorized);
         }
@@ -54,6 +56,7 @@ impl ControlStore {
         user_id: &str,
     ) -> Result<(String, Vec<PeerAuthorization>)> {
         let tx = self.db.begin().await?;
+        super::lock_authentication_generation(&tx).await?;
         let row = one(
             &tx,
             "SELECT email,credential_version FROM cp_users WHERE id=$1 AND NOT disabled FOR UPDATE",
@@ -78,7 +81,7 @@ impl ControlStore {
             return Err(Error::Conflict("email address is unavailable"));
         }
         tx.execute_raw(sql(
-            "UPDATE cp_users SET email=$1,credential_version=credential_version+1 WHERE id=$2",
+            "UPDATE cp_users SET email=$1,credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$2",
             vec![email.into(), user_id.into()],
         ))
         .await?;
@@ -93,6 +96,7 @@ impl ControlStore {
         disabled: bool,
     ) -> Result<Vec<PeerAuthorization>> {
         let tx = self.db.begin().await?;
+        super::lock_authentication_generation(&tx).await?;
         one(
             &tx,
             "SELECT user_id FROM cp_site_admins WHERE user_id=$1 FOR SHARE",
@@ -118,7 +122,7 @@ impl ControlStore {
         )
         .await?
         .try_get("", "disabled")?;
-        let changed=tx.execute_raw(sql("UPDATE cp_users SET disabled=$1,credential_version=credential_version+1 WHERE id=$2",vec![disabled.into(),user_id.into()])).await?;
+        let changed=tx.execute_raw(sql("UPDATE cp_users SET disabled=$1,credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$2",vec![disabled.into(),user_id.into()])).await?;
         if changed.rows_affected() != 1 {
             return Err(Error::NotFound);
         }
@@ -178,6 +182,7 @@ impl ControlStore {
     }
     pub async fn remove_passkey(&self, user_id: &str, id: &str, session_id: &str) -> Result<()> {
         let tx = self.db.begin().await?;
+        super::lock_authentication_generation(&tx).await?;
         require_recent(&tx, user_id, session_id).await?;
         one(
             &tx,
@@ -195,7 +200,7 @@ impl ControlStore {
             return Err(Error::NotFound);
         }
         tx.execute_raw(sql(
-            "UPDATE cp_users SET credential_version=credential_version+1 WHERE id=$1",
+            "UPDATE cp_users SET credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$1",
             vec![user_id.into()],
         ))
         .await?;
