@@ -27,7 +27,7 @@ import ProviderIcon from "../common/ProviderIcon.vue"
 import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
 import WorkspaceContextMenu from "../catalog/WorkspaceContextMenu.vue"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
-import { sessionIsUnread, snapshotIsWorking } from "../../services/agent-conversation.ts"
+import { sessionIsUnread } from "../../services/agent-conversation.ts"
 import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
@@ -90,7 +90,7 @@ const lastSeen = computed(() => {
   return t("machine.lastSeen", { time })
 })
 const terminalLink = (terminalId: string) => ({ name: "terminal", params: { terminalId } })
-const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[sessionId]?.snapshot)
+const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
 </script>
 
 <template>

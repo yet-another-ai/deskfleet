@@ -129,7 +129,9 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       control: <M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]) => management.has(method) && !(local && method === "_deskfleet/git/branches") ? rpc<AgentMethods[M]["result"]>(method, params) : undefined,
       history: {
         available: () => online,
-        list: async () => (await central.sessions(machine.id)).map(snapshot => snapshot.session),
+        list: async () => (await central.sessions(machine.id)).map(snapshot => ({ ...snapshot.session,
+          working: snapshot.turns.some(turn => ["starting", "running", "cancelling"].includes(turn.state)),
+        })),
         snapshot: async sessionId => (await central.session(machine.id, sessionId)).snapshot,
         events: async (sessionId, after, limit) => (await central.events(machine.id, sessionId, after, limit)).events,
       },

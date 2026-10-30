@@ -23,6 +23,9 @@ a stable `Gate` result for branch protection.
   actual login, remote execution, archive/restore, and offline history flows.
   It installs Electron's Linux sandbox helper with root ownership and mode 4755
   before launching the clients.
+  The Linux test matrix also runs native X11 capture/input tests serially under
+  a disposable Xvfb server with `-noreset`, avoiding server resets when the last
+  client disconnects between test cases.
 - `.github/workflows/build.yml` builds artifacts, then packages Electron
   installers. Ordinary CI runs use `mise run ci:build`; tagged releases build
   Web and Electron separately to give only Electron a fixed API origin.

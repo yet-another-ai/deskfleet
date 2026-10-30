@@ -350,7 +350,9 @@ async fn numeric_pages_return_only_notification_and_sidebar_summary_fields() {
     detailed["turns"] = json!([
         {"id":"completed","state":"completed","endedAt":"2026-10-28T00:00:00Z","messages":large},
         {"id":"without-time","state":"completed","messages":large},
-        {"id":"running","state":"running","messages":large}
+        {"id":"running","state":"running","messages":large},
+        {"id":"starting","state":"starting","messages":large},
+        {"id":"cancelling","state":"cancelling","messages":large}
     ]);
     detailed["permissions"] = json!([{"id":"permission","state":"pending","createdAt":"2026-10-28T00:00:01Z","params":large}]);
     detailed["elicitations"] = json!([{"id":"elicitation","state":"pending","createdAt":"2026-10-28T00:00:02Z","schema":large}]);
@@ -362,7 +364,7 @@ async fn numeric_pages_return_only_notification_and_sidebar_summary_fields() {
     assert_eq!(summary["session"], detailed["session"]);
     assert_eq!(
         summary["turns"],
-        json!([{"id":"completed","state":"completed","endedAt":"2026-10-28T00:00:00Z"},{"id":"without-time","state":"completed"}])
+        json!([{"id":"completed","state":"completed","endedAt":"2026-10-28T00:00:00Z"},{"id":"without-time","state":"completed"},{"id":"running","state":"running"},{"id":"starting","state":"starting"},{"id":"cancelling","state":"cancelling"}])
     );
     assert_eq!(
         summary["permissions"],
@@ -374,6 +376,29 @@ async fn numeric_pages_return_only_notification_and_sidebar_summary_fields() {
     );
     assert!(summary.get("inputs").is_none() && summary.get("runs").is_none());
     assert!(summary.to_string().len() < 1000);
+    // Simulate an existing database whose stored summaries predate activity.
+    let tx = fixture.database.begin().await.unwrap();
+    tx.execute_unprepared(&format!("SET LOCAL search_path TO {}", fixture.schema))
+        .await
+        .unwrap();
+    let legacy = include_str!("../src/history_performance.sql")
+        .split("ALTER TABLE")
+        .next()
+        .unwrap()
+        .replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION");
+    tx.execute_unprepared(&legacy).await.unwrap();
+    tx.execute_unprepared("UPDATE cp_sessions SET snapshot = snapshot")
+        .await
+        .unwrap();
+    tx.execute_unprepared(include_str!("../src/session_activity.sql"))
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(
+        store.session_summary(machine, "1").await.unwrap()["sessions"][0],
+        summary
+    );
+
     assert_eq!(
         store.sessions(machine, 0, 1, "all").await.unwrap()["sessions"][0],
         summary

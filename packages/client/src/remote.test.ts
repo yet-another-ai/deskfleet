@@ -14,7 +14,7 @@ function fixture(host: Partial<DeskfleetDesktopApi> = {}, local = false) {
     closePeer: vi.fn(async () => {}), rpc: vi.fn(async () => ({ result: true })),
     offerPeer: vi.fn(async () => ({ sdp: "answer" })),
     startPeer: vi.fn(async () => {}),
-    sessions: vi.fn(async () => [{ session: { id: "1" } }] as never),
+    sessions: vi.fn(async () => [{ session: { id: "1" }, turns: [] }] as never),
   } as unknown as CentralApi
   const machine: Machine = { id: "central7", teamId: "team2", name: "Remote", originId: "origin", localMachineId: "1", capabilities: {}, online: false }
   const remote = remoteMachineClient({ platform: "web", locale: "en-US", ...host } as DeskfleetDesktopApi, central, machine, { local })
@@ -129,7 +129,7 @@ test("revokes only the matching peer and sends management over the central RPC",
   await f.remote.api.agent.control!("_deskfleet/session/read", { sessionId: "1", operationId: "read-op", throughSeq: "42" })
   expect(f.central.rpc).toHaveBeenCalledWith("central7", "_deskfleet/session/read", { sessionId: "1", operationId: "read-op", throughSeq: "42" })
   expect(f.remote.api.agent.control!("_deskfleet/input/submit", { sessionId: "1", operationId: "prompt", content: [], delivery: "backlog" })).toBeUndefined()
-  expect(await f.remote.api.agent.history!.list()).toEqual([{ id: "1" }])
+  expect(await f.remote.api.agent.history!.list()).toEqual([{ id: "1", working: false }])
 })
 
 test.each(["agent", "terminal", "desktop"] as const)("records %s grants and the first observed connection outcome", async feature => {
@@ -223,4 +223,11 @@ test.each([
   expect(f.remote.api.desktop.connectionFailure!("direct")).toContain(message)
   await f.remote.api.agent.close("direct")
   expect(f.remote.api.agent.connectionFailure!("direct")).toBeUndefined()
+})
+
+
+test.each(["starting", "running", "cancelling", "completed", "failed", "cancelled"])("catalog activity projects %s turns", async state => {
+  const f = fixture()
+  f.central.sessions = vi.fn(async () => [{ session: { id: "1" }, turns: [{ id: "turn", state }] }] as never)
+  expect(await f.remote.api.agent.history!.list()).toEqual([{ id: "1", working: ["starting", "running", "cancelling"].includes(state) }])
 })

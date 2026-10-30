@@ -144,6 +144,14 @@ Workspace directories are available without waiting for central catalog sync.
 Management uses authenticated HTTP; live Agent, Git, terminal, and desktop traffic
 uses an authorized WebRTC peer with server-provided STUN/TURN settings. Offline
 machines retain their synchronized catalog and readable conversation history.
+Session working indicators use the central catalog's content-free turn summaries,
+including sessions that this viewer has never opened. A newer live conversation
+snapshot takes precedence by `lastEventSeq`; catalog refreshes retain a trailing
+read when another change arrives during an in-flight request. Pinned sessions on
+other machines derive activity from their owning machine's retained snapshot.
+These updates follow daemon history synchronization (normally coalesced for 250 ms);
+upload backlogs and retries can still delay delivery.
+
 Catalog loading indicators describe the first snapshot for the selected machine.
 Background catalog and presence updates preserve the existing workspace tree,
 selection, and content while refreshing; failures still expose their error and

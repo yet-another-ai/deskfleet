@@ -742,3 +742,88 @@ test("configuration reads require metadata while releasing a draft probe accepts
   await expect(store.releaseAgentConfiguration(params)).resolves.toBeUndefined()
   expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/agent/configuration", { ...params, release: true })
 })
+
+
+test("catalog activity updates unopened sessions and yields only to newer live snapshots", async () => {
+  const previous = platformClient.agent.history
+  let seq = "1"
+  let working = true
+  platformClient.agent.history = {
+    available: () => true,
+    list: async () => [{ ...agentSnapshot().session, lastEventSeq: seq, working }],
+    snapshot: async () => agentSnapshot(), events: async () => [],
+  }
+  try {
+    const store = useAgentSessionsStore()
+    await store.refresh()
+    expect(store.isWorking("30")).toBe(true)
+    expect(store.views["30"]).toBeUndefined()
+    expect(mock.call).not.toHaveBeenCalled()
+    const live = agentSnapshot()
+    live.session.lastEventSeq = "2"
+    store.views["30"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "2", snapshotSeq: "2" }
+    expect(store.isWorking("30")).toBe(false)
+    await store.refresh()
+    expect(store.isWorking("30")).toBe(false)
+    seq = "3"
+    await store.refresh()
+    expect(store.isWorking("30")).toBe(true)
+    seq = "4"; working = false
+    await store.refresh()
+    expect(store.isWorking("30")).toBe(false)
+  } finally { platformClient.agent.history = previous }
+})
+
+test("a catalog notification during a pending read triggers a trailing refresh", async () => {
+  const previous = platformClient.agent.history
+  const first = deferred<ReturnType<typeof agentSnapshot>["session"][]>()
+  const list = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue([{ ...agentSnapshot().session, lastEventSeq: "2", working: false }])
+  platformClient.agent.history = { available: () => true, list, snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    const initial = store.refresh()
+    const changed = store.refresh("30")
+    first.resolve([{ ...agentSnapshot().session, lastEventSeq: "1" }])
+    await Promise.all([initial, changed])
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(store.sessions["30"]?.lastEventSeq).toBe("2")
+    expect(store.isWorking("30")).toBe(false)
+  } finally { platformClient.agent.history = previous }
+})
+
+
+test("catalog removal drops an opened session without reopening its cached snapshot", async () => {
+  const previous = platformClient.agent.history
+  const list = vi.fn().mockResolvedValueOnce([{ ...agentSnapshot().session, working: true }]).mockResolvedValue([])
+  platformClient.agent.history = { available: () => true, list, snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    await store.refresh()
+    await store.open("30")
+    expect(store.views["30"]?.snapshot).not.toBeNull()
+    mock.call.mockClear()
+    await store.refresh("30")
+    expect(store.sessions["30"]).toBeUndefined()
+    expect(mock.call).not.toHaveBeenCalled()
+    await store.refresh()
+    expect(store.sessions["30"]).toBeUndefined()
+  } finally { platformClient.agent.history = previous }
+})
+
+test.each([false, true])("pending catalog reads preserve concurrent session changes (new session: %s)", async newSession => {
+  const previous = platformClient.agent.history
+  const pending = deferred<ReturnType<typeof agentSnapshot>["session"][]>()
+  const list = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue([])
+  platformClient.agent.history = { available: () => true, list, snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    if (!newSession) store.sessions["30"] = agentSnapshot().session
+    const refreshing = store.refresh()
+    receive(agentEvent(1, "session", { ...agentSnapshot().session, lastEventSeq: "1" }))
+    pending.resolve([])
+    await refreshing
+    expect(store.sessions["30"]?.lastEventSeq).toBe("1")
+    await store.refresh()
+    expect(store.sessions["30"]).toBeUndefined()
+  } finally { platformClient.agent.history = previous }
+})

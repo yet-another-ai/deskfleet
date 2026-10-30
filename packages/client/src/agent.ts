@@ -11,7 +11,7 @@ export interface AgentSignalingApi {
   control?<M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]): Promise<AgentMethods[M]["result"]> | undefined
   history?: {
     available(): boolean
-    list(): Promise<AgentSessionRecord[]>
+    list(): Promise<(AgentSessionRecord & { working?: boolean })[]>
     snapshot(sessionId: string): Promise<AgentSnapshot>
     events(sessionId: string, after: string, limit: number): Promise<AgentEvent[]>
   }

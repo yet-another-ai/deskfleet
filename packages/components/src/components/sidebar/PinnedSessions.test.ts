@@ -237,3 +237,20 @@ test("pinned unread results follow each machine's metadata and yield to the work
   expect(wrapper!.find("[data-session-unread]").exists()).toBe(false)
   expect(wrapper!.find("[data-session-working]").exists()).toBe(false)
 })
+
+
+test("another machine's pinned session follows its own running and completed snapshots", async () => {
+  const { pins, remoteSnapshot } = await render(true)
+  remoteSnapshot.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
+  pins.pin("second", "30", "Remote title")
+  await flushPromises()
+  expect(row("second").find("[data-session-working]").exists()).toBe(true)
+  remoteSnapshot.turns[0]!.state = "completed"
+  remoteSnapshot.session.lastCompletedSeq = "8"
+  await pins.refresh(); await flushPromises()
+  expect(row("second").find("[data-session-working]").exists()).toBe(false)
+  expect(row("second").find("[data-session-unread]").exists()).toBe(true)
+  remoteSnapshot.session.lastReadSeq = "8"
+  await pins.refresh(); await flushPromises()
+  expect(row("second").find("[data-session-unread]").exists()).toBe(false)
+})
