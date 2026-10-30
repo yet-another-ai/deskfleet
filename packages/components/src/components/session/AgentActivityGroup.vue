@@ -7,7 +7,7 @@ import type { ConversationActivityStep } from "../../services/agent-conversation
 import AgentContent from "./AgentContent.vue"
 import AgentToolCall from "./AgentToolCall.vue"
 
-const props = defineProps<{ steps: ConversationActivityStep[]; live: boolean; lastStepId?: string }>()
+const props = defineProps<{ steps: ConversationActivityStep[]; live: boolean; lastStepId?: string; expandedToolId?: string }>()
 const open = defineModel<boolean>("open", { default: false })
 const { t } = useI18n()
 const tools = computed(() => props.steps.filter(step => step.kind === "tool"))
@@ -36,7 +36,7 @@ const failed = computed(() => tools.value.some(step => step.tool.status === "fai
     </CollapsibleTrigger>
     <CollapsibleContent class="mt-2 ml-1.5 flex flex-col gap-2 border-l border-ui-border pl-4">
       <div v-for="step in steps" :key="step.id" :data-conversation-entry="step.id">
-        <AgentToolCall v-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="live" />
+        <AgentToolCall v-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="live" :default-open="step.id === expandedToolId" />
         <template v-else>
           <div class="text-xs">{{ t('agent.thinking') }}</div>
           <AgentContent :content="step.content" markdown :final="!live || step.id !== lastStepId" class="mt-1" />

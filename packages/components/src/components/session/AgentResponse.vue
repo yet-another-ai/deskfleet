@@ -23,7 +23,7 @@ const duration = computed(() => {
   const value = elapsed(props.response.startedAt, props.response.live ? now.value.getTime() : props.response.endedAt)
   return value === undefined ? undefined : formatDuration(value)
 })
-// A finished response leads with its final message; the work behind it folds away.
+// Fold completed work only when a final assistant message remains visible.
 const answer = computed(() => {
   const last = props.response.steps.at(-1)
   return !props.response.live && props.response.turn && last?.kind === "message" && last.role === "assistant" ? last : undefined
@@ -34,10 +34,14 @@ const text = computed(() => {
 })
 const steps = computed(() => answer.value ? props.response.steps.slice(0, -1) : props.response.steps)
 const groupedSteps = computed(() => groupResponseActivity(steps.value))
-const activities = reactive(new Set<string>())
+const endingToolId = computed(() => {
+  const last = props.response.steps.at(-1)
+  return !props.response.live && props.response.turn && last?.kind === "tool" ? last.id : undefined
+})
+const activities = reactive(new Map<string, boolean>())
 const toggled = ref<boolean | null>(null)
 watch(() => props.response.live, () => { toggled.value = null })
-const open = computed(() => props.response.steps.some(step => step.kind === "elicitation" && step.elicitation.state === "pending") || !props.response.turn || (toggled.value ?? props.response.live))
+const open = computed(() => props.response.steps.some(step => step.kind === "elicitation" && step.elicitation.state === "pending") || !props.response.turn || (toggled.value ?? !answer.value))
 const summary = computed(() => props.response.live ? [] : summarizeTools(props.response.steps).map(({ kind, count }) => t(`agent.summary.${kind}`, { n: count }, count)))
 const outcome = computed(() => props.response.last && props.response.turn && ["cancelled", "interrupted", "failed"].includes(props.response.turn.state) ? props.response.turn : undefined)
 const thoughts = reactive(new Set<string>())
@@ -58,7 +62,7 @@ watchImmediate([pendingMermaidLocate, steps], ([target, currentSteps]) => {
     toggled.value = true
     if (step.kind === "message" && step.role === "thought") thoughts.add(step.id)
     const activity = groupedSteps.value.find(group => group.kind === "activity" && group.steps.some(item => item.id === step.id))
-    if (activity) activities.add(activity.id)
+    if (activity) activities.set(activity.id, true)
   }
 })
 </script>
@@ -78,8 +82,8 @@ watchImmediate([pendingMermaidLocate, steps], ([target, currentSteps]) => {
     </template>
     <CollapsibleContent v-if="steps.length" class="flex flex-col gap-2" :class="response.turn && !response.live && 'border-l border-ui-border pl-4'">
       <div v-for="step in groupedSteps" :key="step.id" :data-conversation-entry="step.kind === 'activity' ? undefined : step.id">
-        <AgentActivityGroup v-if="step.kind === 'activity'" :steps="step.steps" :live="response.live" :last-step-id="steps.at(-1)?.id" :open="activities.has(step.id)" @update:open="$event ? activities.add(step.id) : activities.delete(step.id)" />
-        <AgentToolCall v-else-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="response.live" />
+        <AgentActivityGroup v-if="step.kind === 'activity'" :steps="step.steps" :live="response.live" :last-step-id="steps.at(-1)?.id" :expanded-tool-id="endingToolId" :open="activities.get(step.id) ?? step.steps.some(item => item.id === endingToolId)" @update:open="activities.set(step.id, $event)" />
+        <AgentToolCall v-else-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="response.live" :default-open="step.id === endingToolId" />
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
         <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
         <CollapsibleRoot v-else-if="step.role === 'thought'" :open="thoughts.has(step.id)" class="text-sm text-ui-text-muted" @update:open="toggleThought(step.id)">
