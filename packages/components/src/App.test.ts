@@ -26,6 +26,14 @@ async function mountApp(path = "/", pinia = createPinia()) {
 }
 function link(wrapper: VueWrapper, text: string) { return wrapper.findAll("a").find(a => a.text() === text)! }
 function button(wrapper: VueWrapper, text: string) { return wrapper.findAll("button").find(entry => entry.text() === text)! }
+async function workspaceAction(wrapper: VueWrapper, label: string): Promise<void> {
+  await wrapper.get('button[aria-label="storefront"]').trigger("contextmenu")
+  await flushPromises()
+  const item = wrapper.findAll('[role="menuitem"]').find(item => item.text() === label)!
+  ;(item.element as HTMLElement).focus()
+  await item.trigger("keydown", { key: "Enter" })
+  await flushPromises()
+}
 const chips = (wrapper: VueWrapper) => wrapper.findAll("[data-composer-context]").map(chip => chip.text())
 function panel(wrapper: VueWrapper) { return wrapper.get<HTMLElement>('aside[aria-label="Changes"]') }
 
@@ -56,7 +64,8 @@ test("the app targets a workspace and lists its sessions without exposing an int
   expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])
   expect(wrapper.get<HTMLButtonElement>('[aria-label="Send"]').element.disabled).toBe(true)
   expect(wrapper.get("aside").text()).not.toContain("Example team")
-  expect(link(wrapper, "storefront").attributes("href")).toBe(`#/workspaces/${workspaceId}`)
+  expect(wrapper.get('button[aria-label="storefront"]').attributes("aria-expanded")).toBe("true")
+  expect(wrapper.find('a[href*="/workspaces/"]').exists()).toBe(false)
   expect(link(wrapper, `Session ${sessionId}`).attributes("href")).toBe(`#/sessions/${sessionId}`)
   expect(wrapper.find('a[href*="/worktrees/"]').exists()).toBe(false)
   expect(wrapper.text()).not.toContain("Main worktree")
@@ -125,14 +134,11 @@ test("workspace creation opens a dialog, requires paths, supports choosing the f
   expect(create).toHaveBeenCalledWith("notes", paths)
   create.mockResolvedValueOnce({ id: "9007199254741003", name: "notes", worktrees: [{ id: "9007199254741005", workspaceId: "9007199254741003", directories: paths }] })
   await wrapper.get("[role=dialog] form").trigger("submit")
-  await vi.waitFor(() => expect(router.currentRoute.value.params.workspaceId).toBe("9007199254741003"))
+  await flushPromises()
+  expect(router.currentRoute.value.name).toBe("new-session")
   expect(wrapper.find("[role=dialog]").exists()).toBe(false)
-  expect(wrapper.get("main").text()).toContain("No sessions yet.")
   expect(wrapper.get("main").text()).not.toContain("Main worktree")
   expect(wrapper.get("main").find('a[href*="/worktrees/"]').exists()).toBe(false)
-  expect(wrapper.get("main").text()).toContain("/code")
-  await link(wrapper, "New session").trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"].map((item, index) => index === 1 ? "notes" : item))
   expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
 })
@@ -152,9 +158,9 @@ test("workspace edits update its configured directories without independent work
   value.name = "renamed"
   value.worktrees[0]!.directories = [{ path: "/replacement" }, { path: "/code/web" }]
   const update = vi.spyOn(platformClient.catalog, "updateWorkspace").mockResolvedValue(value)
-  const wrapper = await mountApp(`/workspaces/${workspaceId}`)
+  const wrapper = await mountApp()
   expect(button(wrapper, "Add worktree")).toBeUndefined()
-  await button(wrapper, "Edit workspace").trigger("click")
+  await workspaceAction(wrapper, "Edit workspace")
   await wrapper.get('input[name="workspace-name"]').setValue("renamed")
   await wrapper.get('button[name="directory-path-1"]').trigger("click")
   await flushPromises()
@@ -165,11 +171,11 @@ test("workspace edits update its configured directories without independent work
   await flushPromises()
   await button(wrapper, "Select folder").trigger("click")
   await wrapper.get('[aria-label="Move directory 2 up"]').trigger("click")
-  await wrapper.get("main form").trigger("submit")
+  await wrapper.get('[role="dialog"] form').trigger("submit")
   await flushPromises()
   expect(update).toHaveBeenCalledWith(workspaceId, "renamed", [{ path: "/replacement" }, { path: "/code/web" }])
-  expect(wrapper.get("main header").text()).toBe("renamed test-host")
-  expect(wrapper.get("main").text()).toContain("/replacement")
+  expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  expect(wrapper.find('button[aria-label="renamed"]').exists()).toBe(true)
   expect(button(wrapper, "Edit worktree")).toBeUndefined()
   expect(button(wrapper, "Delete worktree")).toBeUndefined()
   expect(wrapper.get("main").find('a[href*="/worktrees/"]').exists()).toBe(false)
@@ -179,9 +185,8 @@ test("workspace New session chooses that workspace before opening the composer",
   const snapshot = catalogFixture()
   snapshot.workspaces.push({ id: "2", name: "notes", worktrees: [{ id: "3", workspaceId: "2", directories: [{ path: "/notes" }] }] })
   vi.mocked(platformClient.catalog.list).mockResolvedValue(snapshot)
-  const wrapper = await mountApp("/workspaces/2")
-  expect(wrapper.get("main").text()).toContain("No sessions yet.")
-  await button(wrapper, "New session").trigger("click")
+  const wrapper = await mountApp()
+  await wrapper.findAll('.workspace-row button[aria-label="New session"]')[1]!.trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
   expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
@@ -189,10 +194,10 @@ test("workspace New session chooses that workspace before opening the composer",
 
 test("workspace deletion requires confirmation and clears its composer target", async () => {
   const remove = vi.spyOn(platformClient.catalog, "deleteWorkspace").mockResolvedValue()
-  const wrapper = await mountApp(`/workspaces/${workspaceId}`)
-  await button(wrapper, "Delete workspace").trigger("click")
+  const wrapper = await mountApp()
+  await workspaceAction(wrapper, "Delete workspace")
   expect(remove).not.toHaveBeenCalled()
-  expect(wrapper.get("main").text()).toContain("Its directories remain on disk")
+  expect(wrapper.get('[role="dialog"]').text()).toContain("Its directories remain on disk")
   await button(wrapper, "Confirm deletion").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   expect(remove).toHaveBeenCalledWith(workspaceId)
@@ -200,14 +205,11 @@ test("workspace deletion requires confirmation and clears its composer target", 
   expect(chips(wrapper)).toEqual(["test-hostThis machine", "Codex"])
 })
 
-test.each([
-  ["Open terminal in default directory", "/code/web"],
-  ["Open terminal in /code/api", "/code/api"],
-])("%s sends the correct cwd and retains machine ownership", async (label, cwd) => {
+test("the workspace sidebar opens a terminal in its default directory and retains machine ownership", async () => {
+  const cwd = "/code/web"
   const dial = vi.spyOn(platformClient.terminal, "dial").mockImplementation(async options => ({ id: options.terminalId, title: "shell", cwd, cols: 80, rows: 24, status: "running" }))
-  const wrapper = await mountApp(`/workspaces/${workspaceId}`)
-  const target = wrapper.findAll("button").find(entry => entry.text() === label || entry.attributes("aria-label") === label)!
-  await target.trigger("click")
+  const wrapper = await mountApp()
+  await wrapper.get('button[aria-label="Open terminal in default directory"]').trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("machine-control"))
   expect(dial).toHaveBeenCalledWith({ mode: "create", terminalId: expect.any(String), cols: 80, rows: 24, cwd })
   expect(router.currentRoute.value.query).toEqual({ tab: "terminal", terminal: dial.mock.calls[0]![0].terminalId })
@@ -215,17 +217,17 @@ test.each([
   expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
 })
 
-test("refresh failure preserves directories and disables workspace mutations until retry", async () => {
-  const wrapper = await mountApp(`/workspaces/${workspaceId}`)
+test("refresh failure preserves the workspace and disables its terminal action until retry", async () => {
+  const wrapper = await mountApp()
   vi.mocked(platformClient.catalog.list).mockRejectedValueOnce(new Error("Daemon disconnected"))
   await button(wrapper, "Refresh").trigger("click")
   await flushPromises()
   expect(wrapper.get('aside [role="alert"]').text()).toBe("Daemon disconnected")
-  expect(wrapper.get("main").text()).toContain("/code/web")
-  expect(button(wrapper, "Edit workspace").attributes("disabled")).toBeDefined()
+  expect(wrapper.find('button[aria-label="storefront"]').exists()).toBe(true)
+  expect(wrapper.get('button[aria-label="Open terminal in default directory"]').attributes("aria-disabled")).toBe("true")
   await button(wrapper, "Refresh").trigger("click")
   await flushPromises()
-  expect(button(wrapper, "Edit workspace").attributes("disabled")).toBeUndefined()
+  expect(wrapper.get('button[aria-label="Open terminal in default directory"]').attributes("aria-disabled")).toBeUndefined()
 })
 
 test("a session links to its own read-only worktree", async () => {
@@ -317,7 +319,7 @@ test("settings replaces the app layout, returns to the previous page, and refres
   })
   vi.spyOn(platformClient.settings, "get").mockResolvedValue({ enabled: true, status: "running" })
   const list = vi.spyOn(platformClient.terminal, "list").mockResolvedValue([])
-  const view = await mountApp(`/workspaces/${workspaceId}`)
+  const view = await mountApp()
   await view.get('button[aria-label="Settings"]').trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-preferences"))
   await flushPromises()
@@ -342,16 +344,16 @@ test("settings replaces the app layout, returns to the previous page, and refres
     expect(list).toHaveBeenCalledTimes(index + 1)
   }
   await button(view, "Back to app").trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   await flushPromises()
   expect(listeners.size).toBe(1)
-  expect(view.get("main").text()).toContain("/code/web")
+  expect(chips(view)).toContain("storefront")
   view.unmount()
   expect(listeners.size).toBe(0)
 })
 
 test("notifications have a dedicated settings section and retain the return destination", async () => {
-  const view = await mountApp(`/workspaces/${workspaceId}`)
+  const view = await mountApp()
   await view.get('button[aria-label="Settings"]').trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-preferences"))
   await flushPromises()
@@ -362,7 +364,7 @@ test("notifications have a dedicated settings section and retain the return dest
   expect(view.get("main h1").text()).toBe("Notifications")
   expect(view.findAll('main [role="switch"]')).toHaveLength(3)
   await button(view, "Back to app").trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
 })
 
 test("completed desktop setup exposes permissions and About and retains the return destination", async () => {
@@ -378,7 +380,7 @@ test("completed desktop setup exposes permissions and About and retains the retu
     },
     updates: { get: async () => ({ status: "idle", currentVersion: "0.2.0" }), check, install: vi.fn(), onChanged: () => () => {} },
   })
-  const view = await mountApp(`/workspaces/${workspaceId}`)
+  const view = await mountApp()
   await view.get('button[aria-label="Settings"]').trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-preferences"))
   await view.get('main nav a[href="#/settings/permissions"]').trigger("click")
@@ -399,7 +401,7 @@ test("completed desktop setup exposes permissions and About and retains the retu
   expect(check).toHaveBeenCalledOnce()
   expect(view.text()).toContain("You’re up to date.")
   await button(view, "Back to app").trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
 })
 
 test("Web settings expose About without desktop update controls or system permissions", async () => {
@@ -487,30 +489,30 @@ test("repeated navigation and browser history retain Changes without reviving De
     sessionId, directories: [{ path: "/worktrees/api/session", repositoryId: "checkout" }],
     repositories: [{ id: "checkout", root: "/worktrees/api/session", branch: "session-branch", head: "abc123", changes: [] }],
   })
-  const wrapper = await mountApp(`/workspaces/${workspaceId}`, pinia)
+  const wrapper = await mountApp("/", pinia)
   for (let index = 0; index < 3; index++) {
     await link(wrapper, `Session ${sessionId}`).trigger("click")
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("session"))
     await flushPromises()
     expect(panel(wrapper).text()).toContain("session-branch")
     await wrapper.get('[aria-label="Back"]').trigger("click")
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
     await flushPromises()
     expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
     await wrapper.get('[aria-label="Forward"]').trigger("click")
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("session"))
     await flushPromises()
     expect(panel(wrapper).text()).toContain("session-branch")
-    await link(wrapper, "storefront").trigger("click")
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
+    await link(wrapper, "New session").trigger("click")
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   }
   expect(status).toHaveBeenCalledWith(sessionId, false)
   expect(wrapper.find('aside[aria-label="Details"]').exists()).toBe(false)
   expect(panel(wrapper).find('[role="tab"]').exists()).toBe(false)
 })
 
-test("an unrecognized Details URL falls back to the composer and Settings returns there", async () => {
-  const wrapper = await mountApp("/details")
+test.each(["/details", `/workspaces/${workspaceId}`])("removed page %s falls back to the composer and Settings returns there", async path => {
+  const wrapper = await mountApp(path)
   expect(router.currentRoute.value.name).toBe("new-session")
   expect(wrapper.find('a[href="#/details"]').exists()).toBe(false)
   expect(panel(wrapper).find('[role="tab"]').exists()).toBe(false)

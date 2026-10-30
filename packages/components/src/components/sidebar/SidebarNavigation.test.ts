@@ -19,7 +19,7 @@ async function setup(path = "/") {
       { path: "/schedules/:scheduleId?", name: "schedules", component: {} },
       { path: "/sessions/archived", name: "archived-sessions", component: {}, meta: { hideDetails: true } },
       { path: "/sessions/:sessionId", name: "session", component: {} },
-      { path: "/workspaces/:workspaceId", name: "workspace", component: {} },
+      { path: "/terminals/:terminalId", name: "terminal", component: {} },
       { path: "/worktrees/:worktreeId", name: "worktree", component: {} },
       { path: "/machines/:machineId/control", name: "machine-control", component: {} },
       {
@@ -130,16 +130,16 @@ test.each([
 
 test("external navigation updates the active capsule and conversation return route", async () => {
   const router = await setup("/sessions/session-42")
-  await router.push("/workspaces/project-7")
+  await router.push("/terminals/shell-7")
   await flushPromises()
   expect(sectionLink("Conversations").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Conversations").attributes("href")).toBe("/workspaces/project-7")
+  expect(sectionLink("Conversations").attributes("href")).toBe("/terminals/shell-7")
   await router.push("/schedules/daily-review")
   expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
   expect(sectionLink("Conversations").attributes("aria-current")).toBeUndefined()
   await sectionLink("Conversations").trigger("click")
   await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe("/workspaces/project-7")
+  expect(router.currentRoute.value.fullPath).toBe("/terminals/shell-7")
 })
 
 test("remounting while on Schedules keeps the last conversation path", async () => {
@@ -162,7 +162,7 @@ test("remounting while on Schedules keeps the last conversation path", async () 
 })
 
 test("Settings does not overwrite the Conversations return path", async () => {
-  const conversation = "/workspaces/project-7"
+  const conversation = "/terminals/shell-7"
   const router = await setup(conversation)
   await router.push("/settings/preferences")
   await flushPromises()

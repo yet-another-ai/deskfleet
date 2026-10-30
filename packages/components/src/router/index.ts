@@ -36,12 +36,6 @@ export const router = createRouter({
       meta: { hideDetails: true },
     },
     {
-      path: "/workspaces/:workspaceId",
-      name: "workspace",
-      component: () => import("../views/WorkspaceView.vue"),
-      props: true,
-    },
-    {
       path: "/worktrees/:worktreeId",
       name: "worktree",
       component: () => import("../views/WorktreeView.vue"),

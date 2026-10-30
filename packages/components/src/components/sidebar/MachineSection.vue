@@ -14,16 +14,18 @@ import { useArrayFilter } from "@vueuse/core"
 import { computed, ref } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
-import { RouterLink, useRouter, type RouteLocationRaw } from "vue-router"
+import { useRouter, type RouteLocationRaw } from "vue-router"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
-import type { MachineSummary } from "../../stores/fleet-types.ts"
+import type { MachineSummary, WorkspaceSummary } from "../../stores/fleet-types.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
+import { useTerminalsStore } from "../../stores/terminals.ts"
 import IconButton from "../common/IconButton.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
+import WorkspaceContextMenu from "../catalog/WorkspaceContextMenu.vue"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
 import { sessionIsUnread, snapshotIsWorking } from "../../services/agent-conversation.ts"
 import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
@@ -35,10 +37,12 @@ const { t, locale } = useI18n()
 const sessionLabel = useSessionLabel()
 const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
+const terminals = useTerminalsStore()
 const router = useRouter()
 const account = useAccountSession()
-const selected = computed(() => !account || account.machineId.value === props.machine.id)
 const addingWorkspace = ref(false)
+const openingTerminal = ref(false)
+const terminalError = ref<{ workspaceId: string; message: string } | null>(null)
 const sessions = useArrayFilter(() => props.machine.sessions, session => session.archiveState !== "archived")
 const workspaces = computed(() => props.machine.workspaces.map(workspace => ({
   ...workspace,
@@ -52,7 +56,7 @@ function openRoute(destination: RouteLocationRaw): void {
 
 function workspaceCreated(id: string): void {
   addingWorkspace.value = false
-  openRoute({ name: "workspace", params: { workspaceId: id } })
+  startSession(id)
 }
 
 function startSession(workspaceId: string): void {
@@ -60,12 +64,19 @@ function startSession(workspaceId: string): void {
   openRoute({ name: "new-session" })
 }
 
-function openWorkspace(workspaceId: string, event: MouseEvent, navigate: (event?: MouseEvent) => unknown): void {
-  if (!account) { void navigate(event); return }
-  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return
-  if ((event.currentTarget as HTMLAnchorElement).target === "_blank") return
-  event.preventDefault()
-  openRoute({ name: "workspace", params: { workspaceId } })
+async function openTerminal(workspace: WorkspaceSummary): Promise<void> {
+  const cwd = workspace.directories[0]?.path
+  if (!props.machine.online || openingTerminal.value || !cwd) return
+  openingTerminal.value = true
+  terminalError.value = null
+  try {
+    const terminal = await terminals.create({ cwd })
+    openRoute({ name: "terminal", params: { terminalId: terminal.id } })
+  } catch (reason) {
+    terminalError.value = { workspaceId: workspace.id, message: reason instanceof Error ? reason.message : String(reason) }
+  } finally {
+    openingTerminal.value = false
+  }
 }
 
 const collapsed = computed(() => fleet.isCollapsed(props.machine.id))
@@ -147,20 +158,20 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
         {{ t("machine.noWorkspaces") }}
       </li>
       <CollapsibleRoot v-for="workspace in workspaces" :key="workspace.id" v-slot="{ open }" as="li" default-open class="flex flex-col gap-1">
-        <RouterLink v-slot="{ href, navigate, isActive, isExactActive }" :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" custom>
-          <div class="workspace-row ui-nav-item relative" :class="selected && isActive && 'ui-nav-active'">
-            <a :href="href" :aria-current="selected && isExactActive ? 'page' : undefined" class="flex h-full min-w-0 flex-1 items-center gap-2.5 pl-2.5 pr-9" @click="openWorkspace(workspace.id, $event, navigate)">
+        <WorkspaceContextMenu :workspace-id="workspace.id" :machine-id="machine.id" :name="workspace.name" :directories="workspace.directories" :disabled="!machine.online || !fleet.canManageCatalog">
+          <div class="workspace-row ui-nav-item relative">
+            <CollapsibleTrigger type="button" :aria-label="workspace.name" class="relative flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 pl-2.5 pr-1 text-left">
               <component :is="open ? FolderOpen : Folder" :size="15" :stroke-width="1.75" class="workspace-folder-icon shrink-0" aria-hidden="true" />
+              <ChevronRight :size="15" :stroke-width="1.75" class="workspace-collapse-icon absolute left-2.5 shrink-0" :class="open && 'rotate-90'" aria-hidden="true" />
               <span class="truncate">{{ workspace.name }}</span>
-            </a>
-            <CollapsibleTrigger type="button" :aria-label="workspace.name" class="workspace-collapse-trigger absolute left-1.5 top-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md">
-              <ChevronRight :size="15" :stroke-width="1.75" class="workspace-collapse-icon shrink-0" :class="open && 'rotate-90'" aria-hidden="true" />
             </CollapsibleTrigger>
-            <div class="workspace-session-action absolute inset-y-0 right-1 flex items-center">
+            <div class="workspace-actions flex shrink-0 items-center pr-1">
+              <IconButton :icon="SquareTerminal" :label="t('workspace.openDefaultTerminal')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online || openingTerminal || workspace.directories.length === 0" @click="openTerminal(workspace)" />
               <IconButton :icon="SquarePen" :label="t('workspace.newSession')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online" @click="startSession(workspace.id)" />
             </div>
           </div>
-        </RouterLink>
+        </WorkspaceContextMenu>
+        <p v-if="terminalError?.workspaceId === workspace.id" role="alert" class="m-0 break-words px-2.5 text-xs text-ui-danger">{{ terminalError.message }}</p>
         <CollapsibleContent as="ul" class="flex flex-col gap-1 empty:hidden">
           <li v-for="terminal in workspace.terminals" :key="terminal.id">
             <TreeLink :machine-id="machine.id" :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
@@ -202,14 +213,13 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
 
 <style scoped>
 .workspace-folder-icon,
-.workspace-collapse-trigger,
 .workspace-collapse-icon,
-.workspace-session-action {
+.workspace-actions {
   transition: opacity 100ms ease-out, transform 100ms ease-out;
 }
 
-.workspace-collapse-trigger,
-.workspace-session-action {
+.workspace-collapse-icon,
+.workspace-actions {
   opacity: 0;
 }
 
@@ -217,15 +227,14 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
   opacity: 0;
 }
 
-.workspace-row:is(:hover, :has(:focus-visible)) :is(.workspace-collapse-trigger, .workspace-session-action) {
+.workspace-row:is(:hover, :has(:focus-visible)) :is(.workspace-collapse-icon, .workspace-actions) {
   opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .workspace-folder-icon,
-  .workspace-collapse-trigger,
   .workspace-collapse-icon,
-  .workspace-session-action {
+  .workspace-actions {
     transition: none;
   }
 }

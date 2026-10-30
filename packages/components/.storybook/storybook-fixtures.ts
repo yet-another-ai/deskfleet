@@ -1040,7 +1040,6 @@ export function createStorybookRouter() {
       { path: "/", name: "new-session", component: { template: "<div />" } },
       { path: "/admin", name: "site-admin", component: { template: "<div />" } },
       { path: "/schedules/:scheduleId?", name: "schedules", component: { template: "<div />" }, props: true },
-      { path: "/workspaces/:workspaceId", name: "workspace", component: { template: "<div />" }, props: true },
       { path: "/worktrees/:worktreeId", name: "worktree", component: { template: "<div />" }, props: true },
       { path: "/sessions/archived", name: "archived-sessions", component: { template: "<div />" } },
       { path: "/sessions/:sessionId", name: "session", component: { template: "<div />" }, props: true },

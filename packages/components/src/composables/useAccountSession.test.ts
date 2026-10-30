@@ -76,7 +76,7 @@ test("a newer Session selection replaces the destination of a Machine still moun
 })
 
 test.each([
-  { name: "workspace", params: { workspaceId: "20" } },
+  { name: "session", params: { sessionId: "20" } },
   { name: "terminal", params: { terminalId: "10" } },
   { name: "machine-control", params: { machineId: "b" }, query: { tab: "terminal" } },
   { name: "new-session" },
@@ -95,16 +95,16 @@ test.each([
   expect(push).toHaveBeenCalledExactlyOnceWith(destination)
 })
 
-test("a workspace click replaces a queued Session destination while its Machine mounts", async () => {
+test("opening a terminal replaces a queued Session destination while its Machine mounts", async () => {
   const fake = fakeCentral({ machines: [machineFixture("a", "team-1", "First"), machineFixture("b", "team-1", "Second")] })
   session = createAccountSession(fake.central)
   await flushPromises()
   const push = vi.spyOn(router, "push").mockResolvedValue(undefined)
   session.openSession("b", "30")
-  const workspace = { name: "workspace", params: { workspaceId: "20" } }
-  session.openMachineRoute("b", workspace)
-  expect(push).toHaveBeenCalledExactlyOnceWith(workspace)
-  expect(session.takeMachineDestination("b")).toEqual(workspace)
+  const terminal = { name: "terminal", params: { terminalId: "20" } }
+  session.openMachineRoute("b", terminal)
+  expect(push).toHaveBeenCalledExactlyOnceWith(terminal)
+  expect(session.takeMachineDestination("b")).toEqual(terminal)
 })
 
 test.each(["machine", "same team", "other team", "sign out"] as const)("ordinary %s selection clears a queued Session destination", async action => {
