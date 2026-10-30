@@ -13,7 +13,7 @@ const { t } = useI18n()
 const context = inject(agentResourceContextKey, computed(() => undefined))
 const resource = ref<FileResourceRequest>()
 const error = ref<string>()
-watch(context, () => { resource.value = undefined })
+watch(() => JSON.stringify(context.value), () => { resource.value = undefined })
 const external = computed(() => /^https?:\/\//iu.test(props.uri))
 function open(): void {
   error.value = undefined
