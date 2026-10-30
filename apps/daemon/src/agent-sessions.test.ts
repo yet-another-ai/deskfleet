@@ -128,6 +128,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   const repository = join(directory, "repository")
   await mkdir(repository)
   await execute("git", ["init", repository])
+  await execute("git", ["-C", repository, "config", "core.autocrlf", "false"])
   await writeFile(join(repository, "README.md"), "fixture\n")
   await execute("git", ["-C", repository, "add", "."])
   await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
@@ -583,23 +584,29 @@ test("archive serializes with terminal admission and never completes before reso
   const closure = new Promise<void>(resolve => { releaseClosure = resolve })
   let admitted = false
   let closing = false
-  t.after(() => { releaseAdmission(); releaseClosure() })
   f.service.onSessionArchive(async () => { closing = true; await closure })
-  const dial = f.service.withActiveSession(f.sessionId, async () => { admitted = true; await admission })
-  await until(f.read, () => admitted)
-  let completed = false
-  const archive = f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
-    .then(result => { completed = true; return result as AgentSnapshot })
-  assert.equal(closing, false)
-  releaseAdmission()
-  await dial
-  await until(f.read, state => closing && state.session.archiveState === "archiving")
-  assert.equal(completed, false)
-  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
-  await assert.rejects(f.service.withActiveSession(f.sessionId, async () => {}), /Restore this Session/u)
-  releaseClosure()
-  assert.equal((await archive).session.archiveState, "archived")
-  await assert.rejects(readdir(cwd), { code: "ENOENT" })
+  try {
+    const dial = f.service.withActiveSession(f.sessionId, async () => { admitted = true; await admission })
+    await until(f.read, () => admitted)
+    let completed = false
+    const archive = f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+      .then(result => { completed = true; return result as AgentSnapshot })
+    assert.equal(closing, false)
+    releaseAdmission()
+    await dial
+    await until(f.read, state => closing && state.session.archiveState === "archiving")
+    assert.equal(completed, false)
+    assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+    await assert.rejects(f.service.withActiveSession(f.sessionId, async () => {}), /Restore this Session/u)
+    releaseClosure()
+    assert.equal((await archive).session.archiveState, "archived")
+    await assert.rejects(readdir(cwd), { code: "ENOENT" })
+  } finally {
+    // setup() closes the service first in its after hook, so unblock pending
+    // archive operations before teardown even when an assertion fails.
+    releaseAdmission()
+    releaseClosure()
+  }
 })
 
 test("checkout cleanup and recreation failures leave archive and restore retryable", async t => {
