@@ -1205,7 +1205,6 @@
     "or": "or",
     "signInWithPasskey": "Sign in with a Passkey",
     "signInWithGithub": "Sign in with GitHub",
-    "githubAgreeToTerms": "If creating an account, I agree to the",
     "githubFailed": "GitHub sign-in failed. Please try again.",
     "githubRegistrationDisabled": "New accounts are not enabled on this site.",
     "githubTermsRequired": "To create an account, agree to the terms and try again.",

@@ -74,9 +74,10 @@ membership, resource access, or Site Admin authority.
 7. Support account disablement, revoking existing login sessions/peer access and
    preventing new sessions and authorization of later delegated work.
 
-GitHub login identifies an account by GitHub’s stable user ID. Creating an
-account through GitHub requires a verified GitHub email, enabled public
-registration, and acceptance of configured legal terms. An existing account is
+GitHub login identifies an account by GitHub’s stable user ID. Every GitHub
+sign-in requires acceptance of configured legal terms before authorization.
+Creating an account through GitHub also requires a verified GitHub email and
+enabled public registration. An existing account is
 not automatically linked based on its email address. An email already used by an
 existing account cannot create another account, and explicit linking is not yet
 supported. The initial ten-minute recent-authentication window after GitHub

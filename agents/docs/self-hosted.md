@@ -276,9 +276,9 @@ Matching trims whitespace and lowercases ASCII email, preserving plus tags.
 To enable GitHub login, register a GitHub OAuth app with the callback URL
 `<DESKFLEET_PUBLIC_URL>/api/auth/github/callback` and configure both GitHub
 credentials above. Set the exact API origin in the callback, including the port
-when applicable. GitHub login requests access to verified email addresses. New
-accounts require enabled public registration and acceptance of any configured
-legal terms. An email already used by an existing account cannot create another
+when applicable. GitHub login requests access to verified email addresses and
+requires acceptance of any configured legal terms before authorization. New
+accounts require enabled public registration. An email already used by an existing account cannot create another
 account; automatic and explicit account linking are not supported.
 
 Browsers send HttpOnly session cookies. Mutations require the exact allowed

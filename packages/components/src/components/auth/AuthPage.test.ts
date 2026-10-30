@@ -44,16 +44,21 @@ test("desktop approval confirms recent authentication in a dialog and keeps its 
   expect(dialog().exists()).toBe(false)
 })
 
-test("GitHub sign-in keeps the desktop attempt and sends explicit terms consent", async () => {
+test.each([true, false])("GitHub sign-in requires terms even when registrationEnabled=%s", async registrationEnabled => {
   const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
   const request = mountAt("/auth/desktop?attempt=native-attempt", async (_method, path) => {
-    if (path === "/api/auth/config") return { registrationEnabled: true, githubEnabled: true, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "" }
+    if (path === "/api/auth/config") return { registrationEnabled, githubEnabled: true, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "" }
     if (path === "/api/auth/github/start") return { authorizationUrl: "https://github.com/login/oauth/authorize" }
     return {}
   })
   await flushPromises()
+  const github = button(view!, i18n.global.t("auth.signInWithGithub"))
+  expect(github.attributes("disabled")).toBeDefined()
+  await github.trigger("click"); await flushPromises()
+  expect(request).not.toHaveBeenCalledWith("POST", "/api/auth/github/start", expect.anything())
   await view!.get('[role="checkbox"]').trigger("click")
-  await button(view!, i18n.global.t("auth.signInWithGithub")).trigger("click"); await flushPromises()
+  expect(github.attributes("disabled")).toBeUndefined()
+  await github.trigger("click"); await flushPromises()
   expect(request).toHaveBeenCalledWith("POST", "/api/auth/github/start", { returnTo: "/auth/desktop?attempt=native-attempt", acceptedTerms: true })
   expect(assign).toHaveBeenCalledExactlyOnceWith("https://github.com/login/oauth/authorize")
 })

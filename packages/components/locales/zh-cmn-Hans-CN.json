@@ -1205,7 +1205,6 @@
     "or": "或",
     "signInWithPasskey": "使用 Passkey 登录",
     "signInWithGithub": "使用 GitHub 登录",
-    "githubAgreeToTerms": "如果创建账户，我同意",
     "githubFailed": "GitHub 登录失败，请重试。",
     "githubRegistrationDisabled": "此站点未开放新账户注册。",
     "githubTermsRequired": "创建账户需要同意条款，请同意后重试。",

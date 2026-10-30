@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { KeyRound } from "@lucide/vue"
-import { ref, useId, useTemplateRef } from "vue"
+import githubIcon from "@lobehub/icons-static-svg/icons/github.svg?url"
+import { computed, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication, AuthConfig } from "@deskfleet/client/account-security"
 import { passkeysAvailable } from "@deskfleet/client/passkeys"
@@ -20,6 +21,8 @@ const pending = ref<"password" | "passkey" | "github">()
 const githubErrors: Record<string, string> = { failed: "auth.githubFailed", registration_disabled: "auth.githubRegistrationDisabled", terms_required: "auth.githubTermsRequired", email_conflict: "auth.githubEmailConflict" }
 const error = ref<string | undefined>(props.githubError ? t(githubErrors[props.githubError] ?? "auth.githubFailed") : undefined)
 const acceptedTerms = ref(false)
+const termsRequired = computed(() => !!(props.config.termsOfServiceUrl || props.config.privacyTermsUrl))
+const githubIconStyle = { maskImage: `url("${githubIcon}")` }
 const id = useId()
 const emailInput = useTemplateRef("email")
 const target = props.newTab ? "_blank" : undefined
@@ -42,7 +45,7 @@ function passkey(): void {
   void run("passkey", () => props.account.loginWithPasskey(email.value))
 }
 async function github(): Promise<void> {
-  if (pending.value) return
+  if (pending.value || (termsRequired.value && !acceptedTerms.value)) return
   pending.value = "github"
   error.value = undefined
   try {
@@ -68,16 +71,18 @@ async function github(): Promise<void> {
       <template v-if="passkeysAvailable() || config.githubEnabled">
         <div class="flex items-center gap-3 text-xs text-ui-text-faint" aria-hidden="true"><span class="h-px flex-1 bg-ui-border" />{{ t("auth.or") }}<span class="h-px flex-1 bg-ui-border" /></div>
         <UiButton v-if="passkeysAvailable()" class="h-9 text-sm" :loading="pending === 'passkey'" :disabled="!!pending" @click="passkey"><KeyRound :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("auth.signInWithPasskey") }}</UiButton>
-        <div v-if="config.githubEnabled && registrationEnabled && (config.termsOfServiceUrl || config.privacyTermsUrl)" class="flex items-start gap-2.5 text-sm leading-relaxed text-ui-text-muted">
+        <div v-if="config.githubEnabled && termsRequired" class="flex items-start gap-2.5 text-sm leading-relaxed text-ui-text-muted">
           <UiCheckbox :id="`${id}-github-terms`" v-model="acceptedTerms" :aria-labelledby="`${id}-github-terms-label`" :disabled="!!pending" class="mt-1" />
           <span :id="`${id}-github-terms-label`">
-            <label :for="`${id}-github-terms`">{{ `${t("auth.githubAgreeToTerms")} ` }}</label>
+            <label :for="`${id}-github-terms`">{{ `${t("auth.agreeToTerms")} ` }}</label>
             <a v-if="config.termsOfServiceUrl" :href="config.termsOfServiceUrl" target="_blank" rel="noopener noreferrer" class="text-ui-accent hover:underline">{{ t("auth.termsOfService") }}</a>
             <template v-if="config.termsOfServiceUrl && config.privacyTermsUrl">{{ ` ${t("auth.termsAnd")} ` }}</template>
             <a v-if="config.privacyTermsUrl" :href="config.privacyTermsUrl" target="_blank" rel="noopener noreferrer" class="text-ui-accent hover:underline">{{ t("auth.privacyTerms") }}</a>
           </span>
         </div>
-        <UiButton v-if="config.githubEnabled" class="h-9 text-sm" :loading="pending === 'github'" :disabled="!!pending" @click="github">{{ t("auth.signInWithGithub") }}</UiButton>
+        <UiButton v-if="config.githubEnabled" class="github-sign-in h-9 text-sm" :loading="pending === 'github'" :disabled="!!pending || (termsRequired && !acceptedTerms)" @click="github">
+          <span class="github-icon" :style="githubIconStyle" aria-hidden="true" />{{ t("auth.signInWithGithub") }}
+        </UiButton>
       </template>
     </form>
     <template v-if="registrationEnabled" #footer>
@@ -85,3 +90,10 @@ async function github(): Promise<void> {
     </template>
   </AuthLayout>
 </template>
+
+<style scoped>
+.github-sign-in { color: #fff; background: #24292f; border-color: #24292f; }
+.github-sign-in:enabled:hover { background: #32383f; }
+.github-sign-in:enabled:active { background: #1b1f23; }
+.github-icon { width: 16px; height: 16px; flex: none; background: currentColor; mask-size: contain; mask-position: center; mask-repeat: no-repeat; }
+</style>

@@ -735,7 +735,6 @@
     "hidePassword": "パスワードを非表示", "forgot": "パスワードを忘れた場合",
     "or": "または", "signInWithPasskey": "パスキーでログイン",
     "signInWithGithub": "GitHub でログイン",
-    "githubAgreeToTerms": "アカウントを作成する場合、以下に同意します：",
     "githubFailed": "GitHub でのログインに失敗しました。もう一度お試しください。",
     "githubRegistrationDisabled": "このサイトでは新規アカウントを受け付けていません。",
     "githubTermsRequired": "アカウントを作成するには規約に同意して、もう一度お試しください。",

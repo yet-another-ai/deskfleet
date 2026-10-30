@@ -56,6 +56,16 @@ pub(super) async fn start(
         .ok_or_else(ApiError::forbidden)?;
     return_url(&state.auth.config.web_url, &body.return_to)
         .ok_or_else(|| ApiError::bad("invalid return path"))?;
+    let settings = state.store.site_settings().await?;
+    if !body.accepted_terms
+        && (!settings.terms_of_service_url.is_empty() || !settings.privacy_terms_url.is_empty())
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "terms_acceptance_required",
+            "Accept the terms before signing in with GitHub.",
+        ));
+    }
     let nonce = secret();
     let verifier = secret();
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
@@ -134,6 +144,12 @@ async fn complete(
     attempt: &Value,
     code: Option<&str>,
 ) -> std::result::Result<Value, &'static str> {
+    let settings = state.store.site_settings().await.map_err(|_| "failed")?;
+    if !attempt["acceptedTerms"].as_bool().unwrap_or(false)
+        && (!settings.terms_of_service_url.is_empty() || !settings.privacy_terms_url.is_empty())
+    {
+        return Err("terms_required");
+    }
     let config = state.auth.config.github.as_ref().ok_or("failed")?;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
