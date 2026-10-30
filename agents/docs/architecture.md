@@ -131,6 +131,12 @@ replica configuration and failure behavior.
 The identity design supports the hosted service and self-hosted installations with
 DeskFleet-owned accounts with public email/password registration, Passkeys, and
 optional GitHub OAuth login.
+GitHub App integration is separate from login: central PostgreSQL stores each
+user's App authorization and their opt-in to act as that GitHub user. App grants
+belong to the account, not to a Team or Machine, and do not grant DeskFleet
+resource access. The server retains App credentials and user tokens; clients
+receive only connection status and settings. The initial integration provides
+installation management and user authorization, with no PR operations yet.
 [Identity and billing requirements](identity-billing.md) define the accepted
 plan model, account flows, and enforcement boundaries. Web sessions use HttpOnly
 cookies; Electron exchanges a browser authorization for a secure main-process

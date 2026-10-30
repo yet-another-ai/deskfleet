@@ -349,6 +349,7 @@ pub(crate) mod tests {
             web_origins: vec![],
             auth: crate::auth::config::AuthConfig::development("http://127.0.0.1:8080"),
             billing: Default::default(),
+            github_app: None,
             stun_urls,
             turn_urls,
             turn_secret: turn_secret.map(str::to_owned),

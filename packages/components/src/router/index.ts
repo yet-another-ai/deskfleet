@@ -97,6 +97,11 @@ export const router = createRouter({
           component: () => import("../components/settings/NotificationsSettings.vue"),
         },
         {
+          path: "github",
+          name: "settings-github",
+          component: () => import("../components/settings/GithubSettings.vue"),
+        },
+        {
           path: "permissions",
           name: "settings-permissions",
           component: () => import("../components/settings/PermissionsSettings.vue"),

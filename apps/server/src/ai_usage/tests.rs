@@ -14,6 +14,7 @@ async fn postgres_http_ai_usage_requires_team_membership_and_valid_queries() {
             web_origins: vec![],
             auth: crate::auth::config::AuthConfig::development("https://control.test"),
             billing: Default::default(),
+            github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,

@@ -14,6 +14,7 @@ async fn team_members_rename_machines_and_catalogs_use_the_team_name() {
             web_origins: vec![],
             auth: deskfleet_server::auth::config::AuthConfig::development("https://control.test"),
             billing: Default::default(),
+            github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,

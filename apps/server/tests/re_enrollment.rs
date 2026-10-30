@@ -14,6 +14,7 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
             web_origins: vec![],
             auth: deskfleet_server::auth::config::AuthConfig::development("https://control.test"),
             billing: Default::default(),
+            github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,

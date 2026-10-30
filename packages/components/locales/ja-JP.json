@@ -201,6 +201,28 @@
     "terminalPreview": "ターミナルのフォントプレビュー", "ligatures": "フォントの合字",
     "ligaturesHint": "ターミナルのフォントが対応している場合、=> や != などの文字を合字で表示します。"
   },
+  "githubSettings": {
+    "title": "GitHub",
+    "description": "GitHub App をリポジトリに接続し、DeskFleet があなたに代わって操作できるかを設定します。",
+    "repositories": "リポジトリへのアクセス",
+    "manageDescription": "GitHub App がアクセスできるアカウントとリポジトリを管理します。",
+    "manage": "Manage GitHub",
+    "actAsYou": "Act as you",
+    "actAsYouDescription": "今後のプルリクエスト操作に備えて、あなたの GitHub ID の使用を認可します。オフにしても認可は保持されます。",
+    "authorize": "Authorize",
+    "reauthorize": "再認可",
+    "authorizedAs": "{login} として認可済み",
+    "unavailable": "このサーバーでは GitHub 連携が設定されていません。",
+    "waiting": "ブラウザーで認可を完了してから、ここに戻ってください。",
+    "authorizeTitle": "GitHub を認可",
+    "authorizeDescription": "下に表示された DeskFleet アカウントに GitHub を接続します。",
+    "signInDescription": "サインインして GitHub を DeskFleet アカウントに接続します。",
+    "wrongAccount": "別の DeskFleet アカウントです。GitHub 設定を開いたアカウントでサインインしてください。",
+    "openFromSettings": "DeskFleet の GitHub 設定から認可ページを開いてください。",
+    "authorizationFailed": "GitHub の認可が完了しませんでした。もう一度お試しください。",
+    "authorizationComplete": "GitHub が認可されました。DeskFleet に戻り、準備ができたら Act as you をオンにしてください。",
+    "returnToSettings": "GitHub 設定を開く"
+  },
   "settings": {
     "preferences": "環境設定", "appearance": "外観",
     "notifications": "通知", "notificationsEnabled": "デスクトップ通知",

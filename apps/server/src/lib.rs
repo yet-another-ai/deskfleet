@@ -5,6 +5,7 @@ pub mod auth;
 pub mod billing;
 pub mod config;
 pub mod error;
+pub mod github_app;
 mod hub;
 mod maintenance;
 mod peers;
@@ -81,6 +82,7 @@ pub fn configure(config: &mut ServiceConfig) {
         web::scope("/api")
             .configure(auth::configure)
             .configure(billing::configure)
+            .configure(github_app::configure)
             .route("/site", web::get().to(site::public_settings))
             .route("/admin/site-settings", web::get().to(site::admin_settings))
             .route(

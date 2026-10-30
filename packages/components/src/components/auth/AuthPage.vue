@@ -8,6 +8,7 @@ import UiButton from "../common/UiButton.vue"
 import AccountSecurity from "./AccountSecurity.vue"
 import AuthLayout from "./AuthLayout.vue"
 import DesktopApproval from "./DesktopApproval.vue"
+import GithubAppAuthorization from "./GithubAppAuthorization.vue"
 import EmailChangeConfirm from "./EmailChangeConfirm.vue"
 import EmailLinkForm from "./EmailLinkForm.vue"
 import SetPasswordForm from "./SetPasswordForm.vue"
@@ -34,10 +35,11 @@ const { state, isLoading, error, executeImmediate: reload } = useAsyncState(asyn
   return { config, user: status.user }
 }, undefined)
 // Registration and recovery open in another tab during desktop approval; returning here picks up that sign-in.
-useEventListener(window, "focus", () => { if (route === "/auth/desktop" && !state.value?.user) void reload() })
+useEventListener(window, "focus", () => { if (["/auth/desktop", "/auth/github-app"].includes(route) && !state.value?.user) void reload() })
 
 const signedInPages: Record<string, { title: string; description?: string; newTab?: boolean }> = {
   "/auth/desktop": { title: "auth.desktopSignInTitle", description: "auth.desktopSignInDescription", newTab: true },
+  "/auth/github-app": { title: "auth.signInTitle", description: "githubSettings.signInDescription", newTab: true },
   "/auth/account": { title: "auth.signInTitle", description: "auth.accountSignInDescription" },
   "/auth/email/verify": { title: "auth.signInTitle", description: "auth.emailSignInDescription" },
 }
@@ -71,6 +73,7 @@ async function signOut(): Promise<void> { await props.api.logout(); await reload
     @signed-in="signedIn"
   />
   <DesktopApproval v-else-if="route === '/auth/desktop'" :account="account" :user="state.user" :attempt="attempt" :sign-out="signOut" />
+  <GithubAppAuthorization v-else-if="route === '/auth/github-app'" :api="api" :user="state.user" :sign-out="signOut" />
   <EmailChangeConfirm v-else-if="route === '/auth/email/verify'" :account="account" :user="state.user" :token="token" />
   <AccountSecurity v-else :account="account" :user="state.user" />
 </template>

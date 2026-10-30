@@ -460,7 +460,7 @@ test.each([
   await settled(() => expect(page().get("h1").text()).toBe("Preferences"))
   expect(router.currentRoute.value.path).toBe("/settings/preferences")
   expect(settingsLinks().map(link => link.attributes("href"))).toEqual([
-    "#/settings/preferences", "#/settings/appearance", "#/settings/notifications",
+    "#/settings/preferences", "#/settings/appearance", "#/settings/notifications", "#/settings/github",
     ...(hasMachine ? ["#/settings/agents", "#/settings/mcp-servers"] : []),
     "#/settings/about",
   ])

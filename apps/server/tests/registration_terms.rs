@@ -34,6 +34,7 @@ async fn registration_requires_consent_for_either_configured_terms_link() {
             web_origins: vec!["http://localhost".into()],
             auth,
             billing: Default::default(),
+            github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,

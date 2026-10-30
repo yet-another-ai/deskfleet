@@ -179,3 +179,23 @@ test("failed browser logout keeps the authenticated connection until its cookie 
   expect(socket.close).toHaveBeenCalledOnce()
   expect(events).toHaveBeenCalledExactlyOnceWith({ type: "accountChanged" })
 })
+
+test("GitHub App settings use account-owned routes and authorize through the browser account confirmation", async () => {
+  const settings = { configured: true, manageUrl: "https://github.com/apps/deskfleet/installations/new", authorized: false, login: null, actAsYou: false }
+  const fetch = vi.fn(async (url: string, _init: RequestInit) => {
+    const body = url.endsWith("/api/auth/config") ? { webUrl: "https://app.example" }
+      : url.endsWith("/api/me") ? { user: { id: "user/1", name: "Ada" } } : settings
+    return new Response(JSON.stringify(body), { status: 200 })
+  })
+  const openExternal = vi.fn(async () => {})
+  const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "secret" }, persist: async () => {}, authorize: async () => {}, fetch: fetch as typeof globalThis.fetch, openExternal, socket: () => new Socket() as unknown as WebSocket })
+  clients.push(client)
+  expect(await client.githubSettings()).toEqual(settings)
+  await client.manageGithub()
+  expect(openExternal).toHaveBeenLastCalledWith(settings.manageUrl)
+  await client.authorizeGithubApp()
+  expect(openExternal).toHaveBeenLastCalledWith("https://app.example/auth/github-app?user=user%2F1")
+  await client.setGithubActAsYou(true)
+  expect(fetch).toHaveBeenLastCalledWith("https://fleet.example/api/integrations/github", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ actAsYou: true }) }))
+  expect(fetch.mock.calls.some(([url]) => url.includes("authorization/start"))).toBe(false)
+})

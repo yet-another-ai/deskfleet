@@ -11,6 +11,7 @@ async fn anonymous_options_hide_accounts_and_assertions_keep_their_bindings() {
             web_origins: vec!["http://localhost".into()],
             auth: AuthConfig::development("http://localhost"),
             billing: Default::default(),
+            github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,
