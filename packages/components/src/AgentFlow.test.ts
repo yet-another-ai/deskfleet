@@ -35,6 +35,7 @@ function emit(kind: AgentEvent["kind"], payload: AgentEvent["payload"]): void {
 }
 beforeEach(async () => {
   window.localStorage.removeItem("deskfleet.agent-configuration")
+  window.localStorage.removeItem("deskfleet.session-context")
   snapshot = agentSnapshot(); snapshot.session.workspaceId = workspaceId
   events = []
   const catalog = catalogFixture()
@@ -124,7 +125,7 @@ test("a workspace prompt creates a Session, keeps shared candidates, streams too
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
   await vi.waitFor(() => expect(router.currentRoute.value.params.sessionId).toBe("30"))
-  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ workspaceId, title: "Implement the feature", provider: "codex", context: "worktree", operationId: expect.any(String) })
+  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ workspaceId, title: "Implement the feature", provider: "codex", context: "directory", operationId: expect.any(String) })
   expect(wrapper.get('[aria-label="Queued"]').text()).toContain("Implement the feature")
   expect(wrapper.find('a[href="#/worktrees/31"]').exists()).toBe(true)
   const delivered = agentInput({ content: [{ type: "text", text: "Implement the feature" }], state: "delivered", turnId: "70", actualDelivery: "turn_start" })
@@ -337,8 +338,12 @@ test("returning to unchanged conversation history scrolls after loading, while l
   expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 1600 })
 })
 
-test("the new-session composer remembers a working-directory choice and creates that Session", async () => {
+test("the new-session composer defaults to the working directory and remembers a changed choice", async () => {
   const checkbox = wrapper.get('[role="checkbox"][aria-label="New worktree"]')
+  expect(checkbox.attributes("aria-checked")).toBe("false")
+  await checkbox.trigger("click")
+  await flushPromises()
+  expect(window.localStorage.getItem("deskfleet.session-context")).toBe("worktree")
   expect(checkbox.attributes("aria-checked")).toBe("true")
   await checkbox.trigger("click")
   await flushPromises()
@@ -367,6 +372,8 @@ test("the new-session composer lists local and remote branches, defaults to curr
   await flushPromises()
 
   const checkbox = wrapper.get('[role="checkbox"][aria-label="New worktree"]')
+  await checkbox.trigger("click")
+  await flushPromises()
   expect(checkbox.attributes("aria-checked")).toBe("true")
   const branchTrigger = wrapper.get('[data-composer-branch]')
   expect(branchTrigger.attributes("aria-label")).toBe("Base branch: main")
@@ -395,6 +402,26 @@ test("the new-session composer lists local and remote branches, defaults to curr
     context: "worktree",
     baseBranch: "origin/release",
   })
+})
+
+test("preparing a worktree sends pinned default branch revisions when starting the next session", async () => {
+  await wrapper.get('[role="checkbox"][aria-label="New worktree"]').trigger("click")
+  await flushPromises()
+  const normal = transport.call.getMockImplementation()!
+  const baseRevisions = [{ path: "/repo", revision: "a".repeat(40) }]
+  transport.call.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+    if (method === "_deskfleet/git/prepare") return { workspaceId, context: "worktree", status: "ready", repositories: [{ root: "/repo", branch: "main", changes: [] }], baseRevisions }
+    return normal(method, params)
+  })
+  await wrapper.get("[data-prepare-session]").trigger("click")
+  await flushPromises()
+  expect(wrapper.get("[data-composer-branch]").text()).toBe("Latest main")
+  await wrapper.get("textarea").setValue("Start from the latest code")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  const params = transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]
+  expect(params).toMatchObject({ workspaceId, context: "worktree", baseRevisions })
+  expect(params).not.toHaveProperty("baseBranch")
 })
 
 test("new sessions use the selected configured provider and show its name", async () => {

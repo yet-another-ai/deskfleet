@@ -283,18 +283,33 @@ directories without retargeting existing Session contexts.
 
 Worktrees are not independently maintained resources. Each Session record owns
 one Worktree record, created and destroyed with it. Creating a Session chooses
-its context. A **worktree** Session allocates generated checkouts; archiving or
-destroying it removes them. A **directory** Session records the Workspace's
+its context. New-session composition defaults to directory mode and remembers
+the user's last choice on that device. A **worktree** Session allocates generated
+checkouts; archiving or destroying it removes them. A **directory** Session records the Workspace's
 current paths and works in them directly, including their uncommitted changes
 and non-Git directories; archiving it leaves those files intact, and destroying
 it removes only its records. The choice is immutable. Sessions sharing directories
 are not isolated from each other or from the user's own edits. For worktree
 contexts, the daemon creates detached Git worktrees
-from the configured checkouts' HEAD commits, grouping paths in the same checkout
-and preserving subdirectory positions. Uncommitted source changes are not copied.
+from the selected base branch or the configured checkouts' HEAD commits, grouping
+paths in the same checkout and preserving subdirectory positions. Uncommitted
+source changes are not copied.
 The first path is the Session's default working directory. Workspace paths may
 be non-Git for main-context terminals and directory Sessions; creating a worktree
 Session requires Git-backed paths with a commit.
+
+The new-session composer's context bar offers preparation from each repository's
+latest remote default branch. Preparation fetches before changing source files.
+For a worktree Session it captures a commit for each Workspace directory, and
+creation uses those exact commits without resetting or switching the source
+checkouts. Changing the target, context, or base branch clears that selection.
+For a directory Session it switches the actual checkouts to their default branches
+and advances them only by fast-forward. Tracked local changes require an explicit
+confirmation listing affected paths; changed edits require a fresh confirmation.
+Untracked files are preserved, and divergent local history is left for the user
+to resolve. Other Sessions sharing those directories observe the same changes.
+Preparation does not create a Session or start an Agent. Its transient Git RPC
+uses the authenticated peer or local channel and requires `agent:execute`.
 
 The Electron client can open its local Workspace directories in an installed
 editor, external terminal, or system file manager. The default action opens the

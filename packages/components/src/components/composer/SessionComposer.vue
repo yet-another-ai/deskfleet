@@ -10,6 +10,7 @@ import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch 
 import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { GitPreparationSnapshot } from "../../../../../apps/daemon/src/git-protocol.ts"
 import type { FileEntry } from "../../../../client/src/files.ts"
 import { useFileTarget } from "../../composables/useFileTarget.ts"
 import { useSessionGit } from "../../composables/useSessionGit.ts"
@@ -30,6 +31,7 @@ import type { SessionTarget } from "../../stores/fleet.ts"
 import { focusPreview } from "../../stores/previews.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import AgentUsage from "./AgentUsage.vue"
+import SessionPreparation from "./SessionPreparation.vue"
 import ComposerCompletions from "./ComposerCompletions.vue"
 import { useComposerCompletions } from "./useComposerCompletions.ts"
 import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
@@ -52,9 +54,15 @@ const draft = defineModel<string>({ default: "" })
 const attachments = defineModel<ComposerAttachment[]>("attachments", { default: () => [] })
 const mentions = defineModel<ComposerMention[]>("mentions", { default: () => [] })
 /** The execution context a new Session will use; only offered with `showTarget`. */
-const context = defineModel<AgentSessionContext>("context", { default: "worktree" })
+const context = defineModel<AgentSessionContext>("context", { default: "directory" })
 /** The base branch for a new worktree Session; only offered when `showTarget` and `context === "worktree"`. */
 const baseBranch = defineModel<string>("baseBranch")
+const baseRevisions = defineModel<GitPreparationSnapshot["baseRevisions"]>("baseRevisions")
+const preparing = ref(false)
+const preparedBranches = ref<string[]>([])
+const preparationButton = useTemplateRef<InstanceType<typeof SessionPreparation>>("preparationButton")
+const branchLabel = computed(() => preparedBranches.value.length
+  ? t("composer.prepare.base", { branches: preparedBranches.value.join(", ") }) : baseBranch.value)
 const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: [] }>()
 const { t } = useI18n()
 const agents = useAgentSessionsStore()
@@ -88,9 +96,9 @@ const checkoutLabel = computed(() => checkout.value
 const changes = computed(() => (checkout.value?.changes ?? []).reduce((total, change) => ({ additions: total.additions + (change.additions ?? 0), deletions: total.deletions + (change.deletions ?? 0) }), { additions: 0, deletions: 0 }))
 const availableBranches = ref<string[]>([])
 let branchProbeGeneration = 0
-watch(() => [props.showTarget, props.location?.workspace?.id, props.location?.machine.online] as const, async ([showTarget, workspaceId, online], previous) => {
+watch(() => [props.showTarget, props.location?.workspace?.id, props.location?.machine.online, props.location?.machine.id] as const, async ([showTarget, workspaceId, online, machineId], previous) => {
   const token = ++branchProbeGeneration
-  if (workspaceId !== previous?.[1]) {
+  if (workspaceId !== previous?.[1] || machineId !== previous?.[3]) {
     availableBranches.value = []
     baseBranch.value = undefined
   }
@@ -221,7 +229,7 @@ function onPaste(event: ClipboardEvent): void {
   }
 }
 function submit(delivery: "backlog" | "steer"): void {
-  if (props.disabled || props.submitting || configurationLoading.value || !props.location || empty.value) return
+  if (props.disabled || props.submitting || preparing.value || configurationLoading.value || !props.location || empty.value) return
   emit("submit", commandInput.value ? "backlog" : delivery)
 }
 function keydown(event: KeyboardEvent): void {
@@ -245,22 +253,22 @@ onBeforeUnmount(() => {
       <template v-if="showTarget && location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
         <label class="inline-flex min-w-0 cursor-pointer select-none items-center gap-1.5 text-ui-text" :title="t(`composer.contextHint.${context}`)" data-composer-context>
-          <UiCheckbox :model-value="context === 'worktree'" :aria-label="t('composer.contextOption.worktree')" @update:model-value="context = $event ? 'worktree' : 'directory'" />
+          <UiCheckbox :model-value="context === 'worktree'" :disabled="preparing || submitting" :aria-label="t('composer.contextOption.worktree')" @update:model-value="context = $event ? 'worktree' : 'directory'" />
           <span class="truncate">{{ t("composer.contextOption.worktree") }}</span>
         </label>
-        <template v-if="context === 'worktree' && availableBranches.length && baseBranch">
+        <template v-if="context === 'worktree' && branchLabel && (availableBranches.length || preparedBranches.length)">
           <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
           <DropdownMenuRoot :modal="false">
-            <DropdownMenuTrigger class="inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :aria-label="t('composer.baseBranchChoice', { branch: baseBranch })" data-composer-branch>
-              <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ baseBranch }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+            <DropdownMenuTrigger class="inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.baseBranchChoice', { branch: branchLabel })" data-composer-branch>
+              <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ branchLabel }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuPortal>
             <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-y-auto" loop>
               <DropdownMenuRadioGroup v-model="baseBranch">
-              <DropdownMenuRadioItem v-for="branch in availableBranches" :key="branch" as="button" type="button" :value="branch" class="ui-menu-item">
+              <DropdownMenuRadioItem v-for="branch in availableBranches" :key="branch" as="button" type="button" :value="branch" class="ui-menu-item" @select="preparationButton?.reset()">
                 <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
                 <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ branch }}</span>
-                <Check v-if="branch === baseBranch" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+                <Check v-if="!preparedBranches.length && branch === baseBranch" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
               </DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
@@ -275,6 +283,7 @@ onBeforeUnmount(() => {
           <span class="truncate">{{ checkoutLabel }}</span>
         </RouterLink>
       </template>
+      <SessionPreparation v-if="showTarget && location.workspace" ref="preparationButton" v-model:base-revisions="baseRevisions" v-model:branches="preparedBranches" :location="location" :context="context" :base-branch="baseBranch" :disabled="submitting" @busy="preparing = $event" />
       <span v-if="changes.additions || changes.deletions" class="ml-auto shrink-0 rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></span>
     </div>
     <div ref="dropZoneRef" class="relative rounded-2xl border bg-ui-surface shadow-ui-card transition-colors focus-within:border-ui-accent/60" :class="isOverDropZone ? 'border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
@@ -341,9 +350,9 @@ onBeforeUnmount(() => {
         <AgentConfigurationSelector v-if="location" ref="configurationSelector" :workspace-id="location.workspace?.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" @configuration="configuration = $event" />
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
-          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
           <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
-          <UiButton v-else variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></UiButton>
+          <UiButton v-else variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></UiButton>
         </div>
       </div>
     </div>

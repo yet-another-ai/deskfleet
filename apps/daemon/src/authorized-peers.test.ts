@@ -355,6 +355,22 @@ test("expiry closes access without a signaling connection and ignores queued inp
   assert.equal(f.sent.length, 1)
 })
 
+test("Git preparation requires execution access, not a read-only Git grant", async context => {
+  const denied = fixture(), allowed = fixture()
+  context.after(async () => { await denied.peers.closeAll(); await allowed.peers.closeAll() })
+  await denied.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: ["agent:read", "git:read"] }, iceServers: [] })
+  await denied.rpc(1, "initialize", { protocolVersion: 1 })
+  await denied.rpc(2, "_deskfleet/git/prepare", { workspaceId: "1", context: "directory" })
+  assert.match(denied.sent.join(""), /does not allow this operation/)
+  assert.equal(denied.calls.length, 0)
+
+  await allowed.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })
+  await allowed.rpc(1, "initialize", { protocolVersion: 1 })
+  await allowed.rpc(2, "_deskfleet/git/prepare", { workspaceId: "1", context: "worktree", actor: { userId: "spoof" } })
+  assert.equal(allowed.calls[0]?.method, "_deskfleet/git/prepare")
+  assert.equal(allowed.calls[0]?.actor.userId, "alice")
+})
+
 test("Git observation requires git:read and rechecks authorization before notifications", async context => {
   const denied = fixture(), allowed = fixture()
   context.after(async () => { await denied.peers.closeAll(); await allowed.peers.closeAll() })

@@ -1119,6 +1119,13 @@ export function createSeededStorybookState() {
     currentBranch: "main",
     branches: ["main", "develop", "feat/storybook-components", "fix/terminal-resize"],
   })
+  agents.prepareGit = async (workspaceId, context, confirmationToken) => ({
+    workspaceId, context,
+    status: context === "directory" && !confirmationToken ? "confirmation_required" : "ready",
+    repositories: [{ root: "/workspace/deskfleet", branch: "main", changes: context === "directory" && !confirmationToken ? ["src/app.ts", "README.md"] : [] }],
+    ...(context === "directory" && !confirmationToken ? { confirmationToken: "storybook-changes" } : {}),
+    ...(context === "worktree" ? { baseRevisions: [{ path: "/workspace/deskfleet", revision: "a".repeat(40) }] } : {}),
+  })
   agents.gitStatus = async (sessionId) => ({
     sessionId,
     repositories: [

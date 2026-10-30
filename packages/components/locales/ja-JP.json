@@ -316,6 +316,21 @@
       "worktree": "各ディレクトリのコミット済み HEAD から独立した Git チェックアウトを作成", "directory": "未コミットの変更を含むワークスペースのディレクトリで作業"
     },
     "baseBranch": "ベースブランチ", "baseBranchChoice": "ベースブランチ: {branch}",
+    "prepare": {
+      "action": "準備する",
+      "loading": "準備中…",
+      "ready": "準備完了",
+      "base": "最新の {branches}",
+      "hint": {
+        "worktree": "新しいワークツリー用にデフォルトブランチの最新コードを取得",
+        "directory": "各ディレクトリを最新のデフォルトブランチに切り替え"
+      },
+      "failed": "ワークスペースを準備できませんでした",
+      "confirmTitle": "変更を破棄して準備しますか？",
+      "confirmDescription": "最新のデフォルトブランチに切り替える前に、以下の未コミットの変更を破棄します。未追跡のファイルは保持されます。",
+      "sharedDirectory": "ワークスペースの実際のディレクトリが変更され、同じディレクトリを使う他のセッションにも影響します。破棄した変更は DeskFleet で復元できません。",
+      "discard": "変更を破棄して準備"
+    },
     "model": "モデル", "reasoningEffort": "推論",
     "mode": "モード", "configuration": "エージェント設定",
     "configureAgent": "エージェントを設定: {selection}", "collapseConfiguration": "エージェント設定を折りたたむ",

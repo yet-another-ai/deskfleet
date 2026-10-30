@@ -34,6 +34,18 @@ export interface GitBranchesSnapshot {
   branches: string[]
 }
 
+/** Pinned commits correspond to the Workspace's ordered directory bindings. */
+export interface GitPreparedRevision { path: string; revision: string }
+
+export interface GitPreparationSnapshot {
+  workspaceId: string
+  context: "worktree" | "directory"
+  status: "ready" | "confirmation_required"
+  repositories: { root: string; branch: string; changes: string[] }[]
+  confirmationToken?: string
+  baseRevisions?: GitPreparedRevision[]
+}
+
 export interface GitChangedNotification {
   sessionId: string
   subscriptionId: string

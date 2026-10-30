@@ -4,6 +4,7 @@ import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspaceSession } from "@deskfleet/native"
+import type { GitPreparedRevision } from "./git-protocol.ts"
 
 const execute = promisify(execFile)
 
@@ -62,7 +63,7 @@ async function resolveBranchRevision(root: string, branch: string): Promise<stri
   return null
 }
 
-async function sourceDirectory(path: string, baseBranch?: string, primaryRepository?: string): Promise<SourceDirectory> {
+async function sourceDirectory(path: string, baseBranch?: string, primaryRepository?: string, preparedRevision?: string): Promise<SourceDirectory> {
   const directory = await realpath(path)
   let root: string
   let repository: string
@@ -75,7 +76,10 @@ async function sourceDirectory(path: string, baseBranch?: string, primaryReposit
     throw new Error(`Cannot isolate ${path}: a Git working tree with a committed HEAD is required`, { cause: error })
   }
   let revision = head
-  if (baseBranch !== undefined) {
+  if (preparedRevision !== undefined) {
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(preparedRevision)) throw new Error("Invalid prepared Git revision")
+    revision = await git(["-C", root, "rev-parse", "--verify", `${preparedRevision}^{commit}`])
+  } else if (baseBranch !== undefined) {
     const resolved = await resolveBranchRevision(root, baseBranch)
     if (resolved) revision = resolved
     else if (!primaryRepository || repository === primaryRepository) {
@@ -102,15 +106,19 @@ export class ManagedSessionWorktrees {
     this.#storage = storage
   }
 
-  async create(workspaceId: string, allocated?: CatalogWorkspaceSession, baseBranch?: string): Promise<ManagedWorkspaceSession> {
+  async create(workspaceId: string, allocated?: CatalogWorkspaceSession, baseBranch?: string, baseRevisions?: GitPreparedRevision[]): Promise<ManagedWorkspaceSession> {
     const workspace = (await this.#catalog.snapshot()).workspaces.find(value => value.id === workspaceId)
     const main = workspace?.worktrees.find(worktree => !worktree.sessionId)
     if (!main || main.directories.length === 0) throw new Error("Workspace has no main directories")
+    if (baseRevisions && (baseBranch !== undefined || baseRevisions.length !== main.directories.length
+      || baseRevisions.some((value, index) => value.path !== main.directories[index]!.path))) {
+      throw new Error("Workspace directories changed; prepare the starting point again")
+    }
     // Resolve all sources before allocating anything; non-Git workspaces remain
     // usable for terminals but cannot supply isolated agent sessions.
     const sources: SourceDirectory[] = []
-    for (const directory of main.directories) {
-      sources.push(await sourceDirectory(directory.path, baseBranch, sources[0]?.repository))
+    for (const [index, directory] of main.directories.entries()) {
+      sources.push(await sourceDirectory(directory.path, baseBranch, sources[0]?.repository, baseRevisions?.[index]?.revision))
     }
     // A settings change affects the next Session, never an in-flight creation.
     const root = await this.#storage?.root()

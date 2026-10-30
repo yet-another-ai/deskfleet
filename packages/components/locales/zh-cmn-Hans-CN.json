@@ -480,6 +480,21 @@
     },
     "baseBranch": "基础分支",
     "baseBranchChoice": "基础分支：{branch}",
+    "prepare": {
+      "action": "准备开始",
+      "loading": "正在准备…",
+      "ready": "已准备",
+      "base": "最新 {branches}",
+      "hint": {
+        "worktree": "获取默认分支的最新代码，用于创建独立工作树",
+        "directory": "将这些目录切换到各自最新的默认分支"
+      },
+      "failed": "无法准备工作区",
+      "confirmTitle": "丢弃修改并准备开始？",
+      "confirmDescription": "切换到最新默认分支前，将丢弃以下未提交的修改。未跟踪的文件会保留。",
+      "sharedDirectory": "此操作会修改工作区的实际目录，也会影响使用这些目录的其他会话。DeskFleet 无法恢复被丢弃的修改。",
+      "discard": "丢弃修改并准备"
+    },
     "model": "模型",
     "reasoningEffort": "推理强度",
     "mode": "模式",
