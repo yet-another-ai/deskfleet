@@ -74,7 +74,11 @@ let diagnostics = ""
 async function stopClient(): Promise<void> {
   if (!electron || electron.exitCode !== null || electron.signalCode !== null) return
   const exited = once(electron, "exit")
-  if (electron.connected) electron.send({ close: true })
+  if (electron.connected) electron.send({ close: true }, error => {
+    // A failed renderer can close IPC before its process emits exit.
+    const code = (error as NodeJS.ErrnoException | null)?.code
+    if (error && code !== "EPIPE" && code !== "ERR_IPC_CHANNEL_CLOSED") console.error("Electron smoke shutdown request failed:", error)
+  })
   const force = setTimeout(() => electron!.kill("SIGKILL"), 3_000)
   await exited; clearTimeout(force)
 }

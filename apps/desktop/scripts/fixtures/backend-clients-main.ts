@@ -131,7 +131,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   catalogObserver.disconnect()
   require(!flashedLoading, "Background catalog updates flashed the workspace loading title")
   await session(1)
-  require(context.machines.every((_, index) => !!machineTree(index)?.querySelector('a[href*="/workspaces/"]')), "Switching machines must retain both expanded workspace trees")
+  require(context.machines.every((_, index) => !!machineTree(index)?.querySelector('.workspace-row button[aria-expanded="true"]')), "Switching machines must retain both expanded workspace trees")
   await until(() => !!document.querySelector('button[aria-label="Session actions"]'), "second machine conversation snapshot")
   require(!document.querySelector("main")!.textContent!.includes(`Prompt from ${context.mode}`), "Same local Session ID leaked across machines")
   await session(0)
@@ -140,7 +140,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
 }
 
 
-type CaptureView = "session" | "workspace" | "team-menu" | "account-menu" | "settings-team" | "create-team" | "invite" | "add-machine"
+type CaptureView = "session" | "workspace-edit" | "team-menu" | "account-menu" | "settings-team" | "create-team" | "invite" | "add-machine"
 
 /** Navigation stays within the disposable fixture's authenticated renderer. */
 async function prepareCapture(context: BackendClientsContext, view: CaptureView): Promise<void> {
@@ -161,11 +161,16 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
   for (const trigger of document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"][aria-expanded="true"]')) trigger.click()
   location.hash = `/sessions/${context.sessionId}`
   await until(() => !!document.querySelector('button[aria-label="Team"]') && !!document.querySelector("main")?.textContent?.includes("Machine 0 conversation"), "session")
-  if (view === "workspace") {
-    const link = document.querySelector<HTMLAnchorElement>('aside a[href*="/workspaces/"]')
-    if (!link) throw new Error("Fixture workspace link is missing")
-    link.click()
-    await until(() => location.hash.startsWith("#/workspaces/") && !!document.querySelector("main")?.textContent?.includes("Directories"), "workspace")
+  if (view === "workspace-edit") {
+    const row = document.querySelector<HTMLButtonElement>(`aside section[data-machine-id="${context.machines[0]}"] .workspace-row button[aria-expanded]`)
+    if (!row) throw new Error("Fixture workspace row is missing")
+    row.focus()
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }))
+    await until(() => !!document.querySelector('[role="menu"]'), "workspace context menu")
+    const edit = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === "Edit workspace")
+    if (!edit) throw new Error("Edit workspace menu item is missing")
+    edit.click()
+    await until(() => !!document.querySelector('[role="dialog"][data-state="open"] input[name="workspace-name"]'), "workspace editor")
   } else if (view === "settings-team" || view === "invite") {
     document.querySelector<HTMLButtonElement>('button[aria-label="Team"]')!.click()
     await until(() => !!document.querySelector('[role="menu"][aria-label="Team"]'), "team menu")
@@ -208,7 +213,7 @@ async function captureScreenshots(window: BrowserWindow, context: BackendClients
   await mkdir(directory, { recursive: true })
   for (const [width, height] of [[1100, 740], [800, 600]] as const) {
     window.setContentSize(width, height)
-    for (const view of ["session", "workspace", "team-menu", "account-menu", "settings-team", "create-team", "invite", "add-machine"] as const) {
+    for (const view of ["session", "workspace-edit", "team-menu", "account-menu", "settings-team", "create-team", "invite", "add-machine"] as const) {
       await window.webContents.executeJavaScript(`(${prepareCapture.toString()})(${JSON.stringify(context)},${JSON.stringify(view)})`)
       const image = await window.webContents.capturePage()
       if (image.isEmpty()) throw new Error(`Empty screenshot for ${context.mode} ${view}`)

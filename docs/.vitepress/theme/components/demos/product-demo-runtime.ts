@@ -37,7 +37,6 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     { path: "/schedules", name: "schedules", component: () => import("@deskfleet/components/views/ScheduledTasksView.vue"), meta: { hideDetails: true } },
     { path: "/sessions/archived", name: "archived-sessions", component: () => import("@deskfleet/components/views/ArchivedSessionsView.vue"), meta: { hideDetails: true } },
     { path: "/sessions/:sessionId", name: "session", component: () => import("@deskfleet/components/views/SessionView.vue"), props: true },
-    { path: "/workspaces/:workspaceId", name: "workspace", component: () => import("@deskfleet/components/views/WorkspaceView.vue"), props: true },
     { path: "/worktrees/:worktreeId", name: "worktree", component: () => import("@deskfleet/components/views/WorktreeView.vue"), props: true },
     { path: "/machines/:machineId/control", name: "machine-control", component: () => import("@deskfleet/components/views/RemoteControlView.vue"), props: true },
     { path: "/machines/:machineId/desktop", name: "machine-desktop", redirect: to => ({ name: "machine-control", params: { machineId: to.params.machineId }, query: { tab: "desktop" } }) },
