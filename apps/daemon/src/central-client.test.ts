@@ -153,7 +153,7 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
         history: async () => [{ sessionId: "session", seq: "1" }],
       },
     },
-    catalog: { native: { snapshot: async () => ({}) }, onChange: (listener: () => void) => { catalogChanged = listener; return () => {} } },
+    catalog: { snapshot: async () => ({}), onChange: (listener: () => void) => { catalogChanged = listener; return () => {} } },
     providers: { metadata: () => ({}), onChanged: (listener: () => void) => { providersChanged = listener; return () => {} } },
     terminals: { onChange: (listener: () => void) => { terminalsChanged = listener; return () => {} } },
     handle: async () => [],
@@ -207,7 +207,7 @@ test("final synchronization has a shared deadline when the backend stops respond
   const unsubscribe = () => () => {}
   const operations = {
     agents: { reconcileAdmissions: async () => {}, journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
-    catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
+    catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe },
     terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
@@ -237,7 +237,7 @@ test("explicit credential rejection persists logout without treating transport l
   const unsubscribe = () => () => {}
   const operations = {
     agents: { reconcileAdmissions: async () => {}, journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
-    catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
+    catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
   const central = new CentralClient(directory, operations, {} as ControlPeers)
@@ -322,7 +322,7 @@ test("network drop mid-hello reconnects with the same machine credentials instea
   const unsubscribe = () => () => {}
   const operations = {
     agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
-    catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
+    catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
   const central = new CentralClient(directory, operations, {} as ControlPeers)
@@ -355,7 +355,7 @@ test("credential rejection close still persists local revocation", { timeout: 5_
   const unsubscribe = () => () => {}
   const operations = {
     agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
-    catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
+    catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
   const central = new CentralClient(directory, operations, {} as ControlPeers)
@@ -437,7 +437,7 @@ test("real Node WebSocket closes malformed control traffic without unhandled fai
   const unsubscribe = () => () => {}
   const operations = {
     agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
-    catalog: { native: { snapshot: async () => ({}) }, onChange: unsubscribe },
+    catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
   const central = new CentralClient(directory, operations, {} as ControlPeers)

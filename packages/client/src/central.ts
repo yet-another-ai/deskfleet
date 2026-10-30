@@ -10,6 +10,8 @@ import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization,
 
 export type AccountUser = Omit<User, "email"> & { email?: User["email"] }
 export interface GithubAppSettings { configured: boolean; manageUrl: string | null; authorized: boolean; login: string | null; actAsYou: boolean }
+export interface GithubPullRequestQuery { owner: string; repo: string; branch: string; headOwner?: string }
+export interface GithubPullRequest { number: number; title: string; url: string; state: "draft" | "open" | "merged" | "closed" }
 export interface AccountState { serverUrl: string; user?: AccountUser; siteAdmin: boolean }
 export type { SiteSettings } from "../../../crates/protocol/control.ts"
 export type TeamRole = "owner" | "admin" | "member"
@@ -62,6 +64,7 @@ export interface CentralApi {
   manageGithub(): Promise<void>
   authorizeGithubApp(): Promise<void>
   setGithubActAsYou(enabled: boolean): Promise<GithubAppSettings>
+  githubPullRequest(query: GithubPullRequestQuery): Promise<{ pullRequest: GithubPullRequest | null }>
   billing(teamId: string): Promise<TeamBilling>
   checkout(teamId: string, plan: "go" | "pro", requestId: string, interval?: BillingInterval): Promise<void>
   billingPortal(teamId: string): Promise<void>

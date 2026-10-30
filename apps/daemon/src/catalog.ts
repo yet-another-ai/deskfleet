@@ -2,8 +2,9 @@ import { stat } from "node:fs/promises"
 import { homedir, hostname } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { openCatalog, type NativeCatalog } from "@deskfleet/native"
-import type { AgentSessionContext } from "./agent-protocol.ts"
-import type { CatalogDirectory, CatalogEvent, CatalogMethods, CatalogRequest } from "./catalog-protocol.ts"
+import type { AgentSessionContext, AgentSessionRecord } from "./agent-protocol.ts"
+import type { CatalogDirectory, CatalogEvent, CatalogMethods, CatalogRequest, CatalogSnapshot } from "./catalog-protocol.ts"
+import { GitHubBranches } from "./github-branches.ts"
 import { SessionAttachments } from "./session-attachments.ts"
 import { ManagedSessionWorktrees } from "./session-worktrees.ts"
 import { readWorktreeRoot } from "./worktree-settings.ts"
@@ -15,6 +16,7 @@ export class DaemonCatalog {
   readonly #hostDirectory: string
   readonly #listeners = new Set<(event: CatalogEvent) => void>()
   readonly #releasing = new Set<(worktreeId: string) => Promise<void>>()
+  readonly #github = new GitHubBranches(() => this.changed())
   #catalog: NativeCatalog | undefined
   #sessions: ManagedSessionWorktrees | undefined
 
@@ -54,6 +56,13 @@ export class DaemonCatalog {
   get native(): NativeCatalog {
     if (!this.#catalog) throw new Error("Local catalog is not available")
     return this.#catalog
+  }
+
+  async snapshot(): Promise<CatalogSnapshot> {
+    const [snapshot, records] = await Promise.all([this.native.snapshot(), this.native.agentList()])
+    const inactive = new Set((JSON.parse(records) as AgentSessionRecord[])
+      .filter(session => session.archiveState !== "active" || session.lifecycle !== "ready").map(session => session.id))
+    return { ...snapshot, githubBranches: await this.#github.snapshot(snapshot, inactive) }
   }
 
   async provisionSession(id: string, workspaceId: string | undefined, context: AgentSessionContext, baseBranch?: string): Promise<void> {
@@ -97,7 +106,7 @@ export class DaemonCatalog {
     let result: CatalogMethods[keyof CatalogMethods]["result"]
     switch (request.method) {
       case "catalogList":
-        return catalog.snapshot()
+        return this.snapshot()
       case "workspaceCreate":
         await checkDirectories(request.params.directories)
         result = await catalog.createWorkspace(request.params.name, request.params.directories)
@@ -127,6 +136,7 @@ export class DaemonCatalog {
   }
 
   async close(): Promise<void> {
+    this.#github.close()
     const catalog = this.#catalog
     this.#catalog = undefined
     this.#sessions = undefined

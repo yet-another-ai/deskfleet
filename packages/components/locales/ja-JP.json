@@ -1,4 +1,11 @@
 {
+  "pullRequest": {
+    "indicator": "PR #{number} · {state} · {title}",
+    "draft": "下書き",
+    "open": "オープン",
+    "merged": "マージ済み",
+    "closed": "クローズ済み"
+  },
   "aboutSettings": {
     "title": "このアプリについて",
     "description": "チームの AI エージェントとワークスペースをひとつに。",
@@ -208,7 +215,7 @@
     "manageDescription": "GitHub App がアクセスできるアカウントとリポジトリを管理します。",
     "manage": "Manage GitHub",
     "actAsYou": "Act as you",
-    "actAsYouDescription": "今後のプルリクエスト操作に備えて、あなたの GitHub ID の使用を認可します。オフにしても認可は保持されます。",
+    "actAsYouDescription": "あなたの GitHub ID でプルリクエストの状態を読み取ります。オフにしても認可は保持されます。",
     "authorize": "Authorize",
     "reauthorize": "再認可",
     "authorizedAs": "{login} として認可済み",

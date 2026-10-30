@@ -623,6 +623,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     logout: async () => {},
     openAccountSettings: async () => {},
     githubSettings: async () => ({ configured: false, manageUrl: null, authorized: false, login: null, actAsYou: false }),
+    githubPullRequest: async () => ({ pullRequest: null }),
     manageGithub: async () => {},
     authorizeGithubApp: async () => {},
     setGithubActAsYou: async actAsYou => ({ configured: true, manageUrl: "https://github.com/apps/deskfleet/installations/new", authorized: true, login: "octocat", actAsYou }),

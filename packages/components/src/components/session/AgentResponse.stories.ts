@@ -72,6 +72,7 @@ const meta = {
   args: {
     response: completedResponse,
     disabled: false,
+    canFork: true,
   },
 } satisfies Meta<typeof AgentResponse>
 

@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { useAsyncState, useEventListener } from "@vueuse/core"
+import { useAsyncState, useEventBus, useEventListener } from "@vueuse/core"
 import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { GithubAppSettings } from "@deskfleet/client/central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { githubSettingsChanged } from "../../services/github-settings-events.ts"
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
 import SettingsRow from "./SettingsRow.vue"
 
 const { t } = useI18n()
 const account = useAccountSession()
+const settingsBus = useEventBus(githubSettingsChanged)
 const pending = ref(false)
 const actionError = ref<string>()
 const waiting = ref(false)
@@ -32,7 +34,10 @@ function authorize(): void {
 }
 function setEnabled(enabled: boolean): void {
   if (!state.value?.authorized) return
-  void run(async () => { state.value = await account!.central.setGithubActAsYou(enabled) })
+  void run(async () => {
+    state.value = await account!.central.setGithubActAsYou(enabled)
+    settingsBus.emit({ central: account!.central, settings: state.value })
+  })
 }
 useEventListener(window, "focus", () => {
   if (account && !busy.value) void reload().then(value => { if (value?.authorized) waiting.value = false })

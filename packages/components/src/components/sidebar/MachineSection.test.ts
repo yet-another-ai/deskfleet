@@ -10,11 +10,14 @@ import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import { accountSessionKey, type AccountSession } from "../../composables/useAccountSession.ts"
+import type { GithubPullRequest } from "@deskfleet/client/central"
+import { usePullRequestsStore } from "../../stores/pull-requests.ts"
 import MachineSection from "./MachineSection.vue"
 
-async function setup(machine: Partial<MachineSummary> = {}, account?: AccountSession) {
+async function setup(machine: Partial<MachineSummary> = {}, account?: AccountSession, pullRequest?: GithubPullRequest) {
   const pinia = createPinia()
   setActivePinia(pinia)
+  if (pullRequest) vi.spyOn(usePullRequestsStore(), "forSession").mockReturnValue([pullRequest])
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -235,6 +238,25 @@ test.each(["machine", "workspace"])("%s session rows show unread results after w
   sessions[0]!.lastReadSeq = "9"
   await flushPromises()
   expect(wrapper.find("[data-session-unread]").exists()).toBe(false)
+  wrapper.unmount()
+})
+
+test.each(["machine", "workspace"])("%s session PR status stays beside unread and working indicators", async scope => {
+  const sessions = [{ id: "session", title: "Add feature", provider: "Codex", lastCompletedSeq: "6", lastReadSeq: "5" }]
+  const { wrapper } = await setup(scope === "machine" ? { sessions } : {
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions }],
+  }, undefined, { number: 78, title: "Add feature", url: "https://github.com/acme/app/pull/78", state: "open" })
+  const row = wrapper.get('a[href="/sessions/session"]')
+  expect(row.get("[data-pull-request]").attributes("title")).toBe("PR #78 · Open · Add feature")
+  expect(row.find("[data-session-unread]").exists()).toBe(true)
+  const live = agentSnapshot()
+  live.turns = [{ id: "70", sessionId: "session", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
+  useAgentSessionsStore().views["session"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+  await flushPromises()
+  expect(row.find("[data-session-working]").exists()).toBe(true)
+  expect(row.find("[data-session-unread]").exists()).toBe(false)
+  expect(row.find("[data-pull-request]").exists()).toBe(true)
+  expect(row.find("button, a").exists()).toBe(false)
   wrapper.unmount()
 })
 

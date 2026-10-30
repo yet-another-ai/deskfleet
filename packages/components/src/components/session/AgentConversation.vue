@@ -10,7 +10,8 @@ import type { FileTarget } from "../../../../client/src/files.ts"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
 
 const client = usePlatformClient()
-const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; disabled?: boolean; resourceTarget?: FileTarget }>()
+const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; disabled?: boolean; resourceTarget?: FileTarget; canFork?: boolean; forkDisabled?: boolean }>()
+const emit = defineEmits<{ fork: [] }>()
 const resourceActive = ref(true)
 watch([() => props.snapshot.session.id, () => JSON.stringify(props.resourceTarget)], () => { resourceActive.value = true })
 const unsubscribe = client.central?.onEvent(event => { if (event.type === "accountChanged") resourceActive.value = false })
@@ -29,7 +30,7 @@ defineExpose({ items })
   <ol class="flex flex-col gap-6 text-[15px] leading-[1.65]" :aria-label="t('agent.conversation')">
     <li v-for="entry in transcript" :key="entry.id" ref="items" class="scroll-mt-6" :data-conversation-entry="entry.kind === 'input' ? entry.id : undefined">
       <AgentUserMessage v-if="entry.kind === 'input'" :input="entry.input" />
-      <AgentResponse v-else :response="entry" :disabled="disabled" />
+      <AgentResponse v-else :response="entry" :disabled="disabled" :can-fork="canFork && entry === transcript.at(-1)" :fork-disabled="forkDisabled" @fork="emit('fork')" />
     </li>
   </ol>
 </template>

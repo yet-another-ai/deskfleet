@@ -135,8 +135,10 @@ GitHub App integration is separate from login: central PostgreSQL stores each
 user's App authorization and their opt-in to act as that GitHub user. App grants
 belong to the account, not to a Team or Machine, and do not grant DeskFleet
 resource access. The server retains App credentials and user tokens; clients
-receive only connection status and settings. The initial integration provides
-installation management and user authorization, with no PR operations yet.
+receive only connection settings and PR summaries. With Act as you enabled, the
+server reads branch PR status using the user's App grant, refreshing expired
+access tokens under a database lock before use. Installation management and user
+authorization remain separate from login; no PR writes are performed.
 [Identity and billing requirements](identity-billing.md) define the accepted
 plan model, account flows, and enforcement boundaries. Web sessions use HttpOnly
 cookies; Electron exchanges a browser authorization for a secure main-process
@@ -857,9 +859,19 @@ observed within their captured roots; creating a repository above such a root
 requires reopening the panel to discover the enclosing checkout. These
 observers track changes to explicit `core.excludesFile` paths; changes to Git's
 implicit global ignore file also require reopening. Notifications require
-`git:read` and are not Agent journal events. Git results remain transient;
-Session provisioning still owns creation
-and deletion of managed worktrees.
+`git:read` and are not Agent journal events. File status and diff results remain
+transient; Session provisioning still owns creation and deletion of managed
+worktrees.
+
+The daemon separately projects active Sessions' GitHub repository and branch
+identities into its synchronized catalog for sidebar PR indicators. This compact
+projection contains canonical repository names and branch names, never remote
+credentials or GitHub tokens. Shared metadata observers watch checkout HEAD and
+Git configuration changes without scanning working files or polling Git. Fork
+remotes retain both the target repository and the branch's head repository;
+detached checkouts have no branch locator. The central catalog retains this last
+observed projection so another machine's sidebar can resolve PR status without
+opening its Changes panel.
 
 The machine's Remote control page groups Terminal, Desktop, File transfer, and
 System status. The current Electron client's own daemon is identified by its

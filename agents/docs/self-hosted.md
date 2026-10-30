@@ -274,7 +274,8 @@ for login. Configure all three `DESKFLEET_GITHUB_APP_*` variables and register
 `<DESKFLEET_PUBLIC_URL>/api/integrations/github/callback` as the App's user
 authorization callback. The slug is the name in `https://github.com/apps/<slug>`;
 the client ID is distinct from the numeric App ID. No private key is needed for
-this settings-only stage.
+the user-token integration. Grant the App **Pull requests: Read-only** repository
+permission and install it on the repositories whose PR status should be shown.
 
 Manage GitHub opens the App's installation page, where users choose their account
 or organization and repository access. Authorize opens a browser confirmation
@@ -286,17 +287,23 @@ session. The original browser session must remain active through the callback.
 Act as you is off after authorization and must be enabled explicitly. Turning it
 off retains the authorization and does not uninstall the App or revoke the grant
 on GitHub. Settings report authorization while an access token or refresh token
-is usable; an expired grant requires reauthorization. No PR requests or token
-refresh requests run in this initial version. Future PR operations must check the
-switch and refresh an expired access token before using it. App permissions and
-the user's repository permissions both bound user-token access.
+is usable; an expired grant requires reauthorization. When enabled, the sidebar
+reads the current branch's PR status using this authorization. The server refreshes
+expired access tokens when needed and retains the rotated credentials. Turning the
+switch off stops these reads. App permissions and the user's repository permissions
+both bound user-token access. No PR write operations are performed.
 
 Access tokens, refresh tokens and their expiration times are retained in central
 PostgreSQL, keyed to the configured App client ID. Tokens never enter the renderer,
 daemon, settings response, or logs. The database and its backups are inside this
 secret-storage trust boundary. Changing the configured client ID requires fresh
-authorization. Configure repository permissions in GitHub when adding the future
-PR operations; this version does not request broad OAuth scopes or read/write PRs.
+authorization. This integration does not request broad OAuth scopes.
+
+Session rows show Draft, Open, Merged, or Closed beside their activity indicator.
+They match GitHub remotes and the checked-out branch, including fork branches;
+detached HEADs and branches without a matching PR have no PR indicator. Status
+refreshes while the application is visible and when it regains focus. Archived
+generated checkouts no longer provide live branch information.
 
 ### Login and mail delivery
 

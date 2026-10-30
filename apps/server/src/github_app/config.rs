@@ -9,6 +9,7 @@ pub struct GithubAppConfig {
     pub callback_url: String,
     pub token_url: String,
     pub user_url: String,
+    pub api_url: String,
 }
 
 impl GithubAppConfig {
@@ -57,6 +58,7 @@ impl GithubAppConfig {
             ),
             token_url: "https://github.com/login/oauth/access_token".into(),
             user_url: "https://api.github.com/user".into(),
+            api_url: "https://api.github.com".into(),
         }))
     }
 

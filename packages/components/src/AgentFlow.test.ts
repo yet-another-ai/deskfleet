@@ -563,6 +563,43 @@ test("the selected model, effort and native mode reach a newly created Session t
   window.localStorage.removeItem("deskfleet.agent-configuration")
 })
 
+test("the latest Agent response opens the fork dialog and navigates to the independent conversation", async () => {
+  snapshot.session.capabilities = { steering: true, resume: true, fork: true }
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  emit("input", agentInput({ state: "delivered", turnId: "70", actualDelivery: "turn_start" }))
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "The feature is ready" } } })
+  emit("turn", { id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "completed", startedAt: "now", endedAt: "now" })
+  await flushPromises()
+  const conversation = wrapper.get('[aria-label="Conversation"]')
+  expect(conversation.findAll('[aria-label="Fork session"]')).toHaveLength(1)
+  await conversation.get('[aria-label="Fork session"]').trigger("click")
+  await flushPromises()
+  const dialog = page().get('[role="dialog"]')
+  await dialog.get('[role="radio"][value="directory"]').trigger("click")
+  const forked = agentSnapshot()
+  forked.session = { ...snapshot.session, id: "32", context: "directory", title: "Fork from the response", lastEventSeq: "0" }
+  const forkResponse = deferred<AgentSnapshot>()
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method: string, params: Record<string, unknown>) => {
+    if (method === "_deskfleet/session/fork") return forkResponse.promise
+    if (method === "_deskfleet/session/subscribe" && params.sessionId === "32") return structuredClone(forked)
+    if (method === "_deskfleet/session/history" && params.sessionId === "32") return []
+    return normal(method, params)
+  })
+  await dialog.get(".ui-button-primary").trigger("click")
+  await flushPromises()
+  expect(transport.call).toHaveBeenCalledWith("_deskfleet/session/fork", { sessionId: "30", context: "directory", operationId: expect.any(String) })
+  expect(conversation.get('[aria-label="Fork session"]').attributes("aria-disabled")).toBe("true")
+  expect(router.currentRoute.value.params.sessionId).toBe("30")
+  forkResponse.resolve(structuredClone(forked))
+  await flushPromises()
+  expect(router.currentRoute.value.params.sessionId).toBe("32")
+  expect(wrapper.get("main").text()).toContain("Fork from the response")
+  expect(wrapper.find('aside a[href="#/sessions/30"]').exists()).toBe(true)
+})
+
 test("a supported idle Session forks in the chosen workspace context and navigates to the independent conversation", async () => {
   await wrapper.get("textarea").setValue("Implement the feature")
   await wrapper.get('[aria-label="Send"]').trigger("click")
