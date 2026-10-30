@@ -24,6 +24,17 @@ Sessions can be archived and restored while preserving their data.
 The official server image includes the Web application and serves it alongside
 the API; independent Web hosting remains supported.
 
+## Install the desktop app
+
+On macOS with Apple Silicon, install DeskFleet from the official Homebrew tap:
+
+```sh
+brew install --cask yet-another-ai/tap/deskfleet
+```
+
+Packaged versions for macOS, Windows, and Linux are also available on
+[GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
+
 ## Rust workspace
 
 | Package | Location | Responsibility |
