@@ -78,7 +78,11 @@ Embedded demos keep their pins in memory so separate demonstrations stay indepen
 
 ### Forking a conversation
 
-The Session menu offers Fork when the provider advertises `session/fork`. Forking
+The Session menu and the latest Agent response footer offer Fork when the provider
+advertises `session/fork`. Historical responses offer Copy; forking always inherits
+the current conversation and does not truncate it at an earlier reply. Copy keeps
+the final answer's source text, including Markdown, without folded work or tool output.
+The footer actions appear on hover or keyboard focus, matching User messages. Forking
 requires an active, ready Session between turns, with no pending approvals or
 questions. Its dialog chooses either worktree or directory context; the new
 Session initially inherits the source title.

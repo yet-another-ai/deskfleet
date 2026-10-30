@@ -216,7 +216,7 @@ async function checkOperation(operationId: string): Promise<void> {
       <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
         <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
         <template v-else-if="snapshot">
-          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" />
+          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" @fork="forkOpen = true" />
           <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
         </template>
       </div>
