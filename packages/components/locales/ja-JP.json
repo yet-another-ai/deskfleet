@@ -448,6 +448,10 @@
     "expandText": "すべて表示", "collapseText": "折りたたむ",
     "contentType": "{type} のコンテンツ", "tool": "ツール呼び出し",
     "thinking": "思考中", "plan": "計画",
+    "activity": {
+      "tools": "{n} 件のツール呼び出し",
+      "thoughts": "{n} 件の思考"
+    },
     "steered": "実行中の指示を更新しました", "backlog": "キューに追加済み",
     "steer": "今すぐ指示を追加", "withdraw": "取り消す",
     "retryInput": "送信を再試行", "uncertainInput": "送信を確認できませんでした。再送信する前に会話を確認してください。",

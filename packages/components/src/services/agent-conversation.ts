@@ -25,6 +25,33 @@ type ToolEntry = { id: string; kind: "tool"; tool: ConversationTool; permission?
 type PlanEntry = { id: string; kind: "plan"; entries: { content: string; status: string }[]; turnId?: string }
 type ElicitationEntry = { id: string; kind: "elicitation"; elicitation: AgentElicitation; turnId?: string }
 export type ConversationStep = MessageEntry | ToolEntry | PlanEntry | ElicitationEntry
+export type ConversationActivityStep = ToolEntry | (MessageEntry & { role: "thought" })
+export interface ConversationActivity {
+  id: string
+  kind: "activity"
+  steps: ConversationActivityStep[]
+}
+
+/** Fold adjacent tool calls and thoughts without hiding messages or interactive steps. */
+export function groupResponseActivity(steps: ConversationStep[]): (ConversationStep | ConversationActivity)[] {
+  const groups: (ConversationStep | ConversationActivity)[] = []
+  let activity: ConversationActivity | undefined
+  for (const step of steps) {
+    if (step.kind === "tool" || (step.kind === "message" && step.role === "thought")) {
+      if (!activity) {
+        activity = { id: step.id, kind: "activity", steps: [] }
+        groups.push(activity)
+      }
+      activity.steps.push(step as ConversationActivityStep)
+    } else {
+      activity = undefined
+      groups.push(step)
+    }
+  }
+  // A single tool or thought already has its own disclosure.
+  return groups.map(group => group.kind === "activity" && group.steps.length === 1 ? group.steps[0]! : group)
+}
+
 export type ConversationEntry =
   | { id: string; kind: "input"; input: AgentInput }
   | ConversationStep

@@ -731,6 +731,10 @@
     "contentType": "{type} 内容",
     "tool": "工具调用",
     "thinking": "思考",
+    "activity": {
+      "tools": "{n} 次工具调用",
+      "thoughts": "{n} 段思考"
+    },
     "plan": "计划",
     "steered": "已引导当前轮次",
     "backlog": "排队中",

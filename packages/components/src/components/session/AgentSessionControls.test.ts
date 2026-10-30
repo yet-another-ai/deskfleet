@@ -99,6 +99,8 @@ test("a finished turn folds its work behind a duration and keeps the final answe
   expect(view.text()).not.toContain("Turn completed")
   await button(view, "Worked for 3m 22s").trigger("click")
   expect(view.text()).toContain("Looking around")
+  expect(view.text()).not.toContain("pnpm test")
+  await view.get("[data-activity-trigger]").trigger("click")
   expect(view.text()).toContain("pnpm test")
 })
 
