@@ -1,4 +1,15 @@
 {
+  "aboutSettings": {
+    "title": "关于",
+    "description": "连接团队的 AI 智能体与工作空间。",
+    "versionAndUpdates": "版本与更新",
+    "feedback": "问题反馈",
+    "feedbackDescription": "发现问题或有新的建议？欢迎通过 GitHub Issues 告诉我们。",
+    "openIssues": "打开 Issues 页面",
+    "openSource": "引用的开源软件",
+    "openSourceDescription": "DeskFleet 基于开源软件构建，以下是其中的一些主要项目。",
+    "thanks": "感谢所有开源贡献者，你们的付出让 DeskFleet 成为可能。"
+  },
   "permissionsSettings": {
     "title": "权限配置",
     "description": "查看 DeskFleet 在本机所需的权限，随时调整配置并重新检查状态。",

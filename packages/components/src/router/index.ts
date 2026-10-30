@@ -108,9 +108,9 @@ export const router = createRouter({
           component: () => import("../components/settings/PermissionsSettings.vue"),
         },
         {
-          path: "updates",
-          name: "settings-updates",
-          component: () => import("../components/settings/UpdatesSettings.vue"),
+          path: "about",
+          name: "settings-about",
+          component: () => import("../components/settings/AboutSettings.vue"),
         },
         {
           path: "agents",

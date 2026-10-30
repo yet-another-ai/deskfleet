@@ -327,7 +327,7 @@ test("notifications have a dedicated settings section and retain the return dest
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
 })
 
-test("completed desktop setup exposes permission and update pages and retains the return destination", async () => {
+test("completed desktop setup exposes permissions and About and retains the return destination", async () => {
   const check = vi.fn(async () => ({ status: "idle" as const, currentVersion: "0.2.0" }))
   const permissions = vi.fn(async () => ({ localNetwork: "not-requested" as const, fullDiskAccessPermission: { status: "granted" as const }, screenCapturePermission: { status: "denied" as const }, accessibilityPermission: { status: "granted" as const } }))
   const requestPermission = vi.fn(async () => ({}))
@@ -350,10 +350,10 @@ test("completed desktop setup exposes permission and update pages and retains th
   expect(view.findAll("[data-permission]")).toHaveLength(4)
   expect(permissions).toHaveBeenCalledOnce()
   expect(requestPermission).not.toHaveBeenCalled()
-  await view.get('main nav a[href="#/settings/updates"]').trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-updates"))
+  await view.get('main nav a[href="#/settings/about"]').trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-about"))
   await flushPromises()
-  expect(view.get("main h1").text()).toBe("Updates")
+  expect(view.get("main h1").text()).toBe("About")
   expect(view.text()).toContain("0.2.0")
   expect(check).not.toHaveBeenCalled()
   await button(view, "Check for updates").trigger("click")
@@ -364,11 +364,18 @@ test("completed desktop setup exposes permission and update pages and retains th
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("workspace"))
 })
 
-test("Web settings hide desktop update and system permission sections", async () => {
-  configureClient({ ...host, platform: "web" })
+test("Web settings expose About without desktop update controls or system permissions", async () => {
+  configureClient({ ...host, platform: "web", updates: undefined })
   const view = await mountApp("/settings/preferences")
   expect(view.find('main nav a[href="#/settings/permissions"]').exists()).toBe(false)
-  expect(view.find('main nav a[href="#/settings/updates"]').exists()).toBe(false)
+  await view.get('main nav a[href="#/settings/about"]').trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-about"))
+  await flushPromises()
+  expect(view.get("main h1").text()).toBe("About")
+  expect(view.get('a[href="https://github.com/yet-another-ai/deskfleet/issues"]').attributes("target")).toBe("_blank")
+  expect(view.text()).toContain("VueUse")
+  expect(view.text()).toContain("Thank you to all open-source contributors.")
+  expect(view.findAll("button").some(item => item.text() === "Check for updates")).toBe(false)
 })
 
 test("returning focus to the window refreshes the local machine", async () => {

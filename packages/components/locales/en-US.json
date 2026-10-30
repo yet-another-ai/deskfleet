@@ -1,4 +1,15 @@
 {
+  "aboutSettings": {
+    "title": "About",
+    "description": "Your team's AI agents and workspaces, together.",
+    "versionAndUpdates": "Version and updates",
+    "feedback": "Feedback",
+    "feedbackDescription": "Found a bug or have an idea? Share it with us on GitHub Issues.",
+    "openIssues": "Open issues page",
+    "openSource": "Open-source software",
+    "openSourceDescription": "DeskFleet is built with open-source software. Here are some of the projects that make it possible.",
+    "thanks": "Thank you to all open-source contributors. Your work makes DeskFleet possible."
+  },
   "permissionsSettings": {
     "title": "Permissions",
     "description": "Review the access DeskFleet needs on this computer. You can change permissions and check their status here at any time.",

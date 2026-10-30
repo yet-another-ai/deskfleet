@@ -1,4 +1,15 @@
 {
+  "aboutSettings": {
+    "title": "このアプリについて",
+    "description": "チームの AI エージェントとワークスペースをひとつに。",
+    "versionAndUpdates": "バージョンと更新",
+    "feedback": "フィードバック",
+    "feedbackDescription": "不具合やご提案は GitHub Issues でお知らせください。",
+    "openIssues": "Issues ページを開く",
+    "openSource": "オープンソースソフトウェア",
+    "openSourceDescription": "DeskFleet はオープンソースソフトウェアを利用しています。その主なプロジェクトをご紹介します。",
+    "thanks": "すべてのオープンソース貢献者の皆さまに感謝します。皆さまの活動が DeskFleet を支えています。"
+  },
   "permissionsSettings": {
     "title": "権限",
     "description": "このコンピューターで DeskFleet に必要な権限を確認します。いつでも権限を変更し、状態を再確認できます。",

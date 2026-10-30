@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bell, Bot, Download, Palette, Plug, ShieldCheck, SlidersHorizontal } from "@lucide/vue"
+import { Bell, Bot, Info, Palette, Plug, ShieldCheck, SlidersHorizontal } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRouter } from "vue-router"
 import SettingsLayout from "../components/settings/SettingsLayout.vue"
@@ -29,7 +29,7 @@ function leave(): void {
       <SidebarLink v-if="client.platform !== 'web' && client.onboarding" :to="{ name: 'settings-permissions' }" :icon="ShieldCheck" :label="t('permissionsSettings.title')" replace />
       <SidebarLink v-if="!account || account.machine.value" :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
       <SidebarLink v-if="!account || account.machine.value" :to="{ name: 'settings-mcp-servers' }" :icon="Plug" :label="t('mcpServers.title')" replace />
-      <SidebarLink v-if="client.platform !== 'web' && client.updates" :to="{ name: 'settings-updates' }" :icon="Download" :label="t('updatesSettings.title')" replace />
+      <SidebarLink :to="{ name: 'settings-about' }" :icon="Info" :label="t('aboutSettings.title')" replace />
     </template>
     <RouterView />
   </SettingsLayout>
