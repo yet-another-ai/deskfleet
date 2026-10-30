@@ -154,6 +154,8 @@ and checkout cleanup succeeds.
 Cleanup failures remain retryable. There is no queued offline archive or
 background cleanup of previously archived checkouts in this release; an explicit
 archive request can reclaim a previously archived Session's retained checkouts.
+That request keeps the Session archived throughout cleanup and retries any pending
+quota release; it does not reopen admission or restart resource closure.
 
 Restore recreates generated checkouts at the same paths and saved committed HEADs,
 then returns the same Session to active use without starting the provider,
@@ -456,6 +458,9 @@ Session `deleting`, stops admission, closes the provider and pending permissions
 removes any owned checkouts, retained Git refs, ownership manifests, and Session
 attachments, and removes Session records. Incomplete cleanup retains
 the deleting resource for an explicit retry. Source checkouts are untouched.
+If the recorded source repository no longer exists, deletion still removes owned
+paths and local records, skipping Git metadata cleanup at that missing location.
+Other repository access failures remain retryable errors.
 
 The composer accepts text alongside image (`image`), folded pasted-text (`resource`
 with inline `text`), and file (`resource_link`) attachments. Each submission must

@@ -162,6 +162,64 @@ test("archive discards working files, retains commits across Git GC, and restore
   assert.equal(state.sessions.size, 0)
 })
 
+test("deleting an archived Session cleans owned files after its source repository is moved or deleted", async context => {
+  for (const action of ["move", "delete"] as const) {
+    await context.test(action, async t => {
+      const directory = await fixture(t)
+      const source = join(directory, "source")
+      const machine = join(directory, "daemon")
+      await repository(source)
+      const state = catalogFixture([{ path: source }])
+      const managed = new ManagedSessionWorktrees(state.catalog, machine)
+      const session = await managed.create("1")
+      const checkout = session.worktree.directories[0]!.path
+      await managed.archive(session.id)
+      await mkdir(checkout)
+      await writeFile(join(checkout, "leftover.txt"), "owned cleanup residue\n")
+      const moved = join(directory, "moved-source")
+      if (action === "move") await rename(source, moved)
+      else await rm(source, { recursive: true, force: true })
+
+      await new ManagedSessionWorktrees(state.catalog, machine).destroy(session.id)
+      await assert.rejects(access(checkout), { code: "ENOENT" })
+      await assert.rejects(access(join(machine, "session-worktrees", session.id)), { code: "ENOENT" })
+      assert.equal(state.sessions.size, 0)
+      assert.equal(state.worktrees.size, 0)
+      if (action === "move") assert.equal(await readFile(join(moved, "backend", "source.txt"), "utf8"), "original backend\n")
+    })
+  }
+})
+
+test("deleting an archived Session preserves retry state when an existing repository rejects Git access", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const machine = join(directory, "daemon")
+  await repository(source)
+  const state = catalogFixture([{ path: source }])
+  const managed = new ManagedSessionWorktrees(state.catalog, machine)
+  const session = await managed.create("1")
+  await managed.archive(session.id)
+  const checkout = session.worktree.directories[0]!.path
+  await mkdir(checkout)
+  await writeFile(join(checkout, "leftover.txt"), "retain until Git cleanup succeeds\n")
+  const path = join(machine, "session-worktrees", session.id, "manifest.json")
+  const original = await readFile(path, "utf8")
+  const repositoryPath = join(source, ".git")
+  const unavailable = join(source, "unavailable-git")
+  await rename(repositoryPath, unavailable)
+  await mkdir(repositoryPath)
+  await assert.rejects(managed.destroy(session.id), /not a git repository/u)
+  assert.equal(await readFile(path, "utf8"), original)
+  assert.equal(await readFile(join(checkout, "leftover.txt"), "utf8"), "retain until Git cleanup succeeds\n")
+  assert.equal(state.sessions.size, 1)
+
+  await rm(repositoryPath, { recursive: true, force: true })
+  await rename(unavailable, repositoryPath)
+  await managed.destroy(session.id)
+  assert.equal(state.sessions.size, 0)
+  assert.equal(await git(source, "for-each-ref", "refs/deskfleet/sessions"), "")
+})
+
 test("archive preflight captures legacy checkout revisions and preserves final commits or a missing-checkout fallback", async context => {
   const directory = await fixture(context)
   const source = join(directory, "source")

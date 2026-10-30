@@ -315,8 +315,16 @@ export class ManagedSessionWorktrees {
     // Remove from the end, preserving positional ownership names on retries.
     while (manifest.worktrees.length) {
       const worktree = manifest.worktrees[manifest.worktrees.length - 1]!
-      await this.#removeCheckout(worktree, await this.#registered(worktree))
-      if (worktree.reference) await git(["--git-dir", worktree.repository, "update-ref", "-d", worktree.reference])
+      let repositoryExists = true
+      try { await stat(worktree.repository) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+        // An archived checkout no longer registers with Git, so its source may
+        // have been moved or deleted before the retained Session is deleted.
+        repositoryExists = false
+      }
+      await this.#removeCheckout(worktree, repositoryExists && await this.#registered(worktree))
+      if (repositoryExists && worktree.reference) await git(["--git-dir", worktree.repository, "update-ref", "-d", worktree.reference])
       manifest.worktrees.pop()
       await this.#save(manifest)
     }

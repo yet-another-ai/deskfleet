@@ -473,6 +473,38 @@ test("archive removes generated files but retains history, and restore recreates
   assert.deepEqual(f.provider.resumes, ["provider-conversation"])
 })
 
+test("reclaiming legacy archived checkouts preserves archived state and does not close resources again", async t => {
+  const f = await setup(t)
+  const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+  await writeFile(join(cwd, "untracked.txt"), "old archived checkout\n")
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  // Archives created before reclamation closed resources but retained files.
+  await f.service.journal.serial(f.sessionId, async () => {
+    const snapshot = await f.read()
+    const session = { ...snapshot.session, archiveState: "archived" as const }
+    await f.service.journal.commit(snapshot, { session, events: [f.service.journal.event(f.sessionId, "session", session)] })
+  })
+  const before = (await f.read()).session
+  const closes = f.provider.closeCount
+  f.service.onSessionArchive(async () => { assert.fail("Archived resources must already be closed") })
+  const cleanup = f.catalog.archiveSessionWorktree.bind(f.catalog)
+  f.catalog.archiveSessionWorktree = async id => {
+    assert.equal((await f.read()).session.archiveState, "archived")
+    await cleanup(id)
+  }
+  const result = await f.service.handle("_deskfleet/session/archive", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor) as AgentSnapshot
+  assert.deepEqual(result.session, { ...before, lastEventSeq: result.session.lastEventSeq })
+  assert.equal(f.provider.closeCount, closes)
+  await assert.rejects(readdir(cwd), { code: "ENOENT" })
+  const events = await f.service.journal.history(f.sessionId, before.lastEventSeq, 20)
+  assert.ok(events.every(event => event.kind === "command"))
+  await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+  await assert.rejects(readFile(join(cwd, "untracked.txt")), { code: "ENOENT" })
+})
+
 test("archive rejects an unrecoverable legacy checkout before changing Session state", async t => {
   for (const archiveState of ["active", "archived"] as const) {
     await t.test(archiveState, async t => {
