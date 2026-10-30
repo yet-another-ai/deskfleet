@@ -23,9 +23,11 @@ import AgentSessionMenu from "../components/session/AgentSessionMenu.vue"
 import RenameSessionDialog from "../components/session/RenameSessionDialog.vue"
 import ForkSessionDialog from "../components/session/ForkSessionDialog.vue"
 import MermaidViewer from "../components/session/MermaidViewer.vue"
+import PreviewViewer from "../components/session/PreviewViewer.vue"
 import IconButton from "../components/common/IconButton.vue"
 import { useFleetStore } from "../stores/fleet.ts"
 import { pendingMermaidLocate, performMermaidLocateDom, useLayoutStore, type MermaidSource } from "../stores/layout.ts"
+import { focusedPreviewFromRoute, pendingPreviewLocate, performPreviewLocateDom } from "../stores/previews.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
@@ -57,6 +59,12 @@ const focusedMermaidSource = computed<MermaidSource>(() => ({
   ...(typeof route.query.mermaidEntry === "string" && route.query.mermaidEntry ? { entryId: route.query.mermaidEntry } : {}),
   ...(typeof route.query.mermaidDiagram === "string" && route.query.mermaidDiagram ? { diagramId: route.query.mermaidDiagram } : {}),
 }))
+const focusedPreview = computed(() => {
+  const preview = focusedPreviewFromRoute(route)
+  if (!preview) return undefined
+  return { ...preview, source: { sessionId: props.sessionId, ...preview.source } }
+})
+const pendingLocate = computed(() => pendingPreviewLocate.value ?? pendingMermaidLocate.value)
 const location = computed(() => fleet.findSession(props.sessionId))
 const resourceTarget = useFileTarget(() => location.value?.machine.id)
 const view = computed(() => agents.views[props.sessionId])
@@ -141,20 +149,21 @@ watchImmediate(() => props.sessionId, id => {
   renameOpen.value = false
   actionError.value = null
   activeEntry.value = undefined
-  followBottom.value = !pendingMermaidLocate.value || (!!pendingMermaidLocate.value.sessionId && pendingMermaidLocate.value.sessionId !== id)
+  followBottom.value = !pendingLocate.value || (!!pendingLocate.value.sessionId && pendingLocate.value.sessionId !== id)
   void agents.open(id)
 })
 useSessionRead(() => props.sessionId)
 watch(() => [view.value?.events.length, view.value?.loading], () => {
-  if (!view.value?.loading && followBottom.value && !pendingMermaidLocate.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
+  if (!view.value?.loading && followBottom.value && !pendingLocate.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
   if (followBottom.value || !activeEntry.value) updateOutline()
 }, { flush: "post" })
-watch([pendingMermaidLocate, () => view.value?.loading, () => view.value?.events.length, focusedMermaid], async ([target, loading, , focused]) => {
-  if (!target || loading || focused) return
+watch([pendingLocate, () => view.value?.loading, () => view.value?.events.length, focusedPreview, focusedMermaid], async ([target, loading, , preview, mermaid]) => {
+  if (!target || loading || preview || mermaid) return
   if (target.sessionId && target.sessionId !== props.sessionId) return
   followBottom.value = false
   await nextTick()
-  performMermaidLocateDom(target)
+  if ("content" in target) performPreviewLocateDom(target)
+  else performMermaidLocateDom(target)
 }, { flush: "post" })
 async function action(operation: () => Promise<unknown>): Promise<void> {
   if (busy.value) return
@@ -268,5 +277,11 @@ async function checkOperation(operationId: string): Promise<void> {
       <WindowToolbar />
     </div>
     <MermaidViewer :key="focusedMermaid" :code="focusedMermaid" :source="focusedMermaidSource" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
+  </div>
+  <div v-if="focusedPreview" data-preview-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">
+    <div v-if="!sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pl-20 pr-3">
+      <WindowToolbar />
+    </div>
+    <PreviewViewer :key="focusedPreview.content" v-bind="focusedPreview" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
   </div>
 </template>

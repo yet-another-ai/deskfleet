@@ -3,6 +3,7 @@ import type { InjectionKey } from "vue"
 
 export interface LoadedImage {
   url?: string
+  mimeType?: string
   error?: string
   refCount: number
 }

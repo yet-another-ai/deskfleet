@@ -1,17 +1,18 @@
 import { shell, type BrowserWindowConstructorOptions, type WebContents } from "electron"
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
 
-/** Whether `url` targets the standalone Mermaid viewer route on the main renderer. */
+/** Whether `url` targets a standalone preview route on the main renderer. */
 export function isAuxiliaryRendererUrl(url: string): boolean {
   if (!isMainRendererUrl(url)) return false
   try {
-    return new URL(url).hash.startsWith("#/mermaid")
+    const hash = new URL(url).hash
+    return hash.startsWith("#/mermaid") || hash.startsWith("#/preview")
   } catch {
     return false
   }
 }
 
-/** External links use the system browser; auxiliary Mermaid windows use a renderer window. */
+/** External links use the system browser; auxiliary previews use a renderer window. */
 export function attachExternalLinks(
   contents: WebContents,
   auxiliaryWindowOptions?: () => BrowserWindowConstructorOptions,

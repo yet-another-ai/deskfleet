@@ -8,6 +8,7 @@ import type { ConversationResponse, ConversationStep } from "../../services/agen
 import { groupResponseActivity, summarizeTools } from "../../services/agent-conversation.ts"
 import { elapsed, formatDuration } from "../../services/agent-format.ts"
 import { pendingMermaidLocate, type MermaidLocateRequest } from "../../stores/layout.ts"
+import { pendingPreviewLocate, type PreviewLocateRequest } from "../../stores/previews.ts"
 import AgentContent from "./AgentContent.vue"
 import AgentPlan from "./AgentPlan.vue"
 import AgentToolCall from "./AgentToolCall.vue"
@@ -47,15 +48,23 @@ const outcome = computed(() => props.response.last && props.response.turn && ["c
 const thoughts = reactive(new Set<string>())
 const toggleThought = (id: string) => thoughts.has(id) ? thoughts.delete(id) : thoughts.add(id)
 
-function stepMatchesLocate(step: ConversationStep, target: MermaidLocateRequest): boolean {
+type LocateRequest = PreviewLocateRequest | MermaidLocateRequest
+const pendingLocate = computed(() => pendingPreviewLocate.value ?? pendingMermaidLocate.value)
+
+function stepMatchesLocate(step: ConversationStep, target: LocateRequest): boolean {
   if (target.entryId) return step.id === target.entryId
+  const content = "content" in target ? target.content : target.code
   if (step.kind === "message") {
-    return step.content.some(block => block.type === "text" && block.text.includes(target.code))
+    return step.content.some(block =>
+      (block.type === "text" && block.text.includes(content))
+      || ((block.type === "image" || block.type === "audio") && `data:${block.mimeType};base64,${block.data}` === content)
+      || (block.type === "resource_link" && block.uri === content),
+    )
   }
   return false
 }
 
-watchImmediate([pendingMermaidLocate, steps], ([target, currentSteps]) => {
+watchImmediate([pendingLocate, steps], ([target, currentSteps]) => {
   if (!target) return
   for (const step of currentSteps) {
     if (!stepMatchesLocate(step, target)) continue

@@ -111,7 +111,7 @@ textarea {
 .ui-markdown-segment > :first-child { margin-top: 0; }
 .ui-markdown > :last-child,
 .ui-markdown-segment > :last-child { margin-bottom: 0; }
-.ui-markdown :is(p, ul, ol, pre, blockquote, table, .ui-math-block, .ui-code-block, .ui-mermaid, .ui-markdown-segment) { margin: 0 0 0.875em; }
+.ui-markdown :is(p, ul, ol, pre, blockquote, table, .ui-math-block, .ui-code-block, .ui-mermaid, .ui-preview, .ui-markdown-segment) { margin: 0 0 0.875em; }
 .ui-markdown :is(h1, h2, h3, h4, h5, h6) {
   margin: 1.25em 0 0.5em;
   font-size: 1em;
@@ -223,13 +223,13 @@ textarea {
   display: block;
   color: var(--ui-color-focus);
 }
-.ui-mermaid [data-mermaid-stage] > svg {
+:is(.ui-mermaid [data-mermaid-stage], .ui-preview [data-preview-stage]) svg {
   display: block;
   max-width: 100%;
   height: auto;
   margin: 0 auto;
 }
-[data-mermaid-located="true"] {
+:is([data-mermaid-located="true"], [data-preview-located="true"]) {
   outline: 2px solid var(--ui-color-focus);
   outline-offset: 2px;
 }

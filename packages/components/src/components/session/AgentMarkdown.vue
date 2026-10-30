@@ -5,6 +5,7 @@ import { MarkdownRender, setCustomComponents } from "markstream-vue"
 import { computed, inject, onBeforeUnmount, provide, reactive, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { agentResourceContextKey, isFileResource } from "../../services/agent-resources.ts"
+import { previewKindFromMime } from "../../services/preview.ts"
 import { markdownHostKey, type LoadedImage } from "./markdown/context.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
 import type { FileResourceRequest } from "../../../../client/src/files.ts"
@@ -58,9 +59,10 @@ function load(uri: string, refCount = 1): void {
   }
   void files.readResource({ ...current, uri }).then(result => {
     if (disposed || images.get(uri) !== value) return
-    if (!/^image\/(?:png|jpeg|gif|webp|avif|bmp|svg\+xml|vnd\.microsoft\.icon|x-icon)$/iu.test(result.mimeType)) {
+    if (previewKindFromMime(result.mimeType) !== "image") {
       throw new Error(t("files.notImage"))
     }
+    value.mimeType = result.mimeType
     value.url = URL.createObjectURL(new Blob([new Uint8Array(result.data)], { type: result.mimeType }))
   }).catch(reason => {
     if (images.get(uri) === value) value.error = reason instanceof Error ? reason.message : String(reason)

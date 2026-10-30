@@ -6,19 +6,28 @@ import UiCheckbox from "../common/UiCheckbox.vue"
 import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, MessageSquare, Monitor, Plus, Sparkles, Square, Upload, X } from "@lucide/vue"
 import { useDropZone, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
-import { computed, reactive, ref, useId, useTemplateRef, watch } from "vue"
+import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { FileEntry } from "../../../../client/src/files.ts"
 import { useFileTarget } from "../../composables/useFileTarget.ts"
 import { useSessionGit } from "../../composables/useSessionGit.ts"
-import { attachmentsFromFiles, createMachineFileAttachment, createPastedTextAttachment, hasSubmittableText, shouldFoldPastedText, type ComposerAttachment } from "../../services/composer-attachments.ts"
+import {
+  attachmentsFromFiles,
+  createMachineFileAttachment,
+  createPastedTextAttachment,
+  hasSubmittableText,
+  shouldFoldPastedText,
+  type ComposerAttachment,
+} from "../../services/composer-attachments.ts"
 import { fileSize } from "../../services/file-format.ts"
 import { commandDraft, type ComposerMention } from "../../services/composer-mentions.ts"
+import { previewKindFromMime, previewKindFromUri, type PreviewDescriptor } from "../../services/preview.ts"
 import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"
+import { focusPreview } from "../../stores/previews.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import AgentUsage from "./AgentUsage.vue"
 import ComposerCompletions from "./ComposerCompletions.vue"
@@ -113,6 +122,55 @@ const { isOverDropZone } = useDropZone(dropZoneRef, {
     if (files?.length && !props.disabled && !props.submitting) void addFiles(files)
   },
 })
+
+const attachmentPreviewUrls = reactive(new Map<string, string>())
+
+function setAttachmentPreviewUrl(id: string, data: Uint8Array, type = ""): void {
+  const previous = attachmentPreviewUrls.get(id)
+  if (previous) URL.revokeObjectURL(previous)
+  const bytes = new Uint8Array(data.byteLength)
+  bytes.set(data)
+  attachmentPreviewUrls.set(id, URL.createObjectURL(new Blob([bytes], { type })))
+}
+
+function removeAttachmentPreviewUrl(id: string): void {
+  const url = attachmentPreviewUrls.get(id)
+  if (url) URL.revokeObjectURL(url)
+  attachmentPreviewUrls.delete(id)
+}
+
+watch(attachments, items => {
+  const currentIds = new Set(items.map(item => item.id))
+  for (const [id] of attachmentPreviewUrls) if (!currentIds.has(id)) removeAttachmentPreviewUrl(id)
+  for (const item of items) {
+    if (item.kind !== "local_file" || attachmentPreviewUrls.has(item.id)) continue
+    const kind = previewKindFromUri(item.name, item.mimeType)
+    if (kind) setAttachmentPreviewUrl(item.id, item.bytes, item.mimeType)
+  }
+}, { immediate: true })
+
+function itemPreview(item: ComposerAttachment): PreviewDescriptor | undefined {
+  if (item.kind === "pasted_text") return undefined
+  const content = item.kind === "image"
+    ? `data:${item.mimeType};base64,${item.data}`
+    : attachmentPreviewUrls.get(item.id) ?? (item.kind === "machine_file" ? item.uri : undefined)
+  const kind = item.kind === "image" ? "image" : previewKindFromUri(item.name, item.kind === "local_file" ? item.mimeType : undefined)
+  if (!content || !kind) return undefined
+  return {
+    kind,
+    content,
+    title: item.name,
+    ...(item.kind !== "machine_file" && item.mimeType ? { mimeType: item.mimeType } : {}),
+    source: { sessionId: props.location?.session?.id, itemId: item.id },
+  }
+}
+
+function itemThumbnailSrc(item: ComposerAttachment): string | undefined {
+  const preview = itemPreview(item)
+  if (preview?.kind === "image") return preview.content
+  return undefined
+}
+
 async function addFiles(files: Iterable<File>): Promise<void> {
   const added = await attachmentsFromFiles(files)
   if (added.length) attachments.value = [...attachments.value, ...added]
@@ -127,12 +185,26 @@ function onMachineFilesSelected(entries: FileEntry[]): void {
   if (!entries.length) return
   const added = entries.map(entry => createMachineFileAttachment(entry))
   attachments.value = [...attachments.value, ...added]
+  for (const item of added) {
+    if (item.kind === "machine_file" && previewKindFromUri(item.name) === "image" && filesApi.value && fileTarget.value) {
+      void filesApi.value.readResource({ target: fileTarget.value, sessionId: props.location?.session?.id ?? "", uri: item.path })
+        .then(res => {
+          if (previewKindFromMime(res.mimeType) === "image") setAttachmentPreviewUrl(item.id, res.data, res.mimeType)
+        })
+        .catch(() => {})
+    }
+  }
 }
 function removeAttachment(id: string): void {
+  removeAttachmentPreviewUrl(id)
   attachments.value = attachments.value.filter(item => item.id !== id)
 }
 function attachmentLabel(item: ComposerAttachment): string {
   return item.kind === "pasted_text" ? t("composer.pastedText") : item.name
+}
+function previewAttachment(item: ComposerAttachment): void {
+  const preview = itemPreview(item)
+  if (preview) void focusPreview(preview)
 }
 function onPaste(event: ClipboardEvent): void {
   if (props.disabled || props.submitting) return
@@ -156,6 +228,10 @@ function keydown(event: KeyboardEvent): void {
   if (completion.keydown(event)) return
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit("backlog") }
 }
+
+onBeforeUnmount(() => {
+  for (const [id] of attachmentPreviewUrls) removeAttachmentPreviewUrl(id)
+})
 </script>
 
 <template>
@@ -206,11 +282,29 @@ function keydown(event: KeyboardEvent): void {
       <span v-if="showTarget && submitting" class="composer-creation-beam" aria-hidden="true" />
       <input ref="fileInput" type="file" multiple class="sr-only" data-composer-file-input @change="onFilesPicked" />
       <ul v-if="attachments.length" class="m-0 flex list-none flex-wrap gap-2 px-3 pt-3 pb-0" :aria-label="t('composer.attachments')" data-composer-attachments>
-        <li v-for="item in attachments" :key="item.id" class="inline-flex max-w-full items-center gap-2 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs" :data-attachment-kind="item.kind">
-          <img v-if="item.kind === 'image'" :src="`data:${item.mimeType};base64,${item.data}`" :alt="item.name" class="h-6 w-6 shrink-0 rounded object-cover" />
+        <li
+          v-for="item in attachments"
+          :key="item.id"
+          :data-preview="itemPreview(item) ? item.id : undefined"
+          :data-preview-content="itemPreview(item)?.content"
+          class="inline-flex max-w-full items-center gap-2 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs"
+          :data-attachment-kind="item.kind"
+        >
+          <img
+            v-if="itemThumbnailSrc(item)"
+            :src="itemThumbnailSrc(item)"
+            :alt="attachmentLabel(item)"
+            class="h-6 w-6 shrink-0 cursor-zoom-in rounded object-cover"
+            @click="previewAttachment(item)"
+          />
           <FileText v-else-if="item.kind === 'pasted_text'" :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-          <File v-else :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-          <span class="min-w-0 truncate font-medium text-ui-text" :title="item.kind === 'machine_file' ? item.path : attachmentLabel(item)">{{ attachmentLabel(item) }}</span>
+          <File v-else :size="14" class="shrink-0 text-ui-text-muted" :class="itemPreview(item) && 'cursor-zoom-in'" aria-hidden="true" @click="previewAttachment(item)" />
+          <span
+            class="min-w-0 truncate font-medium text-ui-text"
+            :class="itemPreview(item) && 'cursor-zoom-in hover:underline'"
+            :title="item.kind === 'machine_file' ? item.path : attachmentLabel(item)"
+            @click="previewAttachment(item)"
+          >{{ attachmentLabel(item) }}</span>
           <span v-if="item.kind === 'pasted_text'" class="shrink-0 rounded bg-ui-badge px-1.5 py-0.5 text-[11px] text-ui-text-muted">{{ t("composer.pastedTextLines", item.lines) }}</span>
           <span v-else-if="item.size !== undefined" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted">{{ fileSize(item.size) }}</span>
           <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.removeAttachment', { name: attachmentLabel(item) })" :disabled="disabled || submitting" @click="removeAttachment(item.id)">
