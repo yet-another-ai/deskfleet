@@ -50,6 +50,14 @@ Workspace is selected and remembers the last choice on that device.
 
 ### Session titles
 
+The bundled Codex adapter starts automatic title generation when the first prompt
+turn starts, using that prompt's text in a separate temporary provider thread.
+Generation runs alongside the main turn and publishes its title through ACP
+`session_info_update`; it does not wait for the main turn to finish. The adapter
+attempts generation once for an untitled conversation and retains existing titles.
+A turn cancelled or failed after starting can still receive a generated title;
+a prompt rejected before its turn starts does not trigger generation.
+
 Authorized Team members can rename workspace and machine-scoped Sessions while
 the owning machine is online, including archived Sessions. Rename trims surrounding
 whitespace and requires a nonempty title of at most 200 characters. It preserves

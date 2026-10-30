@@ -1,5 +1,5 @@
 diff --git a/dist/index.js b/dist/index.js
-index f44e3aa..8e07ecc 100644
+index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..d6e71c98ee39b8d07ff6139ff9841e6102f7ea58 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -43076,7 +43076,11 @@ var CodexAppServerSupervisor = class {
@@ -31,6 +31,40 @@ index f44e3aa..8e07ecc 100644
            if (exitSeen) return;
            exitSeen = true;
            markDead();
+@@ -45148,7 +45152,7 @@ var TitleGenerator = class {
+   }
+   /**
+    * Call when an explicit rename failed. A title that this generator dropped for that rename is generated
+-   * again after the next turn, as if the rename had never come.
++   * again when the next turn starts, as if the rename had never come.
+    */
+   retryAfterFailedRename() {
+     if (!this.droppedForExplicitTitle) return;
+@@ -45166,13 +45170,13 @@ var TitleGenerator = class {
+     this.renameEchoResolve = null;
+   }
+   /**
+-   * Fire-and-forget hook — call after each turn completes.
++   * Fire-and-forget hook — call when each prompt turn starts.
+    * Only acts on the first call for new sessions without an existing title.
+    *
+    * @param userPromptText  The text of the user's first message (from params.prompt,
+    *                        not turn.items — turn.items contains only agent output).
+    */
+-  onTurnCompleted(userPromptText) {
++  onTurnStarted(userPromptText) {
+     if (this.generated) return;
+     const src = this.getSessionTitleSource();
+     if (src === "explicit" || src === "unknown") return;
+@@ -45185,7 +45189,7 @@ var TitleGenerator = class {
+   }
+   /**
+    * Resolves once the fire-and-forget generation started by
+-   * {@link onTurnCompleted} has finished, or after `timeoutMs`.
++   * {@link onTurnStarted} has finished, or after `timeoutMs`.
+    *
+    * Generation renames the thread, which Codex echoes back as a
+    * `session_info_update`. `session/load` has to finish replaying a session
 @@ -48042,7 +48046,8 @@ var CodexAcpServer = class {
      ];
      return {
@@ -61,3 +95,25 @@ index f44e3aa..8e07ecc 100644
      };
    }
    createSessionConfigOptions(sessionState) {
+@@ -51388,6 +51397,10 @@ You have been logged out. Please try again.`);
+             if (priorRunningTurnId !== null && turnId === priorRunningTurnId) {
+               insertion?.onTurnAdopted?.();
+             }
++            if (sessionState.titleGen) {
++              const promptText = params.prompt.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim();
++              sessionState.titleGen.onTurnStarted(promptText);
++            }
+             onTurnStarted?.();
+           },
+           () => this.promptShouldStop(params.sessionId, activePrompt),
+@@ -51556,10 +51569,6 @@ You have been logged out. Please try again.`);
+         () => this.sessionPublishIsCurrent(sessionState, turnSessionGeneration),
+         true
+       );
+-      if (sessionState.titleGen) {
+-        const promptText = params.prompt.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim();
+-        sessionState.titleGen.onTurnCompleted(promptText);
+-      }
+       if (pendingInsertion === void 0) {
+         await this.publishFallbackSessionTitle(
+           sessionState,

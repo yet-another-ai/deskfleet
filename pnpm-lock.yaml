@@ -8,7 +8,7 @@ overrides:
   vitepress>vue: 3.6.0-rc.13
 
 patchedDependencies:
-  '@agentclientprotocol/codex-acp@2.3.0': 998899b0dd8104ca42bff31c91ef28bc3a90ac37c035ce4553d339698e7f683a
+  '@agentclientprotocol/codex-acp@2.3.0': 30d6ea4346e4bc997255a84a6dcec395905df04742bbb63a5e48355fe7307b43
   '@xterm/addon-ligatures@0.10.0': fa45e6baf79dcd885c76ac00ddc39740210fcaadc91ce8473481e5e443bf98f2
   '@xterm/addon-search@0.16.0': a3398047a9423d007abbb875aec542ed6f855cc861c4b69b46fd93b7c649c1a0
   pi-acp@0.0.34: 36d9ab123339167dca1f08a507a15cd2e0d55d6bf92d164e13f7bcb0d01d09fb
@@ -37,7 +37,7 @@ importers:
         version: 0.98.0(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))
       '@agentclientprotocol/codex-acp':
         specifier: 2.3.0
-        version: 2.3.0(patch_hash=998899b0dd8104ca42bff31c91ef28bc3a90ac37c035ce4553d339698e7f683a)
+        version: 2.3.0(patch_hash=30d6ea4346e4bc997255a84a6dcec395905df04742bbb63a5e48355fe7307b43)
       '@agentclientprotocol/sdk':
         specifier: 2.0.2
         version: 2.0.2(zod@4.6.7)
@@ -6023,7 +6023,7 @@ snapshots:
       - '@anthropic-ai/sdk'
       - '@modelcontextprotocol/sdk'
 
-  '@agentclientprotocol/codex-acp@2.3.0(patch_hash=998899b0dd8104ca42bff31c91ef28bc3a90ac37c035ce4553d339698e7f683a)':
+  '@agentclientprotocol/codex-acp@2.3.0(patch_hash=30d6ea4346e4bc997255a84a6dcec395905df04742bbb63a5e48355fe7307b43)':
     dependencies:
       '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
       '@openai/codex': 0.164.0
