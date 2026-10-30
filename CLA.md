@@ -131,13 +131,3 @@ and the GitHub accounts authorized to contribute on its behalf.
 Merely opening a pull request does not constitute signing this Agreement.
 An acceptance applies to the identified Agreement; later changes to its terms
 require a new acceptance. Existing grants remain governed by the accepted terms.
-
----
-
-Drafting sources: this Agreement adapts the
-[Apache Software Foundation's Individual Contributor License Agreement](https://www.apache.org/licenses/icla.pdf)
-and differs from that original. The ASF
-[permits reuse and modification of its CLAs](https://www.apache.org/foundation/license-faq.html#CLA-Usage).
-The individual/company structure and contribution assurances were also informed
-by the [PingCAP CLA used for TiDB](https://gist.github.com/ngaut/c76097bc1e95534fc1998f99a3837d84),
-linked through [TiDB's signing page](https://cla.pingcap.net/pingcap/tidb).
