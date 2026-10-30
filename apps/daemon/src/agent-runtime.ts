@@ -251,10 +251,8 @@ export class AgentRuntime {
       this.#connection = connection
       if (this.#stopping) throw new Error("Agent startup was stopped")
       const capabilities = connection.initialization.agentCapabilities
+      const supportsAdditionalDirectories = !!capabilities?.sessionCapabilities?.additionalDirectories
       const additionalDirectories = worktree.directories.slice(1).map(directory => directory.path)
-      if (additionalDirectories.length && !capabilities?.sessionCapabilities?.additionalDirectories) {
-        throw new Error("This agent cannot use all of this Session's directories")
-      }
       if (this.#mcp) {
         const creation = (await this.journal.commands(this.sessionId)).find(command => command.isCanonical && (command.method === "_deskfleet/session/create" || command.method === "_deskfleet/session/fork"))
         if (!creation) throw new Error("This Session has no initiating command for MCP delegation")
@@ -265,7 +263,7 @@ export class AgentRuntime {
           }
         }
       }
-      const params = { cwd: worktree.directories[0].path, mcpServers: this.#mcpLease?.servers ?? [], ...(additionalDirectories.length ? { additionalDirectories } : {}) }
+      const params = { cwd: worktree.directories[0].path, mcpServers: this.#mcpLease?.servers ?? [], ...(supportsAdditionalDirectories && additionalDirectories.length ? { additionalDirectories } : {}) }
       let providerSessionId = snapshot.session.providerSessionId
       let responseOptions: acp.SessionConfigOption[] | undefined
       this.#openingConfiguration = true
@@ -309,6 +307,7 @@ export class AgentRuntime {
             steering: supportsSteering(connection.initialization),
             resume: canContinueSession(connection.initialization),
             fork: !!capabilities?.sessionCapabilities?.fork && !!connection.forkSession,
+            additionalDirectories: supportsAdditionalDirectories,
             ...(promptCapabilities ? { promptCapabilities } : {}),
           },
         }

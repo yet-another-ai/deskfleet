@@ -850,6 +850,7 @@
     },
     "creating": "正在创建会话…",
     "resumeUnavailable": "此提供方无法恢复该会话。请新建会话以继续工作。",
+    "additionalDirectoriesUnavailable": "此 Agent 不支持多个目录。任务将继续在默认目录中执行，其他目录不会自动添加。",
     "inputInProgress": "处理中",
     "awaitingApproval": "等待授权",
     "copy": "复制消息",

@@ -43,7 +43,7 @@ export interface AgentSessionRecord {
   lastReadSeq?: string
   createdAt: string
   updatedAt: string
-  capabilities?: { steering: boolean; resume: boolean; fork?: boolean; promptCapabilities?: AgentPromptCapabilities }
+  capabilities?: { steering: boolean; resume: boolean; fork?: boolean; additionalDirectories?: boolean; promptCapabilities?: AgentPromptCapabilities }
   error?: string
 }
 

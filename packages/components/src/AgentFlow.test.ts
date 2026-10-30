@@ -10,6 +10,7 @@ import { router } from "./router/index.ts"
 import { actor, agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
 import { catalogFixture, sessionId as otherSessionId, workspaceId } from "./test/catalog.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
+import { useFleetStore } from "./stores/fleet.ts"
 import { useProvidersStore } from "./stores/providers.ts"
 import { deferred } from "./test/desktop-media.ts"
 import SessionView from "./views/SessionView.vue"
@@ -490,6 +491,39 @@ test("a stopped agent asks for nothing and the next message is simply sent", asy
   await flushPromises()
   expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit").at(-1)?.[1]).toMatchObject({ content: [{ type: "text", text: "Keep going" }] })
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/session/resume")).toBe(false)
+})
+
+test("unsupported multiple directories show a warning while the Session can keep accepting work", async () => {
+  snapshot.session.capabilities = { steering: true, resume: true, additionalDirectories: false }
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  const warning = () => wrapper.findAll(".ui-notice").find(notice => notice.text().includes("does not support multiple directories"))
+  expect(warning()).toBeUndefined()
+
+  const catalog = await platformClient.catalog.list()
+  catalog.workspaces[0]!.worktrees.find(worktree => worktree.sessionId === "30")!.directories.push({ path: "/worktree/api" })
+  vi.spyOn(platformClient.catalog, "list").mockResolvedValue(catalog)
+  await useFleetStore(pinia).refreshLocalCatalog()
+  await flushPromises()
+  expect(warning()!.attributes("role")).toBe("status")
+  expect(warning()!.classes()).toContain("bg-ui-warning/8")
+  expect(warning()!.text()).toContain("Work continues in the default directory")
+  expect(warning()!.text()).toContain("/worktree/new")
+  await wrapper.get("textarea").setValue("Keep going")
+  expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeUndefined()
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit").at(-1)?.[1]).toMatchObject({ content: [{ type: "text", text: "Keep going" }] })
+
+  snapshot.session.capabilities.additionalDirectories = true
+  emit("session", snapshot.session)
+  await flushPromises()
+  expect(warning()).toBeUndefined()
+  delete snapshot.session.capabilities.additionalDirectories
+  emit("session", snapshot.session)
+  await flushPromises()
+  expect(warning()).toBeUndefined()
 })
 
 test("a Session's shells open in its bottom panel, belong to its Worktree, and stay out of the sidebar", async () => {

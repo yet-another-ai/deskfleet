@@ -850,6 +850,7 @@
     },
     "creating": "Creating session…",
     "resumeUnavailable": "This provider cannot resume this session. Start a new session to continue.",
+    "additionalDirectoriesUnavailable": "This agent does not support multiple directories. Work continues in the default directory; other directories are not added automatically.",
     "inputInProgress": "In progress",
     "awaitingApproval": "Awaiting approval",
     "copy": "Copy message",

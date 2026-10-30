@@ -82,6 +82,7 @@ const forkContext = computed(() => {
 const forkDisabled = computed(() => !connected.value || !!view.value?.loading || !!view.value?.error)
 // A stopped or interrupted agent resumes on the next message; only a dead end is shown.
 const resumeUnavailable = computed(() => snapshot.value?.session.lifecycle === "ready" && run.value?.state !== "running" && !canResume.value)
+const additionalDirectoriesUnavailable = computed(() => snapshot.value?.session.capabilities?.additionalDirectories === false && (location.value?.worktree?.directories.length ?? 0) > 1)
 const draft = computed({ get: () => agents.drafts[props.sessionId] ?? "", set: value => { agents.drafts[props.sessionId] = value } })
 const attachments = computed({ get: () => agents.draftAttachments[props.sessionId] ?? [], set: value => { agents.draftAttachments[props.sessionId] = value } })
 const mentions = computed({ get: () => agents.draftMentions[props.sessionId] ?? [], set: value => { agents.draftMentions[props.sessionId] = value } })
@@ -247,6 +248,7 @@ async function checkOperation(operationId: string): Promise<void> {
             <AgentNotice v-if="!active" :text="t(snapshot.session.archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')" />
             <AgentNotice v-if="snapshot.session.lifecycle !== 'ready'" :tone="snapshot.session.lifecycle === 'provision_failed' ? 'danger' : 'progress'" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
             <AgentNotice v-else-if="snapshot.session.error" tone="danger" :text="snapshot.session.error" />
+            <AgentNotice v-if="additionalDirectoriesUnavailable" tone="warning" :text="t('agent.additionalDirectoriesUnavailable')" :detail="location?.worktree?.directories[0]?.path" />
             <AgentNotice v-if="run && ['starting', 'stopping'].includes(run.state)" tone="progress" :text="t(`agent.runState.${run.state}`)" />
             <AgentNotice v-else-if="resumeUnavailable" :text="t('agent.resumeUnavailable')" />
             <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />

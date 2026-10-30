@@ -136,11 +136,15 @@ pub struct AgentActor {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentCapabilities {
     pub steering: bool,
     pub resume: bool,
     #[serde(default)]
     pub fork: bool,
+    /// Whether the provider accepts directories beyond the Session's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub additional_directories: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
