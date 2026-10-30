@@ -33,7 +33,7 @@ function setup(context: "directory" | "worktree" = "worktree") {
   return prepare
 }
 
-test("preparation pins fetched worktree revisions and clears them when another branch is chosen", async () => {
+test("preparation keeps pinned revisions across catalog refreshes and clears them when the execution context changes", async () => {
   const prepare = setup().mockResolvedValue(ready)
   await wrapper.get("[data-prepare-session]").trigger("click")
   await flushPromises()
@@ -41,7 +41,10 @@ test("preparation pins fetched worktree revisions and clears them when another b
   expect(wrapper.emitted("update:baseRevisions")?.at(-1)).toEqual([ready.baseRevisions])
   expect(wrapper.emitted("update:branches")?.at(-1)).toEqual([["main"]])
   expect(wrapper.get("[data-prepare-session]").attributes("aria-label")).toBe("Ready")
-  await wrapper.setProps({ baseBranch: "release" })
+  await wrapper.setProps({ location: structuredClone(location) })
+  expect(wrapper.emitted("update:baseRevisions")?.at(-1)).toEqual([ready.baseRevisions])
+  expect(wrapper.get("[data-prepare-session]").attributes("aria-label")).toBe("Ready")
+  await wrapper.setProps({ context: "directory" })
   expect(wrapper.emitted("update:baseRevisions")?.at(-1)).toEqual([undefined])
   expect(wrapper.get("[data-prepare-session]").attributes("aria-label")).toBe("Prepare")
 })
@@ -52,6 +55,9 @@ test("directory preparation lists changed files and cancellation never sends the
   await flushPromises()
   expect(page().get('[role="dialog"]').text()).toContain("src/app.ts")
   expect(page().get('[role="dialog"]').text()).toContain("other sessions")
+  await wrapper.setProps({ location: structuredClone(location) })
+  expect(page().get('[role="dialog"]').text()).toContain("src/app.ts")
+  expect(wrapper.get("[data-prepare-session]").attributes("disabled")).toBeDefined()
   await page().get("[data-prepare-cancel]").trigger("click")
   await flushPromises()
   expect(prepare).toHaveBeenCalledTimes(1)
@@ -95,6 +101,51 @@ test("late responses cannot prepare another machine with the same workspace ID",
   expect((wrapper.emitted("update:baseRevisions") ?? []).every(args => args[0] === undefined)).toBe(true)
   await wrapper.setProps({ location: { ...location, machine: { ...location.machine, online: false } } })
   expect(wrapper.get("[data-prepare-session]").attributes("disabled")).toBeDefined()
+})
+
+test("changing workspace directories invalidates prepared revisions and refreshes branch choices", async () => {
+  pinia = createPinia()
+  const agents = useAgentSessionsStore(pinia)
+  const branches = vi.spyOn(agents, "gitBranches")
+    .mockResolvedValueOnce({ workspaceId: "1", currentBranch: "feature", branches: ["feature", "main"] })
+    .mockResolvedValueOnce({ workspaceId: "1", currentBranch: "release", branches: ["release"] })
+  vi.spyOn(agents, "prepareGit").mockResolvedValue(ready)
+  wrapper = mount(SessionComposer, { props: { location, showTarget: true, context: "worktree" }, attachTo: document.body,
+    global: { plugins: [pinia, i18n, router], stubs: { AgentConfigurationSelector: true } } })
+  await flushPromises()
+  await wrapper.get("[data-prepare-session]").trigger("click")
+  await flushPromises()
+  await wrapper.setProps({ location: { ...location, workspace: { ...location.workspace, directories: [{ path: "/other-repo" }] } } })
+  await flushPromises()
+  expect(branches).toHaveBeenCalledTimes(2)
+  expect(wrapper.emitted("update:baseRevisions")?.at(-1)).toEqual([undefined])
+  expect(wrapper.get("[data-prepare-session]").attributes("aria-label")).toBe("Prepare")
+  expect(wrapper.get("[data-composer-branch]").text()).toBe("release")
+})
+
+test.each(["directory", "worktree"] as const)("delayed branch discovery preserves %s preparation", async context => {
+  pinia = createPinia()
+  const agents = useAgentSessionsStore(pinia)
+  const pending = deferred<Awaited<ReturnType<typeof agents.gitBranches>>>()
+  const branches = vi.spyOn(agents, "gitBranches").mockReturnValue(pending.promise)
+  vi.spyOn(agents, "prepareGit").mockResolvedValue(context === "worktree" ? ready : dirty)
+  wrapper = mount(SessionComposer, { props: { location, showTarget: true, context, modelValue: "Next task" }, attachTo: document.body,
+    global: { plugins: [pinia, i18n, router], stubs: { AgentConfigurationSelector: true } } })
+  await wrapper.get("[data-prepare-session]").trigger("click")
+  await flushPromises()
+  await wrapper.setProps({ location: structuredClone(location) })
+  expect(branches).toHaveBeenCalledExactlyOnceWith("1")
+  pending.resolve({ workspaceId: "1", currentBranch: "feature", branches: ["feature", "main"] })
+  await flushPromises()
+  if (context === "worktree") {
+    expect(wrapper.get("[data-prepare-session]").attributes("aria-label")).toBe("Ready")
+    expect(wrapper.get("[data-composer-branch]").text()).toBe("Latest main")
+    expect(wrapper.emitted("update:baseRevisions")?.at(-1)).toEqual([ready.baseRevisions])
+  } else {
+    expect(page().get('[role="dialog"]').text()).toContain("src/app.ts")
+    expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeDefined()
+    await page().get("[data-prepare-cancel]").trigger("click")
+  }
 })
 
 test("preparation blocks submitting and changing execution context until it completes", async () => {

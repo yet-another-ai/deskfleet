@@ -10,7 +10,7 @@ import type { SessionTarget } from "../../stores/fleet.ts"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 
-const props = defineProps<{ location: SessionTarget; context: AgentSessionContext; baseBranch?: string; disabled?: boolean }>()
+const props = defineProps<{ location: SessionTarget; context: AgentSessionContext; disabled?: boolean }>()
 const baseRevisions = defineModel<GitPreparationSnapshot["baseRevisions"]>("baseRevisions")
 const branches = defineModel<string[]>("branches", { default: () => [] })
 const emit = defineEmits<{ busy: [value: boolean] }>()
@@ -38,8 +38,13 @@ function reset(): void {
   branches.value = []
   setBusy(false)
 }
-watch(() => [props.location.machine.id, props.location.workspace?.id, props.location.machine.online,
-  JSON.stringify(props.location.workspace?.directories.map(directory => directory.path)), props.context, props.baseBranch], reset)
+watch([
+  () => props.location.machine.id,
+  () => props.location.workspace?.id,
+  () => props.location.machine.online,
+  () => JSON.stringify(props.location.workspace?.directories.map(directory => directory.path)),
+  () => props.context,
+], reset)
 onScopeDispose(reset)
 defineExpose({ reset })
 

@@ -96,9 +96,15 @@ const checkoutLabel = computed(() => checkout.value
 const changes = computed(() => (checkout.value?.changes ?? []).reduce((total, change) => ({ additions: total.additions + (change.additions ?? 0), deletions: total.deletions + (change.deletions ?? 0) }), { additions: 0, deletions: 0 }))
 const availableBranches = ref<string[]>([])
 let branchProbeGeneration = 0
-watch(() => [props.showTarget, props.location?.workspace?.id, props.location?.machine.online, props.location?.machine.id] as const, async ([showTarget, workspaceId, online, machineId], previous) => {
+watch([
+  () => props.showTarget,
+  () => props.location?.workspace?.id,
+  () => props.location?.machine.online,
+  () => props.location?.machine.id,
+  () => JSON.stringify(props.location?.workspace?.directories.map(directory => directory.path)),
+], async ([showTarget, workspaceId, online, machineId, directories], previous) => {
   const token = ++branchProbeGeneration
-  if (workspaceId !== previous?.[1] || machineId !== previous?.[3]) {
+  if (workspaceId !== previous?.[1] || machineId !== previous?.[3] || directories !== previous?.[4]) {
     availableBranches.value = []
     baseBranch.value = undefined
   }
@@ -283,7 +289,7 @@ onBeforeUnmount(() => {
           <span class="truncate">{{ checkoutLabel }}</span>
         </RouterLink>
       </template>
-      <SessionPreparation v-if="showTarget && location.workspace" ref="preparationButton" v-model:base-revisions="baseRevisions" v-model:branches="preparedBranches" :location="location" :context="context" :base-branch="baseBranch" :disabled="submitting" @busy="preparing = $event" />
+      <SessionPreparation v-if="showTarget && location.workspace" ref="preparationButton" v-model:base-revisions="baseRevisions" v-model:branches="preparedBranches" :location="location" :context="context" :disabled="submitting" @busy="preparing = $event" />
       <span v-if="changes.additions || changes.deletions" class="ml-auto shrink-0 rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></span>
     </div>
     <div ref="dropZoneRef" class="relative rounded-2xl border bg-ui-surface shadow-ui-card transition-colors focus-within:border-ui-accent/60" :class="isOverDropZone ? 'border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
