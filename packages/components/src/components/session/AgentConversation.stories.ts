@@ -25,6 +25,7 @@ export const RunningTurn: Story = {}
 
 export const CompletedTurn: Story = {
   args: {
+    canFork: true,
     events: [
       ...storybookSessionEvents.slice(0, 5),
       {
