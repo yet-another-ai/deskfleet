@@ -292,6 +292,8 @@ impl LocalCatalog {
             admission_generation: request.admission_generation,
             turn_limit_reason: None,
             last_event_seq: 0.into(),
+            last_completed_seq: None,
+            last_read_seq: None,
             created_at: request.command.received_at.clone(),
             updated_at: request.command.received_at.clone(),
             capabilities: None,

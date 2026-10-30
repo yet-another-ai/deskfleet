@@ -305,6 +305,15 @@ test("Agent RPC uses the server actor and cannot perform management over WebRTC"
   assert.equal(f.calls[1]?.actor.userId, "alice")
 })
 
+test("shared Session read acknowledgements require read authority and use the verified peer actor", async context => {
+  const f = fixture()
+  context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: ["agent:read"] }, iceServers: [] })
+  await f.rpc(1, "initialize", { protocolVersion: 1 })
+  await f.rpc(2, "_deskfleet/session/read", { sessionId: "1", operationId: "read", throughSeq: "3", actor: { userId: "spoof" } })
+  assert.deepEqual(f.calls, [{ method: "_deskfleet/session/read", actor: grant().actor }])
+})
+
 test("composer search and resolution require execution authority and use the verified peer actor", async context => {
   const denied = fixture(), allowed = fixture()
   context.after(async () => { await denied.peers.closeAll(); await allowed.peers.closeAll() })

@@ -1,4 +1,9 @@
-import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
+
+/** A completion remains unread until any viewer acknowledges it on the owning daemon. */
+export function sessionIsUnread(session: Pick<AgentSessionRecord, "lastCompletedSeq" | "lastReadSeq"> | undefined): boolean {
+  return BigInt(session?.lastCompletedSeq ?? "0") > BigInt(session?.lastReadSeq ?? "0")
+}
 
 type Content = AgentInput["content"]
 export interface AgentTerminalOutput {

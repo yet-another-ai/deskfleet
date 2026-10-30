@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { useAsyncState } from "@vueuse/core"
 import { withBase } from "vitepress"
-import { Check, Copy, Terminal } from "@lucide/vue"
 import DownloadCard from "./DownloadCard.vue"
 import PlatformIcon from "./PlatformIcon.vue"
 import SegmentedControl from "./SegmentedControl.vue"
@@ -17,11 +16,8 @@ const root = ref<HTMLElement>()
 const shown = useRevealOnce(root, 0.15)
 const mode = ref<InstallMode>("desktop")
 const platform = ref<InstallPlatform>("macos")
-const copied = ref(false)
-const copyError = ref(false)
 const platforms: { value: InstallPlatform; label: string }[] = [{ value: "macos", label: "macOS" }, { value: "windows", label: "Windows" }, { value: "linux", label: "Linux" }]
 const modes = computed<{ value: InstallMode; label: string }[]>(() => [{ value: "desktop", label: t.value.desktop }, { value: "headless", label: t.value.headless }])
-const command = computed(() => mode.value === "desktop" ? "mise run desktop:dev" : `mise run daemon:pack\n${platform.value === "windows" ? ".\\apps\\daemon\\dist\\deskfleet-daemon.exe" : "./apps/daemon/dist/deskfleet-daemon"}`)
 const guide = computed(() => withBase(homeLocalePath(props.locale, "/guide/getting-started")))
 const { state: release, isLoading, executeImmediate: loadRelease } = useAsyncState(fetchLatestRelease, undefined, { immediate: false })
 const formatLocale = computed(() => intlLocale(props.locale))
@@ -67,20 +63,11 @@ const alternatives = computed(() => {
   }
   return []
 })
-let timer: ReturnType<typeof setTimeout> | undefined
 onMounted(() => {
   void loadRelease()
   if (/Windows/i.test(navigator.userAgent)) platform.value = "windows"
   else if (/Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent)) platform.value = "linux"
 })
-onBeforeUnmount(() => clearTimeout(timer))
-async function copy() {
-  copyError.value = false
-  try { await navigator.clipboard.writeText(command.value); copied.value = true }
-  catch { copyError.value = true; return }
-  clearTimeout(timer)
-  timer = setTimeout(() => { copied.value = false }, 1600)
-}
 </script>
 
 <template>
@@ -108,12 +95,6 @@ async function copy() {
           <div v-if="alternatives.length" class="install__alternatives">
             <DownloadCard v-for="download in alternatives" :key="download.detail" :href="download.href" :title="download.title" :detail="download.detail" :file="download.file" :platform="platform" :action="download.file ? t.download : t.releases" />
           </div>
-          <div class="install__command">
-            <div class="install__command-head"><span><Terminal :size="14" aria-hidden="true" />{{ t.source }}</span><button type="button" :aria-label="t.copyCommand" @click="copy"><Check v-if="copied" :size="15" /><Copy v-else :size="15" />{{ copied ? t.copied : t.copy }}</button></div>
-            <pre><code>{{ command }}</code></pre>
-          </div>
-          <p v-if="copyError" class="install__note" role="status">{{ t.copyError }}</p>
-          <p class="install__note">{{ t.note }}</p>
         </div>
       </Transition>
       <p class="install__links reveal-line" style="--line: 5"><a :href="guide">{{ t.guide }} →</a><a :href="releasesPage">{{ t.allDownloads }} →</a><a href="https://github.com/yet-another-ai/deskfleet">{{ t.repository }} →</a></p>
@@ -134,12 +115,6 @@ async function copy() {
 .install__release.is-ready i { background: var(--ui-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-color-success) 22%, transparent); opacity: 1; }
 .install__target { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .install__alternatives { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
-.install__command { overflow: hidden; border: 1px solid var(--home-edge); border-radius: 16px; background: var(--home-panel); }
-.install__command-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--home-edge); color: var(--home-ink-2); font-size: 12px; }
-.install__command-head span, .install__command-head button { display: inline-flex; align-items: center; gap: 7px; }
-.install__command-head button { cursor: pointer; color: var(--home-ink); flex: none; }
-.install__command pre { margin: 0; padding: 18px; overflow-x: auto; font-family: var(--vp-font-family-mono); font-size: 13px; line-height: 1.9; }
-.install__note { margin: 0 2px; color: var(--home-ink-2); font-size: 12px; line-height: 1.7; }
 .install__links { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 26px; font-size: 14px; font-weight: 650; }
 .install__links a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .install-swap-enter-active, .install-swap-leave-active { transition: opacity 160ms ease, transform 160ms ease; }

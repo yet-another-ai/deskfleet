@@ -137,6 +137,38 @@ test("session rows show a working indicator while a live turn is projected", asy
   wrapper.unmount()
 })
 
+test.each(["machine", "workspace"])("%s session rows show unread results after working and clear on shared read updates", async scope => {
+  const sessions = reactive<AgentSessionSummary[]>([
+    { id: "session", title: "Investigate", provider: "Codex", archiveState: "active", lastCompletedSeq: "6", lastReadSeq: "5" },
+  ])
+  const { wrapper } = await setup(scope === "machine" ? { sessions } : {
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions }],
+  })
+  const indicator = wrapper.get("[data-session-unread]")
+  expect(indicator.attributes("role")).toBe("status")
+  expect(indicator.attributes("title")).toBe("Unread result")
+  expect(indicator.text()).toBe("Unread result")
+
+  const agents = useAgentSessionsStore()
+  const live = agentSnapshot()
+  live.session.id = "session"
+  live.turns = [{ id: "70", sessionId: "session", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
+  agents.views["session"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+  await flushPromises()
+  expect(wrapper.find("[data-session-working]").exists()).toBe(true)
+  expect(wrapper.find("[data-session-unread]").exists()).toBe(false)
+
+  agents.views["session"]!.snapshot!.turns[0]!.state = "completed"
+  sessions[0]!.lastCompletedSeq = "9"
+  await flushPromises()
+  expect(wrapper.find("[data-session-working]").exists()).toBe(false)
+  expect(wrapper.find("[data-session-unread]").exists()).toBe(true)
+  sessions[0]!.lastReadSeq = "9"
+  await flushPromises()
+  expect(wrapper.find("[data-session-unread]").exists()).toBe(false)
+  wrapper.unmount()
+})
+
 test.each(["machine", "workspace"])("%s session rows hide completed archives and reappear after restore", async scope => {
   const sessions = reactive<AgentSessionSummary[]>([
     { id: "active", title: "Active chat", archiveState: "active" },

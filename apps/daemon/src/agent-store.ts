@@ -1,6 +1,6 @@
 import type {
   AgentActor, AgentCommand, AgentCommit, AgentEvent, AgentEventDraft,
-  AgentSessionContext, AgentSessionRecord, AgentSnapshot,
+  AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn,
 } from "./agent-protocol.ts"
 
 export interface AgentPersistence {
@@ -91,6 +91,22 @@ export class AgentJournal {
   }
   async commit(current: AgentSnapshot | AgentSessionRecord | undefined, changes: AgentCommit): Promise<AgentEvent[]> {
     const session = current && ("session" in current ? current.session : current)
+    const terminal = (turn: AgentTurn) => ["completed", "cancelled", "interrupted", "failed"].includes(turn.state)
+    if (session && changes.turns?.some(terminal)) {
+      const snapshot = current && "session" in current ? current : await this.read(session.id)
+      const finished = new Set(changes.turns.filter(turn => terminal(turn)
+        && snapshot.turns.some(previous => previous.id === turn.id && !terminal(previous))).map(turn => turn.id))
+      if (finished.size) {
+        const events = [...changes.events ?? []]
+        const index = events.findLastIndex(event => event.kind === "turn"
+          && finished.has((event.payload as AgentTurn).id) && terminal(event.payload as AgentTurn))
+        if (index < 0) throw new Error("Finishing a turn requires its journal event")
+        const completed = { ...changes.session ?? session,
+          lastCompletedSeq: String(BigInt(session.lastEventSeq) + BigInt(index) + 1n) }
+        if (!events.some(event => event.kind === "session")) events.push(this.event(session.id, "session", completed))
+        changes = { ...changes, session: completed, events }
+      }
+    }
     const transaction: AgentCommit = session ? {
       sessionId: session.id, expectedSeq: session.lastEventSeq,
       ...changes,

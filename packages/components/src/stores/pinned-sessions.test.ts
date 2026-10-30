@@ -231,6 +231,41 @@ test("catalog notifications refresh pinned remote history and removed machines l
   expect(store.isPinned("m2", "30")).toBe(true)
 })
 
+test("shared unread markers refresh across machines and are not saved as device preferences", async () => {
+  const { account, fake, snapshot } = await accountFixture()
+  const { store, agents } = fixture(account)
+  agents.sessions["30"] = { ...agentSnapshot().session, workspaceId: undefined, lastCompletedSeq: "7" }
+  snapshot.session.lastCompletedSeq = "11"
+  store.pin("m1", "30", "Local")
+  store.pin("m2", "30", "Remote")
+  await flushPromises()
+  expect(store.items.map(item => [item.machineId, item.lastCompletedSeq, item.lastReadSeq])).toEqual([
+    ["m1", "7", undefined], ["m2", "11", undefined],
+  ])
+  agents.sessions["30"]!.lastReadSeq = "7"
+  snapshot.session.lastReadSeq = "11"
+  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  await flushPromises()
+  expect(store.items.map(item => [item.lastCompletedSeq, item.lastReadSeq])).toEqual([["7", "7"], ["11", "11"]])
+  expect(localStorage.getItem("deskfleet.pinned-sessions")).not.toContain("lastCompletedSeq")
+  expect(localStorage.getItem("deskfleet.pinned-sessions")).not.toContain("lastReadSeq")
+})
+
+test("loaded metadata without a completion supersedes a cached remote unread result", async () => {
+  const { account, snapshot } = await accountFixture()
+  snapshot.session.lastCompletedSeq = "11"
+  const { store, fleet } = fixture(account)
+  store.pin("m2", "30", "Remote")
+  await flushPromises()
+  expect(store.items[0]?.lastCompletedSeq).toBe("11")
+
+  Reflect.set(fleet, "machines", ref<MachineSummary[]>([{
+    id: "m2", name: "Server", online: true, local: false, desktop: false, workspaces: [], terminals: [],
+    sessions: [{ id: "30", title: "Loaded", archiveState: "active" }],
+  }]))
+  expect(store.items[0]).toMatchObject({ title: "Loaded", lastCompletedSeq: undefined, lastReadSeq: undefined })
+})
+
 test("a late remote title cannot overwrite pins after switching away and back to the Team", async () => {
   const { account, session, snapshot } = await accountFixture()
   const response = deferred<Awaited<ReturnType<typeof session>>>()

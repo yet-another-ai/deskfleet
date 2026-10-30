@@ -67,3 +67,16 @@ test("Session rename passes only the server-verified actor to the Agent service"
   assert.deepEqual(await operations.handle("_deskfleet/session/rename", params, actor), { renamed: true })
   assert.deepEqual(calls, [["_deskfleet/session/rename", params, actor]])
 })
+
+test("Session read acknowledgement passes the server-verified actor to the Agent service", async () => {
+  const calls: unknown[][] = []
+  const operations = new MachineOperations({
+    agents: { handle: async (...args: unknown[]) => { calls.push(args); return { read: true } } },
+    catalog: {}, terminals: {}, providers: {}, setup: {}, capabilities: async () => ({ displays: [], audio: false }),
+  } as unknown as ConstructorParameters<typeof MachineOperations>[0])
+  const params = { sessionId: "1", operationId: "read", throughSeq: "5", actor: { userId: "spoof" } }
+  await assert.rejects(operations.handle("_deskfleet/session/read", params, undefined), /verified user and login/u)
+  assert.deepEqual(calls, [])
+  assert.deepEqual(await operations.handle("_deskfleet/session/read", params, actor), { read: true })
+  assert.deepEqual(calls, [["_deskfleet/session/read", params, actor]])
+})

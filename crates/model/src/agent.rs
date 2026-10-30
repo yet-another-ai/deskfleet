@@ -173,6 +173,12 @@ pub struct AgentSessionRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_limit_reason: Option<String>,
     pub last_event_seq: AgentSequence,
+    /// Latest terminal turn event; absent until a turn finishes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_completed_seq: Option<AgentSequence>,
+    /// Shared history watermark acknowledged by a person opening this Session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_read_seq: Option<AgentSequence>,
     pub created_at: String,
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]

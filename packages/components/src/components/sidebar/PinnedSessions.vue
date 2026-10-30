@@ -6,12 +6,13 @@ import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
-import { snapshotIsWorking } from "../../services/agent-conversation.ts"
+import { sessionIsUnread, snapshotIsWorking } from "../../services/agent-conversation.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
+import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
 
 const { t } = useI18n()
 const id = useId()
@@ -55,6 +56,7 @@ function working(machineId: string, sessionId: string): boolean {
             <Pin :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
             <span class="min-w-0 flex-1 truncate">{{ sessionLabel({ id: item.sessionId, title: item.title }) }}</span>
             <SessionWorkingIndicator v-if="working(item.machineId, item.sessionId)" />
+            <SessionUnreadIndicator v-else-if="sessionIsUnread(item)" />
             <span v-if="!item.online" class="ui-badge shrink-0 rounded-full font-normal">{{ t('machine.offline') }}</span>
           </button>
         </SessionContextMenu>

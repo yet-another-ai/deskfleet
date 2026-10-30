@@ -1,7 +1,7 @@
 import { expect, test } from "vitest"
 import type { AgentEvent, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot } from "../test/agent.ts"
-import { groupTranscript, projectConversation, snapshotIsWorking, summarizeTools } from "./agent-conversation.ts"
+import { groupTranscript, projectConversation, sessionIsUnread, snapshotIsWorking, summarizeTools } from "./agent-conversation.ts"
 const update = (seq: number, update: Record<string, unknown>) => agentEvent(seq, "acp", { sessionId: "provider-session", update } as AgentEvent["payload"])
 test("reconstructs text around tools without user echoes or mutating the durable journal", () => {
   const input = agentInput({ state: "delivered" })
@@ -143,6 +143,15 @@ test("questions retain their original conversation position and use the winning 
   expect(entries[1]).toMatchObject({ id: "elicitation-80", turnId: "70", elicitation: resolved })
   expect(projectConversation([], snapshot)).toEqual([entries[1]])
 })
+test("unread completion compares durable sequence numbers without losing integer precision", () => {
+  expect(sessionIsUnread(undefined)).toBe(false)
+  expect(sessionIsUnread({})).toBe(false)
+  expect(sessionIsUnread({ lastCompletedSeq: "9" })).toBe(true)
+  expect(sessionIsUnread({ lastCompletedSeq: "9", lastReadSeq: "9" })).toBe(false)
+  expect(sessionIsUnread({ lastCompletedSeq: "9", lastReadSeq: "10" })).toBe(false)
+  expect(sessionIsUnread({ lastCompletedSeq: "9007199254740993", lastReadSeq: "9007199254740992" })).toBe(true)
+})
+
 test.each(["starting", "running", "cancelling"] as const)("snapshotIsWorking is true for a %s turn", state => {
   const snapshot = agentSnapshot()
   snapshot.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state, startedAt: "now" }]

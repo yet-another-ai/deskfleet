@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 mod elicitations;
 #[path = "agent/queries.rs"]
 mod queries;
+#[path = "agent/unread.rs"]
+mod unread;
 #[path = "agent/usage.rs"]
 mod usage;
 

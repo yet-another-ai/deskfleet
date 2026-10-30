@@ -12,14 +12,14 @@ export interface PinnedSession {
   /** Retained on this device while another machine's history is unavailable. */
   title: string
 }
-export interface PinnedSessionItem extends PinnedSession {
+export interface PinnedSessionItem extends PinnedSession, Pick<AgentSessionRecord, "lastCompletedSeq" | "lastReadSeq"> {
   machineName: string
   online: boolean
   archiveState?: AgentSessionRecord["archiveState"]
   context?: AgentSessionRecord["context"]
   loaded: boolean
 }
-type Metadata = Pick<AgentSessionRecord, "title" | "archiveState" | "context">
+type Metadata = Pick<AgentSessionRecord, "title" | "archiveState" | "context" | "lastCompletedSeq" | "lastReadSeq">
 const key = (machineId: string, sessionId: string) => JSON.stringify([machineId, sessionId])
 
 /** Personal device preferences; central machine IDs qualify machine-local Session IDs. */
@@ -48,9 +48,11 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
     const summary = loaded?.sessions.find(session => session.id === sessionId)
       ?? loaded?.workspaces.flatMap(workspace => workspace.sessions).find(session => session.id === sessionId)
     const remote = metadata.value[key(machineId, sessionId)]
+    const current = local ?? summary ?? remote
     return { title: local?.title ?? summary?.title ?? remote?.title,
       archiveState: local?.archiveState ?? summary?.archiveState ?? remote?.archiveState,
       context: local?.context ?? summary?.context ?? remote?.context,
+      lastCompletedSeq: current?.lastCompletedSeq, lastReadSeq: current?.lastReadSeq,
     }
   }
   const items = computed<PinnedSessionItem[]>(() => pins.value.flatMap(pin => {
@@ -58,6 +60,7 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
     if (!machine) return []
     const current = sessionMetadata(pin.machineId, pin.sessionId)
     return [{ ...pin, title: current.title ?? pin.title, archiveState: current.archiveState, context: current.context,
+      lastCompletedSeq: current.lastCompletedSeq, lastReadSeq: current.lastReadSeq,
       machineName: machine.name, online: machine.online, loaded: fleet.machines.some(machine => machine.id === pin.machineId) }]
   }))
 
@@ -85,7 +88,10 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
       try {
         const { snapshot } = await account.central.session(item.machineId, item.sessionId)
         if (disposed || selected !== scope.value || current !== revision || !isPinned(item.machineId, item.sessionId)) return
-        metadata.value[key(item.machineId, item.sessionId)] = { title: snapshot.session.title, archiveState: snapshot.session.archiveState, context: snapshot.session.context }
+        metadata.value[key(item.machineId, item.sessionId)] = {
+          title: snapshot.session.title, archiveState: snapshot.session.archiveState, context: snapshot.session.context,
+          lastCompletedSeq: snapshot.session.lastCompletedSeq, lastReadSeq: snapshot.session.lastReadSeq,
+        }
         if (snapshot.session.archiveState === "archived") {
           save(pins.value.filter(pin => pin.machineId !== item.machineId || pin.sessionId !== item.sessionId))
         }

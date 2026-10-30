@@ -37,6 +37,10 @@ export interface AgentSessionRecord {
   admissionGeneration?: string
   turnLimitReason?: string
   lastEventSeq: string
+  /** Latest terminal turn event; absent until a turn finishes. */
+  lastCompletedSeq?: string
+  /** Shared watermark acknowledged by a person opening this Session. */
+  lastReadSeq?: string
   createdAt: string
   updatedAt: string
   capabilities?: { steering: boolean; resume: boolean; fork?: boolean; promptCapabilities?: AgentPromptCapabilities }
@@ -188,6 +192,7 @@ export interface AgentMethods {
   "_deskfleet/session/fork": { params: AgentMutation & { context: AgentSessionContext; title?: string }; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
+  "_deskfleet/session/read": { params: AgentMutation & { throughSeq: string }; result: AgentSnapshot }
   "_deskfleet/git/branches": { params: { workspaceId: string }; result: GitBranchesSnapshot }
   "_deskfleet/git/status": { params: { sessionId: string; force?: boolean }; result: GitStatusSnapshot }
   "_deskfleet/git/diff": { params: GitDiffRequest; result: GitFileDiff }
