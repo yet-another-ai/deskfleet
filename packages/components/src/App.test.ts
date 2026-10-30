@@ -55,7 +55,6 @@ beforeAll(async () => {
   ])
 })
 
-
 beforeEach(() => {
   window.localStorage.clear()
   vi.spyOn(platformClient.catalog, "list").mockResolvedValue(catalogFixture())
