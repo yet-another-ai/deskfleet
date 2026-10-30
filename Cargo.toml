@@ -18,8 +18,13 @@ members = [
     "crates/wayland",
     "crates/x11",
 ]
-exclude = [".agents/skills/rust-skills/checks"]
+exclude = [".agents/skills/rust-skills/checks", "vendor/portable-pty"]
 resolver = "3"
+
+[patch.crates-io]
+# Keep PTY child FD cleanup compatible with Chromium's close() ownership checks.
+# Remove after adopting an upstream release with this fix; see the vendored README.
+portable-pty = { path = "vendor/portable-pty" }
 
 [workspace.package]
 version = "0.2.2"

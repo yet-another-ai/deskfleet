@@ -176,6 +176,9 @@ jobs:
       - name: Run the built Web and Electron clients
         run: xvfb-run -a mise run backend:smoke-clients
 
+      - name: Verify native PTYs in the Electron main process
+        run: xvfb-run -a mise run desktop:smoke-native-terminal
+
       - name: Start the test TURN relay
         run: >-
           docker run --detach --name deskfleet-turn-test
