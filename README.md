@@ -145,6 +145,11 @@ cache is ignored. `vueuse-functions` is the official VueUse skill; invoke it as
   API, database, identity provider, reverse proxy, and TURN relay.
 - [Agent guide](AGENTS.md): repository conventions and engineering workflow.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and instructions
+for signing the [Contributor License Agreement](CLA.md).
+
 ## License
 
 The backend and DeskFleet source use the [Apache-2.0 license](LICENSE). Vendored
