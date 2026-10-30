@@ -132,7 +132,7 @@ replica configuration and failure behavior.
 
 The identity design supports the hosted service and self-hosted installations with
 DeskFleet-owned accounts with public email/password registration, Passkeys, and
-optional GitHub OAuth login.
+optional GitHub and Google OAuth login.
 GitHub App integration is separate from login: central PostgreSQL stores each
 user's App authorization and their opt-in to act as that GitHub user. App grants
 belong to the account, not to a Team or Machine, and do not grant DeskFleet

@@ -16,7 +16,7 @@ impl ControlStore {
     ) -> Result<Value> {
         self.new_session_checked(user_id, version, None).await
     }
-    /// Establish a GitHub session only if no credential revocation followed its start.
+    /// Establish an OAuth session only if no credential revocation followed its start.
     pub async fn new_session_at_generation(&self, user_id: &str, generation: i64) -> Result<Value> {
         self.new_session_checked(user_id, None, Some(generation))
             .await

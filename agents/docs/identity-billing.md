@@ -11,7 +11,7 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 ## Agreed scope
 
 - Replace OIDC with DeskFleet-owned accounts, public registration, email/password
-  login, Passkeys, and optional GitHub OAuth login. Web and Electron use the same
+  login, Passkeys, and optional GitHub and Google OAuth login. Web and Electron use the same
   account authority.
 - Subscriptions and usage belong to a Team. A person can use a single-member
   Team; membership in several Teams does not combine their plans.
@@ -61,7 +61,7 @@ membership, resource access, or Site Admin authority.
 1. Register with email/password and prove mailbox control. Verification delivery
    can be retried. Credentials supplied by an unverified third party must not be
    attached to a later verified owner.
-2. Log in with email/password, a registered Passkey, or a linked GitHub identity.
+2. Log in with email/password, a registered Passkey, or a GitHub or Google identity.
    Each produces the same application-session identity and Team authority.
 3. Recover a password using an expiring, single-use email link. Unknown and
    registered addresses receive the same public response.
@@ -74,16 +74,17 @@ membership, resource access, or Site Admin authority.
 7. Support account disablement, revoking existing login sessions/peer access and
    preventing new sessions and authorization of later delegated work.
 
-GitHub login identifies an account by GitHub’s stable user ID. Every GitHub
-sign-in requires acceptance of configured legal terms before authorization.
-Creating an account through GitHub also requires a verified GitHub email and
-enabled public registration. An existing account is
-not automatically linked based on its email address. An email already used by an
-existing account cannot create another account, and explicit linking is not yet
-supported. The initial ten-minute recent-authentication window after GitHub
-sign-in relies on GitHub authorization, which may use an existing GitHub session
-without freshly entered credentials. GitHub users can register a Passkey during
-that window, then use it for later security-sensitive confirmations. GitHub
+GitHub login identifies an account by GitHub’s stable user ID; Google login uses
+Google’s stable `sub` identifier. Every sign-in through either provider requires
+acceptance of configured legal terms before authorization. Creating an account
+also requires a provider-verified email and enabled public registration. An
+existing account is not automatically linked based on its email address. An
+email already used by an existing account cannot create another account, even
+when signing in through a different provider; explicit linking is not yet
+supported. The initial ten-minute recent-authentication window after OAuth
+sign-in relies on provider authorization, which may use an existing provider
+session without freshly entered credentials. These users can register a Passkey
+during that window, then use it for later security-sensitive confirmations.
 OAuth does not provide fresh confirmation for an existing session.
 
 DeskFleet owns email verification for password registration. Invitation acceptance

@@ -25,11 +25,13 @@ const fragmentToken = new URLSearchParams(location.hash.slice(1)).get("token") ?
 const token = fragmentToken ?? (route === "/auth/email/verify" ? sessionStorage.getItem("deskfleet-email-verify-token") ?? undefined : undefined)
 if (route === "/auth/email/verify") sessionStorage.removeItem("deskfleet-email-verify-token")
 const githubError = new URLSearchParams(location.search).get("githubError") ?? undefined
+const googleError = new URLSearchParams(location.search).get("googleError") ?? undefined
 const returnUrl = new URL(location.href)
 returnUrl.searchParams.delete("githubError")
+returnUrl.searchParams.delete("googleError")
 const returnTo = route === "/auth/login" ? "/" : returnUrl.pathname + returnUrl.search
 if (token) history.replaceState(null, "", location.pathname + location.search)
-if (githubError) history.replaceState(null, "", returnUrl.pathname + returnUrl.search + (token ? "" : returnUrl.hash))
+if (githubError || googleError) history.replaceState(null, "", returnUrl.pathname + returnUrl.search + (token ? "" : returnUrl.hash))
 const { state, isLoading, error, executeImmediate: reload } = useAsyncState(async () => {
   const [config, status] = await Promise.all([account.config(), props.api.status()])
   return { config, user: status.user }
@@ -69,6 +71,7 @@ async function signOut(): Promise<void> { await props.api.logout(); state.value 
     :return-to="returnTo"
     :email-verification-token="route === '/auth/email/verify' ? token : undefined"
     :github-error="githubError"
+    :google-error="googleError"
     :new-tab="signIn.newTab"
     @signed-in="signedIn"
   />

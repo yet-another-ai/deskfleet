@@ -24,6 +24,14 @@ pub struct GithubConfig {
     pub emails_url: String,
 }
 #[derive(Clone)]
+pub struct GoogleConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub callback_url: String,
+    pub token_url: String,
+    pub userinfo_url: String,
+}
+#[derive(Clone)]
 pub struct AuthConfig {
     pub web_url: String,
     pub allowed_origins: Vec<String>,
@@ -33,6 +41,7 @@ pub struct AuthConfig {
     pub trusted_proxy_ips: Vec<IpAddr>,
     pub mail: MailConfig,
     pub github: Option<GithubConfig>,
+    pub google: Option<GoogleConfig>,
 }
 impl AuthConfig {
     pub fn development(public_url: &str) -> Self {
@@ -58,6 +67,7 @@ impl AuthConfig {
             secure_cookies: origin.is_some_and(|u| u.scheme() == "https"),
             trusted_proxy_ips: vec![],
             github: None,
+            google: None,
             mail: MailConfig::Local {
                 directory: std::env::temp_dir().join("deskfleet-mails"),
             },
@@ -165,6 +175,31 @@ impl AuthConfig {
                 _ => {
                     return Err(invalid(
                         "both GitHub OAuth client ID and secret are required",
+                    ));
+                }
+            },
+            google: match (
+                env::var("DESKFLEET_GOOGLE_CLIENT_ID"),
+                env::var("DESKFLEET_GOOGLE_CLIENT_SECRET"),
+            ) {
+                (Err(_), Err(_)) => None,
+                (Ok(client_id), Ok(client_secret))
+                    if !client_id.is_empty() && !client_secret.is_empty() =>
+                {
+                    Some(GoogleConfig {
+                        client_id,
+                        client_secret,
+                        token_url: "https://oauth2.googleapis.com/token".into(),
+                        userinfo_url: "https://openidconnect.googleapis.com/v1/userinfo".into(),
+                        callback_url: format!(
+                            "{}/api/auth/google/callback",
+                            public_url.trim_end_matches('/')
+                        ),
+                    })
+                }
+                _ => {
+                    return Err(invalid(
+                        "both Google OAuth client ID and secret are required",
                     ));
                 }
             },

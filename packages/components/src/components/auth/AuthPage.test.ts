@@ -9,6 +9,10 @@ afterEach(() => { view?.unmount(); sessionStorage.clear(); history.replaceState(
 const recentRequired = () => new HttpError(403, "Confirm your password or Passkey to continue.", undefined, "recent_authentication_required")
 const dialog = () => new DOMWrapper(document.body).find('[role="dialog"]')
 const button = (root: { findAll(selector: string): DOMWrapper<Element>[] }, label: string) => root.findAll("button").find(value => value.text() === label)!
+const oauthProviders = [
+  { provider: "github", label: "auth.signInWithGithub", authorizationUrl: "https://github.com/login/oauth/authorize" },
+  { provider: "google", label: "auth.signInWithGoogle", authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth" },
+]
 
 function mountAt(path: string, request: (method: string, path: string, body?: unknown) => Promise<unknown>, user?: object) {
   history.replaceState(null, "", path)
@@ -130,60 +134,88 @@ test("desktop approval confirms recent authentication in a dialog and keeps its 
   expect(dialog().exists()).toBe(false)
 })
 
-test.each([true, false])("GitHub sign-in requires terms even when registrationEnabled=%s", async registrationEnabled => {
+test.each(oauthProviders.flatMap(value => [true, false].map(registrationEnabled => ({ ...value, registrationEnabled }))))("$provider sign-in requires terms even when registrationEnabled=$registrationEnabled", async ({ provider, label, authorizationUrl, registrationEnabled }) => {
   const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
   const request = mountAt("/auth/desktop?attempt=native-attempt", async (_method, path) => {
-    if (path === "/api/auth/config") return { registrationEnabled, githubEnabled: true, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "" }
-    if (path === "/api/auth/github/start") return { authorizationUrl: "https://github.com/login/oauth/authorize" }
+    if (path === "/api/auth/config") return { registrationEnabled, [`${provider}Enabled`]: true, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "" }
+    if (path === `/api/auth/${provider}/start`) return { authorizationUrl }
     return {}
   })
   await flushPromises()
-  const github = button(view!, i18n.global.t("auth.signInWithGithub"))
-  expect(github.attributes("disabled")).toBeUndefined()
-  await github.trigger("click"); await flushPromises()
-  expect(request).not.toHaveBeenCalledWith("POST", "/api/auth/github/start", expect.anything())
+  const signIn = button(view!, i18n.global.t(label))
+  expect(signIn.attributes("disabled")).toBeUndefined()
+  await signIn.trigger("click"); await flushPromises()
+  expect(request).not.toHaveBeenCalledWith("POST", `/api/auth/${provider}/start`, expect.anything())
   const checkbox = view!.get('[role="checkbox"]')
   expect(checkbox.attributes("aria-invalid")).toBe("true")
-  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t("auth.githubTermsRequired"))
+  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t(`auth.${provider}TermsRequired`))
   expect(view!.find(".terms-shake").exists()).toBe(true)
   await view!.get(".terms-shake").trigger("animationend")
-  await github.trigger("click"); await flushPromises()
+  await signIn.trigger("click"); await flushPromises()
   expect(view!.find(".terms-shake").exists()).toBe(true)
   await checkbox.trigger("click")
   expect(checkbox.attributes("aria-invalid")).toBeUndefined()
   expect(view!.find('[role="alert"]').exists()).toBe(false)
-  await github.trigger("click"); await flushPromises()
-  expect(request).toHaveBeenCalledWith("POST", "/api/auth/github/start", { returnTo: "/auth/desktop?attempt=native-attempt", acceptedTerms: true })
-  expect(assign).toHaveBeenCalledExactlyOnceWith("https://github.com/login/oauth/authorize")
+  await signIn.trigger("click"); await flushPromises()
+  expect(request).toHaveBeenCalledWith("POST", `/api/auth/${provider}/start`, { returnTo: "/auth/desktop?attempt=native-attempt", acceptedTerms: true })
+  expect(assign).toHaveBeenCalledExactlyOnceWith(authorizationUrl)
 })
 
-test("GitHub callback errors are displayed and removed from browser history", async () => {
-  mountAt("/auth/login?githubError=terms_required", async () => ({ registrationEnabled: true, githubEnabled: true }))
+test.each(oauthProviders.flatMap(value => [
+  { code: "terms_required", message: "TermsRequired" },
+  { code: "registration_disabled", message: "RegistrationDisabled" },
+  { code: "email_conflict", message: "EmailConflict" },
+  { code: "failed", message: "Failed" },
+  { code: "unknown", message: "Failed" },
+].map(error => ({ ...value, ...error }))))("$provider callback error $code is displayed and removed from browser history", async ({ provider, message, code }) => {
+  mountAt(`/auth/login?${provider}Error=${code}`, async () => ({ registrationEnabled: true, [`${provider}Enabled`]: true }))
   await flushPromises()
-  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t("auth.githubTermsRequired"))
+  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t(`auth.${provider}${message}`))
   expect(location.search).toBe("")
 })
 
-test("GitHub sign-in restores an email verification token without sending it in the return path", async () => {
+test.each(oauthProviders)("$provider sign-in restores an email verification token without sending it in the return path", async ({ provider, label, authorizationUrl }) => {
   vi.spyOn(location, "assign").mockImplementation(() => {})
   const request = mountAt("/auth/email/verify#token=secret", async (_method, path) => {
-    if (path === "/api/auth/config") return { registrationEnabled: true, githubEnabled: true }
-    if (path === "/api/auth/github/start") return { authorizationUrl: "https://github.com/login/oauth/authorize" }
+    if (path === "/api/auth/config") return { registrationEnabled: true, [`${provider}Enabled`]: true }
+    if (path === `/api/auth/${provider}/start`) return { authorizationUrl }
     return {}
   })
   await flushPromises()
   expect(location.hash).toBe("")
-  await button(view!, i18n.global.t("auth.signInWithGithub")).trigger("click"); await flushPromises()
-  expect(request).toHaveBeenCalledWith("POST", "/api/auth/github/start", { returnTo: "/auth/email/verify", acceptedTerms: false })
+  await button(view!, i18n.global.t(label)).trigger("click"); await flushPromises()
+  expect(request).toHaveBeenCalledWith("POST", `/api/auth/${provider}/start`, { returnTo: "/auth/email/verify", acceptedTerms: false })
   view!.unmount()
-  const next = mountAt("/auth/email/verify", async () => ({ registrationEnabled: true, githubEnabled: true }), { id: "u1", name: "Ada", email: "ada@example.test" })
+  const next = mountAt("/auth/email/verify", async () => ({ registrationEnabled: true, [`${provider}Enabled`]: true }), { id: "u1", name: "Ada", email: "ada@example.test" })
   await flushPromises()
   await view!.get("form").trigger("submit"); await flushPromises()
   expect(next).toHaveBeenCalledWith("POST", "/api/auth/email/verify", { token: "secret" })
   expect(sessionStorage.getItem("deskfleet-email-verify-token")).toBeNull()
 })
 
+test.each([true, false])("Google sign-in is shown only when configured: %s", async googleEnabled => {
+  mountAt("/auth/login", async () => ({ registrationEnabled: true, githubEnabled: true, googleEnabled }))
+  await flushPromises()
+  expect(!!button(view!, i18n.global.t("auth.signInWithGoogle"))).toBe(googleEnabled)
+  expect(button(view!, i18n.global.t("auth.signInWithGithub"))).toBeDefined()
+})
 
+test("Google sign-in shares consent with GitHub and preserves the continuation after a callback error", async () => {
+  const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
+  const request = mountAt("/auth/desktop?attempt=native-attempt&googleError=failed", async (_method, path) => {
+    if (path === "/api/auth/config") return { registrationEnabled: true, githubEnabled: true, googleEnabled: true, termsOfServiceUrl: "https://example.test/terms" }
+    if (path === "/api/auth/google/start") return { authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth" }
+    return {}
+  })
+  await flushPromises()
+  expect(view!.findAll('[role="checkbox"]')).toHaveLength(1)
+  expect(location.search).toBe("?attempt=native-attempt")
+  await view!.get('[role="checkbox"]').trigger("click")
+  await button(view!, i18n.global.t("auth.signInWithGoogle")).trigger("click"); await flushPromises()
+  expect(request).toHaveBeenCalledWith("POST", "/api/auth/google/start", { returnTo: "/auth/desktop?attempt=native-attempt", acceptedTerms: true })
+  expect(assign).toHaveBeenCalledExactlyOnceWith("https://accounts.google.com/o/oauth2/v2/auth")
+  expect(button(view!, i18n.global.t("auth.signInWithGithub")).attributes("disabled")).toBeDefined()
+})
 
 test("closed registration presents the site policy without an email submission form", async () => {
   mountAt("/auth/register", async () => ({ registrationEnabled: false }))

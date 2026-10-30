@@ -60,6 +60,7 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_TRUSTED_PROXY_IPS` | Comma-separated exact proxy IPs allowed to set `X-Real-IP` for authentication rate limits. Empty by default; proxies must overwrite that header. |
 | `DESKFLEET_AUTH_WEB_URL` | Trusted Web origin for verification links, Passkeys, and desktop authorization. Defaults to the first Web origin or API origin. |
 | `DESKFLEET_GITHUB_CLIENT_ID`, `DESKFLEET_GITHUB_CLIENT_SECRET` | Optional GitHub OAuth app credentials. Set both to enable login; register `<DESKFLEET_PUBLIC_URL>/api/auth/github/callback` as the callback URL. |
+| `DESKFLEET_GOOGLE_CLIENT_ID`, `DESKFLEET_GOOGLE_CLIENT_SECRET` | Optional Google OAuth Web application credentials. Set both to enable login; register `<DESKFLEET_PUBLIC_URL>/api/auth/google/callback` as an authorized redirect URI. See [login setup](../../agents/docs/self-hosted.md#login-and-mail-delivery). |
 | `DESKFLEET_GITHUB_APP_SLUG`, `DESKFLEET_GITHUB_APP_CLIENT_ID`, `DESKFLEET_GITHUB_APP_CLIENT_SECRET` | Separate optional GitHub App integration. Set all three and register `<DESKFLEET_PUBLIC_URL>/api/integrations/github/callback` as its user authorization callback. See the [integration guide](../../agents/docs/self-hosted.md#github-app-integration). |
 | `DESKFLEET_WEBAUTHN_RP_ID` | Passkey relying-party ID; defaults to the Web hostname. Keep it stable. |
 | `DESKFLEET_SMTP_HOST`, `DESKFLEET_SMTP_PORT` | STARTTLS mail relay and optional port (587). Required outside local development. |
@@ -257,7 +258,15 @@ and case-folds ASCII email without removing plus tags. Recovery links are
 purpose-bound, one-use, and expire after one hour. Recovery and password/email
 changes revoke all login sessions and peer grants without deleting Machines or
 stopping accepted execution. Ordinary recovery retains Passkeys. Security
-changes require password, Passkey, or GitHub confirmation within ten minutes.
+changes require authentication within ten minutes. GitHub and Google sign-in
+establish this initial window; later confirmation uses a password or Passkey.
+
+Optional GitHub and Google OAuth login issue the same application sessions.
+`GET /api/auth/config` reports availability as `githubEnabled` and `googleEnabled`.
+Each provider's `/api/auth/<provider>/start` endpoint requires legal acceptance
+when configured and returns an authorization URL. The callback exchanges the
+code server-side. New accounts require enabled registration and a provider-verified
+email; an email match never links an existing account to another provider.
 
 `GET /api/auth/config` exposes the current `termsOfServiceUrl` and
 `privacyTermsUrl`. When either is configured, registration displays an unchecked
@@ -282,6 +291,8 @@ The `/api` routes cover:
 
 - `/auth/config`, `/auth/register`, `/auth/verify`, `/auth/login`, recovery,
   password/email changes, Passkey management, login-session inspection/revocation.
+- `/auth/github/start`, `/auth/github/callback`, `/auth/google/start`,
+  `/auth/google/callback` for optional provider login.
 - `/auth/start`, `/auth/desktop/complete`, `/auth/exchange`, `/auth/logout`, `/me`.
 - `/teams`, membership/role management, invitations, and `/invites/accept`.
 - Team machine enrollment/listing, renaming (`PATCH /machines/{id}`), and
