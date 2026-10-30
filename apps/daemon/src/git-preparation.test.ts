@@ -23,15 +23,15 @@ async function repository(directory: string, name = "repo", branch = "main") {
   const writer = join(directory, `${name}-writer`)
   const source = join(directory, name)
   await git(directory, "init", "--bare", `--initial-branch=${branch}`, remote)
-  await git(directory, "clone", remote, writer)
-  await git(writer, "config", "core.autocrlf", "false")
+  // Configure line endings before checkout so Windows host defaults cannot make
+  // the fixture dirty when LF assertions and subsequent Git commands run.
+  await git(directory, "clone", "--config", "core.autocrlf=false", remote, writer)
   await mkdir(join(writer, "nested"))
   await writeFile(join(writer, "source.txt"), "initial\n")
   await writeFile(join(writer, "nested", "file.txt"), "nested\n")
   await commit(writer, "initial")
   await git(writer, "push", "origin", branch)
-  await git(directory, "clone", remote, source)
-  await git(source, "config", "core.autocrlf", "false")
+  await git(directory, "clone", "--config", "core.autocrlf=false", remote, source)
   const initial = await git(source, "rev-parse", "HEAD")
   return { source, writer, remote, initial, branch }
 }
