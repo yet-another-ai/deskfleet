@@ -82,6 +82,13 @@ then serializes reaping with termination requests so a reused PID cannot be
 signalled. Exit wakes the reader to drain available bytes even when a descendant
 keeps the slave open; the exit event follows the final output. Explicit close
 cancels pending I/O and drops PTY handles before waiting for termination.
+The workspace patches `portable-pty` 0.9.0 in `vendor/portable-pty`: Unix child
+startup marks inherited descriptors close-on-exec instead of calling `close()`
+before exec. This avoids Chromium's FD ownership abort in Electron's hosted
+daemon and keeps Rust's exec-error pipe open until success or failure is known.
+The kernel closes those descriptors when exec succeeds; the parent retains its
+original descriptors and flags. The vendored README records provenance and
+removal conditions for this temporary dependency patch.
 On Windows, portable-pty asks ConPTY to inherit the cursor. ConPTY writes
 `ESC[6n` when the child connects and will not let that process run until the
 host reports a cursor position. The PTY reader answers that startup query with
@@ -338,6 +345,14 @@ Daemon tests additionally cover window bounds and cumulative acknowledgements,
 restart recovery, incomplete creation/deletion, and hangup while a PTY write is
 blocked. `mise run daemon:smoke` also exercises the bundled image encoder with
 no Node executable on `PATH`.
+
+On Linux, `mise run desktop:smoke-native-terminal` loads the native addon inside
+Electron's browser main process, where Chromium enforces FD ownership. It checks
+PTY input/output, a nonzero command exit, and spawn rejection when an executable's
+interpreter is missing. The latter exercises the child error pipe after
+`pre_exec`, ensuring exec failures reach the parent. The Linux backend CI job runs
+this smoke under Xvfb. The WebRTC terminal smoke above hosts its daemon in the
+outer Node process, so it does not exercise Chromium's FD ownership checks.
 
 `mise exec -- node --test apps/daemon/src/local-channel.test.ts` verifies Agent
 and terminal IPC with WebRTC creation disabled, including input, output, resize,

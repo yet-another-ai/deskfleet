@@ -207,6 +207,11 @@ description = "Verify Chromium terminal I/O and PTY reattachment over WebRTC"
 depends = ["native:debug"]
 run = "node apps/desktop/scripts/smoke-terminal.ts"
 
+[tasks."desktop:smoke-native-terminal"]
+description = "Verify native PTY spawning inside the Linux Electron main process"
+depends = ["native:debug"]
+run = "node apps/desktop/scripts/smoke-native-terminal.ts"
+
 [tasks."desktop:smoke-catalog"]
 description = "Verify local catalog forms, persistence, and directory terminals in Electron"
 depends = ["native:debug", "desktop:build"]

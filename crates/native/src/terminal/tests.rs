@@ -2,6 +2,8 @@ use super::*;
 
 #[cfg(unix)]
 mod async_io;
+#[cfg(target_os = "linux")]
+mod unix_spawn;
 
 fn config() -> TerminalConfig {
     TerminalConfig {
