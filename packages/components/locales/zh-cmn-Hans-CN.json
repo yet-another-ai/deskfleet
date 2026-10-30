@@ -1070,6 +1070,7 @@
     "replace": "替换",
     "loadingResource": "正在加载图片…",
     "imageUnavailable": "图片无法加载",
+    "previewUnavailable": "无法预览此文件，可以下载后查看。", "downloadResource": "下载",
     "resourceUnavailable": "此资源暂不可用，请连接所属机器后重试。",
     "notImage": "此文件无法作为图片显示。",
     "state": {
