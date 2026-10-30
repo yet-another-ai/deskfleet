@@ -15,7 +15,7 @@ export interface SerializedCentralRequestError {
 
 // Only route templates leave the transport; unmatched paths carry no segments.
 const routes = [
-  "/api/me", "/api/site", "/api/teams", "/api/invites/accept", "/api/integrations/github",
+  "/api/me", "/api/site", "/api/teams", "/api/invites/accept", "/api/integrations/github", "/api/integrations/github/pull-request",
   "/api/auth/config", "/api/auth/start", "/api/auth/exchange", "/api/auth/logout", "/api/auth/register",
   "/api/auth/registration", "/api/auth/reauthenticate",
   "/api/auth/passkeys/login", "/api/auth/passkeys/login/options",

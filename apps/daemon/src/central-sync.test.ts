@@ -8,10 +8,12 @@ import { CentralSync } from "./central-sync.ts"
 test("catalog publication reports runtime desktop support and updates after authorization changes", async t => {
   let desktop = false
   const agents = { onEvent: () => () => {}, journal: { list: async () => [] } } as unknown as AgentSessions
-  const catalog = { native: { snapshot: async () => ({}) }, onChange: () => () => {} } as unknown as DaemonCatalog
+  const githubBranches = [{ sessionId: "1", repositories: [{ repository: "owner/repo", headRepository: "owner/repo", branch: "feature" }] }]
+  const catalog = { snapshot: async () => ({ githubBranches }), onChange: () => () => {} } as unknown as DaemonCatalog
   const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
   const published: boolean[] = []
   const sync = new CentralSync(agents, catalog, providers, async (_path, body) => {
+    assert.deepEqual((body as { snapshot: unknown }).snapshot, { githubBranches })
     published.push((body as { capabilities: { desktop: boolean } }).capabilities.desktop)
   }, async () => desktop)
   t.after(() => sync.close())
@@ -35,7 +37,7 @@ test("history retries replay durable events while snapshot and audit may lead th
       history: async (_id: string, after: string, limit: number) => Array.from({ length: Math.min(limit, Number(lastEventSeq) - Number(after)) }, (_, offset) => ({ sessionId: "session", seq: String(Number(after) + offset + 1) })),
     },
   } as unknown as AgentSessions
-  const catalog = { native: { snapshot: async () => ({ workspaces: [] }) }, onChange: () => () => {} } as unknown as DaemonCatalog
+  const catalog = { snapshot: async () => ({ workspaces: [] }), onChange: () => () => {} } as unknown as DaemonCatalog
   const providers = { metadata: () => ({ providers: [{ id: "codex", name: "Codex", template: "codex" }] }), onChanged: () => () => {} } as unknown as AgentProviders
   const batches: number[][] = []
   const snapshots: boolean[] = [], receiptCounts: number[] = []
@@ -92,7 +94,7 @@ test("shutdown flush reads final producer state even after live synchronization 
       history: async (_id: string, after: string) => Array.from({ length: seq - Number(after) }, (_, index) => ({ seq: String(Number(after) + index + 1) })),
     },
   } as unknown as AgentSessions
-  const catalog = { native: { snapshot: async () => ({}) }, onChange: () => () => {} } as unknown as DaemonCatalog
+  const catalog = { snapshot: async () => ({}), onChange: () => () => {} } as unknown as DaemonCatalog
   const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
   const sent: { snapshot: ReturnType<typeof snapshot>; commands: { status: string }[] }[] = []
   const sync = new CentralSync(agents, catalog, providers, async (path, body) => {
@@ -126,7 +128,7 @@ test("receipt-only changes paginate independently and survive a lost response af
       },
     },
   } as unknown as AgentSessions
-  const catalog = { native: { snapshot: async () => ({}) }, onChange: () => () => {} } as unknown as DaemonCatalog
+  const catalog = { snapshot: async () => ({}), onChange: () => () => {} } as unknown as DaemonCatalog
   const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
   const batches: { snapshot?: unknown; snapshotSeq?: string; commands: { id: string; status: string }[] }[] = []
   const sync = new CentralSync(agents, catalog, providers, async (path, body) => {

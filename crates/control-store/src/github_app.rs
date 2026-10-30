@@ -1,6 +1,6 @@
 //! Per-user GitHub App grants. Tokens stay in central storage, never in client settings.
 use crate::{ControlStore, Error, Result, now_ms, one, sql};
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait};
 use serde::Serialize;
 
 #[derive(Default, Serialize)]
@@ -21,7 +21,65 @@ pub struct GithubAppGrant {
     pub refresh_expires_at: Option<i64>,
 }
 
+/// Credentials used only by the central server when consuming an enabled grant.
+pub struct GithubAppTokens {
+    pub access_token: String,
+    pub expires_at: Option<i64>,
+    pub refresh_token: Option<String>,
+    pub refresh_expires_at: Option<i64>,
+}
+
+/// Holds the grant row while a single-use refresh token is being rotated.
+/// The database lock serializes refreshes across API instances.
+pub struct GithubAppAccess {
+    pub tokens: GithubAppTokens,
+    tx: DatabaseTransaction,
+    user_id: String,
+}
+
+impl GithubAppAccess {
+    /// Save rotated credentials without changing the user's identity or opt-in.
+    /// Release the lock before making the repository request.
+    pub async fn finish(mut self, refreshed: Option<GithubAppTokens>) -> Result<String> {
+        if let Some(tokens) = refreshed {
+            self.tx.execute_raw(sql(
+                "UPDATE cp_github_app_authorizations SET access_token=$2,expires_at=$3,refresh_token=$4,refresh_expires_at=$5 WHERE user_id=$1",
+                vec![self.user_id.into(),tokens.access_token.clone().into(),tokens.expires_at.into(),tokens.refresh_token.clone().into(),tokens.refresh_expires_at.into()],
+            )).await?;
+            self.tokens = tokens;
+        }
+        self.tx.commit().await?;
+        Ok(self.tokens.access_token)
+    }
+}
+
 impl ControlStore {
+    /// Lock an explicitly enabled App grant before using or refreshing it.
+    pub async fn github_app_access(
+        &self,
+        user_id: &str,
+        client_id: &str,
+    ) -> Result<Option<GithubAppAccess>> {
+        let tx = self.db.begin().await?;
+        let row = tx.query_one_raw(sql(
+            "SELECT access_token,expires_at,refresh_token,refresh_expires_at FROM cp_github_app_authorizations WHERE user_id=$1 AND client_id=$2 AND act_as_you FOR UPDATE",
+            vec![user_id.into(),client_id.into()],
+        )).await?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        Ok(Some(GithubAppAccess {
+            tokens: GithubAppTokens {
+                access_token: row.try_get("", "access_token")?,
+                expires_at: row.try_get("", "expires_at")?,
+                refresh_token: row.try_get("", "refresh_token")?,
+                refresh_expires_at: row.try_get("", "refresh_expires_at")?,
+            },
+            tx,
+            user_id: user_id.to_owned(),
+        }))
+    }
+
     pub async fn github_app_status(
         &self,
         user_id: &str,

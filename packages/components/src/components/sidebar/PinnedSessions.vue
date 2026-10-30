@@ -13,6 +13,7 @@ import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
+import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
 
 const { t } = useI18n()
 const id = useId()
@@ -55,6 +56,7 @@ function working(machineId: string, sessionId: string): boolean {
           >
             <Pin :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
             <span class="min-w-0 flex-1 truncate">{{ sessionLabel({ id: item.sessionId, title: item.title }) }}</span>
+            <SessionPullRequestIndicators :machine-id="item.machineId" :session-id="item.sessionId" />
             <SessionWorkingIndicator v-if="working(item.machineId, item.sessionId)" />
             <SessionUnreadIndicator v-else-if="sessionIsUnread(item)" />
             <span v-if="!item.online" class="ui-badge shrink-0 rounded-full font-normal">{{ t('machine.offline') }}</span>

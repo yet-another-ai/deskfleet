@@ -1,5 +1,5 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { AccountState, AccountUser, GithubAppSettings, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, Team, TeamMember, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, Team, TeamMember, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -125,6 +125,11 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     await this.#open(url.toString())
   }
   setGithubActAsYou(actAsYou: boolean) { return this.request<GithubAppSettings>("PATCH", "/api/integrations/github", { actAsYou }) }
+  githubPullRequest(query: GithubPullRequestQuery) {
+    const params = new URLSearchParams({ owner: query.owner, repo: query.repo, branch: query.branch })
+    if (query.headOwner) params.set("headOwner", query.headOwner)
+    return this.request<{ pullRequest: GithubPullRequest | null }>("GET", `/api/integrations/github/pull-request?${params}`)
+  }
   billing(teamId: string) { return this.request<TeamBilling>("GET", `/api/teams/${encodeURIComponent(teamId)}/billing`) }
   async checkout(teamId: string, plan: "go" | "pro", requestId: string, interval: BillingInterval = "month") {
     const { url } = await this.request<{ url: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/billing/checkout`, { plan, requestId, interval })

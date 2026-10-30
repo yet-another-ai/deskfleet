@@ -3,7 +3,7 @@ import type { DesktopErrorReportingContext } from "./error-reporting-context.ts"
 import { deserializeCentralRequestError, serializeCentralRequestError, type CentralRequestError, type SerializedCentralRequestError } from "./request-diagnostics.ts"
 
 export const CENTRAL_METHODS = [
-  "status", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "aiUsage", "aiUsageSessions", "openAccountSettings", "githubSettings", "manageGithub", "authorizeGithubApp", "setGithubActAsYou", "billing", "checkout", "billingPortal", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "transferOwnership", "machines", "renameMachine", "removeMachine", "localEnrollment", "enrollLocal", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
+  "status", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "aiUsage", "aiUsageSessions", "openAccountSettings", "githubSettings", "manageGithub", "authorizeGithubApp", "setGithubActAsYou", "githubPullRequest", "billing", "checkout", "billingPortal", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "transferOwnership", "machines", "renameMachine", "removeMachine", "localEnrollment", "enrollLocal", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
 ] as const satisfies readonly (keyof CentralApi)[]
 
 export type CentralIpcResult = { ok: true; value: unknown } | {

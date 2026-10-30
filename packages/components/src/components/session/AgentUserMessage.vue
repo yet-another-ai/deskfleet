@@ -1,16 +1,15 @@
 <script setup lang="ts">
-import { CircleAlert, CircleCheck, Copy, LoaderCircle, User } from "@lucide/vue"
-import { useTimeoutFn } from "@vueuse/core"
-import { computed, ref } from "vue"
+import { CircleAlert, CircleCheck, LoaderCircle, User } from "@lucide/vue"
+import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAgentActor } from "../../composables/useAgentActor.ts"
 import { formatMessageTime } from "../../services/agent-format.ts"
-import IconButton from "../common/IconButton.vue"
 import UserAvatar from "../common/UserAvatar.vue"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
+import AgentMessageActions from "./AgentMessageActions.vue"
 const props = defineProps<{ input: AgentInput }>()
 const { t, locale } = useI18n()
 const { name, email } = useAgentActor(() => props.input.author)
@@ -19,18 +18,6 @@ const time = computed(() => formatMessageTime(props.input.deliveredAt ?? props.i
 const state = computed(() => props.input.state === "delivered" ? undefined : props.input.state === "dispatching" && props.input.actualDelivery === "turn_start" ? t("agent.inputInProgress") : t(`agent.inputState.${props.input.state}`))
 const steered = computed(() => props.input.state === "delivered" && props.input.actualDelivery === "steer")
 const text = computed(() => props.input.content.flatMap(block => block.type === "text" ? [block.text] : block.type === "resource" && "text" in block.resource ? [block.resource.text] : []).join("\n\n"))
-const copied = ref(false)
-const copyFailed = ref(false)
-const { start: scheduleCopiedReset, stop: cancelCopiedReset } = useTimeoutFn(() => { copied.value = false }, 1500, { immediate: false })
-async function copy(): Promise<void> {
-  cancelCopiedReset()
-  copied.value = false
-  copyFailed.value = false
-  try { await navigator.clipboard.writeText(text.value) }
-  catch { copyFailed.value = true; return }
-  copied.value = true
-  scheduleCopiedReset()
-}
 </script>
 
 <template>
@@ -49,10 +36,7 @@ async function copy(): Promise<void> {
         <AgentContent :content="input.content" />
       </div>
       <p v-if="input.state === 'uncertain'" class="m-0 max-w-md text-right text-xs text-ui-warning">{{ t('agent.uncertainInput') }}</p>
-      <div v-if="text" class="-my-1 flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-        <IconButton :icon="copied ? CircleCheck : Copy" :label="t(copied ? 'agent.copied' : 'agent.copy')" @click="copy" />
-      </div>
-      <p v-if="copyFailed" role="alert" class="m-0 text-xs text-ui-danger">{{ t('agent.copyFailed') }}</p>
+      <AgentMessageActions :text="text" />
     </div>
     <UserAvatar v-if="input.author.userId" :name="name" :email="email" :size="32" :title="name" class="mt-6 text-xs" />
     <span v-else class="ui-avatar mt-6 h-8 w-8 rounded-full" :title="name" aria-hidden="true">

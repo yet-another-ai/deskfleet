@@ -174,6 +174,10 @@ test("desktop GitHub settings bridge keeps authorization in the host transport",
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ ...settings, actAsYou: true })))
   await invoke({} as Electron.IpcMainInvokeEvent, "setGithubActAsYou", [true])
   expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/integrations/github`, expect.objectContaining({ method: "PATCH", body: JSON.stringify({ actAsYou: true }) }))
+  const pullRequest = { number: 78, title: "Show PR status", url: "https://github.com/owner/repo/pull/78", state: "draft" }
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ pullRequest })))
+  await expect(invoke({} as Electron.IpcMainInvokeEvent, "githubPullRequest", [{ owner: "owner", repo: "repo", branch: "feat/status" }])).resolves.toEqual({ ok: true, value: { pullRequest } })
+  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/integrations/github/pull-request?owner=owner&repo=repo&branch=feat%2Fstatus`, expect.objectContaining({ method: "GET" }))
 })
 
 test("central IPC preserves network diagnostics for caught renderer failures without exposing request payloads", async () => {

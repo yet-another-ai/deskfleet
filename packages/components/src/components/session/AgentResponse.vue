@@ -13,7 +13,9 @@ import AgentPlan from "./AgentPlan.vue"
 import AgentToolCall from "./AgentToolCall.vue"
 import AgentElicitation from "./AgentElicitation.vue"
 import AgentActivityGroup from "./AgentActivityGroup.vue"
-const props = defineProps<{ response: ConversationResponse; disabled?: boolean }>()
+import AgentMessageActions from "./AgentMessageActions.vue"
+const props = defineProps<{ response: ConversationResponse; disabled?: boolean; canFork?: boolean; forkDisabled?: boolean }>()
+const emit = defineEmits<{ fork: [] }>()
 const { t } = useI18n()
 const { now, pause, resume } = useNow({ controls: true, scheduler: callback => useIntervalFn(callback, 1000) })
 watchImmediate(() => props.response.live, live => live ? resume() : pause())
@@ -25,6 +27,10 @@ const duration = computed(() => {
 const answer = computed(() => {
   const last = props.response.steps.at(-1)
   return !props.response.live && props.response.turn && last?.kind === "message" && last.role === "assistant" ? last : undefined
+})
+const text = computed(() => {
+  const content = answer.value?.content ?? props.response.steps.flatMap(step => step.kind === "message" && step.role === "assistant" ? step.content : [])
+  return content.flatMap(block => block.type === "text" ? [block.text] : block.type === "resource" && "text" in block.resource ? [block.resource.text] : []).join("\n\n")
 })
 const steps = computed(() => answer.value ? props.response.steps.slice(0, -1) : props.response.steps)
 const groupedSteps = computed(() => groupResponseActivity(steps.value))
@@ -58,7 +64,7 @@ watchImmediate([pendingMermaidLocate, steps], ([target, currentSteps]) => {
 </script>
 
 <template>
-  <CollapsibleRoot :open="open" class="flex flex-col gap-3" @update:open="toggled = $event">
+  <CollapsibleRoot :open="open" class="group flex flex-col gap-3" @update:open="toggled = $event">
     <template v-if="response.turn">
       <div v-if="response.live" class="flex items-center gap-2 text-ui-text-muted" role="status">
         <LoaderCircle :size="15" :stroke-width="2" class="animate-spin" aria-hidden="true" />
@@ -92,5 +98,6 @@ watchImmediate([pendingMermaidLocate, steps], ([target, currentSteps]) => {
       <CircleAlert v-else :size="15" :stroke-width="2" class="mt-0.5 shrink-0" aria-hidden="true" />
       <span class="min-w-0 break-words">{{ t(`agent.turnState.${outcome.state}`) }}<template v-if="outcome.error">: {{ outcome.error }}</template></span>
     </div>
+    <AgentMessageActions v-if="!response.live" :text="text" :can-fork="canFork" :fork-disabled="forkDisabled || disabled" @fork="emit('fork')" />
   </CollapsibleRoot>
 </template>

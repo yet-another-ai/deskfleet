@@ -28,7 +28,10 @@ export class CentralSync {
     this.#agents = agents; this.#catalog = catalog; this.#post = post
     this.#providers = providers
     this.#desktopSupported = desktopSupported
-    this.#unsubscribe = [agents.onEvent(event => this.changed(event.sessionId)), catalog.onChange(() => this.changed()), providers.onChanged(() => this.changed())]
+    this.#unsubscribe = [agents.onEvent(event => {
+      if (event.kind === "session") this.#catalogDirty = true
+      this.changed(event.sessionId)
+    }), catalog.onChange(() => this.changed()), providers.onChanged(() => this.changed())]
   }
 
   enable(): void { this.#enabled = true; this.changed() }
@@ -60,7 +63,7 @@ export class CentralSync {
       if (this.#catalogDirty) {
         this.#catalogDirty = false
         try { await this.#post("/api/daemon/catalog", {
-          snapshot: await this.#catalog.native.snapshot(), providers: this.#providers.metadata(),
+          snapshot: await this.#catalog.snapshot(), providers: this.#providers.metadata(),
           capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), agent: true, terminal: true, git: true },
         }) }
         catch (error) { this.#catalogDirty = true; throw error }

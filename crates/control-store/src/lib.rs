@@ -15,7 +15,7 @@ mod site;
 mod teams;
 mod turn_usage;
 
-pub use github_app::{GithubAppGrant, GithubAppStatus};
+pub use github_app::{GithubAppAccess, GithubAppGrant, GithubAppStatus, GithubAppTokens};
 pub use identity::normalize_email;
 pub use peer_negotiations::{PeerCandidateState, PeerOfferState};
 pub use realtime::RealtimeRoute;

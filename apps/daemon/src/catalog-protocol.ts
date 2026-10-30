@@ -1,7 +1,21 @@
-import type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree } from "@deskfleet/native"
+import type { CatalogDirectory, CatalogSnapshot as NativeCatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree } from "@deskfleet/native"
 
 // These records are generated from the Rust napi boundary; IDs stay decimal strings.
-export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree }
+export type { CatalogDirectory, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree }
+
+/** A branch locator contains no remote credentials or local filesystem paths. */
+export interface GitHubBranch {
+  repository: string
+  headRepository: string
+  branch: string
+}
+export interface SessionGitHubBranches {
+  sessionId: string
+  repositories: GitHubBranch[]
+}
+export interface CatalogSnapshot extends NativeCatalogSnapshot {
+  githubBranches?: SessionGitHubBranches[]
+}
 
 export interface ManagedWorkspaceSession extends CatalogWorkspaceSession {
   worktree: CatalogWorktree
