@@ -44,7 +44,7 @@ function working(machineId: string, sessionId: string): boolean {
     <h2 :id="id" class="m-0 mb-2 px-2.5 text-xs font-normal text-ui-text-faint">{{ t('pinnedSessions.title') }}</h2>
     <ul class="m-0 flex list-none flex-col gap-1 p-0">
       <li v-for="item in visiblePins" :key="`${item.machineId}:${item.sessionId}`" :data-pinned-machine="item.machineId" :data-pinned-session="item.sessionId">
-        <SessionContextMenu :machine-id="item.machineId" :session-id="item.sessionId" :title="item.title" :archive-state="item.archiveState" :disabled="!item.online || !item.loaded">
+        <SessionContextMenu :machine-id="item.machineId" :session-id="item.sessionId" :title="item.title" :context="item.context" :archive-state="item.archiveState" :disabled="!item.online || !item.loaded">
           <button
             type="button"
             class="ui-nav-item w-full px-2.5 text-left"

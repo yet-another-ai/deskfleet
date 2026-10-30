@@ -157,10 +157,11 @@ Owners and administrators manage members and roles and remove machines.
 Administrators cannot remove or demote the owner; the owner must transfer
 ownership to an existing active, verified member before leaving. The former owner
 becomes an administrator. Members can enroll their own machines, configure Providers,
-create or delete Workspaces, and create, archive, or restore Sessions. The first
-release does not expose Session deletion to users. Per-Workspace sharing rules are not
-part of the initial role model. Server and daemon authorization still checks the
-requested action and Team rather than treating a connected peer as authority.
+create or delete Workspaces, and create, archive, restore, or delete Sessions.
+The archived Sessions page exposes deletion after a hold-to-confirm action.
+Per-Workspace sharing rules are not part of the initial role model. Server and
+daemon authorization still checks the requested action and Team rather than
+treating a connected peer as authority.
 
 Site administrators have a separate installation-wide grant attached to their
 existing user account. They manage runtime site settings and the target design's
@@ -245,7 +246,8 @@ Team
     Workspace
       Ordered directory paths [one or more; first is default]
       AgentSessions
-        Managed Worktree [created and removed with the Session]
+        Managed Worktree record [owned for the Session's lifetime]
+          Generated checkouts [removed on archive; recreated on restore]
       TerminalSessions [machine, workspace, or worktree scope]
 ```
 
@@ -270,12 +272,13 @@ directories without retargeting existing Session contexts.
 
 Worktrees are not independently maintained resources. Each Session record owns
 one Worktree record, created and destroyed with it. Creating a Session chooses
-its context. A **worktree** Session allocates generated checkouts; destroying it
-removes them. A **directory** Session records the Workspace's current paths and
-works in them directly, including their uncommitted changes and non-Git
-directories; destroying it removes only its records, never those files. The
-choice is immutable. Sessions sharing directories are not isolated from each
-other or from the user's own edits. For worktree contexts, the daemon creates detached Git worktrees
+its context. A **worktree** Session allocates generated checkouts; archiving or
+destroying it removes them. A **directory** Session records the Workspace's
+current paths and works in them directly, including their uncommitted changes
+and non-Git directories; archiving it leaves those files intact, and destroying
+it removes only its records. The choice is immutable. Sessions sharing directories
+are not isolated from each other or from the user's own edits. For worktree
+contexts, the daemon creates detached Git worktrees
 from the configured checkouts' HEAD commits, grouping paths in the same checkout
 and preserving subdirectory positions. Uncommitted source changes are not copied.
 The first path is the Session's default working directory. Workspace paths may
@@ -296,17 +299,23 @@ This integration is unavailable for remote Machines and Web clients; it does not
 start an editor on a remote daemon or create a forwarding connection.
 
 Archiving is the normal way to finish using a Session. It closes the provider
-and Session-owned terminals while retaining the Session, its Worktree and files,
-queued inputs, conversation/tool history, terminal transcripts, and audit.
-Archive never invokes Worktree destruction or deletes uncommitted or untracked
-files. The machine must be online, and archive completes only after the daemon
-confirms that the associated live resources have closed. Restoration keeps the
-same Session identity and execution context and returns it to the active list
-without starting processes. A later message resumes the provider where supported;
-opening a terminal can create a new shell while retaining old terminal history.
+and Session-owned terminals, then removes generated checkouts to reclaim disk
+space, including uncommitted changes and untracked files. It retains the Session,
+Worktree identity and directory metadata, queued inputs, conversation/tool
+history, terminal transcripts, and audit. Compact Git refs and the ownership
+manifest preserve each checkout's last committed HEAD for restoration; discarded
+local changes are not recoverable through restore. Workspace source directories
+are never removed. The machine must be online, and archive completes only after
+the daemon confirms that live resources have closed and generated checkouts have
+been removed. Cleanup failures remain retryable. Restoration recreates generated
+checkouts at the same paths and saved commits, keeps the same Session identity,
+and returns it to the active list without starting processes. A later message
+resumes the provider where supported; opening a terminal can create a new shell
+while retaining old terminal history.
 Archived Sessions remain owned by their Workspace and continue to prevent its
-deletion. Session deletion is not a first-release user operation; existing
-destructive implementation paths are not archive handlers.
+deletion until the Session is deleted. Deletion removes its Session and Worktree
+records, ownership manifest, commit refs, and any remaining generated checkouts.
+Archive does not invoke Session or Worktree record destruction.
 
 For example:
 
@@ -385,11 +394,11 @@ it never imports the previous registration's resources. Valid registrations
 cannot be reset through this flow.
 
 Authenticated backend management exposes catalog queries, Workspace
-create/update/delete, and Session create/archive/restore. The daemon validates
-Workspace paths as absolute, existing directories. There are no manual Worktree
-mutations or user-facing permanent Session deletion. Changes synchronize to the
-central catalog and notify Team clients. Workspace deletion never removes its
-configured source directories, and retained archived Sessions block deletion.
+create/update/delete, and Session create/archive/restore/delete. The daemon
+validates Workspace paths as absolute, existing directories. There are no manual
+Worktree mutations. Changes synchronize to the central catalog and notify Team
+clients. Workspace deletion never removes its configured source directories,
+and retained archived Sessions block deletion.
 
 The shared folder dialog lists directories through backend RPC on the selected
 daemon. It returns the current path, parent, home, roots, and child directories.
@@ -408,9 +417,15 @@ default disk. Directory Sessions continue to use their Workspace paths.
 
 Ownership manifests remain beneath the machine's `session-worktrees/` directory
 and record custom checkout locations independently of the current preference.
-Provisioning failure rolls back partial checkouts. Archive
-retains those checkouts and their local changes; disconnect never destroys them.
-Internal destruction remains available for rollback and development tests only.
+Provisioning failure rolls back partial checkouts. Archive prepares committed HEADs
+in compact Git refs and the manifest before changing archive state; a missing
+recoverable commit fails the request without stopping resources or changing that
+state. It refreshes the retained HEADs after shutdown before removing checkouts;
+restoration uses those saved locations regardless of the current root preference.
+Disconnect never destroys checkouts. Previously archived Sessions are not cleaned
+up in the background; explicitly archiving them again can reclaim retained
+checkouts. Deletion removes retained manifests and commit refs as well as any
+remaining checkouts; the same destruction path supports provisioning rollback.
 
 Electron reaches the backend through its main-process transport and narrow
 preload bridge. Web uses its browser transport. `VITE_DESKFLEET_SERVER_URL`
@@ -924,10 +939,11 @@ terminating shells, or archiving a Session. Details are owned by the
 The initial design trusts the server with synchronized Agent conversations,
 tool history, and audit. Terminal output remains on the daemon. Archive and
 restore preserve all this data, including content-bearing audit records.
-Permanent Session deletion is deferred from the first user-facing release.
-When introduced, it removes central conversation/tool content, including raw
-content in audit parameters and results; only audit metadata remains, and stale
-uploads must not restore removed content. Keep machine private keys and
+The archived Sessions page exposes daemon-side deletion of local records and
+owned resources. Immutable local command receipts remain. Central content erasure
+is separate work: it must remove conversation/tool content, including raw content
+in audit parameters and results, retain only audit metadata, and prevent stale
+uploads from restoring removed content. Keep machine private keys and
 application credentials out of history and logs. Electron renderers stay
 sandboxed, with narrow preload interfaces; agent output and repository content
 are untrusted display data.
@@ -999,7 +1015,7 @@ and [agent guide](../../AGENTS.md) for repository conventions.
 
 The [backend implementation scope](backend.md) covers identity and Teams,
 PostgreSQL, enrollment, authorized management APIs, signaling, synchronized
-catalog/history, reversible Session archive, and the shared Vue component
+catalog/history, Session archive/restore, and the shared Vue component
 package with an independent Web client. The acceptance workflow in both Electron
 and Web is: log in, select a Team,
 enroll a headless machine, configure a Workspace, create a Session with its

@@ -2,18 +2,23 @@
 import UiButton from "../common/UiButton.vue"
 import { Archive, ArchiveRestore, Ellipsis, GitFork, Pencil, Square } from "@lucide/vue"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
-import { ref, useTemplateRef } from "vue"
+import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import IconButton from "../common/IconButton.vue"
 import UiDialog from "../common/UiDialog.vue"
-/** Archival closes execution while retaining the conversation and working context. */
-defineProps<{ canStop: boolean; canFork?: boolean; forkDisabled?: boolean; disabled: boolean; archiveState: "active" | "archiving" | "archived" }>()
+/** Archival closes execution and removes generated worktrees while retaining the conversation. */
+const props = defineProps<{ canStop: boolean; canFork?: boolean; forkDisabled?: boolean; disabled: boolean; context: "directory" | "worktree"; archiveState: "active" | "archiving" | "archived" }>()
 const emit = defineEmits<{ stop: []; archive: []; restore: []; fork: []; rename: [] }>()
 const { t } = useI18n()
 const actions = useTemplateRef<HTMLElement>("actions")
 const open = ref(false)
 const openingDialog = ref(false)
 const confirming = ref<"stop" | "archive" | "restore" | null>(null)
+const confirmationQuestion = computed(() => {
+  if (confirming.value === "stop") return "agent.stopQuestion"
+  if (confirming.value === "restore") return props.context === "worktree" ? "agent.restoreWorktreeQuestion" : "agent.restoreQuestion"
+  return props.context === "worktree" ? "agent.archiveWorktreeQuestion" : "agent.archiveQuestion"
+})
 function changeOpen(value: boolean): void {
   open.value = value
   if (value) openingDialog.value = false
@@ -57,10 +62,10 @@ function restoreFocus(event: Event): void {
       </DropdownMenuPortal>
     </DropdownMenuRoot>
     <UiDialog :open="!!confirming" :title="t('agent.sessionActions')" class="w-[24rem]" @close="confirming = null" @close-auto-focus="restoreFocus">
-      <p class="m-0 text-sm leading-relaxed">{{ t(confirming === 'stop' ? 'agent.stopQuestion' : confirming === 'restore' ? 'agent.restoreQuestion' : 'agent.archiveQuestion') }}</p>
+      <p class="m-0 text-sm leading-relaxed">{{ t(confirmationQuestion) }}</p>
       <div class="ui-dialog-actions">
         <UiButton type="button" @click="confirming = null">{{ t('catalog.cancel') }}</UiButton>
-        <UiButton variant="primary" type="button" @click="confirm">{{ t(confirming === 'stop' ? 'agent.stop' : confirming === 'restore' ? 'agent.restore' : 'agent.archive') }}</UiButton>
+        <UiButton :variant="confirming === 'archive' && context === 'worktree' ? 'danger' : 'primary'" type="button" @click="confirm">{{ t(confirming === 'stop' ? 'agent.stop' : confirming === 'restore' ? 'agent.restore' : 'agent.archive') }}</UiButton>
       </div>
     </UiDialog>
   </div>

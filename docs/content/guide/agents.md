@@ -31,4 +31,6 @@ Read tool activity alongside the conversation. Open the Changes panel to inspect
 
 Leaving a page or closing a desktop window does not stop the agent while its machine and daemon remain running. Quitting the desktop app stops the daemon it hosts. Synchronized conversation history remains readable when a machine is offline.
 
-Archiving stops the session's active processes and retains the conversation, worktree files, queued input, and terminal transcripts. Restoring makes the session available again; a later message starts or resumes its provider as supported.
+Archiving stops the session's active processes and removes its generated worktrees to free disk space, including uncommitted changes and untracked files. Commit any work you want to keep before archiving. The conversation, queued input, and terminal transcripts remain available. Sessions using **Working directory** leave the original directories and files untouched.
+
+Restoring recreates generated worktrees at their last committed HEADs and makes the session available again. It does not recover uncommitted or untracked files removed by archive. A later message starts or resumes the provider as supported.

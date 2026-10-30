@@ -847,10 +847,12 @@
     "archive": "归档会话",
     "restore": "恢复会话",
     "retryArchive": "重试归档",
-    "archiveQuestion": "归档此会话？正在运行的 Agent 和终端将停止，对话和工作环境将保留。",
+    "archiveQuestion": "归档此会话？正在运行的 Agent 和终端将停止，对话记录、工作目录及其中的文件将保留。",
+    "archiveWorktreeQuestion": "归档此会话？正在运行的 Agent 和终端将停止。生成的 worktree 将被删除，包括未提交的修改和未跟踪的文件。对话记录和已提交的修改将保留。",
     "restoreQuestion": "恢复此会话？发送新消息之前不会重新开始执行。",
+    "restoreWorktreeQuestion": "恢复此会话？将从归档前最后一次提交重建 worktree。已删除的未提交修改和未跟踪文件无法恢复。发送新消息之前不会重新开始执行。",
     "archived": "此会话已归档。恢复后可继续工作。",
-    "archiving": "正在归档会话。在运行资源关闭之前无法继续执行。"
+    "archiving": "正在归档会话。Agent 和终端停止、生成的 worktree 清理完成之前无法继续执行。"
   },
   "providers": {
     "choose": "选择 Provider",

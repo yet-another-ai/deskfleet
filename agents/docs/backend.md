@@ -38,7 +38,8 @@ ownership and explicit Site Admin boundary.
   cannot be removed or demoted through ordinary member operations.
 - Members can operate every machine in their Team, enroll their own machines,
   rename Team machines (the name defaults to the hostname), configure
-  Providers, create or delete Workspaces, and create, archive, or restore Sessions.
+  Providers, create or delete Workspaces, and create, archive, restore, or delete
+  Sessions.
 - Use PostgreSQL for the central server and SQLite for each daemon.
 - Keep site administration separate from Team roles. Explicit operator commands
   grant or revoke the role for existing users. Site administrators manage
@@ -70,16 +71,20 @@ ownership and explicit Site Admin boundary.
 - Synchronize Agent conversations, tool history, and audit. Keep terminal output
   on the executing machine and desktop media transient.
 - Archive is the normal Session completion action. It closes the provider and
-  Session-owned terminals without deleting any data: retain Worktree files,
-  queued inputs, configuration, conversations, tool history, terminal transcripts,
-  and full audit records. Archive requires the machine online and completes only
-  after the associated live resources have closed.
-- Restore returns the same Session to active use without starting processes.
+  Session-owned terminals and removes generated checkouts, including uncommitted
+  changes and untracked files. Retain Worktree metadata, queued inputs,
+  configuration, conversations, tool history, terminal transcripts, and full audit
+  records. Archive requires the machine online and completes only after live
+  resources have closed and checkout cleanup succeeds. Source directories stay
+  intact for directory Sessions.
+- Restore recreates generated checkouts at their saved committed HEADs and returns
+  the same Session to active use without starting processes.
   A subsequent message resumes the provider where supported; a subsequent
   terminal start creates a new shell and preserves prior terminal history.
-- Do not expose permanent Session deletion through first-release user interfaces
-  or user-facing APIs. A future delete operation removes content and retains
-  metadata-only audit; archive retains both content and full audit.
+- Expose Session deletion through authenticated APIs and the archived Sessions
+  page's hold confirmation. It removes local Session records and owned resources;
+  archive retains conversation/tool content and full audit. Central content
+  erasure and metadata-only audit are separate work.
 - Treat existing unauthenticated local data as development data. The first
   release does not need a legacy resource/history import flow.
 - Re-enrollment after administrator removal uses a new empty machine directory
@@ -103,7 +108,7 @@ ownership and explicit Site Admin boundary.
 | Local message access | Authorize the local connection's user/device, Team, Machine, purpose, actions, and expiry; deliver revocation without requiring SDP/ICE or TURN | Electron verifies locality and supplies the direct adapter; daemon enforces the same operation permissions and lifetime as remote access |
 | History ingestion | Accept daemon snapshots/events and audit, deduplicate retries, record committed sequence watermarks, and propagate catalog changes/deletions | Daemon is the sole writer of execution history and retains unsynchronized data |
 | History queries | Serve paginated Session summaries, conversations, tool history, and audit over HTTPS, including when a machine is offline | Clients project stored events and attach to the live daemon when operations are available |
-| Archive and restore | Synchronize and query archive state while preserving all central history and audit; report completion only after daemon confirmation | Daemon pauses input delivery, closes the provider and owned PTYs without removing files or records, and restores active state without launching processes |
+| Archive and restore | Synchronize and query archive state while preserving all central history and audit; report completion only after daemon confirmation | Daemon pauses input delivery, closes the provider and owned PTYs, removes generated checkouts while retaining records, and recreates checkouts on restore without launching processes |
 | API and persistence foundation | PostgreSQL migrations and server storage, shared wire contracts, authenticated API/stream errors, and deployment configuration for bundled or independently hosted Web clients | Native bindings remain thin; daemon persistence remains SQLite |
 
 Authorization is enforced at both server and daemon boundaries. The initial Team
@@ -133,7 +138,7 @@ distinct.
 | [Agent](../../packages/components/src/services/agent-client.ts), [terminal](../../packages/components/src/services/terminal-client.ts), and [desktop](../../packages/components/src/composables/useDesktopConnection.ts) peers use empty ICE server lists | Apply server-issued STUN/TURN configuration to both peers and verify relayed access |
 | [Session history](../../packages/components/src/stores/agent-sessions.ts) reads only through the daemon DataChannel | Add backend history reads and reconcile the stored watermark with live subscription without replaying commands |
 | [Catalog notifications](../../apps/daemon/src/catalog.ts) publish immediate `catalogChanged` events | Add synchronization that recovers missed changes and records deletions independently of removed resources |
-| [Session deletion](../../apps/daemon/src/agent-sessions.ts) removes resource rows and their journal | Add reversible archive/restore and remove Session deletion from first-release user operations; do not reuse destruction for archive |
+| [Session deletion](../../apps/daemon/src/agent-sessions.ts) removes resource rows and their journal | Keep deletion separate from archive/restore: archive reclaims generated checkouts while retaining history; deletion also removes local records and retained worktree refs |
 | [Terminal hangup](../../apps/daemon/src/terminals.ts) removes the transcript and metadata | Add a stop-and-retain path for archive; close only Session-owned PTYs and preserve all terminal records |
 | [Provider snapshots](../../apps/daemon/src/agent-providers.ts) include launch settings and environment values | Separate display metadata from configuration; keep secrets out of central replicas, command audit payloads, and logs |
 | [Agent SQL](../../crates/store/src/agent/sql.rs) selects SQLite explicitly; database connections currently use one SQLite-oriented pool configuration | Implement PostgreSQL server persistence |
@@ -182,10 +187,11 @@ state, recorded execution state, and history completeness. Reconnecting attaches
 and fills history gaps without reissuing accepted commands.
 
 Archive/restore preserves local and central conversation/tool content and full
-audit records. A future permanent delete operation must remove conversation
+audit records. Central content erasure must remove conversation
 content embedded in central command parameters/results as well as event history,
 retain metadata-only central audit, and prevent stale uploads from restoring
-deleted content. This permanent-deletion work is outside the first release.
+deleted content. This remains separate from the exposed daemon-side Session
+deletion operation, which retains immutable local command receipts.
 
 ## Team AI usage
 
@@ -229,25 +235,35 @@ inputs, permission records, and their resulting state transitions remain in the
 journal. Reopening an archived view reads history without starting the provider
 or automatically creating a terminal.
 
-The daemon retains the original Worktree records and directories, including
-uncommitted changes and untracked files. Terminal closure is based on Session
-ownership, not cwd: unrelated terminals in the same directory keep running.
+The daemon retains the original Worktree records and directory metadata, but
+removes generated checkouts, including uncommitted changes and untracked files.
+Compact Git refs and the ownership manifest preserve the last committed HEAD of
+each checkout for restoration. Directory Sessions leave Workspace source files
+untouched. Terminal closure is based on Session ownership, not cwd: unrelated
+terminals in the same directory keep running.
 Terminal transcripts and metadata remain on the daemon for read-only replay.
-No archive path calls Session destruction, force-removes a Git worktree, or uses
-the existing destructive terminal hangup implementation.
+No archive path calls Session record destruction or uses the existing destructive
+terminal hangup implementation.
 
 The machine must be online to archive. Do not report archive success or queue
 an offline archive for later execution. An incomplete attempt reports its
-unfinished state and can be retried without discarding data. Successful archive
-means the associated live processes have closed and their final output/state
-has been retained.
+unfinished state and can be retried. Successful archive means the associated live
+processes have closed, their final output/state has been retained, and generated
+checkouts have been removed. Previously archived checkouts are reclaimed only
+after an explicit archive request; there is no background migration.
 
-Restore returns the same Session identity, execution context, and history to
-the active list. It does not start a provider, dispatch pending inputs, or
-create terminals. Later explicit use starts the needed processes under the
+Restore recreates generated checkouts at their saved paths and committed HEADs,
+then returns the same Session identity, execution context, and history to the
+active list. It does not recover discarded uncommitted or untracked files,
+start a provider, dispatch pending inputs, or create terminals. Later explicit
+use starts the needed processes under the
 existing provider resume rules. An ended PTY is not revived; a newly opened
 terminal gets its own identity while old transcripts remain available.
 Archived Sessions still belong to their Workspace and prevent its deletion.
+The archived Sessions page also offers deletion with hold confirmation. This
+removes the local Session and Worktree records, remaining generated checkouts,
+retained refs/manifests, attachments, and owned terminal records. Directory
+Session source files are untouched.
 
 ## Shared Vue clients
 
@@ -281,8 +297,9 @@ not by untrusted operation parameters.
    configuration. Implement the [peer identity/key exchange contract](webrtc-security.md),
    including revocation and 24-hour authorization expiry. Make both clients
    select and operate a remote target.
-3. Add catalog/history synchronization, central history reads, and reversible
-   Session archive/restore with resource closure and complete data retention.
+3. Add catalog/history synchronization, central history reads, and Session
+   archive/restore with resource closure, generated checkout reclamation, and
+   complete conversation/tool history, terminal transcript, and audit retention.
    Integrate active/archived lists and cached history with live Session views
    in both clients.
 4. Use the implemented [local message channel](architecture.md#local-message-channel)
@@ -323,14 +340,16 @@ Acceptance also covers:
   Agents or shells. Signaling reconnect does not extend authorization.
   Reconnecting synchronization catches up without duplicating events.
 - Archive requires the machine online and closes the provider and Session-owned
-  PTYs before reporting success. Unrelated terminals keep running. Worktree
-  files, uncommitted/untracked changes, backlog, terminal records, conversation
-  history, and audit remain intact locally and in their existing central copies.
-- Restore preserves identity and data, returns the Session to the active list,
+  PTYs before removing generated checkouts and reporting success. Unrelated
+  terminals keep running. Backlog, terminal records, conversation history, and
+  audit remain intact; generated uncommitted/untracked files are discarded.
+- Restore recreates generated checkouts at saved committed HEADs, preserves
+  identity and history, returns the Session to the active list,
   and starts no processes or backlog dispatch. Subsequent messages or terminal
   use start only the required processes; archived history views never do so.
-- Neither Electron nor Web exposes permanent Session deletion, and first-release
-  user-facing APIs do not offer that operation.
+- Electron and Web expose deletion on the archived Sessions page with hold
+  confirmation. It removes local Session records and owned resources, including
+  retained worktree refs, while leaving source directories untouched.
 - PostgreSQL server integration and SQLite daemon behavior are tested at their
   respective storage boundaries. Browser and Electron exercise the shared UI
   with their actual adapters.

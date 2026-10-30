@@ -128,6 +128,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   const repository = join(directory, "repository")
   await mkdir(repository)
   await execute("git", ["init", repository])
+  await execute("git", ["-C", repository, "config", "core.autocrlf", "false"])
   await writeFile(join(repository, "README.md"), "fixture\n")
   await execute("git", ["-C", repository, "add", "."])
   await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
@@ -405,7 +406,7 @@ test("rename validates titles and persists customization for archived and machin
   } finally { await restarted.close() }
 })
 
-test("archive retains files and history, cancels approval and questions, and restore waits for explicit input", async t => {
+test("archive removes generated files but retains history, and restore recreates the checkout without starting work", async t => {
   const f = await setup(t)
   const browser: AgentActor = { kind: "user", userId: "browser-user", deviceId: "browser-device" }
   const worktree = (await f.catalog.sessionWorktree(f.sessionId))!
@@ -435,8 +436,7 @@ test("archive retains files and history, cancels approval and questions, and res
   assert.equal(archived.inputs[1]!.state, "pending")
   assert.deepEqual(archived.inputs[0]!.author, browser)
   assert.ok(archived.runs.every(run => run.state === "stopped"))
-  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "uncommitted changes\n")
-  assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "untracked content\n")
+  await assert.rejects(readdir(cwd), { code: "ENOENT" })
   assert.deepEqual(await f.catalog.sessionWorktree(f.sessionId), worktree)
   assert.deepEqual(await f.service.handle("_deskfleet/session/archive", archive, browser), archived)
   const calls = [
@@ -461,6 +461,8 @@ test("archive retains files and history, cancels approval and questions, and res
   const restored = await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, browser) as AgentSnapshot
   assert.equal(restored.session.archiveState, "active")
   assert.equal(restored.session.id, archived.session.id)
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+  await assert.rejects(readFile(join(cwd, "untracked.txt")), { code: "ENOENT" })
   assert.equal(restored.inputs[1]!.state, "pending")
   assert.equal(restored.elicitations.find(question => question.id === pendingQuestion.id)?.state, "cancelled")
   assert.deepEqual(f.provider.prompts, ["hold"])
@@ -469,6 +471,112 @@ test("archive retains files and history, cancels approval and questions, and res
   await until(f.read, () => f.provider.prompts.length === 2)
   assert.deepEqual(f.provider.prompts, ["hold", "queued"])
   assert.deepEqual(f.provider.resumes, ["provider-conversation"])
+})
+
+test("reclaiming legacy archived checkouts preserves archived state and does not close resources again", async t => {
+  const f = await setup(t)
+  const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+  await writeFile(join(cwd, "untracked.txt"), "old archived checkout\n")
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  // Archives created before reclamation closed resources but retained files.
+  await f.service.journal.serial(f.sessionId, async () => {
+    const snapshot = await f.read()
+    const session = { ...snapshot.session, archiveState: "archived" as const }
+    await f.service.journal.commit(snapshot, { session, events: [f.service.journal.event(f.sessionId, "session", session)] })
+  })
+  const before = (await f.read()).session
+  const closes = f.provider.closeCount
+  f.service.onSessionArchive(async () => { assert.fail("Archived resources must already be closed") })
+  const cleanup = f.catalog.archiveSessionWorktree.bind(f.catalog)
+  f.catalog.archiveSessionWorktree = async id => {
+    assert.equal((await f.read()).session.archiveState, "archived")
+    await cleanup(id)
+  }
+  const result = await f.service.handle("_deskfleet/session/archive", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor) as AgentSnapshot
+  assert.deepEqual(result.session, { ...before, lastEventSeq: result.session.lastEventSeq })
+  assert.equal(f.provider.closeCount, closes)
+  await assert.rejects(readdir(cwd), { code: "ENOENT" })
+  const events = await f.service.journal.history(f.sessionId, before.lastEventSeq, 20)
+  assert.ok(events.every(event => event.kind === "command"))
+  await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+  await assert.rejects(readFile(join(cwd, "untracked.txt")), { code: "ENOENT" })
+})
+
+test("archive rejects an unrecoverable legacy checkout before changing Session state", async t => {
+  for (const archiveState of ["active", "archived"] as const) {
+    await t.test(archiveState, async t => {
+      const f = await setup(t)
+      const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+      const revision = (await execute("git", ["-C", cwd, "rev-parse", "HEAD"])).stdout.trim()
+      const path = join(f.directory, "daemon", "session-worktrees", f.sessionId, "manifest.json")
+      const manifest = JSON.parse(await readFile(path, "utf8"))
+      delete manifest.worktrees[0].revision
+      await writeFile(path, JSON.stringify(manifest))
+      await execute("git", ["-C", f.repository, "worktree", "remove", cwd])
+      if (archiveState === "archived") {
+        // Archives created before checkout reclamation kept their manifests
+        // and files without recording a committed revision.
+        await f.service.journal.serial(f.sessionId, async () => {
+          const snapshot = await f.read()
+          const session = { ...snapshot.session, archiveState }
+          await f.service.journal.commit(snapshot, { session, events: [f.service.journal.event(f.sessionId, "session", session)] })
+        })
+      }
+      const before = (await f.read()).session
+      const closes = f.provider.closeCount
+      const failed = { sessionId: f.sessionId, operationId: randomUUID() }
+      await assert.rejects(f.service.handle("_deskfleet/session/archive", failed, f.actor), /original Git revision is unavailable/u)
+      const after = (await f.read()).session
+      // The failed command is audited without emitting a Session transition.
+      assert.deepEqual(after, { ...before, lastEventSeq: after.lastEventSeq })
+      assert.ok((await f.service.journal.history(f.sessionId, before.lastEventSeq, 20)).every(event => event.kind === "command"))
+      assert.equal(f.provider.closeCount, closes)
+      assert.equal((await f.service.journal.command(failed.operationId))?.status, "failed")
+
+      // Repairing the externally removed checkout lets the same Session retry
+      // normally without editing its persisted archive state.
+      await execute("git", ["-C", f.repository, "worktree", "add", "--detach", cwd, revision])
+      const archived = await f.service.handle("_deskfleet/session/archive", {
+        sessionId: f.sessionId, operationId: randomUUID(),
+      }, f.actor) as AgentSnapshot
+      assert.equal(archived.session.archiveState, "archived")
+      const restored = await f.service.handle("_deskfleet/session/restore", {
+        sessionId: f.sessionId, operationId: randomUUID(),
+      }, f.actor) as AgentSnapshot
+      assert.equal(restored.session.archiveState, "active")
+      assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+    })
+  }
+})
+
+test("archive retains a legacy revision before shutdown and captures the final committed HEAD afterward", async t => {
+  for (const duringShutdown of ["remove checkout", "commit changes"] as const) {
+    await t.test(duringShutdown, async t => {
+      const f = await setup(t)
+      const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+      const path = join(f.directory, "daemon", "session-worktrees", f.sessionId, "manifest.json")
+      const manifest = JSON.parse(await readFile(path, "utf8"))
+      delete manifest.worktrees[0].revision
+      await writeFile(path, JSON.stringify(manifest))
+      f.service.onSessionArchive(async () => {
+        if (duringShutdown === "remove checkout") {
+          await execute("git", ["-C", f.repository, "worktree", "remove", cwd])
+        } else {
+          await writeFile(join(cwd, "README.md"), "committed during shutdown\n")
+          await execute("git", ["-C", cwd, "add", "."])
+          await execute("git", ["-C", cwd, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--no-gpg-sign", "-m", "shutdown"])
+        }
+      })
+      await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+      assert.equal((await f.read()).session.archiveState, "archived")
+      await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+      assert.equal((await f.read()).session.archiveState, "active")
+      assert.equal(await readFile(join(cwd, "README.md"), "utf8"), duringShutdown === "remove checkout" ? "fixture\n" : "committed during shutdown\n")
+    })
+  }
 })
 
 test("failed archive retains archiving admission state and retry survives service restart", async t => {
@@ -501,27 +609,68 @@ test("failed archive retains archiving admission state and retry survives servic
 
 test("archive serializes with terminal admission and never completes before resource closure", async t => {
   const f = await setup(t)
+  const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
   let releaseAdmission!: () => void
   let releaseClosure!: () => void
   const admission = new Promise<void>(resolve => { releaseAdmission = resolve })
   const closure = new Promise<void>(resolve => { releaseClosure = resolve })
   let admitted = false
   let closing = false
-  t.after(() => { releaseAdmission(); releaseClosure() })
   f.service.onSessionArchive(async () => { closing = true; await closure })
-  const dial = f.service.withActiveSession(f.sessionId, async () => { admitted = true; await admission })
-  await until(f.read, () => admitted)
-  let completed = false
-  const archive = f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
-    .then(result => { completed = true; return result as AgentSnapshot })
-  assert.equal(closing, false)
-  releaseAdmission()
-  await dial
-  await until(f.read, state => closing && state.session.archiveState === "archiving")
-  assert.equal(completed, false)
-  await assert.rejects(f.service.withActiveSession(f.sessionId, async () => {}), /Restore this Session/u)
-  releaseClosure()
-  assert.equal((await archive).session.archiveState, "archived")
+  try {
+    const dial = f.service.withActiveSession(f.sessionId, async () => { admitted = true; await admission })
+    await until(f.read, () => admitted)
+    let completed = false
+    const archive = f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+      .then(result => { completed = true; return result as AgentSnapshot })
+    assert.equal(closing, false)
+    releaseAdmission()
+    await dial
+    await until(f.read, state => closing && state.session.archiveState === "archiving")
+    assert.equal(completed, false)
+    assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+    await assert.rejects(f.service.withActiveSession(f.sessionId, async () => {}), /Restore this Session/u)
+    releaseClosure()
+    assert.equal((await archive).session.archiveState, "archived")
+    await assert.rejects(readdir(cwd), { code: "ENOENT" })
+  } finally {
+    // setup() closes the service first in its after hook, so unblock pending
+    // archive operations before teardown even when an assertion fails.
+    releaseAdmission()
+    releaseClosure()
+  }
+})
+
+test("checkout cleanup and recreation failures leave archive and restore retryable", async t => {
+  const f = await setup(t)
+  const worktree = (await f.catalog.sessionWorktree(f.sessionId))!
+  const cwd = worktree.directories[0]!.path
+  const archive = f.catalog.archiveSessionWorktree.bind(f.catalog)
+  f.catalog.archiveSessionWorktree = async () => { throw new Error("Checkout cleanup failed") }
+  await assert.rejects(f.service.handle("_deskfleet/session/archive", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor), /Checkout cleanup failed/u)
+  assert.equal((await f.read()).session.archiveState, "archiving")
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+  f.catalog.archiveSessionWorktree = archive
+  await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  await assert.rejects(readdir(cwd), { code: "ENOENT" })
+
+  const restore = f.catalog.restoreSessionWorktree.bind(f.catalog)
+  f.catalog.restoreSessionWorktree = async () => { throw new Error("Checkout recreation failed") }
+  await assert.rejects(f.service.handle("_deskfleet/session/restore", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor), /Checkout recreation failed/u)
+  assert.equal((await f.read()).session.archiveState, "archived")
+  assert.deepEqual(await f.catalog.sessionWorktree(f.sessionId), worktree)
+  assert.equal(f.provider.clients.length, 1)
+  f.catalog.restoreSessionWorktree = restore
+  const restored = await f.service.handle("_deskfleet/session/restore", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor) as AgentSnapshot
+  assert.equal(restored.session.archiveState, "active")
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+  assert.equal(f.provider.clients.length, 1)
 })
 
 test("concurrent users share durable backlog and retries do not duplicate inputs or worktrees", async t => {

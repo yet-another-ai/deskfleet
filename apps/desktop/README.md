@@ -254,9 +254,13 @@ that decision and removes the choices.
 
 **Cancel turn** ends the current turn. **Stop agent** preserves the conversation,
 backlog, and Worktree. The next message resumes the saved provider session when
-supported; there is no separate resume control. **Archive session** closes execution and retains the conversation and working
-context. **Restore session** makes it available again without starting a provider
-or terminal. Session deletion is not exposed to users. Navigating away, disconnecting, or
+supported; there is no separate resume control. **Archive session** closes execution,
+retains conversation history, and removes generated checkouts, including
+uncommitted changes and untracked files. **Restore session** recreates those
+checkouts at their saved committed HEADs and makes the Session available again
+without starting a provider or terminal. Directory Sessions leave source files
+untouched. The archived Sessions page offers Delete with hold confirmation.
+Navigating away, disconnecting, or
 closing the window leaves the agent running; quitting the app stops it.
 
 The terminal button in a Session's header opens a resizable bottom panel of

@@ -69,7 +69,8 @@ const commandInput = computed(() => commandDraft(draft.value) || mentions.value.
 const placeholder = computed(() => t(props.activeTurn ? "agent.backlogHint" : "composer.placeholder"))
 const { snapshot: gitSnapshot } = useSessionGit(
   () => props.location?.session?.id ?? "",
-  () => !props.showTarget && !!props.location?.worktree && !!props.location.machine.online,
+  () => !props.showTarget && !!props.location?.worktree && !!props.location.machine.online
+    && (!props.location.session?.archiveState || props.location.session.archiveState === "active"),
 )
 const checkout = computed(() => gitSnapshot.value?.repositories.find(repository => !repository.error))
 const checkoutLabel = computed(() => checkout.value

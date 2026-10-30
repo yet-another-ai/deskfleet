@@ -10,6 +10,7 @@ const meta = {
     canFork: true,
     forkDisabled: false,
     disabled: false,
+    context: "worktree",
     archiveState: "active",
   },
 } satisfies Meta<typeof AgentSessionMenu>

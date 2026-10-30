@@ -16,6 +16,8 @@ const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const location = computed(() => fleet.findWorktree(props.worktreeId))
 const available = computed(() => fleet.canManageCatalog && location.value?.machine.online)
+const archiveState = computed(() => location.value?.session.archiveState)
+const archived = computed(() => archiveState.value === "archiving" || archiveState.value === "archived")
 </script>
 
 <template>
@@ -31,9 +33,10 @@ const available = computed(() => fleet.canManageCatalog && location.value?.machi
   <div v-else class="min-h-0 flex-1 overflow-y-auto">
     <div class="mx-auto flex max-w-3xl flex-col gap-8 px-6 pb-10 pt-6">
       <p v-if="!available" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t("catalog.offline") }}</p>
+      <p v-if="archived" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t(archiveState === 'archived' ? 'agent.archived' : 'agent.archiving') }}</p>
       <section>
         <h2 class="ui-section-title mb-2">{{ t("worktree.directories") }}</h2>
-        <DirectoryList :directories="location.worktree.directories" :disabled="!available" :owner="{ sessionId: location.session.id, worktreeId: location.worktree.id }" />
+        <DirectoryList :directories="location.worktree.directories" :disabled="!available || archived" :owner="{ sessionId: location.session.id, worktreeId: location.worktree.id }" />
       </section>
       <section>
         <h2 class="ui-section-title mb-2">{{ t("worktree.session") }}</h2>

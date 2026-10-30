@@ -684,6 +684,7 @@ export class AgentSessions {
         if (snapshot.session.archiveState === "archiving") throw new Error("Finish archiving this Session before restoring it")
         if (snapshot.session.archiveState === "active") return
         await this.#admissions.allocate(command, "restore", async admissionGeneration => {
+          await this.#catalog.restoreSessionWorktree(sessionId)
           const session = { ...snapshot.session, admissionGeneration, archiveState: "active" as const, updatedAt: timestamp() }
           await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
           return session
@@ -700,21 +701,26 @@ export class AgentSessions {
   }
 
   async #archive(sessionId: string): Promise<void> {
-    const needed = await this.journal.serial(sessionId, async () => {
+    const alreadyArchived = await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
-      if (snapshot.session.archiveState === "archived") return false
       if (!["ready", "provision_failed"].includes(snapshot.session.lifecycle)) throw new Error("Wait for Session provisioning or deletion before archiving")
+      if (snapshot.session.archiveState === "archived") return true
+      await this.#catalog.prepareSessionWorktreeArchive(sessionId)
       const session = { ...snapshot.session, archiveState: "archiving" as const, updatedAt: timestamp() }
       await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
-      return true
+      return false
     })
-    if (!needed) return
+    if (alreadyArchived) {
+      await this.#catalog.archiveSessionWorktree(sessionId)
+      return
+    }
     const worktree = await this.#catalog.sessionWorktree(sessionId)
     const closures = [this.#runtime(sessionId).stop()]
     if (worktree) for (const listener of this.#archiveListeners) closures.push(Promise.resolve().then(() => listener(worktree.id)))
     const results = await Promise.allSettled(closures)
     const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (errors.length) throw new AggregateError(errors, "Session resources could not all be closed; retry archive")
+    await this.#catalog.archiveSessionWorktree(sessionId)
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
       const session = { ...snapshot.session, archiveState: "archived" as const, updatedAt: timestamp() }

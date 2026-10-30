@@ -121,6 +121,85 @@ test("Team capacity reserves before allocation, archive releases, restore reserv
   assert.equal((await quotas.list()).length, 2)
 })
 
+test("rearchiving at full Team capacity preserves archived state without reserving or occupying capacity", async t => {
+  const quotas = new TestAgentQuotas(); quotas.capacity = 1
+  const f = await setup(t, quotas)
+  const generation = f.source.session.admissionGeneration!
+  await f.transition("archive")
+  const archived = (await f.read()).session
+  const other = await f.create()
+  const replacement = other.session.admissionGeneration!
+  let reservations = 0, cleanups = 0, sessionEvents = 0
+  const reserve = quotas.reserve.bind(quotas)
+  quotas.reserve = async request => { reservations++; return reserve(request) }
+  const cleanup = f.catalog.archiveSessionWorktree.bind(f.catalog)
+  f.catalog.archiveSessionWorktree = async sessionId => {
+    cleanups++
+    assert.equal((await f.read()).session.archiveState, "archived")
+    assert.equal(quotas.admissions.get(generation)?.status, "released")
+    assert.equal((await quotas.list()).length, 1)
+    await cleanup(sessionId)
+  }
+  const unsubscribe = f.sessions.onEvent(event => {
+    if (event.sessionId === f.source.session.id && event.kind === "session") sessionEvents++
+  })
+  try { await f.transition("archive") }
+  finally { unsubscribe() }
+  const retried = (await f.read()).session
+  assert.equal(retried.archiveState, "archived")
+  assert.equal(retried.updatedAt, archived.updatedAt)
+  assert.equal(retried.admissionGeneration, generation)
+  assert.equal(cleanups, 1)
+  assert.equal(sessionEvents, 0)
+  assert.equal(reservations, 0)
+  assert.equal(quotas.admissions.get(generation)?.status, "released")
+  assert.equal(quotas.admissions.get(replacement)?.status, "committed")
+  assert.equal((await quotas.list()).length, 1)
+})
+
+test("a fresh archive operation retries a failed release without reopening the archived Session", async t => {
+  for (const applied of [false, true]) {
+    await t.test(applied ? "release applied but response lost" : "release failed before applying", async t => {
+      const f = await setup(t)
+      const generation = f.source.session.admissionGeneration!
+      const release = f.quotas.release.bind(f.quotas)
+      let attempts = 0
+      f.quotas.release = async (generation, sessionId) => {
+        if (++attempts === 1) {
+          if (applied) await release(generation, sessionId)
+          throw new Error("Archive release interrupted")
+        }
+        await release(generation, sessionId)
+      }
+      await assert.rejects(f.transition("archive"), /Archive release interrupted/u)
+      const archived = (await f.read()).session
+      assert.equal(archived.archiveState, "archived")
+      assert.equal(f.quotas.admissions.get(generation)?.status, applied ? "released" : "committed")
+      let cleanups = 0, sessionEvents = 0
+      const cleanup = f.catalog.archiveSessionWorktree.bind(f.catalog)
+      f.catalog.archiveSessionWorktree = async sessionId => {
+        cleanups++
+        assert.equal((await f.read()).session.archiveState, "archived")
+        await cleanup(sessionId)
+      }
+      const unsubscribe = f.sessions.onEvent(event => {
+        if (event.sessionId === f.source.session.id && event.kind === "session") sessionEvents++
+      })
+      try { await f.transition("archive") }
+      finally { unsubscribe() }
+      const retried = (await f.read()).session
+      assert.equal(retried.archiveState, "archived")
+      assert.equal(retried.updatedAt, archived.updatedAt)
+      assert.equal(retried.admissionGeneration, generation)
+      assert.equal(cleanups, 1)
+      assert.equal(sessionEvents, 0)
+      assert.equal(attempts, 2)
+      assert.equal(f.quotas.admissions.get(generation)?.status, "released")
+      assert.equal((await f.quotas.list()).length, 0)
+    })
+  }
+})
+
 test("a lost confirmation or release is reconciled from durable local outcomes, never elapsed time", async t => {
   const quotas = new TestAgentQuotas()
   const confirm = quotas.confirm.bind(quotas), release = quotas.release.bind(quotas)

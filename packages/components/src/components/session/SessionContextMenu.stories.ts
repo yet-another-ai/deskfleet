@@ -9,6 +9,7 @@ const meta = {
     sessionId: "sess-1",
     machineId: "machine-1",
     title: "Add Storybook for UI components",
+    context: "worktree",
     archiveState: "active",
     disabled: false,
   },

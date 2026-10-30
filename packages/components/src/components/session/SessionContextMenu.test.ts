@@ -31,7 +31,7 @@ async function render(selected = false, disabled = false, archiveState: "active"
   const restore = vi.spyOn(agents, "restore").mockResolvedValue()
   wrapper = mount(SessionContextMenu, {
     attachTo: document.body,
-    props: { sessionId: "30", title: "Investigate failing checks", archiveState, disabled },
+    props: { sessionId: "30", title: "Investigate failing checks", context: "directory", archiveState, disabled },
     slots: { default: () => h(RouterLink, { to: "/sessions/30" }, () => "Investigate failing checks") },
     global: { plugins: [pinia, router, i18n] },
   })
@@ -63,6 +63,17 @@ test("offline sessions can be pinned while session mutations remain disabled", a
   await item("Pin session").trigger("click"); await flushPromises()
   expect(usePinnedSessionsStore().isPinned("local-daemon", "30")).toBe(true)
   expect(page().find('[role="dialog"]').exists()).toBe(false)
+})
+
+test("archive waits for context metadata before offering its confirmation", async () => {
+  const { row, archive } = await render()
+  await wrapper!.setProps({ context: undefined })
+  await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  const action = item("Archive session")
+  expect(action.attributes("data-disabled")).toBeDefined()
+  await action.trigger("click"); await flushPromises()
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  expect(archive).not.toHaveBeenCalled()
 })
 
 test("pinning and unpinning target the clicked session without navigation or confirmation", async () => {
@@ -126,8 +137,14 @@ test("rename operates on the clicked session, retains failures, and restores row
   await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
 })
 
-test.each(["active", "archived"] as const)("%s session confirms its archive action without navigating", async archiveState => {
+test.each([
+  { archiveState: "active", context: "directory", message: "working directory, and files will be retained", button: ".ui-button-primary" },
+  { archiveState: "active", context: "worktree", message: "including uncommitted changes and untracked files", button: ".ui-button-danger" },
+  { archiveState: "archived", context: "directory", message: "Execution stays stopped", button: ".ui-button-primary" },
+  { archiveState: "archived", context: "worktree", message: "recreated from its last committed state", button: ".ui-button-primary" },
+] as const)("$archiveState $context session confirms its archive action without navigating", async ({ archiveState, context, message, button }) => {
   const { router, row, archive, restore } = await render(false, false, archiveState)
+  await wrapper!.setProps({ context })
   const action = archiveState === "archived" ? "Restore session" : "Archive session"
   await row.trigger("contextmenu", { button: 2 }); await flushPromises()
   if (archiveState === "archived") expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Rename session", "Restore session"])
@@ -136,7 +153,8 @@ test.each(["active", "archived"] as const)("%s session confirms its archive acti
   expect(restore).not.toHaveBeenCalled()
   const dialog = page().get('[role="dialog"]')
   expect(dialog.text()).toContain(archiveState === "archived" ? "Restore this session?" : "Archive this session?")
-  await dialog.get(".ui-button-primary").trigger("click"); await flushPromises()
+  expect(dialog.text()).toContain(message)
+  await dialog.get(button).trigger("click"); await flushPromises()
   expect(archiveState === "archived" ? restore : archive).toHaveBeenCalledExactlyOnceWith("30")
   expect(page().find('[role="dialog"]').exists()).toBe(false)
   expect(router.currentRoute.value.params.sessionId).toBe("31")

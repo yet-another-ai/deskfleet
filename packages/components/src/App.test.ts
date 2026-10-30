@@ -9,6 +9,8 @@ import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { usePinnedSessionsStore } from "./stores/pinned-sessions.ts"
 import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
 import type { LocalAgentState } from "../../client/src/local-agent.ts"
+import { agentEvent, agentSnapshot } from "./test/agent.ts"
+import OpenWithMenu from "./components/catalog/OpenWithMenu.vue"
 
 const mounted: { wrapper: VueWrapper; pinia: ReturnType<typeof createPinia> }[] = []
 const host = getClient()
@@ -250,6 +252,42 @@ test("a session links to its own read-only worktree", async () => {
   await flushPromises()
   expect(panel(wrapper).text()).toContain("session-branch")
   expect(panel(wrapper).text()).toContain("/worktrees/api/session")
+})
+
+test.each(["worktree", "directory"] as const)("archiving a %s Session stops Git observation and disables its unavailable filesystem actions", async context => {
+  configureClient({ ...host, applications: { scan: vi.fn(async () => []), openWorkspace: vi.fn(async () => {}) } })
+  const pinia = createPinia()
+  const agents = useAgentSessionsStore(pinia)
+  const snapshot = agentSnapshot()
+  snapshot.session = { ...snapshot.session, id: sessionId, workspaceId, context }
+  const event = { ...agentEvent(1, "acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Retained conversation" } } }), sessionId }
+  agents.sessions[sessionId] = snapshot.session
+  agents.views[sessionId] = { snapshot, events: [event], loading: false, error: null, historySeq: "1", snapshotSeq: "1" }
+  vi.spyOn(agents, "open").mockResolvedValue()
+  vi.spyOn(agents, "refresh").mockResolvedValue()
+  const stop = vi.fn()
+  const watch = vi.spyOn(agents, "watchGit").mockResolvedValue(stop)
+  vi.spyOn(agents, "gitStatus").mockResolvedValue({ sessionId, directories: [], repositories: [] })
+  const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
+  expect(wrapper.findComponent(OpenWithMenu).exists()).toBe(true)
+  expect(watch).toHaveBeenCalledTimes(2)
+
+  for (const archiveState of ["archiving", "archived"] as const) {
+    agents.sessions[sessionId]!.archiveState = archiveState
+    await flushPromises()
+    expect(wrapper.findComponent(OpenWithMenu).exists()).toBe(context === "directory")
+    expect(wrapper.get('[aria-label="Conversation"]').text()).toContain("Retained conversation")
+    expect(watch).toHaveBeenCalledTimes(2)
+    expect(stop).toHaveBeenCalledTimes(2)
+  }
+
+  await router.push(`/worktrees/${sessionWorktreeId}`); await flushPromises()
+  expect(wrapper.get('button[aria-label="Open terminal in /worktrees/api/session"]').attributes("disabled")).toBeDefined()
+  expect(wrapper.get("main").text()).toContain("This session is archived")
+  agents.sessions[sessionId]!.archiveState = "active"
+  await router.push(`/sessions/${sessionId}`); await flushPromises()
+  expect(wrapper.findComponent(OpenWithMenu).exists()).toBe(true)
+  expect(watch).toHaveBeenCalledTimes(4)
 })
 
 test("the internal main worktree has no directly accessible page", async () => {

@@ -92,8 +92,6 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
 - An authentication bypass or automatic first-user administrator grant.
 - SQLite, or any `DATABASE_URL` that does not start with `postgres://` or
   `postgresql://`.
-- Permanent Session deletion. Archive and restore are the user-facing
-  operations.
 - Retargeting enrolled machines after `DESKFLEET_PUBLIC_URL` changes. The
   repository has no migration for that.
 - Importing an old unauthenticated daemon directory into a team. Enrollment
