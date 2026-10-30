@@ -3,15 +3,18 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
 import { HttpCentralClient, serverAddress, type SavedAccount } from "@deskfleet/client/http-central"
+import { CENTRAL_METHODS, centralIpcFailure } from "@deskfleet/client/central-bridge"
 import type { CentralEvent, LocalEnrollment } from "@deskfleet/client/central"
 import { setPeerTelemetrySink } from "@deskfleet/client/peer-telemetry"
 import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { enrollLocalMachine } from "./local-enrollment.ts"
 import { backendUrl } from "./backend.ts"
+import { desktopErrorReportingContext } from "./error-reporting-context.ts"
 
 export const CENTRAL_CHANNEL = "deskfleet:central"
 export const CENTRAL_EVENT = "deskfleet:central-event"
+export const CENTRAL_CONTEXT_CHANNEL = "deskfleet:central-context"
 interface StoredAccount { serverUrl: string; encryptedToken?: string; user?: SavedAccount["user"] }
 
 async function readAccount(path: string): Promise<SavedAccount> {
@@ -86,14 +89,19 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
     prepare: () => daemonCall("centralPrepareEnrollment", {}),
     enroll: credentials => daemonCall("centralEnroll", credentials),
   }, teamId, name)
-  const methods: Record<string, (...args: never[]) => unknown> = Object.fromEntries([
-    "status", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "aiUsage", "aiUsageSessions", "openAccountSettings", "githubSettings", "manageGithub", "authorizeGithubApp", "setGithubActAsYou", "billing", "checkout", "billingPortal", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "transferOwnership", "machines", "renameMachine", "removeMachine", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
-  ].map(method => [method, (client[method as keyof HttpCentralClient] as (...args: never[]) => unknown).bind(client)]))
+  const methods: Record<string, (...args: never[]) => unknown> = Object.fromEntries(CENTRAL_METHODS
+    .filter(method => method !== "localEnrollment" && method !== "enrollLocal")
+    .map(method => [method, (client[method as keyof HttpCentralClient] as (...args: never[]) => unknown).bind(client)]))
   methods.localEnrollment = localEnrollment
   methods.enrollLocal = enrollLocal
   ipcMain.handle(CENTRAL_CHANNEL, async (event, method: unknown, args: unknown) => {
     if (!isDesktopMediaSender(event) || typeof method !== "string" || !Array.isArray(args) || !Object.hasOwn(methods, method)) throw new Error("Invalid account operation")
-    return await methods[method]!(...args as never[])
+    try { return { ok: true, value: await methods[method]!(...args as never[]) } }
+    catch (error) { return centralIpcFailure(error) }
+  })
+  ipcMain.handle(CENTRAL_CONTEXT_CHANNEL, event => {
+    if (!isDesktopMediaSender(event)) throw new Error("Invalid account operation")
+    return desktopErrorReportingContext()
   })
   const broadcast = (event: CentralEvent) => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(CENTRAL_EVENT, event) }
   client.onEvent(broadcast)

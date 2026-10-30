@@ -1,8 +1,8 @@
-import type { DeskfleetDesktopApi } from "../../../../../packages/client/src/desktop-api.ts"
+import type { DesktopPreloadApi } from "../../shared/preload-api.ts"
 
 declare global {
   interface Window {
-    deskfleet: DeskfleetDesktopApi
+    deskfleet: DesktopPreloadApi
   }
 }
 

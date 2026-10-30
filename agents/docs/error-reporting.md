@@ -2,7 +2,8 @@
 
 Web and Electron renderers use `@sentry/vue` through the shared Vue frontend.
 Sentry captures Vue errors, uncaught JavaScript errors, and unhandled promise
-rejections. The integration covers authentication, the root application, and
+rejections. Desktop also reports failed central API fetches when their callers
+handle the error. The integration covers authentication, the root application, and
 the separate Vue applications that render machine surfaces. It does not run in
 the Rust server, daemon, or Electron main process.
 
@@ -48,6 +49,31 @@ environment's tag restrictions.
 Reporting is independent of Statsig. A missing or invalid DSN leaves the Sentry
 client uninitialized. With a configured DSN, delivery is best effort; the app
 does not wait for a Sentry server before becoming usable.
+
+Desktop events include the operating system name and version, CPU architecture,
+application version, and Electron, Node.js, and Chromium versions. Electron's
+system version reports the macOS product version rather than the Darwin kernel
+version. These fields describe the client running the renderer, not its selected
+remote machine.
+
+Central API fetch failures carry the HTTP method, an allowlisted route template,
+the allowlisted machine RPC method when applicable, elapsed milliseconds, and a
+bounded summary of error names and network/TLS error codes from nested causes
+and aggregate connection failures. The transport captures the request's caller
+stack before awaiting fetch; local filenames in the serialized stack are reduced
+to `app:///` basenames. Hostnames, resource IDs, query strings, headers, request
+bodies, and raw nested-cause messages are not included in this diagnostic context.
+Unknown routes or cause codes do not expand the collection automatically.
+
+The main process returns a plain success/error envelope through Electron IPC and
+the preload context bridge. The renderer reconstructs the diagnostic Error,
+reports it once, then rejects the caller's promise with that same Error. This
+retains diagnostics for UI-handled failures and lets the SDK avoid a second event
+if the error later reaches an unhandled rejection hook. The existing displayed
+error message is preserved. Fingerprints include the request method, route, RPC,
+and cause codes so distinct operations and failures are not deduplicated together.
+HTTP error responses retain their existing behavior;
+this reporting path does not retry requests or change proxy/network selection.
 
 The integration does not enable tracing, profiling, session replay, or log
 capture. It does not attach component props, breadcrumbs, user identity, or

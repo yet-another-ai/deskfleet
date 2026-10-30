@@ -4,6 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { observePeerGrant, setPeerTelemetrySink } from "@deskfleet/client/peer-telemetry"
+import { centralBridgeClient, type CentralBridge, type CentralIpcResult } from "@deskfleet/client/central-bridge"
+import { CentralRequestError } from "@deskfleet/client/request-diagnostics"
 
 vi.mock("electron", () => ({
   app: { getPath: vi.fn(), once: vi.fn() },
@@ -117,7 +119,7 @@ test("desktop IPC reads public site settings but rejects administration even for
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify(settings)))
   const invoke = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
   const event = {} as Electron.IpcMainInvokeEvent
-  await expect(invoke(event, "site", [])).resolves.toEqual(settings)
+  await expect(invoke(event, "site", [])).resolves.toEqual({ ok: true, value: settings })
   await expect(invoke(event, "siteSettings", [])).rejects.toThrow("Invalid account operation")
   await expect(invoke(event, "setServer", ["https://other.example"])).rejects.toThrow("Invalid account operation")
   await expect(invoke(event, "updateSiteSettings", [settings])).rejects.toThrow("Invalid account operation")
@@ -168,8 +170,41 @@ test("desktop GitHub settings bridge keeps authorization in the host transport",
   const invoke = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
   const settings = { configured: true, manageUrl: "https://github.com/apps/deskfleet/installations/new", authorized: true, login: "octocat", actAsYou: false }
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify(settings)))
-  await expect(invoke({} as Electron.IpcMainInvokeEvent, "githubSettings", [])).resolves.toEqual(settings)
+  await expect(invoke({} as Electron.IpcMainInvokeEvent, "githubSettings", [])).resolves.toEqual({ ok: true, value: settings })
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ ...settings, actAsYou: true })))
   await invoke({} as Electron.IpcMainInvokeEvent, "setGithubActAsYou", [true])
   expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/integrations/github`, expect.objectContaining({ method: "PATCH", body: JSON.stringify({ actAsYou: true }) }))
+})
+
+test("central IPC preserves network diagnostics for caught renderer failures without exposing request payloads", async () => {
+  const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
+  await f.install()
+  const invoke = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
+  const network = new TypeError("fetch failed", { cause: Object.assign(new Error("private-host.example:443"), { code: "ECONNRESET" }) })
+  f.fetch.mockRejectedValueOnce(network)
+  const report = vi.fn()
+  const bridge: CentralBridge = {
+    invoke: async (method, args) => structuredClone(await invoke({} as Electron.IpcMainInvokeEvent, method, args)) as CentralIpcResult,
+    onEvent: () => () => {},
+    context: vi.fn(),
+  }
+  const api = centralBridgeClient(bridge, report)
+  const failure = await api.rpc("private-machine", "_deskfleet/agent/configuration", { provider: "private-provider" }).catch(error => error)
+  if (!(failure instanceof CentralRequestError)) throw new Error("Expected a central transport failure")
+  expect(failure.message).toBe("Error invoking remote method 'deskfleet:central': TypeError: fetch failed")
+  expect(failure.diagnostics).toMatchObject({ method: "POST", route: "/api/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", causes: [{ name: "TypeError" }, { name: "Error", code: "ECONNRESET" }] })
+  expect(failure.stack).toContain("HttpCentralClient.request")
+  expect(report).toHaveBeenCalledExactlyOnceWith(failure)
+  expect(f.fetch).toHaveBeenCalledTimes(1)
+  expect(JSON.stringify(failure)).not.toMatch(/private-|restored-token|Authorization/)
+})
+
+test("central IPC keeps HTTP and ordinary failures out of network error reporting", async () => {
+  const f = await setup()
+  await f.install()
+  const invoke = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "operation_failed", message: "Provider unavailable" } }), { status: 502 }))
+  await expect(invoke({} as Electron.IpcMainInvokeEvent, "rpc", ["machine", "_deskfleet/agent/configuration", {}])).resolves.toEqual({
+    ok: false, error: { message: "Error invoking remote method 'deskfleet:central': Error: Provider unavailable" },
+  })
 })

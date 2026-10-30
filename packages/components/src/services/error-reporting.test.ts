@@ -1,7 +1,8 @@
 import { createApp, h } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { captureEvent, getClient, init, type ErrorEvent } from "@sentry/vue"
-import { initializeErrorReporting, installErrorReporting, shutdownErrorReporting } from "./error-reporting.ts"
+import { centralRequestFailure } from "@deskfleet/client/request-diagnostics"
+import { captureCentralRequestError, initializeErrorReporting, installErrorReporting, shutdownErrorReporting } from "./error-reporting.ts"
 
 // Exercise the real SDK and Vue error handler; replace only outbound delivery.
 type Options = NonNullable<Parameters<typeof init>[0]>
@@ -33,16 +34,87 @@ function events(): ErrorEvent[] {
     .filter(([header]) => header.type === "event").map(([, event]) => event as ErrorEvent))
 }
 
+function requestFailure(rpcMethod = "_deskfleet/agent/configuration", code = "ENOTFOUND"): Error {
+  return centralRequestFailure(new TypeError("fetch failed", {
+    cause: Object.assign(new Error("getaddrinfo ENOTFOUND private-host"), { code }),
+  }), {
+    method: "POST", path: "/api/machines/private-machine/rpc?token=private-query", elapsedMs: 123.4,
+    body: { method: rpcMethod, params: { provider: "private-provider", workspaceId: "private-workspace" } },
+  })
+}
+
 test.each([undefined, "", "  ", "invalid", "https://sentry.example.com/42"])("does not initialize or change Vue handlers with DSN %s", dsn => {
   vi.stubEnv("VITE_SENTRY_DSN", dsn)
   const app = createApp({ render: () => null })
   const handler = vi.fn()
   app.config.errorHandler = handler
   initializeErrorReporting("web")
+  captureCentralRequestError(requestFailure())
   installErrorReporting(app)
   expect(init).not.toHaveBeenCalled()
   expect(transport.send).not.toHaveBeenCalled()
   expect(app.config.errorHandler).toBe(handler)
+})
+
+test("reports desktop OS and runtime versions for errors without a machine identity", async () => {
+  initializeErrorReporting("desktop", {
+    os: { name: "macOS", version: "15.6" }, architecture: "arm64", appVersion: "0.2.2",
+    electronVersion: "45.0.0", nodeVersion: "24.0.0", chromeVersion: "152.0.0.0",
+  })
+  captureEvent({ message: "desktop failure" })
+  await getClient()?.flush(1000)
+  expect(events()[0]?.contexts).toMatchObject({
+    os: { name: "macOS", version: "15.6" }, device: { arch: "arm64" }, app: { app_version: "0.2.2" },
+    runtime: { name: "Electron", version: "45.0.0" }, node: { name: "Node.js", version: "24.0.0" },
+    browser: { name: "Chrome", version: "152.0.0.0" },
+  })
+})
+
+test("reports handled central transport failures with bounded diagnostics and deduplicates the same rejection", async () => {
+  initializeErrorReporting("desktop")
+  const error = requestFailure()
+  captureCentralRequestError(error)
+  await getClient()?.flush(1000)
+  expect(events()).toHaveLength(1)
+  expect(events()[0]).toMatchObject({
+    exception: { values: [{ type: "TypeError", value: "fetch failed" }] },
+    tags: { platform: "desktop", "central.method": "POST", "central.route": "/api/machines/:machineId/rpc", "central.rpc_method": "_deskfleet/agent/configuration", "central.cause_code": "ENOTFOUND" },
+    contexts: { central_request: {
+      method: "POST", route: "/api/machines/:machineId/rpc", rpc_method: "_deskfleet/agent/configuration", elapsed_ms: 123,
+      causes: ["TypeError", "Error: ENOTFOUND"],
+    } },
+  })
+  expect(events()[0]?.exception?.values?.[0]?.stacktrace?.frames?.length).toBeGreaterThan(0)
+  expect(JSON.stringify(events())).not.toContain("private")
+  globalThis.onunhandledrejection?.call(window, { reason: error } as PromiseRejectionEvent)
+  await getClient()?.flush(1000)
+  expect(events()).toHaveLength(1)
+})
+
+test("leaves ordinary errors to their existing handlers", async () => {
+  initializeErrorReporting("desktop")
+  captureCentralRequestError(new Error("Provider rejected the model"))
+  await getClient()?.flush(1000)
+  expect(events()).toHaveLength(0)
+})
+
+test("retains consecutive failures with the same stack but distinct RPC methods or causes", async () => {
+  initializeErrorReporting("desktop")
+  const requests = [
+    ["_deskfleet/agent/configuration", "ENOTFOUND"],
+    ["_deskfleet/session/configure", "ENOTFOUND"],
+    ["_deskfleet/session/configure", "ETIMEDOUT"],
+  ] as const
+  for (const [method, code] of requests) {
+    const error = requestFailure(method, code)
+    error.stack = "TypeError: fetch failed\n    at HttpCentralClient.request (https://app.example/assets/main.js:10:20)"
+    captureCentralRequestError(error)
+    await getClient()?.flush(1000)
+  }
+  expect(events()).toHaveLength(3)
+  expect(events().map(event => event.fingerprint)).toEqual(requests.map(([method, code]) => [
+    "{{ default }}", "POST", "/api/machines/:machineId/rpc", method, code,
+  ]))
 })
 
 test("captures real Vue errors from multiple apps through one client without props", async () => {

@@ -88,8 +88,10 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   }
   if (context.mode === "web") require(!("deskfleet" in window), "Web must not receive an Electron preload")
   else {
-    const api = (window as unknown as { deskfleet: { central: { status(): Promise<{ serverUrl: string }> } } }).deskfleet
-    const account = await api.central.status()
+    const api = (window as unknown as { deskfleet: { centralBridge: { invoke(method: string, args: unknown[]): Promise<{ ok: boolean; value: { serverUrl: string } }> } } }).deskfleet
+    const result = await api.centralBridge.invoke("status", [])
+    require(result.ok, "The Electron account request must succeed")
+    const account = result.value
     require(account.serverUrl === context.backend, "The Electron client must use its compiled backend address")
     require(!JSON.stringify(account).includes('"token"'), "The Electron renderer must not receive the app session token")
   }

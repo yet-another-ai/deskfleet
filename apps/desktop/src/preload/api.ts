@@ -1,7 +1,8 @@
-import type { CentralApi } from "@deskfleet/client/central"
+import type { CentralBridge } from "@deskfleet/client/central-bridge"
 import { ipcRenderer } from "electron"
 import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT, type DesktopEvent, type DesktopMediaResult, type IceCandidate } from "../../../../packages/client/src/desktop-media.ts"
 import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
+import type { DesktopPreloadApi } from "../shared/preload-api.ts"
 import { DEFAULT_LOCALE, isAppLocale, LOCALE_ARGUMENT_PREFIX } from "../../../../packages/client/src/i18n.ts"
 import { TERMINAL_SESSION_EVENT, type TerminalSessionEvent } from "../../../../packages/client/src/terminal.ts"
 import { CATALOG_CHANGED_EVENT } from "../../../../packages/client/src/catalog.ts"
@@ -46,9 +47,9 @@ const peerSignaling = {
   },
 }
 
-export function desktopApi(central?: CentralApi): DeskfleetDesktopApi {
+export function desktopApi(central?: CentralBridge): DesktopPreloadApi {
 return {
-  ...(central ? { central, onboarding: onboardingApi() } : {}),
+  ...(central ? { centralBridge: central, onboarding: onboardingApi() } : {}),
   platform: process.platform as DeskfleetDesktopApi["platform"],
   locale: isAppLocale(locale) ? locale : DEFAULT_LOCALE,
   appearance: appearanceApi(),

@@ -1,5 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { HttpCentralClient } from "./http-central.ts"
+import { HttpCentralClient, HttpError } from "./http-central.ts"
+import { CentralRequestError, serializeCentralRequestError } from "./request-diagnostics.ts"
 
 const clients: HttpCentralClient[] = []
 afterEach(() => { for (const client of clients.splice(0)) client.dispose(); vi.useRealTimers() })
@@ -89,6 +90,35 @@ test("reports API errors and falls back to HTTP status for non-JSON failures", a
   await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 503, message: "target machine is unavailable" })
   f.fetch.mockResolvedValueOnce(new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }))
   await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" })
+})
+
+test("fetch failures retain request context and a caller stack before Electron serialization", async () => {
+  const f = setup()
+  const cause = new TypeError("fetch failed", { cause: Object.assign(new Error("private backend refused"), { code: "ECONNREFUSED" }) })
+  cause.stack = "TypeError: fetch failed"
+  f.fetch.mockRejectedValueOnce(cause)
+  const failure = await f.client.rpc("private-machine", "_deskfleet/agent/configuration", { provider: "private-provider", model: "private-model" }).catch(error => error)
+  expect(failure).toBeInstanceOf(CentralRequestError)
+  if (!(failure instanceof CentralRequestError)) throw failure
+  expect(failure).toMatchObject({ name: "TypeError", message: "fetch failed", cause })
+  expect(failure.stack).toContain("http-central.ts")
+  expect(failure.stack).toContain("rpc")
+  expect(failure.diagnostics).toEqual({
+    method: "POST", route: "/api/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", elapsedMs: expect.any(Number),
+    causes: [{ name: "TypeError" }, { name: "Error", code: "ECONNREFUSED" }],
+  })
+  const serialized = JSON.stringify(serializeCentralRequestError(failure))
+  for (const secret of ["private-machine", "private-provider", "private-model", "application-token", "fleet.example", "private backend"]) expect(serialized).not.toContain(secret)
+  expect(f.fetch).toHaveBeenCalledOnce()
+})
+
+test("HTTP errors keep their status and code instead of becoming fetch failures", async () => {
+  const f = setup()
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "operation_failed", message: "fetch failed" } }), { status: 502 }))
+  const failure = await f.client.rpc("machine", "_deskfleet/agent/configuration", {}).catch(error => error)
+  expect(failure).toBeInstanceOf(HttpError)
+  expect(failure).toMatchObject({ name: "Error", message: "fetch failed", status: 502, code: "operation_failed" })
+  expect(serializeCentralRequestError(failure)).toBeUndefined()
 })
 
 test("transfers Team ownership with the encoded Team ID and selected member", async () => {
