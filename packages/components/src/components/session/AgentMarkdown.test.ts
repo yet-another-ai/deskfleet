@@ -2,7 +2,7 @@ import { client } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { computed, ref } from "vue"
-import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import type { FilesApi } from "../../../../client/src/files.ts"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
@@ -16,6 +16,8 @@ import MermaidViewer from "./MermaidViewer.vue"
 const originalFiles = client.files
 let wrapper: VueWrapper | undefined
 let pinia: ReturnType<typeof createPinia>
+// Session route is shared; compile once so Mermaid locate navigation cannot cold-load under CI load.
+beforeAll(async () => { await import("../../views/SessionView.vue") })
 beforeEach(() => { localStorage.removeItem(APPEARANCE_STORAGE_KEY); pinia = createPinia(); setActivePinia(pinia) })
 const context = () => ref<AgentResourceContext>({ target: { kind: "machine", machineId: "42", teamId: "7" }, sessionId: "12" })
 function render(files: Partial<FilesApi>, text: string, value = context()) {
@@ -31,13 +33,14 @@ function render(files: Partial<FilesApi>, text: string, value = context()) {
   })
   return wrapper
 }
-afterEach(() => {
+afterEach(async () => {
   wrapper?.unmount()
   wrapper = undefined
   disposePinia(pinia)
   localStorage.removeItem(APPEARANCE_STORAGE_KEY)
   client.files = originalFiles
   resetMermaidSidebarTabs()
+  await router.replace("/")
   vi.restoreAllMocks()
   vi.useRealTimers()
 })
