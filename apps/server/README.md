@@ -59,6 +59,7 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_PUBLIC_URL` | Stable external API origin and server identity; defaults to `http://localhost:8080`. |
 | `DESKFLEET_TRUSTED_PROXY_IPS` | Comma-separated exact proxy IPs allowed to set `X-Real-IP` for authentication rate limits. Empty by default; proxies must overwrite that header. |
 | `DESKFLEET_AUTH_WEB_URL` | Trusted Web origin for verification links, Passkeys, and desktop authorization. Defaults to the first Web origin or API origin. |
+| `DESKFLEET_GITHUB_CLIENT_ID`, `DESKFLEET_GITHUB_CLIENT_SECRET` | Optional GitHub OAuth app credentials. Set both to enable login; register `<DESKFLEET_PUBLIC_URL>/api/auth/github/callback` as the callback URL. |
 | `DESKFLEET_WEBAUTHN_RP_ID` | Passkey relying-party ID; defaults to the Web hostname. Keep it stable. |
 | `DESKFLEET_SMTP_HOST`, `DESKFLEET_SMTP_PORT` | STARTTLS mail relay and optional port (587). Required outside local development. |
 | `DESKFLEET_SMTP_USERNAME`, `DESKFLEET_SMTP_PASSWORD`, `DESKFLEET_MAIL_FROM` | Mail relay credentials and sender. |
@@ -197,7 +198,7 @@ Site Admin `admin@deskfleet.test` with password `deskfleet-dev-password`.
 This explicit debug-build command requires no mail delivery and leaves existing
 accounts unchanged. It creates no Team and is never run during normal startup.
 
-Site administrators use the same password/Passkey login as other users. Their grants are
+Site administrators use the same login methods as other users. Their grants are
 independent of Team roles and do not allow access to other Teams' machines,
 history, terminals, or Agent sessions. No user becomes a site administrator
 automatically. First log in, obtain the account's `user.id` from `GET /api/me`,
@@ -255,7 +256,7 @@ and case-folds ASCII email without removing plus tags. Recovery links are
 purpose-bound, one-use, and expire after one hour. Recovery and password/email
 changes revoke all login sessions and peer grants without deleting Machines or
 stopping accepted execution. Ordinary recovery retains Passkeys. Security
-changes require a password or Passkey confirmation within ten minutes.
+changes require password, Passkey, or GitHub confirmation within ten minutes.
 
 `GET /api/auth/config` exposes the current `termsOfServiceUrl` and
 `privacyTermsUrl`. When either is configured, registration displays an unchecked

@@ -5,7 +5,7 @@ import { i18n } from "../../i18n/index.ts"
 import AuthPage from "./AuthPage.vue"
 
 let view: VueWrapper | undefined
-afterEach(() => { view?.unmount(); history.replaceState(null, "", "/"); vi.restoreAllMocks(); vi.useRealTimers() })
+afterEach(() => { view?.unmount(); sessionStorage.clear(); history.replaceState(null, "", "/"); vi.restoreAllMocks(); vi.useRealTimers() })
 const recentRequired = () => new HttpError(403, "Confirm your password or Passkey to continue.", undefined, "recent_authentication_required")
 const dialog = () => new DOMWrapper(document.body).find('[role="dialog"]')
 const button = (root: { findAll(selector: string): DOMWrapper<Element>[] }, label: string) => root.findAll("button").find(value => value.text() === label)!
@@ -43,6 +43,61 @@ test("desktop approval confirms recent authentication in a dialog and keeps its 
   expect(assign).toHaveBeenCalledExactlyOnceWith("http://127.0.0.1:19091/callback?code=approved")
   expect(dialog().exists()).toBe(false)
 })
+
+test.each([true, false])("GitHub sign-in requires terms even when registrationEnabled=%s", async registrationEnabled => {
+  const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
+  const request = mountAt("/auth/desktop?attempt=native-attempt", async (_method, path) => {
+    if (path === "/api/auth/config") return { registrationEnabled, githubEnabled: true, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "" }
+    if (path === "/api/auth/github/start") return { authorizationUrl: "https://github.com/login/oauth/authorize" }
+    return {}
+  })
+  await flushPromises()
+  const github = button(view!, i18n.global.t("auth.signInWithGithub"))
+  expect(github.attributes("disabled")).toBeUndefined()
+  await github.trigger("click"); await flushPromises()
+  expect(request).not.toHaveBeenCalledWith("POST", "/api/auth/github/start", expect.anything())
+  const checkbox = view!.get('[role="checkbox"]')
+  expect(checkbox.attributes("aria-invalid")).toBe("true")
+  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t("auth.githubTermsRequired"))
+  expect(view!.find(".terms-shake").exists()).toBe(true)
+  await view!.get(".terms-shake").trigger("animationend")
+  await github.trigger("click"); await flushPromises()
+  expect(view!.find(".terms-shake").exists()).toBe(true)
+  await checkbox.trigger("click")
+  expect(checkbox.attributes("aria-invalid")).toBeUndefined()
+  expect(view!.find('[role="alert"]').exists()).toBe(false)
+  await github.trigger("click"); await flushPromises()
+  expect(request).toHaveBeenCalledWith("POST", "/api/auth/github/start", { returnTo: "/auth/desktop?attempt=native-attempt", acceptedTerms: true })
+  expect(assign).toHaveBeenCalledExactlyOnceWith("https://github.com/login/oauth/authorize")
+})
+
+test("GitHub callback errors are displayed and removed from browser history", async () => {
+  mountAt("/auth/login?githubError=terms_required", async () => ({ registrationEnabled: true, githubEnabled: true }))
+  await flushPromises()
+  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t("auth.githubTermsRequired"))
+  expect(location.search).toBe("")
+})
+
+test("GitHub sign-in restores an email verification token without sending it in the return path", async () => {
+  vi.spyOn(location, "assign").mockImplementation(() => {})
+  const request = mountAt("/auth/email/verify#token=secret", async (_method, path) => {
+    if (path === "/api/auth/config") return { registrationEnabled: true, githubEnabled: true }
+    if (path === "/api/auth/github/start") return { authorizationUrl: "https://github.com/login/oauth/authorize" }
+    return {}
+  })
+  await flushPromises()
+  expect(location.hash).toBe("")
+  await button(view!, i18n.global.t("auth.signInWithGithub")).trigger("click"); await flushPromises()
+  expect(request).toHaveBeenCalledWith("POST", "/api/auth/github/start", { returnTo: "/auth/email/verify", acceptedTerms: false })
+  view!.unmount()
+  const next = mountAt("/auth/email/verify", async () => ({ registrationEnabled: true, githubEnabled: true }), { id: "u1", name: "Ada", email: "ada@example.test" })
+  await flushPromises()
+  await view!.get("form").trigger("submit"); await flushPromises()
+  expect(next).toHaveBeenCalledWith("POST", "/api/auth/email/verify", { token: "secret" })
+  expect(sessionStorage.getItem("deskfleet-email-verify-token")).toBeNull()
+})
+
+
 
 test("closed registration presents the site policy without an email submission form", async () => {
   mountAt("/auth/register", async () => ({ registrationEnabled: false }))

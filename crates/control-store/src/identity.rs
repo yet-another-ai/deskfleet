@@ -40,6 +40,13 @@ fn user(row: &QueryResult) -> Result<User> {
         email: row.try_get("", "email")?,
     })
 }
+// Serialize OAuth starts with credential mutations across replicas; sequence
+// allocation must follow commit order for revocations to fence earlier starts.
+async fn lock_authentication_generation(db: &impl ConnectionTrait) -> Result<()> {
+    db.execute_raw(sql("SELECT pg_advisory_xact_lock(761946023)", vec![]))
+        .await?;
+    Ok(())
+}
 impl ControlStore {
     /// Create the explicitly requested development administrator once. An
     /// existing mailbox is never changed or granted additional privileges.
@@ -91,6 +98,55 @@ impl ControlStore {
     pub async fn verified_user(&self, email: &str, display_name: &str) -> Result<User> {
         let email = normalize_email(email)?;
         user(&one(&self.db, "INSERT INTO cp_users(id,name,email,email_verified) VALUES($1,$2,$3,TRUE) ON CONFLICT(email) DO UPDATE SET name=excluded.name RETURNING id,name,email", vec![uuid::Uuid::now_v7().to_string().into(), name(display_name)?.into(), email.into()]).await?)
+    }
+    pub async fn github_account(&self, subject: &str) -> Result<User> {
+        let row = one(&self.db, "SELECT u.id,u.name,u.email FROM cp_github_identities g JOIN cp_users u ON u.id=g.user_id WHERE g.subject=$1 AND NOT u.disabled AND u.email_verified", vec![subject.into()]).await?;
+        user(&row)
+    }
+    /// Resolve an established GitHub identity or create a new account without linking by email.
+    pub async fn github_user(
+        &self,
+        subject: &str,
+        email: &str,
+        display_name: &str,
+        accepted_terms: bool,
+    ) -> Result<User> {
+        let tx = self.db.begin().await?;
+        tx.execute_raw(sql(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 761946022))",
+            vec![subject.into()],
+        ))
+        .await?;
+        if let Some(row) = tx.query_one_raw(sql("SELECT u.id,u.name,u.email,u.disabled,u.email_verified FROM cp_github_identities g JOIN cp_users u ON u.id=g.user_id WHERE g.subject=$1", vec![subject.into()])).await? {
+            if row.try_get::<bool>("", "disabled")? || !row.try_get::<bool>("", "email_verified")? { return Err(Error::Unauthorized); }
+            return user(&row);
+        }
+        let enabled: bool = one(
+            &tx,
+            "SELECT enabled FROM cp_registration_policy WHERE singleton FOR SHARE",
+            vec![],
+        )
+        .await?
+        .try_get("", "enabled")?;
+        if !enabled {
+            return Err(Error::Invalid("registration disabled"));
+        }
+        let settings = one(&tx, "SELECT terms_of_service_url,privacy_terms_url FROM cp_site_settings WHERE singleton FOR SHARE", vec![]).await?;
+        let terms: String = settings.try_get("", "terms_of_service_url")?;
+        let privacy: String = settings.try_get("", "privacy_terms_url")?;
+        if !accepted_terms && (!terms.is_empty() || !privacy.is_empty()) {
+            return Err(Error::Invalid("terms acceptance required"));
+        }
+        let email = normalize_email(email)?;
+        let row = tx.query_one_raw(sql("INSERT INTO cp_users(id,name,email,email_verified) VALUES($1,$2,$3,TRUE) ON CONFLICT(email) DO NOTHING RETURNING id,name,email", vec![uuid::Uuid::now_v7().to_string().into(),name(display_name)?.into(),email.into()])).await?.ok_or(Error::Conflict("account already exists"))?;
+        let account = user(&row)?;
+        tx.execute_raw(sql(
+            "INSERT INTO cp_github_identities(subject,user_id) VALUES($1,$2)",
+            vec![subject.into(), account.id.clone().into()],
+        ))
+        .await?;
+        tx.commit().await?;
+        Ok(account)
     }
     pub async fn account(&self, id: &str) -> Result<User> {
         user(&one(&self.db,"SELECT id,name,email FROM cp_users WHERE id=$1 AND NOT disabled AND email_verified",vec![id.into()]).await?)

@@ -3,6 +3,7 @@
 mod account;
 pub mod config;
 mod desktop;
+mod github;
 mod mail;
 mod passkeys;
 mod passwords;
@@ -55,6 +56,8 @@ pub fn configure(config: &mut web::ServiceConfig) {
         .route("/auth/register", web::post().to(passwords::register))
         .route("/auth/verify", web::post().to(passwords::verify))
         .route("/auth/login", web::post().to(passwords::login))
+        .route("/auth/github/start", web::post().to(github::start))
+        .route("/auth/github/callback", web::get().to(github::callback))
         .route("/auth/recovery", web::post().to(passwords::recovery))
         .route(
             "/auth/recovery/complete",
@@ -265,6 +268,7 @@ async fn public_config(req: HttpRequest, state: web::Data<AppState>) -> Result<H
         .cookie(cookie(CSRF_COOKIE, csrf.clone(), &state, false))
         .json(json!({
             "webUrl": state.auth.config.web_url,
+            "githubEnabled": state.auth.config.github.is_some(),
             "registrationEnabled": state.store.registration_enabled().await?,
             "termsOfServiceUrl": settings.terms_of_service_url,
             "privacyTermsUrl": settings.privacy_terms_url,

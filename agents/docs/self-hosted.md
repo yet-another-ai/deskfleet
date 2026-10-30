@@ -221,6 +221,7 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | `DESKFLEET_PUBLIC_URL` | no | `http://localhost:8080` | External origin and the server identity (`serverId`). Use an `https` origin with no path and no trailing slash. The raw string is what daemons store. |
 | `DESKFLEET_TRUSTED_PROXY_IPS` | behind a proxy | empty | Comma-separated exact proxy IPs allowed to supply `X-Real-IP` for authentication rate limits. |
 | `DESKFLEET_AUTH_WEB_URL` | for split hosts | first Web origin or API origin | Trusted origin serving `/auth/*`, verification links and Passkeys. |
+| `DESKFLEET_GITHUB_CLIENT_ID`, `DESKFLEET_GITHUB_CLIENT_SECRET` | for GitHub login | unset | GitHub OAuth app credentials. Set both to enable GitHub login; keep the secret in the supervisor’s secret store. |
 | `DESKFLEET_WEBAUTHN_RP_ID` | no | Web hostname | Stable Passkey relying-party ID. |
 | `DESKFLEET_SMTP_HOST` | outside localhost | unset | Mandatory STARTTLS mail relay. |
 | `DESKFLEET_SMTP_PORT` | no | 587 | SMTP submission port. |
@@ -266,10 +267,19 @@ DeskFleet setting. Use the mode your database requires.
 ## Accounts and mail
 
 The server owns verified email accounts, Argon2id passwords, Passkeys and opaque
-30-day login sessions. Registration emails a one-hour verification link; the
+30-day login sessions. Optional GitHub OAuth login uses the same account and
+session authority. Registration emails a one-hour verification link; the
 mailbox owner chooses the first password after opening it. Recovery uses a
 separate one-hour, one-use proof. User IDs remain stable when email changes.
 Matching trims whitespace and lowercases ASCII email, preserving plus tags.
+
+To enable GitHub login, register a GitHub OAuth app with the callback URL
+`<DESKFLEET_PUBLIC_URL>/api/auth/github/callback` and configure both GitHub
+credentials above. Set the exact API origin in the callback, including the port
+when applicable. GitHub login requests access to verified email addresses and
+requires acceptance of any configured legal terms before authorization. New
+accounts require enabled public registration. An email already used by an existing account cannot create another
+account; automatic and explicit account linking are not supported.
 
 Browsers send HttpOnly session cookies. Mutations require the exact allowed
 Origin and the CSRF token from `/api/auth/config` in `X-CSRF-Token`. WebSocket
@@ -286,9 +296,14 @@ The renderer never receives the token. Desktop attempts expire in ten minutes.
 Password/email changes and recovery revoke login sessions and existing peer
 grants atomically. They preserve Machine registration and accepted work.
 Ordinary password recovery retains Passkeys. Adding/removing credentials and
-changing security settings require recent password or Passkey authentication
-within ten minutes. Site administrators can close public registration separately
-from Team creation, search account metadata, and disable an account. Disablement
+changing security settings require recent authentication within ten minutes.
+GitHub users can add a Passkey during the initial ten-minute sign-in window and
+use it for later confirmation. That initial window relies on GitHub authorization,
+which may use an existing GitHub session without freshly entered credentials.
+GitHub OAuth cannot itself provide a fresh password or Passkey confirmation for
+an existing session. Site administrators
+can close public registration separately from Team creation, search account
+metadata, and disable an account. Disablement
 blocks later delegated work as well as current interactive access.
 
 Team membership and Site Admin grants remain separate. The creator of a Team

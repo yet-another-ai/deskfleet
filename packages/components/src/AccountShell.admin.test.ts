@@ -80,6 +80,8 @@ test("a site administrator without any Team opens administration from the accoun
   expect(fake.central.members).not.toHaveBeenCalled()
 })
 
+
+
 test("terms URLs can be configured independently and cleared without changing other site settings", async () => {
   const fake = fakeCentral({ siteAdmin: true, teams: [], site: { termsOfServiceUrl: "https://example.test/terms" } })
   await router.push("/admin")

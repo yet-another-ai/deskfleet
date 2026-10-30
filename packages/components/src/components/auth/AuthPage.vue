@@ -20,8 +20,15 @@ const account = accountAuthentication(props.api)
 const route = location.pathname.replace(/\/$/, "")
 const attempt = new URLSearchParams(location.search).get("attempt") ?? undefined
 // Mailed tokens travel in the fragment so they never reach server logs; drop them from history.
-const token = new URLSearchParams(location.hash.slice(1)).get("token") ?? undefined
+const fragmentToken = new URLSearchParams(location.hash.slice(1)).get("token") ?? undefined
+const token = fragmentToken ?? (route === "/auth/email/verify" ? sessionStorage.getItem("deskfleet-email-verify-token") ?? undefined : undefined)
+if (route === "/auth/email/verify") sessionStorage.removeItem("deskfleet-email-verify-token")
+const githubError = new URLSearchParams(location.search).get("githubError") ?? undefined
+const returnUrl = new URL(location.href)
+returnUrl.searchParams.delete("githubError")
+const returnTo = route === "/auth/login" ? "/" : returnUrl.pathname + returnUrl.search
 if (token) history.replaceState(null, "", location.pathname + location.search)
+if (githubError) history.replaceState(null, "", returnUrl.pathname + returnUrl.search + (token ? "" : returnUrl.hash))
 const { state, isLoading, error, executeImmediate: reload } = useAsyncState(async () => {
   const [config, status] = await Promise.all([account.config(), props.api.status()])
   return { config, user: status.user }
@@ -56,6 +63,10 @@ async function signOut(): Promise<void> { await props.api.logout(); await reload
     :title="t(signIn.title)"
     :description="signIn.description && t(signIn.description)"
     :registration-enabled="state.config.registrationEnabled"
+    :config="state.config"
+    :return-to="returnTo"
+    :email-verification-token="route === '/auth/email/verify' ? token : undefined"
+    :github-error="githubError"
     :new-tab="signIn.newTab"
     @signed-in="signedIn"
   />

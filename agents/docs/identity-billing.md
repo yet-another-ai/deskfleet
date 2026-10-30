@@ -11,7 +11,8 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 ## Agreed scope
 
 - Replace OIDC with DeskFleet-owned accounts, public registration, email/password
-  login, and Passkeys. Web and Electron use the same account authority.
+  login, Passkeys, and optional GitHub OAuth login. Web and Electron use the same
+  account authority.
 - Subscriptions and usage belong to a Team. A person can use a single-member
   Team; membership in several Teams does not combine their plans.
 - Sell platform subscriptions. AI credentials and execution remain on user
@@ -60,8 +61,8 @@ membership, resource access, or Site Admin authority.
 1. Register with email/password and prove mailbox control. Verification delivery
    can be retried. Credentials supplied by an unverified third party must not be
    attached to a later verified owner.
-2. Log in with email/password or a registered Passkey. Both produce the same
-   application-session identity and Team authority.
+2. Log in with email/password, a registered Passkey, or a linked GitHub identity.
+   Each produces the same application-session identity and Team authority.
 3. Recover a password using an expiring, single-use email link. Unknown and
    registered addresses receive the same public response.
 4. Change a password or email. Verify a new address before replacing the current
@@ -73,8 +74,20 @@ membership, resource access, or Site Admin authority.
 7. Support account disablement, revoking existing login sessions/peer access and
    preventing new sessions and authorization of later delegated work.
 
-DeskFleet owns email verification. Invitation acceptance still requires a
-verified email matching the invitation. Stable user IDs identify membership and
+GitHub login identifies an account by GitHub’s stable user ID. Every GitHub
+sign-in requires acceptance of configured legal terms before authorization.
+Creating an account through GitHub also requires a verified GitHub email and
+enabled public registration. An existing account is
+not automatically linked based on its email address. An email already used by an
+existing account cannot create another account, and explicit linking is not yet
+supported. The initial ten-minute recent-authentication window after GitHub
+sign-in relies on GitHub authorization, which may use an existing GitHub session
+without freshly entered credentials. GitHub users can register a Passkey during
+that window, then use it for later security-sensitive confirmations. GitHub
+OAuth does not provide fresh confirmation for an existing session.
+
+DeskFleet owns email verification for password registration. Invitation acceptance
+still requires a verified email matching the invitation. Stable user IDs identify membership and
 resource ownership across email changes. Registration, login, email changes, and
 invitations need one consistent email matching/uniqueness policy.
 
