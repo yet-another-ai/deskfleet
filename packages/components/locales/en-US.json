@@ -1070,6 +1070,7 @@
     "replace": "Replace",
     "loadingResource": "Loading image…",
     "imageUnavailable": "Image unavailable",
+    "previewUnavailable": "Preview is unavailable for this file. You can download it.", "downloadResource": "Download",
     "resourceUnavailable": "This resource is unavailable. Connect to its machine and try again.",
     "notImage": "This file cannot be displayed as an image.",
     "state": {

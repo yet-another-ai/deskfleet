@@ -74,10 +74,10 @@ test.each(["image/bmp", "image/vnd.microsoft.icon", "image/x-icon"])("renders re
 test("discards image completion after changing machines and keeps file links on trusted context", async () => {
   let resolve!: (value: { data: Uint8Array; name: string; mimeType: string }) => void
   const readResource = vi.fn().mockImplementationOnce(() => new Promise(done => { resolve = done })).mockRejectedValue(new Error("Machine offline"))
-  const saveResource = vi.fn().mockResolvedValue("transfer-1")
+  const resolveResource = vi.fn().mockResolvedValue({ name: "report.pdf", path: "/tmp/report.pdf", kind: "file" })
   const create = vi.spyOn(URL, "createObjectURL")
   const resourceContext = context()
-  const view = render({ readResource, saveResource }, "![Chart](chart.png) [Report](file:///tmp/report.pdf)", resourceContext)
+  const view = render({ readResource, resolveResource }, "![Chart](chart.png) [Report](file:///tmp/report.pdf)", resourceContext)
   await flushPromises()
   resourceContext.value = { target: { kind: "machine", machineId: "99", teamId: "7" }, sessionId: "12" }
   await flushPromises()
@@ -86,7 +86,7 @@ test("discards image completion after changing machines and keeps file links on 
   expect(create).not.toHaveBeenCalled()
   expect(view.get("[data-resource-retry]").attributes("title")).toContain("Machine offline")
   await view.get("a[data-resource-link]").trigger("click")
-  expect(saveResource).toHaveBeenCalledWith({ ...resourceContext.value, uri: "file:///tmp/report.pdf" })
+  expect(resolveResource).toHaveBeenCalledWith({ ...resourceContext.value, uri: "file:///tmp/report.pdf" })
 })
 
 test("late image completion after unmount creates no retained URL", async () => {

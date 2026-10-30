@@ -7,7 +7,7 @@ import { useI18n } from "vue-i18n"
 import type { FileEntry, FileListing, FileLocation, FilesApi, FileTarget } from "../../../../client/src/files.ts"
 import { fileSize } from "../../services/file-format.ts"
 import IconButton from "../common/IconButton.vue"
-const props = defineProps<{ api: FilesApi; target: FileTarget; name: string; revision: number; resetKey: number; selection: FileEntry[] }>()
+const props = withDefaults(defineProps<{ api: FilesApi; target: FileTarget; name: string; revision: number; resetKey: number; selection: FileEntry[]; initialPath?: string; selectable?: boolean }>(), { selectable: true })
 const emit = defineEmits<{ selection: [entries: FileEntry[]]; location: [location: FileLocation | undefined] }>()
 const { t } = useI18n()
 const listing = ref<FileListing>()
@@ -56,7 +56,7 @@ watch(() => props.resetKey, () => {
   clearSelection()
   void navigate()
 })
-onMounted(() => { void navigate() })
+onMounted(() => { void navigate(props.initialPath) })
 watch(hidden, clearSelection)
 onBeforeUnmount(() => { disposed = true; ++generation })
 </script>
@@ -79,8 +79,8 @@ onBeforeUnmount(() => { disposed = true; ++generation })
       </div>
       <ul v-else-if="entries.length" class="m-0 list-none p-0">
         <li v-for="entry in entries" :key="entry.path" class="flex min-w-0 items-center gap-2 px-3 py-2 text-[13px]" :class="selected.has(entry.path) && 'bg-ui-hover'">
-          <UiCheckbox :model-value="selected.has(entry.path)" :aria-label="t('files.select', { name: entry.name })" @update:model-value="select(entry)" />
-          <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left" :aria-label="entry.kind === 'directory' ? t('folderPicker.openFolder', { name: entry.name }) : t('files.select', { name: entry.name })" @click="entry.kind === 'directory' ? navigate(entry.path) : select(entry)">
+          <UiCheckbox v-if="selectable !== false" :model-value="selected.has(entry.path)" :aria-label="t('files.select', { name: entry.name })" @update:model-value="select(entry)" />
+          <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left" :aria-label="entry.kind === 'directory' ? t('folderPicker.openFolder', { name: entry.name }) : t('files.select', { name: entry.name })" :disabled="selectable === false && entry.kind === 'file'" @click="entry.kind === 'directory' ? navigate(entry.path) : select(entry)">
             <component :is="entry.kind === 'directory' ? Folder : File" :size="15" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate" :title="entry.name">{{ entry.name }}</span>
           </button>
           <span v-if="entry.kind === 'file'" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted">{{ fileSize(entry.size) }}</span>

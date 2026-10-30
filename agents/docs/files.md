@@ -214,8 +214,9 @@ against the Session's captured first directory, including archived Sessions whos
 working context remains available. Editing Workspace directories later does not
 retarget those references. Link fragments and trailing `:line[:column]` editor
 locations are removed before URI decoding; encoded filename characters remain
-part of the path. The current UI downloads file links rather than opening a
-line-aware editor.
+part of the path. The conversation opens directory links in a file browser and previews supported
+text and image files in a dialog. Text previews highlight a requested line.
+Other files can be downloaded from that dialog.
 
 Images are fetched through the same authenticated file endpoint and rendered
 using locally created Blob URLs. The renderer permits `blob:` image sources and
@@ -223,7 +224,7 @@ releases those URLs when their content or Session context leaves the view.
 BMP uses `image/bmp`; ICO uses `image/vnd.microsoft.icon`, with the legacy
 `image/x-icon` type also accepted for previews.
 Preview reads are capped at 16 MiB; larger files use the streaming transfer queue.
-Downloading a file link selects a local destination and creates a normal queue
+The download action selects a local destination and creates a normal queue
 item. Loading failures retain a visible retry action.
 
 The daemon resolves filesystem references only. It does not proxy HTTP URLs,
