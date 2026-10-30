@@ -247,7 +247,7 @@ onBeforeUnmount(() => { finished = true })
         <pre v-if="testDetails" class="m-0 max-h-48 overflow-auto rounded-lg bg-ui-canvas/60 p-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words text-ui-text-muted select-text" data-provider-test-details>{{ testResult.error.trim() }}</pre>
       </div>
 
-      <div class="flex justify-end gap-2">
+      <div class="flex flex-wrap justify-end gap-2">
         <UiButton type="button" class="mr-auto" :title="t('providers.testDescription')" :disabled="testing || formDisabled" data-provider-test @click="runTest">{{ testing ? t("providers.testing") : t("providers.test") }}</UiButton>
         <UiButton type="button" :disabled="saving || setupBusy" @click="cancel">{{ t("catalog.cancel") }}</UiButton>
         <UiButton variant="primary" type="submit" :loading="saving" :disabled="formDisabled">{{ saving ? t("catalog.saving") : t(initial ? "catalog.save" : "providers.add") }}</UiButton>

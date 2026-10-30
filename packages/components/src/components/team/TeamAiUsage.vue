@@ -44,7 +44,7 @@ const rangeEnd = computed(() => state.value ? calendarDate(state.value.to, timeZ
         <h1 class="ui-page-title">{{ t("aiUsage.title") }}</h1>
         <p class="mt-2 truncate text-sm text-ui-text-muted">{{ team.name }}</p>
       </div>
-      <div class="flex max-w-full items-center gap-2">
+      <div class="flex max-w-full flex-wrap items-center gap-2">
         <div class="flex rounded-lg border border-ui-border bg-ui-hover p-1" role="group" :aria-label="t('aiUsage.period')">
           <button v-for="value in periods" :key="value" type="button" :data-usage-period="value" :aria-pressed="period === value" class="cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent sm:px-4" :class="period === value ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" @click="period = value">
             {{ t(`aiUsage.periods.${value}`) }}

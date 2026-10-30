@@ -12,6 +12,7 @@ import { router } from "../../router/index.ts"
 import { agentResourceContextKey, isFileResource, type AgentResourceContext } from "../../services/agent-resources.ts"
 import { previewKindFromMime, resolvePreviewKind, type PreviewKind, type PreviewMode, type PreviewSource } from "../../services/preview.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
+import { useLayoutStore } from "../../stores/layout.ts"
 import {
   broadcastPreviewLocate,
   broadcastPreviewSidebar,
@@ -38,6 +39,7 @@ const props = withDefaults(defineProps<{
 
 const { t } = useI18n()
 const client = usePlatformClient()
+const layout = getActivePinia() ? useLayoutStore() : undefined
 const root = useTemplateRef<HTMLElement>("root")
 const injectedContext = inject(agentResourceContextKey, computed(() => undefined))
 const sessionId = computed(() => {
@@ -151,6 +153,7 @@ function showInNewWindow(): void {
 function locateOriginal(): void {
   menuOpen.value = false
   const resolvedSource = previewSource()
+  if (props.mode === "sidebar") layout?.closeCompactPanel()
   if (props.mode === "window") {
     broadcastPreviewLocate(props.content, resolvedSource)
     window.opener?.focus?.()

@@ -1,6 +1,6 @@
-import { useLocalStorage } from "@vueuse/core"
+import { useBreakpoints, useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { nextTick, ref } from "vue"
+import { computed, nextTick, onScopeDispose, ref, watch } from "vue"
 import type { AgentSessionContext } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { router } from "../router/index.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
@@ -97,10 +97,31 @@ export function listenMermaidLocate(handler: (code: string, source?: MermaidSour
 
 export const useLayoutStore = defineStore("layout", () => {
   // Per-device preferences; they fall back to the defaults when storage is unavailable.
-  const sidebarOpen = useLocalStorage("deskfleet.sidebar-open", true)
+  const desktopSidebarOpen = useLocalStorage("deskfleet.sidebar-open", true)
   const sidebarWidth = useLocalStorage("deskfleet.sidebar-width", 260)
-  const detailsOpen = useLocalStorage("deskfleet.details-open", true)
+  const desktopDetailsOpen = useLocalStorage("deskfleet.details-open", true)
   const detailsWidth = useLocalStorage("deskfleet.details-width", 288)
+  const compact = useBreakpoints({ desktop: 1024 }).smaller("desktop")
+  const compactPanel = ref<"sidebar" | "details" | null>(null)
+  const sidebarOpen = computed({
+    get: () => compact.value ? compactPanel.value === "sidebar" : desktopSidebarOpen.value,
+    set: value => {
+      if (!compact.value) desktopSidebarOpen.value = value
+      else if (value) compactPanel.value = "sidebar"
+      else if (compactPanel.value === "sidebar") compactPanel.value = null
+    },
+  })
+  const detailsOpen = computed({
+    get: () => compact.value ? compactPanel.value === "details" : desktopDetailsOpen.value,
+    set: value => {
+      if (!compact.value) desktopDetailsOpen.value = value
+      else if (value) compactPanel.value = "details"
+      else if (compactPanel.value === "details") compactPanel.value = null
+    },
+  })
+  function closeCompactPanel(): void { compactPanel.value = null }
+  watch(compact, closeCompactPanel)
+  onScopeDispose(router.afterEach(closeCompactPanel))
   /** Machine-local destinations survive view remounts without leaking to another machine. */
   const conversationPath = usePlatformClient().target ? ref("/") : useLocalStorage("deskfleet.conversation-path", "/")
   /** The execution context a new Session uses; the last choice is remembered. */
@@ -117,6 +138,8 @@ export const useLayoutStore = defineStore("layout", () => {
   }
 
   return {
+    compact,
+    closeCompactPanel,
     sidebarOpen,
     sidebarWidth,
     detailsOpen,

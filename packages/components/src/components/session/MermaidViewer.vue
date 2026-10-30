@@ -18,6 +18,7 @@ const platformClient = usePlatformClient()
 const props = withDefaults(defineProps<{ code: string; mode?: "inline" | "focus" | "sidebar" | "window"; source?: MermaidSource; loading?: boolean }>(), { mode: "inline", loading: false })
 const { t } = useI18n()
 const platform = platformClient.platform
+const layout = getActivePinia() ? useLayoutStore() : undefined
 const { isDark } = storeToRefs(useAppearanceStore())
 const root = useTemplateRef<HTMLDivElement>("root")
 const resourceContext = inject(agentResourceContextKey, computed(() => undefined))
@@ -119,6 +120,7 @@ function showInNewWindow(): void {
 }
 async function locateOriginalMessage(): Promise<void> {
   const source = resolvedSource()
+  if (props.mode === "sidebar") layout?.closeCompactPanel()
   if (props.mode === "window") {
     broadcastMermaidLocate(props.code, source)
     window.opener?.focus?.()

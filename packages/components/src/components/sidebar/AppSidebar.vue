@@ -27,7 +27,7 @@ const platformClient = usePlatformClient()
 const fleet = useFleetStore()
 const account = useAccountSession()
 const runtimes = useMachineRuntimes()
-const { sidebarWidth } = storeToRefs(useLayoutStore())
+const { compact, sidebarWidth } = storeToRefs(useLayoutStore())
 const { machines, catalogError, catalogLoading } = storeToRefs(fleet)
 const platform = platformClient.platform
 // Each opened machine retains its own catalog and action scope.
@@ -64,9 +64,10 @@ function refresh(): void {
 <template>
   <aside
     class="relative flex shrink-0 flex-col border-r border-ui-border bg-ui-sidebar"
-    :style="{ width: `${width}px` }"
+    :style="{ width: compact ? '100%' : `${width}px` }"
   >
     <div
+      v-if="!compact"
       role="separator"
       aria-orientation="vertical"
       tabindex="0"

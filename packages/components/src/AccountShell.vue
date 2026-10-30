@@ -96,17 +96,17 @@ if (props.host.onboarding) void loadOnboarding()
       <!-- Only the selected route mounts here; opened machines retain their stores and peers. -->
       <MachineSurface v-else-if="machine" :key="machineScopeKey" :session="session" :machine="machine" @ready="finishBillingReturn" />
       <RouterView v-else-if="route.meta.fullWindow" />
-      <div v-else class="flex min-h-0 flex-1">
-        <aside class="flex w-65 shrink-0 flex-col border-r border-ui-border bg-ui-sidebar">
-          <div class="app-drag h-12 shrink-0" />
+      <div v-else class="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+        <aside class="flex w-full shrink-0 flex-col border-b border-ui-border bg-ui-sidebar pt-2 md:w-65 md:border-b-0 md:border-r md:pt-0">
+          <div class="app-drag hidden h-12 shrink-0 md:block" />
           <TeamSwitcher v-if="teams.length" />
-          <div class="flex-1" />
+          <div class="hidden md:block md:flex-1" />
           <AccountNotices />
           <AppUpdateNotice />
           <AccountFooter />
         </aside>
-        <main class="flex min-w-0 flex-1 flex-col">
-          <div class="app-drag titlebar-overlay-inset h-12 shrink-0" />
+        <main class="flex min-w-0 flex-1 flex-col py-6 md:py-0">
+          <div class="app-drag titlebar-overlay-inset hidden h-12 shrink-0 md:block" />
           <MachineOnboarding v-if="team" />
           <TeamOnboarding v-else-if="!teams.length" />
         </main>

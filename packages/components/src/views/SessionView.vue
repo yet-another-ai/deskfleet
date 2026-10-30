@@ -52,7 +52,7 @@ const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
 const terminals = useTerminalsStore()
-const { sidebarOpen, terminalPanelOpen } = storeToRefs(useLayoutStore())
+const { compact, sidebarOpen, terminalPanelOpen } = storeToRefs(useLayoutStore())
 const focusedMermaid = computed(() => typeof route.query.mermaid === "string" && route.query.mermaid ? route.query.mermaid : undefined)
 const focusedMermaidSource = computed<MermaidSource>(() => ({
   sessionId: props.sessionId,
@@ -273,13 +273,13 @@ async function checkOperation(operationId: string): Promise<void> {
   <RenameSessionDialog v-if="renameOpen && snapshot" :key="sessionId" :title="snapshot.session.title" :disabled="!location?.machine.online" :confirm="title => agents.rename(sessionId, title)" @close="renameOpen = false" />
   <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
   <div v-if="focusedMermaid" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">
-    <div v-if="!sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pl-20 pr-3">
+    <div v-if="compact || !sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pr-3" :class="client.platform === 'darwin' ? 'pl-20' : 'pl-3'">
       <WindowToolbar />
     </div>
     <MermaidViewer :key="focusedMermaid" :code="focusedMermaid" :source="focusedMermaidSource" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
   </div>
   <div v-if="focusedPreview" data-preview-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">
-    <div v-if="!sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pl-20 pr-3">
+    <div v-if="compact || !sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pr-3" :class="client.platform === 'darwin' ? 'pl-20' : 'pl-3'">
       <WindowToolbar />
     </div>
     <PreviewViewer :key="focusedPreview.content" v-bind="focusedPreview" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />

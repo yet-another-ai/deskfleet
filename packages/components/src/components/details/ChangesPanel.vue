@@ -12,11 +12,13 @@ import { closePreviewSidebarTab, previewSidebarTabs } from "../../stores/preview
 import MermaidViewer from "../session/MermaidViewer.vue"
 import PreviewViewer from "../session/PreviewViewer.vue"
 import GitChanges from "./GitChanges.vue"
+import IconButton from "../common/IconButton.vue"
 
 const { t } = useI18n()
 const worktree = useRouteWorktree()
 const agents = useAgentSessionsStore()
-const { detailsWidth } = storeToRefs(useLayoutStore())
+const layout = useLayoutStore()
+const { compact, detailsWidth } = storeToRefs(layout)
 const minimum = 220
 const maximum = 520
 const clamp = (width: number) => Math.round(Math.min(Math.max(width, minimum), maximum))
@@ -62,9 +64,10 @@ function tabTitle(index: number): string {
   <aside
     :aria-label="t('panel.changes')"
     class="relative flex shrink-0 flex-col border-l border-ui-border bg-ui-canvas"
-    :style="{ width: `${width}px` }"
+    :style="{ width: compact ? '100%' : `${width}px` }"
   >
     <div
+      v-if="!compact"
       role="separator"
       aria-orientation="vertical"
       tabindex="0"
@@ -90,6 +93,7 @@ function tabTitle(index: number): string {
             <button type="button" :aria-label="t('mermaid.closeTab', { title: tabTitle(index) })" :title="t('mermaid.closeTab', { title: tabTitle(index) })" data-preview-tab-close class="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" @click.stop="closePreviewSidebarTab(tab.id)"><X :size="13" aria-hidden="true" /></button>
           </div>
         </TabsList>
+        <IconButton v-if="compact" :icon="X" :label="t('toolbar.hidePanel')" @click="layout.toggleDetails()" />
       </div>
       <TabsContent value="changes" class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <GitChanges v-if="worktree && !unavailable" :key="worktree.session.id" class="min-h-0 min-w-0 flex-1" :session-id="worktree.session.id" :enabled="worktree.machine.online" />
@@ -112,7 +116,8 @@ function tabTitle(index: number): string {
     </TabsRoot>
     <template v-else>
       <div class="titlebar-overlay-inset app-drag flex h-12 shrink-0 items-center pl-4">
-        <h2 class="m-0 text-[13px] font-medium">{{ t('panel.changes') }}</h2>
+        <h2 class="m-0 flex-1 text-[13px] font-medium">{{ t('panel.changes') }}</h2>
+        <IconButton v-if="compact" :icon="X" :label="t('toolbar.hidePanel')" @click="layout.toggleDetails()" />
       </div>
       <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <GitChanges v-if="worktree && !unavailable" :key="worktree.session.id" class="min-h-0 min-w-0 flex-1" :session-id="worktree.session.id" :enabled="worktree.machine.online" />

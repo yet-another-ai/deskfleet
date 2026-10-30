@@ -40,12 +40,12 @@ onMounted(() => { void appearance.initialize() })
       <AppearanceThemePicker :model-value="appearance.settings.theme" :disabled="busy" @update:model-value="appearance.set({ theme: $event })" />
     </div>
 
-    <div class="my-5 flex items-center justify-between gap-6 border-y border-ui-border py-4">
+    <div class="my-5 flex flex-wrap items-center justify-between gap-3 border-y border-ui-border py-4 sm:gap-6">
       <span id="appearance-language-label" class="text-sm font-medium">{{ t("appearance.language") }}</span>
       <UiSelect name="appearance-language" aria-labelledby="appearance-language-label" class="w-44" :model-value="appearance.settings.language" :options="languages" :disabled="busy" @update:model-value="appearance.set({ language: $event as AppearanceSettings['language'] })" />
     </div>
 
-    <div class="interface-font-row">
+    <div class="grid items-center gap-6 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
       <div class="min-w-0">
         <label for="appearance-interface-font" class="mb-2 block text-sm font-medium">{{ t("appearance.interfaceFont") }}</label>
         <input
@@ -87,6 +87,5 @@ onMounted(() => { void appearance.initialize() })
 </template>
 
 <style scoped>
-.interface-font-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); align-items: center; gap: 24px; }
 .interface-font-sample { display: flex; flex-direction: column; justify-content: center; align-self: stretch; min-width: 0; padding: 12px 16px; border: 1px solid var(--ui-color-border); border-radius: 10px; background: var(--ui-color-surface); overflow-wrap: anywhere; }
 </style>

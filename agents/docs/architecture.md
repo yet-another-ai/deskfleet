@@ -149,6 +149,12 @@ Site Admin override. Existing development databases must be rebuilt for this
 schema; legacy identity/data migration is not supported.
 
 The Vue Web client and the Electron client share a common UI component package.
+Below 1024 CSS pixels, the workspace keeps its main pane at full width and opens
+navigation or Changes in a modal side panel, one at a time. These temporary panels
+close on navigation and do not overwrite the saved desktop panel widths or open
+states. Settings moves section navigation above its content below 768 CSS pixels;
+the same narrow layout puts account controls above the no-machine or no-team
+onboarding content.
 The official server image bundles the same-version Web build, served by the
 Actix process alongside `/api/*` and `/healthz`. `DESKFLEET_WEB_DIRECTORY` enables
 static hosting for a binary deployment; leaving it unset keeps the binary
