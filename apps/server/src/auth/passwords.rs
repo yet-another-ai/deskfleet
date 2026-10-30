@@ -1,5 +1,5 @@
 use super::*;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -75,10 +75,9 @@ pub(super) async fn hash(state: &AppState, password: String) -> Result<String> {
         .map_err(|_| ApiError::internal())?;
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let salt = SaltString::encode_b64(uuid::Uuid::new_v4().as_bytes())
-            .map_err(|_| ApiError::internal())?;
+        let salt = uuid::Uuid::new_v4();
         Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
+            .hash_password_with_salt(password.as_bytes(), salt.as_bytes())
             .map(|v| v.to_string())
             .map_err(|_| ApiError::internal())
     })
@@ -110,9 +109,8 @@ async fn verify_password(
             }),
             None => {
                 // Unknown addresses perform equivalent work without issuing an identity.
-                if let Ok(salt) = SaltString::encode_b64(b"deskfleet-dummy-salt") {
-                    let _ = Argon2::default().hash_password(password.as_bytes(), &salt);
-                }
+                let _ = Argon2::default()
+                    .hash_password_with_salt(password.as_bytes(), b"deskfleet-dummy-salt");
                 false
             }
         }

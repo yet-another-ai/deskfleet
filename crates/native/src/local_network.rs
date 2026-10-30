@@ -72,7 +72,7 @@ fn request_macos() -> Result<LocalNetworkAccessRequest, LocalNetworkError> {
     use nix::net::if_::InterfaceFlags;
     use std::net::{Ipv6Addr, SocketAddrV6, UdpSocket};
 
-    if predates_local_network_consent(sysinfo::System::os_version().as_deref()) {
+    if predates_local_network_consent(sysinfo::System::os_version().ok().as_deref()) {
         return Ok(LocalNetworkAccessRequest::NotRequired);
     }
     let interfaces =

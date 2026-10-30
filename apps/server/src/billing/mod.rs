@@ -47,6 +47,7 @@ pub(super) fn billing_error(code: &'static str, message: &'static str) -> ApiErr
 
 impl BillingService {
     pub fn new(config: BillingConfig, web_url: String) -> Result<Self> {
+        crate::initialize_tls_provider();
         config
             .validate()
             .map_err(|e| ApiError::bad(e.to_string()))?;

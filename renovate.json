@@ -13,11 +13,12 @@
   "ignorePaths": [
     "**/node_modules/**",
     "**/bower_components/**",
-    ".agents/skills/**"
+    ".agents/skills/**",
+    "vendor/**"
   ],
   "constraints": {
-    "node": "26.13.0",
-    "pnpm": "12.16.1",
+    "node": "24.22.1",
+    "pnpm": "12.15.0",
     "rust": "1.99.1"
   },
   "lockFileMaintenance": {
@@ -59,6 +60,12 @@
       "matchUpdateTypes": ["major"],
       "groupName": "PostgreSQL major",
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Update tool constraints manually with the locked mise toolchain.",
+      "matchManagers": ["renovate-config"],
+      "matchDepTypes": ["tool-constraint"],
+      "enabled": false
     },
     {
       "description": "Keep mise.toml and mise.lock paired; enable after the Renovate host can regenerate the lockfile.",

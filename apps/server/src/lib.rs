@@ -22,6 +22,11 @@ use deskfleet_control_store::ControlStore;
 use deskfleet_protocol::{HealthResponse, control::ControlMessage};
 use error::Result;
 
+pub(crate) fn initialize_tls_provider() {
+    // Keep outbound clients on ring; an already installed process provider takes precedence.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 pub struct AppState {
     pub store: ControlStore,
     pub config: ServerConfig,
@@ -35,6 +40,7 @@ pub struct AppState {
 }
 impl AppState {
     pub async fn new(config: ServerConfig) -> Result<Self> {
+        initialize_tls_provider();
         let store = ControlStore::connect(&config.database_url)
             .await?
             .with_hosted_mode(config.billing.hosted);
