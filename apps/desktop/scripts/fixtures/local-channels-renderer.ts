@@ -1,9 +1,10 @@
-import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
+import { centralBridgeClient } from "../../../../packages/client/src/central-bridge.ts"
 import { remoteMachineClient } from "../../../../packages/client/src/remote.ts"
 import { AgentClient, type AgentNotification } from "../../../../packages/components/src/services/agent-client.ts"
 import { TerminalClient } from "../../../../packages/components/src/services/terminal-client.ts"
 import type { AgentSnapshot } from "../../../daemon/src/agent-protocol.ts"
 import type { GitStatusSnapshot } from "../../../daemon/src/git-protocol.ts"
+import type { DesktopPreloadApi } from "../../src/shared/preload-api.ts"
 
 function require(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -19,10 +20,10 @@ const rounded = (value: number) => Math.round(value * 100) / 100
 
 /** Real renderer clients use the shipped preload, main-process authority and daemon IPC. */
 export async function exercise(context: { teamId: string; machineId: string; sessionId: string }) {
-  const host = (window as unknown as { deskfleet: DeskfleetDesktopApi }).deskfleet
+  const host = (window as unknown as { deskfleet: DesktopPreloadApi }).deskfleet
   const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean; forbiddenAttempts: number; connections: number } }).__deskfleetRtcGuard
-  require(host.central && host.localChannels, "The production preload must expose local message channels")
-  const central = host.central
+  require(host.centralBridge && host.localChannels, "The production preload must expose central and local message channel bridges")
+  const central = centralBridgeClient(host.centralBridge, () => {})
   const machine = (await central.machines(context.teamId)).find(value => value.id === context.machineId)
   require(machine, "Local machine registration is missing")
   guard.blocked = true
