@@ -480,6 +480,21 @@
     },
     "baseBranch": "Base branch",
     "baseBranchChoice": "Base branch: {branch}",
+    "prepare": {
+      "action": "Prepare",
+      "loading": "Preparing…",
+      "ready": "Ready",
+      "base": "Latest {branches}",
+      "hint": {
+        "worktree": "Fetch the latest default branches for a new worktree",
+        "directory": "Switch these directories to their latest default branches"
+      },
+      "failed": "Could not prepare the workspace",
+      "confirmTitle": "Discard changes and prepare?",
+      "confirmDescription": "These uncommitted changes will be discarded before switching to the latest default branches. Untracked files will be kept.",
+      "sharedDirectory": "This changes the actual workspace directories, including those used by other sessions. Discarded changes cannot be restored by DeskFleet.",
+      "discard": "Discard changes and prepare"
+    },
     "model": "Model",
     "reasoningEffort": "Reasoning",
     "mode": "Mode",

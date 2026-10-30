@@ -90,6 +90,26 @@ test("managed sessions preserve directory order, share a checkout for one revisi
   assert.equal(state.sessions.size, 0)
 })
 
+test("prepared session revisions stay pinned when the source branch advances", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  await repository(source)
+  const prepared = await git(source, "rev-parse", "HEAD")
+  await writeFile(join(source, "frontend", "source.txt"), "later commit\n")
+  await git(source, "add", ".")
+  await git(source, "-c", "user.name=deskfleet test", "-c", "user.email=test@example.invalid", "commit", "--no-gpg-sign", "-m", "later")
+  const directories = [{ path: join(source, "frontend") }, { path: source }]
+  const state = catalogFixture(directories)
+  const managed = new ManagedSessionWorktrees(state.catalog, join(directory, "daemon"))
+  const session = await managed.create("1", undefined, undefined, directories.map(({ path }) => ({ path, revision: prepared })))
+  assert.equal(await git(session.worktree.directories[0]!.path, "rev-parse", "HEAD"), prepared)
+  assert.equal(await readFile(join(session.worktree.directories[0]!.path, "source.txt"), "utf8"), "original frontend\n")
+  await assert.rejects(managed.create("1", undefined, undefined, [{ path: source, revision: prepared }]), /directories changed/u)
+  await assert.rejects(managed.create("1", undefined, undefined, directories.map(({ path }) => ({ path, revision: "HEAD" }))), /Invalid prepared/u)
+  assert.equal(state.sessions.size, 1)
+  await managed.destroy(session.id)
+})
+
 test("managed sessions can check out a selected local or remote base branch", async context => {
   const directory = await fixture(context)
   const source = join(directory, "source")

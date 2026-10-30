@@ -111,7 +111,7 @@ const meta = {
     modelValue: "",
     attachments: [],
     mentions: [],
-    context: "worktree",
+    context: "directory",
     baseBranch: "main",
   },
   render: (args) => ({
@@ -120,7 +120,7 @@ const meta = {
       const draft = ref(args.modelValue ?? "")
       const attachments = ref<ComposerAttachment[]>([...(args.attachments ?? [])])
       const mentions = ref<ComposerMention[]>([...(args.mentions ?? [])])
-      const context = ref(args.context ?? "worktree")
+      const context = ref(args.context ?? "directory")
       const baseBranch = ref(args.baseBranch ?? "main")
       return { args, draft, attachments, mentions, context, baseBranch }
     },
@@ -141,6 +141,10 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const NewSessionWithTargetBar: Story = {}
+
+export const PrepareDirectoryWithChanges: Story = {
+  args: { context: "directory", modelValue: "Start the next task from the latest default branch." },
+}
 
 export const ExistingSessionWithAttachmentsAndUsage: Story = {
   args: {

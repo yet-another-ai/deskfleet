@@ -104,7 +104,7 @@ export const useLayoutStore = defineStore("layout", () => {
   /** Machine-local destinations survive view remounts without leaking to another machine. */
   const conversationPath = usePlatformClient().target ? ref("/") : useLocalStorage("deskfleet.conversation-path", "/")
   /** The execution context a new Session uses; the last choice is remembered. */
-  const sessionContext = useLocalStorage<AgentSessionContext>("deskfleet.session-context", "worktree")
+  const sessionContext = useLocalStorage<AgentSessionContext>("deskfleet.session-context", "directory")
   /** The Session terminal panel below the conversation. */
   const terminalPanelOpen = useLocalStorage("deskfleet.terminal-panel-open", false)
   const terminalPanelHeight = useLocalStorage("deskfleet.terminal-panel-height", 280)

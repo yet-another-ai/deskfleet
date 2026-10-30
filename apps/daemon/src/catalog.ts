@@ -5,6 +5,7 @@ import { openCatalog, type NativeCatalog } from "@deskfleet/native"
 import type { AgentSessionContext, AgentSessionRecord } from "./agent-protocol.ts"
 import type { CatalogDirectory, CatalogEvent, CatalogMethods, CatalogRequest, CatalogSnapshot } from "./catalog-protocol.ts"
 import { GitHubBranches } from "./github-branches.ts"
+import type { GitPreparedRevision } from "./git-protocol.ts"
 import { SessionAttachments } from "./session-attachments.ts"
 import { ManagedSessionWorktrees } from "./session-worktrees.ts"
 import { readWorktreeRoot } from "./worktree-settings.ts"
@@ -65,7 +66,7 @@ export class DaemonCatalog {
     return { ...snapshot, githubBranches: await this.#github.snapshot(snapshot, inactive) }
   }
 
-  async provisionSession(id: string, workspaceId: string | undefined, context: AgentSessionContext, baseBranch?: string): Promise<void> {
+  async provisionSession(id: string, workspaceId: string | undefined, context: AgentSessionContext, baseBranch?: string, baseRevisions?: GitPreparedRevision[]): Promise<void> {
     if (!this.#sessions) throw new Error("Local catalog is not available")
     if (!workspaceId) {
       if (context !== "directory") throw new Error("Sessions without a workspace use the home directory")
@@ -74,7 +75,7 @@ export class DaemonCatalog {
       const machineId = (await this.native.snapshot()).machineId
       const allocated = { id, machineId, workspaceId }
       if (context === "directory") await this.#sessions.useDirectories(allocated)
-      else await this.#sessions.create(workspaceId, allocated, baseBranch)
+      else await this.#sessions.create(workspaceId, allocated, baseBranch, baseRevisions)
     }
     this.changed()
   }

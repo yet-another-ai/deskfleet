@@ -16,6 +16,8 @@ import type { AgentProviders } from "./agent-providers.ts"
 import type { AgentMcp } from "./agent-mcp.ts"
 import type { TerminalSessions } from "./terminals.ts"
 import { GitInspection } from "./git-inspection.ts"
+import { prepareGitWorkspace } from "./git-preparation.ts"
+import type { GitPreparedRevision } from "./git-protocol.ts"
 import { ComposerReferences } from "./composer-references.ts"
 import type {
   AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentReceipt, AgentSnapshot,
@@ -310,6 +312,19 @@ export class AgentSessions {
       if (!directory) throw new Error("Unknown local workspace")
       return this.#git.branches(workspaceId, directory.path)
     }
+    if (method === "_deskfleet/git/prepare") {
+      if (actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("A verified user and login session are required")
+      const workspaceId = id(params.workspaceId, "Workspace ID")
+      const context = params.context
+      if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
+      const confirmationToken = params.confirmationToken === undefined ? undefined : string(params.confirmationToken, "confirmation token")
+      const workspace = (await this.#catalog.native.snapshot()).workspaces.find(value => value.id === workspaceId)
+      const directories = workspace?.worktrees.find(worktree => !worktree.sessionId)?.directories
+      if (!directories?.length) throw new Error("Unknown local workspace")
+      const pending = prepareGitWorkspace(workspaceId, directories, context, confirmationToken)
+      this.#discovery.add(pending)
+      try { return await pending } finally { this.#discovery.delete(pending) }
+    }
     if (method === "_deskfleet/git/status" || method === "_deskfleet/git/diff") {
       const sessionId = id(params.sessionId, "Session ID")
       const directories = await this.#gitDirectories(sessionId)
@@ -479,12 +494,18 @@ export class AgentSessions {
     if (!command.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
     const baseBranch = command.params.baseBranch === undefined ? undefined : string(command.params.baseBranch, "base branch").trim()
     if (baseBranch !== undefined && (!baseBranch || context !== "worktree")) throw new Error("Invalid base branch")
+    const baseRevisions = command.params.baseRevisions as GitPreparedRevision[] | undefined
+    if (baseRevisions !== undefined && (context !== "worktree" || !command.workspaceId || baseBranch !== undefined
+      || !Array.isArray(baseRevisions) || !baseRevisions.length || baseRevisions.some(value => !value
+        || typeof value.path !== "string" || typeof value.revision !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(value.revision)))) {
+      throw new Error("Invalid prepared Git revisions")
+    }
     const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : ""
     const session = await this.#admissions.allocate(command, "create", admissionGeneration =>
       this.journal.create(command, command.workspaceId, title, context, provider, { admissionGeneration }))
     command.sessionId = session.id
     try {
-      await this.#catalog.provisionSession(session.id, session.workspaceId, context, baseBranch)
+      await this.#catalog.provisionSession(session.id, session.workspaceId, context, baseBranch, baseRevisions)
       await this.journal.serial(session.id, async () => {
         const snapshot = await this.journal.read(session.id)
         const ready = { ...snapshot.session, lifecycle: "ready" as const, updatedAt: timestamp() }
