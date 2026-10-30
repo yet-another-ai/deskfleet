@@ -8,7 +8,6 @@ const meta = {
   component: SettingsLayout,
   tags: ["autodocs"],
   args: {
-    stackOnSmallScreens: false,
     wide: false,
   },
   render: (args) => ({

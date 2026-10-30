@@ -18,7 +18,7 @@ function leave(): void {
 </script>
 
 <template>
-  <SettingsLayout :wide="route.name === 'team-settings-ai-usage'" :stack-on-small-screens="route.name === 'team-settings-ai-usage'" @back="leave">
+  <SettingsLayout :wide="route.name === 'team-settings-ai-usage'" @back="leave">
     <template #nav>
       <SidebarLink :to="{ name: 'team-settings' }" :icon="Users" :label="t('team.settings')" replace />
       <SidebarLink :to="{ name: 'team-settings-plans' }" :icon="CreditCard" :label="t('team.plansUsage')" replace />

@@ -219,7 +219,7 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
       <PopoverRoot v-if="local" v-model:open="settingsOpen">
       <div
         ref="toolbar"
-        class="absolute z-10 flex items-center gap-1 rounded-xl border border-ui-border bg-ui-surface p-1 shadow-ui-popover"
+        class="absolute z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1 rounded-xl border border-ui-border bg-ui-surface p-1 shadow-ui-popover"
         :class="!toolbarPosition && 'top-3 right-3'"
         :style="toolbarPosition && { left: `${toolbarPosition.x}px`, top: `${toolbarPosition.y}px` }"
       >

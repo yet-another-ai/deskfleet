@@ -13,7 +13,7 @@ const platformClient = usePlatformClient()
 defineProps<{ hideDetails?: boolean }>()
 const { t } = useI18n()
 const layout = useLayoutStore()
-const { sidebarOpen, detailsOpen } = storeToRefs(layout)
+const { compact, sidebarOpen, detailsOpen } = storeToRefs(layout)
 const platform = platformClient.platform
 </script>
 
@@ -26,7 +26,7 @@ const platform = platformClient.platform
       (hideDetails || !detailsOpen) && 'titlebar-overlay-inset',
     ]"
   >
-    <WindowToolbar v-if="!sidebarOpen" />
+    <WindowToolbar v-if="compact || !sidebarOpen" />
     <div class="min-w-0 flex-1 truncate text-sm font-medium">
       <slot />
     </div>

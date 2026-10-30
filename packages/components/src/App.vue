@@ -4,8 +4,10 @@ import { usePlatformClient } from "./composables/usePlatformClient.ts"
 import { storeToRefs } from "pinia"
 import { useEventListener, whenever } from "@vueuse/core"
 import { computed, onBeforeUnmount, onMounted } from "vue"
+import { useI18n } from "vue-i18n"
 import { RouterView, useRoute } from "vue-router"
 import WindowToolbar from "./components/chrome/WindowToolbar.vue"
+import CompactPanel from "./components/chrome/CompactPanel.vue"
 import ChangesPanel from "./components/details/ChangesPanel.vue"
 import PreviewViewer from "./components/session/PreviewViewer.vue"
 import AppSidebar from "./components/sidebar/AppSidebar.vue"
@@ -18,7 +20,9 @@ import { useProvidersStore } from "./stores/providers.ts"
 
 const platformClient = usePlatformClient()
 
-const { sidebarOpen, detailsOpen } = storeToRefs(useLayoutStore())
+const layout = useLayoutStore()
+const { compact, sidebarOpen, detailsOpen } = storeToRefs(layout)
+const { t } = useI18n()
 const route = useRoute()
 const focusedPreview = computed(() => focusedPreviewFromRoute(route))
 const fleet = useFleetStore()
@@ -47,6 +51,7 @@ const unsubscribeMermaidLocate = listenMermaidLocate((code, source) => {
 onMounted(refresh)
 useEventListener(window, "focus", refresh)
 onBeforeUnmount(() => {
+  layout.closeCompactPanel()
   unsubscribeSettings()
   unsubscribePreviewMessages()
   unsubscribeMermaidLocate()
@@ -55,16 +60,22 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex h-full overflow-hidden">
-    <AppSidebar v-if="sidebarOpen && !route.meta.fullWindow" />
+    <AppSidebar v-if="sidebarOpen && !compact && !route.meta.fullWindow" />
     <main class="relative flex min-w-0 flex-1 flex-col">
       <RouterView />
       <div v-if="focusedPreview && route.name !== 'session'" data-preview-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @vue:unmounted="performPreviewLocateDom()">
-        <div v-if="!sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pl-20 pr-3">
+        <div v-if="compact || !sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pr-3" :class="platformClient.platform === 'darwin' ? 'pl-20' : 'pl-3'">
           <WindowToolbar />
         </div>
         <PreviewViewer :key="focusedPreview.content" v-bind="focusedPreview" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
       </div>
     </main>
-    <ChangesPanel v-if="detailsOpen && !route.meta.fullWindow && !route.meta.hideDetails" />
+    <ChangesPanel v-if="detailsOpen && !compact && !route.meta.fullWindow && !route.meta.hideDetails" />
+    <CompactPanel v-if="compact && sidebarOpen && !route.meta.fullWindow" side="left" :title="t('catalog.workspaces')" @close="layout.closeCompactPanel()">
+      <AppSidebar class="h-full" />
+    </CompactPanel>
+    <CompactPanel v-if="compact && detailsOpen && !route.meta.fullWindow && !route.meta.hideDetails" side="right" :title="t('panel.changes')" @close="layout.closeCompactPanel()">
+      <ChangesPanel class="h-full" />
+    </CompactPanel>
   </div>
 </template>

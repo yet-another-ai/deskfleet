@@ -249,8 +249,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-5">
-    <div v-if="location" class="flex h-9 min-w-0 items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
+  <div class="session-composer mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-5">
+    <div v-if="location" class="composer-context flex h-9 min-w-0 items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
       <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Monitor :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="showTarget && location.machine.local" class="ui-badge">{{ t("machine.local") }}</span></span>
       <template v-if="location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
@@ -375,6 +375,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.session-composer { container-type: inline-size; }
+
+@container (max-width: 36rem) {
+  .composer-context { height: auto; min-height: 2.25rem; flex-wrap: wrap; row-gap: 0.25rem; padding-block: 0.25rem; }
+  .composer-context > [aria-hidden="true"] { display: none; }
+  .composer-context > :is([data-composer-context], [data-composer-branch]) { max-width: 100%; flex-shrink: 0; }
+}
+
 @property --deskfleet-composer-beam-angle {
   syntax: "<angle>";
   initial-value: 0deg;

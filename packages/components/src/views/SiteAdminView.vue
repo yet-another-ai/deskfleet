@@ -22,7 +22,7 @@ const reauthenticate = (password?: string) => api!.reauthenticate(password)
 </script>
 
 <template>
-  <SettingsLayout stack-on-small-screens @back="router.replace('/')">
+  <SettingsLayout @back="router.replace('/')">
     <template #nav>
       <span class="ui-nav-item ui-nav-active px-2.5"><ShieldCheck :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("siteAdmin.title") }}</span>
     </template>
