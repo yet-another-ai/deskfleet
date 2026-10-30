@@ -14,6 +14,6 @@ export function catalogFixture(): CatalogSnapshot {
         { id: sessionWorktreeId, workspaceId, sessionId, directories: [{ path: "/worktrees/api/session" }] },
       ],
     }],
-    sessions: [],
+    sessions: [], sessionIds: [sessionId],
   }
 }

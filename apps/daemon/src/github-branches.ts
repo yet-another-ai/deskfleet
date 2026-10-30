@@ -76,7 +76,7 @@ export class GitHubBranches {
 
   constructor(changed: () => void) { this.#changed = changed }
 
-  async snapshot(catalog: CatalogSnapshot, inactive = new Set<string>()): Promise<SessionGitHubBranches[]> {
+  async snapshot(catalog: Pick<CatalogSnapshot, "workspaces" | "sessions">, inactive = new Set<string>()): Promise<SessionGitHubBranches[]> {
     const worktrees = [...catalog.sessions, ...catalog.workspaces.flatMap(workspace => workspace.worktrees)]
       .filter(worktree => worktree.sessionId && !inactive.has(worktree.sessionId))
     const used = new Set<string>()

@@ -14,6 +14,8 @@ export interface SessionGitHubBranches {
   repositories: GitHubBranch[]
 }
 export interface CatalogSnapshot extends NativeCatalogSnapshot {
+  /** All journal Sessions, including archived and unprovisioned records. */
+  sessionIds: string[]
   githubBranches?: SessionGitHubBranches[]
 }
 

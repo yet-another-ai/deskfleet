@@ -810,6 +810,59 @@ test("catalog removal drops an opened session without reopening its cached snaps
   } finally { platformClient.agent.history = previous }
 })
 
+test("successful deletion ignores pending and subsequent stale catalog responses", async () => {
+  const previous = platformClient.agent.history
+  const pending = deferred<ReturnType<typeof agentSnapshot>["session"][]>()
+  const session = { ...agentSnapshot().session, archiveState: "archived" as const }
+  const list = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue([session])
+  platformClient.agent.history = { available: () => true, list, snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    store.sessions[session.id] = session
+    const refreshing = store.refresh()
+    await store.remove(session.id)
+    expect(store.sessions[session.id]).toBeUndefined()
+    pending.resolve([session])
+    await refreshing
+    expect(store.sessions[session.id]).toBeUndefined()
+    await store.refresh()
+    expect(store.sessions[session.id]).toBeUndefined()
+  } finally { platformClient.agent.history = previous }
+})
+
+test("successful deletion ignores delayed session events", async () => {
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  await store.remove("30")
+  receive(agentEvent(1, "session", { ...agentSnapshot().session, lastEventSeq: "1", lifecycle: "deleting" }))
+  expect(store.sessions["30"]).toBeUndefined()
+  expect(store.views["30"]).toBeUndefined()
+})
+
+test.each(["rename", "open"] as const)("successful deletion ignores a delayed %s snapshot response", async action => {
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  const pending = deferred<ReturnType<typeof agentSnapshot>>()
+  mock.call.mockReturnValueOnce(pending.promise)
+  const operation = action === "rename" ? store.rename("30", "Renamed before deletion") : store.open("30")
+  await flushPromises()
+  await store.remove("30")
+  pending.resolve(agentSnapshot())
+  await operation
+  expect(store.sessions["30"]).toBeUndefined()
+  expect(store.views["30"]).toBeUndefined()
+})
+
+test("failed deletion keeps the session visible and accepts later updates", async () => {
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  mock.call.mockRejectedValueOnce(new Error("Session cleanup failed"))
+  await expect(store.remove("30")).rejects.toThrow("Session cleanup failed")
+  expect(store.sessions["30"]).toBeDefined()
+  receive(agentEvent(1, "session", { ...agentSnapshot().session, title: "Still available", lastEventSeq: "1" }))
+  expect(store.sessions["30"]?.title).toBe("Still available")
+})
+
 test.each([false, true])("pending catalog reads preserve concurrent session changes (new session: %s)", async newSession => {
   const previous = platformClient.agent.history
   const pending = deferred<ReturnType<typeof agentSnapshot>["session"][]>()

@@ -74,6 +74,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const error = ref<string | null>(null)
   const operations = ref<Record<string, PendingAgentOperation>>({})
   const journals = new Map<string, Map<string, AgentEvent>>()
+  // Central history and in-flight reads can arrive after a successful deletion.
+  const deletedSessions = new Set<string>()
   const loads = new Map<string, Promise<void>>()
   const reads = new Map<string, Promise<void>>()
   const permissionRequests = new Map<string, { sessionId: string; permissionId: string; resolve(value: unknown): void }>()
@@ -188,6 +190,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   function remember(events: AgentEvent[]): void {
     const changed = new Set<string>()
     for (const event of events) {
+      if (deletedSessions.has(event.sessionId)) continue
       if (journal(event.sessionId).has(event.seq)) continue
       journal(event.sessionId).set(event.seq, event)
       if (event.kind === "session" && sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) sessions.value[event.sessionId] = event.payload as AgentSessionRecord
@@ -221,6 +224,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   function snapshotReceived(snapshot: AgentSnapshot): void {
+    if (deletedSessions.has(snapshot.session.id)) return
     const current = view(snapshot.session.id)
     if (sequenceCompare(snapshot.session.lastEventSeq, current.snapshotSeq) < 0) return
     current.snapshot = snapshot
@@ -304,8 +308,9 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       // Catalog activity must not depend on opening every conversation's live channel.
       const records: (AgentSessionRecord & { working?: boolean })[] = await (api.history ? api.history.list() : call("_deskfleet/session/list", {}))
       if (disposed) return
-      const received = new Map(records.map(session => [session.id, session]))
+      const received = new Map(records.filter(session => !deletedSessions.has(session.id)).map(session => [session.id, session]))
       for (const record of records) {
+        if (deletedSessions.has(record.id)) continue
         const previous = activity.value[record.id]
         if (record.working !== undefined && (!previous || sequenceCompare(record.lastEventSeq, previous.seq) >= 0)) {
           activity.value[record.id] = { seq: record.lastEventSeq, working: record.working }
@@ -332,7 +337,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       for (;;) {
         const afterSeq = view(id).historySeq
         const events = await call("_deskfleet/session/history", { sessionId: id, afterSeq, limit: 100 })
-        if (disposed) return
+        if (disposed || deletedSessions.has(id)) return
         remember(events)
         const current = view(id)
         const latest = current.events.at(-1)?.seq ?? "0"
@@ -340,11 +345,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         if (sequenceCompare(current.historySeq, target) >= 0) { current.error = null; return }
         if (events.length === 0 || current.historySeq === afterSeq) throw new Error("Conversation history is incomplete; reconnect to load missing events")
       }
-    })().catch(reason => { view(id).error = messageOf(reason); throw reason }).finally(() => { reads.delete(id) })
+    })().catch(reason => { if (!deletedSessions.has(id)) view(id).error = messageOf(reason); throw reason }).finally(() => { reads.delete(id) })
     reads.set(id, reading)
     return reading
   }
   function open(id: string, showLoading = true): Promise<void> {
+    if (deletedSessions.has(id)) return Promise.resolve()
     if (showLoading) activeSessionId = id
     const existing = loads.get(id)
     if (existing) return existing
@@ -353,6 +359,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     current.error = null
     const loading = (async () => {
       snapshotReceived(await call("_deskfleet/session/subscribe", { sessionId: id }))
+      if (deletedSessions.has(id)) return
       await readHistory(id)
       await reconcileOperations(id)
     })().catch(reason => { current.error = messageOf(reason) }).finally(() => { current.loading = false; loads.delete(id) })
@@ -563,8 +570,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   async function remove(sessionId: string): Promise<void> {
     await mutation("_deskfleet/session/delete", { sessionId })
+    deletedSessions.add(sessionId)
     for (const elicitation of views.value[sessionId]?.snapshot?.elicitations ?? []) delete elicitationDrafts.value[elicitation.id]
     delete sessions.value[sessionId]
+    delete activity.value[sessionId]
     delete views.value[sessionId]
     delete configurations.value[sessionId]
     configurationSequences.delete(sessionId)

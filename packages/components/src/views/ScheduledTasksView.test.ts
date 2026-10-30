@@ -82,7 +82,7 @@ async function setup(initial: ScheduledTask[] = []) {
   vi.spyOn(platformClient.catalog, "list").mockResolvedValue({
     teamId: "team-1", machineId: "machine-1", machineName: "Build machine",
     workspaces: [{ id: "10", name: "DeskFleet", worktrees: [{ id: "11", workspaceId: "10", directories: [{ path: "/code/deskfleet" }] }] }],
-    sessions: [],
+    sessions: [], sessionIds: ["20"],
   })
   await fleet.refreshLocalCatalog()
   const providers = useProvidersStore()

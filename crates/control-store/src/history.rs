@@ -37,17 +37,19 @@ impl ControlStore {
             return Err(Error::Invalid("invalid archive state filter"));
         }
         let machine = resource_id(machine_id)?;
+        // Retained history can outlive its daemon Session. Apply the journal's
+        // catalog inventory before pagination; replayed history cannot restore it.
         let rows = if archive == "all" {
-            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE machine_id=$1 AND session_id::bigint>$2 ORDER BY session_id::bigint LIMIT $3", vec![machine.into(), after.into(), i64::from(limit+1).into()]).await?
+            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE machine_id=$1 AND session_id::bigint>$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $3", vec![machine.into(), after.into(), i64::from(limit+1).into()]).await?
         } else {
-            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE machine_id=$1 AND summary#>>'{session,archiveState}'=$2 AND session_id::bigint>$3 ORDER BY session_id::bigint LIMIT $4", vec![machine.into(), archive.into(), after.into(), i64::from(limit+1).into()]).await?
+            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE machine_id=$1 AND summary#>>'{session,archiveState}'=$2 AND session_id::bigint>$3 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $4", vec![machine.into(), archive.into(), after.into(), i64::from(limit+1).into()]).await?
         };
         Ok(page(rows, limit, "sessions", "/session/id"))
     }
     pub async fn session_summary(&self, machine_id: &str, session_id: &str) -> Result<Value> {
         let rows = json_rows(
             &self.db,
-            "SELECT summary AS record FROM cp_sessions WHERE machine_id=$1 AND session_id=$2",
+            "SELECT summary AS record FROM cp_sessions WHERE machine_id=$1 AND session_id=$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id",
             vec![resource_id(machine_id)?.into(), session_id.into()],
         )
         .await?;

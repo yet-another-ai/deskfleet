@@ -936,6 +936,43 @@ test("delete closes provider before removing owned checkouts and preserves the c
   assert.equal((await f.catalog.native.snapshot()).workspaces[0]?.worktrees.length, 1)
 })
 
+test("catalog synchronization publishes all surviving Session IDs after deletion", async t => {
+  const f = await setup(t)
+  const machine = await f.service.handle("_deskfleet/session/create", {
+    operationId: randomUUID(), provider: f.create.provider, context: "directory",
+  }, f.actor) as AgentSnapshot
+  const plain = join(f.directory, "plain")
+  await mkdir(plain)
+  const workspace = await f.catalog.native.createWorkspace("Plain", [{ path: plain }])
+  const failed = await f.service.handle("_deskfleet/session/create", {
+    workspaceId: workspace.id, operationId: randomUUID(), provider: f.create.provider, context: "worktree",
+  }, f.actor) as AgentSnapshot
+  assert.equal(failed.session.lifecycle, "provision_failed")
+  assert.equal(await f.catalog.sessionWorktree(failed.session.id), undefined)
+  await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+
+  const inventories: string[][] = []
+  const sync = new CentralSync(f.service, f.catalog, f.providers, async (path, body) => {
+    if (path.endsWith("catalog")) {
+      inventories.push((body as { snapshot: { sessionIds: string[] } }).snapshot.sessionIds)
+      return {}
+    }
+    return { lastEventSeq: (body as { snapshot: AgentSnapshot }).snapshot.session.lastEventSeq }
+  }, async () => false)
+  t.after(() => sync.close())
+  sync.enable()
+  await sync.flush()
+  assert.deepEqual(inventories.at(-1), [f.sessionId, machine.session.id, failed.session.id])
+
+  await f.service.handle("_deskfleet/session/delete", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  await sync.flush()
+  assert.deepEqual(inventories.at(-1), [machine.session.id, failed.session.id])
+  await f.service.handle("_deskfleet/session/delete", { sessionId: machine.session.id, operationId: randomUUID() }, f.actor)
+  await f.service.handle("_deskfleet/session/delete", { sessionId: failed.session.id, operationId: randomUUID() }, f.actor)
+  await sync.flush()
+  assert.deepEqual(inventories.at(-1), [])
+})
+
 test("resume waits for process shutdown and an old close callback cannot interrupt a new run", async t => {
   const f = await setup(t)
   await f.submit("hold").result

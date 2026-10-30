@@ -405,7 +405,7 @@ test("selecting a different machine starts with its own initial loading state an
     expect(next.catalogIdentity).toBeNull()
     expect(next.findWorkspace(workspaceId)).toBeNull()
     expect(first.findWorkspace(workspaceId)?.workspace.name).toBe("storefront")
-    initial.resolve({ teamId: "2", machineId: "3", machineName: "another", workspaces: [], sessions: [] })
+    initial.resolve({ teamId: "2", machineId: "3", machineName: "another", workspaces: [], sessions: [], sessionIds: [] })
     await loading
     expect(next.catalogLoading).toBe(false)
     expect(next.catalogIdentity).toEqual({ teamId: "2", machineId: "3" })

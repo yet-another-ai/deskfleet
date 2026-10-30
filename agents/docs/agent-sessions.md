@@ -984,6 +984,9 @@ The first backend release synchronizes Agent conversations, tool history, audit,
 and archive/restore state to PostgreSQL. Archive preserves conversation/tool
 content and audit locally and in central replicas while reclaiming generated
 checkouts. User-facing deletion removes local Session records and owned resources.
+Catalog synchronization publishes all remaining journal Session IDs, including
+archived and unprovisioned Sessions. Central lists and summaries use that inventory
+to exclude deleted Sessions even when their retained history is uploaded again.
 Central content erasure remains separate work: it must remove conversation/tool
 content and content-bearing audit parameters/results, retain metadata-only audit,
 and prevent stale uploads from restoring that content. Local durable receipts
