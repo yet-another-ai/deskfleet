@@ -91,10 +91,13 @@ jobs:
       - name: Run tests
         run: mise run test
 
+      # Tests close their last X client between cases; keep Xvfb from resetting
+      # while the next case opens its connection.
       - name: Verify X11 capture and input
         if: runner.os == 'Linux'
         run: >-
-          xvfb-run -a env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11
+          xvfb-run -a --server-args="-screen 0 1280x1024x24 -noreset"
+          env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11
           mise exec -- cargo test -p deskfleet-x11 -p deskfleet-capture
           --locked x11_ -- --ignored --test-threads=1
 
