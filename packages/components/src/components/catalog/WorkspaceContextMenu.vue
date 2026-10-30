@@ -2,7 +2,7 @@
 import { Pencil, Trash2 } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot, ContextMenuTrigger, DialogTitle } from "reka-ui"
-import { ref, useTemplateRef } from "vue"
+import { computed, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
@@ -18,9 +18,28 @@ const fleet = useFleetStore()
 const account = useAccountSession()
 const route = useRoute()
 const router = useRouter()
-const trigger = useTemplateRef<InstanceType<typeof ContextMenuTrigger>>("trigger")
+const row = useTemplateRef<HTMLElement>("row")
 const open = ref(false)
+const cursor = ref<{ x: number; y: number }>()
 const dialog = ref<"edit" | "delete">()
+/** Virtual anchor so a sync open still places the menu at the pointer, not the viewport origin. */
+const pointerReference = computed(() => {
+  if (!cursor.value) return
+  const { x, y } = cursor.value
+  return {
+    getBoundingClientRect: () => ({
+      width: 0,
+      height: 0,
+      top: y,
+      right: x,
+      bottom: y,
+      left: x,
+      x,
+      y,
+      toJSON: () => ({}),
+    }),
+  }
+})
 const { isLoading: pending, error, executeImmediate: remove } = useAsyncState(async () => {
   const path = route.fullPath
   const ownsPage = activeWorkspace() === props.workspaceId
@@ -28,6 +47,8 @@ const { isLoading: pending, error, executeImmediate: remove } = useAsyncState(as
   dialog.value = undefined
   if (ownsPage && path === route.fullPath && selectedMachine()) await router.replace({ name: "new-session" })
 }, undefined, { immediate: false })
+
+watch(open, value => { if (!value) cursor.value = undefined })
 
 function selectedMachine(): boolean {
   return !account || account.machineId.value === props.machineId
@@ -39,13 +60,20 @@ function activeWorkspace(): string | undefined {
   if (route.name === "terminal") return fleet.findTerminal(String(route.params.terminalId))?.workspace?.id
 }
 function focusRow(): void {
-  const element = trigger.value?.$el as HTMLElement | undefined
-  element?.querySelector<HTMLElement>("button, a")?.focus()
+  row.value?.querySelector<HTMLElement>("button, a")?.focus()
+}
+/**
+ * Open without Reka's async contextmenu path so Electron cannot show a native menu first.
+ * Record the pointer so Content can anchor at the click instead of Reka's unused {0,0} virtual point.
+ */
+function openMenu(event: Event): void {
+  event.preventDefault()
+  cursor.value = event instanceof MouseEvent ? { x: event.clientX, y: event.clientY } : undefined
+  open.value = true
 }
 function keyboardOpen(event: KeyboardEvent): void {
   if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return
-  event.preventDefault()
-  open.value = true
+  openMenu(event)
 }
 function closeFocus(event: Event): void {
   event.preventDefault()
@@ -53,21 +81,28 @@ function closeFocus(event: Event): void {
 }
 function choose(action: "edit" | "delete"): void {
   if (props.disabled) return
-  focusRow()
-  open.value = false
+  // Mount the dialog before the menu unmounts so close/focus handlers see it.
   error.value = undefined
   dialog.value = action
+  focusRow()
+  open.value = false
 }
 function confirm(): void {
   if (!pending.value && !props.disabled) void remove()
 }
+
+defineExpose({ cursor, pointerReference })
 </script>
 
 <template>
   <ContextMenuRoot v-model:open="open" :modal="false">
-    <ContextMenuTrigger ref="trigger" as="div" @keydown="keyboardOpen"><slot /></ContextMenuTrigger>
+    <ContextMenuTrigger as="div" @contextmenu="openMenu" @keydown="keyboardOpen">
+      <div ref="row">
+        <slot />
+      </div>
+    </ContextMenuTrigger>
     <ContextMenuPortal>
-      <ContextMenuContent :aria-label="name" :collision-padding="8" class="ui-menu z-50 flex w-48 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
+      <ContextMenuContent :reference="pointerReference" :aria-label="name" :collision-padding="8" class="ui-menu z-50 flex w-48 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
         <ContextMenuItem as="button" type="button" class="ui-menu-item" :disabled="disabled" @select="choose('edit')"><Pencil :size="14" aria-hidden="true" />{{ t('workspace.edit') }}</ContextMenuItem>
         <ContextMenuItem as="button" type="button" class="ui-menu-item text-ui-danger" :disabled="disabled" @select="choose('delete')"><Trash2 :size="14" aria-hidden="true" />{{ t('workspace.delete') }}</ContextMenuItem>
       </ContextMenuContent>

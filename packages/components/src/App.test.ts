@@ -27,11 +27,10 @@ async function mountApp(path = "/", pinia = createPinia()) {
 function link(wrapper: VueWrapper, text: string) { return wrapper.findAll("a").find(a => a.text() === text)! }
 function button(wrapper: VueWrapper, text: string) { return wrapper.findAll("button").find(entry => entry.text() === text)! }
 async function workspaceAction(wrapper: VueWrapper, label: string): Promise<void> {
-  await wrapper.get('button[aria-label="storefront"]').trigger("contextmenu")
+  await wrapper.get('button[aria-label="storefront"]').trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 })
   await flushPromises()
   const item = wrapper.findAll('[role="menuitem"]').find(item => item.text() === label)!
-  ;(item.element as HTMLElement).focus()
-  await item.trigger("keydown", { key: "Enter" })
+  await item.trigger("click")
   await flushPromises()
 }
 const chips = (wrapper: VueWrapper) => wrapper.findAll("[data-composer-context]").map(chip => chip.text())

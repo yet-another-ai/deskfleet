@@ -60,8 +60,14 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   async function workspaceAction(name: string, action: string): Promise<void> {
     await until(() => !!workspaceButton(name), `Workspace ${name}`)
     const row = workspaceButton(name)!
-    row.focus()
-    row.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }))
+    const bounds = row.getBoundingClientRect()
+    row.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+      clientX: bounds.left + Math.min(24, bounds.width / 2),
+      clientY: bounds.top + bounds.height / 2,
+    }))
     await until(() => !!document.querySelector('[role="menu"]'), "Workspace context menu")
     await click(action)
     await until(() => !!document.querySelector('[role="dialog"][data-state="open"]'), `${action} dialog`)

@@ -35,8 +35,35 @@ async function setup(disabled = false, selectedMachine = "local-daemon") {
 }
 
 async function openMenu(wrapper: VueWrapper): Promise<void> {
-  await wrapper.get("button").trigger("contextmenu", { button: 2 }); await flushPromises()
+  await wrapper.get("button").trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 }); await flushPromises()
 }
+
+test("right-click prevents the native menu and opens workspace management at the pointer", async () => {
+  const { wrapper } = await setup()
+  const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 144, clientY: 96 })
+  wrapper.get("button").element.dispatchEvent(event)
+  await flushPromises()
+  expect(event.defaultPrevented).toBe(true)
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Edit workspace", "Delete workspace"])
+  // Sync open skips Reka's handleOpen; Content must receive a virtual anchor at the click.
+  const exposed = wrapper.vm as unknown as { cursor?: { x: number; y: number }; pointerReference?: { getBoundingClientRect(): DOMRect } }
+  expect(exposed.cursor).toEqual({ x: 144, y: 96 })
+  expect(exposed.pointerReference?.getBoundingClientRect()).toMatchObject({ left: 144, top: 96, right: 144, bottom: 96 })
+})
+
+test("keyboard open keeps the trigger anchor instead of a stale pointer", async () => {
+  const { wrapper } = await setup()
+  wrapper.get("button").element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 144, clientY: 96 }))
+  await flushPromises()
+  await page().get('[role="menu"]').trigger("keydown", { key: "Escape" }); await flushPromises()
+  const row = wrapper.get("button")
+  row.element.focus()
+  await row.trigger("keydown", { key: "F10", shiftKey: true }); await flushPromises()
+  const exposed = wrapper.vm as unknown as { cursor?: { x: number; y: number }; pointerReference?: unknown }
+  expect(exposed.cursor).toBeUndefined()
+  expect(exposed.pointerReference).toBeUndefined()
+  expect(page().find('[role="menu"]').exists()).toBe(true)
+})
 
 test("keyboard workspace management edits the clicked workspace and restores row focus", async () => {
   const { wrapper, update } = await setup()

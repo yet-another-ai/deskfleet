@@ -270,6 +270,47 @@ test("a machine containing only archived sessions shows its empty state", async 
   wrapper.unmount()
 })
 
+test("workspace row context menu edits and deletes without expanding or collapsing", async () => {
+  const { wrapper } = await setup({
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions: [] }],
+  })
+  const fleet = useFleetStore()
+  fleet.localDesktopTarget = { id: "local-daemon", name: "host", online: true, desktop: false }
+  fleet.catalogReady = true
+  const update = vi.spyOn(fleet, "updateWorkspace").mockResolvedValue()
+  const remove = vi.spyOn(fleet, "deleteWorkspace").mockResolvedValue()
+  const page = new DOMWrapper(document.body)
+  const folder = wrapper.get('button[aria-label="Project"]')
+  expect(folder.attributes("aria-expanded")).toBe("true")
+
+  const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 80 })
+  folder.element.dispatchEvent(event)
+  await flushPromises()
+  expect(event.defaultPrevented).toBe(true)
+  expect(folder.attributes("aria-expanded")).toBe("true")
+  expect(page.findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Edit workspace", "Delete workspace"])
+
+  await page.findAll('[role="menuitem"]').find(item => item.text() === "Edit workspace")!.trigger("click")
+  await flushPromises()
+  await page.get('[role="dialog"] input[name="workspace-name"]').setValue("Renamed")
+  await page.get('[role="dialog"] form').trigger("submit")
+  await flushPromises()
+  expect(update).toHaveBeenCalledExactlyOnceWith("workspace", "Renamed", [{ path: "/project" }])
+  expect(page.find('[role="dialog"]').exists()).toBe(false)
+  expect(folder.attributes("aria-expanded")).toBe("true")
+
+  folder.element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 80 }))
+  await flushPromises()
+  await page.findAll('[role="menuitem"]').find(item => item.text() === "Delete workspace")!.trigger("click")
+  await flushPromises()
+  expect(page.get('[role="dialog"]').text()).toContain("Project")
+  await page.get('[role="dialog"] .ui-button-danger').trigger("click")
+  await flushPromises()
+  expect(remove).toHaveBeenCalledExactlyOnceWith("workspace")
+  expect(page.find('[role="dialog"]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
 test.each(["machine", "workspace"] as const)("%s hover Archive confirms before acting and retains cleanup errors for retry", async scope => {
   const sessions: AgentSessionSummary[] = [{ id: "30", title: "Active chat", context: scope === "machine" ? "directory" : "worktree", archiveState: "active" }]
   const { wrapper, router } = await setup(scope === "machine" ? { sessions } : {
