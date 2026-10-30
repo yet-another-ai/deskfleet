@@ -188,7 +188,8 @@
     "loading": "アーカイブ済みセッションを読み込み中…", "description": "セッションを復元して作業を再開したり、開いて会話を確認したりできます。",
     "empty": "アーカイブ済みセッションはありません", "emptyDescription": "セッションをアーカイブすると、実行を停止し、会話と作業コンテキストを保持できます。",
     "location": "{machine} / {workspace}", "openLabel": "{title} を開く",
-    "restoreLabel": "{title} を復元"
+    "restoreLabel": "{title} を復元",
+    "deleteLabel": "{title} を削除"
   },
   "appearance": {
     "language": "言語", "theme": "テーマ",
@@ -472,7 +473,8 @@
     },
     "backlogHint": "今送信するメッセージはキューに追加されます。", "addToBacklog": "キューに追加",
     "cancelTurn": "ターンをキャンセル", "stop": "エージェントを停止",
-    "delete": "セッションを削除", "stopQuestion": "このエージェントを停止しますか？会話とワークツリーは残ります。",
+    "delete": "セッションを削除",
+    "holdToConfirm": "長押しして確定", "stopQuestion": "このエージェントを停止しますか？会話とワークツリーは残ります。",
     "deleteQuestion": "このセッションと会話、管理対象のワークツリーを削除しますか？", "loading": "会話を復元中…",
     "disconnected": "接続が切れました。エージェントはマシン上で引き続き実行されています。", "reconnect": "再接続",
     "operationPending": "操作結果の確認が必要です。", "checkResult": "結果を確認",

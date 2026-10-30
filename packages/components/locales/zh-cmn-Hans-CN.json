@@ -289,7 +289,8 @@
     "emptyDescription": "归档会话可保留对话和工作环境，同时停止执行。",
     "location": "{machine} / {workspace}",
     "openLabel": "打开 {title}",
-    "restoreLabel": "恢复 {title}"
+    "restoreLabel": "恢复 {title}",
+    "deleteLabel": "删除 {title}"
   },
   "appearance": {
     "language": "语言",
@@ -777,6 +778,7 @@
     "cancelTurn": "取消当前轮次",
     "stop": "停止 Agent",
     "delete": "删除会话",
+    "holdToConfirm": "按住以确认",
     "stopQuestion": "停止此 Agent？对话和工作树会保留。",
     "deleteQuestion": "删除此会话、对话记录及其托管工作树？",
     "loading": "正在恢复对话…",

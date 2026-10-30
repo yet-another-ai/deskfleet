@@ -26,6 +26,7 @@ afterEach(async () => {
   disposePinia(pinia)
   account?.dispose(); account = undefined
   await flushPromises()
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
@@ -42,6 +43,7 @@ async function render(options: { empty?: boolean; online?: boolean; refresh?: (a
   const restore = vi.spyOn(agents, "restore").mockImplementation(async id => {
     agents.sessions[id] = { ...agents.sessions[id]!, archiveState: "active" }
   })
+  const remove = vi.spyOn(agents, "remove").mockImplementation(async id => { delete agents.sessions[id] })
   const refresh = vi.spyOn(agents, "refresh").mockImplementation(async () => { await options.refresh?.(agents) })
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/", name: "new-session", component: { template: "<div>New session</div>" } },
@@ -54,7 +56,7 @@ async function render(options: { empty?: boolean; online?: boolean; refresh?: (a
     global: { plugins: [pinia, router, i18n], provide: account ? { [accountSessionKey as symbol]: account } : {} },
   })
   await flushPromises()
-  return { agents, fleet, restore, refresh, router }
+  return { agents, fleet, restore, remove, refresh, router }
 }
 
 test("direct navigation lists only archived Sessions, newest first, in the main page", async () => {
@@ -137,9 +139,27 @@ test("restore failure remains in the confirmation for retry and cancellation lea
   expect(router.currentRoute.value.params.sessionId).toBe(sessionId)
 })
 
+test("deleting an archived Session requires holding the danger confirmation button", async () => {
+  vi.useFakeTimers()
+  const { agents, remove } = await render()
+  await wrapper!.get(`[data-delete-session="${sessionId}"]`).trigger("click"); await flushPromises()
+  const confirmButton = page().get("[data-confirm-delete]")
+  await confirmButton.trigger("pointerdown", { button: 0 })
+  vi.advanceTimersByTime(600)
+  await confirmButton.trigger("pointerup")
+  expect(remove).not.toHaveBeenCalled()
+  await confirmButton.trigger("pointerdown", { button: 0 })
+  vi.advanceTimersByTime(1200)
+  await flushPromises()
+  expect(remove).toHaveBeenCalledExactlyOnceWith(sessionId)
+  expect(agents.sessions[sessionId]).toBeUndefined()
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+})
+
 test("offline archived history can be opened without pin actions while restore and rename remain disabled", async () => {
   const { router, restore } = await render({ online: false })
   expect(wrapper!.get(`[data-restore-session="${sessionId}"]`).attributes("aria-disabled")).toBe("true")
+  expect(wrapper!.get(`[data-delete-session="${sessionId}"]`).attributes("aria-disabled")).toBe("true")
   await wrapper!.get(`[data-restore-session="${sessionId}"]`).trigger("click"); await flushPromises()
   expect(page().find('[role="dialog"]').exists()).toBe(false)
   expect(wrapper!.get("[data-archived-session]").text()).toContain("Offline")

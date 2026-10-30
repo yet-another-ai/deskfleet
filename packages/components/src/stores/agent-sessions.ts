@@ -536,6 +536,15 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     snapshotReceived(await capacityAction("restore", session ? { context: session.context, scope: session.workspaceId ? "workspace" : "machine" } : {}, () => mutation("_deskfleet/session/restore", { sessionId }), track))
     track("session_restored", {})
   }
+  async function remove(sessionId: string): Promise<void> {
+    await mutation("_deskfleet/session/delete", { sessionId })
+    for (const elicitation of views.value[sessionId]?.snapshot?.elicitations ?? []) delete elicitationDrafts.value[elicitation.id]
+    delete sessions.value[sessionId]
+    delete views.value[sessionId]
+    delete configurations.value[sessionId]
+    configurationSequences.delete(sessionId)
+    journals.delete(sessionId)
+  }
   const gitBranches = (workspaceId: string) => call("_deskfleet/git/branches", { workspaceId })
   const gitStatus = (sessionId: string, force = false) => call("_deskfleet/git/status", { sessionId, ...(force ? { force } : {}) })
   const composerReferences = (params: ComposerReferenceSearch) => call("_deskfleet/composer/references", params)
@@ -564,5 +573,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => client.close()
   onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); closeTransport() })
-  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, composerReferences, resolveComposerReferences, gitBranches, gitStatus, gitDiff, watchGit, closeTransport }
+  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, gitStatus, gitDiff, watchGit, closeTransport }
 })

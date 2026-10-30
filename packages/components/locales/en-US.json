@@ -289,7 +289,8 @@
     "emptyDescription": "Archive a session to keep its conversation and working context without active execution.",
     "location": "{machine} / {workspace}",
     "openLabel": "Open {title}",
-    "restoreLabel": "Restore {title}"
+    "restoreLabel": "Restore {title}",
+    "deleteLabel": "Delete {title}"
   },
   "appearance": {
     "language": "Language",
@@ -777,6 +778,7 @@
     "cancelTurn": "Cancel turn",
     "stop": "Stop agent",
     "delete": "Delete session",
+    "holdToConfirm": "Hold to confirm",
     "stopQuestion": "Stop this agent? Its conversation and worktree will remain.",
     "deleteQuestion": "Delete this session, its conversation, and its managed worktree?",
     "loading": "Restoring conversation…",

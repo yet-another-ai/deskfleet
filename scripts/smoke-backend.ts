@@ -161,7 +161,6 @@ try {
   assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "retained untracked smoke file\n")
   await assert.rejects(agent.rpc("_deskfleet/input/submit", { sessionId, operationId: randomUUID(), delivery: "backlog", content: [{ type: "text", text: "blocked" }] }), /Restore this Session/u)
   await assert.rejects(rpc(machines[0]!, "terminalDial", { mode: "create", terminalId: randomUUID(), worktreeId: worktree.id, cols: 80, rows: 24 }), /Restore this Session/u)
-  await assert.rejects(rpc(machines[0]!, "_deskfleet/session/delete", { sessionId, operationId: randomUUID() }), /400|403/u)
   const starts = providers[0]!.starts
   const restored = await rpc<AgentSnapshot>(machines[0]!, "_deskfleet/session/restore", { sessionId, operationId: randomUUID() }, member)
   assert.equal(restored.session.archiveState, "active")
