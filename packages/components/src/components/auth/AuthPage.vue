@@ -33,7 +33,7 @@ if (githubError) history.replaceState(null, "", returnUrl.pathname + returnUrl.s
 const { state, isLoading, error, executeImmediate: reload } = useAsyncState(async () => {
   const [config, status] = await Promise.all([account.config(), props.api.status()])
   return { config, user: status.user }
-}, undefined)
+}, undefined, { resetOnExecute: false })
 // Registration and recovery open in another tab during desktop approval; returning here picks up that sign-in.
 useEventListener(window, "focus", () => { if (["/auth/desktop", "/auth/github-app"].includes(route) && !state.value?.user) void reload() })
 
@@ -45,15 +45,15 @@ const signedInPages: Record<string, { title: string; description?: string; newTa
 }
 const signIn = signedInPages[route] ?? { title: "auth.signInTitle" }
 function signedIn(): void {
-  if (route in signedInPages) void reload()
+  if (route in signedInPages) { state.value = undefined; void reload() }
   else location.assign("/")
 }
-async function signOut(): Promise<void> { await props.api.logout(); await reload() }
+async function signOut(): Promise<void> { await props.api.logout(); state.value = undefined; await reload() }
 </script>
 
 <template>
   <AuthLayout v-if="isLoading && !state" :title="t('auth.loading')" />
-  <AuthLayout v-else-if="error || !state" :title="t('auth.unavailable')">
+  <AuthLayout v-else-if="!state || (error && state.user)" :title="t('auth.unavailable')">
     <p role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ failureMessage(error) }}</p>
     <UiButton class="h-9 w-full text-sm" @click="reload()">{{ t("auth.retry") }}</UiButton>
   </AuthLayout>

@@ -17,6 +17,92 @@ function mountAt(path: string, request: (method: string, path: string, body?: un
   return api.request as ReturnType<typeof vi.fn>
 }
 
+test.each(["/auth/desktop?attempt=native-attempt", "/auth/github-app?user=u1"])("focus refresh preserves the sign-in form on %s", async path => {
+  let finishRefresh: ((value: unknown) => void) | undefined
+  let configCalls = 0
+  mountAt(path, async () => {
+    if (++configCalls === 1) return { registrationEnabled: true }
+    return new Promise(resolve => { finishRefresh = resolve })
+  })
+  await flushPromises()
+  await view!.get('input[type="email"]').setValue("ada@example.test")
+  await view!.get('input[type="password"]').setValue("password in progress")
+  window.dispatchEvent(new Event("focus"))
+  await view!.vm.$nextTick()
+  expect((view!.get('input[type="email"]').element as HTMLInputElement).value).toBe("ada@example.test")
+  expect((view!.get('input[type="password"]').element as HTMLInputElement).value).toBe("password in progress")
+  finishRefresh!({ registrationEnabled: true })
+  await flushPromises()
+  expect((view!.get('input[type="email"]').element as HTMLInputElement).value).toBe("ada@example.test")
+  expect((view!.get('input[type="password"]').element as HTMLInputElement).value).toBe("password in progress")
+})
+
+test("a failed focus refresh keeps the sign-in form", async () => {
+  let calls = 0
+  mountAt("/auth/desktop", async () => {
+    if (++calls > 1) throw new Error("network failure")
+    return { registrationEnabled: true }
+  })
+  await flushPromises()
+  await view!.get('input[type="email"]').setValue("ada@example.test")
+  await view!.get('input[type="password"]').setValue("password in progress")
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect((view!.get('input[type="email"]').element as HTMLInputElement).value).toBe("ada@example.test")
+  expect((view!.get('input[type="password"]').element as HTMLInputElement).value).toBe("password in progress")
+})
+
+test("an initial loading failure offers a retry", async () => {
+  mountAt("/auth/desktop", async () => { throw new Error("network failure") })
+  await flushPromises()
+  expect(view!.text()).toContain(i18n.global.t("auth.unavailable"))
+  expect(button(view!, i18n.global.t("auth.retry"))).toBeDefined()
+})
+
+test("a refresh failure after signing in offers a retry", async () => {
+  let configCalls = 0
+  mountAt("/auth/desktop?attempt=native-attempt", async (_method, path) => {
+    if (path === "/api/auth/config" && ++configCalls > 1) throw new Error("network failure")
+    return { registrationEnabled: true }
+  })
+  await flushPromises()
+  await view!.get('input[type="email"]').setValue("ada@example.test")
+  await view!.get('input[type="password"]').setValue("password")
+  await view!.get("form").trigger("submit"); await flushPromises()
+  expect(view!.text()).toContain(i18n.global.t("auth.unavailable"))
+  expect(button(view!, i18n.global.t("auth.retry"))).toBeDefined()
+})
+
+test("signing out hides the previous account while refreshing", async () => {
+  let configCalls = 0
+  let finishRefresh: ((value: unknown) => void) | undefined
+  mountAt("/auth/desktop?attempt=native-attempt", async () => {
+    if (++configCalls === 1) return { registrationEnabled: true }
+    return new Promise(resolve => { finishRefresh = resolve })
+  }, { id: "u1", name: "Ada", email: "ada@example.test" })
+  await flushPromises()
+  await button(view!, i18n.global.t("auth.differentAccount")).trigger("click")
+  await view!.vm.$nextTick()
+  expect(view!.text()).toContain(i18n.global.t("auth.loading"))
+  expect(view!.text()).not.toContain("ada@example.test")
+  finishRefresh!({ registrationEnabled: true })
+  await flushPromises()
+})
+
+test("focus refresh detects a sign-in in another tab", async () => {
+  history.replaceState(null, "", "/auth/desktop?attempt=native-attempt")
+  let user: object | undefined
+  const api = { request: vi.fn(async () => ({ registrationEnabled: true })), status: async () => ({ user }), logout: vi.fn(async () => {}) } as unknown as HttpCentralClient
+  view = mount(AuthPage, { props: { api }, global: { plugins: [i18n] }, attachTo: document.body })
+  await flushPromises()
+  expect(view!.find('input[type="email"]').exists()).toBe(true)
+  user = { id: "u1", name: "Ada", email: "ada@example.test" }
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(view!.find('input[type="email"]').exists()).toBe(false)
+  expect(view!.text()).toContain("ada@example.test")
+})
+
 test("desktop approval confirms recent authentication in a dialog and keeps its attempt", async () => {
   const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
   let approvals = 0
