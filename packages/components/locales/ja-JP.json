@@ -489,6 +489,7 @@
     "inputInProgress": "処理中", "awaitingApproval": "承認待ち",
     "copy": "メッセージをコピー", "copied": "コピーしました",
     "copyFailed": "メッセージをコピーできませんでした。もう一度お試しください。", "working": "作業中",
+    "unread": "未読の結果",
     "workingFor": "{duration} 作業中", "worked": "作業完了",
     "workedFor": "{duration} 作業しました",
     "summary": {

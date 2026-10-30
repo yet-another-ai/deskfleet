@@ -102,6 +102,7 @@ export const useFleetStore = defineStore("fleet", () => {
         title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
         providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
         context: metadata.context, archiveState: metadata.archiveState,
+        lastCompletedSeq: metadata.lastCompletedSeq, lastReadSeq: metadata.lastReadSeq,
       })
     }
     workspace.sessions = [...summaries.values()]
@@ -124,6 +125,7 @@ export const useFleetStore = defineStore("fleet", () => {
         title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
         providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
         context: metadata.context, archiveState: metadata.archiveState,
+        lastCompletedSeq: metadata.lastCompletedSeq, lastReadSeq: metadata.lastReadSeq,
       })
     }
     const values = [...summaries.values()]

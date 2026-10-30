@@ -810,6 +810,7 @@
     "copied": "已复制",
     "copyFailed": "无法复制消息，请重试。",
     "working": "工作中",
+    "unread": "未读结果",
     "workingFor": "已工作 {duration}",
     "worked": "已完成",
     "workedFor": "工作了 {duration}",

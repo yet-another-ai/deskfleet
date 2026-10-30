@@ -376,6 +376,7 @@ export class AgentSessions {
       if (method === "_deskfleet/session/create") return await this.#create(command)
       if (method === "_deskfleet/session/fork") return await this.#fork(command)
       if (method === "_deskfleet/session/rename") return await this.#rename(command)
+      if (method === "_deskfleet/session/read") return await this.#markRead(command)
       await this.journal.saveCommand(command)
       const sessionId = command.sessionId!
       const session = await this.journal.session(sessionId)
@@ -437,6 +438,29 @@ export class AgentSessions {
         session,
         command: { ...command, status: "completed", result, completedAt: timestamp() },
         events: [this.journal.event(sessionId, "session", session, { commandId: command.id })],
+      })
+      return result
+    })
+  }
+
+  async #markRead(command: AgentCommand): Promise<AgentSnapshot> {
+    if (command.actor.kind !== "user" || !command.actor.userId) throw new Error("Only a person can mark a Session as read")
+    const throughSeq = string(command.params.throughSeq, "read watermark")
+    if (!/^(0|[1-9][0-9]*)$/u.test(throughSeq)) throw new Error("Invalid read watermark")
+    const sessionId = command.sessionId!
+    return this.journal.serial(sessionId, async () => {
+      const snapshot = await this.journal.read(sessionId)
+      if (this.#closed) throw new Error("Agent service is stopping")
+      if (snapshot.session.lifecycle === "deleting") throw new Error("Session deletion is in progress")
+      if (BigInt(throughSeq) > BigInt(snapshot.session.lastEventSeq)) throw new Error("Read watermark exceeds Session history")
+      const advanced = BigInt(throughSeq) > BigInt(snapshot.session.lastReadSeq ?? "0")
+      const session = advanced ? { ...snapshot.session, lastReadSeq: throughSeq,
+        lastEventSeq: String(BigInt(snapshot.session.lastEventSeq) + 1n) } : snapshot.session
+      const result = { ...snapshot, session }
+      await this.journal.commit(snapshot, {
+        ...(advanced ? { session } : {}),
+        command: { ...command, status: "completed", result, completedAt: timestamp() },
+        ...(advanced ? { events: [this.journal.event(sessionId, "session", session, { commandId: command.id })] } : {}),
       })
       return result
     })

@@ -360,6 +360,23 @@ payloads. Numeric Session and command cursors use matching expression indexes;
 archive filtering has its own indexed path. Opening a conversation still reads
 the full snapshot and paged event history.
 
+Session metadata also owns shared unread state. Each live turn that finishes,
+is cancelled, fails, or is interrupted records its terminal event sequence in
+`lastCompletedSeq` and emits a Session event in the same transaction. The sidebar
+shows unread when that sequence exceeds `lastReadSeq`; both absent values mean
+zero. Opening a conversation acknowledges only its observed history watermark
+through `_deskfleet/session/read`. The daemon advances `lastReadSeq` monotonically
+and rejects watermarks beyond its journal, so a delayed acknowledgement cannot
+hide a newer completion. The acknowledgement is shared by all viewers, survives
+restart, and is included in synchronized history and central Session summaries.
+Ordinary subscriptions, history reads, and agent MCP reads do not acknowledge
+anything. Archived Sessions can be acknowledged without restoring them; reading
+does not update their activity timestamp. The visible conversation acknowledges
+after its history loads successfully, including later completions while it stays
+open. Hidden windows and retained machine stores do not acknowledge results.
+Offline history stays unread until the owning daemon reconnects and the open
+conversation can acknowledge it.
+
 Session lifecycle is `provisioning`, `ready`, `provision_failed`, or `deleting`.
 Independent `archiveState` is `active`, `archiving`, or `archived`. Archive first
 persists `archiving` to close admission, then stops provider processes and owned
@@ -692,6 +709,7 @@ next frame, retaining the existing five-second send deadline.
 | `_deskfleet/session/configure` | Audit and apply model/reasoning/mode changes to a Session without changing its provider |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
 | `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
+| `_deskfleet/session/read` | A person acknowledges shared history through an observed `throughSeq`, with an operation ID; requires `agent:read` on peers and returns the updated snapshot |
 | `_deskfleet/git/status` | Inspect the Session's captured checkouts, branch/HEAD, and staged/unstaged/untracked files |
 | `_deskfleet/git/diff` | Read one changed file's patch by Session, repository, relative path, and change kind |
 | `_deskfleet/input/submit` | Persist prompt content (`text`, `image`, inline text `resource`, and `resource_link` blocks, with at least one non-empty text or text-resource block) with operation ID and backlog/steer intent |

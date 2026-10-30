@@ -284,6 +284,7 @@ const MANAGEMENT: &[&str] = &[
     "_deskfleet/session/archive",
     "_deskfleet/session/restore",
     "_deskfleet/session/rename",
+    "_deskfleet/session/read",
     "_deskfleet/session/configuration",
     "_deskfleet/session/configure",
     "_deskfleet/agent/configuration",

@@ -194,6 +194,83 @@ test("streamed updates, receipt persistence, and history pages use session metad
   } finally { f.catalog.native.agentSnapshot = snapshot }
 })
 
+test("finished turns stay unread until a person acknowledges them, shared across viewers and restart", async t => {
+  const f = await setup(t)
+  const events: AgentEvent[] = []
+  const unsubscribe = f.service.onEvent(event => events.push(event))
+  t.after(async () => { unsubscribe() })
+  const markRead = (throughSeq: string, actor = f.bob) => f.service.handle("_deskfleet/session/read", {
+    sessionId: f.sessionId, operationId: randomUUID(), throughSeq,
+  }, actor) as Promise<AgentSnapshot>
+  assert.equal(f.snapshot.session.lastCompletedSeq, undefined)
+  await f.submit("first completion").result
+  const working = await until(f.read, () => f.provider.prompts.length === 1)
+  assert.equal(working.session.lastCompletedSeq, undefined)
+  await markRead(working.session.lastEventSeq)
+  f.provider.finish()
+  const completed = await until(f.read, snapshot => snapshot.turns[0]?.state === "completed")
+  const completionSeq = completed.session.lastCompletedSeq!
+  assert.ok(BigInt(completionSeq) > BigInt(completed.session.lastReadSeq!))
+  assert.equal(events.find(event => event.seq === completionSeq)?.kind, "turn")
+  assert.ok(events.some(event => event.kind === "session" && "lastCompletedSeq" in event.payload
+    && event.payload.lastCompletedSeq === completionSeq))
+
+  await f.service.handle("_deskfleet/session/subscribe", { sessionId: f.sessionId }, f.bob)
+  await f.service.handle("_deskfleet/session/history", { sessionId: f.sessionId, afterSeq: "0" }, f.bob)
+  assert.equal((await f.read()).session.lastReadSeq, working.session.lastEventSeq, "background reads cannot mark a completion as read")
+  const acknowledged = await markRead(completed.session.lastEventSeq)
+  assert.equal(acknowledged.session.lastReadSeq, completed.session.lastEventSeq)
+  assert.equal(acknowledged.session.updatedAt, completed.session.updatedAt, "reading does not reorder recent Sessions")
+  assert.deepEqual((await f.service.handle("_deskfleet/session/subscribe", { sessionId: f.sessionId }, f.actor) as AgentSnapshot).session, acknowledged.session)
+  await f.service.handle("_deskfleet/turn/cancel", { sessionId: f.sessionId, operationId: randomUUID(), turnId: completed.turns[0]!.id }, f.actor)
+  assert.equal((await f.read()).session.lastCompletedSeq, completionSeq, "writing an already finished turn does not create unread work")
+
+  await f.submit("another completion").result
+  await until(f.read, () => f.provider.prompts.length === 2)
+  f.provider.finish("cancelled")
+  const cancelled = await until(f.read, snapshot => snapshot.turns[1]?.state === "cancelled")
+  assert.ok(BigInt(cancelled.session.lastCompletedSeq!) > BigInt(acknowledged.session.lastReadSeq!))
+  const stale = await markRead(working.session.lastEventSeq)
+  assert.equal(stale.session.lastReadSeq, acknowledged.session.lastReadSeq)
+  assert.equal(stale.session.lastCompletedSeq, cancelled.session.lastCompletedSeq, "a delayed viewer cannot clear a newer turn")
+  await assert.rejects(markRead(String(BigInt(stale.session.lastEventSeq) + 100n)), /exceeds Session history/u)
+  await assert.rejects(markRead("-1"), /Invalid read watermark/u)
+  await assert.rejects(markRead(stale.session.lastEventSeq, { kind: "system" }), /Only a person/u)
+
+  await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  const archived = await f.read()
+  const params = { sessionId: f.sessionId, operationId: randomUUID(), throughSeq: archived.session.lastEventSeq }
+  const read = await f.service.handle("_deskfleet/session/read", params, f.bob) as AgentSnapshot
+  assert.equal(read.session.archiveState, "archived")
+  assert.deepEqual(await f.service.handle("_deskfleet/session/read", params, f.bob), read, "lost acknowledgements can be retried")
+  await f.service.close()
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
+  await restored.init()
+  try {
+    const session = await restored.journal.session(f.sessionId)
+    assert.equal(session.lastCompletedSeq, read.session.lastCompletedSeq)
+    assert.equal(session.lastReadSeq, read.session.lastReadSeq)
+  } finally { await restored.close() }
+})
+
+test("restart recovery marks an interrupted active turn unread without starting a provider", async t => {
+  const f = await setup(t)
+  await f.submit("interrupted work").result
+  const active = await until(f.read, snapshot => snapshot.turns[0]?.state === "running")
+  await f.service.handle("_deskfleet/session/read", {
+    sessionId: f.sessionId, operationId: randomUUID(), throughSeq: active.session.lastEventSeq,
+  }, f.bob)
+  const connections = f.provider.clients.length
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
+  await restored.init()
+  try {
+    const recovered = await restored.journal.read(f.sessionId)
+    assert.equal(recovered.turns[0]?.state, "interrupted")
+    assert.ok(BigInt(recovered.session.lastCompletedSeq!) > BigInt(recovered.session.lastReadSeq!))
+    assert.equal(f.provider.clients.length, connections)
+  } finally { await restored.close() }
+})
+
 test("prompt token usage is persisted per turn and replayed independently from context usage", async t => {
   const f = await setup(t)
   const responses: acp.PromptResponse[] = [

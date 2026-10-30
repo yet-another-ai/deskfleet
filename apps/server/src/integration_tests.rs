@@ -359,6 +359,11 @@ async fn postgres_http_permissions_replication_and_signaling() {
                     assert_eq!(params["title"], "Renamed investigation");
                     assert!(actor.is_some());
                     json!({"title":"Renamed investigation"})
+                } else if method == "_deskfleet/session/read" {
+                    assert_eq!(params["sessionId"], "1");
+                    assert_eq!(params["throughSeq"], "3");
+                    assert!(actor.is_some());
+                    json!({"lastReadSeq":"3"})
                 } else {
                     assert_eq!(method, "_deskfleet/session/archive");
                     assert_eq!(params["sessionId"], "1");
@@ -518,6 +523,26 @@ async fn postgres_http_permissions_replication_and_signaling() {
         .status(),
         StatusCode::OK
     );
+    let read = json!({"method":"_deskfleet/session/read","params":{"sessionId":"1","operationId":"read-fixture","throughSeq":"3"}});
+    assert_eq!(
+        call!(
+            post,
+            &format!("/api/machines/{machine_id}/rpc"),
+            outside_token,
+            &read
+        )
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    let response = call!(
+        post,
+        &format!("/api/machines/{machine_id}/rpc"),
+        token,
+        &read
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let acknowledged: Value = test::read_body_json(response).await;
+    assert_eq!(acknowledged["lastReadSeq"], "3");
     assert_eq!(
         call!(post, "/api/auth/logout", token, &json!({})).status(),
         StatusCode::NO_CONTENT

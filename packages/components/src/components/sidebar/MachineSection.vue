@@ -25,7 +25,8 @@ import IconButton from "../common/IconButton.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
-import { snapshotIsWorking } from "../../services/agent-conversation.ts"
+import { sessionIsUnread, snapshotIsWorking } from "../../services/agent-conversation.ts"
+import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 import TreeLink from "./TreeLink.vue"
 
@@ -142,8 +143,9 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
               <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
               <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
             </template>
-            <template v-if="sessionWorking(session.id)" #trailing>
-              <SessionWorkingIndicator />
+            <template #trailing>
+              <SessionWorkingIndicator v-if="sessionWorking(session.id)" />
+              <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
             </template>
             <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
               <IconButton
@@ -193,8 +195,9 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
                   <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
                   <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
                 </template>
-                <template v-if="sessionWorking(session.id)" #trailing>
-                  <SessionWorkingIndicator />
+                <template #trailing>
+                  <SessionWorkingIndicator v-if="sessionWorking(session.id)" />
+                  <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
                 </template>
                 <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
                   <IconButton

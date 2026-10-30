@@ -370,7 +370,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const pending = operations.value[operationId]
     if (!pending) return
     const received = (result: unknown): unknown => {
-      if (pending.method === "_deskfleet/session/fork" || pending.method === "_deskfleet/session/rename") snapshotReceived(result as AgentSnapshot)
+      if (pending.method === "_deskfleet/session/fork" || pending.method === "_deskfleet/session/rename" || pending.method === "_deskfleet/session/read") snapshotReceived(result as AgentSnapshot)
       completeOperation(operationId)
       return result
     }
@@ -502,6 +502,20 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   async function stop(sessionId: string): Promise<void> { snapshotReceived(await mutation("_deskfleet/session/stop", { sessionId })) }
+  async function markRead(sessionId: string, throughSeq: string): Promise<void> {
+    const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/read"
+      && operation.sessionId === sessionId && operation.params.throughSeq === throughSeq)
+    if (pending) {
+      if (!pending.error) return
+      delete pending.error
+      try {
+        snapshotReceived(await call("_deskfleet/session/read", { sessionId, throughSeq, operationId: pending.operationId }))
+        completeOperation(pending.operationId)
+      } catch (reason) { pending.error = messageOf(reason); throw reason }
+      return
+    }
+    snapshotReceived(await mutation("_deskfleet/session/read", { sessionId, throughSeq }))
+  }
   async function rename(sessionId: string, title: string): Promise<void> {
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/rename"
       && operation.sessionId === sessionId && operation.params.title === title)
@@ -550,5 +564,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => client.close()
   onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); closeTransport() })
-  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, composerReferences, resolveComposerReferences, gitBranches, gitStatus, gitDiff, watchGit, closeTransport }
+  return { sessions, views, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, composerReferences, resolveComposerReferences, gitBranches, gitStatus, gitDiff, watchGit, closeTransport }
 })

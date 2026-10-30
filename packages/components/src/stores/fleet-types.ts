@@ -1,8 +1,8 @@
 // Client view models for the resource catalog.
 
-import type { AgentSessionContext } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentSessionContext, AgentSessionRecord } from "../../../../apps/daemon/src/agent-protocol.ts"
 
-export interface AgentSessionSummary {
+export interface AgentSessionSummary extends Pick<AgentSessionRecord, "lastCompletedSeq" | "lastReadSeq"> {
   id: string
   title?: string
   /** The agent provider's user-facing name. */

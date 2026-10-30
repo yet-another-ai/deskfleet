@@ -810,6 +810,7 @@
     "copied": "Copied",
     "copyFailed": "Could not copy the message. Try again.",
     "working": "Working",
+    "unread": "Unread result",
     "workingFor": "Working for {duration}",
     "worked": "Worked",
     "workedFor": "Worked for {duration}",

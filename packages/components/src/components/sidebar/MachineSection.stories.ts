@@ -77,6 +77,19 @@ type Story = StoryObj<typeof meta>
 
 export const LocalOnlineMachine: Story = {}
 
+export const UnreadResults: Story = {
+  args: {
+    machine: {
+      ...sampleMachine,
+      sessions: sampleMachine.sessions.map(session => ({ ...session, lastCompletedSeq: "12" })),
+      workspaces: sampleMachine.workspaces.map(workspace => ({
+        ...workspace,
+        sessions: workspace.sessions.map((session, index) => ({ ...session, lastCompletedSeq: "12", lastReadSeq: index === 0 ? "8" : "12" })),
+      })),
+    },
+  },
+}
+
 export const RemoteOfflineMachine: Story = {
   args: {
     machine: {

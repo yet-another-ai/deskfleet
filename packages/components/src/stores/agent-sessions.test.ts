@@ -31,6 +31,62 @@ afterEach(() => disposePinia(pinia))
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
 const tracked = (event: string) => vi.mocked(trackEvent).mock.calls.filter(([name]) => name === event).map(([, metadata]) => metadata)
 
+test("background loading preserves unread state and another viewer's acknowledgement clears it", async () => {
+  const snapshot = agentSnapshot()
+  snapshot.session.lastCompletedSeq = "1"
+  mock.call.mockImplementation(async (method: string) => {
+    if (method === "_deskfleet/session/list") return [snapshot.session]
+    if (method === "_deskfleet/session/subscribe") return snapshot
+    if (method === "_deskfleet/session/history") return []
+    return null
+  })
+  const store = useAgentSessionsStore()
+  await store.refresh()
+  await store.open("30", false)
+  expect(mock.call.mock.calls.some(([method]) => method === "_deskfleet/session/read")).toBe(false)
+  receive(agentEvent(1, "session", { ...snapshot.session, lastReadSeq: "1", lastEventSeq: "1" }))
+  expect(store.sessions["30"]?.lastReadSeq).toBe("1")
+  expect(store.views["30"]?.snapshot?.session.lastReadSeq).toBe("1")
+})
+
+test("a delayed read acknowledgement cannot overwrite a newer completion", async () => {
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  receive(agentEvent(1, "session", { ...agentSnapshot().session, lastCompletedSeq: "1", lastEventSeq: "1" }))
+  const acknowledgement = agentSnapshot()
+  acknowledgement.session = { ...acknowledgement.session, lastCompletedSeq: "1", lastReadSeq: "1", lastEventSeq: "2" }
+  const response = deferred<typeof acknowledgement>()
+  mock.call.mockReturnValueOnce(response.promise)
+  const marking = store.markRead("30", "1")
+  await flushPromises()
+  await store.markRead("30", "1")
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/read")).toHaveLength(1)
+  receive(agentEvent(2, "session", acknowledgement.session))
+  receive(agentEvent(3, "session", { ...acknowledgement.session, lastCompletedSeq: "3", lastEventSeq: "3" }))
+  response.resolve(acknowledgement)
+  await marking
+  expect(store.sessions["30"]).toMatchObject({ lastCompletedSeq: "3", lastReadSeq: "1" })
+  expect(store.views["30"]?.snapshot?.session).toMatchObject({ lastCompletedSeq: "3", lastReadSeq: "1" })
+})
+
+test("opening again retries a failed read acknowledgement with the same operation identity", async () => {
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  mock.call.mockRejectedValueOnce(new Error("Connection lost"))
+  await expect(store.markRead("30", "1")).rejects.toThrow("Connection lost")
+  const pending = Object.values(store.operations)[0]!
+  expect(pending.error).toBe("Connection lost")
+  const acknowledged = agentSnapshot()
+  acknowledged.session = { ...acknowledged.session, lastCompletedSeq: "1", lastReadSeq: "1", lastEventSeq: "2" }
+  mock.call.mockResolvedValueOnce(acknowledged)
+  await store.markRead("30", "1")
+  const calls = mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/read")
+  expect(calls).toHaveLength(2)
+  expect(calls[1]).toEqual(calls[0])
+  expect(store.operations[pending.operationId]).toBeUndefined()
+  expect(store.sessions["30"]?.lastReadSeq).toBe("1")
+})
+
 test.each([
   { workspaceId: "20", context: "worktree" as const, scope: "workspace" },
   { workspaceId: undefined, context: "directory" as const, scope: "machine" },

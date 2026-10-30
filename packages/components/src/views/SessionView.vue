@@ -30,6 +30,7 @@ import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
+import { useSessionRead } from "../composables/useSessionRead.ts"
 import { liveTurnStates } from "../services/agent-conversation.ts"
 import { latestAgentUsage } from "../services/agent-usage.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
@@ -142,6 +143,7 @@ watchImmediate(() => props.sessionId, id => {
   followBottom.value = !pendingMermaidLocate.value || (!!pendingMermaidLocate.value.sessionId && pendingMermaidLocate.value.sessionId !== id)
   void agents.open(id)
 })
+useSessionRead(() => props.sessionId)
 watch(() => [view.value?.events.length, view.value?.loading], () => {
   if (!view.value?.loading && followBottom.value && !pendingMermaidLocate.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
   if (followBottom.value || !activeEntry.value) updateOutline()

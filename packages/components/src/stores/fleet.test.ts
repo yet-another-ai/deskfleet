@@ -165,6 +165,20 @@ test("terminal ownership follows live changes and survives catalog refreshes", a
   expect(store.findWorktree(sessionWorktreeId)?.worktree.terminals).toEqual([])
 })
 
+test("machine and workspace session summaries follow shared completion and read markers", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, lastCompletedSeq: "7" }
+  agents.sessions["40"] = { ...agentSnapshot().session, id: "40", workspaceId: undefined, lastCompletedSeq: "11", lastReadSeq: "8" }
+  expect(store.findSession(sessionId)?.session.lastCompletedSeq).toBe("7")
+  expect(store.findSession("40")?.session).toMatchObject({ lastCompletedSeq: "11", lastReadSeq: "8" })
+  agents.sessions[sessionId]!.lastReadSeq = "7"
+  agents.sessions["40"]!.lastReadSeq = "11"
+  expect(store.findSession(sessionId)?.session.lastReadSeq).toBe("7")
+  expect(store.findSession("40")?.session.lastReadSeq).toBe("11")
+})
+
 test("workspace creation selects its configured directories without exposing an empty main worktree", async () => {
   const store = setup()
   await store.refreshLocalCatalog()

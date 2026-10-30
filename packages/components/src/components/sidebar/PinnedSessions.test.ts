@@ -197,3 +197,29 @@ test("pinned rows on another machine do not use this scope's live turns", async 
   expect(row("first").find("[data-session-working]").exists()).toBe(true)
   expect(row("second").find("[data-session-working]").exists()).toBe(false)
 })
+
+test("pinned unread results follow each machine's metadata and yield to the working indicator", async () => {
+  const { pins, agents, remoteSnapshot } = await render(true)
+  agents.sessions["30"]!.lastCompletedSeq = "7"
+  remoteSnapshot.session.lastCompletedSeq = "11"
+  pins.pin("first", "30", "Local title")
+  pins.pin("second", "30", "Remote title")
+  await flushPromises()
+  expect(row("first").get("[data-session-unread]").text()).toBe("Unread result")
+  expect(row("second").get("[data-session-unread]").text()).toBe("Unread result")
+
+  const live = agentSnapshot()
+  live.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
+  agents.views["30"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+  await flushPromises()
+  expect(row("first").find("[data-session-unread]").exists()).toBe(false)
+  expect(row("first").find("[data-session-working]").exists()).toBe(true)
+  expect(row("second").find("[data-session-unread]").exists()).toBe(true)
+
+  agents.views["30"]!.snapshot!.turns[0]!.state = "completed"
+  agents.sessions["30"]!.lastReadSeq = "7"
+  remoteSnapshot.session.lastReadSeq = "11"
+  await pins.refresh(); await flushPromises()
+  expect(wrapper!.find("[data-session-unread]").exists()).toBe(false)
+  expect(wrapper!.find("[data-session-working]").exists()).toBe(false)
+})
