@@ -213,3 +213,28 @@ test("signing out everywhere is confirmed, then retried after recent authenticat
   ])
   expect(assign).toHaveBeenCalledExactlyOnceWith("/auth/login")
 })
+
+test("GitHub App authorization confirms the expected DeskFleet account before redirecting", async () => {
+  const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
+  const request = mountAt("/auth/github-app?user=u1", async (_method, path) => {
+    if (path === "/api/auth/config") return { registrationEnabled: true }
+    if (path === "/api/integrations/github") return { configured: true, authorized: false }
+    if (path === "/api/integrations/github/authorization/start") return { authorizationUrl: "https://github.com/login/oauth/authorize?client_id=app" }
+    return {}
+  }, { id: "u1", name: "Ada", email: "ada@example.test" })
+  await flushPromises()
+  expect(view!.text()).toContain("ada@example.test")
+  expect(assign).not.toHaveBeenCalled()
+  await button(view!, "Authorize").trigger("click"); await flushPromises()
+  expect(request).toHaveBeenCalledWith("POST", "/api/integrations/github/authorization/start", { expectedUserId: "u1" })
+  expect(assign).toHaveBeenCalledExactlyOnceWith("https://github.com/login/oauth/authorize?client_id=app")
+})
+
+test("GitHub App authorization refuses a different browser account", async () => {
+  const request = mountAt("/auth/github-app?user=u1", async () => ({ registrationEnabled: true }), { id: "u2", name: "Bob" })
+  await flushPromises()
+  expect(view!.get('[role="alert"]').text()).toContain("different DeskFleet account")
+  expect(button(view!, "Authorize")).toBeUndefined()
+  expect(button(view!, i18n.global.t("auth.differentAccount"))).toBeDefined()
+  expect(request).not.toHaveBeenCalledWith("GET", "/api/integrations/github")
+})

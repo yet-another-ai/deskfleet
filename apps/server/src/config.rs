@@ -9,6 +9,7 @@ pub struct ServerConfig {
     pub web_origins: Vec<String>,
     pub auth: crate::auth::config::AuthConfig,
     pub billing: crate::billing::BillingConfig,
+    pub github_app: Option<crate::github_app::GithubAppConfig>,
     /// Operator-configured STUN URLs advertised on peer grants. Empty means none.
     pub stun_urls: Vec<String>,
     /// Operator-configured TURN/TURNS URLs advertised on peer grants. Empty means none.
@@ -23,6 +24,7 @@ impl ServerConfig {
         let web_origins = list("DESKFLEET_WEB_ORIGINS");
         let auth = crate::auth::config::AuthConfig::from_env(&public_url, &web_origins)?;
         let billing = crate::billing::BillingConfig::from_env()?;
+        let github_app = crate::github_app::GithubAppConfig::from_env(&public_url)?;
         let stun_urls = ice_urls("DESKFLEET_STUN_URLS", &["stun", "stuns"])?;
         let turn_urls = ice_urls("DESKFLEET_TURN_URLS", &["turn", "turns"])?;
         let turn_secret = env::var("DESKFLEET_TURN_SECRET")
@@ -43,6 +45,7 @@ impl ServerConfig {
             web_origins,
             auth,
             billing,
+            github_app,
             stun_urls,
             turn_urls,
             turn_secret,

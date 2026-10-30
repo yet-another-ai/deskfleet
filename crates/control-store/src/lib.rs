@@ -1,6 +1,7 @@
 //! PostgreSQL control-plane storage. Independent from each daemon's SQLite catalog.
 mod ai_usage;
 pub mod billing;
+mod github_app;
 mod history;
 mod identity;
 mod machines;
@@ -14,6 +15,7 @@ mod site;
 mod teams;
 mod turn_usage;
 
+pub use github_app::{GithubAppGrant, GithubAppStatus};
 pub use identity::normalize_email;
 pub use peer_negotiations::{PeerCandidateState, PeerOfferState};
 pub use realtime::RealtimeRoute;

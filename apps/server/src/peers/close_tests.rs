@@ -19,6 +19,7 @@ async fn inactive_desktop_close_keeps_owner_checks_and_waits_for_daemon_cleanup(
             web_origins: vec![],
             auth: crate::auth::config::AuthConfig::development("https://control.test"),
             billing: Default::default(),
+            github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,

@@ -155,7 +155,7 @@ pub(crate) fn browser_origin(req: &HttpRequest, state: &AppState) -> Result<()> 
     }
     Ok(())
 }
-fn browser_mutation(req: &HttpRequest, state: &AppState) -> Result<()> {
+pub(crate) fn browser_mutation(req: &HttpRequest, state: &AppState) -> Result<()> {
     browser_origin(req, state)?;
     let cookie = req.cookie(CSRF_COOKIE).ok_or_else(ApiError::forbidden)?;
     let header = req
@@ -197,7 +197,12 @@ fn client_ip(req: &HttpRequest, config: &config::AuthConfig) -> Option<std::net:
     }
     Some(peer)
 }
-async fn limit(req: &HttpRequest, state: &AppState, kind: &str, email: Option<&str>) -> Result<()> {
+pub(crate) async fn limit(
+    req: &HttpRequest,
+    state: &AppState,
+    kind: &str,
+    email: Option<&str>,
+) -> Result<()> {
     let ip = client_ip(req, &state.auth.config)
         .map(|ip| ip.to_string())
         .unwrap_or_else(|| "unknown".into());
@@ -222,7 +227,12 @@ async fn limit(req: &HttpRequest, state: &AppState, kind: &str, email: Option<&s
     }
     Ok(())
 }
-fn cookie(name: &str, value: String, state: &AppState, http_only: bool) -> Cookie<'static> {
+pub(crate) fn cookie(
+    name: &str,
+    value: String,
+    state: &AppState,
+    http_only: bool,
+) -> Cookie<'static> {
     Cookie::build(name.to_owned(), value)
         .path("/")
         .secure(state.auth.config.secure_cookies)

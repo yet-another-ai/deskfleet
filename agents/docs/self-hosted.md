@@ -222,6 +222,7 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | `DESKFLEET_TRUSTED_PROXY_IPS` | behind a proxy | empty | Comma-separated exact proxy IPs allowed to supply `X-Real-IP` for authentication rate limits. |
 | `DESKFLEET_AUTH_WEB_URL` | for split hosts | first Web origin or API origin | Trusted origin serving `/auth/*`, verification links and Passkeys. |
 | `DESKFLEET_GITHUB_CLIENT_ID`, `DESKFLEET_GITHUB_CLIENT_SECRET` | for GitHub login | unset | GitHub OAuth app credentials. Set both to enable GitHub login; keep the secret in the supervisor’s secret store. |
+| `DESKFLEET_GITHUB_APP_SLUG`, `DESKFLEET_GITHUB_APP_CLIENT_ID`, `DESKFLEET_GITHUB_APP_CLIENT_SECRET` | for GitHub settings | unset | Separate GitHub App registration for repository integration. Set all three; the client secret remains server-side. |
 | `DESKFLEET_WEBAUTHN_RP_ID` | no | Web hostname | Stable Passkey relying-party ID. |
 | `DESKFLEET_SMTP_HOST` | outside localhost | unset | Mandatory STARTTLS mail relay. |
 | `DESKFLEET_SMTP_PORT` | no | 587 | SMTP submission port. |
@@ -265,6 +266,39 @@ deskfleet-server
 DeskFleet setting. Use the mode your database requires.
 
 ## Accounts and mail
+
+### GitHub App integration
+
+The GitHub settings page uses a GitHub App independently from the OAuth app used
+for login. Configure all three `DESKFLEET_GITHUB_APP_*` variables and register
+`<DESKFLEET_PUBLIC_URL>/api/integrations/github/callback` as the App's user
+authorization callback. The slug is the name in `https://github.com/apps/<slug>`;
+the client ID is distinct from the numeric App ID. No private key is needed for
+this settings-only stage.
+
+Manage GitHub opens the App's installation page, where users choose their account
+or organization and repository access. Authorize opens a browser confirmation
+page for the current DeskFleet account, then uses the GitHub App user authorization
+flow. Its credentials and permissions are not shared with GitHub OAuth login.
+Authorization does not change the DeskFleet login identity or create a new login
+session. The original browser session must remain active through the callback.
+
+Act as you is off after authorization and must be enabled explicitly. Turning it
+off retains the authorization and does not uninstall the App or revoke the grant
+on GitHub. Settings report authorization while an access token or refresh token
+is usable; an expired grant requires reauthorization. No PR requests or token
+refresh requests run in this initial version. Future PR operations must check the
+switch and refresh an expired access token before using it. App permissions and
+the user's repository permissions both bound user-token access.
+
+Access tokens, refresh tokens and their expiration times are retained in central
+PostgreSQL, keyed to the configured App client ID. Tokens never enter the renderer,
+daemon, settings response, or logs. The database and its backups are inside this
+secret-storage trust boundary. Changing the configured client ID requires fresh
+authorization. Configure repository permissions in GitHub when adding the future
+PR operations; this version does not request broad OAuth scopes or read/write PRs.
+
+### Login and mail delivery
 
 The server owns verified email accounts, Argon2id passwords, Passkeys and opaque
 30-day login sessions. Optional GitHub OAuth login uses the same account and

@@ -309,6 +309,28 @@
     "ligatures": "字体连字",
     "ligaturesHint": "在终端字体支持时，将 =>、!= 等字符组合显示为连字。"
   },
+  "githubSettings": {
+    "title": "GitHub",
+    "description": "将 GitHub App 连接到你的仓库，并选择是否允许 DeskFleet 以你的身份操作。",
+    "repositories": "仓库访问",
+    "manageDescription": "管理 GitHub App 可以访问的账号和仓库。",
+    "manage": "Manage GitHub",
+    "actAsYou": "Act as you",
+    "actAsYouDescription": "授权使用你的 GitHub 身份，为后续拉取请求操作做好准备。关闭开关会保留授权。",
+    "authorize": "Authorize",
+    "reauthorize": "重新授权",
+    "authorizedAs": "已授权为 {login}",
+    "unavailable": "此服务器尚未配置 GitHub 集成。",
+    "waiting": "请在浏览器中完成授权，然后返回此处。",
+    "authorizeTitle": "授权 GitHub",
+    "authorizeDescription": "将 GitHub 连接到下方显示的 DeskFleet 账号。",
+    "signInDescription": "登录以将 GitHub 连接到你的 DeskFleet 账号。",
+    "wrongAccount": "当前是另一个 DeskFleet 账号。请登录打开 GitHub 设置时使用的账号。",
+    "openFromSettings": "请从 DeskFleet 的 GitHub 设置中打开授权页面。",
+    "authorizationFailed": "GitHub 授权未完成，请重试。",
+    "authorizationComplete": "GitHub 已授权。返回 DeskFleet，准备好后开启 Act as you。",
+    "returnToSettings": "打开 GitHub 设置"
+  },
   "settings": {
     "preferences": "偏好设置",
     "appearance": "外观",

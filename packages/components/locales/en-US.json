@@ -309,6 +309,28 @@
     "ligatures": "Font ligatures",
     "ligaturesHint": "Combine characters like => and != when the terminal font supports it."
   },
+  "githubSettings": {
+    "title": "GitHub",
+    "description": "Connect the GitHub App to your repositories and choose whether DeskFleet can act on your behalf.",
+    "repositories": "Repository access",
+    "manageDescription": "Manage the accounts and repositories available to the GitHub App.",
+    "manage": "Manage GitHub",
+    "actAsYou": "Act as you",
+    "actAsYouDescription": "Authorize your GitHub identity for future pull request actions. Turning this off keeps your authorization.",
+    "authorize": "Authorize",
+    "reauthorize": "Reauthorize",
+    "authorizedAs": "Authorized as {login}",
+    "unavailable": "GitHub integration is not configured on this server.",
+    "waiting": "Complete authorization in your browser, then return here.",
+    "authorizeTitle": "Authorize GitHub",
+    "authorizeDescription": "Connect GitHub to the DeskFleet account shown below.",
+    "signInDescription": "Sign in to connect GitHub to your DeskFleet account.",
+    "wrongAccount": "This is a different DeskFleet account. Sign in with the account that opened GitHub settings.",
+    "openFromSettings": "Open authorization from GitHub settings in DeskFleet.",
+    "authorizationFailed": "GitHub authorization was not completed. Try again.",
+    "authorizationComplete": "GitHub is authorized. Return to DeskFleet and turn on Act as you when you are ready.",
+    "returnToSettings": "Open GitHub settings"
+  },
   "settings": {
     "preferences": "Preferences",
     "appearance": "Appearance",

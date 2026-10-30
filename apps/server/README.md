@@ -60,6 +60,7 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_TRUSTED_PROXY_IPS` | Comma-separated exact proxy IPs allowed to set `X-Real-IP` for authentication rate limits. Empty by default; proxies must overwrite that header. |
 | `DESKFLEET_AUTH_WEB_URL` | Trusted Web origin for verification links, Passkeys, and desktop authorization. Defaults to the first Web origin or API origin. |
 | `DESKFLEET_GITHUB_CLIENT_ID`, `DESKFLEET_GITHUB_CLIENT_SECRET` | Optional GitHub OAuth app credentials. Set both to enable login; register `<DESKFLEET_PUBLIC_URL>/api/auth/github/callback` as the callback URL. |
+| `DESKFLEET_GITHUB_APP_SLUG`, `DESKFLEET_GITHUB_APP_CLIENT_ID`, `DESKFLEET_GITHUB_APP_CLIENT_SECRET` | Separate optional GitHub App integration. Set all three and register `<DESKFLEET_PUBLIC_URL>/api/integrations/github/callback` as its user authorization callback. See the [integration guide](../../agents/docs/self-hosted.md#github-app-integration). |
 | `DESKFLEET_WEBAUTHN_RP_ID` | Passkey relying-party ID; defaults to the Web hostname. Keep it stable. |
 | `DESKFLEET_SMTP_HOST`, `DESKFLEET_SMTP_PORT` | STARTTLS mail relay and optional port (587). Required outside local development. |
 | `DESKFLEET_SMTP_USERNAME`, `DESKFLEET_SMTP_PASSWORD`, `DESKFLEET_MAIL_FROM` | Mail relay credentials and sender. |

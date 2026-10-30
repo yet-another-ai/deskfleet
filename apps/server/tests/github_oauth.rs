@@ -75,6 +75,7 @@ async fn github_callback_is_bound_to_browser_and_single_use() {
             web_origins: vec!["http://localhost".into()],
             auth,
             billing: Default::default(),
+            github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,

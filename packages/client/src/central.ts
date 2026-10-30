@@ -9,6 +9,7 @@ import type { DesktopEvent, IceCandidate } from "./desktop-media.ts"
 import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings } from "../../../crates/protocol/control.ts"
 
 export type AccountUser = Omit<User, "email"> & { email?: User["email"] }
+export interface GithubAppSettings { configured: boolean; manageUrl: string | null; authorized: boolean; login: string | null; actAsYou: boolean }
 export interface AccountState { serverUrl: string; user?: AccountUser; siteAdmin: boolean }
 export type { SiteSettings } from "../../../crates/protocol/control.ts"
 export type TeamRole = "owner" | "admin" | "member"
@@ -57,6 +58,10 @@ export interface CentralApi {
   login(): Promise<void>
   logout(): Promise<void>
   openAccountSettings(): Promise<void>
+  githubSettings(): Promise<GithubAppSettings>
+  manageGithub(): Promise<void>
+  authorizeGithubApp(): Promise<void>
+  setGithubActAsYou(enabled: boolean): Promise<GithubAppSettings>
   billing(teamId: string): Promise<TeamBilling>
   checkout(teamId: string, plan: "go" | "pro", requestId: string, interval?: BillingInterval): Promise<void>
   billingPortal(teamId: string): Promise<void>

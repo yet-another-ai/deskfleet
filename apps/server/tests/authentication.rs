@@ -69,6 +69,7 @@ async fn mailbox_proof_cookies_csrf_recovery_desktop_and_disable() {
             web_origins: vec!["http://localhost".into()],
             auth,
             billing: Default::default(),
+            github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,

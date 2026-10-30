@@ -264,6 +264,7 @@ async fn unavailable_redis_does_not_block_server_startup_or_health() {
         web_origins: vec![],
         auth: crate::auth::config::AuthConfig::development("https://control.test"),
         billing: Default::default(),
+        github_app: None,
         stun_urls: vec![],
         turn_urls: vec![],
         turn_secret: None,

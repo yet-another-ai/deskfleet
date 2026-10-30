@@ -16,6 +16,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
             web_origins: vec![],
             auth: crate::auth::config::AuthConfig::development("https://control.test"),
             billing: Default::default(),
+            github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
             turn_secret: None,

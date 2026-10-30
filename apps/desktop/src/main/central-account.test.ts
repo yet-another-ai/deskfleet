@@ -161,3 +161,15 @@ test("an async encryption failure preserves the saved account and rejects login"
   await expect(client.exchange("callback-code", "verifier")).rejects.toThrow("Keychain unavailable")
   expect(await readFile(f.path, "utf8")).toBe(saved)
 })
+
+test("desktop GitHub settings bridge keeps authorization in the host transport", async () => {
+  const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
+  await f.install()
+  const invoke = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
+  const settings = { configured: true, manageUrl: "https://github.com/apps/deskfleet/installations/new", authorized: true, login: "octocat", actAsYou: false }
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify(settings)))
+  await expect(invoke({} as Electron.IpcMainInvokeEvent, "githubSettings", [])).resolves.toEqual(settings)
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ ...settings, actAsYou: true })))
+  await invoke({} as Electron.IpcMainInvokeEvent, "setGithubActAsYou", [true])
+  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/integrations/github`, expect.objectContaining({ method: "PATCH", body: JSON.stringify({ actAsYou: true }) }))
+})
