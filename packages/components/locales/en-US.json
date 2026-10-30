@@ -1207,7 +1207,7 @@
     "signInWithGithub": "Sign in with GitHub",
     "githubFailed": "GitHub sign-in failed. Please try again.",
     "githubRegistrationDisabled": "New accounts are not enabled on this site.",
-    "githubTermsRequired": "To create an account, agree to the terms and try again.",
+    "githubTermsRequired": "Agree to the terms to sign in with GitHub.",
     "githubEmailConflict": "This email already belongs to an account. Sign in with your existing credentials.",
     "newHere": "New to DeskFleet?",
     "haveAccount": "Already have an account?",

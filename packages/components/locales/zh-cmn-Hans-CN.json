@@ -1207,7 +1207,7 @@
     "signInWithGithub": "使用 GitHub 登录",
     "githubFailed": "GitHub 登录失败，请重试。",
     "githubRegistrationDisabled": "此站点未开放新账户注册。",
-    "githubTermsRequired": "创建账户需要同意条款，请同意后重试。",
+    "githubTermsRequired": "请先同意条款，再使用 GitHub 登录。",
     "githubEmailConflict": "此邮箱已关联一个账户，请使用现有凭据登录。",
     "newHere": "还没有账号？",
     "haveAccount": "已有账号？",

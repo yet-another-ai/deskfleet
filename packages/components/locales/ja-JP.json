@@ -737,7 +737,7 @@
     "signInWithGithub": "GitHub でログイン",
     "githubFailed": "GitHub でのログインに失敗しました。もう一度お試しください。",
     "githubRegistrationDisabled": "このサイトでは新規アカウントを受け付けていません。",
-    "githubTermsRequired": "アカウントを作成するには規約に同意して、もう一度お試しください。",
+    "githubTermsRequired": "GitHub でサインインするには規約に同意してください。",
     "githubEmailConflict": "このメールアドレスは既にアカウントに関連付けられています。既存の認証情報でログインしてください。",
     "newHere": "DeskFleet を初めてご利用ですか？", "haveAccount": "すでにアカウントをお持ちですか？",
     "createAccount": "アカウントを作成", "continue": "続ける",
