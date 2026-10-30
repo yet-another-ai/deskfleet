@@ -5,13 +5,14 @@ import { computed, reactive, ref, watch } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { ConversationResponse, ConversationStep } from "../../services/agent-conversation.ts"
-import { summarizeTools } from "../../services/agent-conversation.ts"
+import { groupResponseActivity, summarizeTools } from "../../services/agent-conversation.ts"
 import { elapsed, formatDuration } from "../../services/agent-format.ts"
 import { pendingMermaidLocate, type MermaidLocateRequest } from "../../stores/layout.ts"
 import AgentContent from "./AgentContent.vue"
 import AgentPlan from "./AgentPlan.vue"
 import AgentToolCall from "./AgentToolCall.vue"
 import AgentElicitation from "./AgentElicitation.vue"
+import AgentActivityGroup from "./AgentActivityGroup.vue"
 const props = defineProps<{ response: ConversationResponse; disabled?: boolean }>()
 const { t } = useI18n()
 const { now, pause, resume } = useNow({ controls: true, scheduler: callback => useIntervalFn(callback, 1000) })
@@ -26,6 +27,8 @@ const answer = computed(() => {
   return !props.response.live && props.response.turn && last?.kind === "message" && last.role === "assistant" ? last : undefined
 })
 const steps = computed(() => answer.value ? props.response.steps.slice(0, -1) : props.response.steps)
+const groupedSteps = computed(() => groupResponseActivity(steps.value))
+const activities = reactive(new Set<string>())
 const toggled = ref<boolean | null>(null)
 watch(() => props.response.live, () => { toggled.value = null })
 const open = computed(() => props.response.steps.some(step => step.kind === "elicitation" && step.elicitation.state === "pending") || !props.response.turn || (toggled.value ?? props.response.live))
@@ -48,6 +51,8 @@ watchImmediate([pendingMermaidLocate, steps], ([target, currentSteps]) => {
     if (!stepMatchesLocate(step, target)) continue
     toggled.value = true
     if (step.kind === "message" && step.role === "thought") thoughts.add(step.id)
+    const activity = groupedSteps.value.find(group => group.kind === "activity" && group.steps.some(item => item.id === step.id))
+    if (activity) activities.add(activity.id)
   }
 })
 </script>
@@ -66,17 +71,18 @@ watchImmediate([pendingMermaidLocate, steps], ([target, currentSteps]) => {
       <p v-else-if="duration" class="m-0 text-ui-text-muted">{{ t('agent.workedFor', { duration }) }}</p>
     </template>
     <CollapsibleContent v-if="steps.length" class="flex flex-col gap-2" :class="response.turn && !response.live && 'border-l border-ui-border pl-4'">
-      <div v-for="(step, idx) in steps" :key="step.id" :data-conversation-entry="step.id">
-        <AgentToolCall v-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="response.live" />
+      <div v-for="step in groupedSteps" :key="step.id" :data-conversation-entry="step.kind === 'activity' ? undefined : step.id">
+        <AgentActivityGroup v-if="step.kind === 'activity'" :steps="step.steps" :live="response.live" :last-step-id="steps.at(-1)?.id" :open="activities.has(step.id)" @update:open="$event ? activities.add(step.id) : activities.delete(step.id)" />
+        <AgentToolCall v-else-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="response.live" />
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
         <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
         <CollapsibleRoot v-else-if="step.role === 'thought'" :open="thoughts.has(step.id)" class="text-sm text-ui-text-muted" @update:open="toggleThought(step.id)">
           <CollapsibleTrigger type="button" class="group/thought inline-flex cursor-pointer items-center gap-1 hover:text-ui-text">
             {{ t('agent.thinking') }}<ChevronRight :size="14" :stroke-width="2" class="opacity-0 transition-transform group-hover/thought:opacity-100" :class="thoughts.has(step.id) && 'rotate-90 opacity-100'" aria-hidden="true" />
           </CollapsibleTrigger>
-          <CollapsibleContent><AgentContent :content="step.content" markdown :final="!response.live || idx < steps.length - 1" class="mt-1" /></CollapsibleContent>
+          <CollapsibleContent><AgentContent :content="step.content" markdown :final="!response.live || step.id !== steps.at(-1)?.id" class="mt-1" /></CollapsibleContent>
         </CollapsibleRoot>
-        <AgentContent v-else :content="step.content" markdown :final="!response.live || idx < steps.length - 1" class="py-1" />
+        <AgentContent v-else :content="step.content" markdown :final="!response.live || step.id !== steps.at(-1)?.id" class="py-1" />
       </div>
     </CollapsibleContent>
     <AgentContent v-if="answer" :content="answer.content" markdown :final="true" :data-conversation-entry="answer.id" />

@@ -731,6 +731,10 @@
     "contentType": "{type} content",
     "tool": "Tool call",
     "thinking": "Thinking",
+    "activity": {
+      "tools": "{n} tool call | {n} tool calls",
+      "thoughts": "{n} thought | {n} thoughts"
+    },
     "plan": "Plan",
     "steered": "Steered the turn",
     "backlog": "Queued",

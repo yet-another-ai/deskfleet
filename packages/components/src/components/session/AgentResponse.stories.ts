@@ -106,6 +106,28 @@ export const LiveWorkingTurn: Story = {
   },
 }
 
+export const ConsecutiveActivity: Story = {
+  args: {
+    response: {
+      ...completedResponse,
+      id: "resp-activity",
+      live: true,
+      startedAt: new Date().toISOString(),
+      endedAt: undefined,
+      turn: { ...completedResponse.turn!, state: "running", endedAt: undefined },
+      steps: [
+        { id: "intro", kind: "message", role: "assistant", content: [{ type: "text", text: "I'll check the Session view and its existing tests." }] },
+        ...completedResponse.steps.slice(0, 2),
+        { id: "search", kind: "tool", tool: { toolCallId: "search", title: "Find tool call and thought renderers", kind: "search", status: "completed", rawInput: "rg AgentToolCall packages/components/src" } },
+        { id: "thought-2", kind: "message", role: "thought", content: [{ type: "text", text: "Consecutive activity can share one disclosure while messages stay visible." }] },
+        { id: "progress", kind: "message", role: "assistant", content: [{ type: "text", text: "The grouping is in place. I'm checking streaming updates and keyboard interaction." }] },
+        { id: "test-plan", kind: "message", role: "thought", content: [{ type: "text", text: "Verify that expanding a group survives new tool events." }] },
+        { id: "test", kind: "tool", tool: { toolCallId: "test", title: "Run Session component tests", kind: "execute", status: "in_progress", rawInput: "pnpm test" } },
+      ],
+    },
+  },
+}
+
 export const FailedTurn: Story = {
   args: {
     response: {
