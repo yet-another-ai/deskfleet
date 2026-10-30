@@ -10,7 +10,6 @@ import { useFleetStore } from "../stores/fleet.ts"
 import { agentSnapshot } from "../test/agent.ts"
 import { catalogFixture, sessionId, workspaceId } from "../test/catalog.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
-import { selectOption } from "../test/controls.ts"
 import { deferred } from "../test/desktop-media.ts"
 import ArchivedSessionsView from "./ArchivedSessionsView.vue"
 
@@ -66,6 +65,7 @@ test("direct navigation lists only archived Sessions, newest first, in the main 
   expect(router.currentRoute.value.name).toBe("archived-sessions")
   expect(refresh).toHaveBeenCalledOnce()
   expect(wrapper!.get("h1").text()).toBe("Archived sessions")
+  expect(wrapper!.get('nav[aria-label="Machine"] [aria-current="page"]').text()).toBe("Build machine")
   expect(wrapper!.findAll("[data-archived-session]").map(row => row.attributes("data-archived-session"))).toEqual(["32", sessionId])
   expect(wrapper!.text()).toContain("Ship archive UI")
   expect(wrapper!.text()).toContain("storefront")
@@ -197,6 +197,7 @@ test("an in-flight restore cannot submit twice or pull the user back after leavi
   await page().get("[data-confirm-restore]").trigger("click")
   await page().get('[role="dialog"]').trigger("keydown", { key: "Escape" }); await flushPromises()
   expect(restore).toHaveBeenCalledOnce()
+  expect(wrapper!.get('nav[aria-label="Machine"] button').attributes("disabled")).toBeDefined()
   expect(page().find('[role="dialog"]').exists()).toBe(true)
   await router.push("/"); await flushPromises()
   response.resolve(); await flushPromises()
@@ -204,12 +205,17 @@ test("an in-flight restore cannot submit twice or pull the user back after leavi
   expect(page().find('[role="dialog"]').exists()).toBe(false)
 })
 
-test("the archive Machine selector delegates ordinary Machine selection", async () => {
-  const fake = fakeCentral({ machines: [machineFixture("local-daemon", "team-1", "Build machine"), machineFixture("other", "team-1", "Other machine")] })
+test("archive Machine tabs show the selected machine and allow selecting an offline machine", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("local-daemon", "team-1", "Build machine"), machineFixture("other", "team-1", "Other machine", false)] })
   account = createAccountSession(fake.central)
   await flushPromises()
   const selectMachine = vi.spyOn(account, "selectMachine")
   await render()
-  await selectOption(wrapper!, '[data-control-name="archive-machine"]', "Other machine")
+  const tabs = wrapper!.get('nav[aria-label="Machine"]').findAll("button")
+  expect(tabs.map(tab => tab.text())).toEqual(["Build machine", "Other machine Offline"])
+  expect(tabs[0]!.attributes("aria-current")).toBe("page")
+  expect(tabs[1]!.attributes("aria-current")).toBeUndefined()
+  expect(tabs[1]!.attributes("disabled")).toBeUndefined()
+  await tabs[1]!.trigger("click")
   expect(selectMachine).toHaveBeenCalledExactlyOnceWith("other")
 })
