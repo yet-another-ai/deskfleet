@@ -16,9 +16,10 @@ export interface PinnedSessionItem extends PinnedSession {
   machineName: string
   online: boolean
   archiveState?: AgentSessionRecord["archiveState"]
+  context?: AgentSessionRecord["context"]
   loaded: boolean
 }
-type Metadata = Pick<AgentSessionRecord, "title" | "archiveState">
+type Metadata = Pick<AgentSessionRecord, "title" | "archiveState" | "context">
 const key = (machineId: string, sessionId: string) => JSON.stringify([machineId, sessionId])
 
 /** Personal device preferences; central machine IDs qualify machine-local Session IDs. */
@@ -49,13 +50,14 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
     const remote = metadata.value[key(machineId, sessionId)]
     return { title: local?.title ?? summary?.title ?? remote?.title,
       archiveState: local?.archiveState ?? summary?.archiveState ?? remote?.archiveState,
+      context: local?.context ?? summary?.context ?? remote?.context,
     }
   }
   const items = computed<PinnedSessionItem[]>(() => pins.value.flatMap(pin => {
     const machine = machines.value.find(machine => machine.id === pin.machineId)
     if (!machine) return []
     const current = sessionMetadata(pin.machineId, pin.sessionId)
-    return [{ ...pin, title: current.title ?? pin.title, archiveState: current.archiveState,
+    return [{ ...pin, title: current.title ?? pin.title, archiveState: current.archiveState, context: current.context,
       machineName: machine.name, online: machine.online, loaded: fleet.machines.some(machine => machine.id === pin.machineId) }]
   }))
 
@@ -83,7 +85,7 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
       try {
         const { snapshot } = await account.central.session(item.machineId, item.sessionId)
         if (disposed || selected !== scope.value || current !== revision || !isPinned(item.machineId, item.sessionId)) return
-        metadata.value[key(item.machineId, item.sessionId)] = { title: snapshot.session.title, archiveState: snapshot.session.archiveState }
+        metadata.value[key(item.machineId, item.sessionId)] = { title: snapshot.session.title, archiveState: snapshot.session.archiveState, context: snapshot.session.context }
         if (snapshot.session.archiveState === "archived") {
           save(pins.value.filter(pin => pin.machineId !== item.machineId || pin.sessionId !== item.sessionId))
         }

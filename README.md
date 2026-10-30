@@ -20,7 +20,8 @@ SQLite catalogs and execute Codex CLI, Claude Code, Cursor CLI, and Grok CLI
 sessions over ACP. The Web and Electron clients share Vue components, manage
 resources through the backend, and use authenticated WebRTC for Agent, Git,
 terminal, and desktop traffic.
-Sessions can be archived and restored while preserving their data.
+Archiving retains Session history and frees generated worktree disk space;
+restoring recreates those worktrees at their last committed HEADs.
 The official server image includes the Web application and serves it alongside
 the API; independent Web hosting remains supported.
 

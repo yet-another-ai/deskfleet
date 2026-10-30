@@ -1,6 +1,6 @@
-import { flushPromises, mount } from "@vue/test-utils"
+import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { reactive } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
@@ -166,5 +166,30 @@ test("a machine containing only archived sessions shows its empty state", async 
   const { wrapper } = await setup({ sessions: [{ id: "archived", title: "Archived chat", archiveState: "archived" }] })
   expect(wrapper.text()).toContain("No workspaces")
   expect(wrapper.find('a[href="/sessions/archived"]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+test.each(["machine", "workspace"] as const)("%s hover Archive confirms before acting and retains cleanup errors for retry", async scope => {
+  const sessions: AgentSessionSummary[] = [{ id: "30", title: "Active chat", context: scope === "machine" ? "directory" : "worktree", archiveState: "active" }]
+  const { wrapper, router } = await setup(scope === "machine" ? { sessions } : {
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions }],
+  })
+  const archive = vi.spyOn(useAgentSessionsStore(), "archive").mockRejectedValueOnce(new Error("Worktree cleanup failed")).mockResolvedValue()
+  const page = new DOMWrapper(document.body)
+  const button = wrapper.get('button[aria-label="Archive session"]')
+  const confirmSelector = scope === "machine" ? ".ui-button-primary" : ".ui-button-danger"
+  await button.trigger("click"); await flushPromises()
+  expect(archive).not.toHaveBeenCalled()
+  expect(page.get('[role="dialog"]').text()).toContain(scope === "machine" ? "working directory, and files will be retained" : "including uncommitted changes and untracked files")
+  await page.get('[role="dialog"]').trigger("keydown", { key: "Escape" }); await flushPromises()
+  expect(archive).not.toHaveBeenCalled()
+  await button.trigger("click"); await flushPromises()
+  await page.get(`[role="dialog"] ${confirmSelector}`).trigger("click"); await flushPromises()
+  expect(page.get('[role="dialog"] [role="alert"]').text()).toBe("Worktree cleanup failed")
+  await page.get(`[role="dialog"] ${confirmSelector}`).trigger("click"); await flushPromises()
+  expect(archive).toHaveBeenCalledTimes(2)
+  expect(archive).toHaveBeenLastCalledWith("30")
+  expect(page.find('[role="dialog"]').exists()).toBe(false)
+  expect(router.currentRoute.value.name).toBe("machine-control")
   wrapper.unmount()
 })

@@ -129,22 +129,30 @@ Rows keep Rename and Restore in the Session context menu, without Pin/Unpin. Off
 history remains readable, while restoration and other daemon mutations require the machine
 online. The page shows loading, empty, and retry states for list reads.
 
-Archive is the normal user action for ending active use of a Session. It is
-reversible and preserves the Session identity, execution context, Worktree files
-(including uncommitted changes and untracked files), queued inputs, configuration,
-conversation/tool history, terminal records, and full audit. Permanent Session
-deletion is not exposed by first-release user interfaces or user-facing APIs;
+Archive is the normal user action for ending active use of a Session. It removes
+generated checkouts, including uncommitted changes and untracked files, to reclaim
+disk space. It preserves Session and Worktree identity, directory metadata,
+queued inputs, configuration, conversation/tool history, terminal records, and
+full audit. Compact Git refs and the ownership manifest retain each checkout's
+last committed HEAD for restoration. Directory Sessions leave their Workspace
+source directories untouched. Permanent Session deletion is not exposed by
+first-release user interfaces or user-facing APIs;
 the destructive operations documented below describe existing implementation.
 
 Archive requires the owning machine online. The daemon blocks new execution and
 backlog dispatch, closes the provider and its pending permission callbacks without
 granting them, and stops Session-owned terminals while retaining their final
 output and metadata. It records the resulting execution/permission transitions
-without deleting their history. Archive completes only after the associated
-live resources have closed. There is no queued offline archive in this release.
+without deleting their history, then removes generated checkouts. Archive
+completes only after live resources have closed and checkout cleanup succeeds.
+Cleanup failures remain retryable. There is no queued offline archive or
+background cleanup of previously archived checkouts in this release; an explicit
+archive request can reclaim a previously archived Session's retained checkouts.
 
-Restore returns the same Session to active use without starting the provider,
-dispatching queued inputs, or creating terminals. The next explicit message can
+Restore recreates generated checkouts at the same paths and saved committed HEADs,
+then returns the same Session to active use without starting the provider,
+dispatching queued inputs, or creating terminals. Uncommitted changes and
+untracked files removed by archive are not restored. The next explicit message can
 resume the provider using its existing capabilities. A later terminal start
 creates a new PTY while preserving the ended terminal's record and transcript.
 Reading an archived Session cannot trigger implicit resume or terminal creation.
@@ -156,7 +164,7 @@ archive. Restore requires fresh Team capacity admission, and neither operation
 resets consumed turns or inherited usage.
 
 Archive cannot reuse Session destruction or terminal hangup, both of which delete
-data today. See [terminal archive behavior](terminals.md#ownership-and-lifecycle)
+retained records and history. See [terminal archive behavior](terminals.md#ownership-and-lifecycle)
 and the [backend scope](backend.md#session-archive-and-restore).
 
 ## Provider configuration
@@ -363,9 +371,11 @@ the full snapshot and paged event history.
 Session lifecycle is `provisioning`, `ready`, `provision_failed`, or `deleting`.
 Independent `archiveState` is `active`, `archiving`, or `archived`. Archive first
 persists `archiving` to close admission, then stops provider processes and owned
-terminals, and only then commits `archived`. A failed close retains `archiving`
-and can be retried with a new operation ID after restart. Restore permits only
-`archived` to `active`; it does not start processes or dispatch backlog.
+terminals, removes generated checkouts, and only then commits `archived`. A failed
+close or checkout cleanup retains `archiving` and can be retried with a new
+operation ID after restart. Restore permits only
+`archived` to `active` after checkout recreation; it does not start processes or
+dispatch backlog.
 Runs are `starting`, `running`, `stopping`, `stopped`, `interrupted`, or `failed`.
 Each new provider process gets a new generation, including when resuming a saved
 conversation. Busy/idle/awaiting-approval are derived from turns and permissions.
@@ -704,7 +714,7 @@ next frame, retaining the existing five-second send deadline.
 | `_deskfleet/session/event` | Deliver committed domain and original ACP events |
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
 | `_deskfleet/session/resume`, `/stop` | Explicit provider lifecycle operations; input submission also resumes |
-| `_deskfleet/session/archive`, `/restore` | Backend management operations; preserve data and require an online daemon |
+| `_deskfleet/session/archive`, `/restore` | Backend management operations; reclaim/recreate generated checkouts, preserve history, and require an online daemon |
 | `_deskfleet/session/rename` | Rename an active or archived Session through management RPC or ACP; preserve execution and record the customized title |
 
 ACP notifications, including provider Session IDs, are carried in journal
@@ -925,8 +935,9 @@ will use qualified Session IDs and event watermarks; the executing daemon
 remains the single journal writer.
 
 The first backend release synchronizes Agent conversations, tool history, audit,
-and archive/restore state to PostgreSQL. Archive preserves all content locally
-and in central replicas. Permanent user-facing Session deletion is deferred.
+and archive/restore state to PostgreSQL. Archive preserves conversation/tool
+content and audit locally and in central replicas while reclaiming generated
+checkouts. Permanent user-facing Session deletion is deferred.
 When added, deletion removes central conversation/tool content and
 content-bearing audit parameters/results, retaining metadata-only audit; stale
 uploads must not restore that content. Local durable receipts continue to serve

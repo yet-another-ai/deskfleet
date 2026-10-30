@@ -328,7 +328,7 @@ test("rename validates titles and persists customization for archived and machin
   } finally { await restarted.close() }
 })
 
-test("archive retains files and history, cancels approval and questions, and restore waits for explicit input", async t => {
+test("archive removes generated files but retains history, and restore recreates the checkout without starting work", async t => {
   const f = await setup(t)
   const browser: AgentActor = { kind: "user", userId: "browser-user", deviceId: "browser-device" }
   const worktree = (await f.catalog.sessionWorktree(f.sessionId))!
@@ -358,8 +358,7 @@ test("archive retains files and history, cancels approval and questions, and res
   assert.equal(archived.inputs[1]!.state, "pending")
   assert.deepEqual(archived.inputs[0]!.author, browser)
   assert.ok(archived.runs.every(run => run.state === "stopped"))
-  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "uncommitted changes\n")
-  assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "untracked content\n")
+  await assert.rejects(readdir(cwd), { code: "ENOENT" })
   assert.deepEqual(await f.catalog.sessionWorktree(f.sessionId), worktree)
   assert.deepEqual(await f.service.handle("_deskfleet/session/archive", archive, browser), archived)
   const calls = [
@@ -384,6 +383,8 @@ test("archive retains files and history, cancels approval and questions, and res
   const restored = await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, browser) as AgentSnapshot
   assert.equal(restored.session.archiveState, "active")
   assert.equal(restored.session.id, archived.session.id)
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+  await assert.rejects(readFile(join(cwd, "untracked.txt")), { code: "ENOENT" })
   assert.equal(restored.inputs[1]!.state, "pending")
   assert.equal(restored.elicitations.find(question => question.id === pendingQuestion.id)?.state, "cancelled")
   assert.deepEqual(f.provider.prompts, ["hold"])
@@ -424,6 +425,7 @@ test("failed archive retains archiving admission state and retry survives servic
 
 test("archive serializes with terminal admission and never completes before resource closure", async t => {
   const f = await setup(t)
+  const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
   let releaseAdmission!: () => void
   let releaseClosure!: () => void
   const admission = new Promise<void>(resolve => { releaseAdmission = resolve })
@@ -442,9 +444,43 @@ test("archive serializes with terminal admission and never completes before reso
   await dial
   await until(f.read, state => closing && state.session.archiveState === "archiving")
   assert.equal(completed, false)
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
   await assert.rejects(f.service.withActiveSession(f.sessionId, async () => {}), /Restore this Session/u)
   releaseClosure()
   assert.equal((await archive).session.archiveState, "archived")
+  await assert.rejects(readdir(cwd), { code: "ENOENT" })
+})
+
+test("checkout cleanup and recreation failures leave archive and restore retryable", async t => {
+  const f = await setup(t)
+  const worktree = (await f.catalog.sessionWorktree(f.sessionId))!
+  const cwd = worktree.directories[0]!.path
+  const archive = f.catalog.archiveSessionWorktree.bind(f.catalog)
+  f.catalog.archiveSessionWorktree = async () => { throw new Error("Checkout cleanup failed") }
+  await assert.rejects(f.service.handle("_deskfleet/session/archive", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor), /Checkout cleanup failed/u)
+  assert.equal((await f.read()).session.archiveState, "archiving")
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+  f.catalog.archiveSessionWorktree = archive
+  await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  await assert.rejects(readdir(cwd), { code: "ENOENT" })
+
+  const restore = f.catalog.restoreSessionWorktree.bind(f.catalog)
+  f.catalog.restoreSessionWorktree = async () => { throw new Error("Checkout recreation failed") }
+  await assert.rejects(f.service.handle("_deskfleet/session/restore", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor), /Checkout recreation failed/u)
+  assert.equal((await f.read()).session.archiveState, "archived")
+  assert.deepEqual(await f.catalog.sessionWorktree(f.sessionId), worktree)
+  assert.equal(f.provider.clients.length, 1)
+  f.catalog.restoreSessionWorktree = restore
+  const restored = await f.service.handle("_deskfleet/session/restore", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor) as AgentSnapshot
+  assert.equal(restored.session.archiveState, "active")
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+  assert.equal(f.provider.clients.length, 1)
 })
 
 test("concurrent users share durable backlog and retries do not duplicate inputs or worktrees", async t => {

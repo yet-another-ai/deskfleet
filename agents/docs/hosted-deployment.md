@@ -310,8 +310,11 @@ Before tagging, account for these current behaviors:
    Team usage `relayedBytes` increases. `metering.fresh` alone only establishes
    the collector's Redis/database heartbeat, not coturn statistics delivery.
 8. Close the client and confirm work continues on the daemon; reopen and recover
-   the view. Archive/restore a Session and verify files/history survive, with
-   restore leaving execution stopped. Take the machine offline and read its
+   the view. Archive a worktree Session and verify its generated checkouts are
+   removed while history survives. Restore it and verify the checkouts return at
+   their saved committed HEADs, discarded local changes stay absent, and execution
+   remains stopped. Confirm archiving a directory Session leaves source files
+   intact. Take the machine offline and read its
    synchronized history. Place the client and daemon sockets on different API
    instances and alternate management and offer/candidate HTTP requests between
    instances. Verify replies, client notifications, logout revocation,

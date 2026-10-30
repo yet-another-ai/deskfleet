@@ -95,8 +95,10 @@ browser support, destination commit limits, and conflict behavior.
 
 When a machine is offline, the application reads synchronized conversation
 history from the backend, including its completeness watermark. Live operations
-remain unavailable. Archiving a Session retains its history and working context;
-restoring it does not start execution. There is no user-facing Session deletion.
+remain unavailable. Archiving a Session retains its history and removes generated
+checkouts, including uncommitted and untracked files. Restoring recreates checkouts
+at their saved committed HEADs without starting execution. Directory Sessions
+leave source files untouched. There is no user-facing Session deletion.
 
 Run shared UI and transport tests with
 `mise exec -- pnpm --filter @deskfleet/desktop test`.

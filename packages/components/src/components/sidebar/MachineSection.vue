@@ -38,26 +38,11 @@ const router = useRouter()
 const account = useAccountSession()
 const selected = computed(() => !account || account.machineId.value === props.machine.id)
 const addingWorkspace = ref(false)
-const archiving = ref(new Set<string>())
-const archiveErrors = ref<Record<string, string>>({})
 const sessions = useArrayFilter(() => props.machine.sessions, session => session.archiveState !== "archived")
 const workspaces = computed(() => props.machine.workspaces.map(workspace => ({
   ...workspace,
   sessions: workspace.sessions.filter(session => session.archiveState !== "archived"),
 })))
-
-async function archiveSession(sessionId: string): Promise<void> {
-  if (archiving.value.has(sessionId)) return
-  archiving.value.add(sessionId)
-  delete archiveErrors.value[sessionId]
-  try {
-    await agents.archive(sessionId)
-  } catch (reason) {
-    archiveErrors.value[sessionId] = reason instanceof Error ? reason.message : String(reason)
-  } finally {
-    archiving.value.delete(sessionId)
-  }
-}
 
 function openRoute(destination: RouteLocationRaw): void {
   if (account) account.openMachineRoute(props.machine.id, destination)
@@ -130,7 +115,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
         />
       </li>
       <li v-for="session in sessions" :key="session.id">
-        <SessionContextMenu :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
+        <SessionContextMenu v-slot="{ requestArchive, pending }" :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :context="session.context" :archive-state="session.archiveState" :disabled="!machine.online">
           <TreeLink
             :machine-id="machine.id"
             :to="{ name: 'session', params: { sessionId: session.id } }"
@@ -149,13 +134,12 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
               <IconButton
                 :icon="Archive"
                 :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
-                :disabled="!machine.online || archiving.has(session.id)"
-                @click="archiveSession(session.id)"
+                :disabled="!machine.online || pending || !session.context"
+                @click="requestArchive()"
               />
             </template>
           </TreeLink>
         </SessionContextMenu>
-        <p v-if="archiveErrors[session.id]" role="alert" class="m-0 px-2.5 pb-1 pl-6 text-xs text-ui-danger break-words">{{ archiveErrors[session.id] }}</p>
       </li>
       <li v-if="workspaces.length === 0 && sessions.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
         {{ t("machine.noWorkspaces") }}
@@ -180,7 +164,7 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
             <TreeLink :machine-id="machine.id" :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
           </li>
           <li v-for="session in workspace.sessions" :key="session.id">
-            <SessionContextMenu :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :archive-state="session.archiveState" :disabled="!machine.online || archiving.has(session.id)">
+            <SessionContextMenu v-slot="{ requestArchive, pending }" :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :context="session.context" :archive-state="session.archiveState" :disabled="!machine.online">
               <!-- A Session's shells open in its bottom panel, not the sidebar. -->
               <TreeLink
                 :machine-id="machine.id"
@@ -200,13 +184,12 @@ const sessionWorking = (sessionId: string) => snapshotIsWorking(agents.views[ses
                   <IconButton
                     :icon="Archive"
                     :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
-                    :disabled="!machine.online || archiving.has(session.id)"
-                    @click="archiveSession(session.id)"
+                    :disabled="!machine.online || pending || !session.context"
+                    @click="requestArchive()"
                   />
                 </template>
               </TreeLink>
             </SessionContextMenu>
-            <p v-if="archiveErrors[session.id]" role="alert" class="m-0 px-2.5 pb-1 pl-6 text-xs text-ui-danger break-words">{{ archiveErrors[session.id] }}</p>
           </li>
         </CollapsibleContent>
       </CollapsibleRoot>

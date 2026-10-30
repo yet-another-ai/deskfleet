@@ -88,7 +88,7 @@ const unresolvedSubmission = computed(() => Object.values(agents.operations).som
 const pending = computed(() => Object.values(agents.operations).filter(operation => operation.sessionId === props.sessionId && operation.error))
 // Shells need the Session's own Worktree on this machine.
 const terminalWorktree = computed(() => (location.value?.machine.online || terminals.state === "connected") && snapshot.value?.session.lifecycle === "ready" ? location.value?.worktree : undefined)
-const applicationTarget = computed(() => client.platform !== "web" && location.value?.machine.local && client.applications && snapshot.value?.session.lifecycle === "ready" && location.value.worktree && location.value.worktree.directories.length > 0
+const applicationTarget = computed(() => client.platform !== "web" && location.value?.machine.local && client.applications && snapshot.value?.session.lifecycle === "ready" && (active.value || snapshot.value.session.context === "directory") && location.value.worktree && location.value.worktree.directories.length > 0
   ? { api: client.applications, machineId: location.value.machine.id, worktreeId: location.value.worktree.id } : undefined)
 const openWithMenu = ref<InstanceType<typeof OpenWithMenu> | null>(null)
 const empty = computed(() => !view.value?.loading && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
@@ -203,7 +203,7 @@ async function checkOperation(operationId: string): Promise<void> {
 <template>
   <PaneHeader>
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, ...(location.workspace ? [location.workspace.name] : [])]" /></template>
-    <template v-if="snapshot" #actions><OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error /><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" /></template>
+    <template v-if="snapshot" #actions><OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error /><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" /></template>
   </PaneHeader>
   <div class="relative flex min-h-0 flex-1">
     <div

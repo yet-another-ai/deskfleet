@@ -9,7 +9,7 @@ afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 test("fork is offered only when supported and closes the action menu without a second confirmation", async () => {
   wrapper = mount(AgentSessionMenu, {
     attachTo: document.body,
-    props: { canStop: false, canFork: false, disabled: false, archiveState: "active" },
+    props: { canStop: false, canFork: false, disabled: false, context: "directory", archiveState: "active" },
     global: { plugins: [i18n] },
   })
   const page = new DOMWrapper(document.body)
@@ -30,7 +30,7 @@ test("fork is offered only when supported and closes the action menu without a s
 test("archive and restore confirmations follow the latest session state and return focus to its menu", async () => {
   wrapper = mount(AgentSessionMenu, {
     attachTo: document.body,
-    props: { canStop: false, disabled: false, archiveState: "active" },
+    props: { canStop: false, disabled: false, context: "worktree", archiveState: "active" },
     global: { plugins: [i18n] },
   })
   const page = new DOMWrapper(document.body)
@@ -38,7 +38,8 @@ test("archive and restore confirmations follow the latest session state and retu
   await flushPromises()
   await page.findAll('[role="menuitem"]').find(item => item.text() === "Archive session")!.trigger("click"); await flushPromises()
   expect(page.get('[role="dialog"]').text()).toContain("Archive this session?")
-  await page.get('[role="dialog"] .ui-button-primary').trigger("click"); await flushPromises()
+  expect(page.get('[role="dialog"]').text()).toContain("including uncommitted changes and untracked files")
+  await page.get('[role="dialog"] .ui-button-danger').trigger("click"); await flushPromises()
   expect(wrapper.emitted("archive")).toEqual([[]])
   expect(page.find('[role="dialog"]').exists()).toBe(false)
   await vi.waitFor(() => expect(document.activeElement).toBe(wrapper!.get('[aria-label="Session actions"]').element))
@@ -50,6 +51,8 @@ test("archive and restore confirmations follow the latest session state and retu
 
   const dialog = page.get('[role="dialog"]')
   expect(dialog.text()).toContain("Restore this session?")
+  expect(dialog.text()).toContain("recreated from its last committed state")
+  expect(dialog.text()).toContain("Execution stays stopped")
   expect(dialog.get(".ui-button-primary").text()).toBe("Restore session")
   await dialog.get(".ui-button-primary").trigger("click")
   expect(wrapper.emitted("restore")).toEqual([[]])
@@ -59,7 +62,7 @@ test("archive and restore confirmations follow the latest session state and retu
 test("keyboard opens the menu, disabled actions stay closed, and Escape cancels a confirmation", async () => {
   wrapper = mount(AgentSessionMenu, {
     attachTo: document.body,
-    props: { canStop: true, disabled: true, archiveState: "active" },
+    props: { canStop: true, disabled: true, context: "directory", archiveState: "active" },
     global: { plugins: [i18n] },
   })
   const page = new DOMWrapper(document.body)
@@ -79,7 +82,7 @@ test("keyboard opens the menu, disabled actions stay closed, and Escape cancels 
 test("rename closes the action menu and preserves its trigger as the dialog focus target", async () => {
   wrapper = mount(AgentSessionMenu, {
     attachTo: document.body,
-    props: { canStop: false, disabled: false, archiveState: "archived" },
+    props: { canStop: false, disabled: false, context: "directory", archiveState: "archived" },
     global: { plugins: [i18n] },
   })
   const page = new DOMWrapper(document.body)

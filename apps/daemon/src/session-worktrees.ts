@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
@@ -22,8 +23,13 @@ interface SourceDirectory {
   revision: string
   relativePath: string
 }
-interface OwnedWorktree { path: string; repository: string }
-interface Manifest { sessionId: string; directory?: string; worktrees: OwnedWorktree[] }
+interface OwnedWorktree { path: string; repository: string; revision?: string; reference?: string; restored?: boolean }
+interface Manifest {
+  sessionId: string
+  directory?: string
+  state?: "archiving" | "archived" | "restoring"
+  worktrees: OwnedWorktree[]
+}
 
 interface WorktreeStorage {
   originId: string
@@ -135,7 +141,7 @@ export class ManagedSessionWorktrees {
         let target = groups.get(key)
         if (!target) {
           target = join(physicalDirectory, `repo-${manifest.worktrees.length}`)
-          manifest.worktrees.push({ path: target, repository: source.repository })
+          manifest.worktrees.push({ path: target, repository: source.repository, revision: source.revision })
           // Persist ownership before Git creates files so interrupted creation
           // can be explicitly destroyed after a daemon restart.
           await this.#save(manifest)
@@ -178,6 +184,56 @@ export class ManagedSessionWorktrees {
     return { ...allocated, worktree }
   }
 
+  /** Reclaim generated checkouts, retaining only committed revisions and ownership. */
+  async archive(sessionId: string): Promise<void> {
+    const manifest = await this.#load(sessionId)
+    if (!manifest) return
+    manifest.state = "archiving"
+    for (const worktree of manifest.worktrees) delete worktree.restored
+    await this.#save(manifest)
+    for (const worktree of manifest.worktrees) {
+      const registration = await this.#registration(worktree)
+      // Git can retain registration after an interrupted removal has already
+      // deleted the checkout directory. Its HEAD remains available here.
+      if (registration?.revision) worktree.revision = registration.revision
+      if (!worktree.revision) throw new Error("Session checkout has no retained revision")
+      worktree.reference ??= `refs/deskfleet/sessions/${randomUUID()}`
+      // Persist the ref name before creating it, and retain the commit before
+      // unregistering the detached checkout that currently keeps it reachable.
+      await this.#save(manifest)
+      await git(["--git-dir", worktree.repository, "update-ref", worktree.reference, worktree.revision])
+      await this.#removeCheckout(worktree, registration !== undefined)
+    }
+    if (manifest.directory) await rm(manifest.directory, { recursive: true, force: true })
+    manifest.state = "archived"
+    await this.#save(manifest)
+  }
+
+  /** Restore captured paths and committed HEADs without consulting the Workspace. */
+  async restore(sessionId: string): Promise<void> {
+    const manifest = await this.#load(sessionId)
+    if (!manifest || !manifest.state) return
+    if (manifest.state === "archiving") throw new Error("Finish archiving the Session checkout before restoring it")
+    manifest.state = "restoring"
+    await this.#save(manifest)
+    if (manifest.directory) await mkdir(manifest.directory, { recursive: true, mode: 0o700 })
+    for (const worktree of manifest.worktrees) {
+      // A previous attempt may have already restored this repository. Do not
+      // reset its files when retrying the rest of a multi-repository Session.
+      const registered = await this.#registered(worktree)
+      if (registered && worktree.restored) continue
+      if (!worktree.revision) throw new Error("Session checkout has no retained revision")
+      if (!registered) await git(["--git-dir", worktree.repository, "worktree", "add", "--detach", "--no-checkout", worktree.path, worktree.revision])
+      // Registration precedes checkout; completing it separately also recovers
+      // a daemon interruption while Git was populating the working files.
+      await git(["-C", worktree.path, "reset", "--hard", worktree.revision])
+      worktree.restored = true
+      await this.#save(manifest)
+    }
+    delete manifest.state
+    await this.#save(manifest)
+  }
+
   destroy(sessionId: string): Promise<void> {
     const pending = this.#destroying.get(sessionId)
     if (pending) return pending
@@ -187,26 +243,36 @@ export class ManagedSessionWorktrees {
   }
 
   async #destroy(sessionId: string): Promise<void> {
+    const manifest = await this.#load(sessionId)
+    if (manifest) await this.#removeOwned(manifest)
+    // Directory Sessions own no files. This also covers an allocation that
+    // stopped before creating its ownership manifest.
+    await this.#catalog.deleteWorkspaceSession(sessionId)
+  }
+
+  async #load(sessionId: string): Promise<Manifest | undefined> {
     const directory = this.#sessionDirectory(sessionId)
     let manifest: Manifest
     try { manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8")) as Manifest }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-      // A Session using Workspace directories in place owns no files. A process
-      // may also stop after allocating a session but before creating files.
-      await this.#catalog.deleteWorkspaceSession(sessionId)
-      return
+      return undefined
     }
     if (manifest.sessionId !== sessionId || !Array.isArray(manifest.worktrees)) throw new Error("Invalid session worktree ownership manifest")
+    if (manifest.state !== undefined && !["archiving", "archived", "restoring"].includes(manifest.state)) throw new Error("Invalid session worktree ownership manifest")
     const physicalDirectory = manifest.directory ?? await realpath(directory)
     if (manifest.directory !== undefined) this.#checkStorageDirectory(manifest.directory, sessionId)
     for (const [index, worktree] of manifest.worktrees.entries()) {
       if (!worktree || worktree.path !== join(physicalDirectory, `repo-${index}`) || typeof worktree.repository !== "string" || !isAbsolute(worktree.repository)) {
         throw new Error("Invalid session worktree ownership manifest")
       }
+      if (worktree.revision !== undefined && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(worktree.revision)
+        || worktree.reference !== undefined && !/^refs\/deskfleet\/sessions\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(worktree.reference)
+        || worktree.restored !== undefined && typeof worktree.restored !== "boolean") {
+        throw new Error("Invalid session worktree ownership manifest")
+      }
     }
-    await this.#removeOwned(manifest)
-    await this.#catalog.deleteWorkspaceSession(sessionId)
+    return manifest
   }
 
   #sessionDirectory(sessionId: string): string {
@@ -232,14 +298,28 @@ export class ManagedSessionWorktrees {
     // Remove from the end, preserving positional ownership names on retries.
     while (manifest.worktrees.length) {
       const worktree = manifest.worktrees[manifest.worktrees.length - 1]!
-      const registered = (await git(["--git-dir", worktree.repository, "worktree", "list", "--porcelain", "-z"]))
-        .split("\0").some(record => record.startsWith("worktree ") && pathsMatch(record.slice("worktree ".length), worktree.path))
-      if (registered) await git(["--git-dir", worktree.repository, "worktree", "remove", "--force", worktree.path])
-      else await rm(worktree.path, { recursive: true, force: true })
+      await this.#removeCheckout(worktree, await this.#registered(worktree))
+      if (worktree.reference) await git(["--git-dir", worktree.repository, "update-ref", "-d", worktree.reference])
       manifest.worktrees.pop()
       await this.#save(manifest)
     }
     if (manifest.directory) await rm(manifest.directory, { recursive: true, force: true })
     await rm(this.#sessionDirectory(manifest.sessionId), { recursive: true, force: true })
+  }
+
+  async #registered(worktree: OwnedWorktree): Promise<boolean> {
+    return await this.#registration(worktree) !== undefined
+  }
+
+  async #registration(worktree: OwnedWorktree): Promise<{ revision: string | undefined } | undefined> {
+    const listing = await git(["--git-dir", worktree.repository, "worktree", "list", "--porcelain", "-z"])
+    const records = listing.split("\0\0").map(entry => entry.split("\0")).find(entry =>
+      entry[0]?.startsWith("worktree ") && pathsMatch(entry[0].slice("worktree ".length), worktree.path))
+    return records ? { revision: records.find(record => record.startsWith("HEAD "))?.slice("HEAD ".length) } : undefined
+  }
+
+  async #removeCheckout(worktree: OwnedWorktree, registered: boolean): Promise<void> {
+    if (registered) await git(["--git-dir", worktree.repository, "worktree", "remove", "--force", worktree.path])
+    else await rm(worktree.path, { recursive: true, force: true })
   }
 }

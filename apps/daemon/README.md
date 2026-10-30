@@ -194,8 +194,10 @@ Worktree uses its actual directories. Session creation chooses either generated
 Git worktrees or the original directories. Directory browsing always runs on the
 target daemon, using that machine's path rules.
 
-Archive retains Session-owned worktrees, including uncommitted and untracked
-files. Archived Sessions still own their Workspace and block its deletion.
+Archive removes Session-owned generated checkouts, including uncommitted changes
+and untracked files, while retaining Worktree records and committed HEADs for
+restore. Directory Sessions leave source files intact. Archived Sessions still
+own their Workspace and block its deletion.
 Workspace deletion leaves the configured source directories intact.
 See [Agent Sessions](../../agents/docs/agent-sessions.md) and
 [terminals](../../agents/docs/terminals.md) for persistence and lifecycle details.
@@ -216,10 +218,12 @@ execution running; reopening replays the journal over the `deskfleet-acp`
 DataChannel. The composer can queue a message or steer the current turn, and a
 pending candidate can also be selected for steering. Stop retains the backlog;
 the next message, or an explicit `session/resume`, reuses the saved provider
-conversation. Archive stops the provider and Session-owned terminals while preserving all files,
-conversation history, audit, queued inputs, and terminal transcripts. Restore
-returns the same Session to active use without starting processes. Permanent
-Session deletion is unavailable through user-facing APIs or clients.
+conversation. Archive stops the provider and Session-owned terminals, then removes
+generated checkouts while preserving conversation history, audit, queued inputs,
+and terminal transcripts. Restore recreates checkouts at their saved paths and
+committed HEADs and returns the same Session to active use without starting
+processes. Uncommitted and untracked files removed by archive are not restored.
+Permanent Session deletion is unavailable through user-facing APIs or clients.
 
 The backend authenticates and binds SDP to a user, login session, Team, target
 machine, and 24-hour peer grant. Conversation operations use the DataChannel

@@ -833,10 +833,12 @@
     "archive": "Archive session",
     "restore": "Restore session",
     "retryArchive": "Retry archive",
-    "archiveQuestion": "Archive this session? Running agents and terminals will stop. The conversation and working context will be retained.",
+    "archiveQuestion": "Archive this session? Running agents and terminals will stop. The conversation, working directory, and files will be retained.",
+    "archiveWorktreeQuestion": "Archive this session? Running agents and terminals will stop. The generated worktree will be deleted, including uncommitted changes and untracked files. The conversation and committed changes will be retained.",
     "restoreQuestion": "Restore this session? Execution stays stopped until you send a new message.",
+    "restoreWorktreeQuestion": "Restore this session? The worktree will be recreated from its last committed state. Deleted uncommitted changes and untracked files cannot be recovered. Execution stays stopped until you send a new message.",
     "archived": "This session is archived. Restore it to continue working.",
-    "archiving": "Archiving this session. Execution is blocked until its running resources are closed."
+    "archiving": "Archiving this session. Execution is blocked until running agents and terminals stop and any generated worktree is removed."
   },
   "providers": {
     "choose": "Choose provider",

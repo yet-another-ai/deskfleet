@@ -104,9 +104,10 @@ shells appear only in the Session's bottom panel, not in the sidebar or the
 machine terminal tabs. Leaving the Session detaches the panel; destroying the
 Session through internal cleanup hangs up its terminals before the Worktree is removed.
 The user-facing archive operation stops Session-owned PTYs while preserving
-terminal metadata, transcripts, ownership, and Worktree files. It must not call
+terminal metadata, transcripts, and ownership, then removes generated Worktree
+checkouts, including uncommitted changes and untracked files. It must not call
 the existing destructive hangup path. A terminal with the same cwd but different
-ownership is unaffected. Terminal creation and archive share the Session's
+ownership is not stopped. Terminal creation and archive share the Session's
 admission queue, so a concurrent dial cannot leave a new process behind archive.
 
 Navigating away detaches the view. Losing a peer, reloading the renderer, or
@@ -129,8 +130,9 @@ Archived terminal records remain available
 for read-only replay. Restoring a Session preserves those records without
 starting a process. A later terminal start creates a new PTY without overwriting
 the previous terminal's identity or transcript. Archive requires the machine
-online and completes only after its owned PTYs have stopped and their final
-output has been retained.
+online and completes only after its owned PTYs have stopped, their final output
+has been retained, and generated checkouts have been removed. Restore recreates
+generated checkouts at their saved committed HEADs before new terminals can start.
 
 Remote [peer authorization](webrtc-security.md) expires after at most 24 hours
 or on explicit revocation/closure. That event detaches terminal access without

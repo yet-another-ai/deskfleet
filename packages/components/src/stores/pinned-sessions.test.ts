@@ -51,15 +51,15 @@ function fixture(account?: AccountSession, target = "m1") {
 test("pins distinguish equal Session IDs on different machines, persist across machine scopes, and unpin independently", async () => {
   const { account, session } = await accountFixture()
   const first = fixture(account)
-  first.agents.sessions["30"] = { ...agentSnapshot().session, workspaceId: undefined, title: "Laptop investigation" }
+  first.agents.sessions["30"] = { ...agentSnapshot().session, workspaceId: undefined, context: "directory", title: "Laptop investigation" }
   first.store.pin("m1", "30", "Laptop investigation")
   first.store.pin("m2", "30", "Server investigation")
   first.store.pin("m1", "30", "Duplicate")
   await flushPromises()
   expect(first.store.pins).toHaveLength(2)
-  expect(first.store.items.map(item => [item.machineId, item.title, item.loaded, item.online, item.archiveState])).toEqual([
-    ["m1", "Laptop investigation", true, true, "active"],
-    ["m2", "Remote investigation", false, false, "active"],
+  expect(first.store.items.map(item => [item.machineId, item.title, item.loaded, item.online, item.archiveState, item.context])).toEqual([
+    ["m1", "Laptop investigation", true, true, "active", "directory"],
+    ["m2", "Remote investigation", false, false, "active", "worktree"],
   ])
   expect(session).toHaveBeenCalledExactlyOnceWith("m2", "30")
   disposePinia(first.pinia)

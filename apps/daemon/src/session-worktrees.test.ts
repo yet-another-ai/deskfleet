@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
-import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test, { type TestContext } from "node:test"
@@ -120,6 +120,141 @@ test("managed sessions can check out a selected local or remote base branch", as
 
   await managed.destroy(fromLocal.id)
   await managed.destroy(fromRemote.id)
+})
+
+test("archive discards working files, retains commits across Git GC, and restores the captured context after restart", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const machine = join(directory, "daemon")
+  await repository(source)
+  const bindings = [{ path: join(source, "backend") }, { path: source }]
+  const state = catalogFixture(bindings)
+  const managed = new ManagedSessionWorktrees(state.catalog, machine)
+  const session = await managed.create("1")
+  const checkout = session.worktree.directories[1]!.path
+  await writeFile(join(checkout, "backend", "source.txt"), "committed session work\n")
+  await git(checkout, "add", ".")
+  await git(checkout, "-c", "user.name=deskfleet test", "-c", "user.email=test@example.invalid", "commit", "--no-gpg-sign", "-m", "session work")
+  const revision = await git(checkout, "rev-parse", "HEAD")
+  await writeFile(join(checkout, "backend", "source.txt"), "discard this edit\n")
+  await writeFile(join(checkout, "untracked.txt"), "discard this file\n")
+  await managed.archive(session.id)
+  await managed.archive(session.id)
+  await assert.rejects(access(checkout))
+  assert.equal(state.sessions.size, 1)
+  assert.deepEqual(state.worktrees.get(session.id), session.worktree)
+  assert.equal((await git(source, "worktree", "list", "--porcelain")).match(/^worktree /gmu)?.length, 1)
+  assert.equal(await git(source, "for-each-ref", "--format=%(objectname)", "refs/deskfleet/sessions"), revision)
+  await git(source, "reflog", "expire", "--expire=now", "--all")
+  await git(source, "gc", "--prune=now")
+  bindings.splice(0, bindings.length, { path: directory })
+
+  const restarted = new ManagedSessionWorktrees(state.catalog, machine)
+  await restarted.restore(session.id)
+  assert.equal(await git(checkout, "rev-parse", "HEAD"), revision)
+  assert.equal(await readFile(join(checkout, "backend", "source.txt"), "utf8"), "committed session work\n")
+  await assert.rejects(access(join(checkout, "untracked.txt")))
+  await writeFile(join(checkout, "keep-after-restore.txt"), "new work\n")
+  await restarted.restore(session.id)
+  assert.equal(await readFile(join(checkout, "keep-after-restore.txt"), "utf8"), "new work\n")
+  await restarted.destroy(session.id)
+  assert.equal(await git(source, "for-each-ref", "refs/deskfleet/sessions"), "")
+  assert.equal(state.sessions.size, 0)
+})
+
+test("archive and restore resume partial multi-repository operations without resetting restored files", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const second = join(directory, "second")
+  const machine = join(directory, "daemon")
+  await repository(source)
+  await repository(second)
+  const state = catalogFixture([{ path: source }, { path: second }])
+  const managed = new ManagedSessionWorktrees(state.catalog, machine)
+  const session = await managed.create("1")
+  const [firstPath, secondPath] = session.worktree.directories.map(binding => binding.path) as [string, string]
+  await git(second, "worktree", "lock", secondPath)
+  await assert.rejects(managed.archive(session.id), /locked/u)
+  await assert.rejects(access(firstPath))
+  await access(secondPath)
+  await assert.rejects(managed.restore(session.id), /Finish archiving/u)
+  await git(second, "worktree", "unlock", secondPath)
+  // A process can exit after Git removes files but before it unregisters the
+  // checkout. Retrying archive must read the retained HEAD without that path.
+  await rm(secondPath, { recursive: true, force: true })
+  assert.match(await git(second, "worktree", "list", "--porcelain"), /prunable/u)
+  const restarted = new ManagedSessionWorktrees(state.catalog, machine)
+  await restarted.archive(session.id)
+  await assert.rejects(access(secondPath))
+
+  const secondGit = join(second, ".git")
+  const unavailableGit = join(second, "unavailable-git")
+  await rename(secondGit, unavailableGit)
+  await assert.rejects(restarted.restore(session.id), /not a git repository/u)
+  await access(firstPath)
+  await writeFile(join(firstPath, "new-work.txt"), "retained after retry\n")
+  await rename(unavailableGit, secondGit)
+  const nextRestart = new ManagedSessionWorktrees(state.catalog, machine)
+  await nextRestart.restore(session.id)
+  assert.equal(await readFile(join(firstPath, "new-work.txt"), "utf8"), "retained after retry\n")
+  await access(secondPath)
+
+  await nextRestart.archive(session.id)
+  await rename(secondGit, unavailableGit)
+  await assert.rejects(nextRestart.restore(session.id), /not a git repository/u)
+  await rename(unavailableGit, secondGit)
+  await nextRestart.archive(session.id)
+  await assert.rejects(access(firstPath))
+  await assert.rejects(access(secondPath))
+  await nextRestart.destroy(session.id)
+  for (const root of [source, second]) assert.equal(await git(root, "for-each-ref", "refs/deskfleet/sessions"), "")
+  assert.equal(state.sessions.size, 0)
+})
+
+test("archive frees a custom root and restore uses its captured location after the setting changes", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const machine = join(directory, "daemon")
+  const root = join(directory, "worktrees")
+  await repository(source)
+  await mkdir(root)
+  const state = catalogFixture([{ path: source }])
+  const storage = { originId: "origin", root: async (): Promise<string | null> => root }
+  const managed = new ManagedSessionWorktrees(state.catalog, machine, storage)
+  const session = await managed.create("1")
+  const checkout = session.worktree.directories[0]!.path
+  await managed.archive(session.id)
+  await assert.rejects(access(dirname(checkout)))
+  await access(join(machine, "session-worktrees", session.id, "manifest.json"))
+  storage.root = async () => null
+  const restarted = new ManagedSessionWorktrees(state.catalog, machine, storage)
+  await restarted.restore(session.id)
+  await access(checkout)
+  await restarted.archive(session.id)
+  await restarted.destroy(session.id)
+  await assert.rejects(access(join(machine, "session-worktrees", session.id)))
+  assert.equal(await git(source, "for-each-ref", "refs/deskfleet/sessions"), "")
+})
+
+test("restore finishes a checkout interrupted after Git registration", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const machine = join(directory, "daemon")
+  await repository(source)
+  const state = catalogFixture([{ path: source }])
+  const managed = new ManagedSessionWorktrees(state.catalog, machine)
+  const session = await managed.create("1")
+  const checkout = session.worktree.directories[0]!.path
+  await managed.archive(session.id)
+  const path = join(machine, "session-worktrees", session.id, "manifest.json")
+  const manifest = JSON.parse(await readFile(path, "utf8"))
+  manifest.state = "restoring"
+  await writeFile(path, JSON.stringify(manifest))
+  await git(source, "worktree", "add", "--detach", "--no-checkout", checkout, manifest.worktrees[0].revision)
+  await assert.rejects(access(join(checkout, "backend", "source.txt")))
+  await new ManagedSessionWorktrees(state.catalog, machine).restore(session.id)
+  assert.equal(await readFile(join(checkout, "backend", "source.txt"), "utf8"), "original backend\n")
+  await managed.destroy(session.id)
 })
 
 test("changing or resetting the root affects new sessions and preserves cleanup after restart", async context => {
@@ -301,6 +436,10 @@ test("directory sessions ignore worktree storage settings and never remove works
   const allocated = await state.catalog.createWorkspaceSession("1")
   const session = await managed.useDirectories(allocated)
   assert.equal(session.worktree.directories[0]!.path, source)
+  await managed.archive(session.id)
+  await managed.restore(session.id)
+  assert.equal(await readFile(join(source, "keep.txt"), "utf8"), "workspace")
+  assert.equal(state.sessions.size, 1)
   await managed.destroy(session.id)
   assert.equal(await readFile(join(source, "keep.txt"), "utf8"), "workspace")
 })

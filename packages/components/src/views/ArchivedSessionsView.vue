@@ -94,7 +94,7 @@ async function confirmRestore(): Promise<void> {
       </div>
       <ul v-else-if="archived.length" class="ui-card m-0 list-none p-0" :aria-label="t('archivedSessions.title')">
         <li v-for="(item, index) in archived" :key="item.session.id" class="px-4 py-3" :class="index > 0 && 'border-t border-ui-border'" :data-archived-session="item.session.id">
-          <SessionContextMenu :machine-id="item.machine?.id" :session-id="item.session.id" :title="item.session.title" :archive-state="item.session.archiveState" :disabled="!item.online || busy">
+          <SessionContextMenu :machine-id="item.machine?.id" :session-id="item.session.id" :title="item.session.title" :context="item.session.context" :archive-state="item.session.archiveState" :disabled="!item.online || busy">
             <div class="flex items-center gap-3">
               <RouterLink :to="{ name: 'session', params: { sessionId: item.session.id } }" class="min-w-0 flex-1 rounded-md text-inherit no-underline hover:text-ui-accent" :aria-label="t('archivedSessions.openLabel', { title: item.title })">
                 <span class="block truncate text-sm">{{ item.title }}</span>
@@ -110,7 +110,7 @@ async function confirmRestore(): Promise<void> {
   </div>
   <UiDialog v-if="confirming" class="w-[24rem]" :prevent-close="busy" @close="confirmingId = undefined">
     <DialogTitle class="ui-dialog-title">{{ t('agent.restore') }}</DialogTitle>
-    <p class="m-0 text-sm leading-relaxed">{{ t('agent.restoreQuestion') }}</p>
+    <p class="m-0 text-sm leading-relaxed">{{ t(confirming.session.context === 'worktree' ? 'agent.restoreWorktreeQuestion' : 'agent.restoreQuestion') }}</p>
     <p v-if="restoreError" role="alert" class="m-0 mt-3 text-sm text-ui-danger">{{ restoreError }}</p>
     <div class="ui-dialog-actions">
       <UiButton type="button" :disabled="busy" @click="confirmingId = undefined">{{ t('catalog.cancel') }}</UiButton>
