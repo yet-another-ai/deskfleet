@@ -24,15 +24,17 @@ export class BackendAgent implements AgentProvider {
       resume: async params => { this.resumes.push(params.sessionId); return { configOptions: [] } },
       setConfigOption: async () => ({ configOptions: [] }),
       prompt: async params => {
-        this.prompts.push(params.prompt.map(block => block.type === "text" ? block.text : "").join(""))
+        const prompt = params.prompt.map(block => block.type === "text" ? block.text : "").join("")
+        const toolTitle = `Read fixture file for ${prompt}`
+        this.prompts.push(prompt)
         await client.onUpdate({ sessionId: params.sessionId, update: {
-          sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Fixture Agent is waiting for approval. 中文\n" },
+          sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Fixture Agent is waiting for approval for ${prompt}. 中文\n` },
         } })
         await client.onUpdate({ sessionId: params.sessionId, update: {
-          sessionUpdate: "tool_call", toolCallId: "fixture-tool", title: "Read fixture file", status: "pending", rawInput: { path: "README.md" },
+          sessionUpdate: "tool_call", toolCallId: "fixture-tool", title: toolTitle, status: "pending", rawInput: { path: "README.md" },
         } })
         const decision = await client.requestPermission!({
-          sessionId: params.sessionId, toolCall: { toolCallId: "fixture-tool", title: "Read fixture file" },
+          sessionId: params.sessionId, toolCall: { toolCallId: "fixture-tool", title: toolTitle },
           options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
         }, new AbortController().signal)
         return { stopReason: decision.outcome.outcome === "cancelled" ? "cancelled" : "end_turn" }

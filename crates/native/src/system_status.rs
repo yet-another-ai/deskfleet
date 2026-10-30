@@ -1,6 +1,6 @@
 //! On-demand machine CPU and memory sampling, independent of display access.
 
-use std::sync::{LazyLock, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 use sysinfo::{MINIMUM_CPU_UPDATE_INTERVAL, System};
@@ -8,7 +8,7 @@ use sysinfo::{MINIMUM_CPU_UPDATE_INTERVAL, System};
 // Resume with a fresh baseline after a hidden panel stops polling. Otherwise the
 // first CPU value would average over the entire time the panel was closed.
 const MAX_CPU_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
-static COLLECTOR: LazyLock<Mutex<Collector>> = LazyLock::new(|| Mutex::new(Collector::new()));
+static COLLECTOR: Mutex<Option<Collector>> = Mutex::new(None);
 
 /// One transient machine-level measurement. Memory values are bytes.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +40,8 @@ pub struct SystemStatus {
 /// Failures to run or synchronize the machine sampler.
 #[derive(Debug, thiserror::Error)]
 pub enum SystemStatusError {
+    #[error("cannot read system status: {0}")]
+    Read(#[from] sysinfo::Error),
     #[error("system status worker failed: {0}")]
     Worker(#[from] tokio::task::JoinError),
     #[error("system status collector is unavailable after a worker failure")]
@@ -52,18 +54,18 @@ struct Collector {
 }
 
 impl Collector {
-    fn new() -> Self {
-        Self {
-            system: System::new(),
+    fn new() -> Result<Self, SystemStatusError> {
+        Ok(Self {
+            system: System::new()?,
             previous: None,
-        }
+        })
     }
 
-    fn sample(&mut self) -> SystemStatus {
+    fn sample(&mut self) -> Result<SystemStatus, SystemStatusError> {
         if let Some((at, snapshot)) = &self.previous
             && at.elapsed() < MINIMUM_CPU_UPDATE_INTERVAL
         {
-            return snapshot.clone();
+            return Ok(snapshot.clone());
         }
         if self
             .previous
@@ -89,12 +91,12 @@ impl Collector {
                 .map(|cpu| cpu.brand().to_owned())
                 .unwrap_or_default(),
             logical_cpu_count: self.system.cpus().len(),
-            os: System::long_os_version().unwrap_or_else(|| std::env::consts::OS.to_owned()),
+            os: System::long_os_version().unwrap_or_else(|_| std::env::consts::OS.to_owned()),
             arch: std::env::consts::ARCH,
-            uptime_seconds: System::uptime(),
+            uptime_seconds: System::uptime()?,
         };
         self.previous = Some((Instant::now(), snapshot.clone()));
-        snapshot
+        Ok(snapshot)
     }
 }
 
@@ -103,14 +105,17 @@ impl Collector {
 /// concurrent requests reuse the same measurement. No background timer runs.
 ///
 /// # Errors
-/// Returns an error when the worker fails or a preceding panic poisoned the
-/// collector lock.
+/// Returns an error when system information cannot be read, the worker fails,
+/// or a preceding panic poisoned the collector lock.
 pub async fn system_status() -> Result<SystemStatus, SystemStatusError> {
     tokio::task::spawn_blocking(|| {
-        COLLECTOR
+        let mut collector = COLLECTOR
             .lock()
-            .map_err(|_| SystemStatusError::CollectorUnavailable)
-            .map(|mut collector| collector.sample())
+            .map_err(|_| SystemStatusError::CollectorUnavailable)?;
+        match collector.as_mut() {
+            Some(collector) => collector.sample(),
+            None => collector.insert(Collector::new()?).sample(),
+        }
     })
     .await?
 }
@@ -121,20 +126,20 @@ mod tests {
 
     #[test]
     fn nearby_viewers_share_a_primed_measurement() {
-        let mut collector = Collector::new();
+        let mut collector = Collector::new().unwrap();
         let started = Instant::now();
-        let first = collector.sample();
+        let first = collector.sample().unwrap();
         assert!(started.elapsed() >= MINIMUM_CPU_UPDATE_INTERVAL);
-        assert_eq!(collector.sample(), first);
+        assert_eq!(collector.sample().unwrap(), first);
     }
 
     #[test]
     fn resuming_after_a_pause_primes_a_fresh_cpu_window() {
-        let mut collector = Collector::new();
-        let first = collector.sample();
+        let mut collector = Collector::new().unwrap();
+        let first = collector.sample().unwrap();
         collector.previous.as_mut().unwrap().0 -= MAX_CPU_SAMPLE_INTERVAL;
         let started = Instant::now();
-        let resumed = collector.sample();
+        let resumed = collector.sample().unwrap();
         assert!(started.elapsed() >= MINIMUM_CPU_UPDATE_INTERVAL);
         assert!(resumed.sampled_at > first.sampled_at);
     }

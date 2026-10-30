@@ -116,6 +116,8 @@ mod tests {
     }
 
     async fn assert_health_on_each(listeners: Vec<TcpListener>) {
+        // This test bypasses AppState initialization.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let mut server = HttpServer::new(|| App::new().configure(deskfleet_server::configure))
             .workers(1)
             .disable_signals();

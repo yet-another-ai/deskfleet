@@ -347,6 +347,9 @@ Cargo and pnpm and does not apply that release-age filter.
 Built-in managers cover Cargo, pnpm, Compose images, and GitHub Actions, including
 the mise and sccache action inputs. Keep Renovate's Node, pnpm, and Rust `constraints`
 aligned with `mise.toml` so lockfile generation uses the repository's tools.
+The `renovate-config` manager's `tool-constraint` updates are disabled so these
+constraints change only with the locked toolchain; configuration migrations remain
+enabled.
 Node types stay on 24 because the standalone daemon's SEA build targets Node 24.
 PostgreSQL major updates use a separate group and require Dependency Dashboard
 approval so the development volume migration or reset can be reviewed explicitly.
@@ -357,6 +360,10 @@ manually: review or rebase their patches, update the version-specific
 adapter tests and daemon packaging smoke checks. Other ACP dependencies remain
 eligible for Renovate updates. Preserve the TypeScript 6 npm aliases used by
 vue-tsc when reviewing the grouped PR.
+
+Renovate ignores `vendor/`. Vendored packages preserve their upstream manifests
+and sources except for documented local patches; update them together with their
+upstream package and patch notes.
 
 Toolchain and APM updates remain manual. Renovate supports mise lockfiles, but
 [lock regeneration requires host support](https://docs.renovatebot.com/modules/manager/mise/#trust-model-for-lock-file-updates)

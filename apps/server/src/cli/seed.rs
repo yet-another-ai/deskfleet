@@ -1,5 +1,5 @@
 //! Explicit development fixture; ordinary startup never provisions an account.
-use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
+use argon2::{Argon2, PasswordHasher};
 use deskfleet_control_store::ControlStore;
 use std::io;
 
@@ -8,10 +8,9 @@ const PASSWORD: &str = "deskfleet-dev-password";
 
 pub(super) async fn run(store: &ControlStore) -> io::Result<()> {
     let password_hash = tokio::task::spawn_blocking(|| {
-        let salt =
-            SaltString::encode_b64(uuid::Uuid::new_v4().as_bytes()).map_err(io::Error::other)?;
+        let salt = uuid::Uuid::new_v4();
         Argon2::default()
-            .hash_password(PASSWORD.as_bytes(), &salt)
+            .hash_password_with_salt(PASSWORD.as_bytes(), salt.as_bytes())
             .map(|hash| hash.to_string())
             .map_err(io::Error::other)
     })
