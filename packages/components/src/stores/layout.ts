@@ -40,6 +40,8 @@ export function resetMermaidSidebarTabs(): void {
   activeDetailsTab.value = "changes"
   pendingMermaidLocate.value = null
   nextId = 1
+  clearTimeout(locatedTimer)
+  locatedTimer = undefined
 }
 
 export function performMermaidLocateDom(request: MermaidLocateRequest | null = pendingMermaidLocate.value): boolean {

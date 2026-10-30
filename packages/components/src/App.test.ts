@@ -37,11 +37,24 @@ async function workspaceAction(wrapper: VueWrapper, label: string): Promise<void
 const chips = (wrapper: VueWrapper) => wrapper.findAll("[data-composer-context]").map(chip => chip.text())
 function panel(wrapper: VueWrapper) { return wrapper.get<HTMLElement>('aside[aria-label="Changes"]') }
 
-// Compile lazy route modules during setup so a cold Session import cannot outlive
-// a navigation test's deadline and complete during the following test.
+// Compile lazy route modules during setup so a cold import cannot outlive a navigation
+// test's deadline and complete during the following test (macOS CI Cluster B).
 beforeAll(async () => {
-  await Promise.all([import("./views/SessionView.vue"), import("./views/WorktreeView.vue")])
+  await Promise.all([
+    import("./views/NewSessionView.vue"),
+    import("./views/SessionView.vue"),
+    import("./views/WorktreeView.vue"),
+    import("./views/ArchivedSessionsView.vue"),
+    import("./views/RemoteControlView.vue"),
+    import("./views/SettingsView.vue"),
+    import("./components/settings/PreferencesSettings.vue"),
+    import("./components/settings/AppearanceSettings.vue"),
+    import("./components/settings/NotificationsSettings.vue"),
+    import("./components/settings/PermissionsSettings.vue"),
+    import("./components/settings/AboutSettings.vue"),
+  ])
 })
+
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -52,8 +65,10 @@ beforeEach(() => {
     directories: path === "/" ? ["notes", "code", "replacement"].map(name => ({ name, path: `/${name}`, hidden: false })) : [],
   }))
 })
-afterEach(() => {
+afterEach(async () => {
   for (const { wrapper, pinia } of mounted.splice(0)) { wrapper.unmount(); disposePinia(pinia) }
+  // Shared hash router must reset even when a prior test timed out mid-navigation.
+  await router.replace("/")
   vi.restoreAllMocks()
   configureClient(host)
   i18n.global.locale.value = "en-US"
@@ -245,7 +260,8 @@ test("a session links to its own read-only worktree", async () => {
   expect(worktreeLink.text()).toBe("session-branch")
   expect(worktreeLink.attributes("title")).toBe("session-branch")
   await worktreeLink.trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("worktree"))
+  // Preloaded WorktreeView still needs headroom when macOS CI shares the runner with rustc.
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("worktree"), { timeout: 3_000 })
   expect(wrapper.get("main header").text()).toContain("Worktree")
   expect(wrapper.get("main").text()).toContain("/worktrees/api/session")
   expect(button(wrapper, "New session")).toBeUndefined()
