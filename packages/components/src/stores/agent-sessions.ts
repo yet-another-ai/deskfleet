@@ -313,7 +313,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       }
       for (const current of Object.values(sessions.value)) {
         const record = received.get(current.id)
-        if (record ? sequenceCompare(current.lastEventSeq, record.lastEventSeq) > 0 : !!views.value[current.id]?.snapshot || !listedBefore.has(current.id) || sequenceCompare(current.lastEventSeq, listedBefore.get(current.id)!) > 0) received.set(current.id, current)
+        if (record ? sequenceCompare(current.lastEventSeq, record.lastEventSeq) > 0 : !listedBefore.has(current.id) || sequenceCompare(current.lastEventSeq, listedBefore.get(current.id)!) > 0) received.set(current.id, current)
       }
       sessions.value = Object.fromEntries(received)
       for (const id of Object.keys(activity.value)) if (!received.has(id)) delete activity.value[id]
