@@ -111,7 +111,7 @@ export function serializeCentralRequestError(error: unknown): SerializedCentralR
   // Main-process stacks include user-specific installation directories. Keep
   // bundle names and source coordinates, without sending those local paths.
   const stack = error.stack?.replace(
-    /^(\s*at (?:.*? \()?)(?:file:\/\/|[A-Za-z]:[\\/]|\/)(.*?)(:\d+(?::\d+)?\)?\s*)$/gmu,
+    /^(\s*at (?:async )?(?:.*? \()?)(?:file:\/\/|[A-Za-z]:[\\/]|\/)(.*?)(:\d+(?::\d+)?\)?\s*)$/gmu,
     (_frame, prefix: string, path: string, suffix: string) => `${prefix}app:///${path.split(/[\\/]/u).at(-1)}${suffix}`,
   )
   return { name: error.name, message: error.message, stack, diagnostics: structuredClone(error.diagnostics) }

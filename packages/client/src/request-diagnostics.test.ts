@@ -94,3 +94,24 @@ test("serialized main stacks omit installation paths while retaining source coor
   for (const path of ["alice", "Users", "Applications", "home", "AppData", "app.asar"]) expect(serialized.stack).not.toContain(path)
   expect(error.stack).toContain("/Users/alice/")
 })
+
+test.each([
+  "file:///Users/alice/Applications/DeskFleet.app/main.js:12:3",
+  "/home/alice/deskfleet/main.js:12:3",
+  "C:\\Users\\alice\\AppData\\Local\\deskfleet\\main.js:12:3",
+  "file:///C:/Users/alice/AppData/Local/deskfleet/main.js:12:3",
+])("serialized async stack frames omit local paths: %s", location => {
+  const error = centralRequestFailure(new TypeError("fetch failed"), { method: "GET", path: "/api/site", elapsedMs: 1 }, [
+    "Error",
+    `    at async ${location}`,
+    `    at async loadConfiguration (${location})`,
+  ].join("\n"))
+  const serialized = serializeCentralRequestError(error)!
+  expect(serialized.stack).toBe([
+    "TypeError: fetch failed",
+    "    at async app:///main.js:12:3",
+    "    at async loadConfiguration (app:///main.js:12:3)",
+  ].join("\n"))
+  expect(serialized.stack).not.toContain("alice")
+  expect(error.stack).toContain(location)
+})
