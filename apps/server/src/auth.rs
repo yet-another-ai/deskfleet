@@ -4,7 +4,9 @@ mod account;
 pub mod config;
 mod desktop;
 mod github;
+mod google;
 mod mail;
+mod oauth;
 mod passkeys;
 mod passwords;
 
@@ -58,6 +60,8 @@ pub fn configure(config: &mut web::ServiceConfig) {
         .route("/auth/login", web::post().to(passwords::login))
         .route("/auth/github/start", web::post().to(github::start))
         .route("/auth/github/callback", web::get().to(github::callback))
+        .route("/auth/google/start", web::post().to(google::start))
+        .route("/auth/google/callback", web::get().to(google::callback))
         .route("/auth/recovery", web::post().to(passwords::recovery))
         .route(
             "/auth/recovery/complete",
@@ -279,6 +283,7 @@ async fn public_config(req: HttpRequest, state: web::Data<AppState>) -> Result<H
         .json(json!({
             "webUrl": state.auth.config.web_url,
             "githubEnabled": state.auth.config.github.is_some(),
+            "googleEnabled": state.auth.config.google.is_some(),
             "registrationEnabled": state.store.registration_enabled().await?,
             "termsOfServiceUrl": settings.terms_of_service_url,
             "privacyTermsUrl": settings.privacy_terms_url,

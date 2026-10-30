@@ -106,6 +106,7 @@ URLs and use the database/Redis TLS options required by those services.
 | `DESKFLEET_AUTH_WEB_URL` | Set explicitly to the HTTPS Web origin. Used for email links, Passkeys, Electron authorization, and Stripe return URLs. Defaults to the first Web origin, otherwise the API origin. |
 | `DESKFLEET_WEB_ORIGINS` | Empty by default; can remain unset for same-origin hosting. For split hosts, set the exact Web origin. Supports comma-separated origins, credentialed CORS, and `X-CSRF-Token`. |
 | `DESKFLEET_GITHUB_CLIENT_ID`, `DESKFLEET_GITHUB_CLIENT_SECRET` | Optional GitHub OAuth app credentials; configure both and register `<DESKFLEET_PUBLIC_URL>/api/auth/github/callback` as the callback URL. |
+| `DESKFLEET_GOOGLE_CLIENT_ID`, `DESKFLEET_GOOGLE_CLIENT_SECRET` | Optional Google OAuth Web application credentials; configure both and register `<DESKFLEET_PUBLIC_URL>/api/auth/google/callback` as an authorized redirect URI. See [Google login setup](self-hosted.md#login-and-mail-delivery). |
 | `DESKFLEET_WEBAUTHN_RP_ID` | Defaults to the Web hostname. Keep the hostname and RP ID stable for existing Passkeys. |
 | `DESKFLEET_TRUSTED_PROXY_IPS` | Empty by default. Comma-separated exact IPs, not CIDRs, trusted to supply `X-Real-IP` for authentication rate limits. |
 | `DESKFLEET_DEPLOYMENT_MODE` | Set `hosted`. Default `self-hosted` has unlimited allowances and rejects Stripe configuration. |

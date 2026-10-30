@@ -484,7 +484,7 @@ async fn postgres_migration_can_revert_and_reapply_in_isolated_schema() {
     let row = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
-            "SELECT EXISTS(SELECT 1 FROM cp_teams WHERE name='existing team') AND to_regclass('cp_turn_usage') IS NOT NULL AND to_regclass('cp_site_admins') IS NOT NULL AND to_regclass('cp_site_audit') IS NOT NULL AND EXISTS(SELECT 1 FROM cp_site_settings WHERE singleton AND site_name='DeskFleet' AND announcement='' AND allow_team_creation AND terms_of_service_url='' AND privacy_terms_url='') AS upgraded",
+            "SELECT EXISTS(SELECT 1 FROM cp_teams WHERE name='existing team') AND to_regclass('cp_google_identities') IS NOT NULL AND to_regclass('cp_turn_usage') IS NOT NULL AND to_regclass('cp_site_admins') IS NOT NULL AND to_regclass('cp_site_audit') IS NOT NULL AND EXISTS(SELECT 1 FROM cp_site_settings WHERE singleton AND site_name='DeskFleet' AND announcement='' AND allow_team_creation AND terms_of_service_url='' AND privacy_terms_url='') AS upgraded",
         ))
         .await
         .unwrap()
@@ -527,7 +527,7 @@ async fn postgres_migration_can_revert_and_reapply_in_isolated_schema() {
     let row = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
-            "SELECT to_regclass('cp_users') IS NULL AND to_regclass('cp_turn_usage') IS NULL AND to_regclass('cp_site_admins') IS NULL AND to_regclass('cp_site_settings') IS NULL AND to_regclass('cp_site_audit') IS NULL AND NOT EXISTS(SELECT 1 FROM cp_migrations WHERE version IN (7,8)) AS removed",
+            "SELECT to_regclass('cp_users') IS NULL AND to_regclass('cp_google_identities') IS NULL AND to_regclass('cp_turn_usage') IS NULL AND to_regclass('cp_site_admins') IS NULL AND to_regclass('cp_site_settings') IS NULL AND to_regclass('cp_site_audit') IS NULL AND NOT EXISTS(SELECT 1 FROM cp_migrations WHERE version IN (7,8,17)) AS removed",
         ))
         .await
         .unwrap()
