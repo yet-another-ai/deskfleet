@@ -12,6 +12,7 @@ import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useProvidersStore } from "../stores/providers.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
+import { deferred } from "../test/desktop-media.ts"
 import ScheduledTasksView from "./ScheduledTasksView.vue"
 import { selectOption, setTime } from "../test/controls.ts"
 import { DOMWrapper } from "@vue/test-utils"
@@ -224,10 +225,17 @@ test("run errors remain visible and a later successful run links to its session"
   expect(wrapper.text()).toContain("Queued or running")
 })
 
-test("runs a task from its list row without opening it", async () => {
+test("runs a task from its list row and disables machine switching until the request completes", async () => {
   const { wrapper, rpc, router } = await setup([task()])
+  const response = deferred<ScheduleRun>()
+  rpc.mockImplementationOnce(() => response.promise)
   await wrapper.get("[data-schedule-run]").trigger("click")
   await flushPromises()
+  const tabs = wrapper.get('nav[aria-label="Machine"]').findAll("button")
+  expect(tabs.every(tab => tab.attributes("disabled") !== undefined)).toBe(true)
+  response.resolve({ id: "run-1", state: "running", scheduledFor: "2026-10-26T01:00:00Z", startedAt: "2026-10-26T01:00:00Z" })
+  await flushPromises()
+  expect(tabs.every(tab => tab.attributes("disabled") === undefined)).toBe(true)
   expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleRun", { scheduleId: "schedule-1" })
   expect(router.currentRoute.value.params.scheduleId).toBeFalsy()
 })
@@ -341,11 +349,18 @@ test("an offline transition disables actions and rejects a late list response", 
   expect(wrapper.text()).toContain("This machine is offline")
 })
 
-test("machine choice uses the account target switch", async () => {
+test("machine tabs show the current target and allow switching to an offline machine", async () => {
   const { wrapper, account } = await setup()
   const selectMachine = vi.spyOn(account, "selectMachine")
-  await selectOption(wrapper, '[data-control-name="schedule-machine"]', account.machines.value.find(machine => machine.id === "machine-2")!.name)
-  expect(selectMachine).toHaveBeenCalledWith("machine-2")
+  account.machines.value[1]!.online = false
+  await flushPromises()
+  const tabs = wrapper.get('nav[aria-label="Machine"]').findAll("button")
+  expect(tabs.map(tab => tab.text())).toEqual(["Build machine", "Other machine Offline"])
+  expect(tabs[0]!.attributes("aria-current")).toBe("page")
+  expect(tabs[1]!.attributes("aria-current")).toBeUndefined()
+  expect(tabs[1]!.attributes("disabled")).toBeUndefined()
+  await tabs[1]!.trigger("click")
+  expect(selectMachine).toHaveBeenCalledExactlyOnceWith("machine-2")
 })
 
 test("a removed saved provider never silently falls back to the machine default", async () => {

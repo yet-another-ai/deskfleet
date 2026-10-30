@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../components/common/UiButton.vue"
-import UiSelect from "../components/common/UiSelect.vue"
+import MachineTabs from "../components/account/MachineTabs.vue"
 import { CalendarClock, Plus, RefreshCw } from "@lucide/vue"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -59,11 +59,11 @@ async function remove(): Promise<void> {
             <p class="m-0 mt-1 text-sm text-ui-text-muted">{{ t('schedules.description', { machine: machineName }) }}</p>
           </div>
           <div class="flex items-center gap-2">
-            <UiSelect v-if="account && account.machines.value.length > 1" class="w-auto max-w-48" name="schedule-machine" :aria-label="t('schedules.machine')" :model-value="fleet.targetId" :options="account.machines.value.map(machine => ({ value: machine.id, label: machine.name }))" :disabled="pending" @update:model-value="account.selectMachine($event)" />
             <UiButton type="button" class="px-2" :aria-label="t('catalog.refresh')" :title="t('catalog.refresh')" :disabled="!online || loading || pending" @click="schedules.refresh"><RefreshCw :size="14" aria-hidden="true" /></UiButton>
             <RouterLink v-if="online && loaded" :to="{ name: 'schedules', params: { scheduleId: 'new' } }" data-schedule-new class="ui-button-primary no-underline"><Plus :size="15" aria-hidden="true" />{{ t('schedules.create') }}</RouterLink>
           </div>
         </div>
+        <MachineTabs :label="t('schedules.machine')" :disabled="pending" />
       </template>
 
       <p v-if="!online" role="status" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t(schedules.available ? 'schedules.offline' : 'schedules.signIn') }}</p>

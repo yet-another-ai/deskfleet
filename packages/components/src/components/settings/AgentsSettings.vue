@@ -10,6 +10,7 @@ import { computed, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentProviderConfig, AgentProviderInput, ProviderSnapshot, ProviderTestResult } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
+import MachineTabs from "../account/MachineTabs.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import ProviderDialog from "./ProviderDialog.vue"
 import MenuPopover from "../common/MenuPopover.vue"
@@ -20,8 +21,6 @@ const platformClient = usePlatformClient()
 const { t } = useI18n()
 const fleet = useFleetStore()
 const account = useAccountSession()
-// The roster belongs to the account; selecting a tab remounts this page in that
-// machine's runtime, keeping provider operations and setup terminals together.
 const machines = computed(() => account?.machines.value ?? fleet.machines)
 const machine = computed(() => machines.value.find(value => value.id === fleet.targetId))
 const available = computed(() => !!machine.value?.online)
@@ -93,13 +92,7 @@ async function remove(): Promise<void> {
       <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.add") }}
     </UiButton>
   </div>
-  <nav :aria-label="t('providers.machines')" class="mb-5 flex gap-5 overflow-x-auto border-b border-ui-border">
-    <button v-for="item in machines" :key="item.id" type="button" class="relative flex shrink-0 cursor-pointer items-center gap-2 border-b-2 px-0 pb-3 text-sm" :class="item.id === fleet.targetId ? 'border-ui-accent text-ui-text' : 'border-transparent text-ui-text-muted hover:text-ui-text'" :aria-current="item.id === fleet.targetId ? 'page' : undefined" @click="account?.selectMachine(item.id)">
-      <span class="h-1.5 w-1.5 rounded-full" :class="item.online ? 'bg-ui-success' : 'bg-ui-text-muted'" aria-hidden="true" />
-      {{ item.name }}
-      <span v-if="!item.online" class="sr-only">{{ t("machine.offline") }}</span>
-    </button>
-  </nav>
+  <MachineTabs :label="t('providers.machines')" class="mb-5" />
   <p v-if="!available" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t("providers.offline") }}</p>
   <div v-else>
     <div v-if="error" class="mb-4 flex items-center justify-between gap-4">

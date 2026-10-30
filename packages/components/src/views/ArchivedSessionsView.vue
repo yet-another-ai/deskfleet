@@ -5,21 +5,19 @@ import { DialogTitle } from "reka-ui"
 import { computed, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
-import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useFleetStore } from "../stores/fleet.ts"
+import MachineTabs from "../components/account/MachineTabs.vue"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import HoldButton from "../components/common/HoldButton.vue"
 import IconButton from "../components/common/IconButton.vue"
 import UiButton from "../components/common/UiButton.vue"
 import UiDialog from "../components/common/UiDialog.vue"
-import UiSelect from "../components/common/UiSelect.vue"
 import SessionContextMenu from "../components/session/SessionContextMenu.vue"
 
 const { t } = useI18n()
 const router = useRouter()
-const account = useAccountSession()
 const sessionLabel = useSessionLabel()
 const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
@@ -85,11 +83,9 @@ async function confirmAction(): Promise<void> {
           <h1 class="ui-page-title">{{ t('archivedSessions.title') }}</h1>
           <p class="m-0 mt-1 text-sm text-ui-text-muted">{{ t('archivedSessions.description') }}</p>
         </div>
-        <div class="flex items-center gap-2">
-          <UiSelect v-if="account && account.machines.value.length > 1" class="w-auto max-w-48" name="archive-machine" :aria-label="t('archivedSessions.machine')" :model-value="fleet.targetId" :options="account.machines.value.map(machine => ({ value: machine.id, label: machine.name }))" :disabled="busy" @update:model-value="account.selectMachine($event)" />
-          <UiButton type="button" class="px-2" :aria-label="t('catalog.refresh')" :title="t('catalog.refresh')" :disabled="isLoading || busy" @click="refresh()"><RefreshCw :size="14" aria-hidden="true" /></UiButton>
-        </div>
+        <UiButton type="button" class="px-2" :aria-label="t('catalog.refresh')" :title="t('catalog.refresh')" :disabled="isLoading || busy" @click="refresh()"><RefreshCw :size="14" aria-hidden="true" /></UiButton>
       </div>
+      <MachineTabs :label="t('archivedSessions.machine')" :disabled="busy" />
       <div v-if="loadError" class="ui-notice m-0 justify-between border-ui-danger/30 bg-ui-danger/8">
         <p role="alert" class="m-0 text-ui-danger">{{ loadMessage }}</p>
         <UiButton type="button" :disabled="isLoading" @click="refresh()">{{ t('folderPicker.retry') }}</UiButton>

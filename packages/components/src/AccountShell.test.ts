@@ -312,8 +312,9 @@ test("keeps archived lists and their Conversations return path scoped to the sel
   expect(router.currentRoute.value.path).toBe("/sessions/30")
   await router.push("/sessions/archived"); await flushPromises()
 
-  await page().get('aside button[data-machine-id="m2"]').trigger("click")
+  await page().get('main nav[aria-label="Machine"]').findAll("button").find(button => button.text() === "Laptop Offline")!.trigger("click")
   await settled(() => expect(page().get("main").text()).toContain("Archived conversation m2"))
+  expect(page().get('main nav[aria-label="Machine"] [aria-current="page"]').text()).toBe("Laptop Offline")
   expect(page().get("main").text()).not.toContain("Archived conversation m1")
   expect(router.currentRoute.value.name).toBe("archived-sessions")
   expect(router.currentRoute.value.path).toBe("/sessions/archived")
