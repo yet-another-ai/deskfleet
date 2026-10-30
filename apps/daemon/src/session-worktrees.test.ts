@@ -162,6 +162,73 @@ test("archive discards working files, retains commits across Git GC, and restore
   assert.equal(state.sessions.size, 0)
 })
 
+test("archive preflight captures legacy checkout revisions and preserves final commits or a missing-checkout fallback", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const machine = join(directory, "daemon")
+  await repository(source)
+  const state = catalogFixture([{ path: source }])
+  const managed = new ManagedSessionWorktrees(state.catalog, machine)
+  const session = await managed.create("1")
+  const checkout = session.worktree.directories[0]!.path
+  const path = join(machine, "session-worktrees", session.id, "manifest.json")
+  const manifest = JSON.parse(await readFile(path, "utf8"))
+  delete manifest.worktrees[0].revision
+  await writeFile(path, JSON.stringify(manifest))
+
+  await managed.prepareArchive(session.id)
+  const prepared = JSON.parse(await readFile(path, "utf8"))
+  assert.equal(prepared.state, undefined)
+  assert.equal(prepared.worktrees[0].revision, await git(checkout, "rev-parse", "HEAD"))
+  assert.equal(await git(source, "rev-parse", prepared.worktrees[0].reference), prepared.worktrees[0].revision)
+  await writeFile(join(checkout, "backend", "source.txt"), "final commit before shutdown\n")
+  await git(checkout, "add", ".")
+  await git(checkout, "-c", "user.name=deskfleet test", "-c", "user.email=test@example.invalid", "commit", "--no-gpg-sign", "-m", "final work")
+  const finalRevision = await git(checkout, "rev-parse", "HEAD")
+  await managed.archive(session.id)
+  await managed.restore(session.id)
+  assert.equal(await git(checkout, "rev-parse", "HEAD"), finalRevision)
+
+  await managed.prepareArchive(session.id)
+  await git(source, "worktree", "remove", "--force", checkout)
+  await new ManagedSessionWorktrees(state.catalog, machine).archive(session.id)
+  await managed.restore(session.id)
+  assert.equal(await git(checkout, "rev-parse", "HEAD"), finalRevision)
+  await managed.destroy(session.id)
+})
+
+test("archive preflight leaves every checkout and prior state intact when a legacy revision is unavailable", async context => {
+  const directory = await fixture(context)
+  const source = join(directory, "source")
+  const second = join(directory, "second")
+  const machine = join(directory, "daemon")
+  await repository(source)
+  await repository(second)
+  const state = catalogFixture([{ path: source }, { path: second }])
+  const managed = new ManagedSessionWorktrees(state.catalog, machine)
+  const session = await managed.create("1")
+  const [firstPath, secondPath] = session.worktree.directories.map(binding => binding.path) as [string, string]
+  const path = join(machine, "session-worktrees", session.id, "manifest.json")
+  const manifest = JSON.parse(await readFile(path, "utf8"))
+  for (const worktree of manifest.worktrees) delete worktree.revision
+  const original = JSON.stringify(manifest)
+  await writeFile(path, original)
+  await writeFile(join(firstPath, "uncommitted.txt"), "keep this work\n")
+  await git(second, "worktree", "remove", "--force", secondPath)
+  await assert.rejects(managed.prepareArchive(session.id), /original Git revision is unavailable/u)
+  await assert.rejects(managed.archive(session.id), /original Git revision is unavailable/u)
+  assert.equal(await readFile(path, "utf8"), original)
+  assert.equal(await readFile(join(firstPath, "uncommitted.txt"), "utf8"), "keep this work\n")
+  assert.equal(await git(source, "for-each-ref", "refs/deskfleet/sessions"), "")
+
+  await mkdir(secondPath)
+  await writeFile(join(secondPath, "recoverable.txt"), "keep these remaining files\n")
+  await assert.rejects(managed.archive(session.id), /original Git revision is unavailable/u)
+  assert.equal(await readFile(join(secondPath, "recoverable.txt"), "utf8"), "keep these remaining files\n")
+  assert.equal(await readFile(path, "utf8"), original)
+  assert.equal(state.sessions.size, 1)
+})
+
 test("archive and restore resume partial multi-repository operations without resetting restored files", async context => {
   const directory = await fixture(context)
   const source = join(directory, "source")

@@ -704,6 +704,7 @@ export class AgentSessions {
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
       if (!["ready", "provision_failed"].includes(snapshot.session.lifecycle)) throw new Error("Wait for Session provisioning or deletion before archiving")
+      await this.#catalog.prepareSessionWorktreeArchive(sessionId)
       const session = { ...snapshot.session, archiveState: "archiving" as const, updatedAt: timestamp() }
       await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
     })

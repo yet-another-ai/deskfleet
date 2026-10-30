@@ -472,6 +472,80 @@ test("archive removes generated files but retains history, and restore recreates
   assert.deepEqual(f.provider.resumes, ["provider-conversation"])
 })
 
+test("archive rejects an unrecoverable legacy checkout before changing Session state", async t => {
+  for (const archiveState of ["active", "archived"] as const) {
+    await t.test(archiveState, async t => {
+      const f = await setup(t)
+      const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+      const revision = (await execute("git", ["-C", cwd, "rev-parse", "HEAD"])).stdout.trim()
+      const path = join(f.directory, "daemon", "session-worktrees", f.sessionId, "manifest.json")
+      const manifest = JSON.parse(await readFile(path, "utf8"))
+      delete manifest.worktrees[0].revision
+      await writeFile(path, JSON.stringify(manifest))
+      await execute("git", ["-C", f.repository, "worktree", "remove", cwd])
+      if (archiveState === "archived") {
+        // Archives created before checkout reclamation kept their manifests
+        // and files without recording a committed revision.
+        await f.service.journal.serial(f.sessionId, async () => {
+          const snapshot = await f.read()
+          const session = { ...snapshot.session, archiveState }
+          await f.service.journal.commit(snapshot, { session, events: [f.service.journal.event(f.sessionId, "session", session)] })
+        })
+      }
+      const before = (await f.read()).session
+      const closes = f.provider.closeCount
+      const failed = { sessionId: f.sessionId, operationId: randomUUID() }
+      await assert.rejects(f.service.handle("_deskfleet/session/archive", failed, f.actor), /original Git revision is unavailable/u)
+      const after = (await f.read()).session
+      // The failed command is audited without emitting a Session transition.
+      assert.deepEqual(after, { ...before, lastEventSeq: after.lastEventSeq })
+      assert.ok((await f.service.journal.history(f.sessionId, before.lastEventSeq, 20)).every(event => event.kind === "command"))
+      assert.equal(f.provider.closeCount, closes)
+      assert.equal((await f.service.journal.command(failed.operationId))?.status, "failed")
+
+      // Repairing the externally removed checkout lets the same Session retry
+      // normally without editing its persisted archive state.
+      await execute("git", ["-C", f.repository, "worktree", "add", "--detach", cwd, revision])
+      const archived = await f.service.handle("_deskfleet/session/archive", {
+        sessionId: f.sessionId, operationId: randomUUID(),
+      }, f.actor) as AgentSnapshot
+      assert.equal(archived.session.archiveState, "archived")
+      const restored = await f.service.handle("_deskfleet/session/restore", {
+        sessionId: f.sessionId, operationId: randomUUID(),
+      }, f.actor) as AgentSnapshot
+      assert.equal(restored.session.archiveState, "active")
+      assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+    })
+  }
+})
+
+test("archive retains a legacy revision before shutdown and captures the final committed HEAD afterward", async t => {
+  for (const duringShutdown of ["remove checkout", "commit changes"] as const) {
+    await t.test(duringShutdown, async t => {
+      const f = await setup(t)
+      const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+      const path = join(f.directory, "daemon", "session-worktrees", f.sessionId, "manifest.json")
+      const manifest = JSON.parse(await readFile(path, "utf8"))
+      delete manifest.worktrees[0].revision
+      await writeFile(path, JSON.stringify(manifest))
+      f.service.onSessionArchive(async () => {
+        if (duringShutdown === "remove checkout") {
+          await execute("git", ["-C", f.repository, "worktree", "remove", cwd])
+        } else {
+          await writeFile(join(cwd, "README.md"), "committed during shutdown\n")
+          await execute("git", ["-C", cwd, "add", "."])
+          await execute("git", ["-C", cwd, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--no-gpg-sign", "-m", "shutdown"])
+        }
+      })
+      await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+      assert.equal((await f.read()).session.archiveState, "archived")
+      await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+      assert.equal((await f.read()).session.archiveState, "active")
+      assert.equal(await readFile(join(cwd, "README.md"), "utf8"), duringShutdown === "remove checkout" ? "fixture\n" : "committed during shutdown\n")
+    })
+  }
+})
+
 test("failed archive retains archiving admission state and retry survives service restart", async t => {
   const f = await setup(t)
   let failures = 1

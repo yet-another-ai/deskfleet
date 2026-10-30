@@ -139,12 +139,17 @@ source directories untouched. Permanent Session deletion is not exposed by
 first-release user interfaces or user-facing APIs;
 the destructive operations documented below describe existing implementation.
 
-Archive requires the owning machine online. The daemon blocks new execution and
-backlog dispatch, closes the provider and its pending permission callbacks without
-granting them, and stops Session-owned terminals while retaining their final
-output and metadata. It records the resulting execution/permission transitions
-without deleting their history, then removes generated checkouts. Archive
-completes only after live resources have closed and checkout cleanup succeeds.
+Archive requires the owning machine online. Before changing archive state, the
+daemon prepares retained commits for every generated checkout. If a checkout has
+no recoverable commit, the request fails without changing archive state or stopping
+resources. The daemon then blocks new execution and backlog dispatch, closes the
+provider and its pending permission callbacks without granting them, and stops
+Session-owned terminals while retaining their final output and metadata. It
+records the resulting execution/permission transitions
+without deleting their history, captures committed HEADs again after shutdown,
+then removes generated checkouts. The prepared refs remain a fallback if a checkout
+disappears during shutdown. Archive completes only after live resources have closed
+and checkout cleanup succeeds.
 Cleanup failures remain retryable. There is no queued offline archive or
 background cleanup of previously archived checkouts in this release; an explicit
 archive request can reclaim a previously archived Session's retained checkouts.
@@ -386,9 +391,10 @@ Offline history stays unread until the owning daemon reconnects and the open
 conversation can acknowledge it.
 
 Session lifecycle is `provisioning`, `ready`, `provision_failed`, or `deleting`.
-Independent `archiveState` is `active`, `archiving`, or `archived`. Archive first
-persists `archiving` to close admission, then stops provider processes and owned
-terminals, removes generated checkouts, and only then commits `archived`. A failed
+Independent `archiveState` is `active`, `archiving`, or `archived`. After preparing
+retained commits, archive persists `archiving` to close admission, then stops
+provider processes and owned terminals, removes generated checkouts, and only
+then commits `archived`. A failed
 close or checkout cleanup retains `archiving` and can be retried with a new
 operation ID after restart. Restore permits only
 `archived` to `active` after checkout recreation; it does not start processes or

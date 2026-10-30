@@ -70,6 +70,12 @@ export class DaemonCatalog {
     this.changed()
   }
 
+  /** Retain recoverable commits before closing Session admission. */
+  async prepareSessionWorktreeArchive(sessionId: string): Promise<void> {
+    if (!this.#sessions) throw new Error("Local catalog is not available")
+    await this.#sessions.prepareArchive(sessionId)
+  }
+
   /** Release generated files while retaining the Session's catalog and history. */
   async archiveSessionWorktree(sessionId: string): Promise<void> {
     if (!this.#sessions) throw new Error("Local catalog is not available")

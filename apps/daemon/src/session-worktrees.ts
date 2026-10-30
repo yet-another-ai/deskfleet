@@ -184,25 +184,42 @@ export class ManagedSessionWorktrees {
     return { ...allocated, worktree }
   }
 
-  /** Reclaim generated checkouts, retaining only committed revisions and ownership. */
-  async archive(sessionId: string): Promise<void> {
+  /** Establish recoverable revisions before the Session starts archiving. */
+  async prepareArchive(sessionId: string): Promise<void> {
+    await this.#prepareArchive(sessionId)
+  }
+
+  async #prepareArchive(sessionId: string): Promise<Manifest | undefined> {
     const manifest = await this.#load(sessionId)
-    if (!manifest) return
-    manifest.state = "archiving"
-    for (const worktree of manifest.worktrees) delete worktree.restored
-    await this.#save(manifest)
+    if (!manifest) return undefined
     for (const worktree of manifest.worktrees) {
       const registration = await this.#registration(worktree)
       // Git can retain registration after an interrupted removal has already
       // deleted the checkout directory. Its HEAD remains available here.
       if (registration?.revision) worktree.revision = registration.revision
-      if (!worktree.revision) throw new Error("Session checkout has no retained revision")
+      if (!worktree.revision) throw new Error(`Cannot archive ${worktree.path}: its original Git revision is unavailable; repair the checkout before retrying`)
       worktree.reference ??= `refs/deskfleet/sessions/${randomUUID()}`
-      // Persist the ref name before creating it, and retain the commit before
-      // unregistering the detached checkout that currently keeps it reachable.
-      await this.#save(manifest)
-      await git(["--git-dir", worktree.repository, "update-ref", worktree.reference, worktree.revision])
-      await this.#removeCheckout(worktree, registration !== undefined)
+    }
+    // Capture every repository before changing archive state or deleting any
+    // files, and persist ref ownership before pinning the detached commits.
+    await this.#save(manifest)
+    for (const worktree of manifest.worktrees) {
+      await git(["--git-dir", worktree.repository, "update-ref", worktree.reference!, worktree.revision!])
+    }
+    return manifest
+  }
+
+  /** Reclaim generated checkouts, retaining only committed revisions and ownership. */
+  async archive(sessionId: string): Promise<void> {
+    // The Agent may have committed after the admission preflight. Capture its
+    // final HEADs after shutdown, while retaining the earlier durable fallback.
+    const manifest = await this.#prepareArchive(sessionId)
+    if (!manifest) return
+    manifest.state = "archiving"
+    for (const worktree of manifest.worktrees) delete worktree.restored
+    await this.#save(manifest)
+    for (const worktree of manifest.worktrees) {
+      await this.#removeCheckout(worktree, await this.#registered(worktree))
     }
     if (manifest.directory) await rm(manifest.directory, { recursive: true, force: true })
     manifest.state = "archived"

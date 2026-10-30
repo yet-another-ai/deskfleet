@@ -408,8 +408,10 @@ default disk. Directory Sessions continue to use their Workspace paths.
 
 Ownership manifests remain beneath the machine's `session-worktrees/` directory
 and record custom checkout locations independently of the current preference.
-Provisioning failure rolls back partial checkouts. Archive saves committed HEADs
-in compact Git refs and the manifest before removing generated checkouts;
+Provisioning failure rolls back partial checkouts. Archive prepares committed HEADs
+in compact Git refs and the manifest before changing archive state; a missing
+recoverable commit fails the request without stopping resources or changing that
+state. It refreshes the retained HEADs after shutdown before removing checkouts;
 restoration uses those saved locations regardless of the current root preference.
 Disconnect never destroys checkouts. Previously archived Sessions are not cleaned
 up in the background; explicitly archiving them again can reclaim retained
