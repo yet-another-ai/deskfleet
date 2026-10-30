@@ -33,6 +33,12 @@ uses directory context in the machine user's home directory. A `worktree`
 Session owns generated checkouts; a `directory` Session uses the Workspace's own
 directories in place, or the home directory when no Workspace is selected. Its
 captured ordered directories are the execution context; the first supplies `cwd`.
+Agents that advertise `sessionCapabilities.additionalDirectories` receive the
+remaining paths when a Session starts, resumes, or forks. Agents without that
+capability still run in the default directory; the daemon omits the additional
+paths and records the capability in the Session. For Sessions with multiple
+directories, the conversation shows a non-blocking warning that the remaining
+directories were not added automatically. Sending messages remains available.
 Later Workspace edits do not retarget existing Sessions. Session creation also
 retains a failed provisioning record when Git setup fails or a directory is
 missing. Stopping a provider preserves the Session and its files. The deletion
