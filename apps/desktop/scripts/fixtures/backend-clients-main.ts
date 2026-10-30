@@ -112,12 +112,14 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   })
   catalogObserver.observe(document.querySelector("aside")!, { subtree: true, childList: true, characterData: true })
   const textarea = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]')!
-  textarea.value = `Prompt from ${context.mode}`
+  const prompt = `Prompt from ${context.mode}`
+  textarea.value = prompt
   textarea.dispatchEvent(new Event("input", { bubbles: true }))
   await until(() => !button("Send").disabled, "authenticated Agent channel")
   button("Send").click()
-  await until(() => !!document.querySelector("main")?.textContent?.includes("Fixture Agent is waiting for approval"), "streaming Agent message")
-  await until(() => !!document.querySelector("main")?.textContent?.includes("Read fixture file"), "Agent tool call")
+  // Electron reopens Web history; only this prompt's reply may permit archiving.
+  await until(() => !!document.querySelector("main")?.textContent?.includes(`Fixture Agent is waiting for approval for ${prompt}`), "current prompt streaming Agent message")
+  await until(() => !!document.querySelector("main")?.textContent?.includes(`Read fixture file for ${prompt}`), "current prompt Agent tool call")
   const archive = await openSessionAction("Archive session")
   require(!document.body.innerText.includes("Delete session"), "Sessions must expose Archive, not Delete")
   archive.click()
