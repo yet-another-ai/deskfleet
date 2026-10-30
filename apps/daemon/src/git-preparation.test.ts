@@ -156,6 +156,24 @@ test("untracked files obstructing the default branch are preserved along with tr
   assert.equal(await readFile(join(repo.source, "incoming.txt"), "utf8"), "local untracked content\n")
 })
 
+test("incoming tracked files can share a directory with untracked and ignored siblings", async context => {
+  const repo = await repository(await fixture(context))
+  await mkdir(join(repo.source, "docs"))
+  await writeFile(join(repo.source, "docs", "notes.txt"), "local notes\n")
+  await writeFile(join(repo.source, "docs", "local.cache"), "ignored content\n")
+  await writeFile(join(repo.source, ".git", "info", "exclude"), "docs/local.cache\n")
+  await mkdir(join(repo.writer, "docs"))
+  const revision = await advance(repo, "docs/README.md", "upstream documentation\n")
+
+  const result = await prepareGitWorkspace("1", [{ path: repo.source }], "directory")
+
+  assert.equal(result.status, "ready")
+  assert.equal(await git(repo.source, "rev-parse", "HEAD"), revision)
+  assert.equal(await readFile(join(repo.source, "docs", "README.md"), "utf8"), "upstream documentation\n")
+  assert.equal(await readFile(join(repo.source, "docs", "notes.txt"), "utf8"), "local notes\n")
+  assert.equal(await readFile(join(repo.source, "docs", "local.cache"), "utf8"), "ignored content\n")
+})
+
 test("worktree preparation resolves each repository default and preserves ordered directory bindings", async context => {
   const directory = await fixture(context)
   const primary = await repository(directory, "primary")

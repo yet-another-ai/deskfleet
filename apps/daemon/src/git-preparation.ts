@@ -99,15 +99,25 @@ async function inspectDirectory(repository: Repository): Promise<void> {
         for (let end = path.indexOf("/"); end !== -1; end = path.indexOf("/", end + 1)) parents.add(path.slice(0, end))
       }
     }
-    const obstruction = untracked.find(value => {
+    const overlapsTrackedPath = (value: string): boolean => {
       const path = normalized(value.replace(/\/$/u, ""))
       if (tracked.has(path) || parents.has(path)) return true
       for (let end = path.indexOf("/"); end !== -1; end = path.indexOf("/", end + 1)) {
         if (tracked.has(path.slice(0, end))) return true
       }
       return false
-    })
-    if (obstruction) throw new Error(`${root}: untracked or ignored file ${obstruction} would be overwritten; move it before preparing the directory`)
+    }
+    for (const path of untracked) {
+      if (!overlapsTrackedPath(path)) continue
+      // A collapsed directory can share a parent with incoming tracked files
+      // without any file being overwritten. Expand only overlapping directories
+      // so unrelated ignored trees (such as node_modules) stay inexpensive.
+      const candidates = path.endsWith("/")
+        ? (await git(root, ["--literal-pathspecs", "ls-files", "--others", "-z", "--", path])).split("\0").filter(Boolean)
+        : [path]
+      const obstruction = candidates.find(overlapsTrackedPath)
+      if (obstruction) throw new Error(`${root}: untracked or ignored file ${obstruction} would be overwritten; move it before preparing the directory`)
+    }
   }
   repository.status = await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
   repository.changes = changedPaths(repository.status)
