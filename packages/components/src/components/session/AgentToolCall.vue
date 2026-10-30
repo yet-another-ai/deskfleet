@@ -9,19 +9,20 @@ import { readableValue } from "../../services/agent-conversation.ts"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
 import AgentTerminal from "./AgentTerminal.vue"
-const props = defineProps<{ tool: ConversationTool; permission?: AgentPermission; live?: boolean }>()
+const props = defineProps<{ tool: ConversationTool; permission?: AgentPermission; live?: boolean; defaultOpen?: boolean }>()
 const { t } = useI18n()
-const open = ref(false)
+const toggled = ref<boolean | null>(null)
 const icons: Record<string, Component> = { read: FileText, edit: FilePen, delete: Trash2, move: ArrowRightLeft, search: Search, execute: SquareTerminal, think: Brain, fetch: Globe, switch_mode: Repeat }
 const icon = computed(() => props.tool.content?.some(block => block.type === "terminal") ? Bot : icons[props.tool.kind ?? ""] ?? Wrench)
 // A finished turn leaves no tool running, even when the provider never reported completion.
 const running = computed(() => props.live && (props.tool.status === "pending" || props.tool.status === "in_progress"))
 const decision = computed(() => props.permission?.state === "resolved" ? props.permission.request.options.find(option => option.optionId === props.permission!.optionId)?.name ?? props.permission.optionId : undefined)
 const hasDetails = computed(() => !!props.tool.locations?.length || props.tool.rawInput != null || !!props.tool.content?.length || props.tool.rawOutput != null)
+const open = computed(() => hasDetails.value && (toggled.value ?? props.defaultOpen ?? false))
 </script>
 
 <template>
-  <CollapsibleRoot v-model:open="open" :disabled="!hasDetails" class="text-sm" :data-permission-id="permission?.id">
+  <CollapsibleRoot :open="open" :disabled="!hasDetails" class="text-sm" :data-permission-id="permission?.id" @update:open="toggled = $event">
     <CollapsibleTrigger type="button" class="group/tool -mx-2 flex w-[calc(100%+1rem)] min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui-text-muted" :class="hasDetails ? 'cursor-pointer hover:bg-ui-hover hover:text-ui-text' : 'cursor-default'">
       <component :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
       <span class="min-w-0 flex-1 truncate">{{ tool.title || t('agent.tool') }}</span>

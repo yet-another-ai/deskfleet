@@ -81,6 +81,41 @@ type Story = StoryObj<typeof meta>
 
 export const CompletedWithFoldedWork: Story = {}
 
+export const CompletedWithToolResult: Story = {
+  args: {
+    response: {
+      ...completedResponse,
+      steps: [
+        ...completedResponse.steps.slice(0, 2),
+        { id: "progress", kind: "message", role: "assistant", content: [{ type: "text", text: "The change is in place. I'll run the Session tests." }] },
+        { id: "test-thought", kind: "message", role: "thought", content: [{ type: "text", text: "Check the component regressions before finishing." }] },
+        { id: "test", kind: "tool", tool: { toolCallId: "test", title: "Run Session component tests", kind: "execute", status: "completed", rawInput: "pnpm test", rawOutput: "Test Files  3 passed (3)\n     Tests  24 passed (24)" } },
+      ],
+    },
+  },
+}
+
+export const CompletedWithOnlyTool: Story = {
+  args: {
+    response: {
+      ...completedResponse,
+      steps: [{ id: "report", kind: "tool", tool: { toolCallId: "report", title: "Create report", kind: "edit", status: "completed", rawOutput: "Created report.md" } }],
+    },
+  },
+}
+
+export const CompletedWithPlan: Story = {
+  args: {
+    response: {
+      ...completedResponse,
+      steps: [
+        { id: "progress", kind: "message", role: "assistant", content: [{ type: "text", text: "Here is the implementation plan." }] },
+        completedResponse.steps[2]!,
+      ],
+    },
+  },
+}
+
 export const LiveWorkingTurn: Story = {
   args: {
     response: {

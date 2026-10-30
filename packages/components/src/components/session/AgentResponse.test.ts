@@ -118,6 +118,89 @@ test("a finished response keeps the answer visible and stops stale running indic
   expect(view.find('[aria-label="Running"]').exists()).toBe(false)
 })
 
+test.each([false, true])("a tool-ending response exposes its progress and final output after completion (initially live: %s)", async initiallyLive => {
+  const steps = [
+    tool("earlier-read"), message("earlier-thought", "thought"),
+    message("progress", "assistant", "The changes are ready. Checking the result."),
+    tool("read"), tool("result", { status: "in_progress", rawOutput: "All checks passed." }),
+  ]
+  const view = render(response(steps, initiallyLive))
+  if (initiallyLive) {
+    expect(view.get('[data-activity-group="read"] [data-activity-trigger]').attributes("aria-expanded")).toBe("false")
+    expect(view.find('[aria-label="Running"]').exists()).toBe(true)
+    await view.setProps({ response: response(steps, false) })
+  }
+  await flushPromises()
+
+  expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("true")
+  expect(view.get('[data-conversation-entry="progress"]').text()).toBe("The changes are ready. Checking the result.")
+  expect(view.get('[data-activity-group="earlier-read"] [data-activity-trigger]').attributes("aria-expanded")).toBe("false")
+  expect(view.get('[data-activity-group="read"] [data-activity-trigger]').attributes("aria-expanded")).toBe("true")
+  expect(view.get('[data-conversation-entry="read"] button').attributes("aria-expanded")).toBe("false")
+  expect(view.text()).not.toContain("Input for read")
+  expect(view.get('[data-conversation-entry="result"] button').attributes("aria-expanded")).toBe("true")
+  expect(view.text()).toContain("All checks passed.")
+  expect(view.find('[aria-label="Running"]').exists()).toBe(false)
+})
+
+test("a completed response containing only one tool exposes its output without a click", async () => {
+  const view = render(response([tool("result", { rawOutput: "Created report.md" })], false))
+  await flushPromises()
+
+  expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("true")
+  expect(view.find("[data-activity-group]").exists()).toBe(false)
+  expect(view.get('[data-conversation-entry="result"] button').attributes("aria-expanded")).toBe("true")
+  expect(view.text()).toContain("Created report.md")
+})
+
+test("a completed title-only tool stays visible without an empty details panel", async () => {
+  const view = render(response([tool("Finished checks", { rawInput: undefined })], false))
+  await flushPromises()
+
+  const entry = view.get('[data-conversation-entry="Finished checks"]')
+  expect(entry.text()).toBe("Finished checks")
+  expect(entry.get("button").attributes("aria-expanded")).toBe("false")
+  expect(entry.get("button").attributes("disabled")).toBeDefined()
+  expect(entry.find(`[id="${entry.get("button").attributes("aria-controls")}"]`).exists()).toBe(false)
+})
+
+test("a completed response without a final answer keeps its earlier message and plan visible", async () => {
+  const view = render(response([
+    message("progress", "assistant", "Here is the plan."),
+    { id: "plan", kind: "plan", entries: [{ content: "Verify the result", status: "completed" }] },
+  ], false))
+  await flushPromises()
+
+  expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("true")
+  expect(view.get('[data-conversation-entry="progress"]').text()).toBe("Here is the plan.")
+  expect(view.get('[data-conversation-entry="plan"]').text()).toContain("Verify the result")
+})
+
+test("tool-ending responses preserve explicit collapse choices across completed-state updates", async () => {
+  const completed = (output: string) => response([
+    message("progress", "assistant", "Checking the result."),
+    tool("read"), tool("result", { rawOutput: output }),
+  ], false)
+  const view = render(completed("Initial result"))
+  await flushPromises()
+
+  await view.get('[data-conversation-entry="result"] button').trigger("click")
+  await view.setProps({ response: completed("Updated result") })
+  expect(view.get('[data-conversation-entry="result"] button').attributes("aria-expanded")).toBe("false")
+  expect(view.text()).not.toContain("Updated result")
+
+  await view.get("[data-activity-trigger]").trigger("click")
+  await view.setProps({ response: completed("Another result") })
+  expect(view.get("[data-activity-trigger]").attributes("aria-expanded")).toBe("false")
+  expect(view.find('[data-conversation-entry="result"]').exists()).toBe(false)
+
+  await view.get("[data-turn-work]").trigger("click")
+  await view.setProps({ response: completed("Final result") })
+  expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("false")
+  expect(view.find('[data-conversation-entry="progress"]').exists()).toBe(false)
+  expect(view.find("[data-activity-trigger]").exists()).toBe(false)
+})
+
 test("pending approval and failed tools remain visible in a collapsed activity summary", () => {
   const pending = tool("approve")
   pending.permission = agentPermission()
