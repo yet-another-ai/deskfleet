@@ -1,4 +1,11 @@
 {
+  "pullRequest": {
+    "indicator": "PR #{number} · {state} · {title}",
+    "draft": "草稿",
+    "open": "待合并",
+    "merged": "已合并",
+    "closed": "已关闭"
+  },
   "aboutSettings": {
     "title": "关于",
     "description": "连接团队的 AI 智能体与工作空间。",
@@ -316,7 +323,7 @@
     "manageDescription": "管理 GitHub App 可以访问的账号和仓库。",
     "manage": "Manage GitHub",
     "actAsYou": "Act as you",
-    "actAsYouDescription": "授权使用你的 GitHub 身份，为后续拉取请求操作做好准备。关闭开关会保留授权。",
+    "actAsYouDescription": "使用你的 GitHub 身份读取拉取请求状态。关闭开关会保留授权。",
     "authorize": "Authorize",
     "reauthorize": "重新授权",
     "authorizedAs": "已授权为 {login}",

@@ -199,3 +199,12 @@ test("GitHub App settings use account-owned routes and authorize through the bro
   expect(fetch).toHaveBeenLastCalledWith("https://fleet.example/api/integrations/github", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ actAsYou: true }) }))
   expect(fetch.mock.calls.some(([url]) => url.includes("authorization/start"))).toBe(false)
 })
+
+test("GitHub pull-request lookup keeps fork identity and branch punctuation in query values", async () => {
+  const pullRequest = { number: 78, title: "Show PR status", url: "https://github.com/upstream/deskfleet/pull/78", state: "open" }
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ pullRequest })))
+  const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "secret" }, persist: async () => {}, authorize: async () => {}, fetch })
+  clients.push(client)
+  expect(await client.githubPullRequest({ owner: "upstream", repo: "deskfleet", headOwner: "contributor", branch: "feat/status&checks#78" })).toEqual({ pullRequest })
+  expect(fetch).toHaveBeenCalledWith("https://fleet.example/api/integrations/github/pull-request?owner=upstream&repo=deskfleet&branch=feat%2Fstatus%26checks%2378&headOwner=contributor", expect.objectContaining({ method: "GET", headers: { Authorization: "Bearer secret" } }))
+})

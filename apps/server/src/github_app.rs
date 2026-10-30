@@ -1,5 +1,6 @@
 //! Optional GitHub App integration; this never logs a user into DeskFleet.
 mod config;
+mod pull_requests;
 pub use config::GithubAppConfig;
 
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
 };
 use actix_web::{HttpRequest, HttpResponse, cookie::time::Duration, web};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use deskfleet_control_store::{GithubAppGrant, GithubAppStatus, now_ms, secret};
+use deskfleet_control_store::{GithubAppGrant, GithubAppStatus, GithubAppTokens, now_ms, secret};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -19,6 +20,10 @@ pub(crate) fn configure(config: &mut web::ServiceConfig) {
     config
         .route("/integrations/github", web::get().to(settings))
         .route("/integrations/github", web::patch().to(update))
+        .route(
+            "/integrations/github/pull-request",
+            web::get().to(pull_requests::lookup),
+        )
         .route(
             "/integrations/github/authorization/start",
             web::post().to(start),
@@ -196,6 +201,30 @@ struct Token {
     refresh_token: Option<String>,
     refresh_token_expires_in: Option<u64>,
 }
+impl Token {
+    fn into_tokens(self) -> std::result::Result<GithubAppTokens, ()> {
+        if self.access_token.is_empty() || !self.token_type.eq_ignore_ascii_case("bearer") {
+            return Err(());
+        }
+        let issued_at = now_ms();
+        let expires_at = expiry(issued_at, self.expires_in)?;
+        let refresh_expires_at = expiry(issued_at, self.refresh_token_expires_in)?;
+        if self
+            .refresh_token
+            .as_ref()
+            .is_some_and(|token| token.is_empty())
+            || self.refresh_token.is_some() != refresh_expires_at.is_some()
+        {
+            return Err(());
+        }
+        Ok(GithubAppTokens {
+            access_token: self.access_token,
+            expires_at,
+            refresh_token: self.refresh_token,
+            refresh_expires_at,
+        })
+    }
+}
 #[derive(Deserialize)]
 struct Profile {
     id: u64,
@@ -244,20 +273,7 @@ async fn complete(
         .json()
         .await
         .map_err(|_| ())?;
-    if token.access_token.is_empty() || !token.token_type.eq_ignore_ascii_case("bearer") {
-        return Err(());
-    }
-    let issued_at = now_ms();
-    let expires_at = expiry(issued_at, token.expires_in)?;
-    let refresh_expires_at = expiry(issued_at, token.refresh_token_expires_in)?;
-    if token
-        .refresh_token
-        .as_ref()
-        .is_some_and(|token| token.is_empty())
-        || token.refresh_token.is_some() != refresh_expires_at.is_some()
-    {
-        return Err(());
-    }
+    let token = token.into_tokens()?;
     let profile: Profile = client
         .get(&config.user_url)
         .header("Accept", "application/vnd.github+json")
@@ -284,9 +300,9 @@ async fn complete(
                 subject: profile.id.to_string(),
                 login: profile.login,
                 access_token: token.access_token,
-                expires_at,
+                expires_at: token.expires_at,
                 refresh_token: token.refresh_token,
-                refresh_expires_at,
+                refresh_expires_at: token.refresh_expires_at,
             },
         )
         .await

@@ -81,6 +81,7 @@ async fn github_app_authorization_is_account_bound_and_explicitly_enabled() {
             callback_url: "http://localhost/api/integrations/github/callback".into(),
             token_url: format!("{mock_origin}/token"),
             user_url: format!("{mock_origin}/user"),
+            api_url: mock_origin.clone(),
         }),
         billing: Default::default(),
         stun_urls: vec![],
