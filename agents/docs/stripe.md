@@ -50,7 +50,10 @@ no entitlements; only a server-verified paid invoice can establish paid coverage
 The Team billing summary includes `prices` for the four configured Go/Pro offers,
 with `plan`, `interval`, `unitAmount` (Stripe minor units), and `currency`. The
 server retrieves and validates these through the same Prices API used by checkout,
-then caches the catalog for five minutes across requests. No Stripe credentials
+then caches the catalog for five minutes across requests. Only the request that
+starts a refresh waits for Stripe; concurrent summaries return `prices: null`
+immediately instead of waiting for the catalog lock. Failed refreshes are cached
+for 30 seconds before another request can retry. No Stripe credentials
 are sent to the client. A provider error returns `prices: null` while preserving
 current entitlements and usage; installations without payments return an empty list.
 Checkout continues to validate prices independently of the display cache.

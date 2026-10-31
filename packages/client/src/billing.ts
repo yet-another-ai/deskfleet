@@ -7,7 +7,7 @@ export interface BillingPrice {
   currency: string
 }
 export interface TeamBilling {
-  /** Configured Stripe prices; null when the provider could not be reached. */
+  /** Configured Stripe prices; null during another refresh or after a provider failure. */
   prices?: BillingPrice[] | null
   plan: BillingPlan
   limits: { maxActiveSessions: number | null; maxTurnsPerSession: number | null; maxMembers: number | null; turnBytes: number | null }

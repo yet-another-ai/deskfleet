@@ -13,27 +13,39 @@ pub(super) struct PlanPrice {
     currency: String,
 }
 
-pub(super) type PriceCache = Option<(Instant, Vec<PlanPrice>)>;
+pub(super) type PriceCache = Option<(Instant, Option<Vec<PlanPrice>>)>;
 
 impl BillingService {
-    pub(super) async fn prices(&self) -> Result<Vec<PlanPrice>> {
+    pub(super) async fn prices(&self) -> Result<Option<Vec<PlanPrice>>> {
         if !self.enabled() {
-            return Ok(Vec::new());
+            return Ok(Some(Vec::new()));
         }
-        // Share refreshes across requests; only the price catalog uses this async lock.
-        let mut cache = self.price_cache.lock().await;
+        // Only the refreshing request waits for Stripe. Other Teams can read usage
+        // immediately, with prices unavailable until the refresh completes.
+        let Ok(mut cache) = self.price_cache.try_lock() else {
+            return Ok(None);
+        };
         if let Some((fetched, prices)) = cache.as_ref()
-            && fetched.elapsed() < Duration::from_secs(300)
+            && fetched.elapsed() < Duration::from_secs(if prices.is_some() { 300 } else { 30 })
         {
             return Ok(prices.clone());
         }
-        let (go, pro, go_year, pro_year) = tokio::try_join!(
+        let result = tokio::try_join!(
             self.display_price("go", "month"),
             self.display_price("pro", "month"),
             self.display_price("go", "year"),
             self.display_price("pro", "year"),
-        )?;
-        let prices = vec![go, pro, go_year, pro_year];
+        );
+        let (go, pro, go_year, pro_year) = match result {
+            Ok(prices) => prices,
+            Err(error) => {
+                // Cache failure as well, so following requests do not each retry
+                // the same unavailable provider. Cancellation still releases the lock.
+                *cache = Some((Instant::now(), None));
+                return Err(error);
+            }
+        };
+        let prices = Some(vec![go, pro, go_year, pro_year]);
         *cache = Some((Instant::now(), prices.clone()));
         Ok(prices)
     }
