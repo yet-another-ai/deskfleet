@@ -27,8 +27,9 @@ a stable `Gate` result for branch protection.
   a disposable Xvfb server with `-noreset`, avoiding server resets when the last
   client disconnects between test cases.
 - `.github/workflows/build.yml` builds artifacts, then packages Electron
-  installers. Ordinary CI runs use `mise run ci:build`; tagged releases build
-  Web and Electron separately to give only Electron a fixed API origin.
+  installers and Linux desktop archives. Ordinary CI runs use
+  `mise run ci:build`; tagged releases build Web and Electron separately to give
+  only Electron a fixed API origin.
   Its shared Rust task runs one napi-driven Cargo workspace build for the server
   and native addon,
   using the host target for both. SEA and Electron bundling consume that addon
@@ -43,30 +44,32 @@ a stable `Gate` result for branch protection.
   during release linking. This applies only to Build jobs; test and development
   builds keep their debug information. Each target packages and verifies the
   standalone SEA daemon.
-  The same matrix packages Electron installers and smoke-tests the bundled server
-  container on each native Linux runner. The Publish caller enables production
-  configuration and macOS signing. PR, main, and manual Build runs do not bind
+  The same matrix packages Electron installers and Linux desktop archives and
+  smoke-tests the bundled server container on each native Linux runner. The
+  Publish caller enables production configuration and macOS signing. PR, main,
+  and manual Build runs do not bind
   the production environment: Statsig and Sentry stay disabled, and Electron
   defaults to `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
-  calls Nix with production configuration validation. It creates a draft GitHub
+  calls Nix with the desktop archives from Build. It creates a draft GitHub
   Release and pushes the server image to GHCR after all three workflows succeed.
-- `.github/workflows/nix.yml` checks the flake and explicitly builds the
-  `x86_64-linux` desktop package, then runs the installed application under Xvfb.
-  CI includes it in `Gate`; documentation-only
-  changes skip this build alongside Build. Publish calls the same workflow once
-  with `production_release: true`, binding its job to the `production`
-  environment and verifying the public configuration snapshot before building.
-  PR and ordinary CI Nix builds read the committed snapshot without environment
-  credentials. Nix builds do not upload additional GitHub Release assets.
+- `.github/workflows/nix.yml` consumes the same-run Linux desktop archives from
+  Build, generates a flake bundle, and checks the repackaged app under Xvfb.
+  It preloads the archives into Nix's fixed-output store so checks can run before
+  the release assets are published. CI includes it in `Gate`; documentation-only
+  changes skip it alongside Build. Publish reuses the workflow and includes its
+  generated `deskfleet-nix.tar.gz` in the release. The Nix workflow does not bind
+  the production environment or read its variables or secrets.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
-  and configures shared caches for both reusable workflows.
+  and configures shared caches for the Test and Build workflows.
 
-The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each archive
-contains `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
+The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each
+server/daemon archive, such as `deskfleet-linux-x64.tar.gz`, contains
+`deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
 Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
-Linux x64/arm64 AppImage installers, plus updater YAML and blockmaps. PRs
-exercise packaging on Linux x64.
+Linux x64/arm64 AppImages and desktop archives, plus updater YAML and blockmaps.
+The Linux desktop archive names include the app version, such as
+`deskfleet-<version>-linux-x64.tar.gz`. PRs exercise packaging on Linux x64.
 The Linux x64 job also uploads `deskfleet-web` with the static Vue application.
 Its API origin is the hosting origin, including tagged release artifacts;
 deployments with a separate API origin build with `VITE_DESKFLEET_SERVER_URL`
@@ -105,8 +108,9 @@ and regenerate `Cargo.lock` before tagging. Build metadata (`+...`) is not
 accepted because it cannot be represented in a container tag.
 
 Publish calls the same Test and Build workflows used by CI, with the full
-platform matrix and mandatory macOS signing/notarization. It waits for both
-before publishing. The Build workflow keeps read-only repository access;
+platform matrix and mandatory macOS signing/notarization, then validates the
+Linux archives through Nix. It waits for all three before publishing. The Build
+workflow keeps read-only repository access;
 only the release job receives `contents: write`, and only the image job receives
 `packages: write`.
 
@@ -114,9 +118,9 @@ Before the first tag, create the `production` environment under Repository
 Settings → Environments. Set its deployment branch and tag policy to
 **Selected branches and tags**, add a **Tag** rule matching `v*`, and allow no
 branches. Keep production configuration in this environment, removing any
-duplicate repository or organization variables and secrets. The generated
-public Nix snapshot described below is a versioned build input, not a second
-configuration source.
+duplicate repository or organization variables and secrets. The Linux desktop
+archives carry this configuration in the compiled app, including when repackaged
+by Nix.
 
 Configure these environment variables:
 
@@ -174,10 +178,11 @@ and live Session events from another machine after granting DeskFleet access in
 requests or inbound connections to the hosted daemon do not establish that the
 renderer can initiate a direct peer connection.
 
-Each tag produces a **draft** GitHub Release containing the five desktop
-installers, four server/daemon archives, updater metadata and blockmaps. Review
-its generated notes and assets, then publish it in GitHub. Prerelease tags create
-prerelease drafts.
+Each tag produces a **draft** GitHub Release containing the desktop installers,
+two Linux desktop archives, the `deskfleet-nix.tar.gz` flake bundle, four
+server/daemon archives, updater metadata and blockmaps. Review its generated
+notes and assets, then publish it in GitHub. Prerelease tags create prerelease
+drafts.
 Reruns can replace assets on a draft; they refuse to modify an already published
 release.
 
@@ -251,105 +256,56 @@ succeed.
 
 ### Nix distribution
 
-The repository flake builds the Linux desktop app from source. Its default
-package is `deskfleet`; the initial supported platform is `x86_64-linux`.
-The desktop continues to host the daemon in its Electron main process.
-Nix owns installed package updates, so this build does not use the AppImage
-updater.
+Nix installs the prebuilt Linux desktop archive for `x86_64-linux` or
+`aarch64-linux`. For tagged releases, Build compiles the desktop app once per
+architecture under the existing `production` environment and packages it as both
+an AppImage and a `tar.gz`. The archive already contains the official API,
+Statsig, and Sentry configuration. Changes to those variables take effect in the
+next release.
+Distribution packaging can reuse the archive for future deb, rpm, or AUR
+packages as well.
 
-`nix/native.nix` builds the Rust Node-API addon from `Cargo.lock`, including
-the repository's `vendor/portable-pty` patch. `nix/desktop.nix` uses the frozen
-pnpm dependency store and existing Vite/electron-builder configuration, retaining
-the packaged executable, ASAR layout, and Electron fuses. The launcher supplies
-GStreamer libraries and plugins and identifies itself to Linux autostart through
-`DESKFLEET_LAUNCHER`. GPU drivers and the user's desktop session services remain
-host responsibilities.
-
-Nix build tools are pinned by `flake.lock`: Rust must satisfy the workspace's
-minimum version, with Node 24 and pnpm 12. The existing development workflow still
-uses `mise.lock`. Electron matches the exact version in the desktop manifest;
-`nix/electron.nix` records its upstream archive and unpacked headers checksums.
-Update those checksums when upgrading Electron. After changing the pnpm lockfile
-or dependency patches, clear `nix/pnpm-deps-hash.txt`, run
-`nix build .#deskfleet.pnpmDeps`, and replace the empty hash with the reported
-`got: sha256-...` value. Rebuild the package to verify the new dependency store.
-
-The overlay exposes `pkgs.deskfleet`. Self-hosted builds can override its
-`publicConfig` argument with their own `VITE_DESKFLEET_SERVER_URL` and optional
-client-public telemetry settings. These overrides are Nix inputs; ambient shell
-variables do not change the package.
-
-GitHub's `production` environment remains the source of the client-public API,
-Statsig, and Sentry configuration. A local or remote flake evaluation cannot
-read that environment, so `nix/production.json` contains a generated snapshot
-of exactly these public renderer inputs:
-
-- `VITE_DESKFLEET_SERVER_URL`
-- `VITE_STATSIG_CLIENT_KEY`
-- `VITE_STATSIG_ENVIRONMENT`
-- `VITE_SENTRY_DSN`
-- `VITE_SENTRY_ENVIRONMENT`
-
-These values already ship in the application renderer. The synchronization
-script only reads GitHub environment variables and filters this allowlist;
-signing credentials and other secrets never enter the snapshot or Nix store.
-`VITE_SENTRY_RELEASE` is derived from the package version as
-`deskfleet@v<version>`, matching the tagged Electron release.
-
-`.github/workflows/nix-production-sync.yml` checks the production variables every
-hour at minute 17. It reads the current `main` branch and regenerates the snapshot.
-Unchanged values create no commit or pull request. Changes create or update one
-pull request on `chore/nix-production-config`; subsequent changes update that same
-open pull request. Merge the reviewed snapshot before tagging a release. The
-workflow does not merge its own pull requests.
-
-Enable synchronization once by adding the repository secret
-`NIX_CONFIG_SYNC_TOKEN`: a fine-grained personal access token restricted to
-`yet-another-ai/deskfleet`, with these repository permissions:
-
-- **Environments: read** to read the production variables through GitHub's API.
-- **Contents: write** to push the snapshot branch.
-- **Pull requests: write** to create or update the synchronization pull request.
-
-Store the token under repository Actions secrets, not the `production`
-environment. The scheduled workflow never binds that environment, so its
-existing `v*` tag restriction and signing-secret access remain unchanged. The
-dedicated token also lets the generated pull request trigger normal CI without
-the workflow-approval restriction applied to pull requests created with
-`GITHUB_TOKEN`. Renew the token before its configured expiration.
-
-Scheduled workflows start after this workflow is merged into `main`; GitHub can
-delay scheduled runs. After changing a variable, request an immediate check with:
+Every release automatically generates `deskfleet-nix.tar.gz` from the templates
+under `nix/`. This bundle contains a flake with a locked nixpkgs input and the
+versioned GitHub Release URLs and SHA-256 hashes of both Linux desktop archives.
+The repository's `nix/flake.nix` is a release template; install from a generated
+release bundle. For a release containing that asset, replace `<VERSION>` with
+its version without the `v` prefix:
 
 ```sh
-gh workflow run nix-production-sync.yml --ref main
+nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'
 ```
 
-For a local synchronization with an authenticated `gh` installation:
+Use `nix run` with the same URL to try that version. A versioned URL keeps the
+selected release reproducible. The generated default package is `deskfleet`.
+Nix manages installed package updates; the AppImage updater stays disabled.
 
-```sh
-mise exec node -- node scripts/nix-production.ts sync
-git diff -- nix/production.json
-```
+The Nix derivation patches the packaged ELF interpreter and library paths,
+installs the desktop entry and icons, and supplies the runtime libraries and
+GStreamer plugins. It does not compile Rust or run pnpm. Electron, the native
+addon, ASAR contents, ACP adapters, and embedded daemon come from the same app
+as the release installers. The daemon continues to run in Electron's main
+process.
 
-Commit or merge the generated snapshot with the intended release source. The
-production Nix job compares it against the same `vars.VITE_*` values used by the existing
-Electron build and rejects missing required values or drift. Optional telemetry
-values can be empty. The source snapshot makes ordinary `nix build` and
-`nix run github:yet-another-ai/deskfleet` reproducible without GitHub credentials,
-ambient environment variables, or `--impure`.
+The launcher identifies itself to Linux autostart through
+`DESKFLEET_LAUNCHER`. After upgrading, launch the new version once to refresh an
+enabled startup entry. GPU drivers and the user's desktop session services,
+including Portal/PipeWire on Wayland, remain host responsibilities.
 
-The Nix workflow runs `nix flake check --print-build-logs` and
-`nix build .#deskfleet --print-build-logs` on x86_64 Linux. The installed-package
-smoke checks native-addon loading, bundled ACP adapters, the packaged renderer,
-the hosted daemon, startup registration through the Nix wrapper, and disabled
-self-updates. On the disposable Ubuntu runner, the workflow allows Chromium's
-user namespace sandbox through AppArmor; it runs the original Nix-store package
-with sandboxing enabled.
+The Nix workflow downloads the desktop archives from Build in the same workflow
+run and generates the flake bundle. It preloads those archives into Nix's
+fixed-output store, allowing flake checks, installation, and smoke tests before
+the versioned release URLs are public. Its installed-package smoke checks
+native-addon loading, bundled ACP adapters, the packaged renderer, the hosted
+daemon, startup registration through the Nix wrapper, and disabled self-updates.
+On the disposable Ubuntu runner, the workflow allows Chromium's user namespace
+sandbox through AppArmor and runs the installed package with sandboxing enabled.
 
-`Gate` requires this build and smoke on code changes. Publish also requires
-matching production configuration before creating release assets or publishing
-the server image. Nix binary-cache publication is not configured.
+`Gate` requires Nix validation on code changes, and Publish requires it before
+creating the draft release or publishing the server image. Nix reuses the
+configuration already compiled by Build, so it needs no production environment
+access, configuration snapshot, synchronization workflow, or additional token.
+Nix binary-cache publication is not configured.
 
 ### Server image
 

@@ -61,10 +61,8 @@ jobs:
 
   nix:
     name: Nix
-    needs: validate
+    needs: build
     uses: ./.github/workflows/nix.yml
-    with:
-      production_release: true
     permissions:
       contents: read
 
@@ -76,6 +74,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install locked Node
+        uses: jdx/mise-action@v5
+        with:
+          version: 2026.10.24
+          install_args: --locked node
+
       - name: Download desktop installers
         uses: actions/download-artifact@v8
         with:
@@ -90,6 +98,14 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Package the Nix release flake
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          mise exec node -- node scripts/package-nix-release.ts release-assets/deskfleet-nix.tar.gz \
+            "release-assets/deskfleet-$VERSION-linux-x64.tar.gz" \
+            "release-assets/deskfleet-$VERSION-linux-arm64.tar.gz"
+
       - name: Verify release assets
         shell: bash
         env:
@@ -101,6 +117,9 @@ jobs:
             "deskfleet-$VERSION-win-x64.exe"
             "deskfleet-$VERSION-linux-x86_64.AppImage"
             "deskfleet-$VERSION-linux-arm64.AppImage"
+            "deskfleet-$VERSION-linux-x64.tar.gz"
+            "deskfleet-$VERSION-linux-arm64.tar.gz"
+            deskfleet-nix.tar.gz
             "deskfleet-$VERSION-mac-arm64.zip.blockmap"
             "deskfleet-$VERSION-win-x64.exe.blockmap"
             latest.yml

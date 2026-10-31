@@ -1,27 +1,86 @@
 {
   lib,
   stdenv,
-  callPackage,
-  nodejs_24,
-  pnpm_12,
-  fetchPnpmDeps,
-  pnpmConfigHook,
+  fetchurl,
+  autoPatchelfHook,
   makeWrapper,
   makeDesktopItem,
   copyDesktopItems,
   wrapGAppsHook3,
+  alsa-lib,
+  at-spi2-atk,
+  cairo,
+  cups,
+  dbus,
+  expat,
+  gdk-pixbuf,
   glib,
   gtk3,
-  gst_all_1,
+  gtk4,
+  nss,
+  nspr,
+  libx11,
+  libxcb,
+  libxcomposite,
+  libxdamage,
+  libxext,
+  libxfixes,
+  libxrandr,
+  libxkbfile,
+  pango,
+  pciutils,
+  systemd,
+  libnotify,
   pipewire,
-  publicConfig ? builtins.fromJSON (builtins.readFile ./production.json),
+  libsecret,
+  libpulseaudio,
+  speechd-minimal,
+  libdrm,
+  libgbm,
+  libxkbcommon,
+  libxshmfence,
+  libGL,
+  vulkan-loader,
+  gst_all_1,
+  release,
 }:
 let
-  native = callPackage ./native.nix { };
-  electron = callPackage ./electron.nix { };
-  pnpm = pnpm_12;
-  mediaLibraries = [
+  runtimeLibraries = [
+    alsa-lib
+    at-spi2-atk
+    cairo
+    cups
+    dbus
+    expat
+    gdk-pixbuf
     glib
+    gtk3
+    gtk4
+    nss
+    nspr
+    libx11
+    libxcb
+    libxcomposite
+    libxdamage
+    libxext
+    libxfixes
+    libxrandr
+    libxkbfile
+    pango
+    pciutils
+    stdenv.cc.cc
+    systemd
+    libnotify
+    pipewire
+    libsecret
+    libpulseaudio
+    speechd-minimal
+    libdrm
+    libgbm
+    libxkbcommon
+    libxshmfence
+    libGL
+    vulkan-loader
     gst_all_1.gstreamer
     gst_all_1.gst-plugins-base
   ];
@@ -35,51 +94,19 @@ let
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "deskfleet";
-  version = (builtins.fromJSON (builtins.readFile ../package.json)).version;
-  src = lib.cleanSource ../.;
-
-  pnpmDeps = fetchPnpmDeps {
-    inherit (finalAttrs) pname version src;
-    inherit pnpm;
-    fetcherVersion = 5;
-    hash = lib.trim (builtins.readFile ./pnpm-deps-hash.txt);
-  };
+  inherit (release) version;
+  src = fetchurl release.sources.${stdenv.hostPlatform.system};
 
   nativeBuildInputs = [
-    nodejs_24
-    pnpm
-    pnpmConfigHook
+    autoPatchelfHook
     makeWrapper
     copyDesktopItems
     wrapGAppsHook3
   ];
-  buildInputs = [
-    glib
-    gtk3
-  ];
+  buildInputs = runtimeLibraries;
+  dontBuild = true;
   dontWrapGApps = true;
-
-  env = publicConfig // {
-    ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
-    CSC_IDENTITY_AUTO_DISCOVERY = "false";
-    VITE_SENTRY_RELEASE = "deskfleet@v${finalAttrs.version}";
-  };
-
-  buildPhase = ''
-    runHook preBuild
-    export LD_LIBRARY_PATH="${
-      lib.makeLibraryPath [ stdenv.cc.cc ]
-    }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-    cp ${native}/lib/deskfleet.node crates/node/deskfleet.node
-    pnpm --filter @deskfleet/desktop build
-    # electron-builder writes the configured fuses into its copied executable.
-    # Copying directly from the Nix store preserves read-only permissions.
-    cp -r ${electron.dist} "$TMPDIR/electron-dist"
-    chmod -R u+w "$TMPDIR/electron-dist"
-    pnpm --filter @deskfleet/desktop exec electron-builder --dir --linux --publish never \
-      -c.electronDist="$TMPDIR/electron-dist" -c.electronVersion=${electron.version}
-    runHook postBuild
-  '';
+  dontStrip = true;
 
   desktopItems = [
     (makeDesktopItem {
@@ -95,9 +122,12 @@ stdenv.mkDerivation (finalAttrs: {
 
   installPhase = ''
     runHook preInstall
-    mkdir -p "$out/lib"
-    cp -r apps/desktop/release/linux-unpacked "$out/lib/deskfleet"
-    install -Dm644 apps/desktop/build/icon.png "$out/share/icons/hicolor/1024x1024/apps/deskfleet.png"
+    mkdir -p "$out/lib/deskfleet"
+    cp -r . "$out/lib/deskfleet/"
+    install -Dm644 ${./icon.png} "$out/share/icons/hicolor/1024x1024/apps/deskfleet.png"
+    # Use the loader configured to discover NixOS Vulkan drivers.
+    rm "$out/lib/deskfleet/libvulkan.so.1"
+    ln -s ${lib.getLib vulkan-loader}/lib/libvulkan.so.1 "$out/lib/deskfleet/libvulkan.so.1"
     runHook postInstall
   '';
 
@@ -106,16 +136,19 @@ stdenv.mkDerivation (finalAttrs: {
       "''${gappsWrapperArgs[@]}" \
       --set DESKFLEET_LAUNCHER "$out/bin/deskfleet" \
       --unset APPIMAGE \
-      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath mediaLibraries}" \
+      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibraries}" \
       --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "${lib.makeSearchPath "lib/gstreamer-1.0" mediaPlugins}"
   '';
 
-  passthru = { inherit native electron pnpm; };
   meta = {
     description = "Manage a team's AI agents and working environments across machines";
     homepage = "https://github.com/yet-another-ai/deskfleet";
     license = lib.licenses.asl20;
-    platforms = [ "x86_64-linux" ];
+    platforms = [
+      "x86_64-linux"
+      "aarch64-linux"
+    ];
+    sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
     mainProgram = "deskfleet";
   };
 })

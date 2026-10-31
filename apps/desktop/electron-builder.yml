@@ -63,3 +63,5 @@ linux:
   syncDesktopName: true
   target:
     - AppImage
+    # Reusable application payload for Nix and other Linux package formats.
+    - tar.gz

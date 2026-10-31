@@ -8,6 +8,7 @@ import { fetchLatestRelease, findDownload, releasesPage, type LatestRelease } fr
 
 const assetNames = [
   "deskfleet-0.2.0-mac-arm64.dmg", "deskfleet-0.2.0-mac-arm64.zip", "deskfleet-0.2.0-win-x64.exe",
+  "deskfleet-0.2.0-linux-x64.tar.gz", "deskfleet-0.2.0-linux-arm64.tar.gz", "deskfleet-nix.tar.gz",
   "deskfleet-0.2.0-linux-x86_64.AppImage", "deskfleet-0.2.0-linux-arm64.AppImage",
   "deskfleet-macos-arm64.tar.gz", "deskfleet-windows-x64.tar.gz", "deskfleet-linux-x64.tar.gz", "deskfleet-linux-arm64.tar.gz",
 ]
@@ -28,7 +29,7 @@ test("download selection distinguishes installers, archives, and Linux architect
   }
 })
 
-test("release verification requires installers and update metadata for stable and prerelease builds", context => {
+test("release verification requires installers, packaging archives, and update metadata for stable and prerelease builds", context => {
   const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/publish.yml"), "utf8").replace(/\r\n/g, "\n")
   const block = yaml.match(/^      - name: Verify release assets\n[\s\S]*?^        run: \|\n((?:          .*\n)+)/m)?.[1]
   assert.ok(block, "Missing release asset verification step")
@@ -51,7 +52,10 @@ test("release verification requires installers and update metadata for stable an
     const result = verify(version)
     assert.ifError(result.error)
     assert.equal(result.status, 0, result.stderr)
-    for (const required of [`deskfleet-${version}-linux-x86_64.AppImage`, "latest-linux-arm64.yml", `deskfleet-${version}-mac-arm64.zip.blockmap`]) {
+    for (const required of [
+      `deskfleet-${version}-linux-x86_64.AppImage`, "latest-linux-arm64.yml", `deskfleet-${version}-mac-arm64.zip.blockmap`,
+      `deskfleet-${version}-linux-x64.tar.gz`, `deskfleet-${version}-linux-arm64.tar.gz`, "deskfleet-nix.tar.gz",
+    ]) {
       const path = join(directory, "release-assets", required)
       unlinkSync(path)
       assert.notEqual(verify(version).status, 0, `Missing ${required} must prevent publication`)

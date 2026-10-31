@@ -556,7 +556,7 @@ behavior.
 
 ```sh
 mise run desktop:package:dir  # unpacked app in release/
-mise run desktop:package      # dmg and zip, NSIS, or AppImage for the host platform
+mise run desktop:package      # DMG/ZIP, NSIS, or AppImage/tar.gz for the host platform
 ```
 
 `electron-builder.yml` configures packaging. Vite bundles every dependency into
@@ -570,6 +570,12 @@ for those adapter processes. Packages enable ASAR
 integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
+
+Linux packaging produces both an AppImage and a desktop `tar.gz` archive from
+the same compiled app. The archive includes Electron, the native addon, and the
+bundled daemon and ACP adapters. It is the reusable input for distribution
+packages: Nix patches runtime paths and installs it without rebuilding Rust or
+JavaScript. Future deb, rpm, or AUR packaging can consume the same archive.
 
 Tagged releases use `electron-builder.release.yml` on macOS. This overlay
 requires Developer ID signing and Apple notarization; missing credentials or
@@ -616,8 +622,12 @@ mise exec -- pnpm --filter @deskfleet/desktop exec electron-builder --config ele
 ```
 
 The tagged build stages macOS arm64 DMG/ZIP, Windows x64 NSIS, and Linux x64/arm64
-AppImage installers in a draft GitHub Release. After that release is published,
-the website resolves the latest stable installers through GitHub's releases API.
+AppImages and desktop archives in a draft GitHub Release. Linux archives already
+contain the public configuration compiled under the `production` environment.
+The release also includes `deskfleet-nix.tar.gz`, a generated flake bundle that
+pins these archives by versioned URL and SHA-256, together with its nixpkgs input.
+After that release is published, the website resolves the latest stable
+installers through GitHub's releases API.
 See [release workflow](../../agents/docs/ci.md) for tag validation and publishing.
 
 The original brand artwork lives in
