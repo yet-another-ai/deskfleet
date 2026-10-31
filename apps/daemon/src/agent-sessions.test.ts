@@ -952,25 +952,43 @@ test("catalog synchronization publishes all surviving Session IDs after deletion
   await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
 
   const inventories: string[][] = []
+  let markUploadStarted!: () => void
+  let releaseUpload!: () => void
+  const uploadStarted = new Promise<void>(resolve => { markUploadStarted = resolve })
+  const uploadReleased = new Promise<void>(resolve => { releaseUpload = resolve })
+  let holdUpload = false
   const sync = new CentralSync(f.service, f.catalog, f.providers, async (path, body) => {
     if (path.endsWith("catalog")) {
       inventories.push((body as { snapshot: { sessionIds: string[] } }).snapshot.sessionIds)
+      if (holdUpload) {
+        holdUpload = false
+        markUploadStarted()
+        await uploadReleased
+      }
       return {}
     }
     return { lastEventSeq: (body as { snapshot: AgentSnapshot }).snapshot.session.lastEventSeq }
   }, async () => false)
-  t.after(() => sync.close())
+  t.after(async () => { releaseUpload(); await sync.close() })
   sync.enable()
+  const publishedInventory = async () => { await sync.flush(); return inventories.at(-1) }
   await sync.flush()
   assert.deepEqual(inventories.at(-1), [f.sessionId, machine.session.id, failed.session.id])
 
+  // A timer-driven upload can capture the old inventory while deletion is running.
+  holdUpload = true
+  sync.changed()
+  const uploading = sync.flush()
+  await uploadStarted
   await f.service.handle("_deskfleet/session/delete", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
-  await sync.flush()
-  assert.deepEqual(inventories.at(-1), [machine.session.id, failed.session.id])
+  const flushing = sync.flush()
+  releaseUpload()
+  await Promise.all([uploading, flushing])
+  // flush() joins a running pass; deletion is published by its trailing pass.
+  assert.deepEqual(await until(publishedInventory, ids => ids?.length === 2 && !ids.includes(f.sessionId)), [machine.session.id, failed.session.id])
   await f.service.handle("_deskfleet/session/delete", { sessionId: machine.session.id, operationId: randomUUID() }, f.actor)
   await f.service.handle("_deskfleet/session/delete", { sessionId: failed.session.id, operationId: randomUUID() }, f.actor)
-  await sync.flush()
-  assert.deepEqual(inventories.at(-1), [])
+  assert.deepEqual(await until(publishedInventory, ids => ids?.length === 0), [])
 })
 
 test("resume waits for process shutdown and an old close callback cannot interrupt a new run", async t => {
