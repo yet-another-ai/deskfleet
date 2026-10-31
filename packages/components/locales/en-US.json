@@ -414,7 +414,7 @@
     "thisComputer": "This computer",
     "launchAtStartup": "Launch at startup",
     "launchAtStartupDescription": "Open DeskFleet automatically when you log in.",
-    "launchAtStartupUnavailable": "Available in the installed app on macOS and Windows.",
+    "launchAtStartupUnavailable": "Available in the installed app on Linux, macOS, and Windows.",
     "keepAwake": "Keep Awake",
     "keepAwakeDescription": "Prevent idle sleep while DeskFleet is running, including in the tray. The display can still turn off.",
     "worktreeRoot": "Worktree root directory",
