@@ -12,6 +12,7 @@ import { installAppearance } from "./appearance.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
 import { keepRunningInBackground } from "./lifecycle.ts"
 import { KeepAwakeController } from "./keep-awake.ts"
+import { refreshLaunchAtStartup } from "./launch-at-startup.ts"
 import { LocalAgentController } from "./local-agent-controller.ts"
 import { createLocalAgentRuntime } from "./local-agent-runtime.ts"
 import { establishedDesktopProfile, OnboardingController } from "./onboarding-controller.ts"
@@ -40,6 +41,7 @@ function start(): void {
 
   void app.whenReady().then(async () => {
     configureApplicationDisplay()
+    try { refreshLaunchAtStartup() } catch (error) { console.error("Could not refresh launch at startup", error) }
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
     installDesktopMediaIpc()

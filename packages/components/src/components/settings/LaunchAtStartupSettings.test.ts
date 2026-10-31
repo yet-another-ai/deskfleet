@@ -94,8 +94,9 @@ test("offers a reload after the initial read fails", async () => {
 })
 
 test.each([
-  ["en-US", "Launch at startup", "Available in the installed app on macOS and Windows."],
-  ["zh-cmn-Hans-CN", "开机自启", "适用于 macOS 和 Windows 上已安装的应用。"],
+  ["en-US", "Launch at startup", "Available in the installed app on Linux, macOS, and Windows."],
+  ["zh-cmn-Hans-CN", "开机自启", "适用于 Linux、macOS 和 Windows 上已安装的应用。"],
+  ["ja-JP", "ログイン時に起動", "Linux、macOS、Windows にインストールしたアプリで利用できます。"],
 ] as const)("explains unavailable startup settings in %s", async (locale, label, description) => {
   i18n.global.locale.value = locale
   vi.mocked(platformClient.settings.getLaunchAtStartup).mockResolvedValue({ available: false, enabled: false })

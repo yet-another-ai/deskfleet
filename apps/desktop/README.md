@@ -366,13 +366,25 @@ starting another client.
 user logs in. Packaged macOS and Windows apps use Electron's
 `app.getLoginItemSettings()` and `app.setLoginItemSettings()`; the OS owns the
 preference, and Settings reads it again after each change. Windows also honors
-startup entries disabled in Task Manager. The switch is unavailable on Linux
-and in development runs, which use Electron's executable instead of an installed
-DeskFleet app. macOS login items require a signed and notarized app to work
-reliably; see [Electron's login item documentation](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings-macos-windows).
+startup entries disabled in Task Manager. macOS login items require a signed and
+notarized app to work reliably; see [Electron's login item documentation](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings-macos-windows).
 
-This launches the client with its normal window and respects the separate
-**Run local Agent** preference described below.
+Packaged Linux apps use XDG Autostart. Enabling creates
+`$XDG_CONFIG_HOME/autostart/io.github.yet_another_ai.deskfleet.desktop`;
+disabling removes it. If `XDG_CONFIG_HOME` is unset, empty, or relative, the
+configuration directory defaults to `~/.config`. The `Exec` target is the outer
+`APPIMAGE` file for AppImage builds, or the executable path for other packaged
+builds.
+
+On each launch, DeskFleet updates the `Exec` path of an existing enabled Linux
+entry. It honors `Hidden=true` and `X-GNOME-Autostart-enabled=false`, and does not
+recreate deleted entries. Built-in updates restart the new version, which
+refreshes the path. After manually moving, renaming, or replacing an AppImage,
+run it once from its new location to update the startup entry.
+
+The client opens its normal window and respects the separate **Run local Agent**
+preference described below. The switch is unavailable in development runs, which
+use Electron's executable instead of an installed DeskFleet app.
 
 ## Keep Awake
 

@@ -300,7 +300,7 @@
     "notificationTaskCompleted": "タスク完了", "notificationTaskCompletedDescription": "エージェントがタスクを完了したときに通知します。",
     "notificationTaskNeedsInput": "入力が必要なタスク", "notificationTaskNeedsInputDescription": "エージェントが質問や承認を待っているときに通知します。",
     "thisComputer": "このコンピューター", "launchAtStartup": "ログイン時に起動",
-    "launchAtStartupDescription": "ログイン時に DeskFleet を自動で起動します。", "launchAtStartupUnavailable": "macOS と Windows にインストールしたアプリで利用できます。",
+    "launchAtStartupDescription": "ログイン時に DeskFleet を自動で起動します。", "launchAtStartupUnavailable": "Linux、macOS、Windows にインストールしたアプリで利用できます。",
     "keepAwake": "スリープを防止", "keepAwakeDescription": "DeskFleet の実行中は、トレイに格納されている間も、無操作によるスリープを防ぎます。ディスプレイはオフにできます。",
     "worktreeRoot": "ワークツリーのルートディレクトリ", "worktreeRootDescription": "このコンピューターで新しいセッションのワークツリーを保存する場所です。既存のファイルは移動しません。",
     "chooseWorktreeRoot": "フォルダーを選択…", "useDefaultWorktreeRoot": "デフォルトを使用",
