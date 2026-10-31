@@ -9,7 +9,7 @@ import type { AccountAuthentication, AuthenticationMethods } from "@deskfleet/cl
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
-import PasswordField from "./PasswordField.vue"
+import UiField from "../common/UiField.vue"
 
 /** Offers the account’s available identity proofs for a sensitive action. */
 const props = defineProps<{
@@ -79,13 +79,10 @@ async function confirm(usePasskey: boolean): Promise<void> {
     <DialogTitle class="ui-dialog-title">{{ t("auth.reauthTitle") }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t("auth.reauthDescription") }}</DialogDescription>
     <form class="mt-5 flex flex-col gap-4" @submit.prevent="emailChallenge ? confirmEmail() : confirm(false)">
-      <PasswordField v-if="!emailChallenge && methods?.password" v-model="password" :label="t('auth.password')" purpose="current" :disabled="pending" autofocus />
+      <UiField v-if="!emailChallenge && methods?.password" v-model="password" :label="t('auth.password')" type="password" name="password" autocomplete="current-password" required maxlength="128" :disabled="pending" autofocus />
       <template v-if="emailChallenge">
         <p role="status" class="m-0 text-sm text-ui-text-muted">{{ t("auth.emailCodeSent") }}</p>
-        <label class="flex flex-col gap-1.5 text-sm">
-          {{ t("auth.emailCode") }}
-          <input v-model="emailCode" class="ui-input" name="verification-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required :disabled="pending" autofocus />
-        </label>
+        <UiField v-model="emailCode" :label="t('auth.emailCode')" name="verification-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required :disabled="pending" autofocus />
       </template>
       <UiButton :disabled="pending || resendIn > 0" @click="sendEmail">{{ resendIn > 0 ? t("auth.emailCodeResendIn", { seconds: resendIn }) : t(emailChallenge ? "auth.resend" : "auth.useEmailCode") }}</UiButton>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>

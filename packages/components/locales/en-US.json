@@ -325,7 +325,9 @@
     "placeholderControl": "{label} (not available yet)",
     "copy": "Copy",
     "copied": "Copied",
-    "copyLabel": "Copy {label}"
+    "copyLabel": "Copy {label}",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "toolbar": {
     "showSidebar": "Show sidebar",
@@ -1302,8 +1304,6 @@
     "password": "Password",
     "newPassword": "New password",
     "passwordHint": "15–128 characters. Spaces and password managers are welcome.",
-    "showPassword": "Show password",
-    "hidePassword": "Hide password",
     "forgot": "Forgot password?",
     "or": "or",
     "signInWithPasskey": "Sign in with a Passkey",

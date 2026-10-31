@@ -84,8 +84,11 @@ dialog layout within VitePress. Fonts and brand assets are bundled locally.
 Shared UI controls live in `packages/components/src/components/common/`:
 `UiButton` and `IconButton` own action sizes and states; `UiSelect`, `UiCheckbox`,
 `UiSwitch`, `UiNumberField`, `UiTimeField`, and `UiDialog` adapt Reka UI primitives
-to application models and UnoCSS tokens. Menus, tabs, popovers, and disclosures
-use Reka primitives with the same tokens. Keep native text inputs and textareas;
+to application models and UnoCSS tokens. `UiField` wraps a labeled native text
+input or text area, adding a hint, an in-frame `#suffix`, and an adjacent
+`#append` action; `type="password"` adds the reveal toggle. Menus, tabs, popovers,
+and disclosures use Reka primitives with the same tokens. Keep native text inputs
+and textareas;
 schema-driven numeric answers retain native validation for arbitrary decimal
 constraints. Schedule times cross the component boundary as minute-precision
 `HH:mm` strings, with the IANA time zone selected separately. Popups inside the
