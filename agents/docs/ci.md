@@ -48,9 +48,6 @@ a stable `Gate` result for branch protection.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
   creates a draft GitHub Release and pushes the server image to GHCR after
   both workflows succeed.
-- `.github/workflows/notify-homebrew-tap.yml` notifies the Homebrew tap when a
-  stable GitHub Release is published. Manual runs retry synchronization of the
-  latest stable release. The tap owns Cask changes and their validation.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
   and configures shared caches for both reusable workflows.
 
@@ -205,50 +202,39 @@ or either Linux architecture.
 The macOS Apple Silicon Cask is maintained in
 [`yet-another-ai/homebrew-tap`](https://github.com/yet-another-ai/homebrew-tap).
 DeskFleet owns application versions, signing, and release assets; the tap owns
-the Cask, release metadata validation, synchronization PR, and utility checks.
+the Cask, release metadata validation, synchronization, and utility checks.
 The Cask installs the same signed and notarized DMG as the release page and
-retains the app's built-in updater.
-
-After a reviewed stable `v*` Release is published,
-`notify-homebrew-tap.yml` sends the `deskfleet-release-published` repository
-dispatch. The tap reads GitHub's latest stable Release, validates the DMG metadata
-and updates its synchronization PR. Homebrew verifies the installer's SHA-256
-during installation. Drafts, prereleases, and unreleased version
-changes do not advance the Cask. Preserve published assets: the tap rejects
-same-version digest changes and automatic downgrades.
-
-Configure `TAP_SYNC_TOKEN` with a fine-grained personal access token whose
-resource owner is `yet-another-ai`, whose only selected repository is
-`homebrew-tap`, and whose repository permissions are **Contents: Read and
-write** and **Pull requests: Read and write**. Store it as an Actions secret in
-both repositories, or as an organization secret available only to `deskfleet`
-and `homebrew-tap`. DeskFleet uses it only to dispatch the tap workflow;
-the tap uses it to update its synchronization PR. The default `GITHUB_TOKEN`
-cannot write to the other repository.
-
-Merge both workflows onto their repositories' default branches and configure
-the tap's required check and auto-merge before relying on automatic updates.
-The initial Cask can use an existing stable Release. Tap setup and maintenance
-are documented in its
-[maintenance guide](https://github.com/yet-another-ai/homebrew-tap/blob/main/agents/docs/maintenance.md).
-
-If notification fails, fix the reported credentials or configuration and retry:
+retains the app's built-in updater. Install with:
 
 ```sh
-gh workflow run notify-homebrew-tap.yml --repo yet-another-ai/deskfleet --ref main
+brew install --cask yet-another-ai/tap/deskfleet
 ```
 
-If notification succeeded but tap synchronization or PR checks failed, repair
-the reported problem and retry in the tap:
+Cask synchronization lives only in the tap. It runs on a schedule and by manual
+dispatch there; DeskFleet does not notify the tap and does not need a
+`TAP_SYNC_TOKEN` or any other cross-repository secret for Homebrew. The tap
+reads GitHub's latest stable Release, validates the DMG metadata, and updates
+its synchronization PR. Homebrew verifies the installer's SHA-256 during
+installation. Drafts, prereleases, and unreleased version changes do not
+advance the Cask. Preserve published assets: the tap rejects same-version
+digest changes and automatic downgrades.
+
+Configure the tap's required check and auto-merge before relying on automatic
+updates. The initial Cask can use an existing stable Release. Tap setup and
+maintenance are documented in its
+[maintenance guide](https://github.com/yet-another-ai/homebrew-tap/blob/main/agents/docs/maintenance.md).
+
+If tap synchronization or PR checks fail, repair the reported problem and
+retry in the tap:
 
 ```sh
 gh workflow run sync-deskfleet.yml --repo yet-another-ai/homebrew-tap --ref main
 ```
 
-Both retries reconcile the latest stable Release without a tag input. A failed
-notification leaves the published Release and desktop updater available; the
-tap retains its previous Cask until synchronization and merge succeed.
-Synchronization is event-driven, with manual recovery and no polling schedule.
+Manual dispatch reconciles the latest stable Release without a tag input. A
+delayed or failed sync leaves the published Release and desktop updater
+available; the tap retains its previous Cask until synchronization and merge
+succeed.
 
 ### Server image
 
