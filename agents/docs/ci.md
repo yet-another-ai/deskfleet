@@ -296,16 +296,44 @@ signing credentials and other secrets never enter the snapshot or Nix store.
 `VITE_SENTRY_RELEASE` is derived from the package version as
 `deskfleet@v<version>`, matching the tagged Electron release.
 
-After changing any of these GitHub environment variables, synchronize the
-snapshot with an authenticated `gh` installation before tagging a release:
+`.github/workflows/nix-production-sync.yml` checks the production variables every
+hour at minute 17. It reads the current `main` branch and regenerates the snapshot.
+Unchanged values create no commit or pull request. Changes create or update one
+pull request on `chore/nix-production-config`; subsequent changes update that same
+open pull request. Merge the reviewed snapshot before tagging a release. The
+workflow does not merge its own pull requests.
+
+Enable synchronization once by adding the repository secret
+`NIX_CONFIG_SYNC_TOKEN`: a fine-grained personal access token restricted to
+`yet-another-ai/deskfleet`, with these repository permissions:
+
+- **Environments: read** to read the production variables through GitHub's API.
+- **Contents: write** to push the snapshot branch.
+- **Pull requests: write** to create or update the synchronization pull request.
+
+Store the token under repository Actions secrets, not the `production`
+environment. The scheduled workflow never binds that environment, so its
+existing `v*` tag restriction and signing-secret access remain unchanged. The
+dedicated token also lets the generated pull request trigger normal CI without
+the workflow-approval restriction applied to pull requests created with
+`GITHUB_TOKEN`. Renew the token before its configured expiration.
+
+Scheduled workflows start after this workflow is merged into `main`; GitHub can
+delay scheduled runs. After changing a variable, request an immediate check with:
+
+```sh
+gh workflow run nix-production-sync.yml --ref main
+```
+
+For a local synchronization with an authenticated `gh` installation:
 
 ```sh
 mise exec node -- node scripts/nix-production.ts sync
 git diff -- nix/production.json
 ```
 
-Commit the generated snapshot with the intended release source. The production
-Nix job compares it against the same `vars.VITE_*` values used by the existing
+Commit or merge the generated snapshot with the intended release source. The
+production Nix job compares it against the same `vars.VITE_*` values used by the existing
 Electron build and rejects missing required values or drift. Optional telemetry
 values can be empty. The source snapshot makes ordinary `nix build` and
 `nix run github:yet-another-ai/deskfleet` reproducible without GitHub credentials,

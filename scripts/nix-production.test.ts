@@ -52,26 +52,39 @@ test("release validation rejects changed configuration and undeclared snapshot f
   }
 })
 
-test("sync consumes paginated GitHub environment variables without exporting other values", { skip: process.platform === "win32" }, context => {
+test("sync follows production changes and leaves unchanged snapshots identical", { skip: process.platform === "win32" }, context => {
   const directory = temporary(context)
   const destination = join(directory, "nix", "production.json")
   const fixture = join(directory, "gh.mjs")
-  const variables = Object.entries(production).map(([name, value]) => ({ name, value }))
-  const pages = [{ variables: variables.slice(0, 2) }, { variables: [
-    ...variables.slice(2), { name: "UNRELATED_VARIABLE", value: "unrelated" },
-  ] }]
-  writeFileSync(fixture, `import assert from "node:assert/strict"
+  function respond(configuration: typeof production): void {
+    const variables = Object.entries(configuration).map(([name, value]) => ({ name, value }))
+    const pages = [{ variables: variables.slice(0, 2) }, { variables: [
+      ...variables.slice(2), { name: "UNRELATED_VARIABLE", value: "unrelated" },
+    ] }]
+    writeFileSync(fixture, `import assert from "node:assert/strict"
 assert.deepEqual(process.argv.slice(2), ["api", "repos/yet-another-ai/deskfleet/environments/production/variables", "--paginate", "--slurp"])
 console.log(${JSON.stringify(JSON.stringify(pages))})
 `)
+  }
   writeFileSync(join(directory, "gh"), '#!/bin/sh\nexec "$DESKFLEET_TEST_NODE" "$DESKFLEET_GH_FIXTURE" "$@"\n', { mode: 0o755 })
   const path = Object.entries(process.env).find(([name]) => name.toUpperCase() === "PATH")?.[1] ?? ""
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toUpperCase() !== "PATH"))
-  const result = spawnSync(process.execPath, [join(import.meta.dirname, "nix-production.ts"), "sync", destination], {
-    encoding: "utf8", env: { ...env, PATH: `${directory}${delimiter}${path}`, DESKFLEET_TEST_NODE: process.execPath, DESKFLEET_GH_FIXTURE: fixture },
-  })
-  assert.equal(result.status, 0, result.stderr)
+  function synchronize(): string {
+    const result = spawnSync(process.execPath, [join(import.meta.dirname, "nix-production.ts"), "sync", destination], {
+      encoding: "utf8", env: { ...env, PATH: `${directory}${delimiter}${path}`, DESKFLEET_TEST_NODE: process.execPath, DESKFLEET_GH_FIXTURE: fixture },
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.doesNotMatch(result.stdout, /client-public|unrelated/)
+    return readFileSync(destination, "utf8")
+  }
+
+  respond(production)
+  const first = synchronize()
   assert.deepEqual(JSON.parse(readFileSync(destination, "utf8")), production)
   assert.deepEqual(Object.keys(JSON.parse(readFileSync(destination, "utf8"))), [...publicVariables])
-  assert.doesNotMatch(result.stdout, /client-public|unrelated/)
+  assert.equal(synchronize(), first, "Unchanged variables must not produce a content diff")
+
+  const changed = { ...production, VITE_DESKFLEET_SERVER_URL: "https://new.example.com", VITE_SENTRY_DSN: "" }
+  respond(changed)
+  assert.deepEqual(JSON.parse(synchronize()), changed, "Sync must pick up changes and removal of optional configuration")
 })
