@@ -199,6 +199,13 @@ transaction checks, peer expiry/revocation, and daemon delegation bounds remain
 part of authorization. Rules such as retaining a Team's unique owner are
 transactional business invariants in addition to policy checks.
 
+Enrollment, invitations, Team rename, and Machine rename/removal retain
+authorization until commit: they lock the actor against disabling, then the Team against
+membership changes, and check current membership before writing. Session
+admission also locks the Team before the Machine and rechecks revocation after
+waiting. Billing reconciliation locks the Team before its profile and analytics
+outbox, matching Enterprise updates and the outbox's foreign-key checks.
+
 PostgreSQL owns runtime site name, announcement, Team-creation policy, and optional
 Terms of Service and Privacy Terms URLs. The public site endpoint exposes these
 fields; authenticated site administrators

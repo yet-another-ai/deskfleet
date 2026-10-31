@@ -34,7 +34,7 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         let team: i64 = one(
             &tx,
-            "SELECT team_id FROM cp_machines WHERE id=$1 AND NOT revoked FOR SHARE",
+            "SELECT team_id FROM cp_machines WHERE id=$1 AND NOT revoked",
             vec![machine.into()],
         )
         .await?
@@ -43,6 +43,13 @@ impl ControlStore {
             &tx,
             "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
             vec![team.into()],
+        )
+        .await?;
+        // Team precedes Machine locks, matching authorized Machine mutations.
+        one(
+            &tx,
+            "SELECT id FROM cp_machines WHERE id=$1 AND team_id=$2 AND NOT revoked FOR SHARE",
+            vec![machine.into(), team.into()],
         )
         .await?;
         if let Some(row) = tx

@@ -31,15 +31,19 @@ impl ControlStore {
         local_id: &str,
         capabilities: Value,
     ) -> Result<(Machine, String)> {
-        self.authorize_team(user_id, team_id, TeamAction::EnrollMachine)
-            .await?;
         uuid::Uuid::parse_str(origin).map_err(|_| Error::Invalid("invalid catalog origin UUID"))?;
         resource_id(local_id)?;
         let token = secret();
-        let row = self.db.query_one_raw(sql(
+        let tx = self.db.begin().await?;
+        authorize(
+            &crate::teams::lock_team_policy(&tx, user_id, team_id).await?,
+            TeamAction::EnrollMachine,
+        )?;
+        let row = tx.query_one_raw(sql(
             "INSERT INTO cp_machines(team_id,owner_id,name,origin_id,local_machine_id,token_hash,capabilities) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(origin_id) DO NOTHING RETURNING *",
             vec![resource_id(team_id)?.into(),user_id.into(),name(machine_name)?.into(),origin.into(),local_id.into(),secret_hash(&token).into(),capabilities.into()],
         )).await?.ok_or(Error::Conflict("machine origin is already registered"))?;
+        tx.commit().await?;
         Ok((machine(row)?, token))
     }
     pub async fn authenticate_machine(&self, token: &str) -> Result<MachineAuth> {
@@ -89,16 +93,24 @@ impl ControlStore {
     }
     /// Every Team member can rename a machine; the daemon keeps its own hostname.
     pub async fn rename_machine(&self, user_id: &str, id: &str, value: &str) -> Result<Machine> {
-        let mut m = self
-            .authorize_machine(user_id, id, MachineAction::Rename)
-            .await?;
+        let mut m = self.machine(id).await?;
         let value = name(value)?;
-        self.db
+        let tx = self.db.begin().await?;
+        let membership = crate::teams::lock_team_policy(&tx, user_id, &m.team_id).await?;
+        authorize(
+            &MachinePolicy::new(membership.role()),
+            MachineAction::Rename,
+        )?;
+        let changed = tx
             .execute_raw(sql(
                 "UPDATE cp_machines SET name=$1 WHERE id=$2 AND NOT revoked",
                 vec![value.into(), resource_id(id)?.into()],
             ))
             .await?;
+        if changed.rows_affected() != 1 {
+            return Err(Error::NotFound);
+        }
+        tx.commit().await?;
         m.name = value.to_owned();
         Ok(m)
     }
@@ -124,9 +136,13 @@ impl ControlStore {
         Ok(())
     }
     pub async fn revoke_machine(&self, user_id: &str, id: &str) -> Result<()> {
-        self.authorize_machine(user_id, id, MachineAction::Remove)
-            .await?;
+        let m = self.machine(id).await?;
         let tx = self.db.begin().await?;
+        let membership = crate::teams::lock_team_policy(&tx, user_id, &m.team_id).await?;
+        authorize(
+            &MachinePolicy::new(membership.role()),
+            MachineAction::Remove,
+        )?;
         // Lock the Machine before releasing reservations, matching admission order.
         tx.execute_raw(sql(
             "UPDATE cp_machines SET revoked=TRUE WHERE id=$1",
