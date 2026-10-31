@@ -49,6 +49,7 @@ try {
   assert.notEqual(httpBackend, backend)
   const alice = await auth.login(backend, { subject: "alice", name: "Alice smoke", email: "alice@example.invalid" })
   const bob = await auth.login(backend, { subject: "bob", name: "Bob smoke", email: "bob@example.invalid" })
+  await fixture.configureTurnSettings(alice)
   admin = client(alice)
   const member = client(bob)
   assert.deepEqual(auth.exchanges, ["alice", "bob"])

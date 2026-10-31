@@ -1,12 +1,13 @@
 import assert from "node:assert/strict"
-import { spawn } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { createServer, type AddressInfo } from "node:net"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { createAuthFixture } from "./backend-auth.ts"
+import { promisify } from "node:util"
+import { createAuthFixture, type FixtureLogin } from "./backend-auth.ts"
 import { until } from "./backend-peer.ts"
 
 /** Starts the shipped server binary against the supplied test database, without resetting it. */
@@ -24,6 +25,27 @@ export async function startBackendFixture(options: { databaseUrl?: string; binar
   const mailDirectory = await mkdtemp(join(tmpdir(), "deskfleet-auth-smoke-"))
   const webOrigin = options.allowedOrigins?.[0] ?? publicUrl
   const auth = createAuthFixture(mailDirectory, webOrigin)
+  async function configureTurnSettings(login: FixtureLogin): Promise<void> {
+    // CI reuses its database for direct and relay runs. Environment URLs only
+    // seed a new database, so each smoke invocation must explicitly set its list.
+    const settings = { urls: (process.env.DESKFLEET_TURN_URLS ?? "").split(",").map(url => url.trim()).filter(Boolean) }
+    const execute = promisify(execFile)
+    const siteAdmin = (action: "grant" | "revoke") => execute(binary, ["site-admin", action, login.user.id], {
+      cwd: root, env: { ...process.env, DATABASE_URL: databaseUrl },
+    })
+    await siteAdmin("grant")
+    try {
+      for (const method of ["PATCH", "GET"]) {
+        const response = await fetch(`${backend}/api/admin/turn-settings`, {
+          method, headers: { authorization: `Bearer ${login.token}`, "content-type": "application/json" },
+          ...(method === "PATCH" ? { body: JSON.stringify(settings) } : {}), signal: AbortSignal.timeout(20_000),
+        })
+        const text = await response.text()
+        assert.ok(response.ok, `${method} smoke TURN settings: ${response.status} ${text}`)
+        assert.deepEqual(JSON.parse(text), settings, "Smoke TURN settings must match this run's requested URLs")
+      }
+    } finally { await siteAdmin("revoke") }
+  }
   let diagnostics = ""
   function launch() {
     const child = spawn(binary, [], {
@@ -73,5 +95,5 @@ export async function startBackendFixture(options: { databaseUrl?: string; binar
     await rm(mailDirectory, { recursive: true, force: true })
   }
   try { await ready() } catch (error) { await close(); throw error }
-  return { backend, auth, close, stopServer, restartServer, diagnostics: () => diagnostics }
+  return { backend, auth, close, stopServer, restartServer, configureTurnSettings, diagnostics: () => diagnostics }
 }

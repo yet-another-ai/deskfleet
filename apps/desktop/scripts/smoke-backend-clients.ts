@@ -118,6 +118,7 @@ async function launch(mode: BackendClientsContext["mode"]): Promise<void> {
   } finally { await stopClient() }
 }
 try {
+  await fixture.configureTurnSettings(login)
   // Both client bundles receive the fixture backend at compile time, as shipped clients do.
   const define = { "import.meta.env.VITE_DESKFLEET_SERVER_URL": JSON.stringify(fixture.backend) }
   await buildWeb({ root: join(root, "apps/web"), configFile: join(root, "apps/web/vite.config.ts"), define, build: { outDir: webDirectory, emptyOutDir: true } })
