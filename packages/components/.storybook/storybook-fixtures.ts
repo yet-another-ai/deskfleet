@@ -625,6 +625,8 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     openAccountSettings: async () => {},
     githubSettings: async () => ({ configured: false, manageUrl: null, authorized: false, login: null, actAsYou: false }),
     githubPullRequest: async () => ({ pullRequest: null }),
+    search: async () => ({ results: [] }),
+    scheduleSnapshot: async () => ({ tasks: structuredClone(schedules), lastObservedAt: "2026-10-31T12:00:00Z" }),
     manageGithub: async () => {},
     authorizeGithubApp: async () => {},
     setGithubActAsYou: async actAsYou => ({ configured: true, manageUrl: "https://github.com/apps/deskfleet/installations/new", authorized: true, login: "octocat", actAsYou }),
@@ -1044,6 +1046,7 @@ export function createStorybookRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: "/", name: "new-session", component: { template: "<div />" } },
+      { path: "/search", name: "search", component: { template: "<div />" } },
       { path: "/admin", name: "site-admin", component: { template: "<div />" } },
       { path: "/schedules/:scheduleId?", name: "schedules", component: { template: "<div />" }, props: true },
       { path: "/worktrees/:worktreeId", name: "worktree", component: { template: "<div />" }, props: true },

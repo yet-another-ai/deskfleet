@@ -11,6 +11,7 @@ mod peers;
 pub mod policies;
 mod realtime;
 pub mod schema;
+mod search;
 mod site;
 mod teams;
 mod turn_usage;

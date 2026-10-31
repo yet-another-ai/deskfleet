@@ -3,6 +3,7 @@ import type { DesktopErrorReportingContext } from "./error-reporting-context.ts"
 import { deserializeCentralRequestError, serializeCentralRequestError, type CentralRequestError, type SerializedCentralRequestError } from "./request-diagnostics.ts"
 
 export const CENTRAL_METHODS = [
+  "search", "scheduleSnapshot",
   "status", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "aiUsage", "aiUsageSessions", "openAccountSettings", "githubSettings", "manageGithub", "authorizeGithubApp", "setGithubActAsYou", "githubPullRequest", "billing", "checkout", "billingPortal", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "transferOwnership", "machines", "renameMachine", "removeMachine", "localEnrollment", "enrollLocal", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
 ] as const satisfies readonly (keyof CentralApi)[]
 

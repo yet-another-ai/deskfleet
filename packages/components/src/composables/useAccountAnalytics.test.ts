@@ -10,23 +10,27 @@ const setPlan = vi.hoisted(() => vi.fn())
 vi.mock("../services/analytics.ts", () => ({ identifyAnalytics: vi.fn(), analyticsEnabled: vi.fn(() => false), beginAnalyticsPlanRefresh: (team: string) => (plan: string) => setPlan(team, plan) }))
 afterEach(() => { vi.clearAllMocks(); vi.mocked(analyticsEnabled).mockReturnValue(false) })
 
-test("account refreshes, account changes, and sign-out synchronize only the user ID", async () => {
+test("account refreshes, email changes, account changes, and sign-out synchronize identity", async () => {
   const fake = fakeCentral()
   const session = createAccountSession(fake.central)
   const scope = effectScope()
   scope.run(() => useAccountAnalytics(session))
   try {
-    expect(identifyAnalytics).toHaveBeenLastCalledWith(undefined, undefined)
+    expect(identifyAnalytics).toHaveBeenLastCalledWith(undefined, undefined, undefined)
     await flushPromises()
-    expect(vi.mocked(identifyAnalytics).mock.calls.at(-1)?.[0]).toBe(session.account.value.user?.id)
+    expect(identifyAnalytics).toHaveBeenLastCalledWith("user-1", { id: "team-1", role: "admin" }, "ada@example.test")
     const count = vi.mocked(identifyAnalytics).mock.calls.length
     await session.reload()
     expect(identifyAnalytics).toHaveBeenCalledTimes(count)
     expect(session.central.billing).not.toHaveBeenCalled()
-    session.account.value = { ...session.account.value, user: { ...session.account.value.user!, id: "another-user" } }
-    expect(vi.mocked(identifyAnalytics).mock.calls.at(-1)?.[0]).toBe("another-user")
+    session.account.value = { ...session.account.value, user: { ...session.account.value.user!, email: "new@example.test" } }
+    expect(identifyAnalytics).toHaveBeenLastCalledWith("user-1", { id: "team-1", role: "admin" }, "new@example.test")
+    session.account.value = { ...session.account.value, user: { ...session.account.value.user!, email: null } }
+    expect(identifyAnalytics).toHaveBeenLastCalledWith("user-1", { id: "team-1", role: "admin" }, undefined)
+    session.account.value = { ...session.account.value, user: { id: "another-user", name: "Bob" } }
+    expect(identifyAnalytics).toHaveBeenLastCalledWith("another-user", { id: "team-1", role: "admin" }, undefined)
     await session.signOut()
-    expect(vi.mocked(identifyAnalytics).mock.calls.at(-1)?.[0]).toBeUndefined()
+    expect(identifyAnalytics).toHaveBeenLastCalledWith(undefined, undefined, undefined)
   } finally { scope.stop(); session.dispose() }
 })
 
@@ -42,7 +46,7 @@ test("Team selection refreshes plan context and drops an old Team's late respons
   try {
     await session.selectTeam("two")
     await flushPromises()
-    expect(identifyAnalytics).toHaveBeenLastCalledWith(session.account.value.user?.id, { id: "two", role: "member" })
+    expect(identifyAnalytics).toHaveBeenLastCalledWith(session.account.value.user?.id, { id: "two", role: "member" }, "ada@example.test")
     first.resolve({ ...(await fake.central.billing("one")), plan: "pro" })
     await flushPromises()
     expect(setPlan).not.toHaveBeenCalledWith("one", "pro")

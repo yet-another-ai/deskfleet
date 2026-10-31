@@ -29,6 +29,12 @@ export const router = createRouter({
       component: () => import("../views/NewSessionView.vue"),
     },
     {
+      path: "/search",
+      name: "search",
+      component: () => import("../views/SearchView.vue"),
+      meta: { hideDetails: true },
+    },
+    {
       path: "/schedules/:scheduleId?",
       name: "schedules",
       component: () => import("../views/ScheduledTasksView.vue"),

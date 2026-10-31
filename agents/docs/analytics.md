@@ -47,8 +47,13 @@ defaults usable. Event delivery is best effort.
 ## Identity and data
 
 The Statsig user contains the authenticated account UUID as `userID`, the
-selected Team as `customIDs.teamID`, and `custom.platform` as `web` or `desktop`.
-Account status and Team changes replace this identity; logout removes both IDs.
+account email as the standard `email` attribute, the selected Team as
+`customIDs.teamID`, and `custom.platform` as `web` or `desktop`. Email is sent to
+Statsig so gates can target individual addresses or email domains; it does not
+replace the UUID used for identity and percentage rollouts. Account status,
+email, and Team changes replace this identity and refresh gate evaluations;
+logout removes both IDs and the email. Accounts without an available email omit
+that attribute.
 Public authentication pages and startup before
 account status arrives use the SDK's anonymous stable ID. Team and Machine
 switches do not create a new analytics client. Events include `team_id`,
@@ -58,10 +63,12 @@ focus, and billing-page load. Shared response sequencing rejects older requests.
 Joining a Team omits these event metadata fields because an invite token does
 not reveal the target Team before acceptance; use account-based join metrics.
 
-DeskFleet events carry only the fields listed below. They do not include account
-names/email, prompts, Session titles, file paths, provider configuration, raw RPC
-parameters, URL queries, or route resource IDs. Automatic page URL metadata is
-disabled. Auto Capture and Session Replay plugins are not installed.
+DeskFleet custom-event metadata carries only the fields listed below. It does
+not include account names/email, prompts, Session titles, file paths, provider
+configuration, raw RPC parameters, URL queries, or route resource IDs. The SDK
+associates events with the user identity described above, including its email.
+Automatic page URL metadata is disabled. Auto Capture and Session Replay plugins
+are not installed.
 
 Checkout request IDs connect frontend attempts to the server's created-checkout
 event. Billing events also retain opaque invoice/event identifiers for
@@ -201,8 +208,20 @@ Team navigation instead of assigning them to the new Team.
 
 ## Feature gates and experiments
 
-The helpers are ready for future UI experiments; this integration does not
-change any existing product feature based on a remote gate.
+Feature gates control frontend rollout through the shared analytics helpers.
+
+| Gate | Controls | Default |
+| --- | --- | --- |
+| `global_search` | Search navigation, page access, and Team search requests | Off |
+
+Create `global_search` in the Statsig project with a 0% rollout before targeting
+test users or Teams. Web and Electron use the same gate. A missing or blank
+`VITE_STATSIG_CLIENT_KEY`, an unavailable evaluation, or a gate that does not pass
+keeps search off. Closing the gate hides Search, navigates away from an open search page,
+clears its results, and prevents pending responses from repopulating them.
+Direct `/search` links cannot bypass the gate. This frontend rollout gate does
+not pause central history indexing or daemon schedule replication, and does
+not replace the server's Team authorization.
 
 ```ts
 import { useFeatureGate, useExperimentParameter } from "../services/analytics.ts"

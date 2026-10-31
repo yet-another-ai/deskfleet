@@ -42,7 +42,7 @@ export class CentralClient {
       identity: operations.agents.journal.identity,
       signal: (peerId, event) => this.#send({ type: "peerEvent", peerId, event }),
     })
-    this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body))
+    this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body), undefined, operations.schedules)
     this.#unsubscribeTerminals = operations.terminals.onChange(() => this.#sync.changed())
   }
 

@@ -12,11 +12,21 @@ import { fakeCentral, machineFixture } from "../../test/central.ts"
 import MachineSurface from "./MachineSurface.vue"
 
 vi.mock("../../App.vue", () => ({ default: { render: () => null } }))
+vi.mock("../../router/index.ts", async () => {
+  const { createMemoryHistory, createRouter } = await import("vue-router")
+  return { router: createRouter({ history: createMemoryHistory(), routes: [
+    { path: "/", name: "new-session", component: { render: () => null } },
+    { path: "/search", name: "search", component: { render: () => null } },
+    { path: "/sessions/:sessionId", name: "session", component: { render: () => null } },
+    { path: "/schedules/:scheduleId?", name: "schedules", component: { render: () => null } },
+  ] }) }
+})
 
 const cleanups: (() => void)[] = []
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
 
-async function fixture(destination?: string) {
+async function fixture(destination?: string, searchPath?: string) {
+  await router.replace(searchPath ?? "/")
   const first = machineFixture("m1", "team-1", "First", false)
   const fake = fakeCentral({ machines: [first, machineFixture("m2", "team-1", "Second", false)] })
   const session = createAccountSession(fake.central)
@@ -31,7 +41,8 @@ async function fixture(destination?: string) {
   const disposeRuntime = vi.spyOn(runtime, "dispose")
   const navigation = Promise.withResolvers<void>()
   vi.spyOn(router, "isReady").mockResolvedValue()
-  const replace = vi.spyOn(router, "replace").mockReturnValue(navigation.promise)
+  const replace = vi.spyOn(router, "replace")
+  if (!searchPath) replace.mockReturnValue(navigation.promise)
   if (destination) vi.spyOn(session, "takeMachineDestination").mockReturnValue(destination)
   const view = mount(MachineSurface, {
     props: { session, machine: first },
@@ -39,8 +50,10 @@ async function fixture(destination?: string) {
   })
   cleanups.push(() => view.unmount())
   await flushPromises()
-  expect(replace).toHaveBeenCalledExactlyOnceWith(destination ?? "/")
-  expect(mountRuntime).not.toHaveBeenCalled()
+  if (!searchPath) {
+    expect(replace).toHaveBeenCalledExactlyOnceWith(destination ?? "/")
+    expect(mountRuntime).not.toHaveBeenCalled()
+  }
   return { ...fake, first, session, runtimes, runtime, mountRuntime, disposeRuntime, unmount, navigation, view }
 }
 
@@ -54,6 +67,18 @@ test.each([undefined, "/sessions/30"])("mounts the current runtime only after na
   expect(current.view.emitted("ready")).toEqual([["m1"]])
   current.view.unmount()
   expect(current.unmount).toHaveBeenCalledOnce()
+})
+
+test.each(["/sessions/30?entry=message-8", "/schedules/task-1"])("Back returns to the search query after opening remote result %s", async destination => {
+  const searchPath = "/search?q=review&kind=chat"
+  const current = await fixture(destination, searchPath)
+  expect(router.currentRoute.value.fullPath).toBe(destination)
+  expect(current.mountRuntime).toHaveBeenCalledExactlyOnceWith(App, current.view.element)
+
+  router.back()
+  await flushPromises()
+
+  expect(router.currentRoute.value.fullPath).toBe(searchPath)
 })
 
 test.each(["team", "account", "roster"] as const)("does not mount a runtime released by the %s while navigation is pending", async reason => {
