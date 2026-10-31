@@ -89,6 +89,10 @@
     "checkFailed": "アップデートを確認できませんでした。もう一度お試しください。",
     "unavailable": "このビルドではアップデートを利用できません。"
   },
+  "desktopDownload": {
+    "description": "デスクトップアプリで、このパソコン上でエージェントを実行できます。",
+    "download": "ダウンロード"
+  },
   "updates": {
     "available": "バージョン {version} が利用可能です", "install": "更新して再起動",
     "retry": "更新を再試行", "checking": "更新を確認中…",

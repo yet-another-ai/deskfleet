@@ -47,7 +47,21 @@ function install(): void {
 </script>
 
 <template>
-  <div v-if="visible" data-app-update class="app-no-drag shrink-0 px-2 pb-2">
+  <div v-if="client.platform === 'web'" data-app-download class="app-no-drag hidden shrink-0 px-2 pb-2 lg:block">
+    <div class="rounded-lg border border-ui-accent/25 bg-ui-accent/8 p-2">
+      <p class="m-0 mb-2 px-0.5 text-xs text-ui-text-muted">{{ t("desktopDownload.description") }}</p>
+      <a
+        href="https://github.com/yet-another-ai/deskfleet/releases/latest"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="ui-button-primary h-8 w-full px-3 no-underline hover:bg-ui-action-hover active:op-90"
+      >
+        <Download :size="14" class="shrink-0" aria-hidden="true" />
+        <span class="min-w-0 truncate">{{ t("desktopDownload.download") }}</span>
+      </a>
+    </div>
+  </div>
+  <div v-else-if="visible" data-app-update class="app-no-drag shrink-0 px-2 pb-2">
     <div class="rounded-lg border border-ui-accent/25 bg-ui-accent/8 p-2">
       <p class="m-0 mb-2 px-0.5 text-xs text-ui-text-muted">{{ t("updates.available", { version: state.version }) }}</p>
       <UiButton variant="primary" class="w-full" :loading="busy" @click="install">

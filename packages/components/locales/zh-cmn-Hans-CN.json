@@ -89,6 +89,10 @@
     "checkFailed": "无法检查更新，请重试。",
     "unavailable": "此版本不支持应用更新。"
   },
+  "desktopDownload": {
+    "description": "安装桌面客户端，在这台电脑上运行 Agent。",
+    "download": "下载客户端"
+  },
   "updates": {
     "available": "新版本 {version} 已可用",
     "install": "更新并重启",
