@@ -89,6 +89,10 @@
     "checkFailed": "Could not check for updates. Try again.",
     "unavailable": "Updates are unavailable in this build."
   },
+  "desktopDownload": {
+    "description": "Run agents on this computer with the desktop app.",
+    "download": "Download desktop app"
+  },
   "updates": {
     "available": "Version {version} is available",
     "install": "Update and restart",
