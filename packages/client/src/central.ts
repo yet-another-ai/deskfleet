@@ -53,6 +53,9 @@ export interface SiteAdministrationApi {
   disableUser(userId: string, disabled: boolean): Promise<void>
   /** Confirms recent authentication with a password, or a Passkey when omitted. */
   reauthenticate(password?: string): Promise<void>
+  sendEmailCode(): Promise<{ challengeId: string; expiresIn: number; retryAfter: number }>
+  verifyEmailCode(challengeId: string, code: string): Promise<void>
+  authenticationMethods(): Promise<import("./account-security.ts").AuthenticationMethods>
 }
 
 /** Explicit control-plane operations, shared by browser and the narrow Electron bridge. */
