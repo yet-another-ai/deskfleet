@@ -132,7 +132,20 @@ pub async fn user(req: &HttpRequest, state: &AppState) -> Result<AuthSession> {
     Ok(state.store.authenticate(token.value()).await?)
 }
 pub async fn machine(req: &HttpRequest, state: &AppState) -> Result<MachineAuth> {
-    Ok(state.store.authenticate_machine(bearer(req)?).await?)
+    state
+        .store
+        .authenticate_machine(bearer(req)?)
+        .await
+        .map_err(|error| match error {
+            // Only a checked machine credential can retire the daemon's identity.
+            // Generic HTTP authentication failures can also come from a proxy.
+            deskfleet_control_store::Error::Unauthorized => ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "machine_credential_rejected",
+                "machine credential was rejected",
+            ),
+            error => error.into(),
+        })
 }
 fn bearer(req: &HttpRequest) -> Result<&str> {
     req.headers()
