@@ -394,6 +394,13 @@ payloads. Numeric Session and command cursors use matching expression indexes;
 archive filtering has its own indexed path. Opening a conversation still reads
 the full snapshot and paged event history.
 
+Catalog and history uploads arrive independently. A retained Session list can
+temporarily omit a Session already present in the catalog's Session inventory;
+clients keep its known metadata until both sources omit it. Metadata follows
+the newest observed Session event sequence even while an older conversation
+snapshot or missing history pages are being loaded, so titles and archive state
+cannot regress during reconciliation.
+
 Session metadata also owns shared unread state. Each live turn that finishes,
 is cancelled, fails, or is interrupted records its terminal event sequence in
 `lastCompletedSeq` and emits a Session event in the same transaction. The sidebar

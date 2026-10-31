@@ -171,7 +171,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       case "command": commandReceived(event.payload as AgentCommand); break
     }
     snapshot.session.lastEventSeq = event.seq
-    sessions.value[event.sessionId] = { ...snapshot.session }
+    if (sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) sessions.value[event.sessionId] = { ...snapshot.session }
   }
   function advance(id: string): void {
     const current = view(id)
@@ -229,7 +229,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (sequenceCompare(snapshot.session.lastEventSeq, current.snapshotSeq) < 0) return
     current.snapshot = snapshot
     current.snapshotSeq = snapshot.session.lastEventSeq
-    sessions.value[snapshot.session.id] = { ...snapshot.session }
+    if (sequenceCompare(snapshot.session.lastEventSeq, sessions.value[snapshot.session.id]?.lastEventSeq ?? "0") >= 0) sessions.value[snapshot.session.id] = { ...snapshot.session }
     advance(snapshot.session.id)
   }
 
@@ -308,6 +308,15 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       // Catalog activity must not depend on opening every conversation's live channel.
       const records: (AgentSessionRecord & { working?: boolean })[] = await (api.history ? api.history.list() : call("_deskfleet/session/list", {}))
       if (disposed) return
+      const listed = new Set(records.map(session => session.id))
+      let catalogSessions = new Set<string>()
+      if (api.history && Object.keys(sessions.value).some(id => !listed.has(id))) {
+        // Catalog and history uploads are independent. Missing retained history
+        // cannot erase live metadata while the catalog still owns the Session.
+        const catalog = await platformClient.catalog.list()
+        if (disposed) return
+        catalogSessions = new Set(catalog.sessionIds)
+      }
       const received = new Map(records.filter(session => !deletedSessions.has(session.id)).map(session => [session.id, session]))
       for (const record of records) {
         if (deletedSessions.has(record.id)) continue
@@ -318,7 +327,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       }
       for (const current of Object.values(sessions.value)) {
         const record = received.get(current.id)
-        if (record ? sequenceCompare(current.lastEventSeq, record.lastEventSeq) > 0 : !listedBefore.has(current.id) || sequenceCompare(current.lastEventSeq, listedBefore.get(current.id)!) > 0) received.set(current.id, current)
+        if (record ? sequenceCompare(current.lastEventSeq, record.lastEventSeq) > 0 : catalogSessions.has(current.id) || !listedBefore.has(current.id) || sequenceCompare(current.lastEventSeq, listedBefore.get(current.id)!) > 0) received.set(current.id, current)
       }
       sessions.value = Object.fromEntries(received)
       for (const id of Object.keys(activity.value)) if (!received.has(id)) delete activity.value[id]

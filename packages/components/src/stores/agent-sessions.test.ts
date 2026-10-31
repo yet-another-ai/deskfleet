@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { defineComponent, h } from "vue"
 import type { AgentCommand, AgentEvent } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
+import { catalogFixture } from "../test/catalog.ts"
 import { deferred } from "../test/desktop-media.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
 import { useProvidersStore } from "./providers.ts"
@@ -19,6 +20,7 @@ let pinia: ReturnType<typeof createPinia>
 beforeEach(() => {
   vi.mocked(trackEvent).mockClear()
   pinia = createPinia(); setActivePinia(pinia); mock.call.mockReset(); mock.close.mockClear()
+  vi.spyOn(platformClient.catalog, "list").mockResolvedValue({ ...catalogFixture(), workspaces: [], sessions: [], sessionIds: [] })
   mock.call.mockImplementation(async (method: string) => {
     if (method === "initialize") return { _meta: { deskfleet: { identity: actor } } }
     if (method === "_deskfleet/session/subscribe") return agentSnapshot()
@@ -27,7 +29,7 @@ beforeEach(() => {
     return null
   })
 })
-afterEach(() => disposePinia(pinia))
+afterEach(() => { disposePinia(pinia); vi.mocked(platformClient.catalog.list).mockRestore() })
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
 const tracked = (event: string) => vi.mocked(trackEvent).mock.calls.filter(([name]) => name === event).map(([, metadata]) => metadata)
 
@@ -198,6 +200,37 @@ test("a rename response cannot replace a newer title received from another viewe
   response.resolve(snapshot); await renaming
   expect(store.sessions["30"]?.title).toBe("Newer shared title")
   expect(store.views["30"]?.snapshot?.session.title).toBe("Newer shared title")
+})
+
+test("history filling an event gap cannot roll back newer session metadata", async () => {
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  const history = deferred<AgentEvent[]>()
+  mock.call.mockImplementation(async method => method === "_deskfleet/session/history" ? history.promise : null)
+  const renamed = agentEvent(3, "session", { ...agentSnapshot().session, title: "Archived remotely", archiveState: "archived", lastEventSeq: "3" })
+  const input = agentEvent(1, "input", agentInput())
+  const run = agentEvent(2, "run", { sessionId: "30", generation: 1, state: "stopped", startedAt: "now" })
+
+  receive(renamed)
+  receive(input)
+  expect(store.sessions["30"]).toMatchObject({ title: "Archived remotely", archiveState: "archived", lastEventSeq: "3" })
+
+  history.resolve([input, run, renamed])
+  await flushPromises()
+  expect(store.views["30"]?.snapshot?.session).toMatchObject({ title: "Archived remotely", archiveState: "archived", lastEventSeq: "3" })
+})
+
+test("a delayed snapshot cannot replace newer metadata learned from the session list", async () => {
+  const snapshot = deferred<ReturnType<typeof agentSnapshot>>()
+  const latest = { ...agentSnapshot().session, title: "Archived remotely", archiveState: "archived" as const, lastEventSeq: "3" }
+  mock.call.mockImplementation(async method => method === "_deskfleet/session/subscribe" ? snapshot.promise
+    : method === "_deskfleet/session/list" ? [latest] : method === "_deskfleet/session/history" ? [] : null)
+  const store = useAgentSessionsStore()
+  const opening = store.open("30", false)
+  await store.refresh()
+  snapshot.resolve(agentSnapshot())
+  await opening
+  expect(store.sessions["30"]).toEqual(latest)
 })
 
 test.each([false, true])("retrying a lost rename response reuses its operation and updates an idle view (completed: %s)", async completed => {
@@ -861,6 +894,99 @@ test("failed deletion keeps the session visible and accepts later updates", asyn
   expect(store.sessions["30"]).toBeDefined()
   receive(agentEvent(1, "session", { ...agentSnapshot().session, title: "Still available", lastEventSeq: "1" }))
   expect(store.sessions["30"]?.title).toBe("Still available")
+})
+
+test.each([
+  { archiveState: "active", scope: "workspace" },
+  { archiveState: "archived", scope: "machine" },
+] as const)("retained history omissions preserve live $archiveState $scope metadata until the catalog inventory removes it", async ({ archiveState, scope }) => {
+  const previous = platformClient.agent.history
+  const snapshot = agentSnapshot()
+  snapshot.session = { ...snapshot.session, workspaceId: scope === "workspace" ? "20" : undefined, title: "Known session title", archiveState, context: "directory", provider: "work-codex" }
+  const worktree = { id: "40", sessionId: "30", directories: [] }
+  const catalog: ReturnType<typeof catalogFixture> = { ...catalogFixture(), sessionIds: ["30"],
+    workspaces: scope === "workspace" ? [{ id: "20", name: "Workspace", worktrees: [worktree] }] : [],
+    sessions: scope === "machine" ? [worktree] : [],
+  }
+  vi.mocked(platformClient.catalog.list).mockImplementation(async () => structuredClone(catalog))
+  platformClient.agent.history = { available: () => true, list: async () => [], snapshot: async () => snapshot, events: async () => [] }
+  mock.call.mockImplementation(async method => method === "_deskfleet/session/subscribe" ? snapshot : method === "_deskfleet/session/history" ? [] : null)
+  try {
+    const store = useAgentSessionsStore()
+    await store.open("30", false)
+    mock.call.mockClear()
+    await store.refresh()
+    await store.refresh()
+    expect(store.sessions["30"]).toEqual(snapshot.session)
+    expect(mock.call).not.toHaveBeenCalled()
+
+    catalog.sessions = []
+    catalog.workspaces = []
+    catalog.sessionIds = []
+    await store.refresh()
+    expect(store.sessions["30"]).toBeUndefined()
+    expect(mock.call).not.toHaveBeenCalled()
+  } finally { platformClient.agent.history = previous }
+})
+
+test("catalog corroboration preserves metadata changed while its read is pending", async () => {
+  const previous = platformClient.agent.history
+  const catalog = deferred<ReturnType<typeof catalogFixture>>()
+  vi.mocked(platformClient.catalog.list).mockReturnValueOnce(catalog.promise)
+  platformClient.agent.history = { available: () => true, list: async () => [], snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    store.sessions["30"] = agentSnapshot().session
+    const refreshing = store.refresh()
+    await flushPromises()
+    receive(agentEvent(1, "session", { ...agentSnapshot().session, title: "Renamed during catalog read", lastEventSeq: "1" }))
+    catalog.resolve({ ...catalogFixture(), workspaces: [], sessions: [], sessionIds: [] })
+    await refreshing
+    expect(store.sessions["30"]).toMatchObject({ title: "Renamed during catalog read", lastEventSeq: "1" })
+    await store.refresh()
+    expect(store.sessions["30"]).toBeUndefined()
+  } finally { platformClient.agent.history = previous }
+})
+
+test("catalog inventory preserves missing history for a session without a worktree", async () => {
+  const previous = platformClient.agent.history
+  const catalog = { ...catalogFixture(), workspaces: [], sessions: [], sessionIds: ["30"] }
+  vi.mocked(platformClient.catalog.list).mockImplementation(async () => structuredClone(catalog))
+  platformClient.agent.history = { available: () => true, list: async () => [], snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    const session = { ...agentSnapshot().session, lifecycle: "provision_failed" as const, title: "Could not create context" }
+    store.sessions[session.id] = session
+    await store.refresh()
+    await store.refresh()
+    expect(store.sessions[session.id]).toEqual(session)
+
+    catalog.sessionIds = []
+    await store.refresh()
+    expect(store.sessions[session.id]).toBeUndefined()
+  } finally { platformClient.agent.history = previous }
+})
+
+test("successful deletion during catalog corroboration cannot be undone by the pending history list", async () => {
+  const previous = platformClient.agent.history
+  const catalog = deferred<ReturnType<typeof catalogFixture>>()
+  vi.mocked(platformClient.catalog.list).mockReturnValueOnce(catalog.promise)
+  const session = { ...agentSnapshot().session, archiveState: "archived" as const }
+  platformClient.agent.history = { available: () => true, list: async () => [{ ...session, working: true }], snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    const missing = { ...agentSnapshot().session, id: "31" }
+    store.sessions = { [session.id]: session, [missing.id]: missing }
+    const refreshing = store.refresh()
+    await flushPromises()
+    expect(platformClient.catalog.list).toHaveBeenCalledOnce()
+    await store.remove(session.id)
+    catalog.resolve({ ...catalogFixture(), workspaces: [], sessions: [], sessionIds: [session.id, missing.id] })
+    await refreshing
+    expect(store.sessions[session.id]).toBeUndefined()
+    expect(store.isWorking(session.id)).toBe(false)
+    expect(store.sessions[missing.id]).toEqual(missing)
+  } finally { platformClient.agent.history = previous }
 })
 
 test.each([false, true])("pending catalog reads preserve concurrent session changes (new session: %s)", async newSession => {
