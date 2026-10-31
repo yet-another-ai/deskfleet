@@ -5,6 +5,7 @@ import { useAsyncState } from "@vueuse/core"
 import { withBase } from "vitepress"
 import DownloadCard from "./DownloadCard.vue"
 import InstallCommand from "./InstallCommand.vue"
+import InstallMethodIcon from "./InstallMethodIcon.vue"
 import PlatformIcon from "./PlatformIcon.vue"
 import SegmentedControl from "./SegmentedControl.vue"
 import { useRevealOnce } from "./home-motion.ts"
@@ -31,8 +32,8 @@ const method = computed({
 const methodOptions = computed(() => availableMethods.value.map(value => ({
   value,
   label: value === "homebrew" ? t.value.homebrew : value === "nix" ? t.value.nix
-    : value === "archive" ? platform.value === "macos" ? t.value.zipArchive : t.value.tarArchive
-    : platform.value === "macos" ? t.value.dmgInstaller : platform.value === "linux" ? t.value.appImage : t.value.installer,
+    : value === "archive" ? ".tar.gz"
+    : platform.value === "macos" ? ".dmg" : platform.value === "linux" ? t.value.appImage : ".exe",
 })))
 const command = computed(() => {
   if (mode.value !== "desktop") return undefined
@@ -56,7 +57,7 @@ const command = computed(() => {
 const downloadFormat = computed(() => mode.value === "desktop" && method.value === "archive" ? "archive" : "installer")
 const description = computed(() => {
   if (mode.value === "headless") return platform.value === "windows" ? t.value.headlessWindowsDescription : t.value.headlessDescription
-  if (platform.value === "macos") return method.value === "archive" ? t.value.zipDescription : t.value.dmgDescription
+  if (platform.value === "macos") return t.value.dmgDescription
   if (platform.value === "windows") return t.value.windowsDescription
   return method.value === "archive" ? t.value.desktopArchiveDescription : t.value.appImageDescription
 })
@@ -69,7 +70,7 @@ const downloadTitle = computed(() => {
 })
 const packageFormat = computed(() => {
   if (mode.value === "headless") return t.value.tarArchive
-  if (method.value === "archive") return platform.value === "macos" ? t.value.zipArchive : t.value.tarArchive
+  if (method.value === "archive") return t.value.tarArchive
   if (platform.value === "macos") return t.value.dmgInstaller
   if (platform.value === "windows") return t.value.installer
   return "AppImage"
@@ -120,7 +121,9 @@ onMounted(() => {
             {{ releaseSummary ? `${t.latestRelease} · ${releaseSummary}` : isLoading ? t.checkingRelease : t.downloadAvailability }}
           </span>
         </div>
-        <SegmentedControl v-if="mode === 'desktop' && methodOptions.length > 1" v-model="method" :options="methodOptions" size="small" :label="t.method" />
+        <SegmentedControl v-if="mode === 'desktop' && methodOptions.length > 1" v-model="method" :options="methodOptions" size="small" :label="t.method">
+          <template #icon="{ value }"><InstallMethodIcon :method="value" :platform="platform" /></template>
+        </SegmentedControl>
       </div>
       <Transition name="install-swap" mode="out-in">
         <div :key="`${mode}-${platform}-${method}`" class="install__target">

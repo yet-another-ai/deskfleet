@@ -71,13 +71,11 @@ test("release verification requires installers, packaging archives, and update m
   }
 })
 
-test("the macOS ZIP alternative resolves independently of the primary installer", () => {
-  const archive = findDownload(release, "desktop", "macos", "x64", "archive")
-  assert.equal(archive?.name, "deskfleet-0.2.0-mac-arm64.zip")
-  assert.equal(archive?.url, `${releasesPage.replace("/latest", "")}/download/v0.2.0/deskfleet-0.2.0-mac-arm64.zip`)
-  const withoutArchive = { ...release, files: release.files.filter(file => !file.name.endsWith(".zip")) }
-  assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64", "archive"), undefined)
-  assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64")?.name, "deskfleet-0.2.0-mac-arm64.dmg")
+test("the website excludes the macOS updater ZIP from installation choices", () => {
+  assert.ok(release.files.some(file => file.name === "deskfleet-0.2.0-mac-arm64.zip"))
+  assert.deepEqual(desktopInstallMethods(release, "macos"), ["homebrew", "installer"])
+  assert.equal(findDownload(release, "desktop", "macos", "x64", "archive"), undefined)
+  assert.equal(findDownload(release, "desktop", "macos", "x64")?.name, "deskfleet-0.2.0-mac-arm64.dmg")
   assert.equal(findDownload(release, "headless", "macos", "x64", "archive"), undefined)
   assert.equal(findDownload(release, "desktop", "windows", "x64", "archive"), undefined)
 })
@@ -94,7 +92,7 @@ test("Linux desktop archives resolve separately from headless payloads for each 
 
 test("installation methods follow platform support and actual published Linux assets", () => {
   for (const value of [undefined, release]) {
-    assert.deepEqual(desktopInstallMethods(value, "macos"), ["homebrew", "installer", "archive"])
+    assert.deepEqual(desktopInstallMethods(value, "macos"), ["homebrew", "installer"])
     assert.deepEqual(desktopInstallMethods(value, "windows"), ["installer"])
   }
   assert.deepEqual(desktopInstallMethods(release, "linux"), ["installer", "nix", "archive"])

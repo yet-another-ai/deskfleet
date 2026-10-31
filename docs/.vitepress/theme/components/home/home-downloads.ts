@@ -53,10 +53,8 @@ export function findDownload(
 ): ReleaseFile | undefined {
   if (!release) return undefined
   if (format === "archive") {
-    if (mode !== "desktop" || platform === "windows") return undefined
-    const name = platform === "macos"
-      ? `deskfleet-${release.version}-mac-arm64.zip`
-      : `deskfleet-${release.version}-linux-${linuxArchitecture}.tar.gz`
+    if (mode !== "desktop" || platform !== "linux") return undefined
+    const name = `deskfleet-${release.version}-linux-${linuxArchitecture}.tar.gz`
     return release.files.find(file => file.name === name)
   }
   const target = platform === "macos" ? "macos-arm64" : platform === "windows" ? "windows-x64" : `linux-${linuxArchitecture}`
@@ -71,7 +69,7 @@ export function findNixDownload(release: LatestRelease | undefined): ReleaseFile
 }
 
 export function desktopInstallMethods(release: LatestRelease | undefined, platform: InstallPlatform): DesktopInstallMethod[] {
-  if (platform === "macos") return ["homebrew", "installer", "archive"]
+  if (platform === "macos") return ["homebrew", "installer"]
   if (platform === "windows") return ["installer"]
   const methods: DesktopInstallMethod[] = ["installer"]
   if (findNixDownload(release)) methods.push("nix")

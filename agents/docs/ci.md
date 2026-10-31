@@ -192,8 +192,9 @@ architecture. Publishing a stable release makes it discoverable without another
 Pages build. Drafts and prereleases do not replace the website's stable downloads;
 failed requests and unavailable assets retain a link to GitHub Releases.
 
-The installation section groups methods by platform: Homebrew, DMG, and ZIP on
-macOS; the Windows installer; and AppImage, Nix, and desktop archives on Linux.
+The installation section groups methods by platform: Homebrew and DMG on macOS;
+the Windows installer; and AppImage, Nix, and desktop archives on Linux. The macOS
+ZIP is reserved for the updater and is not offered as a website installation method.
 Nix and Linux desktop archives appear only when the published release contains
 their assets. The Nix command uses that release's versioned flake URL. Homebrew
 uses the official tap and does not display GitHub's release version as its own.
