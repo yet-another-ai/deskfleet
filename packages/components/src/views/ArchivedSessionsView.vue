@@ -2,7 +2,7 @@
 import { Archive, ArchiveRestore, RefreshCw, Trash2 } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { DialogTitle } from "reka-ui"
-import { computed, onBeforeUnmount, ref } from "vue"
+import { computed, onBeforeUnmount, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
@@ -11,6 +11,7 @@ import { useFleetStore } from "../stores/fleet.ts"
 import MachineTabs from "../components/account/MachineTabs.vue"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import HoldButton from "../components/common/HoldButton.vue"
+import ErrorNotice from "../components/common/ErrorNotice.vue"
 import IconButton from "../components/common/IconButton.vue"
 import UiButton from "../components/common/UiButton.vue"
 import UiDialog from "../components/common/UiDialog.vue"
@@ -23,7 +24,7 @@ const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
 const confirmingId = ref<string>()
 const confirmingAction = ref<"restore" | "delete">("restore")
-const restoreError = ref<string>()
+const restoreError = shallowRef<unknown>()
 const busy = ref(false)
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
@@ -47,7 +48,6 @@ const { isLoading, error: loadError, executeImmediate: refresh } = useAsyncState
   await agents.refresh()
   if (agents.error) throw new Error(agents.error)
 }, undefined, { onError: () => {} }) // Load failures are shown below with a retry action.
-const loadMessage = computed(() => loadError.value instanceof Error ? loadError.value.message : String(loadError.value))
 
 function requestAction(sessionId: string, action: "restore" | "delete"): void {
   restoreError.value = undefined
@@ -69,7 +69,7 @@ async function confirmAction(): Promise<void> {
       if (!disposed) await router.push({ name: "session", params: { sessionId: item.session.id } })
     }
   } catch (reason) {
-    restoreError.value = reason instanceof Error ? reason.message : String(reason)
+    restoreError.value = reason
   } finally { busy.value = false }
 }
 </script>
@@ -86,10 +86,9 @@ async function confirmAction(): Promise<void> {
         <UiButton type="button" class="px-2" :aria-label="t('catalog.refresh')" :title="t('catalog.refresh')" :disabled="isLoading || busy" @click="refresh()"><RefreshCw :size="14" aria-hidden="true" /></UiButton>
       </div>
       <MachineTabs :label="t('archivedSessions.machine')" :disabled="busy" />
-      <div v-if="loadError" class="ui-notice m-0 justify-between border-ui-danger/30 bg-ui-danger/8">
-        <p role="alert" class="m-0 text-ui-danger">{{ loadMessage }}</p>
+      <ErrorNotice v-if="loadError" :error="loadError">
         <UiButton type="button" :disabled="isLoading" @click="refresh()">{{ t('folderPicker.retry') }}</UiButton>
-      </div>
+      </ErrorNotice>
       <p v-if="isLoading && !archived.length" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t('archivedSessions.loading') }}</p>
       <div v-else-if="!archived.length && !loadError" class="ui-empty">
         <Archive :size="25" class="mb-2 text-ui-text-muted" aria-hidden="true" />
@@ -116,7 +115,7 @@ async function confirmAction(): Promise<void> {
   <UiDialog v-if="confirming" class="w-[24rem]" :prevent-close="busy" @close="confirmingId = undefined">
     <DialogTitle class="ui-dialog-title">{{ t(confirmingAction === 'delete' ? 'agent.delete' : 'agent.restore') }}</DialogTitle>
     <p class="m-0 text-sm leading-relaxed">{{ t(confirmingAction === 'delete' ? (confirming.session.context === 'directory' ? 'agent.deleteDirectoryQuestion' : 'agent.deleteQuestion') : (confirming.session.context === 'worktree' ? 'agent.restoreWorktreeQuestion' : 'agent.restoreQuestion')) }}</p>
-    <p v-if="restoreError" role="alert" class="m-0 mt-3 text-sm text-ui-danger">{{ restoreError }}</p>
+    <ErrorNotice v-if="restoreError" :error="restoreError" class="mt-3" />
     <div class="ui-dialog-actions">
       <UiButton type="button" :disabled="busy" @click="confirmingId = undefined">{{ t('catalog.cancel') }}</UiButton>
       <HoldButton v-if="confirmingAction === 'delete'" variant="danger" :text="t('agent.delete')" :hold-label="t('agent.holdToConfirm')" :disabled="busy || !confirming.online" data-confirm-delete @confirm="confirmAction" />

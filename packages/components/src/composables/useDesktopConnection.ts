@@ -1,4 +1,5 @@
 import { onScopeDispose, ref, shallowRef } from "vue"
+import type { RelayDeniedReason } from "../../../client/src/relay.ts"
 import { DESKTOP_INPUT_CHANNEL, type DesktopInputMessage } from "../../../client/src/desktop-input.ts"
 import type {
   DesktopMediaApi,
@@ -11,6 +12,8 @@ export type DesktopConnectionState = "idle" | "connecting" | "starting" | "conne
 export interface DesktopFailure {
   kind: "timeout" | "connection" | "operation"
   detail?: string
+  error?: unknown
+  relayDeniedReason?: RelayDeniedReason
 }
 
 function parameters(codec: RTCRtpCodec): Map<string, string> {
@@ -131,7 +134,8 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     if (current !== session || session.replaced) return
     if (reason.kind === "connection" || reason.kind === "timeout") {
       const detail = api.connectionFailure?.(session.id)
-      if (detail) reason = { kind: "connection", detail }
+      const relayDeniedReason = api.connectionFailureReason?.(session.id)
+      if (detail || relayDeniedReason) reason = { kind: "connection", ...(detail ? { detail } : {}), ...(relayDeniedReason ? { relayDeniedReason } : {}) }
     }
     session.replaced = true
     stopChain()
@@ -142,7 +146,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     void closePeer(session.id).catch(() => {})
   }
 
-  function continueWithNext(session: Session, detail: string): void {
+  function continueWithNext(session: Session, detail: string, error?: unknown): void {
     if (current !== session || session.replaced) return
     session.replaced = true
     const run = generation
@@ -157,7 +161,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       if (!chain[0]) {
         stopChain()
         codec.value = null
-        failure.value = { kind: "operation", detail }
+        failure.value = { kind: "operation", detail, ...(error === undefined ? {} : { error }) }
         state.value = "error"
         return
       }
@@ -166,17 +170,17 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       if (generation !== run || !running) return
       stopChain()
       codec.value = null
-      failure.value = { kind: "operation", detail: error instanceof Error ? error.message : String(error) }
+      failure.value = { kind: "operation", detail: error instanceof Error ? error.message : String(error), error }
       state.value = "error"
     })
   }
 
   function operationFailed(session: Session, error: unknown): void {
     if (isEncoderReason(error)) {
-      continueWithNext(session, error instanceof Error ? error.message : String(error))
+      continueWithNext(session, error instanceof Error ? error.message : String(error), error)
       return
     }
-    fail(session, { kind: "operation", detail: error instanceof Error ? error.message : String(error) })
+    fail(session, { kind: "operation", detail: error instanceof Error ? error.message : String(error), error })
   }
 
   function sendCandidates(session: Session): void {
@@ -334,7 +338,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       else if (!session) {
         stopChain()
         codec.value = null
-        failure.value = { kind: "operation", detail: error instanceof Error ? error.message : String(error) }
+        failure.value = { kind: "operation", detail: error instanceof Error ? error.message : String(error), error }
         state.value = "error"
       }
     }
@@ -374,7 +378,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       try { await closePeer(session.id) }
       catch (error) {
         if (generation === closingGeneration && !current && state.value === "idle") {
-          failure.value = { kind: "operation", detail: error instanceof Error ? error.message : String(error) }
+          failure.value = { kind: "operation", detail: error instanceof Error ? error.message : String(error), error }
           state.value = "error"
         }
       }

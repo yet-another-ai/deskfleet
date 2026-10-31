@@ -77,6 +77,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       return grant.iceServers
     },
     connectionFailure: (sessionId: string) => relayFailureMessage(peers.get(sessionId)?.relayDeniedReason),
+    connectionFailureReason: (sessionId: string) => peers.get(sessionId)?.relayDeniedReason,
     async offer(options: TerminalOffer | DesktopOffer): Promise<{ sdp: string }> {
       const peer = peers.get(options.sessionId)
       if (!peer) throw new Error("Peer authorization is missing")

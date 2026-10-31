@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import UiButton from "./UiButton.vue"
+import ErrorNotice from "./ErrorNotice.vue"
 import { ArrowUp, Check, ChevronRight, Folder, Home, Pencil } from "@lucide/vue"
 import { DialogTitle } from "reka-ui"
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
 import IconButton from "./IconButton.vue"
@@ -21,7 +22,7 @@ const listing = ref<DirectoryListing | null>(null)
 const editingPath = ref(false)
 const pathInput = ref(props.initialPath ?? "")
 const loading = ref(false)
-const error = ref<string | null>(null)
+const error = shallowRef<unknown>()
 const showHidden = ref(false)
 const trail = ref<{ name: string; path: string }[]>([])
 const visibleDirectories = computed(() => listing.value?.directories.filter(directory => showHidden.value || !directory.hidden) ?? [])
@@ -48,7 +49,7 @@ async function navigate(path?: string, name?: string): Promise<boolean> {
     pathInput.value = next.path
     return true
   } catch (reason) {
-    if (request === requestId && !finished) error.value = reason instanceof Error ? reason.message : String(reason)
+    if (request === requestId && !finished) error.value = reason
     return false
   } finally {
     if (request === requestId) loading.value = false
@@ -142,10 +143,9 @@ onBeforeUnmount(() => { finished = true; requestId++ })
       </div>
       <div class="h-64 overflow-y-auto rounded-xl border border-ui-border bg-ui-canvas" :aria-busy="loading">
         <p v-if="loading" role="status" class="m-0 p-4 text-sm text-ui-text-muted">{{ t("folderPicker.loading") }}</p>
-        <div v-else-if="error" class="flex flex-col items-start gap-3 p-4">
-          <p role="alert" class="m-0 break-all text-sm text-ui-danger">{{ error }}</p>
+        <ErrorNotice v-else-if="error" :error="error" class="m-4">
           <UiButton type="button" @click="navigate(requestedPath)">{{ t("folderPicker.retry") }}</UiButton>
-        </div>
+        </ErrorNotice>
         <ul v-else-if="visibleDirectories.length" :aria-label="t('folderPicker.folders')">
           <li v-for="directory in visibleDirectories" :key="directory.path">
             <button type="button" class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ui-hover" :aria-label="t('folderPicker.openFolder', { name: directory.name })" :data-path="directory.path" @click="navigate(directory.path, directory.name)">

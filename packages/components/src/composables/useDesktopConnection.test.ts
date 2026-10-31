@@ -1,6 +1,7 @@
 import { flushPromises } from "@vue/test-utils"
 import { effectScope } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { HttpError } from "../../../client/src/http-central.ts"
 import { browserCodecs, deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
 import { browserCodecPreferences, commonDesktopCodecs, useDesktopConnection } from "./useDesktopConnection.ts"
 
@@ -147,7 +148,7 @@ test("native errors and browser connection failures close the peer and surface e
   await connection.connect(options)
   emit({ sessionId: api.offer.mock.calls[0]![0].sessionId, kind: "error", error: "Screen recording permission denied" })
   await flushPromises()
-  expect(connection.failure.value).toEqual({ kind: "operation", detail: "Screen recording permission denied" })
+  expect(connection.failure.value).toMatchObject({ kind: "operation", detail: "Screen recording permission denied" })
   expect(connection.state.value).toBe("error")
   expect(listeners.size).toBe(0)
   expect(api.offer).toHaveBeenCalledTimes(1)
@@ -366,5 +367,45 @@ test("shows the relay denial as desktop connection failure detail", async () => 
   await connection.connect(options)
   TestPeer.instances.at(-1)!.changeState("failed")
   expect(connection.failure.value).toEqual({ kind: "connection", detail })
+  expect(connection.state.value).toBe("error")
+})
+
+test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const)("keeps structured desktop relay denial through failure and clears it on reconnect: %s", async relayDeniedReason => {
+  const { connection, api } = setup()
+  Object.assign(api, { connectionFailureReason: () => relayDeniedReason })
+  await connection.connect(options)
+  TestPeer.instances.at(-1)!.changeState("failed")
+  expect(connection.failure.value).toEqual({ kind: "connection", relayDeniedReason })
+  await connection.connect(options)
+  expect(connection.failure.value).toBeNull()
+})
+
+test("desktop timeout retains the relay reason but capture errors do not inherit it", async () => {
+  vi.useFakeTimers()
+  const { connection, api } = setup()
+  Object.assign(api, { connectionFailureReason: () => "turn_quota_exhausted" })
+  await connection.connect(options)
+  await vi.advanceTimersByTimeAsync(20_000)
+  expect(connection.failure.value).toEqual({ kind: "connection", relayDeniedReason: "turn_quota_exhausted" })
+  await connection.connect(options)
+  api.start.mockRejectedValue(new Error("Screen recording permission denied"))
+  TestPeer.instances.at(-1)!.changeState("connected")
+  await vi.advanceTimersByTimeAsync(0)
+  expect(connection.failure.value).toMatchObject({ kind: "operation", detail: "Screen recording permission denied" })
+})
+
+test.each(["prepare", "start"] as const)("preserves structured HTTP errors from desktop %s", async operation => {
+  const { connection, api } = setup()
+  const error = new HttpError(401, "Your session expired", undefined, "unauthorized")
+  if (operation === "prepare") Object.assign(api, { prepare: vi.fn().mockRejectedValue(error) })
+  else api.start.mockRejectedValue(error)
+  await connection.connect(options)
+  if (operation === "start") {
+    TestPeer.instances.at(-1)!.changeState("connected")
+    await flushPromises()
+  }
+  expect(connection.failure.value).toEqual({ kind: "operation", detail: error.message, error })
+  expect(connection.failure.value?.error).toBe(error)
+  expect(connection.failure.value?.error).toMatchObject({ status: 401, code: "unauthorized" })
   expect(connection.state.value).toBe("error")
 })

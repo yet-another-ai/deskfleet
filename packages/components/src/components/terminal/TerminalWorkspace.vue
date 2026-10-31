@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
+import ErrorNotice from "../common/ErrorNotice.vue"
 import { Bot, Circle, CircleAlert, CircleStop, LoaderCircle, Plus, SquareTerminal, Unplug, X } from "@lucide/vue"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
-import { onMounted, ref, watch, type Component } from "vue"
+import { onMounted, ref, shallowRef, watch, type Component } from "vue"
 import { useI18n } from "vue-i18n"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
@@ -20,7 +21,7 @@ const store = useTerminalsStore()
 const { t } = useI18n()
 const creating = ref(false)
 const closing = ref(new Set<string>())
-const error = ref<string | null>(null)
+const error = shallowRef<unknown>(null)
 // The running program's reported title, or a numbered shell until one arrives.
 const tabName = (id: string, index: number) => store.titles[id]?.trim() || (props.terminals[index]?.kind === "acp" ? t("terminal.agent") : t("terminal.tab", { number: index + 1 }))
 const agentTerminal = (id: string) => props.terminals.find(terminal => terminal.id === id)?.kind === "acp"
@@ -41,7 +42,7 @@ function reconnect(): void {
 }
 
 function failed(reason: unknown): void {
-  error.value = reason instanceof Error ? reason.message : String(reason)
+  error.value = reason
 }
 
 function select(id: string): void {
@@ -141,7 +142,7 @@ onMounted(() => {
       ><Plus :size="15" aria-hidden="true" /></button>
       <slot name="actions" />
     </div>
-    <p v-if="error" role="alert" class="m-0 truncate px-2 py-1 text-xs text-ui-danger" :title="error">{{ error }}</p>
+    <ErrorNotice v-if="error" class="m-2 shrink-0" :error="error" />
     <TabsContent
       v-if="activeId && terminals.some(({ id }) => id === activeId)"
       :key="activeId"

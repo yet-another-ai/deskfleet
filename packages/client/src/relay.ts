@@ -1,6 +1,24 @@
 /** Reason recorded when the server issued this peer grant; direct ICE remains available. */
 export type RelayDeniedReason = "free_plan" | "turn_quota_exhausted" | "metering_unavailable"
 
+/** Keeps the server's relay decision available to localized UI and recovery actions. */
+export class RelayConnectionError extends Error {
+  readonly code: RelayDeniedReason
+  readonly relayDeniedReason: RelayDeniedReason
+
+  constructor(reason: RelayDeniedReason) {
+    super(relayFailureMessage(reason))
+    this.name = "RelayConnectionError"
+    this.code = reason
+    this.relayDeniedReason = reason
+  }
+}
+
+/** Apply grant context only to transport failures, never authorization or operation errors. */
+export function relayFailureError(reason: RelayDeniedReason | null | undefined, fallback: Error): Error {
+  return reason ? new RelayConnectionError(reason) : fallback
+}
+
 export function relayFailureMessage(reason?: RelayDeniedReason | null): string | undefined {
   if (reason === "free_plan") return "Direct connection failed. The Free plan does not include TURN relay. Upgrade the Team or try a network that supports direct connections."
   if (reason === "turn_quota_exhausted") return "Direct connection failed. This Team has used its monthly TURN relay allowance. Try a network that supports direct connections or wait for the monthly reset."

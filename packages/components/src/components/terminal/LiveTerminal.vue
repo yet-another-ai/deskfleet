@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { useTimeoutFn, watchImmediate } from "@vueuse/core"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
-import { computed, onBeforeUnmount, ref, useTemplateRef } from "vue"
+import { computed, onBeforeUnmount, ref, shallowRef, useTemplateRef } from "vue"
+import type { RelayDeniedReason } from "@deskfleet/client/relay"
 import { useI18n } from "vue-i18n"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
 import { decodeTerminalBytes, TerminalClient, type TerminalListener } from "../../services/terminal-client.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import TerminalSurface from "./TerminalSurface.vue"
+import ErrorNotice from "../common/ErrorNotice.vue"
 
 const platformClient = usePlatformClient()
 
@@ -23,6 +25,9 @@ const connecting = ref(false)
 const replayed = ref(false)
 const interactive = ref(false)
 const error = ref<string | null>(null)
+const failure = shallowRef<unknown>(null)
+const independentRelayDeniedReason = ref<RelayDeniedReason>()
+const failureRelayDeniedReason = ref<RelayDeniedReason>()
 const sessionStatus = ref<TerminalSummary["status"]>("running")
 const exitCode = ref<number | undefined>()
 const agentOwned = ref(false)
@@ -32,8 +37,9 @@ let attachment: ReturnType<typeof terminals.attach> | null = null
 let disposed = false
 let activating: ReturnType<typeof terminals.attach> | null = null
 // Embedded tool output can be open alongside the same terminal's panel.
-const independentClient = props.independent ? new TerminalClient(platformClient.terminal, (_state, detail) => {
-  if (detail) failed(detail)
+const independentClient = props.independent ? new TerminalClient(platformClient.terminal, (_state, detail, reason) => {
+  independentRelayDeniedReason.value = reason
+  if (detail) failed(detail, reason)
 }) : undefined
 
 watchImmediate(() => terminals.sessions.find(terminal => terminal.id === props.terminalId), summary => {
@@ -59,8 +65,12 @@ const { start: scheduleResize, stop: cancelResize } = useTimeoutFn(() => {
 }, 100, { immediate: false })
 watchImmediate(connection, ([state, label]) => emit("connection", state, label))
 
-function failed(reason: unknown): void {
-  if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason)
+function failed(reason: unknown, relayReason?: RelayDeniedReason): void {
+  if (!disposed) {
+    failure.value = reason
+    failureRelayDeniedReason.value = relayReason
+    error.value = reason instanceof Error ? reason.message : String(reason)
+  }
 }
 
 async function activate(): Promise<void> {
@@ -97,6 +107,9 @@ async function connect(): Promise<void> {
   interactive.value = false
   replayed.value = false
   error.value = null
+  failure.value = null
+  failureRelayDeniedReason.value = undefined
+  independentRelayDeniedReason.value = undefined
   sessionStatus.value = "running"
   exitCode.value = undefined
   const active = attach((event, acknowledge) => {
@@ -121,7 +134,7 @@ async function connect(): Promise<void> {
     } else {
       interactive.value = false
       attached.value = false
-      failed(event.error)
+      failed(event.error, props.independent ? independentRelayDeniedReason.value : terminals.relayDeniedReason)
     }
   })
   attachment = active
@@ -167,16 +180,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- History replay restores the program's title; scrollback size will become a Terminal setting. -->
-  <div class="min-h-0 flex-1 overflow-hidden bg-ui-terminal">
-    <TerminalSurface
-      ref="surface"
-      tools
-      :interactive="interactive && !readonly"
-      @ready="ready"
-      @input="input"
-      @resize="resize"
-      @title="title => emit('title', title)"
-    />
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+    <ErrorNotice v-if="failure" class="m-2 shrink-0" :error="failure" :title="t('terminal.disconnected')" :relay-denied-reason="failureRelayDeniedReason" />
+    <!-- History replay restores the program's title; scrollback size will become a Terminal setting. -->
+    <div class="min-h-0 flex-1 overflow-hidden bg-ui-terminal">
+      <TerminalSurface
+        ref="surface"
+        tools
+        :interactive="interactive && !readonly"
+        @ready="ready"
+        @input="input"
+        @resize="resize"
+        @title="title => emit('title', title)"
+      />
+    </div>
   </div>
 </template>

@@ -1,4 +1,56 @@
 {
+  "errors": {
+    "details": "技術的な詳細",
+    "viewBilling": "請求を確認",
+    "retry": "再試行",
+    "desktopConnectionTitle": "デスクトップに接続できませんでした",
+    "desktopDiscoveryTitle": "デスクトップの状態を確認できませんでした",
+    "desktopUnlockHint": "マシンがスリープ状態でなく、ロックが解除されていることを確認してから、再接続してください。",
+    "generic": {
+      "title": "操作を完了できませんでした",
+      "description": "リクエストを完了できませんでした。詳しくは下の詳細を確認してください。"
+    },
+    "network": {
+      "title": "サーバーに接続できませんでした",
+      "description": "インターネット接続を確認して、もう一度お試しください。"
+    },
+    "unauthorized": {
+      "title": "もう一度サインインしてください",
+      "description": "サインインの有効期限が切れています。再度サインインしてお試しください。"
+    },
+    "forbidden": {
+      "title": "アクセス権がありません",
+      "description": "チームのオーナーまたは管理者にアクセス権の確認を依頼してください。"
+    },
+    "notFound": {
+      "title": "この項目は利用できなくなりました",
+      "description": "削除された可能性があります。ページを更新して最新の情報を確認してください。"
+    },
+    "rateLimited": {
+      "title": "リクエストが多すぎます",
+      "description": "しばらく待ってから、もう一度お試しください。"
+    },
+    "server": {
+      "title": "サーバーがリクエストを完了できませんでした",
+      "description": "しばらくしてから、もう一度お試しください。"
+    },
+    "machineOffline": {
+      "title": "マシンを利用できません",
+      "description": "マシンの電源とインターネット接続を確認し、DeskFleet が実行されていることを確認してください。"
+    },
+    "free_plan": {
+      "title": "この接続にはリレーが必要です",
+      "description": "直接接続を確立できませんでした。無料プランには TURN リレー通信が含まれません。請求ページでプランを比較するか、直接接続に対応したネットワークをお試しください。"
+    },
+    "turn_quota_exhausted": {
+      "title": "チームのリレー通信量を使い切りました",
+      "description": "直接接続を確立できず、今月の TURN リレー通信量も使い切っています。請求ページで使用量とプランを確認するか、別のネットワークをお試しください。"
+    },
+    "metering_unavailable": {
+      "title": "リレー接続は一時的に利用できません",
+      "description": "リレー通信量を確認できませんでした。後でもう一度試すか、直接接続に対応したネットワークをご利用ください。"
+    }
+  },
   "pullRequest": {
     "indicator": "PR #{number} · {state} · {title}",
     "draft": "下書き",

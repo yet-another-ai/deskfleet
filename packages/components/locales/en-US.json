@@ -1,4 +1,56 @@
 {
+  "errors": {
+    "details": "Technical details",
+    "viewBilling": "View billing",
+    "retry": "Try again",
+    "desktopConnectionTitle": "Could not connect to the desktop",
+    "desktopDiscoveryTitle": "Could not check the desktop",
+    "desktopUnlockHint": "Check that the machine is awake and unlocked, then try connecting again.",
+    "generic": {
+      "title": "Something went wrong",
+      "description": "The request could not be completed. Review the details below for more information."
+    },
+    "network": {
+      "title": "Could not reach the server",
+      "description": "Check your internet connection and try again."
+    },
+    "unauthorized": {
+      "title": "Sign in again to continue",
+      "description": "Your sign-in session is no longer valid. Sign in and try again."
+    },
+    "forbidden": {
+      "title": "You do not have access",
+      "description": "Ask your Team owner or administrator to check your access."
+    },
+    "notFound": {
+      "title": "This item is no longer available",
+      "description": "It may have been removed. Refresh the page to see the latest information."
+    },
+    "rateLimited": {
+      "title": "Too many requests",
+      "description": "Wait a moment, then try again."
+    },
+    "server": {
+      "title": "The server could not complete the request",
+      "description": "Try again in a moment."
+    },
+    "machineOffline": {
+      "title": "The machine is unavailable",
+      "description": "Check that the machine is on, connected to the internet, and running DeskFleet."
+    },
+    "free_plan": {
+      "title": "This connection needs a relay",
+      "description": "A direct connection could not be established. The Free plan does not include TURN relay traffic. View billing to compare plans, or try a network that supports direct connections."
+    },
+    "turn_quota_exhausted": {
+      "title": "Your Team has used its relay allowance",
+      "description": "A direct connection could not be established, and the monthly TURN relay allowance has been used. View billing to review usage and plans, or try a different network."
+    },
+    "metering_unavailable": {
+      "title": "Relay connections are temporarily unavailable",
+      "description": "Relay usage could not be checked. Try again later, or use a network that supports direct connections."
+    }
+  },
   "pullRequest": {
     "indicator": "PR #{number} · {state} · {title}",
     "draft": "Draft",

@@ -1,4 +1,4 @@
-import { relayFailureMessage } from "./relay.ts"
+import { relayFailureError } from "./relay.ts"
 import { observePeerGrant } from "./peer-telemetry.ts"
 import type { CentralApi } from "./central.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -57,8 +57,7 @@ export async function connectFilePeer(
     void close()
   }
   function connectionFailed(error: Error): void {
-    const detail = relayFailureMessage(grant.relayDeniedReason)
-    fail(detail ? new Error(detail) : error)
+    fail(relayFailureError(grant.relayDeniedReason, error))
   }
   function checkReady(): void {
     if (opened && remoteReady && !closed) { clearTimeout(setup); telemetry.connected(); resolveReady() }

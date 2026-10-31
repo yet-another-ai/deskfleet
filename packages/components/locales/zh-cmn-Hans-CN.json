@@ -1,4 +1,56 @@
 {
+  "errors": {
+    "details": "技术详情",
+    "viewBilling": "查看账单",
+    "retry": "重试",
+    "desktopConnectionTitle": "无法连接到桌面",
+    "desktopDiscoveryTitle": "无法检查桌面状态",
+    "desktopUnlockHint": "请检查机器是否已唤醒并解锁，然后重新连接。",
+    "generic": {
+      "title": "操作未能完成",
+      "description": "请求未能完成，可展开下方详情查看原因。"
+    },
+    "network": {
+      "title": "无法连接到服务器",
+      "description": "请检查网络连接后重试。"
+    },
+    "unauthorized": {
+      "title": "请重新登录",
+      "description": "当前登录状态已失效，请重新登录后重试。"
+    },
+    "forbidden": {
+      "title": "你没有访问权限",
+      "description": "请联系团队所有者或管理员检查访问权限。"
+    },
+    "notFound": {
+      "title": "此项目已不可用",
+      "description": "它可能已被移除，请刷新页面查看最新信息。"
+    },
+    "rateLimited": {
+      "title": "请求过于频繁",
+      "description": "请稍等片刻后重试。"
+    },
+    "server": {
+      "title": "服务器未能完成请求",
+      "description": "请稍后重试。"
+    },
+    "machineOffline": {
+      "title": "机器暂时不可用",
+      "description": "请检查机器是否已开机、连接网络，并正在运行 DeskFleet。"
+    },
+    "free_plan": {
+      "title": "此次连接需要中继服务",
+      "description": "无法建立直连。免费套餐不包含 TURN 中继流量，可前往账单页面比较套餐，或尝试支持直连的网络。"
+    },
+    "turn_quota_exhausted": {
+      "title": "团队的中继流量已用尽",
+      "description": "无法建立直连，且本月的 TURN 中继流量已用尽。请前往账单页面查看用量和套餐，或尝试其他网络。"
+    },
+    "metering_unavailable": {
+      "title": "中继连接暂时不可用",
+      "description": "暂时无法核实中继流量用量。请稍后重试，或使用支持直连的网络。"
+    }
+  },
   "pullRequest": {
     "indicator": "PR #{number} · {state} · {title}",
     "draft": "草稿",

@@ -100,7 +100,7 @@ test("initial loading precedes the empty archive state", async () => {
 test("a failed refresh retains archived rows and Retry clears the error after a successful read", async () => {
   let fail = true
   const { refresh } = await render({ refresh: async agents => { if (fail) agents.error = "History unavailable" } })
-  expect(wrapper!.get('[role="alert"]').text()).toBe("History unavailable")
+  expect(wrapper!.get('[role="alert"] pre').text()).toBe("History unavailable")
   expect(wrapper!.text()).toContain("Ship archive UI")
   fail = false
   await wrapper!.findAll("button").find(button => button.text() === "Retry")!.trigger("click"); await flushPromises()
@@ -130,7 +130,7 @@ test("restore failure remains in the confirmation for retry and cancellation lea
   restore.mockRejectedValueOnce(new Error("Machine disconnected"))
   await wrapper!.get(`[data-restore-session="${sessionId}"]`).trigger("click"); await flushPromises()
   await page().get("[data-confirm-restore]").trigger("click"); await flushPromises()
-  expect(page().get('[role="dialog"] [role="alert"]').text()).toBe("Machine disconnected")
+  expect(page().get('[role="dialog"] [role="alert"] pre').text()).toBe("Machine disconnected")
   expect(router.currentRoute.value.name).toBe("archived-sessions")
   expect(agents.sessions[sessionId]!.archiveState).toBe("archived")
   await page().get('[role="dialog"]').trigger("keydown", { key: "Escape" }); await flushPromises()

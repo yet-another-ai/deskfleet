@@ -1,4 +1,5 @@
 import type { AgentSignalingApi } from "../../../client/src/agent.ts"
+import { RelayConnectionError, relayFailureError, type RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { IceCandidate } from "../../../client/src/desktop-media.ts"
 import { DataChannelErrorEvent, type DataChannel } from "../../../client/src/data-channel.ts"
 import { AGENT_CHANNEL, AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES } from "../../../../apps/daemon/src/agent-protocol.ts"
@@ -37,7 +38,7 @@ const object = (value: unknown): value is Record<string, unknown> => !!value && 
 /** One ACP channel multiplexes Sessions. Closing a viewer never stops their providers. */
 export class AgentClient {
   readonly #api: AgentSignalingApi
-  readonly #state: (state: AgentConnectionState, error?: string) => void
+  readonly #state: (state: AgentConnectionState, error?: string, relayDeniedReason?: RelayDeniedReason) => void
   readonly #notification: (notification: AgentNotification) => void
   readonly #request?: (request: RpcRequest) => Promise<unknown>
   readonly #pending = new Map<number, PendingRequest>()
@@ -48,7 +49,7 @@ export class AgentClient {
 
   constructor(
     api: AgentSignalingApi,
-    state: (state: AgentConnectionState, error?: string) => void,
+    state: (state: AgentConnectionState, error?: string, relayDeniedReason?: RelayDeniedReason) => void,
     notification: (notification: AgentNotification) => void,
     request?: (request: RpcRequest) => Promise<unknown>,
   ) {
@@ -76,7 +77,7 @@ export class AgentClient {
         channel.bufferedAmountLowThreshold = 64 * 1024
         const session: PeerSession = {
           id, peer, channel, unsubscribe: () => {}, resolve, reject,
-          timeout: setTimeout(() => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection timed out")), 20_000),
+          timeout: setTimeout(() => this.#connectionFailed(session, "Agent connection timed out"), 20_000),
           offered: false, remoteReady: !peer, localCandidates: [], remoteCandidates: [],
           localSending: Promise.resolve(), remoteAdding: Promise.resolve(), sending: Promise.resolve(), queuedBytes: 0,
           decoder: new AgentMessageDecoder(message => this.#message(session, message)),
@@ -89,7 +90,7 @@ export class AgentClient {
               session.remoteCandidates.push(event.candidate)
               this.#addCandidates(session)
             } else if (event.kind === "error") this.#fail(session, new Error(event.error))
-            else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
+            else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) this.#connectionFailed(session, "Agent connection closed")
           })
           peer.onicecandidate = ({ candidate }) => {
             if (!candidate || this.#current !== session) return
@@ -103,12 +104,13 @@ export class AgentClient {
             this.#sendCandidates(session)
           }
           peer.onconnectionstatechange = () => {
-            if (["failed", "closed", "disconnected"].includes(peer.connectionState)) this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
+            if (["failed", "closed", "disconnected"].includes(peer.connectionState)) this.#connectionFailed(session, "Agent connection closed")
           }
         }
         channel.onopen = () => this.#ready(session)
-        channel.onclose = () => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Agent connection closed"))
-        channel.onerror = event => this.#fail(session, event instanceof DataChannelErrorEvent ? event.error : new Error("Agent DataChannel failed"))
+        channel.onclose = () => this.#connectionFailed(session, "Agent connection closed")
+        channel.onerror = event => event instanceof DataChannelErrorEvent
+          ? this.#fail(session, event.error) : this.#connectionFailed(session, "Agent DataChannel failed")
         channel.onmessage = ({ data }) => {
           if (this.#current !== session) return
           try {
@@ -283,7 +285,12 @@ export class AgentClient {
   #fail(session: PeerSession, error: Error): void {
     if (this.#current !== session) return
     this.#release(session, error)
-    this.#state("error", error.message)
+    if (error instanceof RelayConnectionError) this.#state("error", error.message, error.relayDeniedReason)
+    else this.#state("error", error.message)
+  }
+  #connectionFailed(session: PeerSession, fallback: string): void {
+    this.#fail(session, relayFailureError(this.#api.connectionFailureReason?.(session.id),
+      new Error(this.#api.connectionFailure?.(session.id) ?? fallback)))
   }
   close(): void {
     ++this.#generation

@@ -5,6 +5,7 @@ import type {
   DesktopStart,
   IceCandidate,
 } from "../../../apps/daemon/src/control-protocol.ts"
+import type { RelayDeniedReason } from "./relay.ts"
 
 export type {
   DesktopCapabilities,
@@ -29,6 +30,8 @@ export interface DesktopMediaApi {
   prepare?(sessionId: string): Promise<RTCIceServer[]>
   /** Additional context for a transport failure, without masking authorization errors. */
   connectionFailure?(sessionId: string): string | undefined
+  /** The grant's structured reason, consulted only after a transport failure. */
+  connectionFailureReason?(sessionId: string): RelayDeniedReason | null | undefined
   target(): Promise<LocalDesktopTarget>
   capabilities(): Promise<DesktopCapabilities>
   offer(options: DesktopOffer): Promise<{ sdp: string }>

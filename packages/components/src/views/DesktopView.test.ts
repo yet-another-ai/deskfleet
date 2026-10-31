@@ -1,22 +1,26 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia } from "pinia"
+import { ref } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { i18n } from "../i18n/index.ts"
 import { router } from "../router/index.ts"
 import { deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
 import DesktopView from "./DesktopView.vue"
 import { selectOption } from "../test/controls.ts"
+import { accountSessionKey } from "../composables/useAccountSession.ts"
+import { relayFailureMessage, type RelayDeniedReason } from "@deskfleet/client/relay"
+import { HttpError } from "@deskfleet/client/http-central"
 
 const originalApi = platformClient.desktop
 let mock: ReturnType<typeof mockDesktopApi>
 const wrappers: VueWrapper[] = []
 const fullscreenCleanups: (() => void)[] = []
-async function mountDesktop(machineId = "local-daemon") {
+async function mountDesktop(machineId = "local-daemon", openSettings?: (section: string) => void) {
   const wrapper = mount(DesktopView, {
     props: { machineId },
     attachTo: document.body,
-    global: { plugins: [createPinia(), router, i18n] },
+    global: { plugins: [createPinia(), router, i18n], provide: openSettings ? { [accountSessionKey as symbol]: { openSettings, localMachineId: ref("local-daemon") } } : {} },
   })
   wrappers.push(wrapper)
   await flushPromises()
@@ -317,8 +321,9 @@ test("switching displays selects a codec supported by that display's GPU", async
 test("an unavailable daemon remains reachable through refresh", async () => {
   mock.api.target.mockRejectedValueOnce(new Error("No daemon discovery file"))
   const wrapper = await mountDesktop()
-  expect(wrapper.get('[role="status"]').text()).toContain("The local daemon is unavailable.")
-  expect(wrapper.get('[role="alert"]').text()).toBe("No daemon discovery file")
+  expect(wrapper.get('[role="alert"]').text()).toContain("The local daemon is unavailable.")
+  expect(wrapper.get("details").attributes("open")).toBeUndefined()
+  expect(wrapper.get("pre").text()).toBe("No daemon discovery file")
   expect(button(wrapper, "Connect").attributes("disabled")).toBeDefined()
   expect(mock.api.capabilities).not.toHaveBeenCalled()
   await button(wrapper, "Refresh displays").trigger("click")
@@ -360,13 +365,51 @@ test("capture errors are visible and the connection can be retried", async () =>
   await flushPromises()
   TestPeer.instances[0]!.changeState("connected")
   await flushPromises()
-  expect(wrapper.get('[role="status"]').text()).toBe("The desktop connection failed.")
-  expect(wrapper.get('[role="alert"]').text()).toBe("Screen recording permission denied")
+  expect(wrapper.get('[role="alert"]').text()).toContain("The desktop connection failed.")
+  expect(wrapper.get('[role="alert"]').text()).toContain(i18n.global.t("errors.desktopUnlockHint"))
+  expect(wrapper.get("details").attributes("open")).toBeUndefined()
+  expect(wrapper.get("pre").text()).toBe("Screen recording permission denied")
   expect(button(wrapper, "Connect").attributes("disabled")).toBeUndefined()
   expect(mock.api.close).toHaveBeenCalledTimes(1)
   await button(wrapper, "Connect").trigger("click")
   await flushPromises()
   expect(mock.api.offer).toHaveBeenCalledTimes(2)
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+})
+
+test("a connection failure without diagnostics still suggests unlocking the machine", async () => {
+  const wrapper = await mountDesktop()
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  TestPeer.instances[0]!.changeState("failed")
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toContain(i18n.global.t("errors.desktopUnlockHint"))
+  expect(wrapper.find("details").exists()).toBe(false)
+})
+
+test("desktop discovery authentication failures retain the sign-in guidance", async () => {
+  mock.api.capabilities.mockRejectedValueOnce(new HttpError(401, "Session expired"))
+  const wrapper = await mountDesktop()
+  expect(wrapper.get('[role="alert"]').text()).toContain(i18n.global.t("errors.unauthorized.description"))
+  expect(wrapper.get('[role="alert"]').text()).not.toContain(i18n.global.t("errors.desktopUnlockHint"))
+  expect(wrapper.get("pre").text()).toBe("Session expired")
+})
+
+test.each<RelayDeniedReason>(["free_plan", "turn_quota_exhausted", "metering_unavailable"])("%s presents the relay recovery action after direct connection fails", async reason => {
+  Object.assign(mock.api, { connectionFailure: () => relayFailureMessage(reason), connectionFailureReason: () => reason })
+  const openSettings = vi.fn()
+  const wrapper = await mountDesktop("local-daemon", openSettings)
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  TestPeer.instances[0]!.changeState("failed")
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).not.toContain(i18n.global.t("errors.desktopUnlockHint"))
+  const billing = button(wrapper, i18n.global.t("errors.viewBilling"))
+  if (reason === "metering_unavailable") expect(billing).toBeUndefined()
+  else {
+    await billing.trigger("click")
+    expect(openSettings).toHaveBeenCalledExactlyOnceWith("plans")
+  }
 })
 
 test("changing machine routes cancels an in-flight offer", async () => {

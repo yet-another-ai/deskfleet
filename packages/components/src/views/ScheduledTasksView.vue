@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../components/common/UiButton.vue"
+import ErrorNotice from "../components/common/ErrorNotice.vue"
 import MachineTabs from "../components/account/MachineTabs.vue"
 import { CalendarClock, Plus, RefreshCw } from "@lucide/vue"
 import { computed, ref, watch } from "vue"
@@ -67,10 +68,9 @@ async function remove(): Promise<void> {
       </template>
 
       <p v-if="!online" role="status" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t(schedules.available ? 'schedules.offline' : 'schedules.signIn') }}</p>
-      <div v-if="error" class="ui-notice m-0 justify-between border-ui-danger/30 bg-ui-danger/8">
-        <p role="alert" class="m-0 text-ui-danger">{{ error }}</p>
+      <ErrorNotice v-if="error" :error="error">
         <UiButton v-if="!loaded" type="button" :disabled="!online || loading" @click="schedules.refresh">{{ t('folderPicker.retry') }}</UiButton>
-      </div>
+      </ErrorNotice>
       <p v-if="loading && !loaded" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t('schedules.loading') }}</p>
 
       <template v-else-if="loaded">

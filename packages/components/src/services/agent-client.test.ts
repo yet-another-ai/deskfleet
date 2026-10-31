@@ -122,3 +122,24 @@ test("surfaces the saved relay denial only for transport failure", async () => {
   await rejected
   expect(state).toHaveBeenLastCalledWith("error", detail)
 })
+
+test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const)("preserves relay recovery metadata and clears it on agent reconnect: %s", async relayDeniedReason => {
+  const { client, api, state } = setup()
+  api.connectionFailureReason = () => relayDeniedReason
+  const pending = client.connect()
+  const rejected = expect(pending).rejects.toMatchObject({ code: relayDeniedReason, relayDeniedReason })
+  await flushPromises()
+  TestPeer.instances.at(-1)!.channel.onclose?.()
+  await rejected
+  expect(state).toHaveBeenLastCalledWith("error", expect.any(String), relayDeniedReason)
+  await connect(client)
+  expect(state).toHaveBeenLastCalledWith("connected")
+})
+
+test("agent authorization errors do not inherit the grant's relay denial", async () => {
+  const { client, api, state } = setup()
+  api.connectionFailureReason = () => "free_plan"
+  vi.mocked(api.offer).mockRejectedValue(new Error("Permission denied"))
+  await expect(client.connect()).rejects.toThrow("Permission denied")
+  expect(state).toHaveBeenLastCalledWith("error", "Permission denied")
+})
