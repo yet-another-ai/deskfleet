@@ -36,6 +36,17 @@ brew install --cask yet-another-ai/tap/deskfleet
 Packaged versions for macOS, Windows, and Linux are also available on
 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
 
+On x86_64 Linux with Nix flakes enabled, run or install the desktop package:
+
+```sh
+nix run github:yet-another-ai/deskfleet
+nix profile add github:yet-another-ai/deskfleet
+```
+
+Nix builds use the official service configuration and keep application updates
+under Nix's control. See [Nix distribution](agents/docs/ci.md#nix-distribution)
+for configuration and maintenance.
+
 ## Rust workspace
 
 | Package | Location | Responsibility |

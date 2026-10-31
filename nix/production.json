@@ -1,0 +1,7 @@
+{
+  "VITE_DESKFLEET_SERVER_URL": "https://deskfleet.yetanother.ai",
+  "VITE_STATSIG_CLIENT_KEY": "client-h25ix4hcR1FRGtNkp2tVWFScsLYrx9KFNEEYSkPtUJT",
+  "VITE_STATSIG_ENVIRONMENT": "production",
+  "VITE_SENTRY_DSN": "https://497881e2f6e92836e6977c9e638b9193@o4505193156902912.ingest.us.sentry.io/4512344151752704",
+  "VITE_SENTRY_ENVIRONMENT": "production"
+}

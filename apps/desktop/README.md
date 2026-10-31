@@ -372,15 +372,17 @@ notarized app to work reliably; see [Electron's login item documentation](https:
 Packaged Linux apps use XDG Autostart. Enabling creates
 `$XDG_CONFIG_HOME/autostart/io.github.yet_another_ai.deskfleet.desktop`;
 disabling removes it. If `XDG_CONFIG_HOME` is unset, empty, or relative, the
-configuration directory defaults to `~/.config`. The `Exec` target is the outer
-`APPIMAGE` file for AppImage builds, or the executable path for other packaged
-builds.
+configuration directory defaults to `~/.config`. Packages that use a startup
+wrapper set `DESKFLEET_LAUNCHER` to its absolute path; the `Exec` target uses that
+launcher so runtime library and plugin paths are restored at login. Otherwise,
+the target is the outer `APPIMAGE` file for AppImage builds, or the executable
+path for other packaged builds. Empty or relative launcher values are ignored.
 
 On each launch, DeskFleet updates the `Exec` path of an existing enabled Linux
 entry. It honors `Hidden=true` and `X-GNOME-Autostart-enabled=false`, and does not
 recreate deleted entries. Built-in updates restart the new version, which
-refreshes the path. After manually moving, renaming, or replacing an AppImage,
-run it once from its new location to update the startup entry.
+refreshes the path. After upgrading a Nix package or manually moving, renaming,
+or replacing an AppImage, run the new version once to update the startup entry.
 
 The client opens its normal window and respects the separate **Run local Agent**
 preference described below. The switch is unavailable in development runs, which

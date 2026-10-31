@@ -1,14 +1,14 @@
 # Continuous integration
 
 DeskFleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
-one orchestrator, reusable Test and Build workflows, a shared setup action, and
+one orchestrator, reusable Test, Build, and Nix workflows, a shared setup action, and
 a stable `Gate` result for branch protection.
 
 ## Workflow ownership
 
 - `.github/workflows/ci.yml` handles pull requests, pushes to `main`, and manual
   runs. It classifies the changed files with the hosted runner's Node, calls
-  Test and Build, and combines their results in `Gate`. Configure `Gate` under
+  Test, Build, and Nix, and combines their results in `Gate`. Configure `Gate` under
   the `CI` workflow as the required status check in repository branch protection.
   Successful runs on `main` then deploy the product website to GitHub Pages.
 - `.github/workflows/test.yml` runs static checks and the desktop/Web/website builds
@@ -49,8 +49,16 @@ a stable `Gate` result for branch protection.
   the production environment: Statsig and Sentry stay disabled, and Electron
   defaults to `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
-  creates a draft GitHub Release and pushes the server image to GHCR after
-  both workflows succeed.
+  calls Nix with production configuration validation. It creates a draft GitHub
+  Release and pushes the server image to GHCR after all three workflows succeed.
+- `.github/workflows/nix.yml` checks the flake and explicitly builds the
+  `x86_64-linux` desktop package, then runs the installed application under Xvfb.
+  CI includes it in `Gate`; documentation-only
+  changes skip this build alongside Build. Publish calls the same workflow once
+  with `production_release: true`, binding its job to the `production`
+  environment and verifying the public configuration snapshot before building.
+  PR and ordinary CI Nix builds read the committed snapshot without environment
+  credentials. Nix builds do not upload additional GitHub Release assets.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
   and configures shared caches for both reusable workflows.
 
@@ -105,8 +113,10 @@ only the release job receives `contents: write`, and only the image job receives
 Before the first tag, create the `production` environment under Repository
 Settings → Environments. Set its deployment branch and tag policy to
 **Selected branches and tags**, add a **Tag** rule matching `v*`, and allow no
-branches. Store production values in this environment, removing any copies from
-repository or organization variables and secrets.
+branches. Keep production configuration in this environment, removing any
+duplicate repository or organization variables and secrets. The generated
+public Nix snapshot described below is a versioned build input, not a second
+configuration source.
 
 Configure these environment variables:
 
@@ -238,6 +248,80 @@ Manual dispatch reconciles the latest stable Release without a tag input. A
 delayed or failed sync leaves the published Release and desktop updater
 available; the tap retains its previous Cask until synchronization and merge
 succeed.
+
+### Nix distribution
+
+The repository flake builds the Linux desktop app from source. Its default
+package is `deskfleet`; the initial supported platform is `x86_64-linux`.
+The desktop continues to host the daemon in its Electron main process.
+Nix owns installed package updates, so this build does not use the AppImage
+updater.
+
+`nix/native.nix` builds the Rust Node-API addon from `Cargo.lock`, including
+the repository's `vendor/portable-pty` patch. `nix/desktop.nix` uses the frozen
+pnpm dependency store and existing Vite/electron-builder configuration, retaining
+the packaged executable, ASAR layout, and Electron fuses. The launcher supplies
+GStreamer libraries and plugins and identifies itself to Linux autostart through
+`DESKFLEET_LAUNCHER`. GPU drivers and the user's desktop session services remain
+host responsibilities.
+
+Nix build tools are pinned by `flake.lock`: Rust must satisfy the workspace's
+minimum version, with Node 24 and pnpm 12. The existing development workflow still
+uses `mise.lock`. Electron matches the exact version in the desktop manifest;
+`nix/electron.nix` records its upstream archive and unpacked headers checksums.
+Update those checksums when upgrading Electron. After changing the pnpm lockfile
+or dependency patches, clear `nix/pnpm-deps-hash.txt`, run
+`nix build .#deskfleet.pnpmDeps`, and replace the empty hash with the reported
+`got: sha256-...` value. Rebuild the package to verify the new dependency store.
+
+The overlay exposes `pkgs.deskfleet`. Self-hosted builds can override its
+`publicConfig` argument with their own `VITE_DESKFLEET_SERVER_URL` and optional
+client-public telemetry settings. These overrides are Nix inputs; ambient shell
+variables do not change the package.
+
+GitHub's `production` environment remains the source of the client-public API,
+Statsig, and Sentry configuration. A local or remote flake evaluation cannot
+read that environment, so `nix/production.json` contains a generated snapshot
+of exactly these public renderer inputs:
+
+- `VITE_DESKFLEET_SERVER_URL`
+- `VITE_STATSIG_CLIENT_KEY`
+- `VITE_STATSIG_ENVIRONMENT`
+- `VITE_SENTRY_DSN`
+- `VITE_SENTRY_ENVIRONMENT`
+
+These values already ship in the application renderer. The synchronization
+script only reads GitHub environment variables and filters this allowlist;
+signing credentials and other secrets never enter the snapshot or Nix store.
+`VITE_SENTRY_RELEASE` is derived from the package version as
+`deskfleet@v<version>`, matching the tagged Electron release.
+
+After changing any of these GitHub environment variables, synchronize the
+snapshot with an authenticated `gh` installation before tagging a release:
+
+```sh
+mise exec node -- node scripts/nix-production.ts sync
+git diff -- nix/production.json
+```
+
+Commit the generated snapshot with the intended release source. The production
+Nix job compares it against the same `vars.VITE_*` values used by the existing
+Electron build and rejects missing required values or drift. Optional telemetry
+values can be empty. The source snapshot makes ordinary `nix build` and
+`nix run github:yet-another-ai/deskfleet` reproducible without GitHub credentials,
+ambient environment variables, or `--impure`.
+
+The Nix workflow runs `nix flake check --print-build-logs` and
+`nix build .#deskfleet --print-build-logs` on x86_64 Linux. The installed-package
+smoke checks native-addon loading, bundled ACP adapters, the packaged renderer,
+the hosted daemon, startup registration through the Nix wrapper, and disabled
+self-updates. On the disposable Ubuntu runner, the workflow allows Chromium's
+user namespace sandbox through AppArmor; it runs the original Nix-store package
+with sandboxing enabled.
+
+`Gate` requires this build and smoke on code changes. Publish also requires
+matching production configuration before creating release assets or publishing
+the server image. Nix binary-cache publication is not configured.
 
 ### Server image
 
