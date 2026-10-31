@@ -661,9 +661,10 @@ stop existing processes or delete their history; a removed provider cannot
 start again. Provider launch settings remain outside the Session journal.
 The same daemon probes executable paths during provider creation. Explicit
 installation and login actions run in machine-owned terminals, using official
-installers and the selected CLI's authentication command. Their output and input
-reuse the terminal channel. Connection tests use existing credentials and never
-start interactive login. See [provider configuration](agent-sessions.md#provider-configuration).
+installers or pinned vendor downloads and the selected CLI's authentication
+command. Their output and input reuse the terminal channel. Connection tests use
+existing credentials and never start interactive login. See
+[provider configuration](agent-sessions.md#provider-configuration).
 
 The Codex template connects Codex CLI through the bundled
 [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp). The Claude
@@ -680,6 +681,10 @@ The DeepSeek Harness template launches the installed `dsh` CLI directly as
 `dsh --profile acp`. Credentials come from `DEEPSEEK_API_KEY` (optional
 `DEEPSEEK_BASE_URL`); the ACP server does not advertise interactive authenticate
 methods.
+The Antigravity template launches Google's standalone ACP runtime and its matching
+local harness. The daemon downloads and verifies the platform package on explicit
+installation, keeps both executables in its provider directory, and uses existing
+Antigravity credentials. Its runtime has no CLI login command.
 The shared
 `AgentProvider` interface accepts a user-facing name, an optional binary path,
 and environment overrides. Provider-specific code selects the process; the
@@ -690,7 +695,8 @@ version remains `1`, and forking requires the provider's advertised capability.
 Each bundled adapter uses the installed CLI and its credentials. Adapters run as
 child processes; the SEA executable reuses its bundled Node runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
-paths use the template default (`codex`, `claude`, `agent`, `grok`, `pi`, `dsh`, or `acp-agent`), and configured environment
+paths use the template default (`codex`, `claude`, `agent`, `grok`, `pi`, `dsh`,
+`agy_acp_server.par` / `agy_acp_server.exe`, or `acp-agent`), and configured environment
 values extend the executing daemon's inherited environment. New installations
 start with no configured providers; users add them in Settings → Agents using
 the machine's executable discovery, installation, and login actions. The

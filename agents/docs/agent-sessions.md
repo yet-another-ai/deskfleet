@@ -248,6 +248,25 @@ directly as `dsh --profile acp`; its default binary is `dsh`. Set
 before starting a session. The ACP automation profile does not advertise
 interactive authenticate methods. Settings installs the CLI with
 `npm install -g @deepseek-ai/dsh`.
+
+The Antigravity template runs Google's standalone
+[Antigravity ACP runtime](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json)
+directly: `agy_acp_server.par` on macOS and Linux, or `agy_acp_server.exe` on
+Windows. Linux launches add `--uid=` as specified by the registry. The matching
+`localharness_external` executable stays beside the runtime; a configured path
+also sets `ANTIGRAVITY_HARNESS_PATH` unless overridden in the provider environment.
+Settings downloads version `1.4.5` from Google for x64 or arm64 on all three
+platforms and verifies the registry's pinned SHA-256 before extraction. The
+installation directory is `$XDG_DATA_HOME/deskfleet/providers/antigravity`,
+defaulting to `~/.local/share/deskfleet/providers/antigravity`; Windows uses
+`%LOCALAPPDATA%\DeskFleet\providers\antigravity`.
+The runtime has no CLI login command or credential-status command, so discovery
+leaves authentication unknown and offers no **Log in** action. Authenticate
+through an ACP client on the same machine before opening a DeskFleet Session.
+The runtime uses the profile under `GEMINI_HOME`, with settings at
+`~/.gemini/antigravity-acp/settings.json` by default. **Test Connection** uses
+those existing credentials and reports authentication required when absent.
+
 The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the
@@ -267,10 +286,11 @@ resolved path is the default shown for the executable field, which sits with
 environment overrides in a collapsed Advanced section unless the provider
 already overrides either.
 
-Missing built-in CLIs offer **Install**, using the vendor's official installer
-on supported platforms. Installed CLIs offer **Reinstall** to run that installer
-again for updates or repairs, regardless of sign-in status. **Log in** is a
-separate action once the CLI is found.
+Missing built-in providers offer **Install**, using the vendor's official installer
+or the Antigravity runtime download on supported platforms. Installed providers
+offer **Reinstall** to repeat installation for updates or repairs, regardless of
+sign-in status. **Log in** is a separate action once a CLI with interactive login
+support is found.
 Installation and login run in dedicated machine-owned terminals, with output, interactive
 input, and explicit cancellation in the dialog. Output closes after a successful
 exit once the refreshed status appears, and remains after a failure. The daemon selects the command
@@ -291,7 +311,8 @@ gives up after 30 seconds, and reports the agent's own failure details: the
 first line is shown inline and the full output on request. It only
 uses existing credentials. Codex's bridge default-login setting is disabled for
 tests, and Cursor tests skip `cursor_login`, which can otherwise open browser
-authentication. Missing authentication asks the user to use **Log in** instead.
+authentication. Missing authentication asks the user to use **Log in**, or to
+authenticate through another ACP client for Antigravity.
 Template selection is
 immutable after creation because it determines the launch and configuration
 contract; the name, icon, path, and environment remain editable.

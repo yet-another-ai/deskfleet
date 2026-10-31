@@ -154,6 +154,33 @@ test("Pi rejects an unrelated executable with a bare version", async () => {
   assert.equal(value.loginAvailable, false)
 })
 
+test("Antigravity discovers managed runtimes and reads build metadata without starting login", async () => {
+  for (const [platform, env, binary, shell] of [
+    ["linux", { PATH: "" }, "/home/someone/.local/share/deskfleet/providers/antigravity/agy_acp_server.par", "/bin/bash"],
+    ["darwin", { PATH: "", XDG_DATA_HOME: "/custom/data" }, "/custom/data/deskfleet/providers/antigravity/agy_acp_server.par", "/bin/bash"],
+    ["win32", { PATH: "C:\\tools", LOCALAPPDATA: "C:\\Local" }, "C:\\Local\\DeskFleet\\providers\\antigravity\\agy_acp_server.exe", "C:\\tools\\pwsh.exe"],
+  ] as const) {
+    const f = fixture({ platform, env, files: [binary, shell], answer: async () => result("Build timestamp: yesterday\nBuilt as //cloud/developer_experience/antigravity_extensions/acp_server:_agy_acp_server_bin\nBuild label: 1.4.5") })
+    assert.deepEqual(await f.setup.probe(input("antigravity")), {
+      status: "found", binaryPath: binary, version: "Antigravity 1.4.5", auth: "unknown", installable: true, loginAvailable: false,
+    })
+    assert.deepEqual(f.calls.map(call => call.args), [["--version"]])
+    await f.setup.install(input("antigravity"))
+    assert.equal(f.runs[0]!.command, shell)
+    assert.match(f.runs[0]!.args!.at(-1)!, /https:\/\/dl\.google\.com\/agy-extensions\/releases\//u)
+    await assert.rejects(f.setup.login(input("antigravity")), /Sign in to Antigravity through an ACP client/u)
+    assert.equal(f.runs.length, 1)
+  }
+})
+
+test("Antigravity rejects the ordinary CLI instead of offering an incompatible login command", async () => {
+  const f = fixture({ files: ["/tools/agy"], answer: async () => result("Antigravity CLI 1.4.10") })
+  const value = await f.setup.probe(input("antigravity", { binaryPath: "/tools/agy" }))
+  assert.equal(value.status, "invalid")
+  assert.equal(value.loginAvailable, false)
+  assert.deepEqual(f.calls.map(call => call.args), [["--version"]])
+})
+
 test("Pi discovers configured managed installs and npm global prefixes", async () => {
   for (const [platform, env, binary] of [
     ["linux", { PATH: "", PI_CODING_AGENT_DIR: "/custom/pi-agent" }, "/custom/pi-agent/bin/pi"],

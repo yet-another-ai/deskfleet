@@ -8,6 +8,7 @@ import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { agentConfiguration } from "./agent-configuration-protocol.ts"
 import { AgentProviders } from "./agent-providers.ts"
 import { configureAdapterHost } from "./agents/adapter-host.ts"
+import { antigravityProcess } from "./agents/antigravity.ts"
 import { validateControlParams } from "./control-request.ts"
 import type { AgentProviderSettings } from "./provider-protocol.ts"
 
@@ -94,6 +95,11 @@ test("templates resolve their own binary defaults and cannot change after creati
   const deepseek = await registry.create({ template: "deepseek-harness", name: "DeepSeek Harness", env: { DEEPSEEK_API_KEY: "secret" } })
   assert.equal(registry.resolve(deepseek.id).provider.id, "deepseek-harness")
   assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: "dsh", env: { DEEPSEEK_API_KEY: "secret" } })
+  const antigravity = await registry.create({ template: "antigravity", name: "Antigravity", env: { GEMINI_HOME: "/account/antigravity" } })
+  assert.equal(registry.resolve(antigravity.id).provider.id, "antigravity")
+  const antigravityBinary = process.platform === "win32" ? "agy_acp_server.exe" : "agy_acp_server.par"
+  assert.equal(registry.snapshot().templates.find(template => template.id === "antigravity")?.defaultBinaryPath, antigravityBinary)
+  assert.deepEqual(registry.resolve(antigravity.id).config, { name: "Antigravity", binaryPath: antigravityBinary, env: { GEMINI_HOME: "/account/antigravity" } })
   assert.throws(() => registry.update(custom.id, { template: "codex", name: "Changed", env: {} } as AgentProviderSettings), /template is fixed/u)
   assert.equal(registry.get(custom.id).template, "acp")
   const copy = registry.get(custom.id)
@@ -218,6 +224,41 @@ test("Cursor launches agent acp, authenticates, and continues through session/lo
   assert.equal(loaded._meta?.method, "session/load")
   assert.deepEqual(updates.map(update => update.update.sessionUpdate), ["config_option_update"])
   await connection.close()
+})
+
+test("Antigravity selects the platform runtime and keeps its matching harness beside it", () => {
+  for (const [platform, binary, harness, args] of [
+    ["linux", "/opt/Antigravity/agy_acp_server.par", "/opt/Antigravity/localharness_external", ["--uid="]],
+    ["darwin", "/opt/Antigravity/agy_acp_server.par", "/opt/Antigravity/localharness_external", []],
+    ["win32", "C:\\Antigravity\\agy_acp_server.exe", "C:\\Antigravity\\localharness_external.exe", []],
+  ] as const) {
+    const launch = antigravityProcess({ name: "Antigravity", binaryPath: binary, env: { GEMINI_HOME: "/profile" } }, platform)
+    assert.equal(launch.command, binary)
+    assert.deepEqual(launch.args, [...args])
+    assert.equal(launch.env?.ANTIGRAVITY_HARNESS_PATH, harness)
+    assert.equal(launch.env?.GEMINI_HOME, "/profile")
+  }
+  assert.equal(antigravityProcess({ name: "Antigravity" }, "win32").command, "agy_acp_server.exe")
+  assert.equal(antigravityProcess({ name: "Antigravity", binaryPath: "/opt/agy_acp_server.par", env: { ANTIGRAVITY_HARNESS_PATH: "/custom/harness" } }, "linux").env?.ANTIGRAVITY_HARNESS_PATH, "/custom/harness")
+})
+
+test("Antigravity launches its ACP runtime without interactive authentication", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-antigravity-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "agy acp server")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const configured = await registry.create({ template: "antigravity", name: "Antigravity", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "antigravity" } })
+  const { provider, config } = registry.resolve(configured.id)
+  const connection = await provider.connect(config, { onUpdate() {} })
+  t.after(() => connection.close())
+  assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, process.platform === "linux" ? ["--uid="] : [])
+  assert.match((await connection.newSession({ cwd: directory, mcpServers: [] })).sessionId, /^fixture-session-/u)
+  await connection.close()
+  await assert.rejects(registry.test({ template: "antigravity", name: "Antigravity", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "antigravity-signed-out" } }), /Sign in to Antigravity through an ACP client/u)
 })
 
 test("Grok launches grok agent stdio and authenticates with xai.api_key", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
