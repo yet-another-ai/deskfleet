@@ -7,6 +7,7 @@ import { useI18n } from "vue-i18n"
 import { canHighlight, codeLanguageName, highlighter } from "../../../services/code-highlight.ts"
 import MarkdownMathBlock from "./MarkdownMathBlock.vue"
 import MarkdownMermaidNode from "./MarkdownMermaidNode.vue"
+import MarkdownCodeTokens from "./MarkdownCodeTokens.vue"
 
 const props = withDefaults(defineProps<{
   node: { code?: unknown; language?: unknown; loading?: boolean }
@@ -18,7 +19,9 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
-const stableTokens = shallowRef<ThemedToken[]>([])
+// Completed chunks retain their identity, so Vue only renders the changing tail.
+const TOKEN_CHUNK_SIZE = 256
+const stableChunks = shallowRef<ThemedToken[][]>([])
 const unstableTokens = shallowRef<ThemedToken[]>([])
 let tokenizer: ShikiStreamTokenizer | null = null
 let tokenizedCode = ""
@@ -33,18 +36,22 @@ const isMath = computed(() => ["math", "latex", "tex", "katex"].includes(languag
 const languageName = computed(() => codeLanguageName(language.value) ?? rawInfo.value)
 const copyLabel = computed(() => t("common.copy"))
 const hasHighlightedTokens = computed(() =>
-  canHighlight(language.value) && (stableTokens.value.length > 0 || unstableTokens.value.length > 0),
+  canHighlight(language.value) && (stableChunks.value.length > 0 || unstableTokens.value.length > 0),
 )
 
-function tokenStyleString(token: ThemedToken): string | undefined {
-  const style = token.htmlStyle
-  if (!style) return undefined
-  if (typeof style === "string") return style
-  let out = ""
-  for (const [k, v] of Object.entries(style)) {
-    if (v) out += `${out ? ";" : ""}${k}:${v}`
+function appendStableTokens(tokens: ThemedToken[]): void {
+  if (!tokens.length) return
+  const chunks = stableChunks.value.slice()
+  let offset = 0
+  const tail = chunks.at(-1)
+  if (tail && tail.length < TOKEN_CHUNK_SIZE) {
+    offset = Math.min(TOKEN_CHUNK_SIZE - tail.length, tokens.length)
+    chunks[chunks.length - 1] = [...tail, ...tokens.slice(0, offset)]
   }
-  return out || undefined
+  for (; offset < tokens.length; offset += TOKEN_CHUNK_SIZE) {
+    chunks.push(tokens.slice(offset, offset + TOKEN_CHUNK_SIZE))
+  }
+  stableChunks.value = chunks
 }
 
 function syncTokens(nextCode: string, lang: string): void {
@@ -52,7 +59,7 @@ function syncTokens(nextCode: string, lang: string): void {
     tokenizer = null
     tokenizedCode = ""
     currentLang = lang
-    stableTokens.value = []
+    stableChunks.value = []
     unstableTokens.value = []
     return
   }
@@ -65,20 +72,23 @@ function syncTokens(nextCode: string, lang: string): void {
       defaultColor: "light-dark()",
     })
     tokenizedCode = ""
+    stableChunks.value = []
+    unstableTokens.value = []
   }
   const delta = nextCode.slice(tokenizedCode.length)
   if (!delta && tokenizedCode.length > 0) return
   tokenizedCode = nextCode
-  void tokenizer.enqueue(delta).then(() => {
-    stableTokens.value = tokenizer!.tokensStable.slice()
-    unstableTokens.value = tokenizer!.tokensUnstable.slice()
+  const activeTokenizer = tokenizer
+  void activeTokenizer.enqueue(delta).then(({ stable, unstable }) => {
+    if (tokenizer !== activeTokenizer) return
+    appendStableTokens(stable)
+    unstableTokens.value = unstable
   })
 }
 
 watch(
   [code, language],
   ([nextCode, lang]) => {
-    if (isMermaid.value || isMath.value) return
     syncTokens(nextCode, lang)
   },
   { immediate: true },
@@ -115,12 +125,10 @@ onBeforeUnmount(() => {
         <Check :size="14" data-icon-check="" aria-hidden="true" />
       </button>
     </div>
-    <pre><code v-if="hasHighlightedTokens"><span class="shiki-stream-stable"><template
-      v-for="(tok, idx) in stableTokens"
-      :key="idx"
-    ><br v-if="tok.content === '\n'"><span v-else :style="tokenStyleString(tok)">{{ tok.content }}</span></template></span><span class="shiki-stream-unstable"><template
-      v-for="(tok, idx) in unstableTokens"
-      :key="idx"
-    ><br v-if="tok.content === '\n'"><span v-else :style="tokenStyleString(tok)">{{ tok.content }}</span></template></span></code><code v-else>{{ code }}</code></pre>
+    <pre><code v-if="hasHighlightedTokens"><span class="shiki-stream-stable"><MarkdownCodeTokens
+      v-for="(chunk, index) in stableChunks"
+      :key="index"
+      :tokens="chunk"
+    /></span><MarkdownCodeTokens class="shiki-stream-unstable" :tokens="unstableTokens" /></code><code v-else>{{ code }}</code></pre>
   </div>
 </template>

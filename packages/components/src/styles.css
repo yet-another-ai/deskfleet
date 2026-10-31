@@ -108,8 +108,10 @@ textarea {
   user-select: text;
 }
 .ui-markdown > :first-child,
+.ui-markdown > .markdown-renderer > .node-slot:first-child > .node-content > :first-child,
 .ui-markdown-segment > :first-child { margin-top: 0; }
 .ui-markdown > :last-child,
+.ui-markdown > .markdown-renderer > .node-slot:last-child > .node-content > :last-child,
 .ui-markdown-segment > :last-child { margin-bottom: 0; }
 .ui-markdown :is(p, ul, ol, pre, blockquote, table, .ui-math-block, .ui-code-block, .ui-mermaid, .ui-preview, .ui-markdown-segment) { margin: 0 0 0.875em; }
 .ui-markdown :is(h1, h2, h3, h4, h5, h6) {
