@@ -7,6 +7,15 @@ the authenticated machine RPC API. Closing a window or disconnecting a viewer
 does not stop the timer; quitting the hosting Electron application or stopping
 the headless daemon does.
 
+The daemon also publishes a public, read-only task snapshot to central PostgreSQL
+on connection and after committed task changes. This snapshot supports Team-wide
+search over task titles and prompts and lets clients inspect the last synchronized
+task details while a Machine is offline. Editing and execution still require the
+owning daemon. The snapshot excludes saved actor delegation and internal dispatch
+operation IDs. Each publication replaces that Machine's task inventory, so deleted
+tasks disappear after synchronization. Retries read the latest committed snapshot;
+chat streaming does not repeatedly publish unchanged schedules.
+
 ## Targets and timing
 
 A task contains a title, prompt, enabled state, Workspace, execution target, and

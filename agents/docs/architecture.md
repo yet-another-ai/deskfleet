@@ -203,8 +203,14 @@ Enrollment, invitations, Team rename, and Machine rename/removal retain
 authorization until commit: they lock the actor against disabling, then the Team against
 membership changes, and check current membership before writing. Session
 admission also locks the Team before the Machine and rechecks revocation after
-waiting. Billing reconciliation locks the Team before its profile and analytics
-outbox, matching Enterprise updates and the outbox's foreign-key checks.
+waiting. Billing reconciliation and Checkout writes lock the Team before its
+profile and analytics outbox, matching Enterprise updates and the outbox's
+foreign-key checks. Checkout writes recheck the billing lease after acquiring
+the profile lock and retain that lock through commit.
+Ownership transfers lock both accounts before the Team so disabling either
+account cannot race the ownership change. Invitation acceptance holds the
+invitee's active status and email through commit and returns the role observed
+inside that transaction.
 
 PostgreSQL owns runtime site name, announcement, Team-creation policy, and optional
 Terms of Service and Privacy Terms URLs. The public site endpoint exposes these
@@ -405,6 +411,9 @@ collection; filesystem validation belongs to the daemon.
 Workspace creation and updates write the main Worktree and its nonempty directory
 collection atomically. Reads preserve directory order. The default directory is
 always the first path, so no separate default flag can diverge from ordering.
+Local catalog snapshots read Workspace and machine-scoped Session contexts in
+one transaction. Collection reads batch child rows; machine-scoped Session
+selection stays in SQL instead of expanding every Session ID into a parameter.
 The store is a persistence boundary, not an authorization boundary.
 
 `deskfleet-migration` owns explicit, reversible SQLite catalog migrations. The
@@ -963,6 +972,38 @@ extends the SQLite/SeaORM catalog with command audit and a per-Session sequence.
 The daemon commits events before publishing them; the server synchronizes a
 qualified Session identity and completeness watermark. The owning daemon remains
 the single writer even when multiple clients operate concurrently.
+Central event pages and their completeness watermark are read in one SQL
+statement so concurrent synchronization cannot mix different snapshots.
+
+Search spans the selected Team's Machines using central synchronized data. It
+matches active Chat titles, sent user messages, and Agent replies, plus Scheduled
+Task titles and prompts. Results retain their owning Machine and Workspace;
+conversation matches link to the message that contains the text. Team membership,
+machine revocation, current catalog inventory, and archive state are checked
+before results are returned. Previously synchronized content remains searchable
+while its Machine is offline. Scheduled Task snapshots are read-only replicas;
+their execution and mutation remain owned by the daemon.
+
+The `global_search` Statsig gate controls the shared frontend's Search entry,
+page, and requests. It defaults off, including builds without Statsig. The gate
+controls UI rollout; central indexing and schedule replication retain their
+existing data lifecycle. The [analytics guide](analytics.md#feature-gates-and-experiments)
+owns gate configuration and fallback behavior.
+
+Agent replies enter search after their turn completes, is cancelled, fails, or
+is interrupted. The search projection advances a per-Session event cursor over
+new stable history, once the terminal event and all preceding events have arrived.
+A completed turn in a snapshot is insufficient while the contiguous event
+watermark trails it. Inherited fork history uses a fully received stable snapshot
+boundary because it has no live turn records. Streaming chunks retain their
+existing event persistence without repeatedly rebuilding a growing search body.
+
+The projection indexes raw Markdown in bounded text blocks, preserving message
+anchors across blocks. Literal queries are limited to 256 Unicode characters;
+adjacent blocks overlap by 255 characters so a query crossing a block boundary
+can still match. Query results are grouped by resource and return bounded snippets.
+PostgreSQL's `pg_trgm` indexes accelerate substring matching; short queries remain
+supported even when they cannot use a selective trigram lookup.
 
 Live commands require an available target machine. Terminal output is persisted
 on the owning daemon until explicit hangup so a different client can reconstruct

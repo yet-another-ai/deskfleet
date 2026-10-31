@@ -47,11 +47,74 @@ fn fact(actor: &str) -> BillingAnalyticsEvent {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn billing_analytics_batches_use_one_insert_and_roll_back_together() {
+    let (store, db, schema, actor, team) = fixture().await;
+    store.database().execute_unprepared(
+        "CREATE TABLE fixture_inserts (calls INTEGER NOT NULL);
+         INSERT INTO fixture_inserts VALUES (0);
+         CREATE FUNCTION fixture_count_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN UPDATE fixture_inserts SET calls=calls+1; RETURN NULL; END $$;
+         CREATE TRIGGER fixture_insert AFTER INSERT ON cp_billing_analytics
+         FOR EACH STATEMENT EXECUTE FUNCTION fixture_count_insert();
+         ALTER TABLE cp_billing_analytics ADD CONSTRAINT fixture_reject CHECK (event_id <> 'reject')",
+    ).await.unwrap();
+    let events: Vec<_> = (0..250)
+        .map(|index| BillingAnalyticsEvent {
+            id: format!("batch:{index:03}"),
+            ..fact(&actor)
+        })
+        .collect();
+    store
+        .record_billing_analytics(&team, &events)
+        .await
+        .unwrap();
+    let row = store.database().query_one_raw(Statement::from_string(
+        DbBackend::Postgres,
+        "SELECT calls,(SELECT COUNT(*) FROM cp_billing_analytics) AS events FROM fixture_inserts",
+    )).await.unwrap().unwrap();
+    assert_eq!(row.try_get::<i32>("", "calls").unwrap(), 1);
+    assert_eq!(row.try_get::<i64>("", "events").unwrap(), 250);
+
+    let rejected = [
+        BillingAnalyticsEvent {
+            id: "new-valid".into(),
+            ..fact(&actor)
+        },
+        BillingAnalyticsEvent {
+            id: "reject".into(),
+            ..fact(&actor)
+        },
+    ];
+    assert!(
+        store
+            .record_billing_analytics(&team, &rejected)
+            .await
+            .is_err()
+    );
+    let row = store
+        .database()
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT COUNT(*) AS events FROM cp_billing_analytics",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<i64>("", "events").unwrap(), 250);
+    cleanup(store, db, &schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
 async fn billing_analytics_deduplicates_and_retries_with_fenced_delivery_claims() {
     let (store, db, schema, actor, team) = fixture().await;
     let event = fact(&actor);
+    let duplicate = BillingAnalyticsEvent {
+        value: Some(999),
+        ..event.clone()
+    };
     store
-        .record_billing_analytics(&team, &[event.clone(), event.clone()])
+        .record_billing_analytics(&team, &[event.clone(), duplicate])
         .await
         .unwrap();
     let (a, b) = tokio::join!(

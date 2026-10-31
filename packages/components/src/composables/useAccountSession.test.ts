@@ -64,6 +64,22 @@ test("opening another Machine's Session hands its destination only to the select
   expect(session.takeSessionDestination("b")).toBeUndefined()
 })
 
+test("search state survives a cross-machine result and resets when the Team changes", async () => {
+  const fake = fakeCentral({
+    teams: [{ id: "team-1", name: "First", role: "member" }, { id: "team-2", name: "Second", role: "member" }],
+    machines: [machineFixture("a", "team-1", "First"), machineFixture("b", "team-1", "Second", false)],
+  })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  session.searchPath.value = "/search?q=review&kind=chat"
+  const destination = { name: "session", params: { sessionId: "30" }, query: { entry: "message-8" } }
+  session.openMachineRoute("b", destination)
+  expect(session.takeMachineDestination("b")).toEqual(destination)
+  expect(session.searchPath.value).toBe("/search?q=review&kind=chat")
+  await session.selectTeam("team-2")
+  expect(session.searchPath.value).toBe("/search")
+})
+
 test("a newer Session selection replaces the destination of a Machine still mounting", async () => {
   const fake = fakeCentral({ machines: [machineFixture("a", "team-1", "First"), machineFixture("b", "team-1", "Second")] })
   session = createAccountSession(fake.central)

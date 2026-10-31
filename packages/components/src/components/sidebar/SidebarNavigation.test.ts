@@ -1,21 +1,31 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { computed, ref } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
 import SidebarNavigation from "./SidebarNavigation.vue"
+import { accountSessionKey, createAccountSession } from "../../composables/useAccountSession.ts"
+import { fakeCentral } from "../../test/central.ts"
+import { useSearchFeature } from "../../services/search-feature.ts"
+
+vi.mock("../../services/search-feature.ts", () => ({ useSearchFeature: vi.fn() }))
+const searchEnabled = ref(false)
+beforeEach(() => { searchEnabled.value = false; vi.mocked(useSearchFeature).mockReturnValue(computed(() => searchEnabled.value)) })
 
 let wrapper: VueWrapper | undefined
 let pinia: ReturnType<typeof createPinia> | undefined
 const sectionLink = (label: string) => wrapper!.get<HTMLAnchorElement>(`a[aria-label="${label}"]`)
 const newSessionLink = () => wrapper!.findAll("a").find(link => link.text() === i18n.global.t("nav.newSession"))!
 
-async function setup(path = "/") {
+async function setup(path = "/", enableSearch = false) {
+  searchEnabled.value = enableSearch
   pinia = createPinia()
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: "/", name: "new-session", component: {} },
+      { path: "/search", name: "search", component: {} },
       { path: "/schedules/:scheduleId?", name: "schedules", component: {} },
       { path: "/sessions/archived", name: "archived-sessions", component: {}, meta: { hideDetails: true } },
       { path: "/sessions/:sessionId", name: "session", component: {} },
@@ -119,8 +129,9 @@ test("opening Archived sessions directly returns Conversations to New session", 
 test.each([
   { path: "/sessions/session-42?tab=changes", section: "Conversations" },
   { path: "/schedules/new", section: "Schedules" },
+  { path: "/search?q=hello&kind=chat", section: "Search" },
 ])("selecting the active $section section keeps $path", async ({ path, section }) => {
-  const router = await setup(path)
+  const router = await setup(path, section === "Search")
   expect(sectionLink(section).attributes("href")).toBe(path)
   await sectionLink(section).trigger("click")
   await flushPromises()
@@ -159,6 +170,36 @@ test("remounting while on Schedules keeps the last conversation path", async () 
   await sectionLink("Conversations").trigger("click")
   await flushPromises()
   expect(router.currentRoute.value.fullPath).toBe(conversation)
+})
+
+test("Search returns to the Team's previous query after a result switches machine scopes", async () => {
+  const router = await setup("/search?q=review&kind=chat", true)
+  const account = createAccountSession(fakeCentral().central)
+  await flushPromises()
+  account.searchPath.value = router.currentRoute.value.fullPath
+  wrapper!.unmount()
+  await router.push("/sessions/30?entry=message-8")
+  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [pinia!, router, i18n], provide: { [accountSessionKey as symbol]: account } } })
+  expect(sectionLink("Search").attributes("href")).toBe("/search?q=review&kind=chat")
+  await sectionLink("Search").trigger("click")
+  await flushPromises()
+  expect(sectionLink("Search").attributes("aria-current")).toBe("page")
+  expect(router.currentRoute.value.query).toEqual({ q: "review", kind: "chat" })
+  account.dispose()
+})
+
+test("Search is hidden by default and follows its feature gate without affecting existing capsules", async () => {
+  await setup("/schedules")
+  expect(wrapper!.find('a[aria-label="Search"]').exists()).toBe(false)
+  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
+  expect(sectionLink("Conversations").attributes("href")).toBe("/")
+  searchEnabled.value = true
+  await flushPromises()
+  expect(sectionLink("Search").attributes("href")).toBe("/search")
+  searchEnabled.value = false
+  await flushPromises()
+  expect(wrapper!.find('a[aria-label="Search"]').exists()).toBe(false)
+  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
 })
 
 test("Settings does not overwrite the Conversations return path", async () => {

@@ -14,8 +14,12 @@ use sea_orm::{
 
 use crate::{
     Catalog, CatalogWorkspace, StoreError,
+    catalog::{load_machine_session_worktrees, load_machine_workspaces},
     entities::{machine, team},
 };
+
+#[cfg(test)]
+mod tests;
 
 /// A coherent view of the standalone daemon's catalog.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -120,16 +124,16 @@ impl LocalCatalog {
     }
 
     pub async fn snapshot(&self) -> Result<LocalSnapshot, StoreError> {
-        Ok(LocalSnapshot {
+        let transaction = self.catalog.database().begin().await?;
+        let snapshot = LocalSnapshot {
             team_id: self.machine.team_id,
             machine_id: self.machine.id,
             machine_name: self.machine.name.clone(),
-            workspaces: self.catalog.workspaces(self.machine.id).await?,
-            sessions: self
-                .catalog
-                .machine_session_worktrees(self.machine.id)
-                .await?,
-        })
+            workspaces: load_machine_workspaces(&transaction, self.machine.id).await?,
+            sessions: load_machine_session_worktrees(&transaction, self.machine.id).await?,
+        };
+        transaction.commit().await?;
+        Ok(snapshot)
     }
 
     pub async fn create_workspace(

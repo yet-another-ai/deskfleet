@@ -29,13 +29,19 @@ interface AnalyticsConfiguration {
 let sdk: StatsigClient | undefined
 let platform: AnalyticsConfiguration["platform"] = "web"
 let userId: string | undefined
+let email: string | undefined
 let team: Pick<Team, "id" | "role"> | undefined
 let plan: BillingPlan | undefined
 let planRevision = 0
 const revision = ref(0)
 
 function user(): StatsigUser {
-  return { ...(userId ? { userID: userId } : {}), ...(team ? { customIDs: { teamID: team.id } } : {}), custom: { platform } }
+  return {
+    ...(userId ? { userID: userId } : {}),
+    ...(email ? { email } : {}),
+    ...(team ? { customIDs: { teamID: team.id } } : {}),
+    custom: { platform },
+  }
 }
 
 /** Starts in the background; product startup never waits for analytics. */
@@ -63,13 +69,14 @@ export function initializeAnalytics(configuration: AnalyticsConfiguration): void
   revision.value++
 }
 
-/** Replace the identity on login/logout; never merge account name or email into it. */
-export function identifyAnalytics(nextUserId?: string, nextTeam?: Pick<Team, "id" | "role">): void {
-  if (!nextUserId) nextTeam = undefined
-  if (userId === nextUserId && team?.id === nextTeam?.id && team?.role === nextTeam?.role) return
+/** Keep the account UUID stable and use its email for feature targeting. */
+export function identifyAnalytics(nextUserId?: string, nextTeam?: Pick<Team, "id" | "role">, nextEmail?: string): void {
+  if (!nextUserId) { nextTeam = undefined; nextEmail = undefined }
+  if (userId === nextUserId && email === nextEmail && team?.id === nextTeam?.id && team?.role === nextTeam?.role) return
   planRevision++
   if (userId !== nextUserId || team?.id !== nextTeam?.id) plan = undefined
   userId = nextUserId
+  email = nextEmail
   team = nextTeam
   const instance = sdk
   if (!instance) return
@@ -129,6 +136,7 @@ export async function shutdownAnalytics(): Promise<void> {
   const instance = sdk
   sdk = undefined
   userId = undefined
+  email = undefined
   team = undefined
   plan = undefined
   planRevision++

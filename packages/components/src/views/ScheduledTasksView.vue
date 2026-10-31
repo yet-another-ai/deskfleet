@@ -14,14 +14,15 @@ import ScheduleEditor from "../components/schedules/ScheduleEditor.vue"
 import ScheduleList from "../components/schedules/ScheduleList.vue"
 import { useScheduledTasks } from "../composables/useScheduledTasks.ts"
 import { useFleetStore } from "../stores/fleet.ts"
+import { absoluteTime } from "../components/schedules/schedule-format.ts"
 
 // `/schedules` lists the machine's tasks, `/schedules/new` creates one, and `/schedules/:id` shows one.
 const props = defineProps<{ scheduleId?: string }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const fleet = useFleetStore()
 const schedules = useScheduledTasks()
-const { account, online, tasks, loaded, loading, pending, error } = schedules
+const { account, online, tasks, loaded, loading, pending, error, lastObservedAt } = schedules
 const creating = computed(() => props.scheduleId === "new")
 const selected = computed(() => props.scheduleId && !creating.value ? tasks.value.find(task => task.id === props.scheduleId) : undefined)
 const machineName = computed(() => account?.machine.value?.name ?? fleet.machines[0]?.name)
@@ -60,7 +61,7 @@ async function remove(): Promise<void> {
             <p class="m-0 mt-1 text-sm text-ui-text-muted">{{ t('schedules.description', { machine: machineName }) }}</p>
           </div>
           <div class="flex items-center gap-2">
-            <UiButton type="button" class="px-2" :aria-label="t('catalog.refresh')" :title="t('catalog.refresh')" :disabled="!online || loading || pending" @click="schedules.refresh"><RefreshCw :size="14" aria-hidden="true" /></UiButton>
+            <UiButton type="button" class="px-2" :aria-label="t('catalog.refresh')" :title="t('catalog.refresh')" :disabled="!schedules.available || loading || pending" @click="schedules.refresh"><RefreshCw :size="14" aria-hidden="true" /></UiButton>
             <RouterLink v-if="online && loaded" :to="{ name: 'schedules', params: { scheduleId: 'new' } }" data-schedule-new class="ui-button-primary no-underline"><Plus :size="15" aria-hidden="true" />{{ t('schedules.create') }}</RouterLink>
           </div>
         </div>
@@ -68,8 +69,9 @@ async function remove(): Promise<void> {
       </template>
 
       <p v-if="!online" role="status" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t(schedules.available ? 'schedules.offline' : 'schedules.signIn') }}</p>
+      <p v-if="!online && lastObservedAt" class="m-0 text-xs text-ui-text-muted">{{ t('schedules.lastObserved', { time: absoluteTime(lastObservedAt, locale) }) }}</p>
       <ErrorNotice v-if="error" :error="error">
-        <UiButton v-if="!loaded" type="button" :disabled="!online || loading" @click="schedules.refresh">{{ t('folderPicker.retry') }}</UiButton>
+        <UiButton type="button" :disabled="loading || pending" @click="schedules.refresh">{{ t('folderPicker.retry') }}</UiButton>
       </ErrorNotice>
       <p v-if="loading && !loaded" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t('schedules.loading') }}</p>
 

@@ -22,17 +22,19 @@ export function useScheduledTasks() {
   const loading = ref(false)
   const pending = ref(false)
   const error = ref<string>()
+  const lastObservedAt = ref<string | null>(null)
   let revision = 0
   let disposed = false
 
   async function refresh(): Promise<void> {
     const request = ++revision
-    if (!online.value || !api) { loading.value = false; return }
+    if (!api || !account) { loading.value = false; return }
     loading.value = true
     try {
-      const result = await api.list()
+      const result = online.value ? { tasks: await api.list(), lastObservedAt: null } : await account.central.scheduleSnapshot(fleet.targetId)
       if (disposed || request !== revision) return
-      tasks.value = result
+      tasks.value = result.tasks
+      lastObservedAt.value = result.lastObservedAt
       loaded.value = true
       error.value = undefined
     } catch (reason) {
@@ -92,8 +94,8 @@ export function useScheduledTasks() {
     if (event.type === "catalogChanged" && event.machineId === fleet.targetId && !pending.value) void refresh()
   })
   // The visible page follows execution status; switching routes or hiding the window stops reads.
-  useIntervalFn(() => { if (!document.hidden && !loading.value && !pending.value) void refresh() }, 15_000)
+  useIntervalFn(() => { if (online.value && !document.hidden && !loading.value && !pending.value) void refresh() }, 15_000)
   onBeforeUnmount(() => { disposed = true; revision++; unsubscribe?.() })
 
-  return { account, available: !!api, online, tasks, loaded, loading, pending, error, refresh, save, toggle, run, remove }
+  return { account, available: !!api, online, tasks, loaded, loading, pending, error, lastObservedAt, refresh, save, toggle, run, remove }
 }

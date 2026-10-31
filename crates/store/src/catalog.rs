@@ -4,7 +4,8 @@ use deskfleet_model::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Select, Set, TransactionTrait,
+    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, QueryTrait, Select, Set,
+    TransactionTrait,
 };
 
 use crate::{
@@ -100,11 +101,7 @@ impl Catalog {
         machine_id: MachineId,
     ) -> Result<Vec<CatalogWorkspace>, StoreError> {
         let transaction = self.database.begin().await?;
-        let result = load_workspaces(
-            &transaction,
-            workspace::Entity::find().filter(workspace::Column::MachineId.eq(machine_id.as_i64())),
-        )
-        .await?;
+        let result = load_machine_workspaces(&transaction, machine_id).await?;
         transaction.commit().await?;
         Ok(result)
     }
@@ -242,22 +239,7 @@ impl Catalog {
         machine_id: MachineId,
     ) -> Result<Vec<Worktree>, StoreError> {
         let transaction = self.database.begin().await?;
-        let sessions = workspace_session::Entity::find()
-            .filter(workspace_session::Column::MachineId.eq(machine_id.as_i64()))
-            .filter(workspace_session::Column::WorkspaceId.is_null())
-            .all(&transaction)
-            .await?;
-        if sessions.is_empty() {
-            transaction.commit().await?;
-            return Ok(Vec::new());
-        }
-        let worktrees = load_worktrees(
-            &transaction,
-            worktree::Entity::find().filter(
-                worktree::Column::SessionId.is_in(sessions.iter().map(|session| session.id)),
-            ),
-        )
-        .await?;
+        let worktrees = load_machine_session_worktrees(&transaction, machine_id).await?;
         transaction.commit().await?;
         Ok(worktrees)
     }
@@ -276,6 +258,34 @@ impl Catalog {
         transaction.commit().await?;
         Ok(())
     }
+}
+
+pub(crate) async fn load_machine_workspaces(
+    database: &impl ConnectionTrait,
+    machine_id: MachineId,
+) -> Result<Vec<CatalogWorkspace>, StoreError> {
+    load_workspaces(
+        database,
+        workspace::Entity::find().filter(workspace::Column::MachineId.eq(machine_id.as_i64())),
+    )
+    .await
+}
+
+pub(crate) async fn load_machine_session_worktrees(
+    database: &impl ConnectionTrait,
+    machine_id: MachineId,
+) -> Result<Vec<Worktree>, StoreError> {
+    let sessions = workspace_session::Entity::find()
+        .select_only()
+        .column(workspace_session::Column::Id)
+        .filter(workspace_session::Column::MachineId.eq(machine_id.as_i64()))
+        .filter(workspace_session::Column::WorkspaceId.is_null())
+        .into_query();
+    load_worktrees(
+        database,
+        worktree::Entity::find().filter(worktree::Column::SessionId.in_subquery(sessions)),
+    )
+    .await
 }
 
 pub(crate) async fn require_workspace(

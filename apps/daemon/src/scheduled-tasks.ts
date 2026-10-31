@@ -93,6 +93,8 @@ export class ScheduledTasks {
   }
 
   onChanged(listener: () => void): () => void { this.#listeners.add(listener); return () => this.#listeners.delete(listener) }
+  /** Committed public state for central replication; delegation and operation IDs stay local. */
+  snapshot(): ScheduledTask[] { return this.#tasks.map(publicTask) }
   start(): void { if (!this.#closed) { this.#started = true; this.#arm() } }
 
   #serial<T>(action: () => Promise<T>): Promise<T> {
@@ -142,7 +144,7 @@ export class ScheduledTasks {
     if (method === "scheduleRun") return this.#track(this.#run(params.scheduleId, owner))
     return this.#serial(async () => {
       if (this.#closed) throw new Error("Scheduler is stopping")
-      if (method === "scheduleList") return this.#tasks.map(publicTask)
+      if (method === "scheduleList") return this.snapshot()
       const tasks = structuredClone(this.#tasks)
       const now = this.#now().toISOString()
       if (method === "scheduleCreate") {

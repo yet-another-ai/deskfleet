@@ -310,7 +310,8 @@
     "emptyHint": "Create a task to run an agent at set times, at an interval, or on demand.",
     "offline": "This machine is offline. Connect its daemon to manage and run schedules.",
     "signIn": "Sign in and select a machine to manage schedules.",
-    "busy": "Wait for the current schedule operation to finish."
+    "busy": "Wait for the current schedule operation to finish.",
+    "lastObserved": "Last synced {time}"
   },
   "common": {
     "increase": "Increase",
@@ -1478,5 +1479,24 @@
       "incomplete": "awaiting payment",
       "paused": "paused"
     }
+  },
+  "search": {
+    "title": "Search",
+    "description": "Search chats and schedules across {team}.",
+    "placeholder": "Search chats and schedules",
+    "filter": "Result type",
+    "kind": {
+      "all": "All",
+      "chat": "Chats",
+      "schedule": "Schedules"
+    },
+    "signIn": "Sign in and select a team to search.",
+    "empty": "No results",
+    "emptyHint": "Try another phrase or search all result types.",
+    "start": "Find a conversation or schedule",
+    "startHint": "Search titles, sent messages, completed agent responses, and schedule prompts. Archived chats are excluded.",
+    "loading": "Searching…",
+    "more": "Load more",
+    "untitled": "Untitled chat"
   }
 }

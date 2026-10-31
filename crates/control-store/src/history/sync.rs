@@ -106,6 +106,7 @@ impl ControlStore {
             insertions.push(event);
             watermark = seq;
         }
+        let terminal_seq = crate::search::terminal_sequence(&insertions);
         if !insertions.is_empty() {
             tx.execute_raw(sql(
                 "INSERT INTO cp_events(machine_id,session_id,seq,record) SELECT $1,$2,(event->>'seq')::bigint,event FROM jsonb_array_elements($3::jsonb) event",
@@ -132,6 +133,15 @@ impl ControlStore {
                 vec![machine.into(),Value::Array(unique.into_values().collect()).into()],
             )).await?;
         }
+        crate::search::project_history(
+            &tx,
+            machine,
+            session_id,
+            snapshot.as_ref().filter(|_| bound >= current_snapshot_seq),
+            watermark,
+            terminal_seq,
+        )
+        .await?;
         if let Some(snapshot) = snapshot.filter(|_| bound >= current_snapshot_seq) {
             tx.execute_raw(sql(
                 "UPDATE cp_sessions SET snapshot=$1,snapshot_seq=$2,event_seq=$3,observed_at=$4 WHERE machine_id=$5 AND session_id=$6 AND (snapshot IS DISTINCT FROM $1 OR event_seq<>$3)",

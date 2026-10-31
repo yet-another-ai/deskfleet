@@ -216,14 +216,23 @@ impl ControlStore {
     ) -> Result<()> {
         let tx = self.db.begin().await?;
         let id = resource_id(team_id)?;
+        // Both accounts must stay active until commit. Lock users before the
+        // Team, matching other membership mutations and peer creation.
         one(
             &tx,
-            "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
-            vec![id.into()],
+            "SELECT id FROM cp_users WHERE id=$1 AND email_verified AND NOT disabled FOR SHARE",
+            vec![target_user_id.into()],
         )
-        .await?;
+        .await
+        .map_err(|error| {
+            if matches!(error, Error::NotFound) {
+                Error::Invalid("new owner must be an active verified team member")
+            } else {
+                error
+            }
+        })?;
         authorize(
-            &team_policy(&tx, actor, team_id).await?,
+            &lock_team_policy(&tx, actor, team_id).await?,
             TeamAction::TransferOwnership,
         )?;
         if actor == target_user_id {
@@ -290,6 +299,21 @@ impl ControlStore {
         )
         .await?
         .try_get("", "team_id")?;
+        // Account disabling and email changes must finish before checking the
+        // invitee, or wait until membership and invitation consumption commit.
+        let user = one(
+            &tx,
+            "SELECT email FROM cp_users WHERE id=$1 AND email_verified AND NOT disabled FOR SHARE",
+            vec![user_id.into()],
+        )
+        .await
+        .map_err(|error| {
+            if matches!(error, Error::NotFound) {
+                Error::Forbidden
+            } else {
+                error
+            }
+        })?;
         // Team deletion locks the parent before cascading to its invitations.
         one(
             &tx,
@@ -298,29 +322,23 @@ impl ControlStore {
         )
         .await?;
         let invite=one(&tx,"SELECT i.team_id,i.email,i.role,t.name FROM cp_invites i JOIN cp_teams t ON t.id=i.team_id WHERE i.token_hash=$1 AND i.expires_at>$2 FOR UPDATE OF i",vec![secret_hash(token).into(),now_ms().into()]).await?;
-        let user = one(
-            &tx,
-            "SELECT email,email_verified FROM cp_users WHERE id=$1",
-            vec![user_id.into()],
-        )
-        .await?;
-        if !user.try_get::<bool>("", "email_verified")?
-            || user
-                .try_get::<Option<String>>("", "email")?
-                .map(|s| s.to_lowercase())
-                != Some(invite.try_get("", "email")?)
+        if user
+            .try_get::<Option<String>>("", "email")?
+            .map(|s| s.to_lowercase())
+            != Some(invite.try_get("", "email")?)
         {
             return Err(Error::Forbidden);
         }
         let role = invite.try_get::<String>("", "role")?;
         let existing = tx
             .query_one_raw(sql(
-                "SELECT user_id FROM cp_members WHERE team_id=$1 AND user_id=$2",
+                "SELECT role FROM cp_members WHERE team_id=$1 AND user_id=$2",
                 vec![id.into(), user_id.into()],
             ))
             .await?
-            .is_some();
-        if !existing {
+            .map(|row| row.try_get::<String>("", "role"))
+            .transpose()?;
+        if existing.is_none() {
             let plan = crate::billing::effective_plan(&tx, id, self.hosted, now_ms()).await?;
             if let Some(limit) = plan.limits().max_members {
                 let count: i64 = one(
@@ -349,7 +367,7 @@ impl ControlStore {
         Ok(Team {
             id: id.to_string(),
             name: invite.try_get("", "name")?,
-            role: self.team_role(user_id, &id.to_string()).await?,
+            role: existing.unwrap_or(role),
         })
     }
 }

@@ -9,6 +9,7 @@ pub mod github_app;
 mod hub;
 mod maintenance;
 mod peers;
+mod search;
 mod site;
 mod turn_usage;
 mod web_assets;
@@ -104,6 +105,7 @@ pub fn configure(config: &mut ServiceConfig) {
                 web::post().to(api::transfer_ownership),
             )
             .route("/teams/{teamId}/usage", web::get().to(api::team_usage))
+            .route("/teams/{teamId}/search", web::get().to(search::search))
             .route("/teams/{teamId}/ai-usage", web::get().to(ai_usage::summary))
             .route(
                 "/teams/{teamId}/ai-usage/sessions",
@@ -133,6 +135,10 @@ pub fn configure(config: &mut ServiceConfig) {
             .route("/machines/{machineId}/rpc", web::post().to(api::rpc))
             .route("/machines/{machineId}/catalog", web::get().to(api::catalog))
             .route(
+                "/machines/{machineId}/schedules",
+                web::get().to(search::schedules),
+            )
+            .route(
                 "/machines/{machineId}/sessions",
                 web::get().to(api::sessions),
             )
@@ -159,6 +165,7 @@ pub fn configure(config: &mut ServiceConfig) {
             )
             .route("/daemon/catalog", web::post().to(api::sync_catalog))
             .route("/daemon/history", web::post().to(api::sync_history))
+            .route("/daemon/schedules", web::post().to(search::sync_schedules))
             .route("/daemon/ws", web::get().to(websocket::daemon))
             .route("/client/ws", web::get().to(websocket::client))
             .route("/peers", web::post().to(peers::create))

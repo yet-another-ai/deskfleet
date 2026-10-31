@@ -340,3 +340,50 @@ async fn invalid_persisted_main_context_is_reported_and_migrations_round_trip() 
         .unwrap();
     assert_eq!(restored.worktrees.len(), 1);
 }
+
+#[tokio::test]
+async fn machine_session_worktrees_filter_ownership_without_binding_every_session_id() {
+    let (catalog, machine) = fixture().await;
+    // Exceed SQLite's parameter limit without creating unused worktree data.
+    catalog
+        .database()
+        .execute_unprepared(&format!(
+            "WITH RECURSIVE ids(id) AS (SELECT 1 UNION ALL SELECT id + 1 FROM ids WHERE id < 33000) \
+             INSERT INTO workspace_sessions (machine_id) SELECT {} FROM ids",
+            machine.id.as_i64(),
+        ))
+        .await
+        .unwrap();
+    let session = catalog.create_machine_session(machine.id).await.unwrap();
+    let owned = catalog
+        .attach_session_worktree(machine.id, session.id, directories(&["/second", "/first"]))
+        .await
+        .unwrap();
+
+    let other = catalog
+        .create_machine(machine.team_id, "other host")
+        .await
+        .unwrap();
+    let other_session = catalog.create_machine_session(other.id).await.unwrap();
+    catalog
+        .attach_session_worktree(other.id, other_session.id, directories(&["/other"]))
+        .await
+        .unwrap();
+    let workspace = catalog
+        .create_workspace(machine.id, "workspace", directories(&["/workspace"]))
+        .await
+        .unwrap();
+    let nested = catalog
+        .create_workspace_session(machine.id, workspace.workspace.id)
+        .await
+        .unwrap();
+    catalog
+        .attach_session_worktree(machine.id, nested.id, directories(&["/nested"]))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        catalog.machine_session_worktrees(machine.id).await.unwrap(),
+        vec![owned]
+    );
+}

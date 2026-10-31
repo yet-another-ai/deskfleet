@@ -66,6 +66,7 @@ const focusedPreview = computed(() => {
   return { ...preview, source: { sessionId: props.sessionId, ...preview.source } }
 })
 const pendingLocate = computed(() => pendingPreviewLocate.value ?? pendingMermaidLocate.value)
+const focusedEntry = computed(() => typeof route.query.entry === "string" && route.query.entry ? route.query.entry : undefined)
 const location = computed(() => fleet.findSession(props.sessionId))
 const resourceTarget = useFileTarget(() => location.value?.machine.id)
 const view = computed(() => agents.views[props.sessionId])
@@ -114,6 +115,9 @@ const conversation = useTemplateRef<InstanceType<typeof AgentConversation>>("con
 const { height: overlayHeight } = useElementSize(overlay, { width: 0, height: 140 }, { box: "border-box" })
 const followBottom = ref(true)
 const activeEntry = ref<string>()
+let locatedEntry: string | undefined
+let entryHighlightTimer: ReturnType<typeof setTimeout> | undefined
+onScopeDispose(() => { clearTimeout(entryHighlightTimer) })
 
 const { arrivedState } = useScroll(scroller, {
   offset: { bottom: 100 },
@@ -150,7 +154,8 @@ watchImmediate(() => props.sessionId, id => {
   renameOpen.value = false
   actionError.value = null
   activeEntry.value = undefined
-  followBottom.value = !pendingLocate.value || (!!pendingLocate.value.sessionId && pendingLocate.value.sessionId !== id)
+  locatedEntry = undefined
+  followBottom.value = !focusedEntry.value && (!pendingLocate.value || (!!pendingLocate.value.sessionId && pendingLocate.value.sessionId !== id))
   void agents.open(id)
 })
 useSessionRead(() => props.sessionId)
@@ -158,6 +163,23 @@ watch(() => [view.value?.events.length, view.value?.loading], () => {
   if (!view.value?.loading && followBottom.value && !pendingLocate.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
   if (followBottom.value || !activeEntry.value) updateOutline()
 }, { flush: "post" })
+watch([focusedEntry, () => props.sessionId, () => view.value?.loading, () => view.value?.events.length], async ([entry, id, loading]) => {
+  if (!entry) { locatedEntry = undefined; return }
+  const key = `${id}:${entry}`
+  if (locatedEntry === key) return
+  followBottom.value = false
+  if (loading) return
+  await nextTick()
+  if (props.sessionId !== id || focusedEntry.value !== entry) return
+  const target = [...scroller.value?.querySelectorAll<HTMLElement>("[data-conversation-entry]") ?? []].find(item => item.dataset.conversationEntry === entry)
+  if (!target) return
+  locatedEntry = key
+  clearTimeout(entryHighlightTimer)
+  for (const previous of scroller.value?.querySelectorAll<HTMLElement>("[data-conversation-located]") ?? []) delete previous.dataset.conversationLocated
+  target.dataset.conversationLocated = "true"
+  target.scrollIntoView({ block: "center", behavior: "instant" })
+  entryHighlightTimer = setTimeout(() => { delete target.dataset.conversationLocated }, 2000)
+}, { immediate: true, flush: "post" })
 watch([pendingLocate, () => view.value?.loading, () => view.value?.events.length, focusedPreview, focusedMermaid], async ([target, loading, , preview, mermaid]) => {
   if (!target || loading || preview || mermaid) return
   if (target.sessionId && target.sessionId !== props.sessionId) return
@@ -227,7 +249,7 @@ async function checkOperation(operationId: string): Promise<void> {
       <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
         <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
         <template v-else-if="snapshot">
-          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" @fork="forkOpen = true" />
+          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" />
           <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
         </template>
       </div>

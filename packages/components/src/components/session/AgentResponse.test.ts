@@ -118,6 +118,18 @@ test("a finished response keeps the answer visible and stops stale running indic
   expect(view.find('[aria-label="Running"]').exists()).toBe(false)
 })
 
+test("a search anchor opens a collapsed assistant message and follows a new anchor", async () => {
+  const view = render(response([message("message-1", "assistant", "Earlier answer"), tool("read"), message("message-9", "assistant", "Final answer")], false))
+  await flushPromises()
+  expect(view.find('[data-conversation-entry="message-1"]').exists()).toBe(false)
+  await view.setProps({ locateEntry: "message-1" })
+  await flushPromises()
+  expect(view.get('[data-conversation-entry="message-1"]').text()).toBe("Earlier answer")
+  expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("true")
+  await view.setProps({ locateEntry: "message-9" })
+  expect(view.get('[data-conversation-entry="message-9"]').text()).toBe("Final answer")
+})
+
 test.each([false, true])("a tool-ending response exposes its progress and final output after completion (initially live: %s)", async initiallyLive => {
   const steps = [
     tool("earlier-read"), message("earlier-thought", "thought"),

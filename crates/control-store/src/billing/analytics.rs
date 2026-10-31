@@ -28,12 +28,15 @@ pub(super) async fn enqueue(
     events: &[BillingAnalyticsEvent],
 ) -> Result<()> {
     let team = resource_id(team_id)?;
-    for event in events {
-        db.execute_raw(sql(
-            "INSERT INTO cp_billing_analytics(event_id,team_id,event,available_at) VALUES($1,$2,$3,$4) ON CONFLICT(event_id) DO NOTHING",
-            vec![event.id.clone().into(), team.into(), serde_json::to_value(event)?.into(), now_ms().into()],
-        )).await?;
+    if events.is_empty() {
+        return Ok(());
     }
+    // One atomic insert avoids per-event round trips and acquires conflicting
+    // event keys in a consistent order. The first occurrence still wins.
+    db.execute_raw(sql(
+        "INSERT INTO cp_billing_analytics(event_id,team_id,event,available_at) SELECT event->>'id',$1,event,$3 FROM jsonb_array_elements($2) WITH ORDINALITY AS e(event,position) ORDER BY event->>'id',position ON CONFLICT(event_id) DO NOTHING",
+        vec![team.into(), serde_json::to_value(events)?.into(), now_ms().into()],
+    )).await?;
     Ok(())
 }
 

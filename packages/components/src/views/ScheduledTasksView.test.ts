@@ -73,6 +73,7 @@ async function setup(initial: ScheduledTask[] = []) {
     throw new Error(`Unexpected method ${method}`)
   })
   fake.central.rpc = rpc as CentralApi["rpc"]
+  fake.central.scheduleSnapshot.mockImplementation(async () => ({ tasks: clone(schedules), lastObservedAt: "2026-10-26T00:00:00Z" }))
   const account = createAccountSession(fake.central)
   await flushPromises()
   const pinia = createPinia()
@@ -105,7 +106,7 @@ async function setup(initial: ScheduledTask[] = []) {
   })
   cleanup.push(() => { wrapper.unmount(); disposePinia(pinia); account.dispose() })
   await flushPromises()
-  return { wrapper, rpc, router, account, fleet, agents, providers }
+  return { wrapper, rpc, router, account, fleet, agents, providers, scheduleSnapshot: fake.central.scheduleSnapshot }
 }
 
 test("the list summarizes each task's cadence, destination, next run, and last result", async () => {
@@ -347,6 +348,24 @@ test("an offline transition disables actions and rejects a late list response", 
   expect(wrapper.get("[data-schedule-toggle]").attributes("disabled")).toBeDefined()
   expect(wrapper.find("[data-schedule-new]").exists()).toBe(false)
   expect(wrapper.text()).toContain("This machine is offline")
+})
+
+test("an offline schedule detail reads the synced snapshot and can retry a failed read", async () => {
+  const { wrapper, account, router, scheduleSnapshot } = await setup([task()])
+  scheduleSnapshot.mockRejectedValueOnce(new Error("Snapshot unavailable"))
+  account.machines.value[0]!.online = false
+  await flushPromises()
+  expect(wrapper.get('[role="alert"] pre').text()).toBe("Snapshot unavailable")
+  const retry = wrapper.findAll("button").find(button => button.text() === "Retry")!
+  expect(retry.attributes("disabled")).toBeUndefined()
+  await retry.trigger("click")
+  await flushPromises()
+  await router.push("/schedules/schedule-1")
+  await flushPromises()
+  expect(scheduleSnapshot).toHaveBeenCalledWith("machine-1")
+  expect(wrapper.text()).toContain("Last synced")
+  expect(wrapper.get("[data-schedule-run]").attributes("disabled")).toBeDefined()
+  expect(wrapper.get("[data-schedule-delete]").attributes("disabled")).toBeDefined()
 })
 
 test("machine tabs show the current target and allow switching to an offline machine", async () => {
