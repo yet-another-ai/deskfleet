@@ -108,6 +108,128 @@ async fn turn_settings_http_authorization_and_live_grants() {
 
 #[actix_web::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn legacy_grants_recover_deployment_ice_without_replacing_empty_snapshots() {
+    let mut fixture = Fixture::with_ice_servers(
+        vec!["stun:original.example.test:3478".into()],
+        vec!["turn:original.example.test:3478?transport=udp".into()],
+        Some("turn-test-secret"),
+    )
+    .await;
+    let user = fixture
+        .a
+        .store
+        .authenticate(&fixture.token)
+        .await
+        .unwrap()
+        .user;
+    fixture.a.store.grant_site_admin(&user.id).await.unwrap();
+    fixture
+        .a
+        .store
+        .update_turn_settings(
+            &user.id,
+            &deskfleet_protocol::control::TurnSettings {
+                urls: vec!["turn:replacement.example.test:3478".into()],
+            },
+        )
+        .await
+        .unwrap();
+
+    for (relay_allowed, empty_snapshot) in [(true, false), (false, false), (true, true)] {
+        let (authorization, login, expires) = peers::create_grant(
+            &request(&fixture.token),
+            &fixture.a,
+            &peers::Create {
+                team_id: fixture.team.clone(),
+                machine_id: fixture.machine.clone(),
+                purpose: "agent".into(),
+            },
+            deskfleet_protocol::control::PeerTransport::Webrtc,
+        )
+        .await
+        .unwrap();
+        let peer = &authorization.peer_id;
+        // The pre-upgrade API saved the grant and relay decision, but no snapshot.
+        fixture
+            .a
+            .store
+            .save_peer(&authorization, &login.id, expires)
+            .await
+            .unwrap();
+        fixture
+            .a
+            .store
+            .save_peer_relay_decision(peer, relay_allowed)
+            .await
+            .unwrap();
+        let expected = if empty_snapshot {
+            fixture
+                .a
+                .store
+                .save_peer_ice_servers(peer, &[])
+                .await
+                .unwrap();
+            vec![]
+        } else {
+            assert!(
+                fixture
+                    .a
+                    .store
+                    .peer_ice_servers(peer)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            peers::ice_servers(
+                &fixture.a.config,
+                peer,
+                expires,
+                if relay_allowed {
+                    &fixture.a.config.turn_urls
+                } else {
+                    &[]
+                },
+            )
+            .unwrap()
+        };
+        let sdp = peers::tests::sdp();
+        let pending = start_offer(
+            fixture.b.clone(),
+            fixture.token.clone(),
+            peer.clone(),
+            sdp.clone(),
+        );
+        let (id, params) = fixture.next_request("peer.offer").await;
+        assert_eq!(params["iceServers"], json!(expected));
+        fixture.response(&id, json!({"sdp": sdp})).await;
+        pending.await.unwrap().unwrap();
+        assert_eq!(
+            json!(
+                fixture
+                    .a
+                    .store
+                    .peer_ice_servers(peer)
+                    .await
+                    .unwrap()
+                    .unwrap()
+            ),
+            json!(expected),
+        );
+        // A later lookup on another API also uses the recovered snapshot.
+        assert_eq!(
+            json!(
+                peers::issued_ice_servers(&fixture.a, &authorization)
+                    .await
+                    .unwrap()
+            ),
+            json!(expected)
+        );
+    }
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn turn_settings_requires_a_deployment_secret_for_nonempty_lists() {
     let fixture = Fixture::new().await;
     let user = fixture

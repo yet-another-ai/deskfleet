@@ -130,26 +130,33 @@ impl ControlStore {
         Ok(after)
     }
 
-    /// Save the issued short-lived ICE credentials with their owning peer grant.
-    pub async fn save_peer_ice_servers(&self, peer_id: &str, servers: &[IceServer]) -> Result<()> {
-        self.db
-            .execute_raw(sql(
-                "UPDATE cp_peers SET ice_servers=$2 WHERE id=$1",
-                vec![peer_id.into(), json!(servers).into()],
-            ))
-            .await?;
-        Ok(())
+    /// Initialize a missing ICE snapshot and return the snapshot that won the write.
+    /// Concurrent reconstruction must agree, and an issued empty list stays empty.
+    pub async fn save_peer_ice_servers(
+        &self,
+        peer_id: &str,
+        servers: &[IceServer],
+    ) -> Result<Vec<IceServer>> {
+        let row = one(
+            &self.db,
+            "UPDATE cp_peers SET ice_servers=COALESCE(ice_servers,$2) WHERE id=$1 RETURNING ice_servers",
+            vec![peer_id.into(), json!(servers).into()],
+        )
+        .await?;
+        Ok(serde_json::from_value(row.try_get("", "ice_servers")?)?)
     }
 
     /// Offer forwarding uses the issued snapshot even after TURN settings change.
-    pub async fn peer_ice_servers(&self, peer_id: &str) -> Result<Vec<IceServer>> {
+    /// None identifies a legacy grant; Some([]) is an intentionally empty snapshot.
+    pub async fn peer_ice_servers(&self, peer_id: &str) -> Result<Option<Vec<IceServer>>> {
         let row = one(
             &self.db,
             "SELECT ice_servers FROM cp_peers WHERE id=$1",
             vec![peer_id.into()],
         )
         .await?;
-        Ok(serde_json::from_value(row.try_get("", "ice_servers")?)?)
+        let servers: Option<serde_json::Value> = row.try_get("", "ice_servers")?;
+        Ok(servers.map(serde_json::from_value).transpose()?)
     }
 }
 

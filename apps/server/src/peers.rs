@@ -40,7 +40,7 @@ pub async fn create(
     let ice_servers = grant_ice_servers(&s, id, expires, relay_allowed).await?;
     s.store.save_peer(&authorization, &a.id, expires).await?;
     s.store.save_peer_relay_decision(id, relay_allowed).await?;
-    s.store.save_peer_ice_servers(id, &ice_servers).await?;
+    let ice_servers = s.store.save_peer_ice_servers(id, &ice_servers).await?;
     Ok(web::Json(
         json!({"peerId":id,"authorization":authorization,"iceServers":ice_servers,"relayAllowed":relay_allowed,"relayDeniedReason":relay_denied_reason}),
     ))
@@ -105,6 +105,30 @@ async fn grant_ice_servers(
     };
     ice_servers(&state.config, peer_id, expires, &turn_urls)
 }
+
+async fn issued_ice_servers(
+    state: &AppState,
+    authorization: &PeerAuthorization,
+) -> Result<Vec<IceServer>> {
+    let peer_id = &authorization.peer_id;
+    if let Some(servers) = state.store.peer_ice_servers(peer_id).await? {
+        return Ok(servers);
+    }
+    // Grants issued before snapshot storage (including by an old API during a
+    // rolling upgrade) used deployment URLs, not the editable runtime list.
+    let turn_urls = if state.store.peer_relay_decision(peer_id).await? {
+        state.config.turn_urls.as_slice()
+    } else {
+        &[]
+    };
+    let expires = chrono::DateTime::parse_from_rfc3339(&authorization.expires_at)
+        .map_err(|_| ApiError::internal())?
+        .timestamp_millis();
+    let servers = ice_servers(&state.config, peer_id, expires, turn_urls)?;
+    // Concurrent recovery on another API instance must return the same snapshot.
+    Ok(state.store.save_peer_ice_servers(peer_id, &servers).await?)
+}
+
 fn ice_servers(
     config: &ServerConfig,
     peer_id: &str,

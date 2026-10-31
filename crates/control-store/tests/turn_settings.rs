@@ -265,7 +265,22 @@ async fn upgrade_keeps_existing_settings_and_peer_snapshots_survive_list_changes
             .peer_ice_servers(&grant.peer_id)
             .await
             .unwrap()
-            .is_empty()
+            .is_none()
+    );
+    // Old API instances still use this INSERT without an ice_servers column.
+    // Their grants must be distinguishable from a deliberately empty snapshot.
+    let mut rolling_grant = grant.clone();
+    rolling_grant.peer_id = "rolling-deployment-peer".into();
+    store
+        .save_peer(&rolling_grant, &auth.id, now + 60_000)
+        .await
+        .unwrap();
+    assert!(
+        upgraded
+            .peer_ice_servers(&rolling_grant.peer_id)
+            .await
+            .unwrap()
+            .is_none()
     );
     upgraded.seed_turn_settings(&[]).await.unwrap();
     upgraded
@@ -281,17 +296,86 @@ async fn upgrade_keeps_existing_settings_and_peer_snapshots_survive_list_changes
         username: Some("short-lived-user".into()),
         credential: Some("short-lived-credential".into()),
     }];
-    upgraded
+    let saved = upgraded
         .save_peer_ice_servers(&grant.peer_id, &servers)
         .await
         .unwrap();
+    assert_eq!(json!(saved), json!(servers));
     upgraded
         .update_turn_settings(&user.id, &endpoints(&["turn:replacement.test"]))
         .await
         .unwrap();
     assert_eq!(
-        json!(store.peer_ice_servers(&grant.peer_id).await.unwrap()),
+        json!(
+            store
+                .peer_ice_servers(&grant.peer_id)
+                .await
+                .unwrap()
+                .unwrap()
+        ),
         json!(servers)
+    );
+    let replacement = vec![IceServer {
+        urls: vec!["turn:replacement.test:3478?transport=udp".into()],
+        username: Some("replacement-user".into()),
+        credential: Some("replacement-credential".into()),
+    }];
+    assert_eq!(
+        json!(
+            store
+                .save_peer_ice_servers(&grant.peer_id, &replacement)
+                .await
+                .unwrap()
+        ),
+        json!(servers)
+    );
+    let (first, second) = tokio::join!(
+        store.save_peer_ice_servers(&rolling_grant.peer_id, &servers),
+        upgraded.save_peer_ice_servers(&rolling_grant.peer_id, &replacement),
+    );
+    let first = json!(first.unwrap());
+    let second = json!(second.unwrap());
+    assert_eq!(first, second);
+    assert!(first == json!(servers) || first == json!(replacement));
+    assert_eq!(
+        json!(
+            store
+                .peer_ice_servers(&rolling_grant.peer_id)
+                .await
+                .unwrap()
+                .unwrap()
+        ),
+        first
+    );
+
+    let mut direct_grant = grant.clone();
+    direct_grant.peer_id = "direct-only-peer".into();
+    store
+        .save_peer(&direct_grant, &auth.id, now + 60_000)
+        .await
+        .unwrap();
+    assert!(
+        store
+            .save_peer_ice_servers(&direct_grant.peer_id, &[])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        json!(
+            upgraded
+                .peer_ice_servers(&direct_grant.peer_id)
+                .await
+                .unwrap()
+        ),
+        json!([])
+    );
+    assert!(
+        upgraded
+            .save_peer_ice_servers(&direct_grant.peer_id, &servers)
+            .await
+            .unwrap()
+            .is_empty()
     );
     assert!(matches!(
         upgraded.peer_ice_servers("missing-peer").await,

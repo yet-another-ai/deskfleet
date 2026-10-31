@@ -230,9 +230,13 @@ current-grant checks and transactional audit as other site changes. The first
 API startup seeds the list from deployment configuration; subsequent starts
 preserve it, including an explicitly empty list. Peer creation reads the current
 list and stores the issued ICE servers with that peer, so later signaling uses
-the same snapshot across API instances. The TURN shared secret remains deployment
-configuration. List edits affect new grants without restarting the API and do
-not control the lifecycle of TURN processes.
+the same snapshot across API instances. Grants issued before snapshot storage
+are marked as missing and recover their snapshot once from deployment URLs, the
+original expiry, and the saved relay decision. Retain deployment ICE configuration
+until grants issued by old API instances expire during an upgrade.
+An explicitly empty snapshot is never regenerated. The TURN shared secret remains
+deployment configuration. List edits affect new grants without restarting the
+API and do not control the lifecycle of TURN processes.
 
 Authentication configuration also publishes the legal URLs. When either URL is
 configured, the registration page requires explicit checkbox acceptance and the
