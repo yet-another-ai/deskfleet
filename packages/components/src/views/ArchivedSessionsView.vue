@@ -45,8 +45,9 @@ const archived = computed(() => Object.values(agents.sessions)
 const confirming = computed(() => archived.value.find(item => item.session.id === confirmingId.value))
 const { isLoading, error: loadError, executeImmediate: refresh } = useAsyncState(async () => {
   agents.error = null
+  agents.relayDeniedReason = undefined
   await agents.refresh()
-  if (agents.error) throw new Error(agents.error)
+  if (agents.error) throw Object.assign(new Error(agents.error), { relayDeniedReason: agents.relayDeniedReason })
 }, undefined, { onError: () => {} }) // Load failures are shown below with a retry action.
 
 function requestAction(sessionId: string, action: "restore" | "delete"): void {

@@ -105,6 +105,19 @@ test("the Session disconnect notice retains guidance and diagnostics for real fa
   expect(wrapper.get("[data-error-notice]").text()).toContain(i18n.global.t("errors.turn_quota_exhausted.description"))
 })
 
+test("a disconnected Session ignores a relay reason without its error", async () => {
+  await wrapper.get("textarea").setValue("Keep this Session available")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  transport.state("idle")
+  useAgentSessionsStore(pinia).relayDeniedReason = "turn_quota_exhausted"
+  await flushPromises()
+  const notice = wrapper.get("[data-error-notice]")
+  expect(notice.text()).toContain(i18n.global.t("agent.disconnected"))
+  expect(notice.text()).not.toContain(i18n.global.t("errors.turn_quota_exhausted.description"))
+  expect(notice.find("details").exists()).toBe(false)
+})
+
 test("session usage restores from history, follows committed updates, and remains scoped to its session", async () => {
   expect(wrapper.find("[data-agent-usage]").exists()).toBe(false)
   events.push(agentEvent(1, "acp", { sessionId: "provider", update: { sessionUpdate: "usage_update", used: 64_000, size: 128_000, cost: { amount: 0.25, currency: "USD" } } }))

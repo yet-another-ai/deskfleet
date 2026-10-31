@@ -269,7 +269,7 @@ async function checkOperation(operationId: string): Promise<void> {
           class="pointer-events-none absolute inset-x-0 -top-6 h-6 [background:linear-gradient(to_bottom,transparent,var(--ui-color-canvas))]"
         />
         <div class="flex w-full shrink-0 flex-col gap-2 px-6 pb-2 empty:hidden">
-          <ErrorNotice v-if="!view?.loading && (!connected || view?.error)" :title="t('agent.disconnected')" :description="view?.error || agents.error ? undefined : ''" :error="view?.error || agents.error" :relay-denied-reason="view?.error ? view.relayDeniedReason : agents.relayDeniedReason">
+          <ErrorNotice v-if="!view?.loading && (!connected || view?.error)" :title="t('agent.disconnected')" :description="view?.error || agents.error ? undefined : ''" :error="view?.error || agents.error" :relay-denied-reason="view?.error ? view.relayDeniedReason : agents.error ? agents.relayDeniedReason : undefined">
             <UiButton type="button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</UiButton>
           </ErrorNotice>
           <ErrorNotice v-for="operation in pending" :key="operation.operationId" :title="t('agent.operationPending')" description="" :error="operation.error">

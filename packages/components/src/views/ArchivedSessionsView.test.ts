@@ -11,6 +11,7 @@ import { agentSnapshot } from "../test/agent.ts"
 import { catalogFixture, sessionId, workspaceId } from "../test/catalog.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import { deferred } from "../test/desktop-media.ts"
+import { relayFailureMessage, type RelayDeniedReason } from "../../../client/src/relay.ts"
 import ArchivedSessionsView from "./ArchivedSessionsView.vue"
 
 let wrapper: VueWrapper | undefined
@@ -108,6 +109,57 @@ test("a failed refresh retains archived rows and Retry clears the error after a 
   expect(wrapper!.find('[role="alert"]').exists()).toBe(false)
   await wrapper!.get('[aria-label="Refresh"]').trigger("click"); await flushPromises()
   expect(refresh).toHaveBeenCalledTimes(3)
+})
+
+test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as RelayDeniedReason[])("an archived refresh snapshots %s guidance and clears its metadata on retry", async reason => {
+  account = createAccountSession(fakeCentral().central)
+  await flushPromises()
+  const openSettings = vi.spyOn(account, "openSettings").mockImplementation(() => {})
+  let fail = true
+  const detail = relayFailureMessage(reason)!
+  const { agents } = await render({ refresh: async agents => {
+    expect(agents.error).toBeNull()
+    expect(agents.relayDeniedReason).toBeUndefined()
+    if (fail) { agents.error = detail; agents.relayDeniedReason = reason }
+  } })
+  const notice = wrapper!.get("[data-error-notice]")
+  expect(notice.text()).toContain(i18n.global.t(`errors.${reason}.description`))
+  expect(notice.get("pre").text()).toBe(detail)
+  const billing = notice.findAll("button").find(button => button.text() === "View billing")
+  expect(!!billing).toBe(reason !== "metering_unavailable")
+  if (billing) {
+    await billing.trigger("click")
+    expect(openSettings).toHaveBeenCalledExactlyOnceWith("plans")
+  }
+
+  // A later connection update must not relabel the captured refresh failure.
+  agents.error = "A different connection failed"
+  agents.relayDeniedReason = reason === "metering_unavailable" ? "free_plan" : "metering_unavailable"
+  await flushPromises()
+  expect(notice.text()).toContain(i18n.global.t(`errors.${reason}.description`))
+  expect(notice.get("pre").text()).toBe(detail)
+  fail = false
+  await notice.findAll("button").find(button => button.text() === "Retry")!.trigger("click")
+  await flushPromises()
+  expect(wrapper!.find("[data-error-notice]").exists()).toBe(false)
+  expect(agents.error).toBeNull()
+  expect(agents.relayDeniedReason).toBeUndefined()
+})
+
+test("an ordinary archived refresh failure replaces a TURN failure without stale billing guidance", async () => {
+  account = createAccountSession(fakeCentral().central)
+  await flushPromises()
+  let attempt = 0
+  await render({ refresh: async agents => {
+    agents.error = ++attempt === 1 ? relayFailureMessage("turn_quota_exhausted")! : "History unavailable"
+    if (attempt === 1) agents.relayDeniedReason = "turn_quota_exhausted"
+  } })
+  await wrapper!.findAll("button").find(button => button.text() === "Retry")!.trigger("click")
+  await flushPromises()
+  const notice = wrapper!.get("[data-error-notice]")
+  expect(notice.get("pre").text()).toBe("History unavailable")
+  expect(notice.text()).toContain(i18n.global.t("errors.generic.title"))
+  expect(notice.findAll("button").some(button => button.text() === "View billing")).toBe(false)
 })
 
 test("restoring a Session requires confirmation and then opens its conversation", async () => {
