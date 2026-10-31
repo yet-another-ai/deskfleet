@@ -18,6 +18,7 @@ const routes = [
   "/api/me", "/api/site", "/api/teams", "/api/invites/accept", "/api/integrations/github", "/api/integrations/github/pull-request",
   "/api/auth/config", "/api/auth/start", "/api/auth/exchange", "/api/auth/logout", "/api/auth/register",
   "/api/auth/registration", "/api/auth/reauthenticate",
+  "/api/auth/reauthenticate/methods", "/api/auth/reauthenticate/email", "/api/auth/reauthenticate/email/verify",
   "/api/auth/passkeys/login", "/api/auth/passkeys/login/options",
   "/api/auth/passkeys/reauthenticate", "/api/auth/passkeys/reauthenticate/options",
   "/api/auth/passkeys/register", "/api/auth/passkeys/register/options",

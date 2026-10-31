@@ -1,6 +1,7 @@
 //! Verified account identity; authentication credentials never identify Teams.
 mod challenges;
 mod credentials;
+mod email_authentication;
 mod maintenance;
 mod oauth;
 mod sessions;
@@ -112,6 +113,16 @@ impl ControlStore {
             }
         })
     }
+    pub async fn authentication_methods(&self, user_id: &str) -> Result<Value> {
+        let row = one(&self.db,
+            "SELECT password_hash IS NOT NULL AS password, EXISTS(SELECT 1 FROM cp_passkeys WHERE user_id=u.id) AS passkey FROM cp_users u WHERE id=$1",
+            vec![user_id.into()]).await?;
+        Ok(json!({
+            "password": row.try_get::<bool>("", "password")?,
+            "passkey": row.try_get::<bool>("", "passkey")?,
+        }))
+    }
+
     pub async fn password_credentials(&self, email: &str) -> Result<Option<Value>> {
         self.db.query_one_raw(sql("SELECT id,password_hash,credential_version FROM cp_users WHERE email=$1 AND email_verified AND NOT disabled",vec![normalize_email(email)?.into()])).await?.map(|row| -> Result<Value> { Ok(json!({"userId":row.try_get::<String>("","id")?,"passwordHash":row.try_get::<Option<String>>("","password_hash")?,"version":row.try_get::<i64>("","credential_version")?})) }).transpose()
     }

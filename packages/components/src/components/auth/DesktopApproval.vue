@@ -48,5 +48,5 @@ function approve(): void {
       <UiButton variant="ghost" class="h-9 text-sm" :disabled="pending" @click="run(signOut)">{{ t("auth.differentAccount") }}</UiButton>
     </form>
   </AuthLayout>
-  <ReauthDialog v-if="recent.prompting.value" :reauthenticate="account.reauthenticate" @settle="recent.settle" />
+  <ReauthDialog v-if="recent.prompting.value" :reauthenticate="account.reauthenticate" :send-email-code="account.sendEmailCode" :verify-email-code="account.verifyEmailCode" :authentication-methods="account.authenticationMethods" @settle="recent.settle" />
 </template>

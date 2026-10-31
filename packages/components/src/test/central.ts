@@ -70,6 +70,9 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     updateRegistration: vi.fn(async (_enabled: boolean) => {}),
     users: vi.fn(async (_query: string) => []),
     disableUser: vi.fn(async (_userId: string, _disabled: boolean) => {}),
+    sendEmailCode: vi.fn(async () => ({ challengeId: "challenge", expiresIn: 600, retryAfter: 60 })),
+    verifyEmailCode: vi.fn(async () => {}),
+    authenticationMethods: vi.fn(async () => ({ password: true, passkey: false })),
     reauthenticate: vi.fn(async (_password?: string) => {}),
     teams: vi.fn(async () => state.teams.map(team => ({ ...team }))),
     createTeam: vi.fn(async (name: string) => {
