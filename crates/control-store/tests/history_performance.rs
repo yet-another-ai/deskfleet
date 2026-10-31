@@ -87,6 +87,103 @@ fn command(id: &str, status: &str) -> Value {
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn event_pages_keep_their_watermark_consistent_with_concurrent_sync() {
+    use std::time::Duration;
+
+    let fixture = Fixture::new().await;
+    let (store, machine) = (&fixture.store, &fixture.machine);
+    store
+        .sync_history(
+            machine,
+            "1",
+            snapshot("1", "1", "active"),
+            vec![event("1")],
+            vec![],
+        )
+        .await
+        .unwrap();
+
+    // Pause the event read while a sync transaction publishes its next event
+    // and watermark together. Separate SELECTs can observe different commits.
+    let writer = store.database().begin().await.unwrap();
+    writer
+        .execute_unprepared("LOCK TABLE cp_events IN ACCESS EXCLUSIVE MODE")
+        .await
+        .unwrap();
+    let blocker: i32 = writer
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT pg_backend_pid() AS pid",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "pid")
+        .unwrap();
+    writer
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO cp_events(machine_id,session_id,seq,record) VALUES($1,'1',2,$2)",
+            vec![machine.parse::<i64>().unwrap().into(), event("2").into()],
+        ))
+        .await
+        .unwrap();
+    writer
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "UPDATE cp_sessions SET event_seq=2 WHERE machine_id=$1 AND session_id='1'",
+            vec![machine.parse::<i64>().unwrap().into()],
+        ))
+        .await
+        .unwrap();
+    let reader = {
+        let store = store.clone();
+        let machine = machine.clone();
+        tokio::spawn(async move { store.events(&machine, "1", 0, 10).await })
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting = store
+                .database()
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid))",
+                    vec![blocker.into()],
+                ))
+                .await
+                .unwrap();
+            if waiting.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("reader reached the event table lock");
+    writer.commit().await.unwrap();
+    let page = reader.await.unwrap().unwrap();
+    assert_eq!(
+        page["events"].as_array().unwrap().last().unwrap()["seq"],
+        page["lastEventSeq"],
+        "an untruncated event page and its watermark must share a database snapshot"
+    );
+
+    let page = store.events(machine, "1", 0, 1).await.unwrap();
+    assert_eq!(page["events"], json!([event("1")]));
+    assert_eq!(page["lastEventSeq"], "2");
+    assert_eq!(
+        store.events(machine, "1", 2, 10).await.unwrap(),
+        json!({"events":[],"lastEventSeq":"2"})
+    );
+    assert!(matches!(
+        store.events(machine, "2", 0, 10).await,
+        Err(Error::NotFound)
+    ));
+    fixture.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn history_pages_require_the_snapshot_and_commit_ordered_events_atomically() {
     let fixture = Fixture::new().await;
     let (store, machine) = (&fixture.store, &fixture.machine);

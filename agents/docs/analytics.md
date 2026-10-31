@@ -154,7 +154,9 @@ omit `userID`. Portal creation records its actual initiating actor separately.
 Migration 10 adds the Checkout actor, signed failure-attempt fields, and
 `cp_billing_analytics`. Invoice IDs deduplicate facts across different webhook
 types and periodic repair. Checkout creation and subscription projections commit
-with their corresponding events. An independent leased worker delivers up to 25 due events
+with their corresponding events. Each event batch uses one atomic insert,
+with a consistent event-ID order and first-occurrence deduplication.
+An independent leased worker delivers up to 25 due events
 per pass to `https://api.statsig.com/v1/log_event`, with five-second HTTP
 timeouts and increasing retry delays capped at one hour. Outages in Statsig do
 not hold the payment reconciliation worker. Delivery retains event ID, original

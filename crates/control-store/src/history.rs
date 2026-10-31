@@ -71,14 +71,28 @@ impl ControlStore {
         if after < 0 || limit == 0 || limit > 1000 {
             return Err(Error::Invalid("invalid history cursor or limit"));
         }
-        let watermark: i64 = one(
+        // One statement keeps the page and completeness watermark on the same
+        // MVCC snapshot even when another connection commits a sync meanwhile.
+        let row = one(
             &self.db,
-            "SELECT event_seq FROM cp_sessions WHERE machine_id=$1 AND session_id=$2",
-            vec![resource_id(machine_id)?.into(), session_id.into()],
+            "SELECT event_seq, COALESCE((
+                SELECT jsonb_agg(page.record ORDER BY page.seq) FROM (
+                    SELECT seq,record FROM cp_events
+                    WHERE machine_id=$1 AND session_id=$2 AND seq>$3
+                    ORDER BY seq LIMIT $4
+                ) page
+             ), '[]'::jsonb) AS events
+             FROM cp_sessions WHERE machine_id=$1 AND session_id=$2",
+            vec![
+                resource_id(machine_id)?.into(),
+                session_id.into(),
+                after.into(),
+                i64::from(limit).into(),
+            ],
         )
-        .await?
-        .try_get("", "event_seq")?;
-        let events=json_rows(&self.db,"SELECT record FROM cp_events WHERE machine_id=$1 AND session_id=$2 AND seq>$3 ORDER BY seq LIMIT $4",vec![resource_id(machine_id)?.into(),session_id.into(),after.into(),i64::from(limit).into()]).await?;
+        .await?;
+        let watermark: i64 = row.try_get("", "event_seq")?;
+        let events: Value = row.try_get("", "events")?;
         Ok(json!({"events":events,"lastEventSeq":watermark.to_string()}))
     }
     pub async fn commands(

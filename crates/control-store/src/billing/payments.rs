@@ -1,6 +1,6 @@
 use super::{BillingAnalyticsEvent, BillingProfile, Plan, analytics, profile};
 use crate::{ControlStore, Error, Result, now_ms, one, resource_id, sql};
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait};
 
 #[derive(Clone, Debug)]
 pub struct CheckoutAttempt {
@@ -48,6 +48,32 @@ fn parse_interval(interval: &str) -> Result<&str> {
         "month" | "year" => Ok(interval),
         _ => Err(Error::Invalid("interval must be month or year")),
     }
+}
+
+async fn lock_billing_operation(tx: &DatabaseTransaction, team: i64, token: &str) -> Result<()> {
+    // Match subscription reconciliation: Team, profile, then checkout/outbox.
+    one(
+        tx,
+        "SELECT id FROM cp_teams WHERE id=$1 FOR KEY SHARE",
+        vec![team.into()],
+    )
+    .await?;
+    let row = one(
+        tx,
+        "SELECT lease_token,lease_until FROM cp_billing_profiles WHERE team_id=$1 FOR UPDATE",
+        vec![team.into()],
+    )
+    .await?;
+    // Check time after waiting, and retain the profile lock through commit so
+    // a replacement claim cannot invalidate a checkout's authorization mid-write.
+    if row.try_get::<Option<String>>("", "lease_token")?.as_deref() != Some(token)
+        || !row
+            .try_get::<Option<i64>>("", "lease_until")?
+            .is_some_and(|until| until > now_ms())
+    {
+        return Err(Error::Conflict("checkout operation changed; retry"));
+    }
+    Ok(())
 }
 
 impl ControlStore {
@@ -167,7 +193,12 @@ impl ControlStore {
         let interval = parse_interval(interval)?;
         uuid::Uuid::parse_str(request_id)
             .map_err(|_| Error::Invalid("requestId must be a UUID"))?;
-        one(&self.db,"INSERT INTO cp_checkout_attempts(request_id,team_id,plan,billing_interval,status,created_at,actor_user_id) SELECT $3,team_id,$4,$5,'pending',$6,$7 FROM cp_billing_profiles WHERE team_id=$1 AND lease_token=$2 AND lease_until>$6 RETURNING *",vec![resource_id(team_id)?.into(),token.into(),request_id.into(),plan.into(),interval.into(),now_ms().into(),actor_user_id.into()]).await.and_then(checkout)
+        let team = resource_id(team_id)?;
+        let tx = self.db.begin().await?;
+        lock_billing_operation(&tx, team, token).await?;
+        let attempt = checkout(one(&tx,"INSERT INTO cp_checkout_attempts(request_id,team_id,plan,billing_interval,status,created_at,actor_user_id) VALUES($2,$1,$3,$4,'pending',$5,$6) RETURNING *",vec![team.into(),request_id.into(),plan.into(),interval.into(),now_ms().into(),actor_user_id.into()]).await?)?;
+        tx.commit().await?;
+        Ok(attempt)
     }
     pub async fn update_checkout_attempt(
         &self,
@@ -182,7 +213,9 @@ impl ControlStore {
             return Err(Error::Invalid("invalid checkout state"));
         }
         let tx = self.db.begin().await?;
-        let changed=tx.execute_raw(sql("UPDATE cp_checkout_attempts a SET session_id=$4,status=$5 FROM cp_billing_profiles b WHERE a.request_id=$3 AND a.team_id=$1 AND b.team_id=a.team_id AND b.lease_token=$2 AND b.lease_until>$6",vec![resource_id(team_id)?.into(),token.into(),request_id.into(),session_id.into(),status.into(),now_ms().into()])).await?.rows_affected()==1;
+        let team = resource_id(team_id)?;
+        lock_billing_operation(&tx, team, token).await?;
+        let changed=tx.execute_raw(sql("UPDATE cp_checkout_attempts SET session_id=$3,status=$4 WHERE request_id=$2 AND team_id=$1",vec![team.into(),request_id.into(),session_id.into(),status.into()])).await?.rows_affected()==1;
         if changed {
             analytics::enqueue(&tx, team_id, events).await?;
             tx.commit().await?;
@@ -197,7 +230,15 @@ impl ControlStore {
         token: &str,
         request_id: &str,
     ) -> Result<()> {
-        self.db.execute_raw(sql("UPDATE cp_checkout_attempts a SET status='complete' FROM cp_billing_profiles b WHERE a.team_id=$1 AND a.request_id=$3 AND b.team_id=a.team_id AND b.lease_token=$2 AND b.lease_until>$4",vec![resource_id(team_id)?.into(),token.into(),request_id.into(),now_ms().into()])).await?;
+        let team = resource_id(team_id)?;
+        let tx = self.db.begin().await?;
+        lock_billing_operation(&tx, team, token).await?;
+        tx.execute_raw(sql(
+            "UPDATE cp_checkout_attempts SET status='complete' WHERE team_id=$1 AND request_id=$2",
+            vec![team.into(), request_id.into()],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
     pub async fn receive_payment_event(
