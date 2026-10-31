@@ -967,6 +967,36 @@ the single writer even when multiple clients operate concurrently.
 Central event pages and their completeness watermark are read in one SQL
 statement so concurrent synchronization cannot mix different snapshots.
 
+Search spans the selected Team's Machines using central synchronized data. It
+matches active Chat titles, sent user messages, and Agent replies, plus Scheduled
+Task titles and prompts. Results retain their owning Machine and Workspace;
+conversation matches link to the message that contains the text. Team membership,
+machine revocation, current catalog inventory, and archive state are checked
+before results are returned. Previously synchronized content remains searchable
+while its Machine is offline. Scheduled Task snapshots are read-only replicas;
+their execution and mutation remain owned by the daemon.
+
+The `global_search` Statsig gate controls the shared frontend's Search entry,
+page, and requests. It defaults off, including builds without Statsig. The gate
+controls UI rollout; central indexing and schedule replication retain their
+existing data lifecycle. The [analytics guide](analytics.md#feature-gates-and-experiments)
+owns gate configuration and fallback behavior.
+
+Agent replies enter search after their turn completes, is cancelled, fails, or
+is interrupted. The search projection advances a per-Session event cursor over
+new stable history, once the terminal event and all preceding events have arrived.
+A completed turn in a snapshot is insufficient while the contiguous event
+watermark trails it. Inherited fork history uses a fully received stable snapshot
+boundary because it has no live turn records. Streaming chunks retain their
+existing event persistence without repeatedly rebuilding a growing search body.
+
+The projection indexes raw Markdown in bounded text blocks, preserving message
+anchors across blocks. Literal queries are limited to 256 Unicode characters;
+adjacent blocks overlap by 255 characters so a query crossing a block boundary
+can still match. Query results are grouped by resource and return bounded snippets.
+PostgreSQL's `pg_trgm` indexes accelerate substring matching; short queries remain
+supported even when they cannot use a selective trigram lookup.
+
 Live commands require an available target machine. Terminal output is persisted
 on the owning daemon until explicit hangup so a different client can reconstruct
 the session. Reconnecting does not restart the shell. Daemon restart retains the

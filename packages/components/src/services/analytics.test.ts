@@ -1,6 +1,7 @@
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { analyticsReady, beginAnalyticsPlanRefresh, captureAnalyticsContext, identifyAnalytics, initializeAnalytics, shutdownAnalytics, trackEvent, useExperimentParameter, useFeatureGate } from "./analytics.ts"
+import { SEARCH_FEATURE_GATE, useSearchFeature } from "./search-feature.ts"
 
 const mock = vi.hoisted(() => {
   const sdk = {
@@ -81,6 +82,51 @@ test("feature reads react to initialization and identity changes without eager e
   expect(gate.value).toBe(false)
 })
 
+test("global search stays closed during initialization and identity loading and follows its named gate", async () => {
+  initializeAnalytics({ platform: "web", environment: "test", clientKey: "client-test" })
+  const search = useSearchFeature()
+  expect(search.value).toBe(false)
+  expect(mock.sdk.checkGate).not.toHaveBeenCalled()
+  await flushPromises()
+  expect(search.value).toBe(true)
+  expect(mock.sdk.checkGate).toHaveBeenLastCalledWith(SEARCH_FEATURE_GATE)
+  identifyAnalytics("another-user")
+  expect(search.value).toBe(false)
+  await flushPromises()
+  expect(search.value).toBe(true)
+  mock.sdk.checkGate.mockReturnValueOnce(false)
+  valuesUpdated()
+  expect(search.value).toBe(false)
+})
+
+test.each(["web", "desktop"] as const)("%s identity includes email and refreshes gates when only the email changes", async platform => {
+  const team = { id: "team-a", role: "admin" as const }
+  identifyAnalytics("user-a", team, "ada@example.test")
+  initializeAnalytics({ platform, environment: "test", clientKey: "client-test" })
+  const identity = { userID: "user-a", email: "ada@example.test", customIDs: { teamID: "team-a" }, custom: { platform } }
+  expect(mock.create.mock.calls.at(-1)?.[1]).toEqual(identity)
+  await flushPromises()
+  const search = useSearchFeature()
+  expect(search.value).toBe(true)
+  identifyAnalytics("user-a", team, "ada@example.test")
+  expect(mock.sdk.updateUserAsync).not.toHaveBeenCalled()
+  identifyAnalytics("user-a", team, "new@example.test")
+  expect(mock.sdk.updateUserAsync).toHaveBeenCalledExactlyOnceWith({ ...identity, email: "new@example.test" }, { timeoutMs: 1000 })
+  expect(search.value).toBe(false)
+  await flushPromises()
+  expect(search.value).toBe(true)
+  identifyAnalytics()
+  expect(mock.sdk.updateUserAsync).toHaveBeenLastCalledWith({ custom: { platform } }, { timeoutMs: 1000 })
+})
+
+test.each(["user-a", "user-b"])("missing email for %s clears the previous email", async nextUserId => {
+  initializeAnalytics({ platform: "web", environment: "test", clientKey: "client-test" })
+  identifyAnalytics("user-a", undefined, "ada@example.test")
+  await flushPromises()
+  identifyAnalytics(nextUserId)
+  expect(mock.sdk.updateUserAsync).toHaveBeenLastCalledWith({ userID: nextUserId, custom: { platform: "web" } }, { timeoutMs: 1000 })
+})
+
 test("initialization rejection does not block product events or feature defaults", async () => {
   mock.sdk.initializeAsync.mockRejectedValueOnce(new Error("Network unavailable"))
   initializeAnalytics({ platform: "web", environment: "test", clientKey: "client-test" })
@@ -93,7 +139,7 @@ test("initialization rejection does not block product events or feature defaults
 
 test("root teardown shuts down the client and clears identity and evaluations", async () => {
   initializeAnalytics({ platform: "web", environment: "test", clientKey: "client-test" })
-  identifyAnalytics("user-a")
+  identifyAnalytics("user-a", undefined, "ada@example.test")
   await flushPromises()
   const gate = useFeatureGate("new_ui")
   expect(gate.value).toBe(true)

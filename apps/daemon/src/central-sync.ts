@@ -1,6 +1,7 @@
 import type { AgentSessions } from "./agent-sessions.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import type { AgentProviders } from "./agent-providers.ts"
+import type { ScheduledTasks } from "./scheduled-tasks.ts"
 import { supportsDesktop } from "./desktop-capabilities.ts"
 
 type Post = (path: string, value: unknown) => Promise<unknown>
@@ -11,6 +12,7 @@ export class CentralSync {
   readonly #catalog: DaemonCatalog
   readonly #post: Post
   readonly #providers: AgentProviders
+  readonly #schedules: Pick<ScheduledTasks, "snapshot" | "onChanged"> | undefined
   readonly #desktopSupported: () => Promise<boolean>
   readonly #cursors = new Map<string, string>()
   readonly #commandCursors = new Map<string, string>()
@@ -19,22 +21,29 @@ export class CentralSync {
   #running: Promise<void> | undefined
   #dirty = false
   #catalogDirty = true
+  #schedulesDirty = true
   #enabled = false
   #closed = false
   #closing = false
   #timer: ReturnType<typeof setTimeout> | undefined
 
-  constructor(agents: AgentSessions, catalog: DaemonCatalog, providers: AgentProviders, post: Post, desktopSupported: () => Promise<boolean> = supportsDesktop) {
+  constructor(agents: AgentSessions, catalog: DaemonCatalog, providers: AgentProviders, post: Post, desktopSupported: () => Promise<boolean> = supportsDesktop, schedules?: Pick<ScheduledTasks, "snapshot" | "onChanged">) {
     this.#agents = agents; this.#catalog = catalog; this.#post = post
     this.#providers = providers
+    this.#schedules = schedules
     this.#desktopSupported = desktopSupported
     this.#unsubscribe = [agents.onEvent(event => {
       if (event.kind === "session") this.#catalogDirty = true
       this.changed(event.sessionId)
     }), catalog.onChange(() => this.changed()), providers.onChanged(() => this.changed())]
+    if (schedules) this.#unsubscribe.push(schedules.onChanged(() => {
+      this.#schedulesDirty = true
+      this.#dirty = true
+      this.#schedule()
+    }))
   }
 
-  enable(): void { this.#enabled = true; this.changed() }
+  enable(): void { this.#enabled = true; this.#schedulesDirty = true; this.changed() }
   disable(): void { this.#enabled = false; clearTimeout(this.#timer); this.#timer = undefined }
   changed(sessionId?: string): void {
     this.#dirty = true
@@ -67,6 +76,11 @@ export class CentralSync {
           capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), agent: true, terminal: true, git: true },
         }) }
         catch (error) { this.#catalogDirty = true; throw error }
+      }
+      if (this.#schedules && this.#schedulesDirty) {
+        this.#schedulesDirty = false
+        try { await this.#post("/api/daemon/schedules", { tasks: this.#schedules.snapshot() }) }
+        catch (error) { this.#schedulesDirty = true; throw error }
       }
       for (const session of await this.#agents.journal.list()) {
         if (!this.#enabled || this.#closed) return

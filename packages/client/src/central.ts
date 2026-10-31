@@ -3,6 +3,7 @@ import type { PeerTelemetryEvent } from "./peer-telemetry.ts"
 import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
+import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { DesktopEvent, IceCandidate } from "./desktop-media.ts"
@@ -75,6 +76,8 @@ export interface CentralApi {
   teamUsage(teamId: string): Promise<TeamUsage>
   aiUsage(teamId: string, query: AiUsageQuery): Promise<TeamAiUsage>
   aiUsageSessions(teamId: string, query: { date: string; timeZone: string }): Promise<TeamAiUsageSessions>
+  search(teamId: string, query: SearchQuery): Promise<SearchPage>
+  scheduleSnapshot(machineId: string): Promise<ScheduleSnapshot>
   renameTeam(teamId: string, name: string): Promise<Team>
   invite(teamId: string, email: string, role: "admin" | "member"): Promise<{ token: string; expiresAt: string }>
   acceptInvite(token: string): Promise<Team>

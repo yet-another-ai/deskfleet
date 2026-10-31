@@ -229,7 +229,7 @@ textarea {
   height: auto;
   margin: 0 auto;
 }
-:is([data-mermaid-located="true"], [data-preview-located="true"]) {
+:is([data-mermaid-located="true"], [data-preview-located="true"], [data-conversation-located="true"]) {
   outline: 2px solid var(--ui-color-focus);
   outline-offset: 2px;
 }

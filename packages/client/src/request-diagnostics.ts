@@ -27,6 +27,7 @@ const routes = [
   "/api/teams/:teamId/billing/portal", "/api/teams/:teamId/machines", "/api/teams/:teamId/members",
   "/api/teams/:teamId/members/:userId", "/api/teams/:teamId/usage", "/api/teams/:teamId/ai-usage",
   "/api/teams/:teamId/ai-usage/sessions", "/api/teams/:teamId/invites", "/api/teams/:teamId/ownership",
+  "/api/teams/:teamId/search", "/api/machines/:machineId/schedules",
   "/api/machines/:machineId", "/api/machines/:machineId/catalog", "/api/machines/:machineId/sessions",
   "/api/machines/:machineId/sessions/:sessionId", "/api/machines/:machineId/sessions/:sessionId/events",
   "/api/machines/:machineId/rpc", "/api/peers", "/api/peers/local", "/api/peers/:peerId",

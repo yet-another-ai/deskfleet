@@ -3,6 +3,7 @@ import test from "node:test"
 import type { AgentSessions } from "./agent-sessions.ts"
 import type { AgentProviders } from "./agent-providers.ts"
 import type { DaemonCatalog } from "./catalog.ts"
+import type { ScheduledTask } from "./schedule-protocol.ts"
 import { CentralSync } from "./central-sync.ts"
 
 test("catalog publication reports runtime desktop support and updates after authorization changes", async t => {
@@ -150,4 +151,77 @@ test("receipt-only changes paginate independently and survive a lost response af
   await sync.flush()
   assert.equal(cursors.at(-1), "1")
   assert.equal(batches.at(-1)?.commands[0]?.status, "completed")
+})
+
+function scheduleSource() {
+  let tasks: ScheduledTask[] = [{
+    id: "task", title: "Review changes", prompt: "Review the latest commits", workspaceId: "1", enabled: true,
+    target: { kind: "new", provider: "codex", context: "directory" }, trigger: { kind: "manual" },
+    createdAt: "2026-10-31T00:00:00Z", updatedAt: "2026-10-31T00:00:00Z", runs: [],
+  }]
+  const listeners = new Set<() => void>()
+  return {
+    snapshot: () => structuredClone(tasks),
+    onChanged: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    replace: (next: ScheduledTask[]) => { tasks = next; for (const listener of listeners) listener() },
+    listeners,
+  }
+}
+
+test("schedule snapshots replace the inventory on changes and reconnect, independently of chat streaming", async context => {
+  const agents = { onEvent: () => () => {}, journal: { list: async () => [] } } as unknown as AgentSessions
+  const catalog = { snapshot: async () => ({}), onChange: () => () => {} } as unknown as DaemonCatalog
+  const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
+  const schedules = scheduleSource()
+  const publications: ScheduledTask[][] = []
+  let catalogs = 0
+  const sync = new CentralSync(agents, catalog, providers, async (path, body) => {
+    if (path.endsWith("catalog")) catalogs++
+    if (path.endsWith("schedules")) publications.push((body as { tasks: ScheduledTask[] }).tasks)
+  }, async () => false, schedules)
+  context.after(() => sync.close())
+  sync.enable(); await sync.flush()
+  assert.equal(publications.length, 1)
+  assert.equal(publications[0]![0]!.title, "Review changes")
+
+  for (let i = 0; i < 10; i++) { sync.changed("chat"); await sync.flush() }
+  assert.equal(publications.length, 1, "Chat chunks do not republish unchanged schedules")
+  const task = schedules.snapshot()[0]!
+  schedules.replace([{ ...task, title: "First edit" }])
+  schedules.replace([{ ...task, title: "Latest edit" }])
+  await sync.flush()
+  assert.equal(publications.length, 2, "Multiple edits are coalesced into the latest committed snapshot")
+  assert.equal(publications[1]![0]!.title, "Latest edit")
+  assert.equal(catalogs, 1, "Schedule-only changes do not republish resource catalogs")
+
+  schedules.replace([]); await sync.flush()
+  assert.deepEqual(publications.at(-1), [], "An empty inventory removes deleted tasks centrally")
+  sync.disable(); sync.enable(); await sync.flush()
+  assert.equal(publications.length, 4, "Reconnect republishes the authoritative inventory")
+  await sync.close()
+  assert.equal(schedules.listeners.size, 0)
+})
+
+test("schedule publication retries the latest state and retains changes made during an upload", async context => {
+  const agents = { onEvent: () => () => {}, journal: { list: async () => [] } } as unknown as AgentSessions
+  const catalog = { snapshot: async () => ({}), onChange: () => () => {} } as unknown as DaemonCatalog
+  const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
+  const schedules = scheduleSource()
+  const publications: ScheduledTask[][] = []
+  const sync = new CentralSync(agents, catalog, providers, async (path, body) => {
+    if (!path.endsWith("schedules")) return
+    publications.push((body as { tasks: ScheduledTask[] }).tasks)
+    if (publications.length === 1) {
+      schedules.replace([{ ...schedules.snapshot()[0]!, title: "Changed during failed upload" }])
+      throw new Error("response lost")
+    }
+    if (publications.length === 2) schedules.replace([])
+  }, async () => false, schedules)
+  context.after(() => sync.close())
+  sync.enable()
+  await assert.rejects(sync.flush(), /response lost/)
+  await sync.flush()
+  assert.equal(publications[1]![0]!.title, "Changed during failed upload")
+  await sync.flush()
+  assert.deepEqual(publications[2], [], "An acknowledged older snapshot does not consume a concurrent deletion")
 })

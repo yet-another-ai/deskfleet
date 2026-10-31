@@ -300,7 +300,10 @@ The `/api` routes cover:
 - `/machines/{id}/rpc` for an explicit management-method allowlist, including
   Session create, archive, restore, configuration, and operation receipt lookup.
 - Machine catalog, Session snapshots, paginated events, and command audit reads.
-- `/daemon/me`, `/daemon/catalog`, and `/daemon/history` with machine credentials.
+- `/teams/{id}/search?q=...&kind=all|chat|schedule` for paginated Team search,
+  and `/machines/{id}/schedules` for the last synchronized public task snapshot.
+- `/daemon/me`, `/daemon/catalog`, `/daemon/history`, and `/daemon/schedules`
+  with machine credentials.
 - `/peers` creation, immutable offer/answer exchange, ICE candidate forwarding,
   desktop stream start, and revocation.
 

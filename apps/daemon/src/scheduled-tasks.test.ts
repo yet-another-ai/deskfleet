@@ -94,6 +94,13 @@ test("scheduled dispatch persists configuration, queues the prompt, and records 
   assert.equal(result.lastRun?.finishedAt, "2026-10-26T00:06:00Z")
   assert.ok(!JSON.stringify(result).includes("login-1"))
   assert.ok(!JSON.stringify(result).includes("OperationId"))
+  const replicated = f.scheduler.snapshot()
+  assert.deepEqual(replicated, await f.list(), "Replication uses the same public task shape as authenticated reads")
+  assert.ok(!JSON.stringify(replicated).includes("user-1"))
+  assert.ok(!JSON.stringify(replicated).includes("login-1"))
+  assert.ok(!JSON.stringify(replicated).includes("OperationId"))
+  replicated[0]!.title = "Mutated outside scheduler"
+  assert.equal(f.scheduler.snapshot()[0]!.title, task.title)
 })
 
 test("overlap is skipped and a long active run survives bounded history", async t => {

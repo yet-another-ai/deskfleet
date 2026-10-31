@@ -5,6 +5,7 @@ import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-p
 import type { IceCandidate } from "./desktop-media.ts"
 import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
+import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
 import { centralRequestFailure } from "./request-diagnostics.ts"
 
@@ -172,6 +173,15 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   }
   aiUsageSessions(teamId: string, query: { date: string; timeZone: string }) {
     return this.request<TeamAiUsageSessions>("GET", `/api/teams/${encodeURIComponent(teamId)}/ai-usage/sessions?${new URLSearchParams(query)}`)
+  }
+  search(teamId: string, query: SearchQuery) {
+    const params = new URLSearchParams({ q: query.q, kind: query.kind ?? "all" })
+    if (query.cursor !== undefined) params.set("cursor", query.cursor)
+    if (query.limit !== undefined) params.set("limit", String(query.limit))
+    return this.request<SearchPage>("GET", `/api/teams/${encodeURIComponent(teamId)}/search?${params}`)
+  }
+  scheduleSnapshot(machineId: string) {
+    return this.request<ScheduleSnapshot>("GET", `/api/machines/${encodeURIComponent(machineId)}/schedules`)
   }
   renameTeam(teamId: string, name: string) { return this.request<Team>("PATCH", `/api/teams/${encodeURIComponent(teamId)}`, { name }) }
   invite(teamId: string, email: string, role: "admin" | "member") { return this.request<{ token: string; expiresAt: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/invites`, { email, role }) }

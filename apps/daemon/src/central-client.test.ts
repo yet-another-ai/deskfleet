@@ -139,7 +139,7 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
     published.emit(new URL(String(url)).pathname)
     return Response.json({ lastEventSeq: "1" })
   })
-  let catalogChanged = () => {}, providersChanged = () => {}, terminalsChanged = () => {}
+  let catalogChanged = () => {}, providersChanged = () => {}, terminalsChanged = () => {}, schedulesChanged = () => {}
   let agentChanged = (_event: { sessionId: string }) => {}
   let hasSession = false
   const snapshot = () => ({ session: { id: "session", lastEventSeq: "1" } })
@@ -156,6 +156,7 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
     catalog: { snapshot: async () => ({}), onChange: (listener: () => void) => { catalogChanged = listener; return () => {} } },
     providers: { metadata: () => ({}), onChanged: (listener: () => void) => { providersChanged = listener; return () => {} } },
     terminals: { onChange: (listener: () => void) => { terminalsChanged = listener; return () => {} } },
+    schedules: { snapshot: () => [], onChanged: (listener: () => void) => { schedulesChanged = listener; return () => {} } },
     handle: async () => [],
   } as unknown as MachineOperations
   const central = new CentralClient(directory, operations, {} as ControlPeers)
@@ -173,6 +174,7 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
   socket.receive({ type: "ready", serverId: "server", machineId: "machine", teamId: "team" })
   await flush("/api/daemon/catalog")
   assert.equal(catalogs(), 1)
+  assert.equal(posts.filter(url => url.endsWith("/schedules")).length, 1)
   for (const method of ["terminalList", "systemStatus", "peer.close"]) {
     socket.receive({ type: "request", id: method, method, params: { peerId: "closed-peer" } })
   }
@@ -188,6 +190,10 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
   hasSession = true
   agentChanged({ sessionId: "session" }); await flush("/api/daemon/history")
   assert.equal(posts.filter(url => url.endsWith("/history")).length, 1)
+  assert.equal(catalogs(), 4)
+  assert.equal(posts.filter(url => url.endsWith("/schedules")).length, 1, "Chat history does not republish schedules")
+  schedulesChanged(); await flush("/api/daemon/schedules")
+  assert.equal(posts.filter(url => url.endsWith("/schedules")).length, 2)
   assert.equal(catalogs(), 4)
 })
 

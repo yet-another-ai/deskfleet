@@ -15,8 +15,13 @@ export function useAccountAnalytics(session: AccountSession): void {
       if (revision === current) updatePlan(value.plan)
     } catch { /* Analytics context must not interrupt account initialization. */ }
   }
-  watch([() => session.account.value.user?.id, () => session.team.value?.id, () => session.team.value?.role], ([id, teamId, role]) => {
-    identifyAnalytics(id, teamId && role ? { id: teamId, role } : undefined)
+  watch([
+    () => session.account.value.user?.id,
+    () => session.account.value.user?.email,
+    () => session.team.value?.id,
+    () => session.team.value?.role,
+  ], ([id, email, teamId, role]) => {
+    identifyAnalytics(id, teamId && role ? { id: teamId, role } : undefined, email ?? undefined)
     void refreshPlan()
   }, { immediate: true, flush: "sync" })
   useEventListener(window, "focus", () => { void refreshPlan() })

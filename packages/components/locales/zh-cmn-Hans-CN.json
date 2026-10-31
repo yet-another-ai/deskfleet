@@ -258,7 +258,8 @@
     "emptyHint": "创建任务，让 Agent 定时、按间隔或按需运行。",
     "offline": "此机器已离线。请连接其 daemon 后管理或运行计划任务。",
     "signIn": "登录并选择机器后即可管理计划任务。",
-    "busy": "请等待当前计划任务操作完成。"
+    "busy": "请等待当前计划任务操作完成。",
+    "lastObserved": "上次同步于 {time}"
   },
   "common": {
     "increase": "增加",
@@ -1426,5 +1427,24 @@
       "incomplete": "待付款",
       "paused": "已暂停"
     }
+  },
+  "search": {
+    "title": "搜索",
+    "description": "搜索 {team} 所有机器上的对话和计划任务。",
+    "placeholder": "搜索对话和计划任务",
+    "filter": "结果类型",
+    "kind": {
+      "all": "全部",
+      "chat": "对话",
+      "schedule": "计划任务"
+    },
+    "signIn": "登录并选择团队后即可搜索。",
+    "empty": "没有找到结果",
+    "emptyHint": "试试其他关键词，或搜索全部类型。",
+    "start": "查找对话或计划任务",
+    "startHint": "搜索标题、已发送的消息、已结束回合的智能体回复和计划任务提示词。不包含已归档的对话。",
+    "loading": "正在搜索…",
+    "more": "加载更多",
+    "untitled": "未命名对话"
   }
 }

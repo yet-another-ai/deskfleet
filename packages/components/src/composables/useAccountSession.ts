@@ -27,6 +27,8 @@ export interface AccountSession {
   machines: Ref<Machine[]>
   machineId: Ref<string | undefined>
   machine: ComputedRef<Machine | undefined>
+  /** Team-wide search survives switching a result into another machine's surface. */
+  searchPath: Ref<string>
   enrollment: Ref<LocalEnrollment | undefined>
   /** The central ID of this computer's active registration with the signed-in server. */
   localMachineId: ComputedRef<string | undefined>
@@ -72,6 +74,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   const members = ref<TeamMember[]>([])
   const machines = ref<Machine[]>([])
   const machineId = ref<string>()
+  const searchPath = ref("/search")
   const enrollment = ref<LocalEnrollment>()
   const connected = ref(true)
   const notice = ref(initialNotice)
@@ -127,12 +130,14 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       members.value = []
       dialog.value = undefined
       machineDestination = undefined
+      searchPath.value = "/search"
       await loadSite
       return
     }
     const [list] = await Promise.all([central.teams(), loadEnrollment(), loadSite])
     teams.value = list
     if (!list.some(value => value.id === teamId.value)) {
+      searchPath.value = "/search"
       const enrolledTeam = enrollment.value?.serverUrl === account.value.serverUrl ? enrollment.value.teamId : undefined
       teamId.value = (list.find(value => value.id === enrolledTeam) ?? list[0])?.id
       machineId.value = undefined
@@ -144,6 +149,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   async function selectTeam(id: string): Promise<void> {
     machineDestination = undefined
     if (id === teamId.value) return
+    searchPath.value = "/search"
     teamId.value = id
     machineId.value = undefined
     machines.value = []
@@ -217,7 +223,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   void background(reload).finally(() => { ready.value = true; if (initialNotice) notice.value = initialNotice })
 
   return {
-    central, ready, account, site, teams, teamId, team, members, machines, machineId, machine, enrollment, localMachineId, canEnrollLocal,
+    central, ready, account, site, teams, teamId, team, members, machines, machineId, machine, searchPath, enrollment, localMachineId, canEnrollLocal,
     connected, notice, dialog, reload,
     refreshMachines,
     async signIn() { await central.login(); await reload() },

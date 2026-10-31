@@ -102,7 +102,10 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
 
 - PostgreSQL 17 or later; development and CI currently use 18.6. The server
   does not probe the major version. The connected role needs to create and
-  modify tables in its search path.
+  modify tables in its search path. The `pg_trgm` extension must be available for
+  search indexes. Migrations install this trusted extension in `public`, which
+  requires `CREATE` privilege on the database and target schema; alternatively,
+  an administrator can install it in `public` before running migrations.
 - An SMTP relay with STARTTLS and credentials, for verification and recovery mail.
 - A TLS reverse proxy that can upgrade WebSockets, accept request bodies of at
   least 64 MiB, and keep a connection idle for more than 60 seconds.

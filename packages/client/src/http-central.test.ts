@@ -74,6 +74,28 @@ test("loads a targeted Session summary using the indexed collection filter", asy
   )
 })
 
+test("searches a Team with encoded literal text and retains paging and Machine scope", async () => {
+  const f = setup()
+  const page = { results: [{ kind: "chat", machineId: "2", resourceId: "1", entryId: "message-3" }], nextCursor: "next/+" }
+  f.responses.push(page, { tasks: [], lastObservedAt: null })
+  expect(await f.client.search("team/1", { q: "中文 foo_%", kind: "chat", cursor: "next/+", limit: 20 })).toEqual(page)
+  expect(await f.client.scheduleSnapshot("machine/2")).toEqual({ tasks: [], lastObservedAt: null })
+  expect(f.fetch).toHaveBeenNthCalledWith(1,
+    "https://fleet.example/api/teams/team%2F1/search?q=%E4%B8%AD%E6%96%87+foo_%25&kind=chat&cursor=next%2F%2B&limit=20",
+    expect.objectContaining({ method: "GET" }))
+  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/machines/machine%2F2/schedules", expect.objectContaining({ method: "GET" }))
+})
+
+test("search failure diagnostics omit query text and resource identities", async () => {
+  const f = setup()
+  f.fetch.mockRejectedValueOnce(new TypeError("fetch failed"))
+  const error = await f.client.search("private-team", { q: "private conversation" }).catch(error => error)
+  const serialized = serializeCentralRequestError(error)
+  expect(serialized?.diagnostics.route).toBe("/api/teams/:teamId/search")
+  expect(JSON.stringify(serialized)).not.toContain("private conversation")
+  expect(JSON.stringify(serialized)).not.toContain("private-team")
+})
+
 test("collects paginated billing Teams while retaining the administration array API", async () => {
   const f = setup()
   const first = { id: "first", name: "Design team", owner: { id: "ada", name: "Ada", email: "ada@example.test" } }

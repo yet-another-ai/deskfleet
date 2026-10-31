@@ -15,7 +15,7 @@ import AgentToolCall from "./AgentToolCall.vue"
 import AgentElicitation from "./AgentElicitation.vue"
 import AgentActivityGroup from "./AgentActivityGroup.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
-const props = defineProps<{ response: ConversationResponse; disabled?: boolean; canFork?: boolean; forkDisabled?: boolean }>()
+const props = defineProps<{ response: ConversationResponse; disabled?: boolean; canFork?: boolean; forkDisabled?: boolean; locateEntry?: string }>()
 const emit = defineEmits<{ fork: [] }>()
 const { t } = useI18n()
 const { now, pause, resume } = useNow({ controls: true, scheduler: callback => useIntervalFn(callback, 1000) })
@@ -48,12 +48,13 @@ const outcome = computed(() => props.response.last && props.response.turn && ["c
 const thoughts = reactive(new Set<string>())
 const toggleThought = (id: string) => thoughts.has(id) ? thoughts.delete(id) : thoughts.add(id)
 
-type LocateRequest = PreviewLocateRequest | MermaidLocateRequest
-const pendingLocate = computed(() => pendingPreviewLocate.value ?? pendingMermaidLocate.value)
+type LocateRequest = PreviewLocateRequest | MermaidLocateRequest | { entryId: string }
+const pendingLocate = computed(() => pendingPreviewLocate.value ?? pendingMermaidLocate.value ?? (props.locateEntry ? { entryId: props.locateEntry } : undefined))
 
 function stepMatchesLocate(step: ConversationStep, target: LocateRequest): boolean {
   if (target.entryId) return step.id === target.entryId
-  const content = "content" in target ? target.content : target.code
+  const content = "content" in target ? target.content : "code" in target ? target.code : undefined
+  if (content === undefined) return false
   if (step.kind === "message") {
     return step.content.some(block =>
       (block.type === "text" && block.text.includes(content))
