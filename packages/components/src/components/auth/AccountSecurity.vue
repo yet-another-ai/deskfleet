@@ -39,6 +39,6 @@ const formatDate = (value: string | number) => new Intl.DateTimeFormat(intlLocal
       <AccountPasskeys :account="account" :confirmed="recent.confirmed" :format-date="formatDate" />
       <AccountSessions :account="account" :confirmed="recent.confirmed" :format-date="formatDate" />
     </main>
-    <ReauthDialog v-if="recent.prompting.value" :reauthenticate="account.reauthenticate" :send-email-code="account.sendEmailCode" :verify-email-code="account.verifyEmailCode" :authentication-methods="account.authenticationMethods" :start-reauthentication="account.startReauthentication" @settle="recent.settle" />
+    <ReauthDialog v-if="recent.prompting.value" :reauthenticate="account.reauthenticate" :send-email-code="account.sendEmailCode" :verify-email-code="account.verifyEmailCode" :authentication-methods="account.authenticationMethods" @settle="recent.settle" />
   </div>
 </template>

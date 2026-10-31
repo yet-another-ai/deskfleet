@@ -51,6 +51,15 @@ async fn email_codes_unlock_sensitive_actions_and_reject_reuse() {
     let session = state.store.new_session(&user.id).await.unwrap();
     let id = session["sessionId"].as_str().unwrap();
     let token = session["token"].as_str().unwrap();
+    let methods: Value = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/auth/reauthenticate/methods")
+            .cookie(Cookie::new("deskfleet_session", token.to_owned()))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(methods, json!({"password":false,"passkey":false}));
     let csrf = "email-reauthentication-csrf-32-characters";
     let post = |path: &str| {
         test::TestRequest::post()

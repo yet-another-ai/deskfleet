@@ -57,7 +57,7 @@ pub fn configure(config: &mut web::ServiceConfig) {
     config
         .route(
             "/auth/reauthenticate/methods",
-            web::get().to(oauth::methods),
+            web::get().to(authentication_methods),
         )
         .route("/auth/reauthenticate/email", web::post().to(email::send))
         .route(
@@ -128,6 +128,15 @@ pub fn configure(config: &mut web::ServiceConfig) {
         .route("/auth/exchange", web::post().to(desktop::exchange))
         .route("/auth/logout", web::post().to(logout))
         .route("/me", web::get().to(me));
+}
+async fn authentication_methods(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse> {
+    let auth = user(&req, &state).await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(("Cache-Control", "no-store"))
+        .json(state.store.authentication_methods(&auth.user.id).await?))
 }
 pub async fn user(req: &HttpRequest, state: &AppState) -> Result<AuthSession> {
     if let Ok(token) = bearer(req) {

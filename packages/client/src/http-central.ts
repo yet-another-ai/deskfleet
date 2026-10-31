@@ -158,9 +158,6 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   sendEmailCode() { return this.request<{ challengeId: string; expiresIn: number; retryAfter: number }>("POST", "/api/auth/reauthenticate/email", {}) }
   async verifyEmailCode(challengeId: string, code: string) { await this.request("POST", "/api/auth/reauthenticate/email/verify", { challengeId, code }) }
   authenticationMethods() { return this.request<import("./account-security.ts").AuthenticationMethods>("GET", "/api/auth/reauthenticate/methods") }
-  startReauthentication(provider: "github" | "google", returnTo: string) {
-    return this.request<{ authorizationUrl: string }>("POST", `/api/auth/${provider}/start`, { returnTo, reauthenticate: true })
-  }
   async reauthenticate(password?: string) {
     if (password === undefined) await authenticatePasskey(this, "reauthenticate")
     else await this.request("POST", "/api/auth/reauthenticate", { password })

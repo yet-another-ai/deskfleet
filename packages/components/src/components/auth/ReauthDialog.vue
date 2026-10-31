@@ -17,7 +17,6 @@ const props = defineProps<{
   sendEmailCode: AccountAuthentication["sendEmailCode"]
   verifyEmailCode: AccountAuthentication["verifyEmailCode"]
   authenticationMethods: AccountAuthentication["authenticationMethods"]
-  startReauthentication: AccountAuthentication["startReauthentication"]
 }>()
 const emit = defineEmits<{ settle: [confirmed: boolean] }>()
 const { t } = useI18n()
@@ -34,6 +33,11 @@ async function sendEmail(): Promise<void> {
   if (pending.value || resendIn.value > 0) return
   pending.value = true
   error.value = undefined
+  // Sending consumes a rate-limit slot and can replace the previous proof even
+  // when delivery fails; keep the dialog aligned with that server-side state.
+  emailChallenge.value = undefined
+  emailCode.value = ""
+  resendIn.value = 60
   try {
     const sent = await props.sendEmailCode()
     emailChallenge.value = sent.challengeId
@@ -56,18 +60,6 @@ onMounted(async () => {
   try { methods.value = await props.authenticationMethods() }
   catch (reason) { error.value = failureMessage(reason) }
 })
-
-async function oauth(provider: "github" | "google"): Promise<void> {
-  pending.value = true
-  error.value = undefined
-  try {
-    const returnUrl = new URL(location.href)
-    returnUrl.searchParams.delete("githubError")
-    returnUrl.searchParams.delete("googleError")
-    const { authorizationUrl } = await props.startReauthentication(provider, returnUrl.pathname + returnUrl.search)
-    location.assign(authorizationUrl)
-  } catch (reason) { error.value = failureMessage(reason); pending.value = false }
-}
 
 async function confirm(usePasskey: boolean): Promise<void> {
   if (pending.value || (usePasskey ? !methods.value?.passkey : !methods.value?.password)) return
@@ -96,11 +88,6 @@ async function confirm(usePasskey: boolean): Promise<void> {
         </label>
       </template>
       <UiButton :disabled="pending || resendIn > 0" @click="sendEmail">{{ resendIn > 0 ? t("auth.emailCodeResendIn", { seconds: resendIn }) : t(emailChallenge ? "auth.resend" : "auth.useEmailCode") }}</UiButton>
-      <template v-if="!emailChallenge && (methods?.github || methods?.google)">
-        <p class="m-0 text-sm text-ui-text-muted">{{ t("auth.reauthProviderHint") }}</p>
-        <UiButton v-if="methods?.github" :disabled="pending" @click="oauth('github')">{{ t("auth.signInWithGithub") }}</UiButton>
-        <UiButton v-if="methods?.google" :disabled="pending" @click="oauth('google')">{{ t("auth.signInWithGoogle") }}</UiButton>
-      </template>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="flex flex-wrap items-center gap-2">
         <UiButton v-if="methods?.passkey && passkeysAvailable()" variant="ghost" :disabled="pending" @click="confirm(true)"><KeyRound :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("auth.usePasskeyInstead") }}</UiButton>

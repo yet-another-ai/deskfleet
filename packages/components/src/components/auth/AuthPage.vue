@@ -54,7 +54,6 @@ async function signOut(): Promise<void> { await props.api.logout(); state.value 
 </script>
 
 <template>
-  <p v-if="state?.user && (githubError || googleError)" role="alert" class="m-0 bg-ui-canvas p-4 text-sm text-ui-danger">{{ t("auth.reauthFailed") }}</p>
   <AuthLayout v-if="isLoading && !state" :title="t('auth.loading')" />
   <AuthLayout v-else-if="!state || (error && state.user)" :title="t('auth.unavailable')">
     <p role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ failureMessage(error) }}</p>

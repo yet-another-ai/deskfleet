@@ -873,7 +873,7 @@
     "emailCode": "確認コード",
     "emailCodeSent": "確認済みのメールアドレスに6桁のコードを送信しました。有効期限は10分です。",
     "emailCodeResendIn": "{seconds}秒後に再送信できます",
-    "reauthTitle": "本人確認", "reauthDescription": "本人確認をして続けてください。10 分間は再確認を求められません。", "reauthFailed": "本人確認に失敗しました。連携済みのアカウントで再試行してください。", "reauthProviderHint": "連携済みのアカウントで本人確認を行い、戻ってから操作をもう一度実行してください。",
+    "reauthTitle": "本人確認", "reauthDescription": "本人確認をして続けてください。10 分間は再確認を求められません。",
     "usePasskeyInstead": "パスキーを使用", "confirm": "確認",
     "security": "アカウントのセキュリティ", "back": "DeskFleet に戻る",
     "signInMethods": "ログイン方法", "change": "変更",

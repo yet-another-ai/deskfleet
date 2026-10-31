@@ -56,7 +56,6 @@ export interface SiteAdministrationApi {
   sendEmailCode(): Promise<{ challengeId: string; expiresIn: number; retryAfter: number }>
   verifyEmailCode(challengeId: string, code: string): Promise<void>
   authenticationMethods(): Promise<import("./account-security.ts").AuthenticationMethods>
-  startReauthentication(provider: "github" | "google", returnTo: string): Promise<{ authorizationUrl: string }>
 }
 
 /** Explicit control-plane operations, shared by browser and the narrow Electron bridge. */

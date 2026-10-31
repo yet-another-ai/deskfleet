@@ -1367,8 +1367,6 @@
     "emailCodeResendIn": "Resend in {seconds}s",
     "reauthTitle": "Confirm it’s you",
     "reauthDescription": "Confirm your identity to continue. You won’t be asked again for 10 minutes.",
-    "reauthFailed": "Identity verification failed. Try again with your linked account.",
-    "reauthProviderHint": "Verify with your linked account, then repeat the action when you return.",
     "usePasskeyInstead": "Use a Passkey",
     "confirm": "Confirm",
     "security": "Account security",

@@ -654,8 +654,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     disableUser: async () => {},
     sendEmailCode: async () => ({ challengeId: "challenge", expiresIn: 600, retryAfter: 60 }),
     verifyEmailCode: async () => {},
-    authenticationMethods: async () => ({ password: true, passkey: false, github: false, google: false }),
-    startReauthentication: async () => ({ authorizationUrl: "https://example.test/authorize" }),
+    authenticationMethods: async () => ({ password: true, passkey: false }),
     reauthenticate: async () => {},
     teams: async () => structuredClone(teams),
     createTeam: async (name: string) => {

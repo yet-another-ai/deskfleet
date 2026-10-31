@@ -1367,8 +1367,6 @@
     "emailCodeResendIn": "{seconds} 秒后可重发",
     "reauthTitle": "验证身份",
     "reauthDescription": "请验证身份以继续。10 分钟内不会再次询问。",
-    "reauthFailed": "身份验证失败，请使用已关联的账号重试。",
-    "reauthProviderHint": "使用已关联的账号验证身份，返回此页面后请重新执行操作。",
     "usePasskeyInstead": "使用 Passkey",
     "confirm": "确认",
     "security": "账号安全",
