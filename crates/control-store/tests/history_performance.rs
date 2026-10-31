@@ -60,6 +60,17 @@ impl Fixture {
             .unwrap();
         self.database.close().await.unwrap();
     }
+
+    async fn catalog(&self, session_ids: &[&str]) {
+        self.store
+            .save_catalog(
+                &self.machine,
+                json!({"machineId":"1","workspaces":[],"sessions":[],"sessionIds":session_ids}),
+                json!({"providers":[]}),
+            )
+            .await
+            .unwrap();
+    }
 }
 
 fn snapshot(id: &str, seq: &str, archive: &str) -> Value {
@@ -313,6 +324,7 @@ async fn command_batches_keep_last_duplicate_and_ignore_stale_snapshots() {
 async fn numeric_pages_return_only_notification_and_sidebar_summary_fields() {
     let fixture = Fixture::new().await;
     let (store, machine) = (&fixture.store, &fixture.machine);
+    fixture.catalog(&["1", "2", "9", "10", "11", "100"]).await;
     for (id, archive) in [
         ("1", "active"),
         ("2", "archived"),
@@ -419,7 +431,7 @@ async fn numeric_pages_return_only_notification_and_sidebar_summary_fields() {
     )
     .await
     .unwrap();
-    tx.execute_unprepared("PREPARE history_all(bigint,bigint,bigint) AS SELECT summary FROM cp_sessions WHERE machine_id=$1 AND session_id::bigint>$2 ORDER BY session_id::bigint LIMIT $3; PREPARE history_archive(bigint,text,bigint,bigint) AS SELECT summary FROM cp_sessions WHERE machine_id=$1 AND summary#>>'{session,archiveState}'=$2 AND session_id::bigint>$3 ORDER BY session_id::bigint LIMIT $4; PREPARE history_commands(bigint,text,bigint,bigint) AS SELECT record FROM cp_commands WHERE machine_id=$1 AND record->>'sessionId'=$2 AND command_id::bigint>$3 ORDER BY command_id::bigint LIMIT $4").await.unwrap();
+    tx.execute_unprepared("PREPARE history_all(bigint,bigint,bigint) AS SELECT summary FROM cp_sessions WHERE machine_id=$1 AND session_id::bigint>$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $3; PREPARE history_archive(bigint,text,bigint,bigint) AS SELECT summary FROM cp_sessions WHERE machine_id=$1 AND summary#>>'{session,archiveState}'=$2 AND session_id::bigint>$3 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $4; PREPARE history_commands(bigint,text,bigint,bigint) AS SELECT record FROM cp_commands WHERE machine_id=$1 AND record->>'sessionId'=$2 AND command_id::bigint>$3 ORDER BY command_id::bigint LIMIT $4").await.unwrap();
     for (execute, index) in [
         (format!("history_all({machine},2,3)"), "cp_sessions_numeric"),
         (
@@ -451,5 +463,97 @@ async fn numeric_pages_return_only_notification_and_sidebar_summary_fields() {
     .await
     .unwrap();
     tx.rollback().await.unwrap();
+    fixture.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn deleted_sessions_stay_out_of_catalog_reads_when_old_history_is_uploaded() {
+    let fixture = Fixture::new().await;
+    let (store, machine) = (&fixture.store, &fixture.machine);
+    fixture.catalog(&["1", "2", "3", "4"]).await;
+    let deleted = snapshot("1", "1", "archived");
+    store
+        .sync_history(
+            machine,
+            "1",
+            deleted.clone(),
+            vec![event("1")],
+            vec![command("10", "completed")],
+        )
+        .await
+        .unwrap();
+    for (id, archive) in [("2", "active"), ("3", "archived"), ("4", "archived")] {
+        let mut current = snapshot(id, "0", archive);
+        // Inventory comes from journal records, including machine Sessions and
+        // failed provisioning that never created a Worktree.
+        current["session"]
+            .as_object_mut()
+            .unwrap()
+            .remove("workspaceId");
+        if id == "2" {
+            current["session"]["lifecycle"] = json!("provision_failed");
+        }
+        store
+            .sync_history(machine, id, current, vec![], vec![])
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        store.sessions(machine, 0, 1, "archived").await.unwrap()["sessions"][0]["session"]["id"],
+        "1"
+    );
+
+    fixture.catalog(&["2", "3", "4"]).await;
+    for replay_old_history in [false, true] {
+        if replay_old_history {
+            store
+                .sync_history(
+                    machine,
+                    "1",
+                    deleted.clone(),
+                    vec![event("1")],
+                    vec![command("10", "completed")],
+                )
+                .await
+                .unwrap();
+        }
+        let page = store.sessions(machine, 0, 2, "all").await.unwrap();
+        assert_eq!(page["sessions"][0]["session"]["id"], "2");
+        assert_eq!(page["sessions"][1]["session"]["id"], "3");
+        assert_eq!(page["nextCursor"], "3");
+        let page = store.sessions(machine, 0, 1, "archived").await.unwrap();
+        assert_eq!(page["sessions"][0]["session"]["id"], "3");
+        assert_eq!(page["nextCursor"], "3");
+        let last = store.sessions(machine, 3, 1, "archived").await.unwrap();
+        assert_eq!(last["sessions"][0]["session"]["id"], "4");
+        assert!(last.get("nextCursor").is_none());
+        assert_eq!(
+            store.session_summary(machine, "1").await.unwrap()["sessions"],
+            json!([])
+        );
+        assert_eq!(
+            store.session_summary(machine, "2").await.unwrap()["sessions"][0]["session"]["lifecycle"],
+            "provision_failed"
+        );
+    }
+    // Catalog removal does not perform the separately scoped content erasure.
+    assert_eq!(
+        store.session_snapshot(machine, "1").await.unwrap()["snapshot"],
+        deleted
+    );
+    assert_eq!(
+        store.events(machine, "1", 0, 10).await.unwrap()["events"],
+        json!([event("1")])
+    );
+    assert_eq!(
+        store.command_by_operation(machine, "op-10").await.unwrap(),
+        command("10", "completed")
+    );
+    fixture.catalog(&[]).await;
+    assert_eq!(
+        store.sessions(machine, 0, 10, "all").await.unwrap()["sessions"],
+        json!([])
+    );
     fixture.close().await;
 }

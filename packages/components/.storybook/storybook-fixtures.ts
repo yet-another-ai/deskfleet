@@ -255,6 +255,7 @@ export const storybookCatalog: CatalogSnapshot = {
   teamId: "team-1",
   machineId: "machine-1",
   machineName: "MacBook Pro (Studio)",
+  sessionIds: ["sess-1", "sess-2"],
   workspaces: [
     {
       id: "ws-1",

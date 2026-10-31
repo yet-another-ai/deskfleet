@@ -982,7 +982,10 @@ The initial design trusts the server with synchronized Agent conversations,
 tool history, and audit. Terminal output remains on the daemon. Archive and
 restore preserve all this data, including content-bearing audit records.
 The archived Sessions page exposes daemon-side deletion of local records and
-owned resources. Immutable local command receipts remain. Central content erasure
+owned resources. Catalog snapshots carry the daemon journal's complete Session ID
+inventory, including archived and unprovisioned Sessions. Central lists and summaries
+only expose IDs in that inventory, so retained history cannot make deleted Sessions
+reappear. Immutable local command receipts remain. Central content erasure
 is separate work: it must remove conversation/tool content, including raw content
 in audit parameters and results, retain only audit metadata, and prevent stale
 uploads from restoring removed content. Keep machine private keys and

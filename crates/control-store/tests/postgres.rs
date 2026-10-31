@@ -108,7 +108,7 @@ async fn postgres_roles_tokens_replication_and_revocation() {
     store
         .save_catalog(
             &machine.id,
-            json!({"machineId":"1","workspaces":[]}),
+            json!({"machineId":"1","workspaces":[],"sessions":[],"sessionIds":["1","2","10"]}),
             json!({"providers":[]}),
         )
         .await

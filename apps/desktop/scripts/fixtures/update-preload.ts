@@ -5,7 +5,7 @@ import { isMainRendererUrl } from "../../src/shared/renderer-security.ts"
 // Only unrelated machine/account services are fixtures; updates and appearance use real IPC.
 const api = desktopApi()
 api.desktop.target = async () => ({ id: "local-daemon", name: "Development computer", online: true, desktop: false })
-api.catalog.list = async () => ({ teamId: "1", machineId: "1", machineName: "Development computer", sessions: [], workspaces: [
+api.catalog.list = async () => ({ teamId: "1", machineId: "1", machineName: "Development computer", sessions: [], sessionIds: [], workspaces: [
   { id: "1", name: "DeskFleet", worktrees: [{ id: "1", workspaceId: "1", directories: [{ path: "/projects/deskfleet" }] }] },
 ] })
 api.terminal.list = async () => []

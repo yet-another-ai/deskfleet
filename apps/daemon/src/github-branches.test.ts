@@ -21,7 +21,7 @@ async function fixture(context: TestContext) {
   const observer = new GitHubBranches(() => { notifications++ })
   context.after(async () => { observer.close(); await rm(directory, { recursive: true, force: true }) })
   const catalog: CatalogSnapshot = {
-    machineId: "1", machineName: "test", teamId: "1", sessions: [],
+    machineId: "1", machineName: "test", teamId: "1", sessions: [], sessionIds: ["3"],
     workspaces: [{ id: "1", name: "test", worktrees: [{ id: "2", sessionId: "3", workspaceId: "1", directories: [{ path: root }] }] }],
   }
   return { directory, root, observer, catalog, notifications: () => notifications }

@@ -13,7 +13,7 @@ function setup() {
     identity: { originId: "local-origin", machineId: "1" },
   }
   const snapshot: CatalogSnapshot = {
-    teamId: "1", machineId: "1", machineName: "My computer", sessions: [],
+    teamId: "1", machineId: "1", machineName: "My computer", sessions: [], sessionIds: ["16"],
     workspaces: [{ id: "12", name: "Project", worktrees: [
       { id: "14", workspaceId: "12", sessionId: "16", directories: [{ path: "/generated/session" }] },
       { id: "13", workspaceId: "12", directories: [{ path: "/code/project with spaces" }, { path: "/code/second" }] },
