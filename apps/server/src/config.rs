@@ -12,7 +12,7 @@ pub struct ServerConfig {
     pub github_app: Option<crate::github_app::GithubAppConfig>,
     /// Operator-configured STUN URLs advertised on peer grants. Empty means none.
     pub stun_urls: Vec<String>,
-    /// Operator-configured TURN/TURNS URLs advertised on peer grants. Empty means none.
+    /// Initial TURN/TURNS URLs, used only when the persisted list has not been seeded.
     pub turn_urls: Vec<String>,
     pub turn_secret: Option<String>,
     pub turn_usage_redis_url: Option<String>,
@@ -30,12 +30,6 @@ impl ServerConfig {
         let turn_secret = env::var("DESKFLEET_TURN_SECRET")
             .ok()
             .filter(|value| !value.is_empty());
-        if !turn_urls.is_empty() && turn_secret.is_none() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "DESKFLEET_TURN_SECRET is required with TURN URLs",
-            ));
-        }
         Ok(Self {
             bind_addrs: parse_bind_addrs(
                 &env::var("DESKFLEET_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into()),

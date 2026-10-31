@@ -9,6 +9,8 @@ use tokio::sync::{mpsc, watch};
 
 #[path = "local_tests.rs"]
 mod local_tests;
+#[path = "turn_settings_tests.rs"]
+mod turn_settings_tests;
 
 struct Fixture {
     admin: DatabaseConnection,
@@ -25,6 +27,10 @@ struct Fixture {
 
 impl Fixture {
     async fn new() -> Self {
+        Self::with_turn_secret(None).await
+    }
+
+    async fn with_turn_secret(turn_secret: Option<&str>) -> Self {
         let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
         let admin = Database::connect(&url).await.unwrap();
         // Fault-injection triggers must not affect concurrently running cases.
@@ -45,7 +51,7 @@ impl Fixture {
             github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
-            turn_secret: None,
+            turn_secret: turn_secret.map(str::to_owned),
             turn_usage_redis_url: None,
         };
         let a = web::Data::new(AppState::new(config.clone()).await.unwrap());

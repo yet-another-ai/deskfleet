@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter } from "vue-router"
 import { configureClient } from "@deskfleet/client/platform"
 import { DEFAULT_APPEARANCE_SETTINGS } from "@deskfleet/client/appearance"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
-import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteAdministrationApi, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
+import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteAdministrationApi, SiteSettings, TurnSettings, Team, TeamMember } from "@deskfleet/client/central"
 import type { TeamBilling } from "@deskfleet/client/billing"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "@deskfleet/client/ai-usage"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace } from "@deskfleet/client/catalog"
@@ -598,6 +598,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     privacyTermsUrl: "https://deskfleet.dev/privacy",
   }
   let registrationEnabled = true
+  let turn: TurnSettings = { urls: ["turn:turn.example.com:3478?transport=udp"] }
   let enrollment: LocalEnrollment = {
     configured: true,
     connected: true,
@@ -638,6 +639,11 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     updateSiteSettings: async (next: SiteSettings) => {
       site = { ...next }
       return { ...site }
+    },
+    turnSettings: async () => ({ urls: [...turn.urls] }),
+    updateTurnSettings: async next => {
+      turn = { urls: [...next.urls] }
+      return { urls: [...turn.urls] }
     },
     billingTeams: async () => [
       { id: "team-1", name: "Core Engineering", owner: { id: "user-1", name: "Ada Lovelace", email: "ada@deskfleet.dev" }, billing: structuredClone(storybookBilling) },

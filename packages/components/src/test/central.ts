@@ -1,7 +1,7 @@
 import { vi } from "vitest"
 import type { AdminTeamBilling, TeamBilling } from "../../../client/src/billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
-import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "../../../client/src/central.ts"
+import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, Team, TeamMember } from "../../../client/src/central.ts"
 
 export function billingFixture(usage = { relayedBytes: "0", activeSessionCount: 0, memberCount: 1 }): TeamBilling {
   return { plan: "selfHosted", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: null }, usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false, enterpriseContactEmail: null }
@@ -19,6 +19,7 @@ export interface FakeCentralOptions {
   signedIn?: boolean
   siteAdmin?: boolean
   site?: Partial<SiteSettings>
+  turn?: TurnSettings
   teams?: Team[]
   machines?: Machine[]
   members?: TeamMember[]
@@ -37,6 +38,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     signedIn: options.signedIn ?? true,
     siteAdmin: options.siteAdmin ?? false,
     site: { siteName: "DeskFleet", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "", ...options.site },
+    turn: { urls: [...(options.turn?.urls ?? [])] },
     teams: options.teams ?? [{ id: "team-1", name: "Design team", role: "admin" as const }],
     machines: options.machines ?? [],
     members: options.members ?? [
@@ -53,6 +55,8 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     site: vi.fn(async () => ({ ...state.site })),
     siteSettings: vi.fn(async () => ({ ...state.site })),
     updateSiteSettings: vi.fn(async (settings: SiteSettings) => { state.site = { ...settings }; return { ...state.site } }),
+    turnSettings: vi.fn(async () => ({ urls: [...state.turn.urls] })),
+    updateTurnSettings: vi.fn(async (settings: TurnSettings) => { state.turn = { urls: [...settings.urls] }; return { urls: [...state.turn.urls] } }),
     openAccountSettings: vi.fn(async () => {}),
     githubSettings: vi.fn<CentralApi["githubSettings"]>(async () => ({ configured: false, manageUrl: null, authorized: false, login: null, actAsYou: false })),
     githubPullRequest: vi.fn<CentralApi["githubPullRequest"]>(async () => ({ pullRequest: null })),

@@ -1,5 +1,5 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { AccountState, AccountUser, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, Team, TeamMember, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, TurnSettings, Team, TeamMember, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -166,6 +166,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   site() { return this.request<SiteSettings>("GET", "/api/site") }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }
   updateSiteSettings(settings: SiteSettings) { return this.request<SiteSettings>("PATCH", "/api/admin/site-settings", settings) }
+  turnSettings() { return this.request<TurnSettings>("GET", "/api/admin/turn-settings") }
+  updateTurnSettings(settings: TurnSettings) { return this.request<TurnSettings>("PATCH", "/api/admin/turn-settings", settings) }
   teams() { return this.request<Team[]>("GET", "/api/teams") }
   createTeam(name: string) { return this.request<Team>("POST", "/api/teams", { name }) }
   enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string }) { return this.request<{ machine: Machine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine) }

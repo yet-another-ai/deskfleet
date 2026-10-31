@@ -235,7 +235,7 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | `DESKFLEET_DEPLOYMENT_MODE` | no | `self-hosted` | Self-hosted installations have unlimited allowances and no payment integration. |
 | `DESKFLEET_WEB_ORIGINS` | for cross-origin browsers | empty | Comma-separated exact origins (`https://app.example.com`, with port if it is not the default). |
 | `DESKFLEET_STUN_URLS` | no | empty | Comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Invalid schemes fail startup. Empty means no STUN; DeskFleet does not ship a public STUN default. |
-| `DESKFLEET_TURN_URLS` | no | empty | Comma-separated `turn:`/`turns:` URLs advertised on peer grants. Invalid schemes fail startup. Setting any URL requires a secret. |
+| `DESKFLEET_TURN_URLS` | no | empty | Comma-separated `turn:`/`turns:` URLs used to initialize the persisted list on first API startup. Manage later changes in Site administration. A nonempty list requires a secret. |
 | `DESKFLEET_TURN_SECRET` | with TURN URLs | unset | Shared with the TURN server's REST `static-auth-secret`. Empty is treated as missing and startup fails when TURN URLs are set. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | no | unset | `redis://` or `rediss://` URL for [Team TURN usage collection](#team-turn-usage-collection). Empty disables collection. Invalid URLs fail startup; unavailable Redis is retried in the background. |
 | `RUST_LOG` | no | `info` | `tracing` `EnvFilter`. A missing or invalid value falls back to `info`. |
@@ -465,15 +465,25 @@ mode (`use-auth-secret` and `static-auth-secret` on coturn). The development
 container does this and also sets `--external-ip=127.0.0.1`,
 `--allow-loopback-peers`, `--no-tls`, and a tiny relay range on loopback. Those
 flags are for one host. A public relay publishes a reachable listening address
-and relay range, and every URL in `DESKFLEET_TURN_URLS` must be an address both
+and relay range, and every configured TURN URL must be an address both
 peers can use.
 
 `DESKFLEET_STUN_URLS` is independent. TURN URLs are not also advertised as
 STUN. An empty ICE list is valid: peers then try direct candidates only.
-Clients and daemons take ICE servers only from peer grants, so operators change
-STUN/TURN membership by updating these environment variables and restarting the
-API; new grants pick up the new lists without client releases or hardcoded
-public STUN servers.
+Clients and daemons take ICE servers only from peer grants. The first API startup
+seeds the persisted TURN list from `DESKFLEET_TURN_URLS`. Afterward, site
+administrators can add, edit, or remove URLs in Site administration or replace
+the list through `PATCH /api/admin/turn-settings` with `{ "urls": [...] }`.
+`GET /api/admin/turn-settings` reads that private list. Both endpoints require a
+current site administrator grant. Updates take effect for new peer grants across
+API instances without restart. Saving an empty list disables new TURN grants and
+remains empty after restart, even if the initial environment list is still set.
+The shared `DESKFLEET_TURN_SECRET` remains deployment configuration and must be
+configured before adding URLs.
+
+Each peer retains its issued ICE list during signaling. Editing the list does
+not stop TURN servers or disconnect existing peers. STUN changes still use
+`DESKFLEET_STUN_URLS` and require an API restart.
 
 TURN forwards DTLS. It does not decrypt sessions, and the API never sees the
 DTLS private keys. Relay ports are the TURN server's configuration; the API

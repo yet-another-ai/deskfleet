@@ -116,7 +116,7 @@ URLs and use the database/Redis TLS options required by those services.
 | `DESKFLEET_SMTP_PASSWORD` | Required nonempty relay password; secret. |
 | `DESKFLEET_MAIL_FROM` | Required valid sender mailbox when SMTP is configured. |
 | `DESKFLEET_STUN_URLS` | Optional comma-separated `stun:`/`stuns:` URLs. Empty by default; there is no built-in public STUN service. |
-| `DESKFLEET_TURN_URLS` | Optional for startup, needed for relay tests. Comma-separated `turn:`/`turns:` URLs reachable from both peers. |
+| `DESKFLEET_TURN_URLS` | Initial comma-separated `turn:`/`turns:` URLs reachable from both peers. Seeds the persisted list on first API startup; manage later changes online in Site administration. Relay tests need a configured TURN list. |
 | `DESKFLEET_TURN_SECRET` | Required when TURN URLs are set; secret shared with coturn's `static-auth-secret`. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | Empty/unset disables collection. `redis://` or `rediss://`; required for Go/Pro metering. An unavailable Redis is retried in the background. |
 | `RUST_LOG` | Defaults to `info`; controls the server log filter. |

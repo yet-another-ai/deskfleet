@@ -7,14 +7,14 @@ import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { DesktopEvent, IceCandidate } from "./desktop-media.ts"
-import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings } from "../../../crates/protocol/control.ts"
+import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings, TurnSettings } from "../../../crates/protocol/control.ts"
 
 export type AccountUser = Omit<User, "email"> & { email?: User["email"] }
 export interface GithubAppSettings { configured: boolean; manageUrl: string | null; authorized: boolean; login: string | null; actAsYou: boolean }
 export interface GithubPullRequestQuery { owner: string; repo: string; branch: string; headOwner?: string }
 export interface GithubPullRequest { number: number; title: string; url: string; state: "draft" | "open" | "merged" | "closed" }
 export interface AccountState { serverUrl: string; user?: AccountUser; siteAdmin: boolean }
-export type { SiteSettings } from "../../../crates/protocol/control.ts"
+export type { SiteSettings, TurnSettings } from "../../../crates/protocol/control.ts"
 export type TeamRole = "owner" | "admin" | "member"
 export type Team = Omit<WireTeam, "role"> & { role: TeamRole }
 export interface TeamMember { userId: string; name: string; email?: string | null; role: TeamRole }
@@ -45,6 +45,8 @@ export type CentralEvent =
 export interface SiteAdministrationApi {
   siteSettings(): Promise<SiteSettings>
   updateSiteSettings(settings: SiteSettings): Promise<SiteSettings>
+  turnSettings(): Promise<TurnSettings>
+  updateTurnSettings(settings: TurnSettings): Promise<TurnSettings>
   billingTeams(): Promise<AdminTeamBilling[]>
   setEnterprise(teamId: string, enabled: boolean): Promise<void>
   registrationPolicy(): Promise<{ registrationEnabled: boolean }>

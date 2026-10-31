@@ -11,6 +11,7 @@ mod maintenance;
 mod peers;
 mod search;
 mod site;
+mod turn_settings;
 mod turn_usage;
 mod web_assets;
 mod websocket;
@@ -45,6 +46,7 @@ impl AppState {
         let store = ControlStore::connect(&config.database_url)
             .await?
             .with_hosted_mode(config.billing.hosted);
+        turn_settings::initialize(&store, &config).await?;
         let auth = auth::AuthService::new(config.auth.clone())?;
         let billing =
             billing::BillingService::new(config.billing.clone(), config.auth.web_url.clone())?;
@@ -95,6 +97,11 @@ pub fn configure(config: &mut ServiceConfig) {
             .route(
                 "/admin/site-settings",
                 web::patch().to(site::update_settings),
+            )
+            .route("/admin/turn-settings", web::get().to(turn_settings::read))
+            .route(
+                "/admin/turn-settings",
+                web::patch().to(turn_settings::update),
             )
             .route("/teams", web::get().to(api::teams))
             .route("/teams", web::post().to(api::create_team))

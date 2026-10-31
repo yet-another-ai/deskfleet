@@ -22,6 +22,13 @@ pub struct SiteSettings {
     pub privacy_terms_url: String,
 }
 
+/// Administrator-managed TURN endpoints; credentials remain deployment configuration.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TurnSettings {
+    pub urls: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Team {
@@ -186,6 +193,7 @@ pub fn typescript() -> String {
     let declarations = [
         User::decl(&config),
         SiteSettings::decl(&config),
+        TurnSettings::decl(&config),
         Team::decl(&config),
         Machine::decl(&config),
         PeerActor::decl(&config),
