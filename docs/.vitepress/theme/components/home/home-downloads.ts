@@ -1,6 +1,7 @@
 export type InstallMode = "desktop" | "headless"
 export type InstallPlatform = "macos" | "windows" | "linux"
 export type LinuxArchitecture = "x64" | "arm64"
+export type DesktopInstallMethod = "homebrew" | "installer" | "archive" | "nix"
 
 export const releasesPage = "https://github.com/yet-another-ai/deskfleet/releases/latest"
 
@@ -52,15 +53,32 @@ export function findDownload(
 ): ReleaseFile | undefined {
   if (!release) return undefined
   if (format === "archive") {
-    return mode === "desktop" && platform === "macos"
-      ? release.files.find(file => file.name === `deskfleet-${release.version}-mac-arm64.zip`)
-      : undefined
+    if (mode !== "desktop" || platform === "windows") return undefined
+    const name = platform === "macos"
+      ? `deskfleet-${release.version}-mac-arm64.zip`
+      : `deskfleet-${release.version}-linux-${linuxArchitecture}.tar.gz`
+    return release.files.find(file => file.name === name)
   }
   const target = platform === "macos" ? "macos-arm64" : platform === "windows" ? "windows-x64" : `linux-${linuxArchitecture}`
   const appImageArchitecture = linuxArchitecture === "x64" ? "x86_64" : linuxArchitecture
   const installer = platform === "macos" ? "mac-arm64.dmg" : platform === "windows" ? "win-x64.exe" : `linux-${appImageArchitecture}.AppImage`
   const name = mode === "headless" ? `deskfleet-${target}.tar.gz` : `deskfleet-${release.version}-${installer}`
   return release.files.find(file => file.name === name)
+}
+
+export function findNixDownload(release: LatestRelease | undefined): ReleaseFile | undefined {
+  return release?.files.find(file => file.name === "deskfleet-nix.tar.gz")
+}
+
+export function desktopInstallMethods(release: LatestRelease | undefined, platform: InstallPlatform): DesktopInstallMethod[] {
+  if (platform === "macos") return ["homebrew", "installer", "archive"]
+  if (platform === "windows") return ["installer"]
+  const methods: DesktopInstallMethod[] = ["installer"]
+  if (findNixDownload(release)) methods.push("nix")
+  if (findDownload(release, "desktop", "linux", "x64", "archive") || findDownload(release, "desktop", "linux", "arm64", "archive")) {
+    methods.push("archive")
+  }
+  return methods
 }
 
 export function formatSize(bytes: number, locale: string): string {

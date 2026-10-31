@@ -192,6 +192,14 @@ architecture. Publishing a stable release makes it discoverable without another
 Pages build. Drafts and prereleases do not replace the website's stable downloads;
 failed requests and unavailable assets retain a link to GitHub Releases.
 
+The installation section groups methods by platform: Homebrew, DMG, and ZIP on
+macOS; the Windows installer; and AppImage, Nix, and desktop archives on Linux.
+Nix and Linux desktop archives appear only when the published release contains
+their assets. The Nix command uses that release's versioned flake URL. Homebrew
+uses the official tap and does not display GitHub's release version as its own.
+Headless downloads remain separate server/daemon archives. English, Chinese,
+and Japanese pages share the same selection logic and localized instructions.
+
 ### Desktop updates
 
 Electron uses `electron-updater` with the public GitHub provider for

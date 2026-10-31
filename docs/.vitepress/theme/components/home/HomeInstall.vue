@@ -4,10 +4,11 @@ import { computed, onMounted, ref } from "vue"
 import { useAsyncState } from "@vueuse/core"
 import { withBase } from "vitepress"
 import DownloadCard from "./DownloadCard.vue"
+import InstallCommand from "./InstallCommand.vue"
 import PlatformIcon from "./PlatformIcon.vue"
 import SegmentedControl from "./SegmentedControl.vue"
 import { useRevealOnce } from "./home-motion.ts"
-import { fetchLatestRelease, findDownload, formatSize, releasesPage, type InstallMode, type InstallPlatform } from "./home-downloads.ts"
+import { desktopInstallMethods, fetchLatestRelease, findDownload, findNixDownload, formatSize, releasesPage, type DesktopInstallMethod, type InstallMode, type InstallPlatform } from "./home-downloads.ts"
 import { homeCopy, homeLocalePath } from "./home-locales.ts"
 
 const props = withDefaults(defineProps<{ locale?: AppLocale }>(), { locale: "en-US" })
@@ -16,10 +17,49 @@ const root = ref<HTMLElement>()
 const shown = useRevealOnce(root, 0.15)
 const mode = ref<InstallMode>("desktop")
 const platform = ref<InstallPlatform>("macos")
+const preferredMethods = ref<Record<InstallPlatform, DesktopInstallMethod>>({ macos: "homebrew", windows: "installer", linux: "installer" })
 const platforms: { value: InstallPlatform; label: string }[] = [{ value: "macos", label: "macOS" }, { value: "windows", label: "Windows" }, { value: "linux", label: "Linux" }]
 const modes = computed<{ value: InstallMode; label: string }[]>(() => [{ value: "desktop", label: t.value.desktop }, { value: "headless", label: t.value.headless }])
 const guide = computed(() => withBase(homeLocalePath(props.locale, "/guide/getting-started")))
 const { state: release, isLoading, executeImmediate: loadRelease } = useAsyncState(fetchLatestRelease, undefined, { immediate: false })
+const availableMethods = computed(() => desktopInstallMethods(release.value, platform.value))
+const method = computed({
+  get: () => availableMethods.value.includes(preferredMethods.value[platform.value])
+    ? preferredMethods.value[platform.value] : availableMethods.value[0],
+  set: (value: DesktopInstallMethod) => { preferredMethods.value[platform.value] = value },
+})
+const methodOptions = computed(() => availableMethods.value.map(value => ({
+  value,
+  label: value === "homebrew" ? t.value.homebrew : value === "nix" ? t.value.nix
+    : value === "archive" ? platform.value === "macos" ? t.value.zipArchive : t.value.tarArchive
+    : platform.value === "macos" ? t.value.dmgInstaller : platform.value === "linux" ? t.value.appImage : t.value.installer,
+})))
+const command = computed(() => {
+  if (mode.value !== "desktop") return undefined
+  if (method.value === "homebrew") return {
+    title: t.value.homebrewTitle,
+    description: t.value.homebrewDescription,
+    value: "brew install --cask yet-another-ai/tap/deskfleet",
+    requirement: t.value.homebrewRequirement,
+    href: "https://brew.sh/",
+  }
+  const nix = findNixDownload(release.value)
+  if (method.value === "nix" && nix) return {
+    title: t.value.nixTitle,
+    description: t.value.nixDescription,
+    value: `nix profile add '${nix.url}'`,
+    requirement: t.value.nixRequirement,
+    href: "https://nixos.org/download/",
+  }
+  return undefined
+})
+const downloadFormat = computed(() => mode.value === "desktop" && method.value === "archive" ? "archive" : "installer")
+const description = computed(() => {
+  if (mode.value === "headless") return platform.value === "windows" ? t.value.headlessWindowsDescription : t.value.headlessDescription
+  if (platform.value === "macos") return method.value === "archive" ? t.value.zipDescription : t.value.dmgDescription
+  if (platform.value === "windows") return t.value.windowsDescription
+  return method.value === "archive" ? t.value.desktopArchiveDescription : t.value.appImageDescription
+})
 const formatLocale = computed(() => intlLocale(props.locale))
 const releaseSummary = computed(() => release.value && `v${release.value.version} · ${new Intl.DateTimeFormat(formatLocale.value, { dateStyle: "medium" }).format(new Date(release.value.publishedAt))}`)
 const downloadTitle = computed(() => {
@@ -29,12 +69,13 @@ const downloadTitle = computed(() => {
 })
 const packageFormat = computed(() => {
   if (mode.value === "headless") return t.value.tarArchive
+  if (method.value === "archive") return platform.value === "macos" ? t.value.zipArchive : t.value.tarArchive
   if (platform.value === "macos") return t.value.dmgInstaller
   if (platform.value === "windows") return t.value.installer
   return "AppImage"
 })
 const primary = computed(() => {
-  const file = findDownload(release.value, mode.value, platform.value, "x64")
+  const file = findDownload(release.value, mode.value, platform.value, "x64", downloadFormat.value)
   return {
     title: downloadTitle.value,
     detail: `${packageFormat.value} · ${platform.value === "macos" ? "Apple Silicon" : "x64"}`,
@@ -44,19 +85,10 @@ const primary = computed(() => {
 })
 const alternatives = computed(() => {
   if (platform.value === "linux") {
-    const file = findDownload(release.value, mode.value, "linux", "arm64")
+    const file = findDownload(release.value, mode.value, "linux", "arm64", downloadFormat.value)
     return [{
       title: downloadTitle.value,
       detail: `${packageFormat.value} · arm64`,
-      href: file?.url ?? releasesPage,
-      file: file && formatSize(file.size, formatLocale.value),
-    }]
-  }
-  if (mode.value === "desktop" && platform.value === "macos") {
-    const file = findDownload(release.value, "desktop", "macos", "x64", "archive")
-    return [{
-      title: t.value.zipArchive,
-      detail: "Apple Silicon",
       href: file?.url ?? releasesPage,
       file: file && formatSize(file.size, formatLocale.value),
     }]
@@ -83,18 +115,23 @@ onMounted(() => {
           <SegmentedControl v-model="platform" :options="platforms" size="small" :label="t.platform">
             <template #icon="{ value }"><PlatformIcon :platform="value" /></template>
           </SegmentedControl>
-          <span class="install__release" :class="{ 'is-ready': releaseSummary }" aria-live="polite">
+          <span v-if="mode !== 'desktop' || method !== 'homebrew'" class="install__release" :class="{ 'is-ready': releaseSummary }" aria-live="polite">
             <i aria-hidden="true" />
             {{ releaseSummary ? `${t.latestRelease} · ${releaseSummary}` : isLoading ? t.checkingRelease : t.downloadAvailability }}
           </span>
         </div>
+        <SegmentedControl v-if="mode === 'desktop' && methodOptions.length > 1" v-model="method" :options="methodOptions" size="small" :label="t.method" />
       </div>
       <Transition name="install-swap" mode="out-in">
-        <div :key="`${mode}-${platform}`" class="install__target">
-          <DownloadCard primary :href="primary.href" :title="primary.title" :detail="primary.detail" :file="primary.file" :platform="platform" :action="primary.file ? t.download : t.releases" />
-          <div v-if="alternatives.length" class="install__alternatives">
-            <DownloadCard v-for="download in alternatives" :key="download.detail" :href="download.href" :title="download.title" :detail="download.detail" :file="download.file" :platform="platform" :action="download.file ? t.download : t.releases" />
-          </div>
+        <div :key="`${mode}-${platform}-${method}`" class="install__target">
+          <InstallCommand v-if="command" :title="command.title" :description="command.description" :command="command.value" :requirement="command.requirement" :href="command.href" :copy="t" />
+          <template v-else>
+            <p class="install__description">{{ description }}</p>
+            <DownloadCard primary :href="primary.href" :title="primary.title" :detail="primary.detail" :file="primary.file" :platform="platform" :action="primary.file ? t.download : t.releases" />
+            <div v-if="alternatives.length" class="install__alternatives">
+              <DownloadCard v-for="download in alternatives" :key="download.detail" :href="download.href" :title="download.title" :detail="download.detail" :file="download.file" :platform="platform" :action="download.file ? t.download : t.releases" />
+            </div>
+          </template>
         </div>
       </Transition>
       <p class="install__links reveal-line" style="--line: 5"><a :href="guide">{{ t.guide }} →</a><a :href="releasesPage">{{ t.allDownloads }} →</a><a href="https://github.com/yet-another-ai/deskfleet">{{ t.repository }} →</a></p>
@@ -114,12 +151,17 @@ onMounted(() => {
 .install__release i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--home-ink-2); opacity: 0.4; transition: background 300ms ease, opacity 300ms ease; }
 .install__release.is-ready i { background: var(--ui-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-color-success) 22%, transparent); opacity: 1; }
 .install__target { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.install__description { color: var(--home-ink-2); font-size: 15px; line-height: 1.65; margin: 4px 0; }
 .install__alternatives { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .install__links { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 26px; font-size: 14px; font-weight: 650; }
 .install__links a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .install-swap-enter-active, .install-swap-leave-active { transition: opacity 160ms ease, transform 160ms ease; }
 .install-swap-enter-from, .install-swap-leave-to { opacity: 0; transform: translateY(5px); }
-@media (max-width: 560px) { .install { padding-inline: 16px; } .install__row > :first-child { width: 100%; } }
+@media (max-width: 560px) {
+  .install { padding-inline: 16px; }
+  .install__row > :first-child { width: 100%; }
+  .install__controls > .segmented:last-child { max-width: 100%; overflow-x: auto; }
+}
 @media (max-width: 360px) {
   .install__controls :deep(.segmented--large .segmented__option) { padding-inline: 12px; font-size: 14px; }
   .install__controls :deep(.segmented--small .segmented__option) { padding-inline: 10px; gap: 6px; }

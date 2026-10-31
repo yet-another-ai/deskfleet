@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { fetchLatestRelease, findDownload, releasesPage, type LatestRelease } from "../docs/.vitepress/theme/components/home/home-downloads.ts"
+import { desktopInstallMethods, fetchLatestRelease, findDownload, findNixDownload, releasesPage, type LatestRelease } from "../docs/.vitepress/theme/components/home/home-downloads.ts"
 
 const assetNames = [
   "deskfleet-0.2.0-mac-arm64.dmg", "deskfleet-0.2.0-mac-arm64.zip", "deskfleet-0.2.0-win-x64.exe",
@@ -79,7 +79,52 @@ test("the macOS ZIP alternative resolves independently of the primary installer"
   assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64", "archive"), undefined)
   assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64")?.name, "deskfleet-0.2.0-mac-arm64.dmg")
   assert.equal(findDownload(release, "headless", "macos", "x64", "archive"), undefined)
-  assert.equal(findDownload(release, "desktop", "linux", "x64", "archive"), undefined)
+  assert.equal(findDownload(release, "desktop", "windows", "x64", "archive"), undefined)
+})
+
+test("Linux desktop archives resolve separately from headless payloads for each architecture", () => {
+  for (const arch of ["x64", "arm64"] as const) {
+    const desktop = findDownload(release, "desktop", "linux", arch, "archive")
+    assert.equal(desktop?.name, `deskfleet-0.2.0-linux-${arch}.tar.gz`)
+    assert.equal(desktop?.url, `${releasesPage.replace("/latest", "")}/download/v0.2.0/deskfleet-0.2.0-linux-${arch}.tar.gz`)
+    assert.equal(findDownload(release, "headless", "linux", arch)?.name, `deskfleet-linux-${arch}.tar.gz`)
+    assert.equal(findDownload(release, "headless", "linux", arch, "archive"), undefined)
+  }
+})
+
+test("installation methods follow platform support and actual published Linux assets", () => {
+  for (const value of [undefined, release]) {
+    assert.deepEqual(desktopInstallMethods(value, "macos"), ["homebrew", "installer", "archive"])
+    assert.deepEqual(desktopInstallMethods(value, "windows"), ["installer"])
+  }
+  assert.deepEqual(desktopInstallMethods(release, "linux"), ["installer", "nix", "archive"])
+  assert.equal(findNixDownload(release)?.url,
+    "https://github.com/yet-another-ai/deskfleet/releases/download/v0.2.0/deskfleet-nix.tar.gz")
+  const oldRelease = {
+    ...release,
+    files: release.files.filter(file => !file.name.startsWith("deskfleet-0.2.0-linux-") || file.name.endsWith(".AppImage"))
+      .filter(file => file.name !== "deskfleet-nix.tar.gz"),
+  }
+  for (const value of [undefined, oldRelease, { ...release, files: [] }]) {
+    assert.deepEqual(desktopInstallMethods(value, "linux"), ["installer"])
+    assert.equal(findNixDownload(value), undefined)
+  }
+  assert.deepEqual(desktopInstallMethods({ ...oldRelease, files: [
+    ...oldRelease.files, { name: "deskfleet-nix.tar.gz.sha256", url: "checksum", size: 100 },
+    { name: "deskfleet-0.1.0-linux-x64.tar.gz", url: "previous-version", size: 100 },
+  ] }, "linux"), ["installer"], "checksums and archives from another version are not installation methods")
+})
+
+test("partial Linux releases expose available methods without substituting architectures", () => {
+  for (const available of ["x64", "arm64"] as const) {
+    const other = available === "x64" ? "arm64" : "x64"
+    const partial = { ...release, files: release.files.filter(file => file.name === `deskfleet-0.2.0-linux-${available}.tar.gz`) }
+    assert.deepEqual(desktopInstallMethods(partial, "linux"), ["installer", "archive"])
+    assert.equal(findDownload(partial, "desktop", "linux", available, "archive")?.name, `deskfleet-0.2.0-linux-${available}.tar.gz`)
+    assert.equal(findDownload(partial, "desktop", "linux", other, "archive"), undefined)
+  }
+  const nixOnly = { ...release, files: release.files.filter(file => file.name === "deskfleet-nix.tar.gz") }
+  assert.deepEqual(desktopInstallMethods(nixOnly, "linux"), ["installer", "nix"])
 })
 
 test("missing packages fall back to the release page without selecting another architecture", () => {
