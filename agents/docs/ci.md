@@ -1,14 +1,14 @@
 # Continuous integration
 
 DeskFleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
-one orchestrator, reusable Test and Build workflows, a shared setup action, and
+one orchestrator, reusable Test, Build, and Nix workflows, a shared setup action, and
 a stable `Gate` result for branch protection.
 
 ## Workflow ownership
 
 - `.github/workflows/ci.yml` handles pull requests, pushes to `main`, and manual
   runs. It classifies the changed files with the hosted runner's Node, calls
-  Test and Build, and combines their results in `Gate`. Configure `Gate` under
+  Test, Build, and Nix, and combines their results in `Gate`. Configure `Gate` under
   the `CI` workflow as the required status check in repository branch protection.
   Successful runs on `main` then deploy the product website to GitHub Pages.
 - `.github/workflows/test.yml` runs static checks and the desktop/Web/website builds
@@ -27,8 +27,9 @@ a stable `Gate` result for branch protection.
   a disposable Xvfb server with `-noreset`, avoiding server resets when the last
   client disconnects between test cases.
 - `.github/workflows/build.yml` builds artifacts, then packages Electron
-  installers. Ordinary CI runs use `mise run ci:build`; tagged releases build
-  Web and Electron separately to give only Electron a fixed API origin.
+  installers and Linux desktop archives. Ordinary CI runs use
+  `mise run ci:build`; tagged releases build Web and Electron separately to give
+  only Electron a fixed API origin.
   Its shared Rust task runs one napi-driven Cargo workspace build for the server
   and native addon,
   using the host target for both. SEA and Electron bundling consume that addon
@@ -43,22 +44,32 @@ a stable `Gate` result for branch protection.
   during release linking. This applies only to Build jobs; test and development
   builds keep their debug information. Each target packages and verifies the
   standalone SEA daemon.
-  The same matrix packages Electron installers and smoke-tests the bundled server
-  container on each native Linux runner. The Publish caller enables production
-  configuration and macOS signing. PR, main, and manual Build runs do not bind
+  The same matrix packages Electron installers and Linux desktop archives and
+  smoke-tests the bundled server container on each native Linux runner. The
+  Publish caller enables production configuration and macOS signing. PR, main,
+  and manual Build runs do not bind
   the production environment: Statsig and Sentry stay disabled, and Electron
   defaults to `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
-  creates a draft GitHub Release and pushes the server image to GHCR after
-  both workflows succeed.
+  calls Nix with the desktop archives from Build. It creates a draft GitHub
+  Release and pushes the server image to GHCR after all three workflows succeed.
+- `.github/workflows/nix.yml` consumes the same-run Linux desktop archives from
+  Build, generates a flake bundle, and checks the repackaged app under Xvfb.
+  It preloads the archives into Nix's fixed-output store so checks can run before
+  the release assets are published. CI includes it in `Gate`; documentation-only
+  changes skip it alongside Build. Publish reuses the workflow and includes its
+  generated `deskfleet-nix.tar.gz` in the release. The Nix workflow does not bind
+  the production environment or read its variables or secrets.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
-  and configures shared caches for both reusable workflows.
+  and configures shared caches for the Test and Build workflows.
 
-The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each archive
-contains `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
+The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each
+server/daemon archive, such as `deskfleet-linux-x64.tar.gz`, contains
+`deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
 Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
-Linux x64/arm64 AppImage installers, plus updater YAML and blockmaps. PRs
-exercise packaging on Linux x64.
+Linux x64/arm64 AppImages and desktop archives, plus updater YAML and blockmaps.
+The Linux desktop archive names include the app version, such as
+`deskfleet-<version>-linux-x64.tar.gz`. PRs exercise packaging on Linux x64.
 The Linux x64 job also uploads `deskfleet-web` with the static Vue application.
 Its API origin is the hosting origin, including tagged release artifacts;
 deployments with a separate API origin build with `VITE_DESKFLEET_SERVER_URL`
@@ -97,16 +108,19 @@ and regenerate `Cargo.lock` before tagging. Build metadata (`+...`) is not
 accepted because it cannot be represented in a container tag.
 
 Publish calls the same Test and Build workflows used by CI, with the full
-platform matrix and mandatory macOS signing/notarization. It waits for both
-before publishing. The Build workflow keeps read-only repository access;
+platform matrix and mandatory macOS signing/notarization, then validates the
+Linux archives through Nix. It waits for all three before publishing. The Build
+workflow keeps read-only repository access;
 only the release job receives `contents: write`, and only the image job receives
 `packages: write`.
 
 Before the first tag, create the `production` environment under Repository
 Settings → Environments. Set its deployment branch and tag policy to
 **Selected branches and tags**, add a **Tag** rule matching `v*`, and allow no
-branches. Store production values in this environment, removing any copies from
-repository or organization variables and secrets.
+branches. Keep production configuration in this environment, removing any
+duplicate repository or organization variables and secrets. The Linux desktop
+archives carry this configuration in the compiled app, including when repackaged
+by Nix.
 
 Configure these environment variables:
 
@@ -164,10 +178,11 @@ and live Session events from another machine after granting DeskFleet access in
 requests or inbound connections to the hosted daemon do not establish that the
 renderer can initiate a direct peer connection.
 
-Each tag produces a **draft** GitHub Release containing the five desktop
-installers, four server/daemon archives, updater metadata and blockmaps. Review
-its generated notes and assets, then publish it in GitHub. Prerelease tags create
-prerelease drafts.
+Each tag produces a **draft** GitHub Release containing the desktop installers,
+two Linux desktop archives, the `deskfleet-nix.tar.gz` flake bundle, four
+server/daemon archives, updater metadata and blockmaps. Review its generated
+notes and assets, then publish it in GitHub. Prerelease tags create prerelease
+drafts.
 Reruns can replace assets on a draft; they refuse to modify an already published
 release.
 
@@ -176,6 +191,15 @@ the matching published stable release asset for the chosen platform and
 architecture. Publishing a stable release makes it discoverable without another
 Pages build. Drafts and prereleases do not replace the website's stable downloads;
 failed requests and unavailable assets retain a link to GitHub Releases.
+
+The installation section groups methods by platform: Homebrew and DMG on macOS;
+the Windows installer; and AppImage, Nix, and desktop archives on Linux. The macOS
+ZIP is reserved for the updater and is not offered as a website installation method.
+Nix and Linux desktop archives appear only when the published release contains
+their assets. The Nix command uses that release's versioned flake URL. Homebrew
+uses the official tap and does not display GitHub's release version as its own.
+Headless downloads remain separate server/daemon archives. English, Chinese,
+and Japanese pages share the same selection logic and localized instructions.
 
 ### Desktop updates
 
@@ -238,6 +262,59 @@ Manual dispatch reconciles the latest stable Release without a tag input. A
 delayed or failed sync leaves the published Release and desktop updater
 available; the tap retains its previous Cask until synchronization and merge
 succeed.
+
+### Nix distribution
+
+Nix installs the prebuilt Linux desktop archive for `x86_64-linux` or
+`aarch64-linux`. For tagged releases, Build compiles the desktop app once per
+architecture under the existing `production` environment and packages it as both
+an AppImage and a `tar.gz`. The archive already contains the official API,
+Statsig, and Sentry configuration. Changes to those variables take effect in the
+next release.
+Distribution packaging can reuse the archive for future deb, rpm, or AUR
+packages as well.
+
+Every release automatically generates `deskfleet-nix.tar.gz` from the templates
+under `nix/`. This bundle contains a flake with a locked nixpkgs input and the
+versioned GitHub Release URLs and SHA-256 hashes of both Linux desktop archives.
+The repository's `nix/flake.nix` is a release template; install from a generated
+release bundle. For a release containing that asset, replace `<VERSION>` with
+its version without the `v` prefix:
+
+```sh
+nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'
+```
+
+Use `nix run` with the same URL to try that version. A versioned URL keeps the
+selected release reproducible. The generated default package is `deskfleet`.
+Nix manages installed package updates; the AppImage updater stays disabled.
+
+The Nix derivation patches the packaged ELF interpreter and library paths,
+installs the desktop entry and icons, and supplies the runtime libraries and
+GStreamer plugins. It does not compile Rust or run pnpm. Electron, the native
+addon, ASAR contents, ACP adapters, and embedded daemon come from the same app
+as the release installers. The daemon continues to run in Electron's main
+process.
+
+The launcher identifies itself to Linux autostart through
+`DESKFLEET_LAUNCHER`. After upgrading, launch the new version once to refresh an
+enabled startup entry. GPU drivers and the user's desktop session services,
+including Portal/PipeWire on Wayland, remain host responsibilities.
+
+The Nix workflow downloads the desktop archives from Build in the same workflow
+run and generates the flake bundle. It preloads those archives into Nix's
+fixed-output store, allowing flake checks, installation, and smoke tests before
+the versioned release URLs are public. Its installed-package smoke checks
+native-addon loading, bundled ACP adapters, the packaged renderer, the hosted
+daemon, startup registration through the Nix wrapper, and disabled self-updates.
+On the disposable Ubuntu runner, the workflow allows Chromium's user namespace
+sandbox through AppArmor and runs the installed package with sandboxing enabled.
+
+`Gate` requires Nix validation on code changes, and Publish requires it before
+creating the draft release or publishing the server image. Nix reuses the
+configuration already compiled by Build, so it needs no production environment
+access, configuration snapshot, synchronization workflow, or additional token.
+Nix binary-cache publication is not configured.
 
 ### Server image
 

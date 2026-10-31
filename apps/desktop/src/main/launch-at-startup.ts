@@ -11,10 +11,12 @@ function available(): boolean {
 function linuxStartup(): LinuxLaunchAtStartup {
   const configHome = process.env.XDG_CONFIG_HOME
   const directory = configHome && isAbsolute(configHome) ? configHome : join(app.getPath("home"), ".config")
+  const launcher = process.env.DESKFLEET_LAUNCHER
   return new LinuxLaunchAtStartup(
     join(directory, "autostart", "io.github.yet_another_ai.deskfleet.desktop"),
+    // Package launchers restore runtime library and plugin paths at login.
     // Electron's executable inside an AppImage lives in a temporary mount.
-    process.env.APPIMAGE || process.execPath,
+    launcher && isAbsolute(launcher) ? launcher : process.env.APPIMAGE || process.execPath,
   )
 }
 

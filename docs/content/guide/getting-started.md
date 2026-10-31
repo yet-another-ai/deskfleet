@@ -6,6 +6,19 @@ On macOS with Apple Silicon, install the desktop app using Homebrew:
 brew install --cask yet-another-ai/tap/deskfleet
 ```
 
+For releases containing `deskfleet-nix.tar.gz`, install on x86-64 or ARM64 Linux
+with Nix and flakes enabled. Replace `<VERSION>` with the release version
+without its `v` prefix:
+
+```sh
+nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'
+```
+
+Use `nix run` with the same URL to try it without adding it to your profile.
+The package installs the prebuilt desktop app and connects to the official
+DeskFleet service. Nix manages application updates. Desktop sharing also requires
+your session's Portal/PipeWire services on Wayland and a supported GPU driver.
+
 Packaged versions for macOS, Windows, and Linux are also available on [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases). To try the current development version, use the source workflow below.
 
 ## Set up the development environment

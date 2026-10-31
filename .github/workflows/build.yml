@@ -208,6 +208,7 @@ jobs:
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
             apps/desktop/release/*.AppImage
+            apps/desktop/release/*.tar.gz
             apps/desktop/release/latest*.yml
             apps/desktop/release/*.blockmap
           if-no-files-found: error

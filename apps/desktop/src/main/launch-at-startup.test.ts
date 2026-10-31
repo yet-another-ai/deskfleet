@@ -29,7 +29,10 @@ function linux(configHome?: string) {
   app.getPath.mockReturnValue(directory)
   vi.stubGlobal("process", {
     ...process, platform: "linux", execPath: "/tmp/.mount_deskfleet/deskfleet",
-    env: { ...process.env, XDG_CONFIG_HOME: configHome, APPIMAGE: "/opt/Desk Fleet/deskfleet-0.3.2.AppImage" },
+    env: {
+      ...process.env, XDG_CONFIG_HOME: configHome, APPIMAGE: "/opt/Desk Fleet/deskfleet-0.3.2.AppImage",
+      DESKFLEET_LAUNCHER: undefined,
+    },
   })
   return directory
 }
@@ -123,4 +126,24 @@ test("packaged Linux executables outside AppImage use process.execPath", () => {
   expect(setLaunchAtStartup(true)).toEqual({ available: true, enabled: true })
   const path = join(home, ".config", "autostart", "io.github.yet_another_ai.deskfleet.desktop")
   expect(readFileSync(path, "utf8")).toContain('Exec="/opt/deskfleet/deskfleet"')
+})
+
+test("Linux uses the package launcher and refreshes it after an upgrade", () => {
+  const home = linux()
+  process.env.DESKFLEET_LAUNCHER = "/nix/store/old-deskfleet/bin/deskfleet"
+  const path = join(home, ".config", "autostart", "io.github.yet_another_ai.deskfleet.desktop")
+  expect(setLaunchAtStartup(true)).toEqual({ available: true, enabled: true })
+  expect(readFileSync(path, "utf8")).toContain('Exec="/nix/store/old-deskfleet/bin/deskfleet"')
+
+  process.env.DESKFLEET_LAUNCHER = "/nix/store/new-deskfleet/bin/deskfleet"
+  refreshLaunchAtStartup()
+  expect(readFileSync(path, "utf8")).toContain('Exec="/nix/store/new-deskfleet/bin/deskfleet"')
+})
+
+test.each(["", "relative/deskfleet"])("Linux ignores a non-absolute package launcher: %s", (launcher) => {
+  const home = linux()
+  process.env.DESKFLEET_LAUNCHER = launcher
+  const path = join(home, ".config", "autostart", "io.github.yet_another_ai.deskfleet.desktop")
+  setLaunchAtStartup(true)
+  expect(readFileSync(path, "utf8")).toContain('Exec="/opt/Desk Fleet/deskfleet-0.3.2.AppImage"')
 })

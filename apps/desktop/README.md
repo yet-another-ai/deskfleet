@@ -372,15 +372,17 @@ notarized app to work reliably; see [Electron's login item documentation](https:
 Packaged Linux apps use XDG Autostart. Enabling creates
 `$XDG_CONFIG_HOME/autostart/io.github.yet_another_ai.deskfleet.desktop`;
 disabling removes it. If `XDG_CONFIG_HOME` is unset, empty, or relative, the
-configuration directory defaults to `~/.config`. The `Exec` target is the outer
-`APPIMAGE` file for AppImage builds, or the executable path for other packaged
-builds.
+configuration directory defaults to `~/.config`. Packages that use a startup
+wrapper set `DESKFLEET_LAUNCHER` to its absolute path; the `Exec` target uses that
+launcher so runtime library and plugin paths are restored at login. Otherwise,
+the target is the outer `APPIMAGE` file for AppImage builds, or the executable
+path for other packaged builds. Empty or relative launcher values are ignored.
 
 On each launch, DeskFleet updates the `Exec` path of an existing enabled Linux
 entry. It honors `Hidden=true` and `X-GNOME-Autostart-enabled=false`, and does not
 recreate deleted entries. Built-in updates restart the new version, which
-refreshes the path. After manually moving, renaming, or replacing an AppImage,
-run it once from its new location to update the startup entry.
+refreshes the path. After upgrading a Nix package or manually moving, renaming,
+or replacing an AppImage, run the new version once to update the startup entry.
 
 The client opens its normal window and respects the separate **Run local Agent**
 preference described below. The switch is unavailable in development runs, which
@@ -554,7 +556,7 @@ behavior.
 
 ```sh
 mise run desktop:package:dir  # unpacked app in release/
-mise run desktop:package      # dmg and zip, NSIS, or AppImage for the host platform
+mise run desktop:package      # DMG/ZIP, NSIS, or AppImage/tar.gz for the host platform
 ```
 
 `electron-builder.yml` configures packaging. Vite bundles every dependency into
@@ -568,6 +570,12 @@ for those adapter processes. Packages enable ASAR
 integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
+
+Linux packaging produces both an AppImage and a desktop `tar.gz` archive from
+the same compiled app. The archive includes Electron, the native addon, and the
+bundled daemon and ACP adapters. It is the reusable input for distribution
+packages: Nix patches runtime paths and installs it without rebuilding Rust or
+JavaScript. Future deb, rpm, or AUR packaging can consume the same archive.
 
 Tagged releases use `electron-builder.release.yml` on macOS. This overlay
 requires Developer ID signing and Apple notarization; missing credentials or
@@ -614,8 +622,12 @@ mise exec -- pnpm --filter @deskfleet/desktop exec electron-builder --config ele
 ```
 
 The tagged build stages macOS arm64 DMG/ZIP, Windows x64 NSIS, and Linux x64/arm64
-AppImage installers in a draft GitHub Release. After that release is published,
-the website resolves the latest stable installers through GitHub's releases API.
+AppImages and desktop archives in a draft GitHub Release. Linux archives already
+contain the public configuration compiled under the `production` environment.
+The release also includes `deskfleet-nix.tar.gz`, a generated flake bundle that
+pins these archives by versioned URL and SHA-256, together with its nixpkgs input.
+After that release is published, the website resolves the latest stable
+installers through GitHub's releases API.
 See [release workflow](../../agents/docs/ci.md) for tag validation and publishing.
 
 The original brand artwork lives in

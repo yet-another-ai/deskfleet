@@ -1,4 +1,6 @@
 /target/
+/result
+/result-*
 /deskfleet.db
 /deskfleet.db-shm
 /deskfleet.db-wal

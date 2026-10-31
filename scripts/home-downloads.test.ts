@@ -4,10 +4,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { fetchLatestRelease, findDownload, releasesPage, type LatestRelease } from "../docs/.vitepress/theme/components/home/home-downloads.ts"
+import { desktopInstallMethods, fetchLatestRelease, findDownload, findNixDownload, releasesPage, type LatestRelease } from "../docs/.vitepress/theme/components/home/home-downloads.ts"
 
 const assetNames = [
   "deskfleet-0.2.0-mac-arm64.dmg", "deskfleet-0.2.0-mac-arm64.zip", "deskfleet-0.2.0-win-x64.exe",
+  "deskfleet-0.2.0-linux-x64.tar.gz", "deskfleet-0.2.0-linux-arm64.tar.gz", "deskfleet-nix.tar.gz",
   "deskfleet-0.2.0-linux-x86_64.AppImage", "deskfleet-0.2.0-linux-arm64.AppImage",
   "deskfleet-macos-arm64.tar.gz", "deskfleet-windows-x64.tar.gz", "deskfleet-linux-x64.tar.gz", "deskfleet-linux-arm64.tar.gz",
 ]
@@ -28,7 +29,7 @@ test("download selection distinguishes installers, archives, and Linux architect
   }
 })
 
-test("release verification requires installers and update metadata for stable and prerelease builds", context => {
+test("release verification requires installers, packaging archives, and update metadata for stable and prerelease builds", context => {
   const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/publish.yml"), "utf8").replace(/\r\n/g, "\n")
   const block = yaml.match(/^      - name: Verify release assets\n[\s\S]*?^        run: \|\n((?:          .*\n)+)/m)?.[1]
   assert.ok(block, "Missing release asset verification step")
@@ -51,7 +52,10 @@ test("release verification requires installers and update metadata for stable an
     const result = verify(version)
     assert.ifError(result.error)
     assert.equal(result.status, 0, result.stderr)
-    for (const required of [`deskfleet-${version}-linux-x86_64.AppImage`, "latest-linux-arm64.yml", `deskfleet-${version}-mac-arm64.zip.blockmap`]) {
+    for (const required of [
+      `deskfleet-${version}-linux-x86_64.AppImage`, "latest-linux-arm64.yml", `deskfleet-${version}-mac-arm64.zip.blockmap`,
+      `deskfleet-${version}-linux-x64.tar.gz`, `deskfleet-${version}-linux-arm64.tar.gz`, "deskfleet-nix.tar.gz",
+    ]) {
       const path = join(directory, "release-assets", required)
       unlinkSync(path)
       assert.notEqual(verify(version).status, 0, `Missing ${required} must prevent publication`)
@@ -67,15 +71,58 @@ test("release verification requires installers and update metadata for stable an
   }
 })
 
-test("the macOS ZIP alternative resolves independently of the primary installer", () => {
-  const archive = findDownload(release, "desktop", "macos", "x64", "archive")
-  assert.equal(archive?.name, "deskfleet-0.2.0-mac-arm64.zip")
-  assert.equal(archive?.url, `${releasesPage.replace("/latest", "")}/download/v0.2.0/deskfleet-0.2.0-mac-arm64.zip`)
-  const withoutArchive = { ...release, files: release.files.filter(file => !file.name.endsWith(".zip")) }
-  assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64", "archive"), undefined)
-  assert.equal(findDownload(withoutArchive, "desktop", "macos", "x64")?.name, "deskfleet-0.2.0-mac-arm64.dmg")
+test("the website excludes the macOS updater ZIP from installation choices", () => {
+  assert.ok(release.files.some(file => file.name === "deskfleet-0.2.0-mac-arm64.zip"))
+  assert.deepEqual(desktopInstallMethods(release, "macos"), ["homebrew", "installer"])
+  assert.equal(findDownload(release, "desktop", "macos", "x64", "archive"), undefined)
+  assert.equal(findDownload(release, "desktop", "macos", "x64")?.name, "deskfleet-0.2.0-mac-arm64.dmg")
   assert.equal(findDownload(release, "headless", "macos", "x64", "archive"), undefined)
-  assert.equal(findDownload(release, "desktop", "linux", "x64", "archive"), undefined)
+  assert.equal(findDownload(release, "desktop", "windows", "x64", "archive"), undefined)
+})
+
+test("Linux desktop archives resolve separately from headless payloads for each architecture", () => {
+  for (const arch of ["x64", "arm64"] as const) {
+    const desktop = findDownload(release, "desktop", "linux", arch, "archive")
+    assert.equal(desktop?.name, `deskfleet-0.2.0-linux-${arch}.tar.gz`)
+    assert.equal(desktop?.url, `${releasesPage.replace("/latest", "")}/download/v0.2.0/deskfleet-0.2.0-linux-${arch}.tar.gz`)
+    assert.equal(findDownload(release, "headless", "linux", arch)?.name, `deskfleet-linux-${arch}.tar.gz`)
+    assert.equal(findDownload(release, "headless", "linux", arch, "archive"), undefined)
+  }
+})
+
+test("installation methods follow platform support and actual published Linux assets", () => {
+  for (const value of [undefined, release]) {
+    assert.deepEqual(desktopInstallMethods(value, "macos"), ["homebrew", "installer"])
+    assert.deepEqual(desktopInstallMethods(value, "windows"), ["installer"])
+  }
+  assert.deepEqual(desktopInstallMethods(release, "linux"), ["installer", "nix", "archive"])
+  assert.equal(findNixDownload(release)?.url,
+    "https://github.com/yet-another-ai/deskfleet/releases/download/v0.2.0/deskfleet-nix.tar.gz")
+  const oldRelease = {
+    ...release,
+    files: release.files.filter(file => !file.name.startsWith("deskfleet-0.2.0-linux-") || file.name.endsWith(".AppImage"))
+      .filter(file => file.name !== "deskfleet-nix.tar.gz"),
+  }
+  for (const value of [undefined, oldRelease, { ...release, files: [] }]) {
+    assert.deepEqual(desktopInstallMethods(value, "linux"), ["installer"])
+    assert.equal(findNixDownload(value), undefined)
+  }
+  assert.deepEqual(desktopInstallMethods({ ...oldRelease, files: [
+    ...oldRelease.files, { name: "deskfleet-nix.tar.gz.sha256", url: "checksum", size: 100 },
+    { name: "deskfleet-0.1.0-linux-x64.tar.gz", url: "previous-version", size: 100 },
+  ] }, "linux"), ["installer"], "checksums and archives from another version are not installation methods")
+})
+
+test("partial Linux releases expose available methods without substituting architectures", () => {
+  for (const available of ["x64", "arm64"] as const) {
+    const other = available === "x64" ? "arm64" : "x64"
+    const partial = { ...release, files: release.files.filter(file => file.name === `deskfleet-0.2.0-linux-${available}.tar.gz`) }
+    assert.deepEqual(desktopInstallMethods(partial, "linux"), ["installer", "archive"])
+    assert.equal(findDownload(partial, "desktop", "linux", available, "archive")?.name, `deskfleet-0.2.0-linux-${available}.tar.gz`)
+    assert.equal(findDownload(partial, "desktop", "linux", other, "archive"), undefined)
+  }
+  const nixOnly = { ...release, files: release.files.filter(file => file.name === "deskfleet-nix.tar.gz") }
+  assert.deepEqual(desktopInstallMethods(nixOnly, "linux"), ["installer", "nix"])
 })
 
 test("missing packages fall back to the release page without selecting another architecture", () => {

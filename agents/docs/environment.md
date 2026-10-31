@@ -73,6 +73,10 @@ Simplified Chinese, and Japanese content share those components. The sticky show
 the fixed navigation height; short viewports use normal page flow with tabs so
 the application controls and explanatory text remain reachable.
 
+Embedded demos keep their application layout inside the preview window even on
+mobile pages. Their compact drawer mode is disabled so app panels cannot portal
+over the website navigation or installation controls.
+
 `packages/components/src/theme-tokens.css` owns the product palette. Both the
 application and website consume it; `color-scheme` selects the website's explicit
 light/dark theme. `product-demo.css` only restores application typography and

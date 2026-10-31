@@ -97,12 +97,13 @@ function workflowScript(job: string): string {
 test("actual Gate accepts only successful required jobs and explicitly allowed skips", { skip: process.platform === "win32" }, () => {
   const script = workflowScript("gate")
   const results = ["success", "failure", "cancelled", "skipped"]
-  for (const changes of results) for (const tests of results) for (const build of results) for (const docs of ["true", "false", ""]) {
+  for (const changes of results) for (const tests of results) for (const build of results) for (const nix of results) for (const docs of ["true", "false", ""]) {
     const result = spawnSync("bash", ["-c", script], {
-      env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, DOCS_ONLY: docs }
+      env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, NIX_RESULT: nix, DOCS_ONLY: docs }
     })
-    assert.equal(result.status === 0, changes === "success" && tests === "success" && build === (docs === "true" ? "skipped" : "success"),
-      JSON.stringify({ changes, tests, build, docs }))
+    assert.equal(result.status === 0, changes === "success" && tests === "success"
+      && build === (docs === "true" ? "skipped" : "success") && nix === (docs === "true" ? "skipped" : "success"),
+      JSON.stringify({ changes, tests, build, nix, docs }))
   }
 })
 
