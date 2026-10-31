@@ -69,6 +69,42 @@ beforeEach(async () => {
 })
 afterEach(() => { wrapper?.unmount(); disposePinia(pinia); vi.restoreAllMocks() })
 
+test.each(["idle", "connecting"])("a retained Session in %s state does not invent an error", async state => {
+  await wrapper.get("textarea").setValue("Keep this Session available")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  transport.state(state)
+  await flushPromises()
+
+  const notice = wrapper.get("[data-error-notice]")
+  expect(notice.text()).toContain(i18n.global.t("agent.disconnected"))
+  expect(notice.text()).not.toContain(i18n.global.t("errors.generic.description"))
+  expect(notice.find("details").exists()).toBe(false)
+  expect(notice.get("button").text()).toBe(i18n.global.t("agent.reconnect"))
+  expect(notice.get("button").attributes("disabled") !== undefined).toBe(state === "connecting")
+})
+
+test("the Session disconnect notice retains guidance and diagnostics for real failures", async () => {
+  await wrapper.get("textarea").setValue("Keep this Session available")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  const agents = useAgentSessionsStore(pinia)
+  transport.state("error")
+  agents.error = "Failed to fetch"
+  await flushPromises()
+  expect(wrapper.get("[data-error-notice]").text()).toContain(i18n.global.t("errors.network.description"))
+  expect(wrapper.get("[data-error-notice] pre").text()).toBe("Failed to fetch")
+
+  agents.views["30"]!.error = "Could not subscribe to the Session"
+  await flushPromises()
+  expect(wrapper.get("[data-error-notice]").text()).toContain(i18n.global.t("errors.generic.description"))
+  expect(wrapper.get("[data-error-notice] pre").text()).toBe("Could not subscribe to the Session")
+
+  agents.views["30"]!.relayDeniedReason = "turn_quota_exhausted"
+  await flushPromises()
+  expect(wrapper.get("[data-error-notice]").text()).toContain(i18n.global.t("errors.turn_quota_exhausted.description"))
+})
+
 test("session usage restores from history, follows committed updates, and remains scoped to its session", async () => {
   expect(wrapper.find("[data-agent-usage]").exists()).toBe(false)
   events.push(agentEvent(1, "acp", { sessionId: "provider", update: { sessionUpdate: "usage_update", used: 64_000, size: 128_000, cost: { amount: 0.25, currency: "USD" } } }))
