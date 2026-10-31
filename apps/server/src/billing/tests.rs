@@ -691,3 +691,120 @@ async fn one_portal_applies_paid_plan_and_interval_changes_without_resetting_usa
     handle.stop(true).await;
     task.await.unwrap().unwrap();
 }
+
+#[actix_web::test]
+async fn display_prices_use_configured_stripe_offers_and_share_cache() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let provider_state = web::Data::new(Mutex::new(Provider::default()));
+    let server_state = provider_state.clone();
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(server_state.clone())
+            .default_service(web::route().to(provider))
+    })
+    .listen(listener)
+    .unwrap()
+    .run();
+    let handle = server.handle();
+    let task = actix_web::rt::spawn(server);
+    let mut service =
+        BillingService::new(fixture_config(), "https://web.example.test".into()).unwrap();
+    service.api_base = format!("http://{address}/v1");
+    let prices = serde_json::to_value(service.prices().await.unwrap()).unwrap();
+    assert_eq!(
+        prices,
+        json!([
+            {"plan":"go","interval":"month","unitAmount":500,"currency":"usd"},
+            {"plan":"pro","interval":"month","unitAmount":1500,"currency":"usd"},
+            {"plan":"go","interval":"year","unitAmount":5000,"currency":"usd"},
+            {"plan":"pro","interval":"year","unitAmount":15000,"currency":"usd"}
+        ])
+    );
+    service.clone().prices().await.unwrap();
+    assert_eq!(provider_state.lock().unwrap().price_reads.len(), 4);
+    *service.price_cache.lock().await = None;
+    provider_state.lock().unwrap().price_reads_remaining = Some(0);
+    assert!(service.prices().await.is_err());
+    assert!(service.prices().await.unwrap().is_none());
+    handle.stop(true).await;
+    task.await.unwrap().unwrap();
+    let disabled =
+        BillingService::new(BillingConfig::default(), "https://web.example.test".into()).unwrap();
+    assert!(disabled.prices().await.unwrap().unwrap().is_empty());
+}
+
+#[actix_web::test]
+async fn slow_failed_catalog_refresh_does_not_queue_other_teams_or_repeat_requests() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::sync::Semaphore;
+    use tokio::time::timeout;
+
+    let started = Arc::new(Semaphore::new(0));
+    let release = Arc::new(Semaphore::new(0));
+    let requests = Arc::new(AtomicUsize::new(0));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = {
+        let started = started.clone();
+        let release = release.clone();
+        let requests = requests.clone();
+        HttpServer::new(move || {
+            let started = started.clone();
+            let release = release.clone();
+            let requests = requests.clone();
+            App::new().default_service(web::route().to(move || {
+                let started = started.clone();
+                let release = release.clone();
+                let requests = requests.clone();
+                async move {
+                    requests.fetch_add(1, Ordering::SeqCst);
+                    started.add_permits(1);
+                    release.acquire().await.unwrap().forget();
+                    HttpResponse::ServiceUnavailable().finish()
+                }
+            }))
+        })
+        .listen(listener)
+        .unwrap()
+        .run()
+    };
+    let handle = server.handle();
+    let server_task = actix_web::rt::spawn(server);
+    let mut service =
+        BillingService::new(fixture_config(), "https://web.example.test".into()).unwrap();
+    service.api_base = format!("http://{address}/v1");
+    let refresh_service = service.clone();
+    let refresh = actix_web::rt::spawn(async move { refresh_service.prices().await });
+    timeout(Duration::from_secs(5), started.acquire_many(4))
+        .await
+        .unwrap()
+        .unwrap()
+        .forget();
+    for _ in 0..8 {
+        assert!(
+            timeout(Duration::from_millis(100), service.clone().prices())
+                .await
+                .unwrap()
+                .unwrap()
+                .is_none()
+        );
+    }
+    assert_eq!(requests.load(Ordering::SeqCst), 4);
+    release.add_permits(4);
+    assert!(refresh.await.unwrap().is_err());
+    for _ in 0..8 {
+        assert!(service.clone().prices().await.unwrap().is_none());
+    }
+    assert_eq!(requests.load(Ordering::SeqCst), 4);
+    // Expiring the failure cooldown lets the next request retry the provider.
+    service.price_cache.lock().await.as_mut().unwrap().0 -= Duration::from_secs(31);
+    release.add_permits(4);
+    assert!(service.prices().await.is_err());
+    assert!(requests.load(Ordering::SeqCst) > 4);
+    handle.stop(true).await;
+    server_task.await.unwrap().unwrap();
+}

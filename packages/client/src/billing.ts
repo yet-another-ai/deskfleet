@@ -1,6 +1,14 @@
 export type BillingPlan = "free" | "go" | "pro" | "enterprise" | "selfHosted"
 export type BillingInterval = "month" | "year"
+export interface BillingPrice {
+  plan: "go" | "pro"
+  interval: BillingInterval
+  unitAmount: number
+  currency: string
+}
 export interface TeamBilling {
+  /** Configured Stripe prices; null during another refresh or after a provider failure. */
+  prices?: BillingPrice[] | null
   plan: BillingPlan
   limits: { maxActiveSessions: number | null; maxTurnsPerSession: number | null; maxMembers: number | null; turnBytes: number | null }
   usage: { activeSessionCount: number; memberCount: number; relayedBytes: string }

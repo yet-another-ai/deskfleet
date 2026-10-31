@@ -1420,6 +1420,24 @@
     "revokeAllDescription": "Every browser and desktop app, including this one, will need to sign in again. Machines and running work are not affected."
   },
   "billing": {
+    "comparison": {
+      "title": "Compare plans",
+      "subtitle": "Allowances apply to your whole Team. Direct connections are included in every plan.",
+      "current": "Current plan",
+      "description": {
+        "free": "For getting started with direct connections.",
+        "go": "For everyday work with relay access.",
+        "pro": "For more work over relayed connections."
+      },
+      "freePrice": "Free",
+      "priceUnavailable": "Price temporarily unavailable",
+      "per": { "month": "/ month", "year": "/ year" },
+      "monthlyRelay": "Relay / month",
+      "relayAmount": "{amount} GiB",
+      "direct": "Direct connections",
+      "included": "Included",
+      "monthlyReset": "Relay allowance resets monthly, including on annual plans."
+    },
     "plan": {
       "free": "Free",
       "go": "Go",

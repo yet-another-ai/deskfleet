@@ -15,6 +15,7 @@ import IconButton from "../common/IconButton.vue"
 import UiButton from "../common/UiButton.vue"
 import AgentNotice from "../session/AgentNotice.vue"
 import UsageMeter from "./UsageMeter.vue"
+import PlanComparison from "./PlanComparison.vue"
 
 const props = defineProps<{ team: Team }>()
 const { t, locale } = useI18n()
@@ -39,7 +40,6 @@ useEventListener(window, "focus", () => { void load() })
 
 const date = (value: string) => new Intl.DateTimeFormat(intlLocale(locale.value as AppLocale), { dateStyle: "medium" }).format(new Date(value))
 const count = (value: number) => String(value)
-const plans = ["go", "pro"] as const
 const subscription = computed(() => state.value?.subscription ?? undefined)
 const paymentProblem = computed(() => ["past_due", "unpaid", "incomplete"].includes(subscription.value?.status ?? ""))
 const status = computed(() => {
@@ -177,26 +177,22 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
           </div>
         </div>
       </div>
-      <div v-if="offers" class="flex flex-col gap-3">
-        <div class="flex flex-wrap items-center justify-between gap-3" data-billing-interval>
+      <section v-if="state.plan !== 'selfHosted'" class="mt-5 flex flex-col gap-4" :aria-labelledby="`${id}-compare`">
+        <div>
+          <h2 :id="`${id}-compare`" class="m-0 text-base font-semibold">{{ t("billing.comparison.title") }}</h2>
+          <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.comparison.subtitle") }}</p>
+        </div>
+        <div v-if="state.paymentsAvailable" class="flex flex-wrap items-center justify-between gap-3" data-billing-interval>
           <p class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.chooseInterval") }}</p>
           <div role="group" :aria-label="t('billing.chooseInterval')" class="flex rounded-lg border border-ui-border bg-ui-hover p-1">
             <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'month' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'month'" data-billing-interval-option="month" @click="selectInterval('month')">{{ t("billing.interval.month") }}</button>
             <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'year' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'year'" data-billing-interval-option="year" @click="selectInterval('year')">{{ t("billing.interval.year") }}</button>
           </div>
         </div>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div v-for="plan in plans" :key="plan" class="ui-card flex flex-col gap-3 p-4" :data-billing-offer="plan">
-            <div>
-              <p class="m-0 text-sm font-semibold">{{ t(`billing.plan.${plan}`) }}</p>
-              <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t(`billing.offer.${plan}`) }}</p>
-              <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t(`billing.offerInterval.${interval}`) }}</p>
-            </div>
-            <UiButton :variant="plan === 'go' ? 'primary' : 'default'" class="mt-auto" :loading="pending === plan" :disabled="!!pending" @click="open(plan)">{{ t("billing.upgradeTo", { plan: t(`billing.plan.${plan}`) }) }}</UiButton>
-          </div>
-        </div>
-      </div>
-      <p v-else-if="state.plan === 'free' && state.paymentsAvailable && !state.canManageBilling" class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.askOwner") }}</p>
+        <p v-if="state.paymentsAvailable" class="m-0 text-xs text-ui-text-muted">{{ t(`billing.offerInterval.${interval}`) }} · {{ t("billing.comparison.monthlyReset") }}</p>
+        <PlanComparison :billing="state" :interval="interval" :offers="offers" :pending="pending" @select="open" />
+      </section>
+      <p v-if="state.plan === 'free' && state.paymentsAvailable && !state.canManageBilling" class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.askOwner") }}</p>
       <div v-if="enterpriseContact" class="ui-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" data-billing-offer="enterprise">
         <div class="min-w-0">
           <p class="m-0 text-sm font-semibold">{{ t("billing.plan.enterprise") }}</p>
