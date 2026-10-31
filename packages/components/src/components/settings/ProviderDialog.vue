@@ -171,15 +171,15 @@ onBeforeUnmount(() => { finished = true })
       </div>
     </div>
 
-    <div v-if="step === 'template'" class="flex flex-col gap-2">
-      <div role="group" :aria-label="t('providers.template')" class="flex flex-col gap-2">
-        <button v-for="item in templates" :key="item.id" type="button" class="ui-option-card group" :disabled="disabled" :data-provider-template-choice="item.id" @click="choose(item.id)">
-          <ProviderIcon :template="item.id" :size="22" class="shrink-0" />
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium">{{ item.name }}</span>
-            <span class="mt-0.5 block text-[13px] text-ui-text-muted">{{ t(`providers.templateDescription.${item.id}`) }}</span>
+    <div v-if="step === 'template'" class="flex flex-col">
+      <div role="group" :aria-label="t('providers.template')" class="max-h-[min(27rem,calc(100dvh-14rem))] overflow-y-auto rounded-xl border border-ui-border">
+        <button v-for="item in templates" :key="item.id" type="button" class="group flex min-h-11 w-full cursor-pointer items-center gap-2.5 border-b border-ui-border px-3 py-2 text-left transition-colors last:border-b-0 enabled:hover:bg-ui-control-hover disabled:cursor-default" :disabled="disabled" :data-provider-template-choice="item.id" @click="choose(item.id)">
+          <ProviderIcon :template="item.id" :size="18" class="shrink-0" />
+          <span class="min-w-0 flex-1 sm:flex sm:items-baseline sm:gap-2">
+            <span class="block truncate text-sm font-medium leading-5 sm:shrink-0">{{ item.name }}</span>
+            <span class="block truncate text-xs leading-4 text-ui-text-muted sm:leading-5" :title="t(`providers.templateDescription.${item.id}`)">{{ t(`providers.templateDescription.${item.id}`) }}</span>
           </span>
-          <ChevronRight :size="16" :stroke-width="1.75" class="shrink-0 text-ui-text-faint group-hover:text-ui-text-muted" aria-hidden="true" />
+          <ChevronRight :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-faint group-hover:text-ui-text-muted" aria-hidden="true" />
         </button>
       </div>
       <div class="ui-dialog-actions mt-4">
