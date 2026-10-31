@@ -177,6 +177,9 @@ useResizeObserver(container, () => fit.fit())
 onBeforeUnmount(() => {
   // TerminalWorkspace remounts this surface on tab switches; release GPU and image caches before GC.
   releaseImageAddon()
+  // Deregister joiners while the renderer is alive; xterm disposes its core before addons.
+  ligaturesAddon?.dispose()
+  ligaturesAddon = undefined
   releaseWebglRenderer()
   input.dispose()
   resize.dispose()
