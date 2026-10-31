@@ -10,8 +10,8 @@ import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import googleIcon from "../../assets/google.png"
 import UiButton from "../common/UiButton.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
+import UiField from "../common/UiField.vue"
 import AuthLayout from "./AuthLayout.vue"
-import PasswordField from "./PasswordField.vue"
 
 /** Account sign-in. Desktop approval opens the other steps in a new tab. */
 const props = defineProps<{ account: AccountAuthentication; title: string; description?: string; registrationEnabled: boolean; newTab?: boolean; config: AuthConfig; returnTo: string; githubError?: string; googleError?: string; emailVerificationToken?: string }>()
@@ -78,9 +78,9 @@ async function oauth(provider: OAuthProvider): Promise<void> {
         {{ t("auth.email") }}
         <input ref="email" v-model="email" class="ui-input" type="email" name="email" autocomplete="username webauthn" required maxlength="254" :disabled="!!pending" autofocus />
       </label>
-      <PasswordField v-model="password" :label="t('auth.password')" purpose="current" :disabled="!!pending">
+      <UiField v-model="password" :label="t('auth.password')" type="password" name="password" autocomplete="current-password" required maxlength="128" :disabled="!!pending">
         <template #aside><a href="/auth/recovery" :target="target" rel="noopener" class="text-[13px] text-ui-text-muted hover:text-ui-text">{{ t("auth.forgot") }}</a></template>
-      </PasswordField>
+      </UiField>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <UiButton type="submit" variant="primary" class="h-9 text-sm" :loading="pending === 'password'" :disabled="!!pending">{{ t("auth.signIn") }}</UiButton>
       <template v-if="passkeysAvailable() || config.githubEnabled || config.googleEnabled">

@@ -5,8 +5,8 @@ import { useI18n } from "vue-i18n"
 import type { AccountAuthentication } from "@deskfleet/client/account-security"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import UiButton from "../common/UiButton.vue"
+import UiField from "../common/UiField.vue"
 import AuthLayout from "./AuthLayout.vue"
-import PasswordField from "./PasswordField.vue"
 
 /** Completes a mailed link: a verified registration names its account; recovery replaces the password. */
 const props = defineProps<{ account: AccountAuthentication; purpose: "verify" | "reset"; token?: string }>()
@@ -49,7 +49,7 @@ async function submit(): Promise<void> {
         {{ t("auth.name") }}
         <input v-model="name" class="ui-input" name="name" autocomplete="name" required maxlength="200" :disabled="pending" autofocus />
       </label>
-      <PasswordField v-model="password" :label="t(purpose === 'verify' ? 'auth.password' : 'auth.newPassword')" purpose="new" :disabled="pending" :autofocus="purpose === 'reset'" />
+      <UiField v-model="password" :label="t(purpose === 'verify' ? 'auth.password' : 'auth.newPassword')" type="password" name="password" autocomplete="new-password" required minlength="15" maxlength="128" :disabled="pending" :autofocus="purpose === 'reset'" :hint="t('auth.passwordHint')" />
       <div v-if="error" role="alert" class="m-0 text-sm text-ui-danger">
         {{ error }} <a :href="restart" class="text-ui-accent hover:underline">{{ t("auth.requestNewLink") }}</a>
       </div>

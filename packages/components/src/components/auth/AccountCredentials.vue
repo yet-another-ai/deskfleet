@@ -7,8 +7,8 @@ import type { AccountUser } from "@deskfleet/client/central"
 import { failureMessage, type RecentAuthentication } from "../../composables/useRecentAuthentication.ts"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
+import UiField from "../common/UiField.vue"
 import SettingsRow from "../settings/SettingsRow.vue"
-import PasswordField from "./PasswordField.vue"
 
 const props = defineProps<{ account: AccountAuthentication; user: AccountUser; confirmed: RecentAuthentication["confirmed"] }>()
 const { t } = useI18n()
@@ -70,7 +70,7 @@ async function submit(): Promise<void> {
         {{ t("auth.newEmail") }}
         <input v-model="email" class="ui-input" type="email" name="new-email" autocomplete="email" required maxlength="254" :disabled="pending" autofocus />
       </label>
-      <PasswordField v-else v-model="password" :label="t('auth.newPassword')" purpose="new" :disabled="pending" autofocus />
+      <UiField v-else v-model="password" :label="t('auth.newPassword')" type="password" name="password" autocomplete="new-password" required minlength="15" maxlength="128" :disabled="pending" autofocus :hint="t('auth.passwordHint')" />
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="ui-dialog-actions mt-2">
         <UiButton :disabled="pending" @click="editing = undefined">{{ t("catalog.cancel") }}</UiButton>

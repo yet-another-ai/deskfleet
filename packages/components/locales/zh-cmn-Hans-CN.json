@@ -325,7 +325,9 @@
     "placeholderControl": "{label}（尚不可用）",
     "copy": "复制",
     "copied": "已复制",
-    "copyLabel": "复制{label}"
+    "copyLabel": "复制{label}",
+    "showPassword": "显示密码",
+    "hidePassword": "隐藏密码"
   },
   "toolbar": {
     "showSidebar": "显示侧边栏",
@@ -1302,8 +1304,6 @@
     "password": "密码",
     "newPassword": "新密码",
     "passwordHint": "15–128 个字符，支持空格和密码管理器。",
-    "showPassword": "显示密码",
-    "hidePassword": "隐藏密码",
     "forgot": "忘记密码？",
     "or": "或",
     "signInWithPasskey": "使用 Passkey 登录",

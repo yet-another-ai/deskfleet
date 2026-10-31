@@ -7,7 +7,7 @@ import { passkeysAvailable } from "@deskfleet/client/passkeys"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
-import PasswordField from "./PasswordField.vue"
+import UiField from "../common/UiField.vue"
 
 /** Asks for a fresh password or Passkey proof, then lets the waiting action retry. */
 const props = defineProps<{ reauthenticate(password?: string): Promise<void> }>()
@@ -35,7 +35,7 @@ async function confirm(usePasskey: boolean): Promise<void> {
     <DialogTitle class="ui-dialog-title">{{ t("auth.reauthTitle") }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t("auth.reauthDescription") }}</DialogDescription>
     <form class="mt-5 flex flex-col gap-4" @submit.prevent="confirm(false)">
-      <PasswordField v-model="password" :label="t('auth.password')" purpose="current" :disabled="pending" autofocus />
+      <UiField v-model="password" :label="t('auth.password')" type="password" name="password" autocomplete="current-password" required maxlength="128" :disabled="pending" autofocus />
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="flex flex-wrap items-center gap-2">
         <UiButton v-if="passkeysAvailable()" variant="ghost" :disabled="pending" @click="confirm(true)"><KeyRound :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("auth.usePasskeyInstead") }}</UiButton>

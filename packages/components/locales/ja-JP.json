@@ -234,7 +234,8 @@
     "increase": "増やす", "decrease": "減らす",
     "noResults": "該当する結果はありません。", "notAvailable": "まだ利用できません",
     "placeholderControl": "{label}（まだ利用できません）", "copy": "コピー",
-    "copied": "コピーしました", "copyLabel": "{label} をコピー"
+    "copied": "コピーしました", "copyLabel": "{label} をコピー",
+    "showPassword": "パスワードを表示", "hidePassword": "パスワードを非表示"
   },
   "toolbar": {
     "showSidebar": "サイドバーを表示", "hideSidebar": "サイドバーを非表示",
@@ -834,8 +835,8 @@
     "desktopSignInTitle": "DeskFleet Desktop にログイン", "desktopSignInDescription": "ログイン後、このページからデスクトップアプリへセッションが引き継がれます。",
     "email": "メールアドレス", "name": "表示名",
     "password": "パスワード", "newPassword": "新しいパスワード",
-    "passwordHint": "15～128 文字。スペースやパスワードマネージャーも使用できます。", "showPassword": "パスワードを表示",
-    "hidePassword": "パスワードを非表示", "forgot": "パスワードを忘れた場合",
+    "passwordHint": "15～128 文字。スペースやパスワードマネージャーも使用できます。",
+    "forgot": "パスワードを忘れた場合",
     "or": "または", "signInWithPasskey": "パスキーでログイン",
     "signInWithGithub": "GitHub でログイン",
     "githubFailed": "GitHub でのログインに失敗しました。もう一度お試しください。",
