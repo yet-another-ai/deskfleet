@@ -4,7 +4,7 @@ import test from "node:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { nativeInfo, openInMemoryCatalog } from "@deskfleet/native"
+import { nativeInfo, openCatalog, openInMemoryCatalog } from "@deskfleet/native"
 import { DaemonClient, readDaemonDiscovery, startDaemon as startNativeDaemon } from "./index.ts"
 import type { DesktopPermission } from "./control-protocol.ts"
 
@@ -36,8 +36,38 @@ test("headless daemon serves information from the Rust addon", async context => 
 })
 
 test("authenticated shutdown acknowledges before cleanup and releases discovery last", { timeout: 15_000 }, async context => {
-  const directory = await mkdtemp(join(tmpdir(), "df-daemon-shutdown-"))
-  const starting = startDaemon(0, { agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  const began = performance.now()
+  const pending = new Map<symbol, { name: string; began: number }>()
+  const completed: string[] = []
+  let bodyFinished = false
+  let reported = false
+  const phase = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+    const id = Symbol(name)
+    const began = performance.now()
+    pending.set(id, { name, began })
+    try { return await operation() }
+    finally {
+      pending.delete(id)
+      completed.push(`${name} (${(performance.now() - began).toFixed(1)} ms)`)
+    }
+  }
+  const reportAbort = () => {
+    if (bodyFinished || reported) return
+    reported = true
+    const now = performance.now()
+    // Emit immediately: teardown can still be waiting on the stalled resource.
+    console.error(`Authenticated shutdown test did not finish after ${(now - began).toFixed(1)} ms; pending: ${[...pending.values()].map(value => `${value.name} (${(now - value.began).toFixed(1)} ms)`).join(", ") || "test assertions"}; completed: ${completed.join("; ")}`)
+  }
+  context.signal.addEventListener("abort", reportAbort, { once: true })
+  context.after(() => { reportAbort(); bodyFinished = true; context.signal.removeEventListener("abort", reportAbort) })
+  const directory = await phase("create control directory", () => mkdtemp(join(tmpdir(), "df-daemon-shutdown-")))
+  const options = (label: string): Parameters<typeof startDaemon>[1] => ({
+    agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory,
+    // Keep the real file catalog and record its cost separately from startup.
+    openCatalog: (path, name) => phase(`${label} file catalog open`, () => openCatalog(path, name)),
+    requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null,
+  })
+  const starting = phase("initial daemon startup", () => startDaemon(0, options("initial")))
   let restarting: ReturnType<typeof startDaemon> | undefined
   let releaseCleanup!: () => void
   let cleanupStarted!: () => void
@@ -45,46 +75,47 @@ test("authenticated shutdown acknowledges before cleanup and releases discovery 
   const cleaning = new Promise<void>(resolve => { cleanupStarted = resolve })
   context.after(async () => {
     releaseCleanup()
-    await (await starting).close()
-    await (await restarting)?.close()
-    await rm(directory, { recursive: true, force: true })
+    await phase("teardown initial daemon", async () => (await starting).close())
+    await phase("teardown restarted daemon", async () => (await restarting)?.close())
+    await phase("remove control directory", () => rm(directory, { recursive: true, force: true }))
   })
   const daemon = await starting
   context.signal.throwIfAborted()
   const closeTerminals = daemon.terminals.close.bind(daemon.terminals)
   daemon.terminals.close = async () => {
     cleanupStarted()
-    await cleanupGate
-    await closeTerminals()
+    await phase("wait at test cleanup gate", () => cleanupGate)
+    await phase("close terminal resources", () => closeTerminals())
   }
-  const client = await DaemonClient.connect(() => {}, () => {}, directory)
+  const client = await phase("initial client connection", () => DaemonClient.connect(() => {}, () => {}, directory))
   context.after(() => client.close())
-  await client.call("workspaceCreate", { name: "Persistent workspace", directories: [{ path: directory }] })
-  await client.call("terminalDial", { mode: "create", terminalId: "shutdown-terminal", cols: 80, rows: 24, cwd: directory })
-  const discovery = await readDaemonDiscovery(directory)
+  await phase("persist workspace", () => client.call("workspaceCreate", { name: "Persistent workspace", directories: [{ path: directory }] }))
+  await phase("create native terminal", () => client.call("terminalDial", { mode: "create", terminalId: "shutdown-terminal", cols: 80, rows: 24, cwd: directory }))
+  const discovery = await phase("read initial discovery", () => readDaemonDiscovery(directory))
 
-  assert.equal(await client.call("shutdown", {}), null)
-  await cleaning
-  assert.deepEqual(await readDaemonDiscovery(directory), discovery)
-  await assert.rejects(DaemonClient.connect(() => {}, () => {}, directory))
-  await assert.rejects(startDaemon(0, { agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null }), /already running/)
-  assert.deepEqual(await readDaemonDiscovery(directory), discovery)
+  assert.equal(await phase("receive shutdown acknowledgement", () => client.call("shutdown", {})), null)
+  await phase("reach cleanup gate", () => cleaning)
+  assert.deepEqual(await phase("read discovery during cleanup", () => readDaemonDiscovery(directory)), discovery)
+  await phase("reject new client during cleanup", () => assert.rejects(DaemonClient.connect(() => {}, () => {}, directory)))
+  await phase("reject competing daemon", () => assert.rejects(startDaemon(0, options("competing")), /already running/))
+  assert.deepEqual(await phase("read discovery after competing startup", () => readDaemonDiscovery(directory)), discovery)
   assert.equal(daemon.close(), daemon.closed)
   releaseCleanup()
-  await daemon.closed
-  await assert.rejects(readDaemonDiscovery(directory), { code: "ENOENT" })
-  await assert.rejects(fetch(`${daemon.address}/healthz`))
-  await assert.rejects(daemon.terminals.dial({ mode: "resume", terminalId: "shutdown-terminal" }), /closed/)
+  await phase("finish daemon shutdown", () => daemon.closed)
+  await phase("verify discovery removed", () => assert.rejects(readDaemonDiscovery(directory), { code: "ENOENT" }))
+  await phase("verify health server closed", () => assert.rejects(fetch(`${daemon.address}/healthz`)))
+  await phase("verify terminal registry closed", () => assert.rejects(daemon.terminals.dial({ mode: "resume", terminalId: "shutdown-terminal" }), /closed/))
   assert.equal(daemon.close(), daemon.closed)
 
   context.signal.throwIfAborted()
-  restarting = startDaemon(0, { agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, controlDirectory: directory, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
+  restarting = phase("restart daemon", () => startDaemon(0, options("restart")))
   const restarted = await restarting
   context.signal.throwIfAborted()
-  const next = await DaemonClient.connect(() => {}, () => {}, directory)
+  const next = await phase("reconnect client", () => DaemonClient.connect(() => {}, () => {}, directory))
   context.after(() => next.close())
-  assert.equal((await next.call("catalogList", {})).workspaces[0]?.name, "Persistent workspace")
-  await restarted.close()
+  assert.equal((await phase("read persisted workspace", () => next.call("catalogList", {}))).workspaces[0]?.name, "Persistent workspace")
+  await phase("close restarted daemon", () => restarted.close())
+  bodyFinished = true
 })
 
 test("startup requests file and desktop permissions once without blocking health and catalog", { timeout: 15_000 }, async context => {
