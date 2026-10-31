@@ -56,6 +56,27 @@ export const highlighter = createHighlighterCoreSync({
   warnings: false,
 })
 const loadedLanguages = new Set(highlighter.getLoadedLanguages())
+const fileLanguages = new Map([
+  ["dockerfile", "dockerfile"], ["containerfile", "dockerfile"],
+  ["makefile", "makefile"], ["gnumakefile", "makefile"],
+  ["gemfile", "ruby"], ["rakefile", "ruby"], ["cargo.lock", "toml"],
+  [".bashrc", "bash"], [".bash_profile", "bash"], [".zshrc", "bash"], [".profile", "bash"],
+  [".env", "bash"], [".gitconfig", "ini"], [".npmrc", "ini"], [".editorconfig", "ini"],
+])
+const extensionLanguages = new Map<string, string>()
+for (const [language, extensions] of [
+  ["bash", "sh bash zsh"], ["c", "c h"], ["cpp", "cc cpp cxx hpp hxx hh"], ["csharp", "cs"],
+  ["css", "css"], ["diff", "diff patch"], ["dockerfile", "dockerfile containerfile"], ["go", "go"],
+  ["graphql", "graphql gql"], ["html", "html htm"], ["ini", "ini properties"], ["java", "java"],
+  ["javascript", "js cjs mjs"], ["json", "json"], ["jsonc", "jsonc"], ["jsx", "jsx"],
+  ["kotlin", "kt kts"], ["lua", "lua"], ["makefile", "mk"], ["markdown", "md markdown"],
+  ["php", "php"], ["powershell", "ps1 psm1 psd1"], ["proto", "proto"], ["python", "py pyi pyw"],
+  ["ruby", "rb"], ["rust", "rs"], ["scss", "scss"], ["sql", "sql"], ["swift", "swift"],
+  ["toml", "toml"], ["tsx", "tsx"], ["typescript", "ts cts mts"], ["vue", "vue"],
+  ["xml", "xml svg"], ["yaml", "yaml yml"], ["zig", "zig"],
+] as const) {
+  for (const extension of extensions.split(" ")) extensionLanguages.set(extension, language)
+}
 
 export function codeLanguageName(language: string): string | undefined {
   return language ? languageNames.get(language) : undefined
@@ -63,4 +84,15 @@ export function codeLanguageName(language: string): string | undefined {
 
 export function canHighlight(language: string): boolean {
   return loadedLanguages.has(language)
+}
+
+/** Detect from the resolved file name, without interpreting resource URI suffixes. */
+export function fileCodeLanguage(filename: string): string | undefined {
+  const name = filename.toLowerCase()
+  const exact = fileLanguages.get(name)
+  if (exact) return exact
+  if (name.startsWith("dockerfile.") || name.startsWith("containerfile.")) return "dockerfile"
+  if (name.startsWith(".env.")) return "bash"
+  const dot = name.lastIndexOf(".")
+  return dot < 0 ? undefined : extensionLanguages.get(name.slice(dot + 1))
 }
