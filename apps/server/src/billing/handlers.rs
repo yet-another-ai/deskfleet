@@ -47,6 +47,13 @@ async fn summary(
     summary["paymentsAvailable"] = json!(s.billing.enabled());
     summary["canManageBilling"] = json!(role == "owner");
     summary["enterpriseContactEmail"] = json!(s.billing.enterprise_contact_email());
+    summary["prices"] = match s.billing.prices().await {
+        Ok(prices) => json!(prices),
+        Err(error) => {
+            tracing::warn!(%error, "could not load billing display prices");
+            Value::Null
+        }
+    };
     Ok(web::Json(summary))
 }
 #[derive(Deserialize)]

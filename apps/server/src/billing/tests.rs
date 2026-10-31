@@ -691,3 +691,45 @@ async fn one_portal_applies_paid_plan_and_interval_changes_without_resetting_usa
     handle.stop(true).await;
     task.await.unwrap().unwrap();
 }
+
+#[actix_web::test]
+async fn display_prices_use_configured_stripe_offers_and_share_cache() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let provider_state = web::Data::new(Mutex::new(Provider::default()));
+    let server_state = provider_state.clone();
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(server_state.clone())
+            .default_service(web::route().to(provider))
+    })
+    .listen(listener)
+    .unwrap()
+    .run();
+    let handle = server.handle();
+    let task = actix_web::rt::spawn(server);
+    let mut service =
+        BillingService::new(fixture_config(), "https://web.example.test".into()).unwrap();
+    service.api_base = format!("http://{address}/v1");
+    let prices = serde_json::to_value(service.prices().await.unwrap()).unwrap();
+    assert_eq!(
+        prices,
+        json!([
+            {"plan":"go","interval":"month","unitAmount":500,"currency":"usd"},
+            {"plan":"pro","interval":"month","unitAmount":1500,"currency":"usd"},
+            {"plan":"go","interval":"year","unitAmount":5000,"currency":"usd"},
+            {"plan":"pro","interval":"year","unitAmount":15000,"currency":"usd"}
+        ])
+    );
+    service.clone().prices().await.unwrap();
+    assert_eq!(provider_state.lock().unwrap().price_reads.len(), 4);
+    *service.price_cache.lock().await = None;
+    provider_state.lock().unwrap().price_reads_remaining = Some(0);
+    assert!(service.prices().await.is_err());
+    assert!(service.price_cache.lock().await.is_none());
+    handle.stop(true).await;
+    task.await.unwrap().unwrap();
+    let disabled =
+        BillingService::new(BillingConfig::default(), "https://web.example.test".into()).unwrap();
+    assert!(disabled.prices().await.unwrap().is_empty());
+}

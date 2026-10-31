@@ -4,6 +4,7 @@ mod config;
 mod gateway;
 mod handlers;
 mod portal;
+mod prices;
 mod reconcile;
 #[cfg(test)]
 mod tests;
@@ -27,6 +28,7 @@ pub struct BillingService {
     client: reqwest::Client,
     web_url: String,
     api_base: String,
+    price_cache: std::sync::Arc<tokio::sync::Mutex<prices::PriceCache>>,
 }
 pub struct BillingWorker([tokio::task::JoinHandle<()>; 3]);
 struct BillingActor<'a> {
@@ -62,6 +64,7 @@ impl BillingService {
         }
         Ok(Self {
             config,
+            price_cache: Default::default(),
             web_url: web_url.trim_end_matches('/').into(),
             api_base: "https://api.stripe.com/v1".into(),
             client: reqwest::Client::builder()

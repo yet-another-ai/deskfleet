@@ -1412,6 +1412,24 @@
     "revokeAllDescription": "包括当前浏览器在内，所有浏览器和桌面应用都需要重新登录。机器和正在运行的任务不受影响。"
   },
   "billing": {
+    "comparison": {
+      "title": "套餐权益对比",
+      "subtitle": "额度由整个 Team 共享，所有套餐均支持直连。",
+      "current": "当前套餐",
+      "description": {
+        "free": "适合通过直连开始使用。",
+        "go": "适合需要中继连接的日常工作。",
+        "pro": "适合中继连接用量较大的工作。"
+      },
+      "freePrice": "免费",
+      "priceUnavailable": "价格暂时无法加载",
+      "per": { "month": "/ 月", "year": "/ 年" },
+      "monthlyRelay": "每月中继流量",
+      "relayAmount": "{amount} GiB",
+      "direct": "直连",
+      "included": "包含",
+      "monthlyReset": "年付套餐的中继流量也按月重置。"
+    },
     "plan": {
       "free": "Free",
       "go": "Go",

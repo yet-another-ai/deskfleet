@@ -899,6 +899,24 @@
     "revokeAllDescription": "このブラウザーを含むすべてのブラウザーとデスクトップアプリで、再度ログインが必要になります。マシンや実行中の作業には影響しません。"
   },
   "billing": {
+    "comparison": {
+      "title": "プランの利用枠を比較",
+      "subtitle": "利用枠はチーム全体で共有されます。すべてのプランに直接接続が含まれます。",
+      "current": "現在のプラン",
+      "description": {
+        "free": "直接接続で使い始める方に。",
+        "go": "中継接続を使う日々の作業に。",
+        "pro": "中継接続の利用が多い作業に。"
+      },
+      "freePrice": "無料",
+      "priceUnavailable": "価格を取得できません",
+      "per": { "month": "/ 月", "year": "/ 年" },
+      "monthlyRelay": "月間中継通信量",
+      "relayAmount": "{amount} GiB",
+      "direct": "直接接続",
+      "included": "含まれる",
+      "monthlyReset": "年間プランでも中継通信量の利用枠は毎月リセットされます。"
+    },
     "plan": {
       "free": "Free", "go": "Go",
       "pro": "Pro", "enterprise": "Enterprise",

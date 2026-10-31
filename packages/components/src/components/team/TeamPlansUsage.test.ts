@@ -113,6 +113,7 @@ test("Free shows finite limits, relay as not included, and no billing actions fo
   expect(metric("turns").text()).toContain("30 per Session")
   expect(usage().find("[data-billing-offer]").exists()).toBe(false)
   expect(usage().text()).toContain("The Team owner can upgrade this Team.")
+  expect(usage().findAll("[data-plan-comparison]")).toHaveLength(3)
 })
 
 test("metered relay shows the remaining allowance and next reset", async () => {
@@ -177,6 +178,9 @@ test("annual billing creates a yearly checkout and keeps monthly request ids sep
   await usage().get("[data-billing-interval-option='year']").trigger("click")
   expect(usage().get("[data-billing-interval-option='year']").attributes("aria-pressed")).toBe("true")
   expect(usage().text()).toContain("Billed annually")
+  expect(usage().get('[data-plan-comparison="go"]').text()).toContain("2 GiB")
+  expect(usage().get('[data-plan-comparison="pro"]').text()).toContain("20 GiB")
+  expect(usage().get('[data-plan-comparison="free"]').text()).toContain("Current plan")
   await button("Upgrade to Go")!.trigger("click"); await flushPromises()
   expect(fake.central.checkout.mock.calls[0]).toEqual(["team-1", "go", expect.any(String), "year"])
   const yearlyId = fake.central.checkout.mock.calls[0]![2]
@@ -315,4 +319,46 @@ test("an earlier account's pending Checkout is not attributed to its replacement
   opened.resolve()
   await flushPromises()
   expect(trackEvent).not.toHaveBeenCalledWith("billing_checkout_opened", expect.anything())
+})
+
+test("comparison uses server allowances for the current plan and stays visible to subscribers", async () => {
+  await setup(fake => fake.central.billing.mockResolvedValue({
+    ...free(), plan: "go", canManageBilling: true,
+    limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: 4_294_967_296 },
+    subscription: { plan: "go", status: "active", paidThrough: "2026-12-01T00:00:00Z", cancelAtPeriodEnd: false },
+  }))
+  const current = usage().get('[data-plan-comparison="go"]')
+  expect(current.text()).toContain("Current plan")
+  expect(current.text()).toContain("4 GiB")
+  expect(current.text()).toContain("Unlimited")
+  expect(current.find("button").exists()).toBe(false)
+  expect(usage().findAll("[data-plan-comparison]")).toHaveLength(3)
+  expect(button("Manage billing")).toBeDefined()
+})
+
+test.each([
+  ["usd", 500, "USD 5.00"],
+  ["jpy", 500, "JPY 500"],
+  ["isk", 50000, "ISK 500"],
+])("Stripe %s prices display in the correct currency units and switch by billing interval", async (currency, unitAmount, expected) => {
+  await setup(fake => fake.central.billing.mockResolvedValue({
+    ...free(), canManageBilling: true,
+    prices: [
+      { plan: "go", interval: "month", unitAmount, currency },
+      { plan: "go", interval: "year", unitAmount: 5000, currency: "usd" },
+    ],
+  }))
+  const go = () => usage().get('[data-plan-comparison="go"]').text().replaceAll("\u00a0", " ")
+  expect(go()).toContain(expected)
+  expect(go()).toContain("/ month")
+  await usage().get("[data-billing-interval-option='year']").trigger("click")
+  expect(go()).toContain("USD 50.00")
+  expect(go()).toContain("/ year")
+  expect(go()).toContain("2 GiB")
+})
+
+test("unavailable prices do not hide current usage or invent a paid price", async () => {
+  await setup(fake => fake.central.billing.mockResolvedValue({ ...free(), prices: null }))
+  expect(metric("members").text()).toContain("3 / 3")
+  expect(usage().get('[data-plan-comparison="go"]').text()).toContain("Price temporarily unavailable")
 })
