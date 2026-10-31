@@ -211,6 +211,14 @@ events and repeated synchronization do not add usage. Attribute a turn to its
 initial input's user and its model snapshot at dispatch; missing attribution is
 shown as unknown. Steering inputs do not redistribute a turn among members.
 
+PostgreSQL maintains a content-free `cp_ai_turns` projection in the same transaction
+as each changed Session snapshot. It resolves input authors once per snapshot,
+upserts changed terminal turns, and removes facts absent from the new snapshot.
+Usage reads use the `(machine_id, ended_at)` index and the stored Session summary
+for titles; they do not expand conversation JSON. Migration 18 backfills existing
+snapshots while holding the Session table against concurrent writes. Machine
+revocation retains these facts, and Session deletion cascades to them.
+
 Aggregate provider-reported `totalTokens` directly. Input/output and cache
 categories are shown separately and are not added to that total. The API also
 retains the optional reasoning-token subtotal.

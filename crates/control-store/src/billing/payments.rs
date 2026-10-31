@@ -121,6 +121,14 @@ impl ControlStore {
             return Err(Error::Invalid("incomplete paid coverage"));
         }
         let tx = self.db.begin().await?;
+        // The analytics FK also locks this parent. Acquire it before the profile,
+        // matching Enterprise updates rather than reversing their lock order.
+        one(
+            &tx,
+            "SELECT id FROM cp_teams WHERE id=$1 FOR KEY SHARE",
+            vec![resource_id(team_id)?.into()],
+        )
+        .await?;
         let changed=tx.execute_raw(sql(
             "UPDATE cp_billing_profiles SET subscription_id=$3,subscription_status=$4,plan=COALESCE($5,plan),paid_through=CASE WHEN $5::text IS NULL THEN paid_through ELSE $6 END,period_anchor=CASE WHEN subscription_id IS NULL OR subscription_id<>$3 THEN $7 ELSE period_anchor END,cancel_at_period_end=$8,reconciled_at=$9 WHERE team_id=$1 AND lease_token=$2 AND lease_until>$9 AND (subscription_id IS NULL OR subscription_id=$3 OR paid_through IS NULL OR paid_through<=$9)",
             vec![resource_id(team_id)?.into(),token.into(),projection.subscription_id.clone().into(),projection.status.clone().into(),projection.paid_plan.clone().into(),projection.paid_through.into(),projection.period_anchor.into(),projection.cancel_at_period_end.into(),now_ms().into()]

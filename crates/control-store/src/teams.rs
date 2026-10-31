@@ -96,19 +96,20 @@ impl ControlStore {
         })
     }
     pub async fn rename_team(&self, user_id: &str, team_id: &str, value: &str) -> Result<Team> {
-        self.authorize_team(user_id, team_id, TeamAction::Rename)
-            .await?;
         let value = name(value)?;
-        self.db
-            .execute_raw(sql(
-                "UPDATE cp_teams SET name=$1 WHERE id=$2",
-                vec![value.into(), resource_id(team_id)?.into()],
-            ))
-            .await?;
+        let tx = self.db.begin().await?;
+        let policy = lock_team_policy(&tx, user_id, team_id).await?;
+        authorize(&policy, TeamAction::Rename)?;
+        tx.execute_raw(sql(
+            "UPDATE cp_teams SET name=$1 WHERE id=$2",
+            vec![value.into(), resource_id(team_id)?.into()],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(Team {
             id: team_id.into(),
             name: value.into(),
-            role: self.team_role(user_id, team_id).await?,
+            role: policy.role().ok_or(Error::Forbidden)?.as_str().into(),
         })
     }
     pub async fn delete_team(&self, user_id: &str, team_id: &str) -> Result<()> {
@@ -255,26 +256,29 @@ impl ControlStore {
         email: &str,
         role: &str,
     ) -> Result<Value> {
-        self.authorize_team(user_id, team_id, TeamAction::ManageMembers)
-            .await?;
         if role != "admin" && role != "member" {
             return Err(Error::Invalid("invalid team role"));
         }
         let email = crate::normalize_email(email)?;
         let token = secret();
         let expires = now_ms() + 7 * 24 * 60 * 60 * 1000;
-        self.db
-            .execute_raw(sql(
-                "INSERT INTO cp_invites VALUES($1,$2,$3,$4,$5)",
-                vec![
-                    secret_hash(&token).into(),
-                    resource_id(team_id)?.into(),
-                    email.into(),
-                    role.into(),
-                    expires.into(),
-                ],
-            ))
-            .await?;
+        let tx = self.db.begin().await?;
+        authorize(
+            &lock_team_policy(&tx, user_id, team_id).await?,
+            TeamAction::ManageMembers,
+        )?;
+        tx.execute_raw(sql(
+            "INSERT INTO cp_invites VALUES($1,$2,$3,$4,$5)",
+            vec![
+                secret_hash(&token).into(),
+                resource_id(team_id)?.into(),
+                email.into(),
+                role.into(),
+                expires.into(),
+            ],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(json!({"token":token,"expiresAt":timestamp(expires)}))
     }
     pub async fn accept_invite(&self, user_id: &str, token: &str) -> Result<Team> {
@@ -348,6 +352,35 @@ impl ControlStore {
             role: self.team_role(user_id, &id.to_string()).await?,
         })
     }
+}
+
+/// Hold authorization through commit. Parent locks precede membership and Machine
+/// writes, matching peer creation and Team membership mutations.
+pub(crate) async fn lock_team_policy(
+    db: &impl ConnectionTrait,
+    user_id: &str,
+    team_id: &str,
+) -> Result<TeamPolicy> {
+    one(
+        db,
+        "SELECT id FROM cp_users WHERE id=$1 AND email_verified AND NOT disabled FOR SHARE",
+        vec![user_id.into()],
+    )
+    .await
+    .map_err(|error| {
+        if matches!(error, Error::NotFound) {
+            Error::Forbidden
+        } else {
+            error
+        }
+    })?;
+    one(
+        db,
+        "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
+        vec![resource_id(team_id)?.into()],
+    )
+    .await?;
+    team_policy(db, user_id, team_id).await
 }
 
 async fn team_policy(
