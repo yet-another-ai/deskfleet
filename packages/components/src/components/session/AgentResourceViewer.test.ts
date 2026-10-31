@@ -2,12 +2,78 @@ import { flushPromises, mount } from "@vue/test-utils"
 import { expect, test, vi } from "vitest"
 import type { FilesApi, FileResourceRequest } from "../../../../client/src/files.ts"
 import { i18n } from "../../i18n/index.ts"
+import { highlighter } from "../../services/code-highlight.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
 
 const request: FileResourceRequest = { target: { kind: "machine", teamId: "team", machineId: "machine" }, sessionId: "session", uri: "src" }
 function render(api: Partial<FilesApi>, selected = request) {
   return mount(AgentResourceViewer, { props: { api: api as FilesApi, request: selected }, global: { plugins: [i18n], stubs: { Teleport: { template: "<slot />" } } }, attachTo: document.body })
 }
+
+function renderText(name: string, text: string, uri = name) {
+  return render({
+    resolveResource: vi.fn().mockResolvedValue({ name, path: `/work/${name}`, kind: "file" }),
+    readResource: vi.fn().mockResolvedValue({ name, data: new TextEncoder().encode(text), mimeType: "application/octet-stream" }),
+  }, { ...request, uri })
+}
+
+test("highlights the resolved code filename with both themes and retains line navigation", async () => {
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const source = '/* multiline\n * comment */\nconst greeting: string = "你好";\n'
+  const view = renderText("main.ts", source, "file:///work/alias#L2-L3")
+  await flushPromises()
+  expect(view.get("pre code").element.textContent).toBe(source)
+  const tokens = view.findAll("pre code span[style]")
+  expect(tokens.length).toBeGreaterThan(3)
+  const keyword = tokens.find(token => token.text() === "const")!
+  const comment = tokens.find(token => token.text().includes("multiline"))!
+  expect(keyword.attributes("style")).toContain("--shiki-light:")
+  expect(keyword.attributes("style")).toContain("--shiki-dark:")
+  expect(keyword.attributes("style")).not.toBe(comment.attributes("style"))
+  expect(tokens.find(token => token.text().includes("comment */"))!.attributes("style")).toBe(comment.attributes("style"))
+  expect(view.findAll("pre .bg-ui-hover").map(line => line.text())).toEqual(['* comment */', 'const greeting: string = "你好";'])
+  expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: "center" })
+  expect(scroll.mock.contexts[0]).toBe(view.get("pre .bg-ui-hover").element)
+  view.unmount()
+})
+
+test.each(["main.ts", "notes.txt", "unknown.custom"])("preserves literal markup and whitespace in %s", async name => {
+  const source = '\tconst markup = "<img src=x onerror=alert(1)> & 文本";\r\n\r\n  // end\r\n'
+  const view = renderText(name, source)
+  await flushPromises()
+  expect(view.get("pre code").element.textContent).toBe(source)
+  expect(view.find("pre img").exists()).toBe(false)
+  expect(view.find("pre code span[style]").exists()).toBe(name === "main.ts")
+  view.unmount()
+})
+
+test.each(["", "\n\n", "\r\n\r\n"])("preserves empty source lines: %j", async source => {
+  const view = renderText("empty.ts", source)
+  await flushPromises()
+  expect(view.get("pre code").element.textContent).toBe(source)
+  expect(view.find('[role="alert"]').exists()).toBe(false)
+  view.unmount()
+})
+
+test("keeps large source files readable without tokenizing", async () => {
+  const tokenize = vi.spyOn(highlighter, "codeToTokens")
+  const source = `const value = "${"x".repeat(200_000)}";`
+  const view = renderText("large.ts", source)
+  await flushPromises()
+  expect(view.get("pre code").element.textContent).toBe(source)
+  expect(tokenize).not.toHaveBeenCalled()
+  view.unmount()
+})
+
+test("retains the plain text preview if syntax highlighting fails", async () => {
+  vi.spyOn(highlighter, "codeToTokens").mockImplementation(() => { throw new Error("Highlight failed") })
+  const source = "const value = 1;\n"
+  const view = renderText("main.ts", source)
+  await flushPromises()
+  expect(view.get("pre code").element.textContent).toBe(source)
+  expect(view.find('[role="alert"]').exists()).toBe(false)
+  view.unmount()
+})
 
 test("opens a directory on the session machine without prompting for a download", async () => {
   const resolveResource = vi.fn().mockResolvedValue({ name: "src", path: "/work/src", kind: "directory" })
