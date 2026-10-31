@@ -840,6 +840,14 @@ cannot connect directly. Desktop streaming, terminal traffic, and bulk results
 need flow control appropriate to their latency and throughput; validate this
 with the selected WebRTC implementation.
 
+The client retains a grant's structured relay denial reason through connection
+failures. Shared error notices show localized recovery guidance and collapsible
+technical details. Free-plan and exhausted TURN allowances link to the selected
+Team's plans and usage page; a metering outage suggests retrying later without
+a billing action. Relay guidance appears only after direct transport fails,
+never in place of an authorization or capture error. Generic desktop failures
+also suggest checking that the machine is awake and unlocked.
+
 Desktop's programmatic [TCP forwarding](ports.md) API owns local loopback
 listeners in its main process, independently of windows and the local Agent.
 The target daemon enables native forwarding only for a `ports:forward` grant.

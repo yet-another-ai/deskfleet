@@ -1,6 +1,7 @@
 import type { AgentEvent, AgentMethod, AgentMethods, AgentSessionRecord, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { DesktopEvent, IceCandidate, TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts"
 import type { DataChannel } from "./data-channel.ts"
+import type { RelayDeniedReason } from "./relay.ts"
 
 /** Agent operations share ACP framing across local and remote message channels. */
 export interface AgentSignalingApi {
@@ -8,6 +9,7 @@ export interface AgentSignalingApi {
   prepare?(sessionId: string): Promise<RTCIceServer[]>
   /** Additional context for a transport failure, without masking authorization errors. */
   connectionFailure?(sessionId: string): string | undefined
+  connectionFailureReason?(sessionId: string): RelayDeniedReason | null | undefined
   control?<M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]): Promise<AgentMethods[M]["result"]> | undefined
   history?: {
     available(): boolean

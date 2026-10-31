@@ -1,4 +1,4 @@
-import { relayFailureMessage, type RelayDeniedReason } from "./relay.ts"
+import { relayFailureError, type RelayDeniedReason } from "./relay.ts"
 import { observePeerGrant, type PeerConnectionTelemetry } from "./peer-telemetry.ts"
 import type { CentralApi } from "./central.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -77,8 +77,7 @@ export async function connectPortPeer(
   }
   function abort(): void { fail(new Error("Port connection was cancelled"), false) }
   function connectionFailed(error: Error): void {
-    const detail = relayFailureMessage(relayDeniedReason)
-    fail(detail ? new Error(detail) : error)
+    fail(relayFailureError(relayDeniedReason, error))
   }
   function checkReady(): void {
     if (opened && remoteReady && !closed) { clearTimeout(setup); telemetry?.connected(); resolveReady() }

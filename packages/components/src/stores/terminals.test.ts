@@ -1,10 +1,11 @@
 import { client as platformClient } from "@deskfleet/client/platform"
+import { flushPromises } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { TerminalSessionEvent, TerminalSummary } from "../../../client/src/terminal.ts"
 import { TerminalClient } from "../services/terminal-client.ts"
 import { useTerminalsStore } from "./terminals.ts"
-import { deferred } from "../test/desktop-media.ts"
+import { deferred, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
 
 const shell: TerminalSummary = { id: "shell-1", title: "home", cwd: "/home/user", cols: 80, rows: 24, status: "running" }
 const stores: ReturnType<typeof useTerminalsStore>[] = []
@@ -20,6 +21,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const store of stores.splice(0)) store.$dispose()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 function setup() {
@@ -27,6 +29,28 @@ function setup() {
   stores.push(store)
   return store
 }
+
+test("keeps relay recovery metadata for a failed attachment and clears it when transport closes", async () => {
+  stubWebRtc()
+  vi.spyOn(platformClient.terminal, "dial").mockResolvedValue(shell)
+  vi.spyOn(platformClient.terminal, "offer").mockResolvedValue({ sdp: "answer" })
+  vi.spyOn(platformClient.terminal, "close").mockResolvedValue()
+  vi.spyOn(platformClient.terminal, "onEvent").mockReturnValue(() => {})
+  const original = platformClient.terminal.connectionFailureReason
+  platformClient.terminal.connectionFailureReason = () => "turn_quota_exhausted"
+  try {
+    const store = setup()
+    const attachment = store.attach(shell.id, () => {})
+    const failed = expect(attachment.ready).rejects.toMatchObject({ code: "turn_quota_exhausted" })
+    await flushPromises()
+    TestPeer.instances.at(-1)!.changeState("failed")
+    await failed
+    expect(store.relayDeniedReason).toBe("turn_quota_exhausted")
+    store.closeTransport()
+    expect(store.error).toBeNull()
+    expect(store.relayDeniedReason).toBeUndefined()
+  } finally { platformClient.terminal.connectionFailureReason = original }
+})
 
 test("lists, dials and hangs up shells through signaling without needing a data peer", async () => {
   const list = vi.spyOn(platformClient.terminal, "list").mockResolvedValue([shell])

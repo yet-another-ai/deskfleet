@@ -221,8 +221,12 @@ test.each([
   expect(f.remote.api.agent.connectionFailure!("direct")).toContain(message)
   expect(f.remote.api.terminal.connectionFailure!("direct")).toContain(message)
   expect(f.remote.api.desktop.connectionFailure!("direct")).toContain(message)
+  expect(f.remote.api.agent.connectionFailureReason!("direct")).toBe(reason)
+  expect(f.remote.api.terminal.connectionFailureReason!("direct")).toBe(reason)
+  expect(f.remote.api.desktop.connectionFailureReason!("direct")).toBe(reason)
   await f.remote.api.agent.close("direct")
   expect(f.remote.api.agent.connectionFailure!("direct")).toBeUndefined()
+  expect(f.remote.api.desktop.connectionFailureReason!("direct")).toBeUndefined()
 })
 
 

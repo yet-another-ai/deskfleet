@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
+import ErrorNotice from "../common/ErrorNotice.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
 import { ArrowUp, File, Folder, FolderOpen, Home, RefreshCw } from "@lucide/vue"
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { FileEntry, FileListing, FileLocation, FilesApi, FileTarget } from "../../../../client/src/files.ts"
 import { fileSize } from "../../services/file-format.ts"
@@ -16,7 +17,7 @@ const target = computed<FileTarget>(() => props.target.kind === "local" && listi
 const selected = computed(() => new Set(props.selection.map(entry => entry.path)))
 const hidden = ref(false)
 const loading = ref(false)
-const error = ref<string>()
+const error = shallowRef<unknown>()
 const entries = computed(() => listing.value?.entries.filter(entry => hidden.value || !entry.name.startsWith('.')) ?? [])
 let requestedPath: string | undefined
 let generation = 0
@@ -38,14 +39,14 @@ async function navigate(path?: string, chosen?: FileListing): Promise<void> {
     listing.value = next
     emit("location", { target: target.value, path: next.path })
   } catch (reason) {
-    if (!disposed && current === generation) error.value = reason instanceof Error ? reason.message : String(reason)
+    if (!disposed && current === generation) error.value = reason
   } finally { if (current === generation) loading.value = false }
 }
 async function choose(): Promise<void> {
   try {
     const next = await props.api.chooseLocalDirectory()
     if (next && !disposed) await navigate(next.path, next)
-  } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
+  } catch (reason) { if (!disposed) error.value = reason }
 }
 watch(() => props.revision, () => { void navigate(listing.value?.path) })
 watch(() => props.resetKey, () => {
@@ -72,11 +73,10 @@ onBeforeUnmount(() => { disposed = true; ++generation })
     </nav>
     <div class="file-browser-entries max-h-80 min-h-40 flex-1 overflow-y-auto border-t border-ui-border bg-ui-canvas" :aria-busy="loading">
       <p v-if="loading" class="m-0 p-3 text-sm text-ui-text-muted" role="status">{{ t('folderPicker.loading') }}</p>
-      <div v-else-if="error" class="flex flex-col items-start gap-2 p-3">
-        <p class="m-0 break-all text-xs text-ui-danger" role="alert">{{ error }}</p>
+      <ErrorNotice v-else-if="error" :error="error" class="m-3">
         <UiButton v-if="target.kind === 'local'" type="button" @click="choose">{{ t('files.chooseFolder') }}</UiButton>
         <UiButton v-else type="button" @click="navigate(requestedPath)">{{ t('folderPicker.retry') }}</UiButton>
-      </div>
+      </ErrorNotice>
       <ul v-else-if="entries.length" class="m-0 list-none p-0">
         <li v-for="entry in entries" :key="entry.path" class="flex min-w-0 items-center gap-2 px-3 py-2 text-[13px]" :class="selected.has(entry.path) && 'bg-ui-hover'">
           <UiCheckbox v-if="selectable !== false" :model-value="selected.has(entry.path)" :aria-label="t('files.select', { name: entry.name })" @update:model-value="select(entry)" />

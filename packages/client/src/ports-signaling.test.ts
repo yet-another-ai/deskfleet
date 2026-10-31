@@ -164,7 +164,7 @@ test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const
   Object.assign(f.grant, { relayDeniedReason })
   f.native.answer = async () => { f.events().fail(new Error("ICE failed")) }
   await expect(f.connect()).rejects.toThrow("Direct connection failed.")
-  expect(f.failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay") }))
+  expect(f.failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay"), code: relayDeniedReason, relayDeniedReason }))
   expect(telemetry).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: relayDeniedReason, outcome: "failed", transport: "unknown" } })
   expect(telemetry).toHaveBeenCalledTimes(2)
 })

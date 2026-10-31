@@ -1,4 +1,5 @@
 import type { TerminalSignalingApi } from "../../../client/src/terminal.ts"
+import { RelayConnectionError, relayFailureError, type RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { IceCandidate } from "../../../client/src/desktop-media.ts"
 import { DataChannelErrorEvent, type DataChannel } from "../../../client/src/data-channel.ts"
 import {
@@ -12,7 +13,7 @@ import {
 
 export type TerminalConnectionState = "idle" | "connecting" | "connected" | "error"
 export type TerminalListener = (event: TerminalEvent, acknowledge: () => void) => void
-type TransportSignaling = Pick<TerminalSignalingApi, "offer" | "candidate" | "close" | "onEvent" | "prepare" | "connectionFailure" | "connectChannel">
+type TransportSignaling = Pick<TerminalSignalingApi, "offer" | "candidate" | "close" | "onEvent" | "prepare" | "connectionFailure" | "connectionFailureReason" | "connectChannel">
 
 interface PendingRequest {
   resolve: (result: unknown) => void
@@ -62,7 +63,7 @@ export function decodeTerminalBytes(data: string): Uint8Array {
 /** An ordered message channel. Terminal processes belong to the daemon, independently of this connection. */
 export class TerminalClient {
   readonly #api: TransportSignaling
-  readonly #state: (state: TerminalConnectionState, error?: string) => void
+  readonly #state: (state: TerminalConnectionState, error?: string, relayDeniedReason?: RelayDeniedReason) => void
   readonly #event: (event: TerminalEvent) => void
   readonly #pending = new Map<number, PendingRequest>()
   readonly #listeners = new Map<string, TerminalListener>()
@@ -74,7 +75,7 @@ export class TerminalClient {
 
   constructor(
     api: TransportSignaling,
-    state: (state: TerminalConnectionState, error?: string) => void = () => {},
+    state: (state: TerminalConnectionState, error?: string, relayDeniedReason?: RelayDeniedReason) => void = () => {},
     event: (event: TerminalEvent) => void = () => {},
   ) {
     this.#api = api
@@ -98,7 +99,7 @@ export class TerminalClient {
         const channel: DataChannel = this.#api.connectChannel?.(id) ?? peer!.createDataChannel(TERMINAL_CHANNEL, { ordered: true })
         const session: PeerSession = {
           id, peer, channel, unsubscribe: () => {},
-          timeout: setTimeout(() => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection timed out")), 20_000),
+          timeout: setTimeout(() => this.#connectionFailed(session, "Terminal connection timed out"), 20_000),
           resolve, reject, offered: false, remoteReady: !peer,
           localCandidates: [], remoteCandidates: [],
           localSending: Promise.resolve(), remoteAdding: Promise.resolve(),
@@ -113,7 +114,7 @@ export class TerminalClient {
             } else if (event.kind === "error") {
               this.#fail(session, new Error(event.error))
             } else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) {
-              this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
+              this.#connectionFailed(session, "Terminal connection closed")
             }
           })
           peer.onicecandidate = ({ candidate }) => {
@@ -129,13 +130,14 @@ export class TerminalClient {
           }
           peer.onconnectionstatechange = () => {
             if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
-              this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
+              this.#connectionFailed(session, "Terminal connection closed")
             }
           }
         }
         channel.onopen = () => this.#ready(session)
-        channel.onclose = () => this.#fail(session, new Error(this.#api.connectionFailure?.(session.id) ?? "Terminal connection closed"))
-        channel.onerror = event => this.#fail(session, event instanceof DataChannelErrorEvent ? event.error : new Error("Terminal data channel failed"))
+        channel.onclose = () => this.#connectionFailed(session, "Terminal connection closed")
+        channel.onerror = event => event instanceof DataChannelErrorEvent
+          ? this.#fail(session, event.error) : this.#connectionFailed(session, "Terminal data channel failed")
         channel.onmessage = ({ data }) => this.#message(session, data)
         if (peer) void this.#negotiate(session).catch((error: unknown) => this.#fail(session, errorOf(error)))
         else this.#ready(session)
@@ -347,8 +349,14 @@ export class TerminalClient {
   #fail(session: PeerSession, error: Error): void {
     if (this.#current !== session) return
     this.#release(session, error)
-    this.#state("error", error.message)
+    if (error instanceof RelayConnectionError) this.#state("error", error.message, error.relayDeniedReason)
+    else this.#state("error", error.message)
     for (const [sessionId, listener] of this.#listeners) listener({ kind: "error", sessionId, error: error.message }, () => {})
+  }
+
+  #connectionFailed(session: PeerSession, fallback: string): void {
+    this.#fail(session, relayFailureError(this.#api.connectionFailureReason?.(session.id),
+      new Error(this.#api.connectionFailure?.(session.id) ?? fallback)))
   }
 
   close(): void {

@@ -1,6 +1,7 @@
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { defineStore } from "pinia"
 import { onScopeDispose, ref } from "vue"
+import type { RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { TerminalSummary } from "../../../../apps/daemon/src/terminal-protocol.ts"
 import { TerminalClient, type TerminalConnectionState, type TerminalListener } from "../services/terminal-client.ts"
 
@@ -10,6 +11,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const sessions = ref<TerminalSummary[]>([])
   const state = ref<TerminalConnectionState>("idle")
   const error = ref<string | null>(null)
+  const relayDeniedReason = ref<RelayDeniedReason>()
   /** The tab last shown in each Session Worktree's terminal panel. */
   const selected = ref<Record<string, string>>({})
   /** The title each shell's running program last reported; replay restores it after reattaching. */
@@ -24,9 +26,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
   })
 
   function connection(): TerminalClient {
-    client ??= new TerminalClient(platformClient.terminal, (next, detail) => {
+    client ??= new TerminalClient(platformClient.terminal, (next, detail, relayReason) => {
       state.value = next
       error.value = detail ?? null
+      relayDeniedReason.value = relayReason
     }, (event) => {
       if (event.kind !== "exit") return
       const terminal = sessions.value.find(({ id }) => id === event.sessionId)
@@ -61,8 +64,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
       }
       sessions.value = [...merged.values()]
       error.value = null
+      relayDeniedReason.value = undefined
     }).catch((reason: unknown) => {
       error.value = reason instanceof Error ? reason.message : String(reason)
+      relayDeniedReason.value = undefined
     }).finally(() => { refreshing = null; refreshChanges = null })
     return refreshing
   }
@@ -70,6 +75,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
   /** A `worktreeId` makes the terminal its Session's; without `cwd` it starts in the Worktree's first directory. */
   async function create(options: { cwd?: string; worktreeId?: string; cols?: number; rows?: number } = {}): Promise<TerminalSummary> {
     error.value = null
+    relayDeniedReason.value = undefined
     const { cols = 80, rows = 24, cwd, worktreeId } = options
     const summary = remember(await platformClient.terminal.dial({
       mode: "create", terminalId: crypto.randomUUID(), cols, rows,
@@ -125,5 +131,5 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
   function closeTransport(): void { client?.close(); client = null }
   onScopeDispose(() => { unsubscribe(); closeTransport() })
-  return { sessions, state, error, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup, closeTransport }
+  return { sessions, state, error, relayDeniedReason, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup, closeTransport }
 })

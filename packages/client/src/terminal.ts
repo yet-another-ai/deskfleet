@@ -1,6 +1,7 @@
 import type { DesktopEvent, IceCandidate, TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts"
 import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "../../../apps/daemon/src/terminal-protocol.ts"
 import type { DataChannel } from "./data-channel.ts"
+import type { RelayDeniedReason } from "./relay.ts"
 
 export type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "../../../apps/daemon/src/terminal-protocol.ts"
 
@@ -12,6 +13,7 @@ export interface TerminalSignalingApi {
   prepare?(sessionId: string): Promise<RTCIceServer[]>
   /** Additional context for a transport failure, without masking authorization errors. */
   connectionFailure?(sessionId: string): string | undefined
+  connectionFailureReason?(sessionId: string): RelayDeniedReason | null | undefined
   list(): Promise<TerminalSummary[]>
   dial(options: TerminalDial): Promise<TerminalSummary>
   hangup(terminalId: string): Promise<void>

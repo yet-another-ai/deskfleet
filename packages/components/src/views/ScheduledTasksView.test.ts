@@ -355,7 +355,7 @@ test("an offline schedule detail reads the synced snapshot and can retry a faile
   scheduleSnapshot.mockRejectedValueOnce(new Error("Snapshot unavailable"))
   account.machines.value[0]!.online = false
   await flushPromises()
-  expect(wrapper.get('[role="alert"]').text()).toBe("Snapshot unavailable")
+  expect(wrapper.get('[role="alert"] pre').text()).toBe("Snapshot unavailable")
   const retry = wrapper.findAll("button").find(button => button.text() === "Retry")!
   expect(retry.attributes("disabled")).toBeUndefined()
   await retry.trigger("click")

@@ -82,6 +82,23 @@ test("a transport error disables input and is reported as the connection state",
   await flushPromises()
   expect(fixture.wrapper.get("[data-surface]").attributes("data-interactive")).toBe("false")
   expect(fixture.connection()).toEqual(["error", "Peer disconnected"])
+  expect(fixture.wrapper.get('[role="alert"]').text()).toContain("Disconnected")
+  expect(fixture.wrapper.get("details").attributes("open")).toBeUndefined()
+  expect(fixture.wrapper.get("pre").text()).toBe("Peer disconnected")
+  fixture.wrapper.unmount()
+})
+
+test("a displayed relay failure keeps its cause when another terminal refresh clears shared errors", async () => {
+  const fixture = setup()
+  fixture.resolve()
+  await flushPromises()
+  fixture.terminals.relayDeniedReason = "turn_quota_exhausted"
+  fixture.emit({ kind: "error", sessionId: "terminal-1", error: "Relay unavailable" }, () => {})
+  await flushPromises()
+  expect(fixture.wrapper.get('[role="alert"]').text()).toContain(i18n.global.t("errors.turn_quota_exhausted.title"))
+  fixture.terminals.relayDeniedReason = undefined
+  await flushPromises()
+  expect(fixture.wrapper.get('[role="alert"]').text()).toContain(i18n.global.t("errors.turn_quota_exhausted.title"))
   fixture.wrapper.unmount()
 })
 

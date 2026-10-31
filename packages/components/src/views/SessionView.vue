@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import UiButton from "../components/common/UiButton.vue"
+import ErrorNotice from "../components/common/ErrorNotice.vue"
 import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
 import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
@@ -268,17 +269,18 @@ async function checkOperation(operationId: string): Promise<void> {
           class="pointer-events-none absolute inset-x-0 -top-6 h-6 [background:linear-gradient(to_bottom,transparent,var(--ui-color-canvas))]"
         />
         <div class="flex w-full shrink-0 flex-col gap-2 px-6 pb-2 empty:hidden">
-          <AgentNotice v-if="!view?.loading && (!connected || view?.error)" tone="warning" :text="t('agent.disconnected')" :detail="view?.error || agents.error">
+          <ErrorNotice v-if="!view?.loading && (!connected || view?.error)" :title="t('agent.disconnected')" :description="view?.error || agents.error ? undefined : ''" :error="view?.error || agents.error" :relay-denied-reason="view?.error ? view.relayDeniedReason : agents.error ? agents.relayDeniedReason : undefined">
             <UiButton type="button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</UiButton>
-          </AgentNotice>
-          <AgentNotice v-for="operation in pending" :key="operation.operationId" tone="warning" :text="t('agent.operationPending')" :detail="operation.error">
+          </ErrorNotice>
+          <ErrorNotice v-for="operation in pending" :key="operation.operationId" :title="t('agent.operationPending')" description="" :error="operation.error">
             <UiButton type="button" :disabled="busy" @click="action(() => checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</UiButton>
-          </AgentNotice>
-          <AgentNotice v-if="draftError && !pending.some(operation => operation.error === draftError)" tone="danger" :text="draftError" />
+          </ErrorNotice>
+          <ErrorNotice v-if="draftError && !pending.some(operation => operation.error === draftError)" :error="draftError" />
           <template v-if="snapshot">
             <AgentNotice v-if="!active" :text="t(snapshot.session.archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')" />
-            <AgentNotice v-if="snapshot.session.lifecycle !== 'ready'" :tone="snapshot.session.lifecycle === 'provision_failed' ? 'danger' : 'progress'" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
-            <AgentNotice v-else-if="snapshot.session.error" tone="danger" :text="snapshot.session.error" />
+            <ErrorNotice v-if="snapshot.session.lifecycle === 'provision_failed'" :title="t('agent.lifecycle.provision_failed')" :error="snapshot.session.error" />
+            <AgentNotice v-else-if="snapshot.session.lifecycle !== 'ready'" tone="progress" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
+            <ErrorNotice v-else-if="snapshot.session.error" :error="snapshot.session.error" />
             <AgentNotice v-if="additionalDirectoriesUnavailable" tone="warning" :text="t('agent.additionalDirectoriesUnavailable')" :detail="location?.worktree?.directories[0]?.path" />
             <AgentNotice v-if="run && ['starting', 'stopping'].includes(run.state)" tone="progress" :text="t(`agent.runState.${run.state}`)" />
             <AgentNotice v-else-if="resumeUnavailable" :text="t('agent.resumeUnavailable')" />

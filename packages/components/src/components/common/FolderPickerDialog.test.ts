@@ -1,5 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
+import { HttpError } from "@deskfleet/client/http-central"
 import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
 import { i18n } from "../../i18n/index.ts"
 import FolderPickerDialog from "./FolderPickerDialog.vue"
@@ -121,7 +122,8 @@ test("selecting an edited path validates it and never selects the previous folde
   await button(view, "Select folder").trigger("click")
   await flushPromises()
   expect(browse).toHaveBeenLastCalledWith("/missing")
-  expect(view.get('[role="alert"]').text()).toBe("Directory not found")
+  expect(view.get('[role="alert"] pre').text()).toBe("Directory not found")
+  expect(view.get('[role="alert"] details').attributes("open")).toBeUndefined()
   expect(view.emitted("select")).toBeUndefined()
   await view.get("[data-edit-path]").trigger("click")
   await view.get('[name="folder-picker-path"]').setValue("  /home/agent/code  ")
@@ -132,16 +134,18 @@ test("selecting an edited path validates it and never selects the previous folde
 })
 
 test("failed navigation cannot select the previous folder and retries the failed path", async () => {
-  const browse = vi.fn().mockResolvedValueOnce(home).mockRejectedValueOnce(new Error("Permission denied")).mockResolvedValueOnce(code)
+  const browse = vi.fn().mockResolvedValueOnce(home).mockRejectedValueOnce(new HttpError(403, "Permission denied")).mockResolvedValueOnce(code)
   const view = await render(browse)
   await flushPromises()
   await view.get('[aria-label="Open code"]').trigger("click")
   await flushPromises()
-  expect(view.get('[role="alert"]').text()).toBe("Permission denied")
+  expect(view.get('[role="alert"]').text()).toContain(i18n.global.t("errors.forbidden.title"))
+  expect(view.get('[role="alert"] pre').text()).toBe("Permission denied")
   expect(button(view, "Select folder").attributes("disabled")).toBeDefined()
   await button(view, "Retry").trigger("click")
   await flushPromises()
   expect(browse).toHaveBeenLastCalledWith(code.path)
+  expect(view.find('[role="alert"]').exists()).toBe(false)
   await button(view, "Select folder").trigger("click")
   expect(view.emitted("select")).toEqual([[code.path]])
 })

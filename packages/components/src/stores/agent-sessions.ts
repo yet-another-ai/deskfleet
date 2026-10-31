@@ -10,6 +10,7 @@ import type { ComposerMention } from "../services/composer-mentions.ts"
 import type { ComposerReference, ComposerReferenceSearch } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
 import { agentComposerCatalog, agentConfiguration as normalizeAgentConfiguration } from "../../../../apps/daemon/src/agent-configuration-protocol.ts"
 import type { AgentConfiguration } from "../../../client/src/agent-configuration.ts"
+import { RelayConnectionError, type RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { GitChangedNotification, GitDiffRequest } from "../../../../apps/daemon/src/git-protocol.ts"
 import { useProvidersStore } from "./providers.ts"
 import { AgentClient, type AgentConnectionState, type AgentNotification } from "../services/agent-client.ts"
@@ -23,6 +24,7 @@ export interface AgentSessionView {
   events: AgentEvent[]
   loading: boolean
   error: string | null
+  relayDeniedReason?: RelayDeniedReason
   historySeq: string
   snapshotSeq: string
 }
@@ -72,6 +74,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const unclassifiedCommands = new Map<string, Parameters<typeof agentComposerCatalog>[0]>()
   const state = ref<AgentConnectionState>("idle")
   const error = ref<string | null>(null)
+  const relayDeniedReason = ref<RelayDeniedReason>()
   const operations = ref<Record<string, PendingAgentOperation>>({})
   const journals = new Map<string, Map<string, AgentEvent>>()
   // Central history and in-flight reads can arrive after a successful deletion.
@@ -233,9 +236,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     advance(snapshot.session.id)
   }
 
-  const client = new AgentClient(api, (next, detail) => {
+  const client = new AgentClient(api, (next, detail, relayReason) => {
     state.value = next
     error.value = detail ?? null
+    relayDeniedReason.value = relayReason
     if (next === "error" || next === "idle") {
       initialized = null
       connectionGeneration++
@@ -295,7 +299,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   function refresh(sessionId?: string): Promise<void> {
     refreshPending = true
-    const list = (refreshing ??= refreshList().catch(reason => { error.value = messageOf(reason) }).finally(() => { refreshing = null }))
+    const list = (refreshing ??= refreshList().catch(reason => {
+      error.value = messageOf(reason)
+      relayDeniedReason.value = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
+    }).finally(() => { refreshing = null }))
     return list.then(() => {
       const id = sessionId ?? activeSessionId
       if (id && id === activeSessionId && sessions.value[id]) return open(id, false)
@@ -351,10 +358,16 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         const current = view(id)
         const latest = current.events.at(-1)?.seq ?? "0"
         const target = sequenceCompare(latest, current.snapshotSeq) > 0 ? latest : current.snapshotSeq
-        if (sequenceCompare(current.historySeq, target) >= 0) { current.error = null; return }
+        if (sequenceCompare(current.historySeq, target) >= 0) { current.error = null; current.relayDeniedReason = undefined; return }
         if (events.length === 0 || current.historySeq === afterSeq) throw new Error("Conversation history is incomplete; reconnect to load missing events")
       }
-    })().catch(reason => { if (!deletedSessions.has(id)) view(id).error = messageOf(reason); throw reason }).finally(() => { reads.delete(id) })
+    })().catch(reason => {
+      if (!deletedSessions.has(id)) {
+        view(id).error = messageOf(reason)
+        view(id).relayDeniedReason = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
+      }
+      throw reason
+    }).finally(() => { reads.delete(id) })
     reads.set(id, reading)
     return reading
   }
@@ -366,12 +379,16 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const current = view(id)
     if (showLoading) current.loading = true
     current.error = null
+    current.relayDeniedReason = undefined
     const loading = (async () => {
       snapshotReceived(await call("_deskfleet/session/subscribe", { sessionId: id }))
       if (deletedSessions.has(id)) return
       await readHistory(id)
       await reconcileOperations(id)
-    })().catch(reason => { current.error = messageOf(reason) }).finally(() => { current.loading = false; loads.delete(id) })
+    })().catch(reason => {
+      current.error = messageOf(reason)
+      current.relayDeniedReason = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
+    }).finally(() => { current.loading = false; loads.delete(id) })
     loads.set(id, loading)
     return loading
   }
@@ -617,5 +634,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => client.close()
   onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); closeTransport() })
-  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, relayDeniedReason, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

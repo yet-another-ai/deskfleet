@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
+import ErrorNotice from "../common/ErrorNotice.vue"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { ArrowLeft, ArrowRight, File, Folder, RotateCcw, X } from "@lucide/vue"
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { FileConflict, FileEntry, FileLocation, FilesApi, FileTarget, FileTransfer } from "../../../../client/src/files.ts"
 import { fileSize } from "../../services/file-format.ts"
@@ -17,7 +18,7 @@ const paths = ref<{ local?: FileLocation; remote?: FileLocation }>({})
 const selection = ref<{ local: FileEntry[]; remote: FileEntry[] }>({ local: [], remote: [] })
 const resetKey = ref(0)
 const transfers = ref<FileTransfer[]>([])
-const error = ref<string>()
+const error = shallowRef<unknown>()
 const busy = ref(false)
 const revision = ref(0)
 let disposed = false
@@ -43,7 +44,7 @@ const unsubscribeAccount = client.central?.onEvent(event => { if (event.type ===
 async function operation(action: () => Promise<unknown>): Promise<void> {
   if (busy.value) return
   busy.value = true; error.value = undefined
-  try { await action() } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
+  try { await action() } catch (reason) { if (!disposed) error.value = reason }
   finally { if (!disposed) busy.value = false }
 }
 function transfer(side: "local" | "remote"): void {
@@ -97,11 +98,12 @@ onBeforeUnmount(() => { disposed = true; unsubscribe(); unsubscribeAccount?.() }
               <UiButton type="button" :disabled="busy" @click="retry(task, 'skip')">{{ t('files.skip') }}</UiButton>
               <UiButton variant="danger" type="button" :disabled="busy" @click="retry(task, 'replace')">{{ t('files.replace') }}</UiButton>
             </div>
-            <p v-if="['failed', 'conflict', 'cancelled'].includes(task.state) && task.error" class="mt-0 mb-2 break-words pl-6 text-xs text-ui-danger" role="alert">{{ task.error }}</p>
+            <p v-if="task.state === 'conflict' && task.error" class="mt-0 mb-2 break-words pl-6 text-xs text-ui-warning" role="alert">{{ task.error }}</p>
+            <ErrorNotice v-else-if="['failed', 'cancelled'].includes(task.state) && task.error" :error="task.error" class="mb-2" />
           </div>
         </div>
       </section>
-      <p v-if="error" class="mb-0 shrink-0 break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
+      <ErrorNotice v-if="error" :error="error" class="mt-3 shrink-0" />
     </div>
   </div>
 </template>

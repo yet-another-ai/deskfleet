@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { storeToRefs } from "pinia"
-import { computed, onScopeDispose, ref } from "vue"
+import { computed, onScopeDispose, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
+import ErrorNotice from "../components/common/ErrorNotice.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { hasSubmittableText, sessionTitleFromDraft } from "../services/composer-attachments.ts"
@@ -37,7 +38,7 @@ const mentions = computed({ get: () => agents.draftMentions[draftKey.value] ?? [
 const baseBranch = ref<string>()
 const baseRevisions = ref<GitPreparationSnapshot["baseRevisions"]>()
 const submitting = ref(false)
-const error = ref<string | null>(null)
+const error = shallowRef<unknown>()
 async function submit(): Promise<void> {
   const target = newSessionTarget.value
   const text = draft.value
@@ -79,7 +80,7 @@ async function submit(): Promise<void> {
         agents.draftErrors[id] = reason instanceof Error ? reason.message : String(reason)
       })
     }
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
+  } catch (reason) { error.value = reason }
   finally {
     if (preparingSessionId) delete agents.preparingDrafts[preparingSessionId]
     submitting.value = false
@@ -93,8 +94,8 @@ async function submit(): Promise<void> {
     <h1 class="m-0 text-center text-3xl font-semibold">{{ t("newSession.heading") }}</h1>
     <p v-if="!newSessionTarget" class="m-0 text-ui-text-muted">{{ t("newSession.noTarget") }}</p>
     <p v-if="submitting" role="status" class="text-sm text-ui-text-muted">{{ t("agent.creating") }}</p>
-    <p v-if="error" role="alert" class="max-w-xl text-sm text-ui-danger">{{ error }}</p>
-    <p v-if="newSessionTarget?.machine.online && providers.error" role="alert" class="max-w-xl text-sm text-ui-danger">{{ providers.error }}</p>
+    <ErrorNotice v-if="error" :error="error" class="w-full max-w-xl" />
+    <ErrorNotice v-if="newSessionTarget?.machine.online && providers.error" :error="providers.error" class="w-full max-w-xl" />
     <p v-else-if="newSessionTarget?.machine.online && providers.ready && !providers.providers.length" class="max-w-xl text-center text-sm text-ui-text-muted">{{ t('providers.noneConfigured') }} <RouterLink :to="{ name: 'settings-agents' }" class="text-ui-accent hover:underline">{{ t('providers.manage') }}</RouterLink></p>
   </div>
   <SessionComposer v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" v-model:context="sessionContext" v-model:base-branch="baseBranch" v-model:base-revisions="baseRevisions" :location="newSessionTarget" :disabled="!newSessionTarget?.machine.online || !providers.ready || !providers.selectedId" :submitting="submitting" show-target @submit="submit" />

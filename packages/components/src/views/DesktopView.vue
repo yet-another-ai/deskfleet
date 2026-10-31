@@ -2,6 +2,7 @@
 import UiButton from "../components/common/UiButton.vue"
 import UiSelect from "../components/common/UiSelect.vue"
 import UiCheckbox from "../components/common/UiCheckbox.vue"
+import ErrorNotice from "../components/common/ErrorNotice.vue"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 
 import { GripVertical, LoaderCircle, Maximize, Minimize, MonitorPlay, Play, RefreshCw, SlidersHorizontal, Unplug } from "@lucide/vue"
@@ -15,6 +16,7 @@ import { commonDesktopCodecs, desktopCodecLabel, useDesktopConnection } from "..
 import { useDesktopInput } from "../composables/useDesktopInput.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
+import { errorPresentation } from "../services/error-presentation.ts"
 
 const platformClient = usePlatformClient()
 
@@ -27,7 +29,7 @@ const machine = computed(() => fleet.findMachine(props.machineId))
 const local = computed(() => props.machineId === fleet.targetId)
 const capabilities = shallowRef<DesktopCapabilities | null>(null)
 const loading = ref(false)
-const discoveryError = ref<string | null>(null)
+const discoveryError = shallowRef<unknown>(null)
 const displayId = ref<number | null>(null)
 const audio = ref(false)
 const control = ref(false)
@@ -74,7 +76,7 @@ async function refresh(): Promise<void> {
     if (!available.audio) audio.value = false
   } catch (error) {
     if (generation === discoveryGeneration) {
-      discoveryError.value = error instanceof Error ? error.message : String(error)
+      discoveryError.value = error
     }
   } finally {
     if (generation === discoveryGeneration) loading.value = false
@@ -174,8 +176,10 @@ const status = computed(() => {
   if (codecs.value.length === 0) return t("desktop.noCodec")
   return t("desktop.ready")
 })
-const detail = computed(() => local.value ? failure.value?.detail ?? discoveryError.value
+const detail = computed(() => local.value ? failure.value?.error ?? failure.value?.detail ?? discoveryError.value
   ?? (!fleet.localDesktopTarget.online ? fleet.localDesktopTarget.error : undefined) : undefined)
+const hasError = computed(() => local.value && !!(failure.value || detail.value))
+const errorDescription = computed(() => errorPresentation(detail.value, failure.value?.relayDeniedReason).kind === "generic" ? t("errors.desktopUnlockHint") : undefined)
 </script>
 
 <template>
@@ -196,13 +200,13 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
         playsinline
       />
 
-      <div v-if="!stream" class="flex max-w-md flex-col items-center gap-3 p-6 text-center">
-        <span class="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-ui-accent/10 text-ui-accent" aria-hidden="true">
+      <div v-if="!stream" class="flex w-full max-w-md flex-col items-center gap-3 p-6 text-center">
+        <span v-if="!hasError" class="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-ui-accent/10 text-ui-accent" aria-hidden="true">
           <LoaderCircle v-if="local && (active || loading)" :size="26" :stroke-width="1.75" class="animate-spin" />
           <MonitorPlay v-else :size="28" :stroke-width="1.5" />
         </span>
-        <p class="m-0 text-sm font-medium" role="status">{{ status }}</p>
-        <p v-if="detail" class="m-0 break-words text-[13px] text-ui-text-muted" role="alert">{{ detail }}</p>
+        <ErrorNotice v-if="hasError" class="w-full text-left" :title="status" :error="detail" :relay-denied-reason="failure?.relayDeniedReason" :description="errorDescription" />
+        <p v-else class="m-0 text-sm font-medium" role="status">{{ status }}</p>
         <div v-if="local" class="mt-2 flex flex-wrap items-center justify-center gap-2">
           <UiButton v-if="active" type="button" @click="connection.disconnect()">{{ t("desktop.disconnect") }}</UiButton>
           <UiButton variant="primary" v-else type="button" :disabled="!canConnect" @click="connect">{{ t("desktop.connect") }}</UiButton>

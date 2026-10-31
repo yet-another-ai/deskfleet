@@ -10,8 +10,9 @@ import { useAgentSessionsStore } from "./agent-sessions.ts"
 import { useProvidersStore } from "./providers.ts"
 import { client as platformClient } from "@deskfleet/client/platform"
 import { captureAnalyticsContext, trackEvent } from "../services/analytics.ts"
+import { RelayConnectionError, type RelayDeniedReason } from "../../../client/src/relay.ts"
 vi.mock("../services/analytics.ts", () => { const trackEvent = vi.fn(); return { trackEvent, captureAnalyticsContext: vi.fn(() => trackEvent) } })
-const mock = vi.hoisted(() => ({ call: vi.fn(), connect: vi.fn(async () => {}), close: vi.fn(), notification: (_value: { method: string; params: unknown }) => {}, request: (_value: { id: string; method: string; params: unknown }): Promise<unknown> => Promise.resolve(), state: (_state: string) => {} }))
+const mock = vi.hoisted(() => ({ call: vi.fn(), connect: vi.fn(async () => {}), close: vi.fn(), notification: (_value: { method: string; params: unknown }) => {}, request: (_value: { id: string; method: string; params: unknown }): Promise<unknown> => Promise.resolve(), state: (_state: string, _error?: string, _reason?: RelayDeniedReason) => {} }))
 vi.mock("../services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof mock.state, notification: typeof mock.notification, request: typeof mock.request) { mock.state = state; mock.notification = notification; mock.request = request }
   connect = mock.connect; call = mock.call; close = mock.close
@@ -32,6 +33,37 @@ beforeEach(() => {
 afterEach(() => { disposePinia(pinia); vi.mocked(platformClient.catalog.list).mockRestore() })
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
 const tracked = (event: string) => vi.mocked(trackEvent).mock.calls.filter(([name]) => name === event).map(([, metadata]) => metadata)
+
+test("exposes relay recovery metadata only while the failed agent connection needs it", () => {
+  const store = useAgentSessionsStore()
+  mock.state("error", "Relay unavailable", "turn_quota_exhausted")
+  expect(store.relayDeniedReason).toBe("turn_quota_exhausted")
+  mock.state("connecting")
+  expect(store.relayDeniedReason).toBeUndefined()
+  mock.state("error", "Relay unavailable", "free_plan")
+  mock.state("error", "Permission denied")
+  expect(store.relayDeniedReason).toBeUndefined()
+})
+
+test.each(["_deskfleet/session/subscribe", "_deskfleet/session/history"])("keeps per-view relay metadata paired with its own %s error", async failedMethod => {
+  const original = mock.call.getMockImplementation()!
+  let failure: Error | undefined = new RelayConnectionError("turn_quota_exhausted")
+  mock.call.mockImplementation(async (method: string, ...args: unknown[]) => {
+    if (method === failedMethod && failure) throw failure
+    return original(method, ...args)
+  })
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  expect(store.views["30"]?.relayDeniedReason).toBe("turn_quota_exhausted")
+  failure = new Error("Conversation access denied")
+  await store.open("30")
+  expect(store.views["30"]?.error).toBe(failure.message)
+  expect(store.views["30"]?.relayDeniedReason).toBeUndefined()
+  failure = undefined
+  await store.open("30")
+  expect(store.views["30"]?.error).toBeNull()
+  expect(store.views["30"]?.relayDeniedReason).toBeUndefined()
+})
 
 test("background loading preserves unread state and another viewer's acknowledgement clears it", async () => {
   const snapshot = agentSnapshot()

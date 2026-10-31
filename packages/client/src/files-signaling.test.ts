@@ -84,7 +84,7 @@ test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const
     offer: async () => sdp, answer: async () => events.fail(new Error("ICE failed")), candidate: async () => {}, send: async () => {}, close: async () => {},
   }), () => {}, failed)
   await expect(connecting).rejects.toThrow("Direct connection failed.")
-  expect(failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay") }))
+  expect(failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay"), code: relayDeniedReason, relayDeniedReason }))
   expect(telemetry).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "1", metadata: { feature: "files", relay: relayDeniedReason, outcome: "failed", transport: "unknown" } })
   expect(telemetry).toHaveBeenCalledTimes(2)
 })
