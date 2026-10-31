@@ -206,13 +206,67 @@ async fn github_callback_is_bound_to_browser_and_single_use() {
         &app,
         test::TestRequest::get()
             .uri("/api/me")
-            .cookie(session)
+            .cookie(session.clone())
             .to_request(),
     )
     .await;
     assert_eq!(me.status(), StatusCode::OK);
     let me: Value = test::read_body_json(me).await;
     assert_eq!(me["user"]["name"], "GitHub User");
+    // A passwordless GitHub user can refresh the same session for sensitive actions.
+    scoped_database
+        .execute_unprepared("UPDATE cp_login_sessions SET authenticated_at=0")
+        .await
+        .unwrap();
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/auth/github/start")
+            .insert_header(("Origin", "http://localhost"))
+            .insert_header(("X-CSRF-Token", csrf))
+            .cookie(Cookie::new("deskfleet_csrf", csrf))
+            .cookie(session.clone())
+            .set_json(json!({"returnTo":"/auth/account","reauthenticate":true}))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let binding = response
+        .response()
+        .cookies()
+        .find(|c| c.name() == "deskfleet_github_state")
+        .unwrap()
+        .into_owned();
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/auth/github/callback?state={}&code=fixture",
+                binding.value()
+            ))
+            .cookie(binding)
+            .cookie(session)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FOUND);
+    assert_eq!(
+        response.headers().get("Location").unwrap(),
+        "http://localhost/auth/account"
+    );
+    assert!(
+        response
+            .response()
+            .cookies()
+            .all(|c| c.name() != "deskfleet_session")
+    );
+    assert!(
+        state
+            .store
+            .recent_authentication(me["sessionId"].as_str().unwrap())
+            .await
+            .unwrap()
+    );
     // A newly configured policy also applies to an outstanding sign-in attempt.
     let response = test::call_service(&app, start_with_terms("/auth/login", false)).await;
     let binding = response

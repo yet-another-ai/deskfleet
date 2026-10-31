@@ -78,6 +78,9 @@ pub(super) async fn complete(
     let generation = attempt["generation"].as_i64().ok_or("failed")?;
     match state.store.github_account(&profile.id.to_string()).await {
         Ok(user) => {
+            if attempt["sessionId"].is_string() {
+                return oauth::refresh(state, attempt, &user.id).await;
+            }
             return state
                 .store
                 .new_session_at_generation(&user.id, generation)
@@ -86,6 +89,9 @@ pub(super) async fn complete(
         }
         Err(deskfleet_control_store::Error::NotFound) => {}
         Err(_) => return Err("failed"),
+    }
+    if attempt["sessionId"].is_string() {
+        return Err("failed");
     }
     let emails: Vec<Email> = client
         .get(&config.emails_url)

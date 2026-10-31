@@ -20,6 +20,18 @@ impl Provider {
 }
 
 impl ControlStore {
+    pub async fn authentication_methods(&self, user_id: &str) -> Result<serde_json::Value> {
+        let row = one(&self.db,
+            "SELECT password_hash IS NOT NULL AS password, EXISTS(SELECT 1 FROM cp_passkeys WHERE user_id=u.id) AS passkey, EXISTS(SELECT 1 FROM cp_github_identities WHERE user_id=u.id) AS github, EXISTS(SELECT 1 FROM cp_google_identities WHERE user_id=u.id) AS google FROM cp_users u WHERE id=$1",
+            vec![user_id.into()]).await?;
+        Ok(serde_json::json!({
+            "password": row.try_get::<bool>("", "password")?,
+            "passkey": row.try_get::<bool>("", "passkey")?,
+            "github": row.try_get::<bool>("", "github")?,
+            "google": row.try_get::<bool>("", "google")?,
+        }))
+    }
+
     pub async fn github_account(&self, subject: &str) -> Result<User> {
         self.oauth_account(Provider::Github, subject).await
     }

@@ -259,12 +259,33 @@ purpose-bound, one-use, and expire after one hour. Recovery and password/email
 changes revoke all login sessions and peer grants without deleting Machines or
 stopping accepted execution. Ordinary recovery retains Passkeys. Security
 changes require authentication within ten minutes. GitHub and Google sign-in
-establish this initial window; later confirmation uses a password or Passkey.
+establish this initial window; later confirmation uses a configured password,
+registered Passkey, linked GitHub/Google account, or a one-time email code. The
+confirmation dialog offers methods available to that account. Provider confirmation is bound to the initiating browser session
+and the existing provider subject; it cannot create or switch accounts. After
+the provider returns to the original page, repeat the pending action.
+
+Email confirmation is a fallback for any signed-in account with a verified mailbox.
+`POST /api/auth/reauthenticate/email` delivers a six-digit code to that account's
+verified address and returns a challenge id, never the code. Codes expire after
+10 minutes, permit five guesses, and are bound to the user, current login session,
+and credential version. Sending a replacement invalidates the previous code for
+that session. Database rate limits allow one send per minute window and ten per
+hour window per user, in addition to the shared IP limits.
+`POST /api/auth/reauthenticate/email/verify` accepts `challengeId` and `code`;
+success atomically consumes the proof and refreshes the existing session. The
+browser then retries its pending action without navigating away. Production uses
+the existing SMTP configuration; development writes to the local mail sink.
+This is optional recent-authentication confirmation, not a mandatory two-factor
+login policy.
 
 Optional GitHub and Google OAuth login issue the same application sessions.
 `GET /api/auth/config` reports availability as `githubEnabled` and `googleEnabled`.
-Each provider's `/api/auth/<provider>/start` endpoint requires legal acceptance
-when configured and returns an authorization URL. The callback exchanges the
+Each provider's `/api/auth/<provider>/start` endpoint returns an authorization URL.
+Ordinary login requires legal acceptance when configured. Signed-in confirmation
+uses `reauthenticate: true` with `returnTo` and does not repeat signup consent.
+`GET /api/auth/reauthenticate/methods` reports the current account's available
+password, Passkey, GitHub, and Google verification methods. The callback exchanges the
 code server-side. New accounts require enabled registration and a provider-verified
 email; an email match never links an existing account to another provider.
 

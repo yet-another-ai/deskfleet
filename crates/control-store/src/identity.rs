@@ -1,6 +1,7 @@
 //! Verified account identity; authentication credentials never identify Teams.
 mod challenges;
 mod credentials;
+mod email_authentication;
 mod maintenance;
 mod oauth;
 mod sessions;

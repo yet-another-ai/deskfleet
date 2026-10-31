@@ -5,7 +5,7 @@ import { i18n } from "../../i18n/index.ts"
 import AuthPage from "./AuthPage.vue"
 
 let view: VueWrapper | undefined
-afterEach(() => { view?.unmount(); sessionStorage.clear(); history.replaceState(null, "", "/"); vi.restoreAllMocks(); vi.useRealTimers() })
+afterEach(() => { view?.unmount(); sessionStorage.clear(); history.replaceState(null, "", "/"); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 const recentRequired = () => new HttpError(403, "Confirm your password or Passkey to continue.", undefined, "recent_authentication_required")
 const dialog = () => new DOMWrapper(document.body).find('[role="dialog"]')
 const button = (root: { findAll(selector: string): DOMWrapper<Element>[] }, label: string) => root.findAll("button").find(value => value.text() === label)!
@@ -14,9 +14,11 @@ const oauthProviders = [
   { provider: "google", label: "auth.signInWithGoogle", authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth" },
 ]
 
-function mountAt(path: string, request: (method: string, path: string, body?: unknown) => Promise<unknown>, user?: object) {
+function mountAt(path: string, request: (method: string, path: string, body?: unknown) => Promise<unknown>, user?: object, methods = { password: true, passkey: false, github: false, google: false }) {
   history.replaceState(null, "", path)
-  const api = { request: vi.fn(request), status: async () => ({ user }), logout: vi.fn(async () => {}) } as unknown as HttpCentralClient
+  const api = { request: vi.fn((method, path, body) => path === "/api/auth/reauthenticate/methods"
+    ? Promise.resolve(methods)
+    : request(method, path, body)), status: async () => ({ user }), logout: vi.fn(async () => {}) } as unknown as HttpCentralClient
   view = mount(AuthPage, { props: { api }, global: { plugins: [i18n] }, attachTo: document.body })
   return api.request as ReturnType<typeof vi.fn>
 }
@@ -355,4 +357,78 @@ test("GitHub App authorization refuses a different browser account", async () =>
   expect(button(view!, "Authorize")).toBeUndefined()
   expect(button(view!, i18n.global.t("auth.differentAccount"))).toBeDefined()
   expect(request).not.toHaveBeenCalledWith("GET", "/api/integrations/github")
+})
+
+test.each(oauthProviders.flatMap(provider => ["/auth/desktop?attempt=native-attempt", "/auth/account"].map(path => ({ ...provider, path }))))("$provider passwordless confirmation on $path offers the linked provider", async ({ provider, label, authorizationUrl, path }) => {
+  const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
+  vi.stubGlobal("PublicKeyCredential", class { static parseCreationOptionsFromJSON() {} })
+  const request = mountAt(path, async (method, endpoint) => {
+    if (endpoint === "/api/auth/config") return {}
+    if (endpoint === "/api/auth/passkeys" || endpoint === "/api/auth/sessions") return []
+    if (endpoint === `/api/auth/${provider}/start`) return { authorizationUrl }
+    if (method === "POST") throw recentRequired()
+  }, { id: "u1", name: "Ada", email: "ada@example.test" },
+  { password: false, passkey: false, github: provider === "github", google: provider === "google" })
+  await flushPromises()
+  if (path.startsWith("/auth/desktop")) await view!.get("form").trigger("submit")
+  else {
+    await button(view!, i18n.global.t("auth.addPasskey")).trigger("click")
+    await flushPromises()
+    await dialog().get('input[name="passkey-name"]').setValue("First Passkey")
+    await dialog().get("form").trigger("submit")
+  }
+  await flushPromises()
+  const prompt = new DOMWrapper(document.body).findAll('[role="dialog"]').at(-1)!
+  expect(prompt.find('input[type="password"]').exists()).toBe(false)
+  expect(button(prompt, i18n.global.t("auth.usePasskeyInstead"))).toBeUndefined()
+  await button(prompt, i18n.global.t(label)).trigger("click")
+  await flushPromises()
+  expect(request).toHaveBeenCalledWith("POST", `/api/auth/${provider}/start`, { returnTo: path, reauthenticate: true })
+  expect(assign).toHaveBeenCalledWith(authorizationUrl)
+  vi.unstubAllGlobals()
+})
+
+test("email confirmation retries desktop approval in place and keeps failures open", async () => {
+  const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
+  let approvals = 0
+  const request = mountAt("/auth/desktop?attempt=native-attempt", async (_method, path, body) => {
+    if (path === "/api/auth/config") return {}
+    if (path === "/api/auth/desktop/complete") {
+      if (++approvals === 1) throw recentRequired()
+      return { returnTo: "http://127.0.0.1:19091/callback#loginCode=approved" }
+    }
+    if (path === "/api/auth/reauthenticate/email") return { challengeId: "email-challenge", expiresIn: 600, retryAfter: 60 }
+    if (path === "/api/auth/reauthenticate/email/verify" && (body as { code: string }).code !== "123456") throw new Error("Invalid verification code")
+    return {}
+  }, { id: "u1", name: "Ada", email: "ada@example.test" }, { password: false, passkey: false, github: true, google: false })
+  await flushPromises()
+  await view!.get("form").trigger("submit"); await flushPromises()
+  await button(dialog(), i18n.global.t("auth.useEmailCode")).trigger("click"); await flushPromises()
+  expect(dialog().text()).toContain(i18n.global.t("auth.emailCodeSent"))
+  expect(button(dialog(), i18n.global.t("auth.emailCodeResendIn", { seconds: 60 })).attributes("disabled")).toBeDefined()
+  await dialog().get('input[autocomplete="one-time-code"]').setValue("000000")
+  await dialog().get("form").trigger("submit"); await flushPromises()
+  expect(dialog().get('[role="alert"]').text()).toBe("Invalid verification code")
+  expect(approvals).toBe(1)
+  expect(assign).not.toHaveBeenCalled()
+  await dialog().get('input[autocomplete="one-time-code"]').setValue("123456")
+  await dialog().get("form").trigger("submit"); await flushPromises()
+  expect(request).toHaveBeenCalledWith("POST", "/api/auth/reauthenticate/email/verify", { challengeId: "email-challenge", code: "123456" })
+  expect(approvals).toBe(2)
+  expect(dialog().exists()).toBe(false)
+  expect(assign).toHaveBeenCalledExactlyOnceWith("http://127.0.0.1:19091/callback#loginCode=approved")
+})
+
+test("email delivery failure leaves confirmation open for retry", async () => {
+  mountAt("/auth/desktop?attempt=native-attempt", async (_method, path) => {
+    if (path === "/api/auth/config") return {}
+    if (path === "/api/auth/desktop/complete") throw recentRequired()
+    if (path === "/api/auth/reauthenticate/email") throw new Error("Email delivery failed")
+  }, { id: "u1", name: "Ada", email: "ada@example.test" })
+  await flushPromises()
+  await view!.get("form").trigger("submit"); await flushPromises()
+  await button(dialog(), i18n.global.t("auth.useEmailCode")).trigger("click"); await flushPromises()
+  expect(dialog().get('[role="alert"]').text()).toBe("Email delivery failed")
+  expect(dialog().find('input[autocomplete="one-time-code"]').exists()).toBe(false)
+  expect(button(dialog(), i18n.global.t("auth.useEmailCode")).attributes("disabled")).toBeUndefined()
 })

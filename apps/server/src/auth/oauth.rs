@@ -76,6 +76,8 @@ pub(super) struct Start {
     return_to: String,
     #[serde(default)]
     accepted_terms: bool,
+    #[serde(default)]
+    reauthenticate: bool,
 }
 #[derive(Deserialize)]
 pub(super) struct Callback {
@@ -101,8 +103,21 @@ pub(super) async fn start(
     let mut url = provider.authorization_url(&state)?;
     return_url(&state.auth.config.web_url, &body.return_to)
         .ok_or_else(|| ApiError::bad("invalid return path"))?;
+    let auth = if body.reauthenticate {
+        let token = cookie_token(&req).ok_or_else(ApiError::unauthorized)?;
+        let auth = state.store.authenticate(&token).await?;
+        let methods = state.store.authentication_methods(&auth.user.id).await?;
+        if methods[provider.kind()] != true {
+            return Err(ApiError::forbidden());
+        }
+        Some(auth)
+    } else {
+        reject_signed_in(&req, &state).await?;
+        None
+    };
     let settings = state.store.site_settings().await?;
-    if !body.accepted_terms
+    if auth.is_none()
+        && !body.accepted_terms
         && (!settings.terms_of_service_url.is_empty() || !settings.privacy_terms_url.is_empty())
     {
         return Err(ApiError::new(
@@ -114,9 +129,28 @@ pub(super) async fn start(
     let nonce = secret();
     let verifier = secret();
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    reject_signed_in(&req, &state).await?;
     let generation = state.store.authentication_generation().await?;
-    state.store.save_login_attempt(&nonce, json!({"kind":provider.kind(),"returnTo":body.return_to,"acceptedTerms":body.accepted_terms,"verifier":verifier,"generation":generation})).await?;
+    let mut attempt = json!({"kind":provider.kind(),"returnTo":body.return_to,"acceptedTerms":body.accepted_terms,"verifier":verifier,"generation":generation});
+    if let Some(auth) = auth {
+        let credentials = state
+            .store
+            .password_credentials(
+                auth.user
+                    .email
+                    .as_deref()
+                    .ok_or_else(ApiError::unauthorized)?,
+            )
+            .await?
+            .ok_or_else(ApiError::unauthorized)?;
+        attempt["sessionId"] = json!(auth.id);
+        attempt["userId"] = json!(auth.user.id);
+        attempt["version"] = credentials["version"].clone();
+        if matches!(provider, Provider::Google) {
+            url.query_pairs_mut()
+                .append_pair("prompt", "select_account");
+        }
+    }
+    state.store.save_login_attempt(&nonce, attempt).await?;
     url.query_pairs_mut()
         .append_pair("state", &nonce)
         .append_pair("code_challenge", &challenge)
@@ -146,7 +180,15 @@ pub(super) async fn callback(
     if attempt["kind"] != provider.kind() {
         return Err(ApiError::unauthorized());
     }
-    reject_signed_in(&req, &state).await?;
+    if let Some(session_id) = attempt["sessionId"].as_str() {
+        let token = cookie_token(&req).ok_or_else(ApiError::unauthorized)?;
+        let auth = state.store.authenticate(&token).await?;
+        if auth.id != session_id || attempt["userId"] != auth.user.id {
+            return Err(ApiError::forbidden());
+        }
+    } else {
+        reject_signed_in(&req, &state).await?;
+    }
     let path = attempt["returnTo"]
         .as_str()
         .ok_or_else(ApiError::unauthorized)?;
@@ -156,6 +198,12 @@ pub(super) async fn callback(
     let mut binding = cookie(provider.state_cookie(), String::new(), &state, true);
     binding.make_removal();
     match result {
+        Ok(_) if attempt["sessionId"].is_string() => Ok(HttpResponse::Found()
+            .insert_header(("Location", target.as_str()))
+            .insert_header(("Cache-Control", "no-store"))
+            .insert_header(("Referrer-Policy", "no-referrer"))
+            .cookie(binding)
+            .finish()),
         Ok(session) => {
             let token = session["token"].as_str().ok_or_else(ApiError::internal)?;
             Ok(HttpResponse::Found()
@@ -191,7 +239,8 @@ async fn complete(
     code: Option<&str>,
 ) -> std::result::Result<Value, &'static str> {
     let settings = state.store.site_settings().await.map_err(|_| "failed")?;
-    if !attempt["acceptedTerms"].as_bool().unwrap_or(false)
+    if !attempt["sessionId"].is_string()
+        && !attempt["acceptedTerms"].as_bool().unwrap_or(false)
         && (!settings.terms_of_service_url.is_empty() || !settings.privacy_terms_url.is_empty())
     {
         return Err("terms_required");
@@ -200,6 +249,34 @@ async fn complete(
         Provider::Github => github::complete(state, attempt, code).await,
         Provider::Google => google::complete(state, attempt, code).await,
     }
+}
+pub(super) async fn refresh(
+    state: &AppState,
+    attempt: &Value,
+    user_id: &str,
+) -> std::result::Result<Value, &'static str> {
+    if attempt["userId"] != user_id {
+        return Err("failed");
+    }
+    state
+        .store
+        .refresh_authentication(
+            attempt["sessionId"].as_str().ok_or("failed")?,
+            attempt["version"].as_i64().ok_or("failed")?,
+        )
+        .await
+        .map_err(|_| "failed")?;
+    Ok(Value::Null)
+}
+
+pub(super) async fn methods(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse> {
+    let auth = user(&req, &state).await?;
+    let mut methods = state.store.authentication_methods(&auth.user.id).await?;
+    methods["github"] = json!(methods["github"] == true && state.auth.config.github.is_some());
+    methods["google"] = json!(methods["google"] == true && state.auth.config.google.is_some());
+    Ok(HttpResponse::Ok()
+        .insert_header(("Cache-Control", "no-store"))
+        .json(methods))
 }
 async fn reject_signed_in(req: &HttpRequest, state: &AppState) -> Result<()> {
     if let Some(token) = cookie_token(req) {

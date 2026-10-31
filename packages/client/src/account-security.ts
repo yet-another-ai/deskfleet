@@ -2,11 +2,12 @@ import { HttpError, type HttpCentralClient } from "./http-central.ts"
 import { authenticatePasskey, registerPasskey } from "./passkeys.ts"
 
 type Transport = Pick<HttpCentralClient, "request">
+export interface AuthenticationMethods { password: boolean; passkey: boolean; github: boolean; google: boolean }
 export interface AuthConfig { webUrl: string; registrationEnabled: boolean; githubEnabled: boolean; googleEnabled: boolean; termsOfServiceUrl: string; privacyTermsUrl: string }
 export interface LoginSession { id: string; deviceId: string; createdAt: string; expiresAt: string; current: boolean }
 export interface Passkey { id: string; name: string; createdAt: number }
 
-/** The server asks for a fresh password or Passkey proof before credential changes. */
+/** The server asks for a fresh identity proof before credential changes. */
 export const recentAuthenticationRequired = (reason: unknown) => reason instanceof HttpError && reason.code === "recent_authentication_required"
 
 /** Owned-account endpoints behind the Web authentication and account security pages. */
@@ -14,6 +15,10 @@ export function accountAuthentication(api: Transport) {
   const post = <T = void>(path: string, body: unknown = {}) => api.request<T>("POST", `/api/auth/${path}`, body)
   const passkey = (id: string) => `/api/auth/passkeys/${encodeURIComponent(id)}`
   return {
+    sendEmailCode: () => post<{ challengeId: string; expiresIn: number; retryAfter: number }>("reauthenticate/email"),
+    verifyEmailCode: (challengeId: string, code: string) => post("reauthenticate/email/verify", { challengeId, code }),
+    authenticationMethods: () => api.request<AuthenticationMethods>("GET", "/api/auth/reauthenticate/methods"),
+    startReauthentication: (provider: "github" | "google", returnTo: string) => post<{ authorizationUrl: string }>(`${provider}/start`, { returnTo, reauthenticate: true }),
     config: () => api.request<AuthConfig>("GET", "/api/auth/config"),
     login: (email: string, password: string) => post("login", { email, password }),
     loginWithPasskey: (email: string) => authenticatePasskey(api, "login", email),

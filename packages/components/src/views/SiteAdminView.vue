@@ -16,8 +16,9 @@ const client = usePlatformClient()
 const { t } = useI18n()
 const session = useAccountSession()
 const api = client.platform === "web" ? client.siteAdministration : undefined
-// Account policy and Enterprise changes need a fresh password or Passkey proof.
+// Account policy and Enterprise changes need a fresh identity proof.
 const recent = useRecentAuthentication()
+const reauthFailed = new URLSearchParams(location.search).has("githubError") || new URLSearchParams(location.search).has("googleError")
 const reauthenticate = (password?: string) => api!.reauthenticate(password)
 </script>
 
@@ -27,10 +28,11 @@ const reauthenticate = (password?: string) => api!.reauthenticate(password)
       <span class="ui-nav-item ui-nav-active px-2.5"><ShieldCheck :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("siteAdmin.title") }}</span>
     </template>
     <template v-if="session?.account.value.siteAdmin && api">
+      <p v-if="reauthFailed" role="alert" class="text-sm text-ui-danger">{{ t("auth.reauthFailed") }}</p>
       <SiteSettings :api="api" />
       <SiteIdentitySettings :api="api" :confirmed="recent.confirmed" />
       <EnterpriseTeams :api="api" :confirmed="recent.confirmed" />
-      <ReauthDialog v-if="recent.prompting.value" :reauthenticate="reauthenticate" @settle="recent.settle" />
+      <ReauthDialog v-if="recent.prompting.value" :reauthenticate="reauthenticate" :send-email-code="() => api!.sendEmailCode()" :verify-email-code="(challenge, code) => api!.verifyEmailCode(challenge, code)" :authentication-methods="() => api!.authenticationMethods()" :start-reauthentication="(provider, returnTo) => api!.startReauthentication(provider, returnTo)" @settle="recent.settle" />
     </template>
     <template v-else>
       <h1 class="ui-page-title">{{ t("siteAdmin.title") }}</h1>

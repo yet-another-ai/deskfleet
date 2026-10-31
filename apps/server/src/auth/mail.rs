@@ -58,12 +58,12 @@ impl Mailer {
                     .await
                     .map_err(|_| {
                         tracing::error!(
-                            "authentication email delivery failed; request a new link to retry"
+                            "authentication email delivery failed; request a new email to retry"
                         );
                         ApiError::new(
                             actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
                             "mail_unavailable",
-                            "Email delivery failed. Request a new link to retry.",
+                            "Email delivery failed. Request a new email to retry.",
                         )
                     })?;
             }

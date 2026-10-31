@@ -652,6 +652,10 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       { id: "user-3", name: "Alan Turing", email: "alan@deskfleet.dev", disabled: true },
     ],
     disableUser: async () => {},
+    sendEmailCode: async () => ({ challengeId: "challenge", expiresIn: 600, retryAfter: 60 }),
+    verifyEmailCode: async () => {},
+    authenticationMethods: async () => ({ password: true, passkey: false, github: false, google: false }),
+    startReauthentication: async () => ({ authorizationUrl: "https://example.test/authorize" }),
     reauthenticate: async () => {},
     teams: async () => structuredClone(teams),
     createTeam: async (name: string) => {
