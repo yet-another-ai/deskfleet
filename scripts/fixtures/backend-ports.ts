@@ -15,6 +15,7 @@ export async function smokePortForwarding(backend: string, login: FixtureLogin, 
     account: { serverUrl: backend, token: login.token, user: login.user },
     persist: async () => {}, authorize: async () => { throw new Error("Smoke login is already authenticated") },
   })
+  const relayOnly = process.env.DESKFLEET_SMOKE_RELAY_ONLY === "1"
   let signalingReady = false, lastPeerId = ""
   const unsubscribe = central.onEvent(event => { if (event.type === "connection") signalingReady = event.connected })
   const createPeer = central.createPeer.bind(central)
@@ -22,10 +23,10 @@ export async function smokePortForwarding(backend: string, login: FixtureLogin, 
     const grant = await createPeer(...args)
     assert.equal(grant.authorization.purpose, "ports")
     assert.deepEqual(grant.authorization.actions, ["ports:forward"])
+    if (relayOnly) assert.ok(grant.iceServers.some(server => [server.urls].flat().some(url => /^turns?:/u.test(url))), "Relay port smoke requires TURN credentials")
     lastPeerId = grant.peerId
     return grant
   }
-  const relayOnly = process.env.DESKFLEET_SMOKE_RELAY_ONLY === "1"
   const candidates: string[] = []
   const forwards = new PortForwards(central, (request, failed, signal) => {
     const factory = createNativePortPeer(request, signal, { relayOnly })

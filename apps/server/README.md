@@ -71,7 +71,7 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_STATSIG_ENVIRONMENT` | Statsig environment tier, default `production`; match the frontend project and tier. See [analytics](../../agents/docs/analytics.md#payment-funnel). |
 | `DESKFLEET_WEB_ORIGINS` | Comma-separated browser origins permitted by CORS. |
 | `DESKFLEET_STUN_URLS` | Optional comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Empty means no STUN; there is no public default. Change the list and restart to update new grants. |
-| `DESKFLEET_TURN_URLS` | Optional comma-separated `turn:`/`turns:` URLs advertised on peer grants. Change the list and restart to update new grants. |
+| `DESKFLEET_TURN_URLS` | Optional comma-separated `turn:`/`turns:` URLs used to initialize the persisted TURN list on first startup. Manage the list online in Site administration afterward. |
 | `DESKFLEET_TURN_SECRET` | Required with TURN URLs; shared with coturn's REST credential mechanism. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | Optional `redis://` or `rediss://` URL for [Team TURN usage collection](../../agents/docs/self-hosted.md#team-turn-usage-collection). Empty or unset disables it. |
 | `RUST_LOG` | Log filter; defaults to `info`. |
@@ -240,6 +240,21 @@ and grant/revoke changes write `cp_site_audit` in the same transaction, recordin
 source, actor or target user, time, and previous/new values. Subsequent requests
 read updated settings and grants without restarting the backend or logging in
 again. Deployment secrets and startup options remain environment configuration.
+
+Site administration also manages the private TURN URL list through
+`GET /api/admin/turn-settings` and `PATCH /api/admin/turn-settings`. Both require
+the current site grant. PATCH replaces the ordered list with `{ "urls": [...] }`;
+an empty list disables TURN for new peer grants. URLs must use `turn:` or `turns:`
+with a host, an optional port, and an optional `transport=udp` or `transport=tcp`
+query. Changes are audited and take effect across API instances without restart.
+This list is not included in public site settings.
+
+The first API startup initializes the list from `DESKFLEET_TURN_URLS`, including
+an empty initial value. Later startups preserve the saved list, including an
+explicitly cleared list. `DESKFLEET_TURN_SECRET` remains deployment configuration
+and is required before adding URLs. All listed servers use that shared secret.
+Each peer grant retains its issued ICE servers through subsequent signaling;
+list edits do not revoke existing peers or stop TURN processes.
 
 ### Application and machine authentication
 

@@ -57,6 +57,9 @@ test("a site administrator without any Team opens administration from the accoun
   expect(router.currentRoute.value.path).toBe("/admin")
   expect(page().get("h1").text()).toBe("Site administration")
   expect(fake.central.siteSettings).toHaveBeenCalledOnce()
+  expect(fake.central.turnSettings).toHaveBeenCalledOnce()
+  expect(page().find('form[aria-labelledby] input[name^="turn-url-"]').exists()).toBe(false)
+  expect(page().text()).toContain("No TURN servers configured.")
   await page().get('[name="site-name"]').setValue("  Studio fleet  ")
   await page().get('[name="announcement"]').setValue("Maintenance on Sunday")
   await page().get('[name="terms-of-service-url"]').setValue("  https://example.test/terms  ")
@@ -115,6 +118,7 @@ test("an ordinary Team admin has no site menu entry and direct navigation never 
   expect(page().get('[role="alert"]').text()).toBe("Site administrator access is required.")
   expect(page().find("form").exists()).toBe(false)
   expect(fake.central.siteSettings).not.toHaveBeenCalled()
+  expect(fake.central.turnSettings).not.toHaveBeenCalled()
 })
 
 test.each(["darwin", "linux", "win32"] as const)("%s keeps public site settings but does not expose administration to a site admin", async platform => {
@@ -134,6 +138,7 @@ test.each(["darwin", "linux", "win32"] as const)("%s keeps public site settings 
   expect(page().find('[name="site-name"]').exists()).toBe(false)
   expect(fake.central.siteSettings).not.toHaveBeenCalled()
   expect(fake.central.updateSiteSettings).not.toHaveBeenCalled()
+  expect(fake.central.turnSettings).not.toHaveBeenCalled()
 })
 
 test("direct administration navigation handles denied server access and removes the form after role refresh", async () => {

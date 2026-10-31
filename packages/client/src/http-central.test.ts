@@ -190,6 +190,18 @@ test("loads public settings and saves site settings through the admin endpoint",
 })
 
 
+test("loads, replaces, and clears the ordered TURN URL list through its admin endpoint", async () => {
+  const f = setup()
+  const settings = { urls: ["turn:second.example:3478?transport=udp", "turns:first.example:5349?transport=tcp"] }
+  f.responses.push(settings, settings, { urls: [] })
+  expect(await f.client.turnSettings()).toEqual(settings)
+  expect(await f.client.updateTurnSettings(settings)).toEqual(settings)
+  expect(await f.client.updateTurnSettings({ urls: [] })).toEqual({ urls: [] })
+  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "GET" }))
+  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(settings) }))
+  expect(f.fetch).toHaveBeenNthCalledWith(3, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ urls: [] }) }))
+})
+
 test("browser requests use cookie authentication and CSRF, with no bearer WebSocket frame", async () => {
   const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ user: { id: "u1", name: "Ada" }, csrfToken: "csrf-token", siteAdmin: false }), { status: 200 }))
   const socket = new Socket()

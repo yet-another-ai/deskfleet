@@ -1,6 +1,6 @@
 //! Shared SDP exchanges without retaining SQL locks while awaiting a daemon.
 
-use super::{authorize_webrtc, binding, grant_ice_servers, normalize_candidate};
+use super::{authorize_webrtc, binding, issued_ice_servers, normalize_candidate};
 use crate::{
     AppState,
     error::{ApiError, Result},
@@ -83,10 +83,7 @@ async fn exchange_offer(
     offer: &Offer,
     authorization: &PeerAuthorization,
 ) -> Result<String> {
-    let expires = chrono::DateTime::parse_from_rfc3339(&authorization.expires_at)
-        .map_err(|_| ApiError::internal())?
-        .timestamp_millis();
-    let relay_allowed = s.store.peer_relay_decision(peer_id).await?;
+    let ice_servers = issued_ice_servers(s, authorization).await?;
     let result = s
         .hub
         .request(
@@ -94,7 +91,7 @@ async fn exchange_offer(
             "peer.offer",
             json!({
                 "peerId": peer_id, "sdp": offer.sdp, "authorization": authorization,
-                "iceServers": grant_ice_servers(&s.config, peer_id, expires, relay_allowed)?,
+                "iceServers": ice_servers,
                 "options": offer.options,
             }),
             Some(authorization.actor.clone()),

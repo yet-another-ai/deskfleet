@@ -32,6 +32,8 @@ pub fn authorize<P: Policy>(policy: &P, action: P::Action) -> Result<()> {
 pub enum SiteAction {
     ReadSettings,
     UpdateSettings,
+    ReadTurnSettings,
+    UpdateTurnSettings,
     ReadAudit,
 }
 
@@ -52,9 +54,11 @@ impl Policy for SitePolicy {
 
     fn permits(&self, action: SiteAction) -> bool {
         match action {
-            SiteAction::ReadSettings | SiteAction::UpdateSettings | SiteAction::ReadAudit => {
-                self.is_site_admin
-            }
+            SiteAction::ReadSettings
+            | SiteAction::UpdateSettings
+            | SiteAction::ReadTurnSettings
+            | SiteAction::UpdateTurnSettings
+            | SiteAction::ReadAudit => self.is_site_admin,
         }
     }
 }

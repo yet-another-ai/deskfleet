@@ -37,10 +37,12 @@ pub async fn create(
     let id = &authorization.peer_id;
     let relay_denied_reason = s.store.relay_denied_reason(&b.team_id).await?;
     let relay_allowed = relay_denied_reason.is_none();
+    let ice_servers = grant_ice_servers(&s, id, expires, relay_allowed).await?;
     s.store.save_peer(&authorization, &a.id, expires).await?;
     s.store.save_peer_relay_decision(id, relay_allowed).await?;
+    let ice_servers = s.store.save_peer_ice_servers(id, &ice_servers).await?;
     Ok(web::Json(
-        json!({"peerId":id,"authorization":authorization,"iceServers":grant_ice_servers(&s.config,id,expires,relay_allowed)?,"relayAllowed":relay_allowed,"relayDeniedReason":relay_denied_reason}),
+        json!({"peerId":id,"authorization":authorization,"iceServers":ice_servers,"relayAllowed":relay_allowed,"relayDeniedReason":relay_denied_reason}),
     ))
 }
 
@@ -90,20 +92,49 @@ async fn create_grant(
     };
     Ok((authorization, a, expires))
 }
-fn grant_ice_servers(
-    config: &ServerConfig,
+async fn grant_ice_servers(
+    state: &AppState,
     peer_id: &str,
     expires: i64,
     relay_allowed: bool,
 ) -> Result<Vec<IceServer>> {
-    if relay_allowed {
-        return ice_servers(config, peer_id, expires);
-    }
-    let mut direct = config.clone();
-    direct.turn_urls.clear();
-    ice_servers(&direct, peer_id, expires)
+    let turn_urls = if relay_allowed {
+        state.store.turn_settings().await?.urls
+    } else {
+        Vec::new()
+    };
+    ice_servers(&state.config, peer_id, expires, &turn_urls)
 }
-pub fn ice_servers(config: &ServerConfig, peer_id: &str, expires: i64) -> Result<Vec<IceServer>> {
+
+async fn issued_ice_servers(
+    state: &AppState,
+    authorization: &PeerAuthorization,
+) -> Result<Vec<IceServer>> {
+    let peer_id = &authorization.peer_id;
+    if let Some(servers) = state.store.peer_ice_servers(peer_id).await? {
+        return Ok(servers);
+    }
+    // Grants issued before snapshot storage (including by an old API during a
+    // rolling upgrade) used deployment URLs, not the editable runtime list.
+    let turn_urls = if state.store.peer_relay_decision(peer_id).await? {
+        state.config.turn_urls.as_slice()
+    } else {
+        &[]
+    };
+    let expires = chrono::DateTime::parse_from_rfc3339(&authorization.expires_at)
+        .map_err(|_| ApiError::internal())?
+        .timestamp_millis();
+    let servers = ice_servers(&state.config, peer_id, expires, turn_urls)?;
+    // Concurrent recovery on another API instance must return the same snapshot.
+    Ok(state.store.save_peer_ice_servers(peer_id, &servers).await?)
+}
+
+fn ice_servers(
+    config: &ServerConfig,
+    peer_id: &str,
+    expires: i64,
+    turn_urls: &[String],
+) -> Result<Vec<IceServer>> {
     let mut servers = Vec::new();
     if !config.stun_urls.is_empty() {
         servers.push(IceServer {
@@ -112,14 +143,14 @@ pub fn ice_servers(config: &ServerConfig, peer_id: &str, expires: i64) -> Result
             credential: None,
         });
     }
-    if !config.turn_urls.is_empty() {
+    if !turn_urls.is_empty() {
         let key = config.turn_secret.as_ref().ok_or_else(ApiError::internal)?;
         let username = format!("{}:{peer_id}", expires / 1000);
         let mut mac =
             Hmac::<Sha1>::new_from_slice(key.as_bytes()).map_err(|_| ApiError::internal())?;
         mac.update(username.as_bytes());
         servers.push(IceServer {
-            urls: config.turn_urls.clone(),
+            urls: turn_urls.to_vec(),
             username: Some(username),
             credential: Some(
                 base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes()),
@@ -372,6 +403,10 @@ pub(crate) mod tests {
             ),
             "peer-1",
             1_700_000_000_000,
+            &[
+                "turn:turn.example.com:3478?transport=udp".into(),
+                "turn:turn.example.com:3478?transport=tcp".into(),
+            ],
         )
         .unwrap();
         assert_eq!(servers.len(), 2);
@@ -402,7 +437,7 @@ pub(crate) mod tests {
     #[test]
     fn ice_servers_omit_entries_when_lists_are_empty() {
         assert!(
-            ice_servers(&config(vec![], vec![], None), "peer", 1)
+            ice_servers(&config(vec![], vec![], None), "peer", 1, &[])
                 .unwrap()
                 .is_empty()
         );
@@ -410,6 +445,7 @@ pub(crate) mod tests {
             &config(vec!["stun:stun.example.com:3478".into()], vec![], None),
             "peer",
             1,
+            &[],
         )
         .unwrap();
         assert_eq!(stun_only.len(), 1);

@@ -22,7 +22,7 @@ const routes = [
   "/api/auth/passkeys/login", "/api/auth/passkeys/login/options",
   "/api/auth/passkeys/reauthenticate", "/api/auth/passkeys/reauthenticate/options",
   "/api/auth/passkeys/register", "/api/auth/passkeys/register/options",
-  "/api/admin/site-settings", "/api/admin/users", "/api/admin/users/:userId/disabled",
+  "/api/admin/site-settings", "/api/admin/turn-settings", "/api/admin/users", "/api/admin/users/:userId/disabled",
   "/api/admin/teams", "/api/admin/teams/:teamId/enterprise",
   "/api/teams/:teamId", "/api/teams/:teamId/billing", "/api/teams/:teamId/billing/checkout",
   "/api/teams/:teamId/billing/portal", "/api/teams/:teamId/machines", "/api/teams/:teamId/members",
