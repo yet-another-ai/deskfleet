@@ -200,6 +200,45 @@ Installed upgrades still need platform release testing: metadata generation and
 unit tests do not demonstrate a successful installation on Windows, signed macOS
 or either Linux architecture.
 
+### Homebrew distribution
+
+The macOS Apple Silicon Cask is maintained in
+[`yet-another-ai/homebrew-tap`](https://github.com/yet-another-ai/homebrew-tap).
+DeskFleet owns application versions, signing, and release assets; the tap owns
+the Cask, release metadata validation, synchronization, and utility checks.
+The Cask installs the same signed and notarized DMG as the release page and
+retains the app's built-in updater. Install with:
+
+```sh
+brew install --cask yet-another-ai/tap/deskfleet
+```
+
+Cask synchronization lives only in the tap. It runs on a schedule and by manual
+dispatch there; DeskFleet does not notify the tap and does not need a
+`TAP_SYNC_TOKEN` or any other cross-repository secret for Homebrew. The tap
+reads GitHub's latest stable Release, validates the DMG metadata, and updates
+its synchronization PR. Homebrew verifies the installer's SHA-256 during
+installation. Drafts, prereleases, and unreleased version changes do not
+advance the Cask. Preserve published assets: the tap rejects same-version
+digest changes and automatic downgrades.
+
+Configure the tap's required check and auto-merge before relying on automatic
+updates. The initial Cask can use an existing stable Release. Tap setup and
+maintenance are documented in its
+[maintenance guide](https://github.com/yet-another-ai/homebrew-tap/blob/main/agents/docs/maintenance.md).
+
+If tap synchronization or PR checks fail, repair the reported problem and
+retry in the tap:
+
+```sh
+gh workflow run sync-deskfleet.yml --repo yet-another-ai/homebrew-tap --ref main
+```
+
+Manual dispatch reconciles the latest stable Release without a tag input. A
+delayed or failed sync leaves the published Release and desktop updater
+available; the tap retains its previous Cask until synchronization and merge
+succeed.
+
 ### Server image
 
 The same successful tag build pushes

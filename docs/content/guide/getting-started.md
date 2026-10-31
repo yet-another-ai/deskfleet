@@ -1,6 +1,12 @@
 # Run DeskFleet
 
-Find packaged versions on [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases). To try the current development version, use the source workflow below.
+On macOS with Apple Silicon, install the desktop app using Homebrew:
+
+```sh
+brew install --cask yet-another-ai/tap/deskfleet
+```
+
+Packaged versions for macOS, Windows, and Linux are also available on [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases). To try the current development version, use the source workflow below.
 
 ## Set up the development environment
 
