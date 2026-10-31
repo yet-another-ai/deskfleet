@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { RequestError } from "@agentclientprotocol/sdk/unstable"
 import { connectAcpProcess, type AgentConfig, type AgentProvider } from "./agents/acp.ts"
+import { antigravityProvider } from "./agents/antigravity.ts"
 import { claudeCodeProvider } from "./agents/claude-code.ts"
 import { codexProvider } from "./agents/codex.ts"
 import { cursorProvider } from "./agents/cursor.ts"
@@ -22,8 +23,9 @@ const acpProvider: AgentProvider = {
 }
 
 /** ACP adapters often put the actual cause in error data behind a generic JSON-RPC message. */
-function testFailure(error: unknown): string {
+function testFailure(error: unknown, template: AgentProviderInput["template"]): string {
   if ((error as { code?: unknown } | null)?.code === RequestError.authRequired().code) {
+    if (template === "antigravity") return "Authentication required. Sign in to Antigravity through an ACP client on this machine, then retry."
     return "Authentication required. Use the Log in button before testing the connection."
   }
   const data = (error as { data?: unknown } | null | undefined)?.data
@@ -77,7 +79,10 @@ export class AgentProviders {
   }
 
   snapshot(): ProviderSnapshot {
-    return { revision: this.#revision, templates: structuredClone(AGENT_PROVIDER_TEMPLATES) as ProviderSnapshot["templates"], providers: structuredClone(this.#providers) }
+    const templates = AGENT_PROVIDER_TEMPLATES.map(template => ({ ...template,
+      ...(template.id === "antigravity" && process.platform === "win32" ? { defaultBinaryPath: "agy_acp_server.exe" } : {}),
+    }))
+    return { revision: this.#revision, templates, providers: structuredClone(this.#providers) }
   }
 
   /** Public display fields and an opaque revision may enter the central catalog replica. */
@@ -119,7 +124,7 @@ export class AgentProviders {
       const agent = connection.initialization.agentInfo
       return { agentName: agent?.title || agent?.name || config.name }
     } catch (error) {
-      throw new Error(testFailure(error), { cause: error })
+      throw new Error(testFailure(error, input.template), { cause: error })
     } finally {
       clearTimeout(timer)
       await connecting.then(connection => connection.close(), () => {})
@@ -136,8 +141,9 @@ export class AgentProviders {
             : record.template === "grok" ? grokProvider
               : record.template === "pi" ? piProvider
                 : record.template === "deepseek-harness" ? deepseekHarnessProvider
-                  : acpProvider,
-      config: { name: record.name, binaryPath: record.binaryPath ?? template.defaultBinaryPath, env: record.env },
+                  : record.template === "antigravity" ? antigravityProvider
+                    : acpProvider,
+      config: { name: record.name, binaryPath: record.binaryPath ?? (record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath), env: record.env },
     }
   }
 

@@ -1013,6 +1013,7 @@
       "grok": "xAI's Grok CLI.",
       "pi": "Pi's coding agent CLI.",
       "deepseek-harness": "DeepSeek's agent harness CLI (dsh).",
+      "antigravity": "Google's Antigravity coding agent.",
       "acp": "Any agent that speaks the Agent Client Protocol."
     },
     "iconDefault": "Template default",

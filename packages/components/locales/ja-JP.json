@@ -656,6 +656,7 @@
       "codex": "OpenAI のコーディングエージェント。", "claude-code": "Anthropic のコーディングエージェント。",
       "cursor": "Cursor のエージェント CLI。", "grok": "xAI の Grok CLI。",
       "pi": "Pi のコーディングエージェント CLI。", "deepseek-harness": "DeepSeek のエージェントハーネス CLI（dsh）。",
+      "antigravity": "Google の Antigravity コーディングエージェント。",
       "acp": "Agent Client Protocol に対応した任意のエージェント。"
     },
     "iconDefault": "テンプレートのデフォルト", "iconReset": "テンプレートのデフォルトを使用",

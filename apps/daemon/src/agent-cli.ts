@@ -1,6 +1,7 @@
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
+import { antigravityProvider } from "./agents/antigravity.ts"
 import { claudeCodeProvider } from "./agents/claude-code.ts"
 import { codexProvider } from "./agents/codex.ts"
 import { cursorProvider } from "./agents/cursor.ts"
@@ -22,6 +23,7 @@ const agents: Record<string, { provider: AgentProvider; name: string }> = {
   grok: { provider: grokProvider, name: "Grok" },
   pi: { provider: piProvider, name: "Pi Coding Agent" },
   "deepseek-harness": { provider: deepseekHarnessProvider, name: "DeepSeek Harness" },
+  antigravity: { provider: antigravityProvider, name: "Antigravity" },
 }
 
 export async function runAgent(args: string[], dependencies: {
@@ -43,7 +45,7 @@ export async function runAgent(args: string[], dependencies: {
     },
   })
   if (values.help) {
-    console.log("Usage: deskfleet-daemon agent <codex|claude-code|cursor|grok|pi|deepseek-harness> [--check | --prompt <text>] [--cwd <directory>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
+    console.log("Usage: deskfleet-daemon agent <codex|claude-code|cursor|grok|pi|deepseek-harness|antigravity> [--check | --prompt <text>] [--cwd <directory>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
     return
   }
   const selected = positionals.length === 1 && Object.hasOwn(agents, positionals[0]!) ? agents[positionals[0]!] : undefined

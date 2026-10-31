@@ -21,6 +21,7 @@ afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers(); i
 test("chooses a template, leaves the binary default implicit, and preserves environment values", async () => {
   const { view, save } = await render()
   expect(view.findAll("[data-provider-template-choice]").map(choice => choice.attributes("data-provider-template-choice"))).toEqual(AGENT_PROVIDER_TEMPLATES.map(template => template.id))
+  expect(view.text()).not.toContain("providers.templateDescription.")
   expect(view.find("form").exists()).toBe(false)
   await pick(view, "codex")
   expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe("codex")
@@ -51,6 +52,7 @@ test.each([
   ["grok", "Grok", "grok", "grok"],
   ["pi", "Pi Coding Agent", "pi", "pi"],
   ["deepseek-harness", "DeepSeek Harness", "dsh", "deepseek"],
+  ["antigravity", "Antigravity", "agy_acp_server.par", "antigravity"],
 ] as const)("the %s template defaults to its installed CLI and mark", async (template, name, binary, mark) => {
   const { view, save } = await render()
   await pick(view, template)

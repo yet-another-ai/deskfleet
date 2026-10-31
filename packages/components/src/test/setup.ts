@@ -13,7 +13,7 @@ const api: DeskfleetDesktopApi = {
   providers: {
     list: async () => ({
       revision: "test-settings",
-      templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }, { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" }, { id: "cursor", name: "Cursor", defaultBinaryPath: "agent" }, { id: "grok", name: "Grok", defaultBinaryPath: "grok" }, { id: "pi", name: "Pi Coding Agent", defaultBinaryPath: "pi" }, { id: "deepseek-harness", name: "DeepSeek Harness", defaultBinaryPath: "dsh" }, { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" }],
+      templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }, { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" }, { id: "cursor", name: "Cursor", defaultBinaryPath: "agent" }, { id: "grok", name: "Grok", defaultBinaryPath: "grok" }, { id: "pi", name: "Pi Coding Agent", defaultBinaryPath: "pi" }, { id: "deepseek-harness", name: "DeepSeek Harness", defaultBinaryPath: "dsh" }, { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy_acp_server.par" }, { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" }],
       providers: [{ id: "codex", template: "codex", name: "Codex", env: {} }],
     }),
     create: async () => { throw new Error("Daemon unavailable") },
