@@ -53,6 +53,27 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
             .await
         };
     }
+    // Missing credentials and rejected user sessions do not prove that a
+    // daemon's machine credential has been retired.
+    for (path, credential, expected_code) in [
+        ("/api/me", None, "unauthorized"),
+        ("/api/daemon/me", None, "unauthorized"),
+        ("/api/me", Some("unknown-token"), "unauthorized"),
+        (
+            "/api/daemon/me",
+            Some("unknown-token"),
+            "machine_credential_rejected",
+        ),
+    ] {
+        let mut request = test::TestRequest::get().uri(path);
+        if let Some(credential) = credential {
+            request = request.insert_header(("Authorization", format!("Bearer {credential}")));
+        }
+        let response = test::call_service(&app, request.to_request()).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let error: Value = test::read_body_json(response).await;
+        assert_eq!(error["error"]["code"], expected_code);
+    }
     let registration_path = format!("/api/teams/{}/machines", team.id);
     let old_origin = uuid::Uuid::new_v4().to_string();
     let registration = json!({"name":"Old machine","originId":old_origin,"localMachineId":"1"});
@@ -74,10 +95,10 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
         .status(),
         StatusCode::OK
     );
-    assert_eq!(
-        call!(get, "/api/daemon/me", old_token, &json!({})).status(),
-        StatusCode::UNAUTHORIZED
-    );
+    let rejected = call!(get, "/api/daemon/me", old_token, &json!({}));
+    assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+    let error: Value = test::read_body_json(rejected).await;
+    assert_eq!(error["error"]["code"], "machine_credential_rejected");
     assert_eq!(
         call!(post, "/api/auth/logout", token, &json!({})).status(),
         StatusCode::NO_CONTENT

@@ -434,7 +434,13 @@ that origin to the central Team and Machine. Earlier unauthenticated development
 data outside `machine/` is not imported into the enrolled machine.
 
 Machine removal revokes its credential without removing the user's Team
-membership or stopping accepted execution. Explicit re-enrollment closes the
+membership or stopping accepted execution. HTTP requests retire the daemon's
+stored credential only on a JSON `401` response with
+`error.code = "machine_credential_rejected"`, issued when the backend rejects
+the machine token. Generic `401`/`403` responses, including gateway errors and
+user or quota denials, fail the request without retiring the machine. Signaling
+retains its explicit `4401`/`4403` credential-rejection close codes.
+Explicit re-enrollment closes the
 old execution context and selects a new empty directory and origin. The old
 directory remains at its original path, preserving Git worktree registrations
 and history. The new identity may join the original Team or a different Team;

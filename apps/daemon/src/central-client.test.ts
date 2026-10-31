@@ -89,7 +89,7 @@ test("delegation rechecks membership without treating a removed user as a revoke
       for await (const chunk of request) body += chunk
       users.push(JSON.parse(body).userId)
       response.writeHead(status)
-      response.end(JSON.stringify({ authorized: status === 200 }))
+      response.end(JSON.stringify(status === 401 ? { error: { code: "machine_credential_rejected" } } : { authorized: status === 200 }))
     } else if (request.url === "/api/daemon/entitlements") {
       response.writeHead(status)
       response.end(JSON.stringify({ error: { message: "Team limit reached" } }))
@@ -231,7 +231,10 @@ test("explicit credential rejection persists logout without treating transport l
   const directory = await mkdtemp(join(tmpdir(), "df-revoked-"))
   context.after(() => rm(directory, { recursive: true, force: true }))
   let requests = 0
-  const server = createServer((_request, response) => { requests++; response.writeHead(401).end() })
+  const server = createServer((_request, response) => {
+    requests++
+    response.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: { code: "machine_credential_rejected" } }))
+  })
   server.on("upgrade", (_request, socket) => socket.destroy())
   server.listen(0, "127.0.0.1"); await once(server, "listening")
   context.after(() => { server.closeAllConnections(); server.close() })

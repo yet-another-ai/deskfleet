@@ -10,6 +10,14 @@ import { isEncoderFailure, type IceCandidate } from "./control-protocol.ts"
 import { validateRelayedDesktopStart } from "./control-request.ts"
 import type { MachineOperations } from "./machine-operations.ts"
 
+/** Only the backend's explicit machine credential error can retire an identity. */
+async function machineCredentialRejected(response: Response): Promise<boolean> {
+  if (response.status !== 401 || response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") return false
+  // Keep the original body available to the request's own error handling.
+  const body = await response.clone().json().catch(() => undefined) as { error?: { code?: unknown } } | undefined
+  return body?.error?.code === "machine_credential_rejected"
+}
+
 /** Outbound machine identity/control link. A lost socket never owns peer cleanup. */
 export class CentralClient {
   readonly #path: string
@@ -90,8 +98,8 @@ export class CentralClient {
       body: JSON.stringify({ userId: actor.userId }),
       signal: AbortSignal.any([AbortSignal.timeout(15_000), this.#httpClosing.signal]),
     })
-    // A removed user is forbidden without revoking this otherwise valid machine.
-    if (response.status === 401) await this.#revoked()
+    // User denials and gateway errors do not revoke an otherwise valid machine.
+    if (await machineCredentialRejected(response)) await this.#revoked()
     if (!response.ok) throw new Error(`User delegation is no longer authorized (${response.status})`)
     const result = await response.json() as { authorized?: boolean }
     if (result.authorized !== true) throw new Error("Backend did not authorize this user delegation")
@@ -107,7 +115,7 @@ export class CentralClient {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.any([AbortSignal.timeout(15_000), this.#httpClosing.signal]),
     })
-    if (response.status === 401) await this.#revoked()
+    if (await machineCredentialRejected(response)) await this.#revoked()
     if (!response.ok) {
       const error = await response.json().catch(() => null) as { message?: string; error?: { message?: string } | string } | null
       const message = error?.message ?? (typeof error?.error === "string" ? error.error : error?.error?.message)
@@ -158,7 +166,7 @@ export class CentralClient {
       body: JSON.stringify(body), signal: AbortSignal.any([AbortSignal.timeout(30_000), this.#httpClosing.signal]),
     })
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) await this.#revoked()
+      if (await machineCredentialRejected(response)) await this.#revoked()
       throw new Error(`Central sync failed (${response.status})`)
     }
     return response.json()
