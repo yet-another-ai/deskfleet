@@ -26,6 +26,8 @@ export interface DesktopDisplay {
 export interface DesktopCapabilities {
   displays: DesktopDisplay[]
   audio: boolean
+  /** The installed Windows service and current policy permit Ctrl+Alt+Del. */
+  secureAttention?: boolean
 }
 
 export interface DesktopOffer {

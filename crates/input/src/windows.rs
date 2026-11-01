@@ -15,16 +15,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::BOOL;
 
 use crate::{InputError, Result};
+use deskfleet_windows_desktop::desktop::bind_input_desktop;
 
 pub(super) struct PlatformInput {
     display_id: u32,
     wheel_x: f64,
     wheel_y: f64,
     pressed_buttons: [Option<u8>; 5],
+    desktop_generation: u64,
 }
 
 impl PlatformInput {
     pub(super) fn new(display_id: u32) -> Result<Self> {
+        let desktop_generation = bind_input_desktop()
+            .map_err(|error| InputError::Platform(format!("bind input desktop: {error}")))?;
         let _dpi = DpiScope::enter()?;
         display_bounds(display_id)?;
         Ok(Self {
@@ -32,7 +36,21 @@ impl PlatformInput {
             wheel_x: 0.0,
             wheel_y: 0.0,
             pressed_buttons: [None; 5],
+            desktop_generation,
         })
+    }
+
+    pub(super) fn prepare(&mut self) -> Result<bool> {
+        let generation = bind_input_desktop()
+            .map_err(|error| InputError::Platform(format!("bind input desktop: {error}")))?;
+        if generation == self.desktop_generation {
+            return Ok(false);
+        }
+        self.desktop_generation = generation;
+        self.wheel_x = 0.0;
+        self.wheel_y = 0.0;
+        // Keep physical button mappings until Controller releases old presses.
+        Ok(true)
     }
 
     pub(super) fn move_pointer(&mut self, x: f64, y: f64) -> Result<()> {

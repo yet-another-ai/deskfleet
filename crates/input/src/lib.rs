@@ -5,7 +5,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -91,7 +91,7 @@ pub fn request_accessibility_access() -> Option<bool> {
 /// Positions are normalized to the selected display, independent of video size.
 /// Wheel distances are CSS pixels, positive right/down. Keys use physical DOM
 /// `KeyboardEvent.code` names, interpreted with the remote machine's layout.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum InputEvent {
     PointerMove {
@@ -116,6 +116,8 @@ pub enum InputEvent {
         #[serde(default)]
         repeat: bool,
     },
+    /// Ask the Windows desktop service to send Ctrl+Alt+Del in this session.
+    SecureAttention,
     ReleaseAll,
 }
 
@@ -155,13 +157,26 @@ impl InputEvent {
 
 /// Injectable backend boundary used to test input ownership without OS events.
 trait Backend {
+    /// Rebind to the current desktop; true discards the previous held state.
+    fn prepare(&mut self) -> Result<bool> {
+        Ok(false)
+    }
     fn move_pointer(&mut self, x: f64, y: f64) -> Result<()>;
     fn button(&mut self, button: u8, pressed: bool) -> Result<()>;
     fn wheel(&mut self, dx: f64, dy: f64) -> Result<()>;
     fn key(&mut self, code: &str, pressed: bool, repeat: bool) -> Result<()>;
+    fn secure_attention(&mut self) -> Result<()> {
+        Err(InputError::Unsupported(
+            "secure attention requires the Windows desktop service",
+        ))
+    }
 }
 
 impl Backend for PlatformInput {
+    #[cfg(target_os = "windows")]
+    fn prepare(&mut self) -> Result<bool> {
+        self.prepare()
+    }
     fn move_pointer(&mut self, x: f64, y: f64) -> Result<()> {
         self.move_pointer(x, y)
     }
@@ -174,14 +189,23 @@ impl Backend for PlatformInput {
     fn key(&mut self, code: &str, pressed: bool, repeat: bool) -> Result<()> {
         self.key(code, pressed, repeat)
     }
+    #[cfg(target_os = "windows")]
+    fn secure_attention(&mut self) -> Result<()> {
+        deskfleet_windows_desktop::send_secure_attention()
+            .map_err(|error| InputError::Platform(error.to_string()))
+    }
 }
 
 static CONTROL_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-struct ControlLease;
+/// Reserves this process's exclusive desktop controller without opening input.
+/// A remote helper uses its own OS session while the daemon retains this lease.
+pub struct ControlLease;
 
 impl ControlLease {
-    fn acquire() -> Result<Self> {
+    /// # Errors
+    /// Returns [`InputError::Busy`] while another controller owns the process.
+    pub fn acquire() -> Result<Self> {
         CONTROL_ACTIVE
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| InputError::Busy)?;
@@ -226,6 +250,15 @@ impl InputSession {
     /// Returns invalid input or OS injection errors.
     pub fn handle(&mut self, event: InputEvent) -> Result<()> {
         self.controller.handle(event)
+    }
+
+    /// Rebind after a desktop switch and release controls held before it.
+    /// Call periodically while idle so modifiers do not outlive lock/unlock.
+    ///
+    /// # Errors
+    /// Returns desktop access or OS input release errors.
+    pub fn refresh_desktop(&mut self) -> Result<()> {
+        self.controller.refresh_desktop()
     }
 
     /// Release this session's held keys and buttons. Safe to call repeatedly.

@@ -23,6 +23,8 @@ export interface LocalDesktopTarget {
   name: string
   online: boolean
   desktop: boolean
+  /** The target daemon's OS, independent of the viewer's host platform. */
+  platform?: string
   error?: string
 }
 

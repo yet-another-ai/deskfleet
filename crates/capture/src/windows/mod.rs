@@ -2,7 +2,8 @@
 
 #![allow(unsafe_code)]
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use deskfleet_windows_desktop::desktop::bind_input_desktop;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Instant;
 
@@ -35,13 +36,61 @@ const DXGI_ERR_ACCESS_LOST: windows::core::HRESULT = windows::core::HRESULT(0x88
 struct CaptureResources {
     device: ID3D11Device,
     context: ID3D11DeviceContext,
-    output_dup: IDXGIOutputDuplication,
+    output_dup: Option<IDXGIOutputDuplication>,
     texture_pool: Arc<TexturePool>,
     display_id: u32,
     cap_width: u32,
     cap_height: u32,
     target_fps: f64,
-    video_tx: mpsc::SyncSender<Frame>,
+    video_tx: mpsc::SyncSender<(u64, Frame)>,
+    generation: Arc<AtomicU64>,
+    desktop: Option<(std::thread::ThreadId, u64)>,
+}
+
+impl CaptureResources {
+    fn invalidate(&mut self) {
+        if self.output_dup.take().is_some() {
+            self.generation.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    /// Desktop switches can temporarily remove access. Each attempt is bounded,
+    /// and the caller observes a new generation before reusing any saved frame.
+    fn prepare(&mut self) -> bool {
+        let desktop = match bind_input_desktop() {
+            Ok(generation) => (std::thread::current().id(), generation),
+            Err(error) => {
+                if self.output_dup.is_some() {
+                    tracing::debug!(%error, "waiting for input desktop access");
+                }
+                self.invalidate();
+                self.desktop = None;
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                return false;
+            }
+        };
+        if self.desktop != Some(desktop) {
+            self.invalidate();
+            self.desktop = Some(desktop);
+        }
+        if self.output_dup.is_none() {
+            match try_recreate_duplication(
+                &self.device,
+                self.display_id,
+                &mut self.cap_width,
+                &mut self.cap_height,
+                &mut self.texture_pool,
+            ) {
+                Ok(duplication) => self.output_dup = Some(duplication),
+                Err(error) => {
+                    tracing::debug!(%error, "waiting for desktop duplication");
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    return false;
+                }
+            }
+        }
+        true
+    }
 }
 
 // SAFETY: COM pointers wrapped by the `windows` crate are reference-counted
@@ -56,8 +105,9 @@ pub struct WindowsStream {
     thread: Mutex<Option<std::thread::JoinHandle<()>>>,
     resources: Mutex<Option<CaptureResources>>,
     start_time: Instant,
-    video_rx: mpsc::Receiver<Frame>,
+    video_rx: mpsc::Receiver<(u64, Frame)>,
     capture_audio: bool,
+    generation: Arc<AtomicU64>,
 }
 
 impl WindowsStream {
@@ -74,7 +124,10 @@ impl WindowsStream {
                 "DXGI capture does not resize frames",
             ));
         }
-        let (video_tx, video_rx) = mpsc::sync_channel::<Frame>(3);
+        let (video_tx, video_rx) = mpsc::sync_channel(3);
+        let desktop = bind_input_desktop()
+            .map_err(|error| CaptureError::Platform(format!("bind capture desktop: {error}")))?;
+        let generation = Arc::new(AtomicU64::new(0));
 
         // 1. Create a D3D11 device on the adapter that owns this display.
         let (device, context) = create_d3d11_device(display.id)?;
@@ -102,17 +155,20 @@ impl WindowsStream {
             resources: Mutex::new(Some(CaptureResources {
                 device,
                 context,
-                output_dup,
+                output_dup: Some(output_dup),
                 texture_pool,
                 display_id: display.id,
                 cap_width,
                 cap_height,
                 target_fps: config.fps,
                 video_tx,
+                generation: Arc::clone(&generation),
+                desktop: Some((std::thread::current().id(), desktop)),
             })),
             start_time: Instant::now(),
             video_rx,
             capture_audio: config.capture_audio,
+            generation,
         })
     }
 
@@ -154,6 +210,12 @@ impl WindowsStream {
                 "resources unavailable (already started in threaded mode?)".into(),
             )
         })?;
+        if !res.prepare() {
+            return Ok(None);
+        }
+        let output_dup = res.output_dup.as_ref().ok_or_else(|| {
+            CaptureError::Platform("capture duplication unavailable after desktop binding".into())
+        })?;
 
         let frame_period_ms = ((1000.0 / res.target_fps).round() as u32).max(1);
         let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
@@ -162,8 +224,7 @@ impl WindowsStream {
         // SAFETY: Duplication is exclusively owned by this capture worker; the
         // output pointers point to initialized storage valid for this call.
         let result = unsafe {
-            res.output_dup
-                .AcquireNextFrame(frame_period_ms, &raw mut frame_info, &raw mut resource)
+            output_dup.AcquireNextFrame(frame_period_ms, &raw mut frame_info, &raw mut resource)
         };
 
         match result {
@@ -185,29 +246,13 @@ impl WindowsStream {
                 };
                 // SAFETY: A successful AcquireNextFrame above must be paired with release.
                 unsafe {
-                    let _ = res.output_dup.ReleaseFrame();
+                    let _ = output_dup.ReleaseFrame();
                 }
                 frame
             }
             Err(e) if e.code() == DXGI_ERR_WAIT_TIMEOUT => Ok(None),
             Err(e) if e.code() == DXGI_ERR_ACCESS_LOST => {
-                tracing::warn!("DXGI access lost — recreating output duplication");
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                match try_recreate_duplication(
-                    &res.device,
-                    res.display_id,
-                    &mut res.cap_width,
-                    &mut res.cap_height,
-                    &mut res.texture_pool,
-                ) {
-                    Ok(dup) => {
-                        res.output_dup = dup;
-                    }
-                    Err(e) => {
-                        tracing::error!("failed to recreate output duplication: {e}");
-                        std::thread::sleep(std::time::Duration::from_secs(1));
-                    }
-                }
+                res.invalidate();
                 Ok(None)
             }
             Err(e) => Err(CaptureError::Platform(format!("AcquireNextFrame: {e}"))),
@@ -234,14 +279,27 @@ impl WindowsStream {
     }
 
     pub fn next_frame(&self) -> Result<Frame, CaptureError> {
-        self.video_rx.recv().map_err(|_| CaptureError::StreamEnded)
+        loop {
+            let (generation, frame) = self
+                .video_rx
+                .recv()
+                .map_err(|_| CaptureError::StreamEnded)?;
+            if generation == self.desktop_generation() {
+                return Ok(frame);
+            }
+        }
     }
 
     pub fn try_next_frame(&self) -> Result<Option<Frame>, CaptureError> {
-        match self.video_rx.try_recv() {
-            Ok(frame) => Ok(Some(frame)),
-            Err(mpsc::TryRecvError::Empty) => Ok(None),
-            Err(mpsc::TryRecvError::Disconnected) => Err(CaptureError::StreamEnded),
+        loop {
+            match self.video_rx.try_recv() {
+                Ok((generation, frame)) if generation == self.desktop_generation() => {
+                    return Ok(Some(frame));
+                }
+                Ok(_) => continue,
+                Err(mpsc::TryRecvError::Empty) => return Ok(None),
+                Err(mpsc::TryRecvError::Disconnected) => return Err(CaptureError::StreamEnded),
+            }
         }
     }
 
@@ -249,10 +307,19 @@ impl WindowsStream {
         &self,
         timeout: std::time::Duration,
     ) -> Result<Option<Frame>, CaptureError> {
-        match self.video_rx.recv_timeout(timeout) {
-            Ok(frame) => Ok(Some(frame)),
-            Err(mpsc::RecvTimeoutError::Timeout) => Ok(None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(CaptureError::StreamEnded),
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self
+                .video_rx
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            {
+                Ok((generation, frame)) if generation == self.desktop_generation() => {
+                    return Ok(Some(frame));
+                }
+                Ok(_) => continue,
+                Err(mpsc::RecvTimeoutError::Timeout) => return Ok(None),
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(CaptureError::StreamEnded),
+            }
         }
     }
 
@@ -276,6 +343,10 @@ impl WindowsStream {
     pub fn has_audio(&self) -> bool {
         self.capture_audio
     }
+
+    pub fn desktop_generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
 }
 
 impl Drop for WindowsStream {
@@ -288,118 +359,93 @@ impl Drop for WindowsStream {
 // ── Capture thread ────────────────────────────────────────────────────
 
 /// Main capture loop running on a dedicated thread.
-fn capture_loop(res: CaptureResources, stop_flag: Arc<AtomicBool>) {
-    let CaptureResources {
-        device,
-        context,
-        mut output_dup,
-        mut texture_pool,
-        display_id,
-        mut cap_width,
-        mut cap_height,
-        target_fps,
-        video_tx,
-    } = res;
-
+fn capture_loop(mut res: CaptureResources, stop_flag: Arc<AtomicBool>) {
     let start_time = Instant::now();
-
-    let frame_period_ms = ((1000.0 / target_fps).round() as u32).max(1);
-
-    // Persistent texture for idle repeat frames (allocated lazily).
+    let frame_period_ms = ((1000.0 / res.target_fps).round() as u32).max(1);
     let mut last_desktop: Option<ID3D11Texture2D> = None;
-
-    // Periodic repeats keep the stream alive during idle periods.
     let mut last_sent = Instant::now();
+    let mut generation = res.generation.load(Ordering::Acquire);
     let repeat_interval = std::time::Duration::from_millis(500);
 
     while !stop_flag.load(Ordering::Relaxed) {
+        let prepared = res.prepare();
+        let current_generation = res.generation.load(Ordering::Acquire);
+        if current_generation != generation {
+            last_desktop = None;
+            generation = current_generation;
+        }
+        if !prepared {
+            continue;
+        }
+        let Some(output_dup) = res.output_dup.as_ref() else {
+            continue;
+        };
         let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
         let mut resource: Option<IDXGIResource> = None;
-
         // SAFETY: Duplication is exclusively owned by this capture worker; the
         // output pointers point to initialized storage valid for this call.
         let result = unsafe {
             output_dup.AcquireNextFrame(frame_period_ms, &raw mut frame_info, &raw mut resource)
         };
-
         match result {
             Ok(()) => {
-                if let Some(ref res) = resource {
+                if let Some(resource) = resource.as_ref() {
                     let timestamp_ns = start_time.elapsed().as_nanos() as u64;
                     if let Ok(()) = process_frame(
-                        res,
-                        &device,
-                        &context,
-                        &video_tx,
-                        &texture_pool,
+                        resource,
+                        &res.device,
+                        &res.context,
+                        &res.video_tx,
+                        &res.texture_pool,
                         timestamp_ns,
-                        cap_width,
-                        cap_height,
+                        res.cap_width,
+                        res.cap_height,
+                        generation,
                     ) {
                         last_sent = Instant::now();
                     }
-
                     update_last_desktop(
-                        res,
-                        &device,
-                        &context,
+                        resource,
+                        &res.device,
+                        &res.context,
                         &mut last_desktop,
-                        cap_width,
-                        cap_height,
+                        res.cap_width,
+                        res.cap_height,
                     );
                 }
-                // SAFETY: A successful AcquireNextFrame above must be paired with release.
+                // SAFETY: Every successful AcquireNextFrame has one release.
                 unsafe {
                     let _ = output_dup.ReleaseFrame();
                 }
             }
-            Err(e) if e.code() == DXGI_ERR_WAIT_TIMEOUT => {
+            Err(error) if error.code() == DXGI_ERR_WAIT_TIMEOUT => {
                 if last_sent.elapsed() >= repeat_interval
-                    && let Some(ld) = last_desktop.as_ref()
+                    && let Some(texture) = last_desktop.as_ref()
                 {
                     let timestamp_ns = start_time.elapsed().as_nanos() as u64;
                     if let Ok(()) = send_frame_from_texture(
-                        ld,
-                        &device,
-                        &context,
-                        &video_tx,
-                        &texture_pool,
+                        texture,
+                        &res.device,
+                        &res.context,
+                        &res.video_tx,
+                        &res.texture_pool,
                         timestamp_ns,
-                        cap_width,
-                        cap_height,
+                        res.cap_width,
+                        res.cap_height,
+                        generation,
                     ) {
                         last_sent = Instant::now();
                     }
                 }
             }
-            Err(e) if e.code() == DXGI_ERR_ACCESS_LOST => {
-                tracing::warn!("DXGI access lost — recreating output duplication");
-                std::thread::sleep(std::time::Duration::from_millis(200));
-
-                match try_recreate_duplication(
-                    &device,
-                    display_id,
-                    &mut cap_width,
-                    &mut cap_height,
-                    &mut texture_pool,
-                ) {
-                    Ok(dup) => {
-                        output_dup = dup;
-                        last_desktop = None;
-                    }
-                    Err(e) => {
-                        tracing::error!("failed to recreate output duplication: {e}");
-                        std::thread::sleep(std::time::Duration::from_secs(1));
-                    }
-                }
-                continue;
+            Err(error) if error.code() == DXGI_ERR_ACCESS_LOST => {
+                res.invalidate();
+                last_desktop = None;
             }
-            Err(e) => {
-                tracing::error!("AcquireNextFrame failed: {e}");
+            Err(error) => {
+                tracing::error!(%error, "AcquireNextFrame failed");
                 break;
             }
         }
     }
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────

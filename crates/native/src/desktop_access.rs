@@ -23,6 +23,25 @@ pub fn linux_backend() -> Option<&'static str> {
     }
 }
 
+/// Probe Windows Ctrl+Alt+Del support without starting capture or modifying
+/// policy. Other platforms return false.
+///
+/// # Errors
+/// Returns service-manager, registry, or worker errors.
+pub async fn secure_attention_supported() -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        tokio::task::spawn_blocking(deskfleet_windows_desktop::secure_attention_available)
+            .await
+            .map_err(|error| error.to_string())?
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(false)
+    }
+}
+
 /// Discover capture and hardware encoding without requesting OS authorization.
 pub async fn supported() -> Result<bool, String> {
     #[cfg(target_os = "linux")]

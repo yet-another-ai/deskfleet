@@ -5,6 +5,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use deskfleet_input::InputSession;
 pub use deskfleet_input::{InputError, InputEvent};
@@ -12,6 +13,71 @@ use tokio::sync::{mpsc, oneshot};
 
 type Result<T> = std::result::Result<T, InputError>;
 type Command = (InputEvent, oneshot::Sender<Result<()>>);
+
+enum Session {
+    Local(InputSession),
+    #[cfg(windows)]
+    Service {
+        client: crate::windows_desktop::Client,
+        _lease: deskfleet_input::ControlLease,
+    },
+}
+
+impl Session {
+    fn open(display_id: u32) -> Result<Self> {
+        #[cfg(windows)]
+        if let Some(mut client) =
+            crate::windows_desktop::Client::connect().map_err(service_error)?
+        {
+            let lease = deskfleet_input::ControlLease::acquire()?;
+            client.start_input(display_id).map_err(service_error)?;
+            return Ok(Self::Service {
+                client,
+                _lease: lease,
+            });
+        }
+        Ok(Self::Local(InputSession::new(display_id)?))
+    }
+
+    fn handle(&mut self, event: InputEvent) -> Result<()> {
+        match self {
+            Self::Local(session) => session.handle(event),
+            #[cfg(windows)]
+            Self::Service { client, .. } => {
+                if matches!(event, InputEvent::SecureAttention) {
+                    client
+                        .input(InputEvent::ReleaseAll)
+                        .map_err(service_error)?;
+                    deskfleet_windows_desktop::send_secure_attention()
+                        .map_err(|error| InputError::Platform(error.to_string()))
+                } else {
+                    client.input(event).map_err(service_error)
+                }
+            }
+        }
+    }
+
+    fn refresh(&mut self) -> Result<()> {
+        match self {
+            Self::Local(session) => session.refresh_desktop(),
+            #[cfg(windows)]
+            Self::Service { client, .. } => client.refresh_input().map_err(service_error),
+        }
+    }
+
+    fn release_all(&mut self) -> Result<()> {
+        match self {
+            Self::Local(session) => session.release_all(),
+            #[cfg(windows)]
+            Self::Service { client, .. } => client.stop().map_err(service_error),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn service_error(error: crate::media::MediaError) -> InputError {
+    InputError::Platform(error.to_string())
+}
 
 /// Check this process's Accessibility permission without prompting.
 ///
@@ -60,10 +126,11 @@ impl InputWorker {
         let (ready, initialized) = oneshot::channel();
         let stopped = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&stopped);
+        let runtime = tokio::runtime::Handle::current();
         let thread = std::thread::Builder::new()
             .name("desktop-input".into())
             .spawn(move || {
-                let mut session = match InputSession::new(display_id) {
+                let mut session = match Session::open(display_id) {
                     Ok(session) => session,
                     Err(error) => {
                         let _ = ready.send(Err(error));
@@ -73,7 +140,29 @@ impl InputWorker {
                 if ready.send(Ok(())).is_err() {
                     return session.release_all();
                 }
-                while let Some((event, reply)) = receiver.blocking_recv() {
+                let mut refresh_failed = false;
+                loop {
+                    if stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let command = runtime.block_on(async {
+                        tokio::time::timeout(Duration::from_millis(100), receiver.recv()).await
+                    });
+                    let (event, reply) = match command {
+                        Ok(Some(command)) => command,
+                        Ok(None) => break,
+                        Err(_) => {
+                            match session.refresh() {
+                                Ok(()) => refresh_failed = false,
+                                Err(error) if !refresh_failed => {
+                                    tracing::warn!(%error, "desktop input refresh failed");
+                                    refresh_failed = true;
+                                }
+                                Err(_) => {}
+                            }
+                            continue;
+                        }
+                    };
                     if stop.load(Ordering::Acquire) {
                         break;
                     }

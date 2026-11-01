@@ -5,6 +5,7 @@ import KeepAwakeSettings from "./KeepAwakeSettings.vue"
 import LaunchAtStartupSettings from "./LaunchAtStartupSettings.vue"
 import LocalAgentSettings from "./LocalAgentSettings.vue"
 import WorktreeRootSettings from "./WorktreeRootSettings.vue"
+import WindowsDesktopServiceSettings from "./WindowsDesktopServiceSettings.vue"
 
 const client = usePlatformClient()
 
@@ -18,6 +19,7 @@ const { t } = useI18n()
     <div class="ui-card px-4">
       <LaunchAtStartupSettings />
       <KeepAwakeSettings />
+      <WindowsDesktopServiceSettings v-if="client.platform === 'win32'" />
       <WorktreeRootSettings />
       <LocalAgentSettings />
     </div>

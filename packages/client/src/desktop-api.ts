@@ -15,6 +15,7 @@ import type { AppearanceApi } from "./appearance.ts"
 import type { LocalApplicationsApi } from "./applications.ts"
 import type { UpdateApi } from "./updates.ts"
 import type { LocalChannelsApi } from "./local-channels.ts"
+import type { WindowsDesktopServiceApi } from "./windows-desktop-service.ts"
 
 /** The host platform adapter configured for the shared application. */
 export interface DeskfleetDesktopApi {
@@ -26,6 +27,7 @@ export interface DeskfleetDesktopApi {
   appearance?: AppearanceApi
   applications?: LocalApplicationsApi
   updates?: UpdateApi
+  windowsDesktopService?: WindowsDesktopServiceApi
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
   localChannels?: LocalChannelsApi

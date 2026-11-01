@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "apps/server",
+    "apps/desktop-service",
     "crates/control-store",
     "crates/capture",
     "crates/encoder",
@@ -16,6 +17,7 @@ members = [
     "crates/protocol",
     "crates/store",
     "crates/wayland",
+    "crates/windows-desktop",
     "crates/x11",
 ]
 exclude = [".agents/skills/rust-skills/checks", "vendor/portable-pty"]
@@ -41,6 +43,7 @@ deskfleet-input = { path = "crates/input" }
 deskfleet-linux-desktop = { path = "crates/linux-desktop" }
 deskfleet-linux-media = { path = "crates/linux-media" }
 deskfleet-wayland = { path = "crates/wayland" }
+deskfleet-windows-desktop = { path = "crates/windows-desktop" }
 deskfleet-x11 = { path = "crates/x11" }
 deskfleet-nvenc = { path = "crates/nvenc" }
 deskfleet-nvenc-sys = { path = "crates/nvenc-sys" }

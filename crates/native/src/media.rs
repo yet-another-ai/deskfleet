@@ -7,11 +7,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use deskfleet_capture::{CaptureConfig, CaptureError, Display};
-use deskfleet_encoder::{
-    Codec, EncodedPacket, Encoder, EncoderConfig, EncoderError, H264Profile, OpusEncoder,
-    OpusEncoderConfig,
-};
+use deskfleet_capture::{CaptureError, Display};
+use deskfleet_encoder::{Codec, EncoderError};
+
+pub(crate) mod pipeline;
+use pipeline::{CaptureBatch, CapturePipeline};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 
@@ -36,6 +36,8 @@ pub enum MediaError {
     PermissionSettings(#[source] std::io::Error),
     #[error("media transport failed: {0}")]
     Transport(String),
+    #[error("Windows desktop service: {message}")]
+    Service { message: String, encoder: bool },
     #[error("media worker stopped during startup")]
     Startup,
     #[error("capture and encoding did not produce the first video packet within 5 seconds")]
@@ -51,7 +53,9 @@ impl MediaError {
     /// Permission, display, transport, and audio failures stay unclassified.
     pub(crate) fn fallback_reason(&self) -> Option<&'static str> {
         match self {
-            Self::VideoEncoder(_) | Self::EncoderStall => Some("encoder"),
+            Self::VideoEncoder(_) | Self::EncoderStall | Self::Service { encoder: true, .. } => {
+                Some("encoder")
+            }
             _ => None,
         }
     }
@@ -60,6 +64,10 @@ impl MediaError {
 /// Video codec support is probed only when explicitly requested.
 pub async fn supported_video_codecs(display_id: u32) -> Result<Vec<String>, MediaError> {
     tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        if let Some(mut client) = crate::windows_desktop::Client::connect()? {
+            return client.codecs(display_id);
+        }
         if !deskfleet_capture::displays()?
             .iter()
             .any(|display| display.id == display_id)
@@ -82,7 +90,14 @@ pub async fn displays() -> Result<Vec<Display>, MediaError> {
             .await
             .map_err(|error| CaptureError::Platform(error.to_string()))?;
     }
-    Ok(tokio::task::spawn_blocking(deskfleet_capture::displays).await??)
+    tokio::task::spawn_blocking(|| {
+        #[cfg(windows)]
+        if let Some(mut client) = crate::windows_desktop::Client::connect()? {
+            return client.displays();
+        }
+        Ok(deskfleet_capture::displays()?)
+    })
+    .await?
 }
 
 /// Check capture permission on a worker without prompting or starting capture.
@@ -117,6 +132,7 @@ pub async fn request_screen_capture_access() -> Result<Option<bool>, MediaError>
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(any(windows, test), derive(serde::Serialize, serde::Deserialize))]
 pub struct DesktopConfig {
     pub display_id: u32,
     pub fps: f64,
@@ -125,7 +141,7 @@ pub struct DesktopConfig {
 }
 
 impl DesktopConfig {
-    fn validate(&self) -> Result<(), MediaError> {
+    pub(crate) fn validate(&self) -> Result<(), MediaError> {
         if !self.fps.is_finite() || !(1.0..=240.0).contains(&self.fps) {
             return Err(MediaError::InvalidConfig("fps must be between 1 and 240"));
         }
@@ -140,7 +156,7 @@ impl DesktopConfig {
     }
 }
 
-enum Packet {
+pub(crate) enum Packet {
     Video(Vec<u8>, Duration),
     Audio(Vec<u8>, Duration),
 }
@@ -268,6 +284,46 @@ impl Drop for DesktopStream {
     }
 }
 
+enum CaptureSource {
+    Local(Box<CapturePipeline>),
+    #[cfg(windows)]
+    Service(crate::windows_desktop::Client),
+}
+
+impl CaptureSource {
+    fn open(config: DesktopConfig, codec: Codec, audio: bool) -> Result<Self, MediaError> {
+        #[cfg(windows)]
+        if let Some(mut client) = crate::windows_desktop::Client::connect()? {
+            if audio {
+                return Err(MediaError::InvalidConfig(
+                    "Windows system audio is unavailable",
+                ));
+            }
+            client.start(config, codec)?;
+            return Ok(Self::Service(client));
+        }
+        Ok(Self::Local(Box::new(CapturePipeline::new(
+            config, codec, audio,
+        )?)))
+    }
+
+    fn poll(&mut self, keyframe: bool) -> Result<CaptureBatch, MediaError> {
+        match self {
+            Self::Local(pipeline) => pipeline.poll(keyframe),
+            #[cfg(windows)]
+            Self::Service(client) => client.poll(keyframe),
+        }
+    }
+
+    fn stop(self) -> Result<(), MediaError> {
+        match self {
+            Self::Local(pipeline) => (*pipeline).stop(),
+            #[cfg(windows)]
+            Self::Service(mut client) => client.stop(),
+        }
+    }
+}
+
 fn capture_loop(
     config: DesktopConfig,
     codec: Codec,
@@ -277,193 +333,47 @@ fn capture_loop(
     packets: mpsc::Sender<Packet>,
     ready: oneshot::Sender<()>,
 ) -> Result<(), MediaError> {
-    let display = deskfleet_capture::displays()?
-        .into_iter()
-        .find(|display| display.id == config.display_id)
-        .ok_or(MediaError::DisplayNotFound(config.display_id))?;
-    let fps = if display.refresh_rate_hz > 0.0 {
-        config.fps.min(display.refresh_rate_hz)
-    } else {
-        config.fps
-    };
-    let capture = deskfleet_capture::create_capture_stream(
-        &display,
-        &CaptureConfig {
-            fps,
-            capture_audio: audio,
-            ..CaptureConfig::default()
-        },
-    )?;
-    let mut opus = audio
-        .then(|| OpusEncoder::new(&OpusEncoderConfig::default()))
-        .transpose()?;
-    let mut encoder: Option<Encoder> = None;
-    let mut retained = RetainedVideoFrame::new();
-    let mut dimensions = (0, 0);
+    let mut source = CaptureSource::open(config, codec, audio)?;
     let mut ready = Some(ready);
     let first_frame_deadline = Instant::now() + Duration::from_secs(5);
+    let mut encoder_started = false;
     let result = (|| {
         while !stop.load(Ordering::Relaxed) {
             if ready.is_some() && Instant::now() >= first_frame_deadline {
-                return Err(if encoder.is_some() {
+                return Err(if encoder_started {
                     MediaError::EncoderStall
                 } else {
                     MediaError::FirstFrameTimeout
                 });
             }
-            let captured = capture.poll_frame()?;
-            if let Some(frame) = captured.as_ref()
-                && dimensions != (frame.width, frame.height)
-            {
-                encoder = Some(
-                    Encoder::new(&EncoderConfig {
-                        width: frame.width,
-                        height: frame.height,
-                        fps,
-                        codec,
-                        bitrate_bps: config.bitrate_bps,
-                        max_bitrate_bps: config.max_bitrate_bps,
-                        h264_profile: H264Profile::ConstrainedBaseline,
-                        ..EncoderConfig::default()
-                    })
-                    .map_err(MediaError::VideoEncoder)?,
-                );
-                dimensions = (frame.width, frame.height);
-            }
-            // Keep one owned surface outside the capture pool. PLI/FIR can
-            // arrive after the desktop stops changing, so consume requests on
-            // every bounded capture poll and re-encode that retained frame.
-            let keyframe = peer.take_keyframe_request();
-            let captured = captured.map(|frame| {
-                let timestamp = frame.timestamp_ns;
-                (frame, timestamp)
-            });
-            if let Some(encoded) = retained.submit(
-                captured,
-                keyframe,
-                Instant::now(),
-                |frame, timestamp, keyframe| -> Result<_, MediaError> {
-                    frame.timestamp_ns = timestamp;
-                    let encoder = encoder.as_mut().ok_or(MediaError::Startup)?;
-                    if keyframe {
-                        encoder.request_keyframe();
-                    }
-                    encoder.encode(frame).map_err(MediaError::VideoEncoder)
-                },
-            ) && !deliver_video(encoded?, &packets, &mut ready, fps)
-            {
+            let batch = source.poll(peer.take_keyframe_request())?;
+            encoder_started = batch.encoder_started;
+            if !deliver_packets(batch.packets, &packets, &mut ready) {
                 return Ok(());
-            }
-            // Hardware MFTs can produce their first or last packet after encode
-            // returns, including when a static desktop never supplies another frame.
-            if let Some(encoder) = encoder.as_mut()
-                && !deliver_video(
-                    encoder.poll_output().map_err(MediaError::VideoEncoder)?,
-                    &packets,
-                    &mut ready,
-                    fps,
-                )
-            {
-                return Ok(());
-            }
-            // Drain audio even when there is no new video frame (a static desktop).
-            if let Some(opus) = opus.as_mut() {
-                while let Some(frame) = capture.try_next_audio_frame()? {
-                    for packet in opus.encode(&frame.samples)? {
-                        if packets
-                            .blocking_send(Packet::Audio(
-                                packet.data,
-                                Duration::from_nanos(packet.duration_ns),
-                            ))
-                            .is_err()
-                        {
-                            return Ok(());
-                        }
-                    }
-                }
             }
         }
         Ok(())
     })();
-    // Release encoder registrations while their capture textures still exist.
-    // The Linux stub has no destructor, so `drop(encoder)` fails clippy there.
-    // Ending this scope still drops Windows and macOS encoders before stop.
-    {
-        let _encoder = encoder.take();
-    }
-    let _ = retained.latest.take();
-    let stopped = capture.stop().map_err(MediaError::from);
-    result.and(stopped)
+    result.and(source.stop())
 }
 
-/// Holds exactly one capture-owned surface until a newer frame replaces it.
-/// The generic frame lets scheduling and ownership be exercised without a GPU.
-struct RetainedVideoFrame<T> {
-    latest: Option<(T, u64, Instant)>,
-    last_timestamp: Option<u64>,
-    keyframe_requested: bool,
-}
-
-impl<T> RetainedVideoFrame<T> {
-    fn new() -> Self {
-        Self {
-            latest: None,
-            last_timestamp: None,
-            keyframe_requested: false,
-        }
-    }
-
-    fn submit<R>(
-        &mut self,
-        captured: Option<(T, u64)>,
-        keyframe_requested: bool,
-        now: Instant,
-        encode: impl FnOnce(&mut T, u64, bool) -> R,
-    ) -> Option<R> {
-        let fresh = captured.is_some();
-        if let Some((frame, timestamp)) = captured {
-            self.latest = Some((frame, timestamp, now));
-        }
-        self.keyframe_requested |= keyframe_requested;
-        if !fresh && !self.keyframe_requested {
-            return None;
-        }
-        let (frame, captured_timestamp, captured_at) = self.latest.as_mut()?;
-        let elapsed =
-            u64::try_from(now.duration_since(*captured_at).as_nanos()).unwrap_or(u64::MAX);
-        let mut timestamp = captured_timestamp.saturating_add(elapsed);
-        if let Some(previous) = self.last_timestamp {
-            // MF uses 100 ns ticks; preserve ordering after its time conversion.
-            timestamp = timestamp.max(previous.saturating_add(100));
-        }
-        self.last_timestamp = Some(timestamp);
-        let keyframe = std::mem::take(&mut self.keyframe_requested);
-        Some(encode(frame, timestamp, keyframe))
-    }
-}
-
-fn deliver_video(
-    encoded: Vec<EncodedPacket>,
+fn deliver_packets(
+    encoded: Vec<Packet>,
     packets: &mpsc::Sender<Packet>,
     ready: &mut Option<oneshot::Sender<()>>,
-    fps: f64,
 ) -> bool {
     for packet in encoded {
-        if packet.data.is_empty() {
+        let video = matches!(&packet, Packet::Video(data, _) if !data.is_empty());
+        let empty = match &packet {
+            Packet::Video(data, _) | Packet::Audio(data, _) => data.is_empty(),
+        };
+        if empty {
             continue;
         }
-        let duration = if packet.duration_ns == 0 {
-            Duration::from_secs_f64(1.0 / fps)
-        } else {
-            Duration::from_nanos(packet.duration_ns)
-        };
-        if packets
-            .blocking_send(Packet::Video(packet.data, duration))
-            .is_err()
-        {
+        if packets.blocking_send(packet).is_err() {
             return false;
         }
-        if let Some(ready) = ready.take() {
+        if video && let Some(ready) = ready.take() {
             let _ = ready.send(());
         }
     }
@@ -475,155 +385,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keyframe_feedback_resubmits_unchanged_frame_without_repeating_idle_polls() {
-        let start = Instant::now();
-        let mut retained = RetainedVideoFrame::new();
-        let mut submitted = Vec::new();
-        let mut encode = |frame: &mut u8, timestamp, keyframe| {
-            submitted.push((*frame, timestamp, keyframe));
-        };
-
-        retained.submit(Some((7, 1_000)), false, start, &mut encode);
-        assert!(
-            retained
-                .submit(None, false, start + Duration::from_millis(10), &mut encode)
-                .is_none()
-        );
-        retained.submit(None, true, start + Duration::from_millis(20), &mut encode);
-        assert!(
-            retained
-                .submit(None, false, start + Duration::from_millis(30), &mut encode)
-                .is_none()
-        );
-        retained.submit(None, true, start + Duration::from_millis(40), &mut encode);
-        // A newly queued capture may predate the most recent repeated frame.
-        retained.submit(
-            Some((8, 30_001_000)),
-            false,
-            start + Duration::from_millis(50),
-            &mut encode,
-        );
-        assert_eq!(
-            submitted,
-            [
-                (7, 1_000, false),
-                (7, 20_001_000, true),
-                (7, 40_001_000, true),
-                (8, 40_001_100, false),
-            ]
-        );
-        assert!(
-            submitted
-                .windows(2)
-                .all(|pair| pair[0].1 / 100 < pair[1].1 / 100)
-        );
-    }
-
-    #[test]
-    fn retains_surface_until_replaced_and_coalesces_feedback_before_first_frame() {
-        use std::cell::Cell;
-        use std::rc::Rc;
-
-        struct Surface(Rc<Cell<usize>>);
-        impl Drop for Surface {
-            fn drop(&mut self) {
-                self.0.set(self.0.get() + 1);
-            }
-        }
-
-        let dropped = Rc::new(Cell::new(0));
-        let mut retained = RetainedVideoFrame::new();
-        let now = Instant::now();
-        assert!(
-            retained
-                .submit(None, true, now, |_: &mut Surface, _, _| panic!(
-                    "no capture yet"
-                ))
-                .is_none()
-        );
-        assert!(
-            retained
-                .submit(None, true, now, |_: &mut Surface, _, _| panic!(
-                    "no capture yet"
-                ))
-                .is_none()
-        );
-        let keyframe = retained.submit(
-            Some((Surface(Rc::clone(&dropped)), 0)),
-            false,
-            now,
-            |_, _, keyframe| keyframe,
-        );
-        assert_eq!(keyframe, Some(true));
-        assert_eq!(dropped.get(), 0);
-        retained.submit(None, true, now + Duration::from_millis(10), |_, _, _| {});
-        assert_eq!(
-            dropped.get(),
-            0,
-            "a repeated frame must retain the same surface"
-        );
-        retained.submit(
-            Some((Surface(Rc::clone(&dropped)), 20_000_000)),
-            false,
-            now + Duration::from_millis(20),
-            |_, _, _| {},
-        );
-        assert_eq!(
-            dropped.get(),
-            1,
-            "only the replaced surface returns to capture"
-        );
-        drop(retained);
-        assert_eq!(dropped.get(), 2);
-    }
-
-    #[test]
-    fn startup_waits_for_nonempty_output_and_delivery() {
+    fn startup_waits_for_nonempty_video_output_and_delivery() {
         let (packets, mut receiver) = mpsc::channel(2);
         let (sender, mut started) = oneshot::channel();
         let mut ready = Some(sender);
-        assert!(deliver_video(Vec::new(), &packets, &mut ready, 30.0));
-        assert!(matches!(
-            started.try_recv(),
-            Err(oneshot::error::TryRecvError::Empty)
-        ));
-        let mut packet = EncodedPacket {
-            data: Vec::new(),
-            timestamp_ns: 0,
-            duration_ns: 0,
-            is_keyframe: true,
-        };
-        assert!(deliver_video(
-            vec![packet.clone()],
+        assert!(deliver_packets(
+            vec![Packet::Video(Vec::new(), Duration::ZERO)],
             &packets,
-            &mut ready,
-            30.0
+            &mut ready
+        ));
+        assert!(deliver_packets(
+            vec![Packet::Audio(vec![1], Duration::from_millis(20))],
+            &packets,
+            &mut ready
         ));
         assert!(matches!(
             started.try_recv(),
             Err(oneshot::error::TryRecvError::Empty)
         ));
-        packet.data = vec![0, 0, 0, 1, 0x65];
-        assert!(deliver_video(vec![packet], &packets, &mut ready, 30.0));
+        assert!(deliver_packets(
+            vec![Packet::Video(
+                vec![0, 0, 0, 1, 0x65],
+                Duration::from_millis(33)
+            )],
+            &packets,
+            &mut ready
+        ));
         assert!(started.try_recv().is_ok());
+        assert!(matches!(receiver.try_recv().unwrap(), Packet::Audio(..)));
         let Packet::Video(bytes, duration) = receiver.try_recv().unwrap() else {
             panic!("expected video")
         };
         assert_eq!(bytes, [0, 0, 0, 1, 0x65]);
-        assert_eq!(duration, Duration::from_secs_f64(1.0 / 30.0));
+        assert_eq!(duration, Duration::from_millis(33));
         drop(receiver);
         let (sender, mut started) = oneshot::channel();
         let mut ready = Some(sender);
-        assert!(!deliver_video(
-            vec![EncodedPacket {
-                data: bytes,
-                timestamp_ns: 0,
-                duration_ns: 0,
-                is_keyframe: true
-            }],
+        assert!(!deliver_packets(
+            vec![Packet::Video(bytes, duration)],
             &packets,
-            &mut ready,
-            30.0
+            &mut ready
         ));
         assert!(matches!(
             started.try_recv(),

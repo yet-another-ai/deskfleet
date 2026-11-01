@@ -30,6 +30,7 @@ import {
 } from "./renderer-protocol.ts"
 import { createTray } from "./tray.ts"
 import { installUpdates } from "./updates.ts"
+import { installWindowsDesktopService } from "./windows-desktop-service.ts"
 import { hideMainWindow, showMainWindow } from "./windows.ts"
 
 function start(): void {
@@ -45,6 +46,7 @@ function start(): void {
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
     installDesktopMediaIpc()
+    installWindowsDesktopService()
     const central = await installCentralAccount()
     installLocalApplications(central)
     const files = installFiles(central)

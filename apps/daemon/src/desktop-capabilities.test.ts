@@ -18,6 +18,7 @@ test("desktop capabilities keep codecs attached to each display's GPU", async ()
     { id: 9, width: 1280, height: 720, refreshRateHz: 60 },
   ]
   const result = await desktopCapabilities({
+    secureAttentionSupported: async () => false,
     captureDisplays: async () => displays,
     supportedVideoCodecs: async id => {
       probed.push(id)
@@ -42,6 +43,7 @@ test("a failed display codec probe preserves usable neighboring displays", async
     { id: 9, width: 1280, height: 720, refreshRateHz: 60 },
   ]
   const result = await desktopCapabilities({
+    secureAttentionSupported: async () => false,
     captureDisplays: async () => displays,
     supportedVideoCodecs: async id => {
       probed.push(id)
@@ -63,7 +65,31 @@ test("a failed display codec probe preserves usable neighboring displays", async
 test("display enumeration failures reject the capability request", async () => {
   const failure = new Error("display enumeration failed")
   await assert.rejects(desktopCapabilities({
+    secureAttentionSupported: async () => false,
     captureDisplays: async () => { throw failure },
     supportedVideoCodecs: async () => { assert.fail("No display should be probed after enumeration fails") },
   }), error => error === failure)
+})
+
+for (const supported of [true, false]) {
+  test(`secure attention capability follows the native service and policy probe: ${supported}`, async () => {
+    const result = await desktopCapabilities({
+      captureDisplays: async () => [],
+      supportedVideoCodecs: async () => [],
+      secureAttentionSupported: async () => supported,
+    })
+    assert.equal(result.secureAttention, supported)
+  })
+}
+
+test("secure attention probe failure hides the action without hiding usable desktop capture", async t => {
+  const diagnostics = t.mock.method(console, "error", () => {})
+  const result = await desktopCapabilities({
+    captureDisplays: async () => [{ id: 1, width: 1920, height: 1080, refreshRateHz: 60 }],
+    supportedVideoCodecs: async () => ["h264"],
+    secureAttentionSupported: async () => { throw new Error("Cannot read Windows policy") },
+  })
+  assert.equal(result.secureAttention, false)
+  assert.deepEqual(result.displays[0]?.codecs, ["h264"])
+  assert.equal(diagnostics.mock.callCount(), 1)
 })

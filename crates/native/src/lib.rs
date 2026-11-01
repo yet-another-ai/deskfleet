@@ -11,6 +11,8 @@ mod permission_settings;
 pub mod rtc;
 pub mod system_status;
 pub mod terminal;
+#[cfg(any(windows, test))]
+pub mod windows_desktop;
 
 /// The operating system and architecture this library was built for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -100,6 +100,22 @@ impl CaptureStream {
         self.inner.poll_frame()
     }
 
+    /// Changes when Windows loses access to its desktop or rebinds after a
+    /// lock, unlock, or display-mode change. Consumers must discard retained
+    /// frames and encoder output from the previous generation after each poll.
+    /// Other backends use their existing stream lifecycle and return zero.
+    #[must_use]
+    pub fn desktop_generation(&self) -> u64 {
+        #[cfg(target_os = "windows")]
+        {
+            self.inner.desktop_generation()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            0
+        }
+    }
+
     /// Block until the next frame is available or the timeout elapses.
     ///
     /// Returns `Ok(None)` on timeout, or `Err` if the stream ended.

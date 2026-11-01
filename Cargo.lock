@@ -1400,6 +1400,7 @@ dependencies = [
  "deskfleet-linux-desktop",
  "deskfleet-linux-media",
  "deskfleet-wayland",
+ "deskfleet-windows-desktop",
  "deskfleet-x11",
  "dispatch2",
  "objc2",
@@ -1432,6 +1433,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskfleet-desktop-service"
+version = "0.4.1"
+dependencies = [
+ "deskfleet-native",
+ "deskfleet-windows-desktop",
+]
+
+[[package]]
 name = "deskfleet-encoder"
 version = "0.4.1"
 dependencies = [
@@ -1455,6 +1464,7 @@ version = "0.4.1"
 dependencies = [
  "deskfleet-linux-desktop",
  "deskfleet-wayland",
+ "deskfleet-windows-desktop",
  "deskfleet-x11",
  "objc2-core-foundation",
  "objc2-core-graphics",
@@ -1507,6 +1517,7 @@ dependencies = [
  "deskfleet-linux-desktop",
  "deskfleet-linux-media",
  "deskfleet-wayland",
+ "deskfleet-windows-desktop",
  "deskfleet-x11",
  "filedescriptor",
  "nix 0.31.3",
@@ -1627,6 +1638,17 @@ dependencies = [
  "tokio",
  "tracing",
  "zbus",
+]
+
+[[package]]
+name = "deskfleet-windows-desktop"
+version = "0.4.1"
+dependencies = [
+ "rand 0.10.3",
+ "serde",
+ "serde_json",
+ "tracing",
+ "windows",
 ]
 
 [[package]]

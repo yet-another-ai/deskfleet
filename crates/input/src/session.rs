@@ -4,6 +4,7 @@ pub(super) struct Controller<B: Backend> {
     backend: B,
     keys: Vec<String>,
     buttons: Vec<u8>,
+    desktop_reset_pending: bool,
 }
 
 impl<B: Backend> Controller<B> {
@@ -12,17 +13,30 @@ impl<B: Backend> Controller<B> {
             backend,
             keys: Vec::new(),
             buttons: Vec::new(),
+            desktop_reset_pending: false,
         }
     }
 
     pub(super) fn handle(&mut self, event: InputEvent) -> Result<()> {
-        let result = event.validate().and_then(|()| self.apply(event));
+        let result = event
+            .validate()
+            .and_then(|()| self.refresh_desktop())
+            .and_then(|()| self.apply(event));
         if result.is_err()
             && let Err(error) = self.release_all()
         {
             tracing::warn!(%error, "desktop input cleanup failed");
         }
         result
+    }
+
+    pub(super) fn refresh_desktop(&mut self) -> Result<()> {
+        self.desktop_reset_pending |= self.backend.prepare()?;
+        if self.desktop_reset_pending {
+            self.release_held()?;
+            self.desktop_reset_pending = false;
+        }
+        Ok(())
     }
 
     fn apply(&mut self, event: InputEvent) -> Result<()> {
@@ -71,11 +85,22 @@ impl<B: Backend> Controller<B> {
                 }
                 Ok(())
             }
+            InputEvent::SecureAttention => {
+                self.release_all()?;
+                self.backend.secure_attention()
+            }
             InputEvent::ReleaseAll => self.release_all(),
         }
     }
 
     pub(super) fn release_all(&mut self) -> Result<()> {
+        self.backend.prepare()?;
+        self.release_held()?;
+        self.desktop_reset_pending = false;
+        Ok(())
+    }
+
+    fn release_held(&mut self) -> Result<()> {
         let mut first_error = None;
         // Reverse press order releases ordinary keys before earlier modifiers.
         for index in (0..self.keys.len()).rev() {

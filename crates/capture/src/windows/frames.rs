@@ -71,11 +71,12 @@ pub(super) fn process_frame(
     resource: &IDXGIResource,
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
-    tx: &mpsc::SyncSender<Frame>,
+    tx: &mpsc::SyncSender<(u64, Frame)>,
     texture_pool: &Arc<TexturePool>,
     timestamp_ns: u64,
     width: u32,
     height: u32,
+    generation: u64,
 ) -> Result<(), CaptureError> {
     let src_texture: ID3D11Texture2D = resource.cast().map_err(|e| {
         CaptureError::Platform(format!("cast IDXGIResource to ID3D11Texture2D: {e}"))
@@ -118,7 +119,7 @@ pub(super) fn process_frame(
         },
     );
 
-    match tx.try_send(frame) {
+    match tx.try_send((generation, frame)) {
         Ok(()) | Err(mpsc::TrySendError::Full(_)) => Ok(()),
         Err(mpsc::TrySendError::Disconnected(_)) => Err(CaptureError::StreamEnded),
     }
@@ -177,11 +178,12 @@ pub(super) fn send_frame_from_texture(
     src: &ID3D11Texture2D,
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
-    tx: &mpsc::SyncSender<Frame>,
+    tx: &mpsc::SyncSender<(u64, Frame)>,
     texture_pool: &Arc<TexturePool>,
     timestamp_ns: u64,
     width: u32,
     height: u32,
+    generation: u64,
 ) -> Result<(), CaptureError> {
     let copy_texture = match texture_pool.acquire() {
         Some(tex) => tex,
@@ -220,7 +222,7 @@ pub(super) fn send_frame_from_texture(
         },
     );
 
-    match tx.try_send(frame) {
+    match tx.try_send((generation, frame)) {
         Ok(()) | Err(mpsc::TrySendError::Full(_)) => Ok(()),
         Err(mpsc::TrySendError::Disconnected(_)) => Err(CaptureError::StreamEnded),
     }

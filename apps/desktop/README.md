@@ -575,6 +575,22 @@ integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
 
+Windows packaging also builds and bundles `deskfleet-desktop-service.exe` in
+`resources/windows/`. Settings → Preferences → **Remote control while locked**
+uses this helper's fixed setup commands to install or remove the optional
+`DeskFleetDesktop` system service with UAC approval. The application remains a
+per-user install; merely opening Settings does not request elevation. The helper
+owns its protected Program Files installation and service stop/start lifecycle.
+Installer updates maintain an already-installed service without enabling it on
+other machines. An ordinary uninstall removes the service, while the uninstall
+phase of an application update preserves it. Updating or removing the service
+can require administrator approval. Service updates stage a protected recovery
+copy before stopping the previous process and restore it if the replacement
+cannot start. A cancelled or failed maintenance step
+aborts the installer and requires rerunning it; it does not roll back an already
+extracted application payload. See [native media](../../agents/docs/media.md#windows-locked-desktop-access)
+for the console-session boundary and runtime requirements.
+
 Linux packaging produces both an AppImage and a desktop `tar.gz` archive from
 the same compiled app. The archive includes Electron, the native addon, and the
 bundled daemon and ACP adapters. It is the reusable input for distribution
