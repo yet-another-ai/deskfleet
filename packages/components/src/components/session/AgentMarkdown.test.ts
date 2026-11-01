@@ -263,13 +263,15 @@ test("filesystem links and line references become application resources while re
   const readResource = vi.fn(() => new Promise<never>(() => {}))
   const view = render(
     { readResource },
-    '![Chart](/tmp/chart.png) ![Remote](https://example.org/a.png) [Read](file:///tmp/report.md) [Code](./src/main.ts#L12) [line](main.ts:12:4) [path](/src/main.ts:12) [file](</tmp/a"b.txt>) [bad](javascript:alert(1)) [bad](data:text/html,test) [bad](javascript:12) [site](https://example.org/a)',
+    '![Chart](/tmp/chart.png) ![Remote](https://example.org/a.png) [Read](file:///tmp/report.md) [Network](<file://server/share/report.md>) [Relative](<file:relative.md>) [Code](./src/main.ts#L12) [line](main.ts:12:4) [path](/src/main.ts:12) [file](</tmp/a"b.txt>) [bad](javascript:alert(1)) [bad](data:text/html,test) [bad](javascript:12) [site](https://example.org/a)',
   )
   await flushPromises()
   const html = view.html()
   expect(html).not.toContain('src="/tmp/chart.png"')
   expect(html).toContain('src="https://example.org/a.png"')
   expect(html).toContain('data-resource-link="file:///tmp/report.md"')
+  expect(html).toContain('data-resource-link="file://server/share/report.md"')
+  expect(html).toContain('data-resource-link="file:relative.md"')
   expect(html).toContain('data-resource-link="./src/main.ts#L12"')
   expect(html).toContain('data-resource-link="main.ts:12:4"')
   expect(html).toContain('data-resource-link="/src/main.ts:12"')
@@ -312,4 +314,15 @@ test("renders LaTeX inline, display, and fenced blocks while ignoring plain curr
   expect(html).toContain('class="katex-display"')
   expect(html).toContain("prices like $10 and $20, escaped $30.")
   expect(html).toContain('class="ui-math-fallback"')
+})
+
+test("streamed file links in HTML details retain their destinations after completion", async () => {
+  const view = render({}, "")
+  const text = '<details open><summary>Files</summary>\n\n[Network](<file://server/share/report.md>)\n\n- [Relative](<file:relative.md>)\n\n</details>'
+  await view.setProps({ text: text.slice(0, 90), final: false })
+  await view.setProps({ text, final: true })
+  await flushPromises()
+  expect(view.findAll("a[data-resource-link]").map(link => link.attributes("data-resource-link"))).toEqual([
+    "file://server/share/report.md", "file:relative.md",
+  ])
 })

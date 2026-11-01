@@ -12,6 +12,7 @@ patchedDependencies:
   '@xterm/addon-ligatures@0.10.0': fa45e6baf79dcd885c76ac00ddc39740210fcaadc91ce8473481e5e443bf98f2
   '@xterm/addon-search@0.16.0': a3398047a9423d007abbb875aec542ed6f855cc861c4b69b46fd93b7c649c1a0
   pi-acp@0.0.34: 36d9ab123339167dca1f08a507a15cd2e0d55d6bf92d164e13f7bcb0d01d09fb
+  stream-markdown-parser@1.2.22: 100e9ff04a11b902a75490525a3471d349a4ef3366254fd7b9bb3a93555f0583
 
 importers:
 
@@ -10053,7 +10054,7 @@ snapshots:
       '@chenglou/pretext': 0.0.9
       '@floating-ui/dom': 1.8.0
       markstream-core: 2.0.21
-      stream-markdown-parser: 1.2.22
+      stream-markdown-parser: 1.2.22(patch_hash=100e9ff04a11b902a75490525a3471d349a4ef3366254fd7b9bb3a93555f0583)
       vue: 3.6.0-rc.13(@typescript/typescript6@6.0.2)
     optionalDependencies:
       katex: 0.19.1
@@ -10947,7 +10948,7 @@ snapshots:
       - react
       - utf-8-validate
 
-  stream-markdown-parser@1.2.22:
+  stream-markdown-parser@1.2.22(patch_hash=100e9ff04a11b902a75490525a3471d349a4ef3366254fd7b9bb3a93555f0583):
     dependencies:
       markdown-it-container: 4.0.0
       markdown-it-footnote: 4.0.0

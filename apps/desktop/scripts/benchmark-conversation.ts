@@ -2,7 +2,7 @@ import { app, BrowserWindow, contentTracing } from "electron"
 import { writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 
-interface Configuration { url: string; output: string; turns: number[]; rounds: number; chunks: number; intervalMs: number; expanded: boolean; scroll: string; profile: boolean; trace: boolean; isolated?: { renderer: string; corpus: string; repeats: number } }
+interface Configuration { url: string; output: string; turns: number[]; rounds: number; chunks: number; intervalMs: number; expanded: boolean; scroll: string; profile: boolean; trace: boolean; capture?: boolean; isolated?: { renderer: string; corpus: string; repeats: number } }
 const config: Configuration = JSON.parse(process.argv[2]!)
 app.setPath("userData", resolve(config.output, "electron-profile"))
 app.commandLine.appendSwitch("disable-renderer-backgrounding")
@@ -19,9 +19,38 @@ async function main(): Promise<void> {
       })
       try {
         window.webContents.setFrameRate(60)
-        window.webContents.on("console-message", event => { if (event.level === "error") console.error(event.message) })
+        const capturePrefix = "__deskfleet_scrollback_capture__:"
+        window.webContents.on("console-message", event => {
+          if (event.level === "error") console.error(event.message)
+          if (!config.capture || !event.message.startsWith(capturePrefix)) return
+          const name = event.message.slice(capturePrefix.length)
+          void (async () => {
+            let failure: string | undefined
+            try {
+              if (!["top", "middle", "bottom", "located-thought"].includes(name)) throw new Error(`Unknown screenshot checkpoint: ${name}`)
+              // rAF runs before paint, and the first delivered image may already
+              // be in flight. Wait for paint, then request a fresh screenshot.
+              await new Promise<void>(done => {
+                window.webContents.once("paint", () => done())
+                window.webContents.invalidate()
+              })
+              const screenshot = await window.webContents.capturePage()
+              await writeFile(resolve(config.output, `${turns}-${round + 1}-scrollback-${name}.png`), screenshot.toPNG())
+            } catch (error) { failure = String(error) }
+            await window.webContents.executeJavaScript(failure
+              ? `window.__scrollbackCapture.reject(new Error(${JSON.stringify(failure)}))`
+              : "window.__scrollbackCapture.resolve()")
+          })().catch(error => { console.error(error); window.destroy() })
+        })
         await window.loadURL(config.url)
         await window.webContents.executeJavaScript("window.benchmarkReady")
+        if (config.capture) await window.webContents.executeJavaScript(`
+          window.captureConversationScrollback = name => new Promise((resolve, reject) => {
+            window.__scrollbackCapture = { resolve, reject };
+            console.info(${JSON.stringify(capturePrefix)} + name);
+          });
+          void 0;
+        `)
         if (config.trace) await contentTracing.startRecording({ included_categories: ["devtools.timeline", "disabled-by-default-devtools.timeline", "blink.user_timing"] })
         if (config.profile) {
           window.webContents.debugger.attach("1.3")

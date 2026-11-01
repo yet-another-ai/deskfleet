@@ -17,13 +17,13 @@ const { values } = parseArgs({ options: {
   chunks: { type: "string", default: "120" }, "interval-ms": { type: "string", default: "16" },
   expanded: { type: "boolean", default: false }, scroll: { type: "string", default: "bottom" },
   label: { type: "string", default: "working-tree" }, profile: { type: "boolean", default: false },
-  trace: { type: "boolean", default: false },
+  trace: { type: "boolean", default: false }, capture: { type: "boolean", default: false },
   "isolated-renderer": { type: "string" }, corpus: { type: "string", default: "prose" }, repeats: { type: "string", default: "1" },
   "markdown-renderer": { type: "string", default: "vapor" },
   "skip-build": { type: "boolean", default: false }, help: { type: "boolean", default: false },
 } })
 if (values.help) {
-  console.log("Usage: mise exec -- node scripts/benchmark-conversation.ts [--turns 0,20,80] [--rounds 3] [--chunks 120] [--interval-ms 16] [--expanded] [--scroll bottom|history] [--markdown-renderer vapor|vdom] [--isolated-renderer upstream|upstream-hook|deskfleet] [--corpus prose|rich] [--repeats 1] [--label baseline] [--profile] [--trace] [--skip-build]\nBuilds a production Vue renderer in the locked Electron runtime. JSON results, optional CPU profiles and Perfetto traces go to result/conversation/<label>. --isolated-renderer streams a single Markdown message without conversation history. --markdown-renderer changes only the Markdown component group; the rest remains Vapor. --skip-build reuses the previous build for that mode. Compare on the same machine; no timing threshold is asserted.")
+  console.log("Usage: mise exec -- node scripts/benchmark-conversation.ts [--turns 0,20,80] [--rounds 3] [--chunks 120] [--interval-ms 16] [--expanded] [--scroll bottom|history] [--markdown-renderer vapor|vdom] [--isolated-renderer upstream|upstream-hook|deskfleet] [--corpus prose|rich] [--repeats 1] [--label baseline] [--profile] [--trace] [--capture] [--skip-build]\nBuilds a production Vue renderer in the locked Electron runtime. JSON results, optional CPU profiles, Perfetto traces and scrollback screenshots go to result/conversation/<label>. --isolated-renderer streams a single Markdown message without conversation history. --markdown-renderer changes only the Markdown component group; the rest remains Vapor. --skip-build reuses the previous build for that mode. Compare on the same machine; no timing threshold is asserted.")
   process.exit(0)
 }
 const isolatedRenderer = values["isolated-renderer"]
@@ -100,7 +100,7 @@ if (!values["skip-build"]) {
   assert.equal(compiledRenderers["packages/components/src/components/session/AgentMarkdown.vue"], markdownRenderer)
   assert.equal(compiledRenderers["packages/components/src/components/session/AgentConversation.vue"], "vapor")
   const git = (args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim()
-  const sources = ["pnpm-lock.yaml", "scripts/benchmark-conversation.ts", "apps/desktop/scripts/benchmark-conversation.ts", "packages/components/src/components/session/AgentMarkdown.vue", "packages/components/src/services/mermaid.ts", "packages/components/src/services/mermaid-svg.ts", "packages/components/benchmarks/conversation/fixture.ts", "packages/components/benchmarks/conversation/Harness.vue", "packages/components/benchmarks/conversation/IsolatedMarkdown.vue", "packages/components/benchmarks/conversation/main.ts"]
+  const sources = ["pnpm-lock.yaml", "scripts/benchmark-conversation.ts", "apps/desktop/scripts/benchmark-conversation.ts", "packages/components/src/components/session/AgentConversation.vue", "packages/components/src/components/session/AgentMarkdown.vue", "packages/components/src/services/agent-markdown.ts", "packages/components/src/services/mermaid.ts", "packages/components/src/services/mermaid-svg.ts", "packages/components/benchmarks/conversation/fixture.ts", "packages/components/benchmarks/conversation/Harness.vue", "packages/components/benchmarks/conversation/scrollback.ts", "packages/components/benchmarks/conversation/IsolatedMarkdown.vue", "packages/components/benchmarks/conversation/main.ts"]
   await writeFile(resolve(buildDir, "provenance.json"), JSON.stringify({
     markdownRenderer, compiledRenderers,
     commit: git(["rev-parse", "HEAD"]), dirty: Boolean(git(["status", "--porcelain"])),
@@ -132,14 +132,14 @@ const metadata = { label: values.label, build: JSON.parse(await readFile(resolve
   }).map(async ([name, path]) => [name, createHash("sha256").update(await readFile(path)).digest("hex")]))),
   platform: platform(), os: release(), cpu: cpus()[0]?.model, cpuCount: cpus().length, node: process.version,
   viewport: { width: 1280, height: 900 }, offscreenFrameRate: 60, rounds, turns, chunks, intervalMs, expanded: values.expanded, scroll: values.scroll, isolated,
-  profile: values.profile, trace: values.trace,
+  profile: values.profile, trace: values.trace, capture: values.capture,
 }
 await writeFile(resolve(output, "metadata.json"), JSON.stringify(metadata, null, 2))
 try {
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
   await new Promise<void>((done, reject) => {
-    const child = spawn(requireDesktop("electron"), [electronMain, JSON.stringify({ url, output, turns, rounds, chunks, intervalMs, expanded: values.expanded, scroll: values.scroll, profile: values.profile, trace: values.trace, isolated })], { env, windowsHide: true, stdio: "inherit" })
+    const child = spawn(requireDesktop("electron"), [electronMain, JSON.stringify({ url, output, turns, rounds, chunks, intervalMs, expanded: values.expanded, scroll: values.scroll, profile: values.profile, trace: values.trace, capture: values.capture, isolated })], { env, windowsHide: true, stdio: "inherit" })
     child.once("error", reject)
     child.once("exit", code => code === 0 ? done() : reject(new Error(`Electron benchmark exited ${code}`)))
   })

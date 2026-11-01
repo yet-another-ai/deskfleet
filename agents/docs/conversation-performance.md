@@ -116,6 +116,7 @@ update; `deliveryBatches` and `largestDeliveryBatch` make this visible.
 | `finalCatchupMs` | Time from final text delivery through completion and final-answer readiness, including three stable frames. |
 | `initialDom` / `finalDom` | Element, Markdown, code-block, disclosure, hidden-descendant, and diagram counts at the scenario boundaries. Hidden descendants only count nodes under the HTML `hidden` attribute. |
 | `diagramValidation` | Post-measurement counts of duplicate SVG IDs, unresolved local references, and missing expected fixture labels. Diagnostic failures remain visible in JSON without preventing comparison with an older renderer. |
+| `scrollbackValidation` | Post-measurement checks for visible top/middle/bottom rows, scroll alignment, retained DOM/disclosures, and locating a collapsed thought. Readiness times are separate from streaming. |
 
 Final readiness inspects only the last response, avoiding an extra
 history-sized layout/text scan on every settling frame. It requires visible
@@ -140,9 +141,9 @@ Results live under the gitignored `result/conversation/<label>/` directory:
 - Optional `<turns>-<round>.cpuprofile` files contain Chromium CPU samples.
 
 Build provenance records the Git commit, dirty status, tracked diff hash, and
-SHA-256 hashes of `pnpm-lock.yaml`, `AgentMarkdown.vue`, the Mermaid service and
-SVG helper, `fixture.ts`, and `Harness.vue` (older runs predate the Mermaid source
-hashes). Run metadata also records the built index hash. With
+SHA-256 hashes of `pnpm-lock.yaml`, the Markdown and conversation components,
+parser service, Mermaid service and SVG helper, fixture and harness sources
+(older runs predate some source hashes). Run metadata also records the built index hash. With
 `--skip-build`, provenance describes the reused build rather than the current
 source tree. The tracked diff hash does not include untracked files; retain the
 benchmark source revision as well as JSON output when sharing a result.
@@ -449,40 +450,115 @@ Local evidence: `diagnosis-current-expanded/analysis-notes.md`,
 `result/conversation/`. Probe metadata records exact source overrides and map
 hashes; production Mermaid code was not changed.
 
-## Next optimization candidates
+## Production fixes for parser and browser style costs
+
+`AgentMarkdown` now owns one public Markstream parser per mounted message and
+passes its structured nodes to `MarkdownRender`. It configures MarkdownIt's
+existing URL validator directly before parsing, allowing filesystem destinations
+without using the `customMarkdownIt` hook that disables incremental tokenization.
+The parser receives `final` on every update, including completion without another
+text change. Its existing file-link filtering also remains available to nested
+Markdown renderers. Tests cover append, replacement, clearing, completion, late
+reference definitions, nested HTML details, file destinations and unsafe schemes.
+
+The parser also needs to know that our URL predicate is stateless. Without that,
+it conservatively disables structured-node reuse in documents containing links,
+and restoring incremental tokenization alone does not remove repeated Vue work.
+A pinned `stream-markdown-parser@1.2.22` patch exports the parser's existing
+`registerCacheStableLinkValidator` function with its deterministic-function
+contract. Only our module-level URL predicate is registered. The patch changes
+exports and type declarations, leaving parser algorithms and conservative
+behavior for other callbacks intact. Tests verify node identity for completed
+file/HTTP links and continued revalidation for an unregistered mutable validator.
+Passing nodes also avoids `MarkdownRender`'s fallback signature calculation.
+Vapor compilation remains enabled.
+
+`AgentConversation` applies `content-visibility: auto` to historical transcript
+rows. Chromium can skip style, layout and paint for distant rows while retaining
+their DOM, components and disclosure state. Remembered intrinsic block sizes
+preserve measured row heights; unseen input/response rows start with 5rem/24rem
+estimates. Live responses, the latest entry (including its completed answer),
+explicitly located entries, and printed content remain fully rendered. Keeping
+the latest completed answer exempt is necessary: otherwise completion while
+reading history can leave its rich content skipped.
+
+Mermaid's strict security mode, SVG styles, cache and diagram rendering are
+unchanged. The fixture still waits for every mounted historical diagram before
+streaming. This bounds browser rendering work; it does not virtualize Vue
+components or reduce retained DOM memory.
+
+After the measured window, the full benchmark checks real scrollback at the top,
+middle and bottom, then locates a thought through collapsed work/activity
+ancestors. It checks visible text and hit testing, scroll alignment, retained DOM,
+and disclosure state. `scrollbackValidation` reports readiness for these actions
+separately from streaming. Add `--capture` to save the four corresponding
+screenshots; captures also occur outside the measured window.
+The harness retains native scroll anchoring, matching `SessionView`; disabling
+it causes rows to drift as newly visible content replaces intrinsic size estimates.
+
+### Before/after verification
+
+The baseline is `73be9f94f5464e16215544311e86e7d95b09b5a2` in a detached
+worktree; its production renderer matches the PR merge base `b6f1035`. Both sides
+use native scroll anchoring and the same fixture, viewport, offered load and
+dependency versions. The candidate adds the parser export patch above. The
+baseline uses the common benchmark overlay with its production files and lockfile
+unchanged. Three rounds per case ran sequentially on the same Windows/Ryzen 9
+7900X machine in Electron 45.1.0. The isolated prose case is profiled; the full
+conversation cases are not.
+
+Medians in milliseconds, before → after:
+
+| Scenario | Frame interval p95 | Update-to-frame p95 | Final catchup | Long-task total | Historical settle |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 112,699-character prose | 116.7 → 50.1 | 421.1 → 60.0 | 350.9 → 338.6 | 1567 → 740 | — |
+| 20 turns, collapsed/bottom | 16.8 → 16.8 | 21.9 → 23.9 | 89.9 → 82.6 | 281 → 111 | 657.2 → 345.6 |
+| 80 turns, collapsed/bottom | 233.3 → 33.4 | 34.3 → 31.6 | 356.2 → 102.2 | 919 → 145 | 5899.1 → 890.8 |
+| 20 turns, expanded/history | 66.7 → 16.8 | 26.2 → 20.4 | 207.0 → 79.5 | 525 → 59 | 1721.5 → 611.1 |
+| 80 turns, expanded/history | 533.3 → 66.7 | 99.5 → 48.0 | 662.8 → 132.7 | 2241 → 265 | 22870.5 → 2963.0 |
+
+All 30 before/after samples completed. Matching scenarios have identical initial
+and final DOM/feature counts; the 80-turn expanded case retains 112,974 elements
+and 41 rendered diagrams. All diagram reference/label checks and reopen actions
+pass. Candidate scrollback visits finish within 52 ms and collapsed-thought
+locates within 120 ms in these runs, with retained DOM and disclosure state.
+These are readiness measurements, not visible application FPS. Long-prose final
+catchup remains about 339 ms, and the 20-turn collapsed update p95 does not improve.
+
+The final scrollback verifier also checks neighboring rows intersecting the
+viewport. Assertions run in a task after animation frames so the browser can
+resume their rendering; optional screenshots wait for offscreen paint and then
+capture the current page. This avoids reporting a stale compositor frame as a
+blank history row. These stronger checks/capture synchronization are after the
+measured window; they do not change the streaming baseline.
+
+Local evidence: `result/conversation/fix-stable-{prose,bottom,history}/` and
+`fix-summary.json`; baseline outputs are under
+`result/pr-252-before/result/conversation/fix-before-{prose,native-bottom,native-history}/`.
+Metadata records exact build/source hashes. The native-anchor overlay manifest
+records the baseline's benchmark-only changes. The parser/component tests pass
+22/22, the full renderer suite passes 1,391 tests, and root/desktop typechecks pass.
+
+## Remaining optimization candidates
 
 Evaluate each candidate with the collapsed and expanded/history scenarios, then
 verify its functional boundaries with focused tests:
 
-1. **Restore incremental parsing without losing file links.** The hook comparison
-   above confirms a substantial penalty for long messages. Preserve local-link
-   validation and malformed/incomplete syntax while restoring parser and stable
-   node reuse. Removing `customMarkdownIt` is not equivalent to using
-   `parseOptions.validateLink` alone: angle-delimited
-   `file://server/share/report.md` and `file:relative.md` destinations can retain
-   literal brackets through recovery. The latter option filters parsed links
-   after tokenizer validation, so it is not a complete replacement.
-2. **Bound browser style work.** Reduce the number of mounted historical nodes
-   and investigate isolating rich-content generation/styles. A viewport strategy
-   must preserve disclosure state, scroll position, locate actions, copy and
-   accessibility. Measure both history reading and bottom-following streams;
-   moving work to later scrolling is observable. Per-message node windows alone
-   cannot bound a transcript containing many separate messages.
-3. **Preserve the final message across completion.** `AgentResponse` moves the
+1. **Preserve the final message across completion.** `AgentResponse` moves the
    last assistant message from its work section into the final-answer section.
    Keeping that message mounted could avoid repeating Markdown and rich-block
    initialization at the exact point measured by final catchup. The component
    must also retain its identity when a later tool/thought follows an assistant
    progress message; placing only the last message in a separate subtree moves
    the remount cost to that transition and resets preview state.
-4. **Incrementally project the journal.** `SessionView` now supplies one shared
+2. **Incrementally project the journal.** `SessionView` now supplies one shared
    `projectConversation` result to `AgentConversation` and `AgentOutline`; each
    component retains its standalone fallback for isolated callers. The shared
    projection still replays history and recreates response objects. An
    incremental projection can avoid replaying completed history. Reconnects,
    snapshot corrections, message IDs,
    and tool metadata must retain their existing ordering and merge semantics.
-5. **Coalesce superseded Mermaid work.** The Mermaid service now shares identical
+3. **Coalesce superseded Mermaid work.** The Mermaid service now shares identical
    pending renders and caches completed templates by exact source and theme.
    It still renders distinct queued streaming revisions. Further work should
    measure stale-request elimination with theme changes, disposal and unique SVG
