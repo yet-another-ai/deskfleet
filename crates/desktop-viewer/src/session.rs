@@ -1,9 +1,9 @@
 //! Control/signaling and transport never wait for the window's presentation queue.
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 use std::time::{Duration, Instant};
 
 use deskfleet_input::InputEvent;
@@ -116,7 +116,7 @@ pub(crate) async fn run(
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 async fn receive(
     mut receiver: VideoReceiver,
     frames: Frames,
@@ -134,7 +134,10 @@ async fn receive(
         else {
             return Ok(());
         };
+        #[cfg(target_os = "linux")]
         let decoder = deskfleet_linux_media::RtpVideoDecoder::new(first.payload_type)?;
+        #[cfg(target_os = "windows")]
+        let decoder = crate::windows_decoder::RtpVideoDecoder::new(first.payload_type)?;
         let mut pending = Some(first);
         while !stop.load(Ordering::Acquire) {
             if pending.is_none() {
@@ -218,12 +221,12 @@ async fn receive(
     result
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 async fn receive(
     _receiver: VideoReceiver,
     _frames: Frames,
     _proxy: EventLoopProxy<WindowEvent>,
     _shutdown: &mut watch::Receiver<bool>,
 ) -> Result<(), Error> {
-    Err("native desktop decoding is currently supported on Linux".into())
+    Err("native desktop decoding is currently supported on Linux and Windows".into())
 }

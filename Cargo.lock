@@ -1638,6 +1638,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wgpu",
+ "windows",
  "winit",
 ]
 

@@ -131,6 +131,10 @@ impl Viewer {
             "presentedCommits":stats.as_ref().filter(|_| presentation.is_some_and(|p| p.mode() == "wayland-presentation")).map(|stats| stats.presented),
             "discardedPresents":stats.as_ref().map(|stats| stats.discarded),
             "refreshIntervalNs":stats.as_ref().and_then(|stats| stats.refresh_ns),
+            "frameCallbacks":stats.as_ref().map(|stats| stats.frame_callbacks),
+            "presentationClockId":stats.as_ref().and_then(|stats| stats.clock_id),
+            "lastPresentedNs":stats.as_ref().and_then(|stats| stats.last_presented_ns),
+            "presentationSequence":stats.as_ref().and_then(|stats| stats.sequence),
         }))?;
         self.last_stats = Instant::now();
         Ok(())

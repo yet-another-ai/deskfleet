@@ -25,12 +25,13 @@ export function installNativeDesktop(central: CentralApi): { close(): Promise<vo
   let closed = false
   ipcMain.handle(NATIVE_DESKTOP_CHANNEL, async (event, value: unknown) => {
     if (closed || !isDesktopMediaSender(event)) throw new Error("Native desktop IPC is restricted to the main renderer")
-    if (process.platform !== "linux") throw new Error("Native desktop windows are not available on this platform")
+    if (process.platform !== "linux" && process.platform !== "win32") throw new Error("Native desktop windows are not available on this platform")
     const request = nativeDesktopRequest(value)
     const window = BrowserWindow.fromWebContents(event.sender)
+    const name = process.platform === "win32" ? "deskfleet-viewer.exe" : "deskfleet-viewer"
     const executable = app.isPackaged
-      ? join(process.resourcesPath, "native", "deskfleet-viewer")
-      : resolve(app.getAppPath(), "../../target/debug/deskfleet-viewer")
+      ? join(process.resourcesPath, "native", name)
+      : resolve(app.getAppPath(), "../../target/debug", name)
     let started = false
     const session = openNativeDesktopSession(central, request, receive => spawnDesktopViewer(executable, receive), error => {
       if (!started || closed) return

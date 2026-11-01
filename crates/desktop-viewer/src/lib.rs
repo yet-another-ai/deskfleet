@@ -1,5 +1,7 @@
 //! Native desktop viewer. Network, decoding and presentation run independently.
 
+#[cfg(any(target_os = "windows", test))]
+mod h264;
 mod input;
 mod presentation;
 mod protocol;
@@ -7,6 +9,8 @@ mod queue;
 mod renderer;
 mod session;
 mod window;
+#[cfg(target_os = "windows")]
+mod windows_decoder;
 
 use std::io::{self, BufRead};
 use std::sync::{Arc, Mutex};

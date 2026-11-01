@@ -57,6 +57,8 @@ mac:
 
 win:
   extraResources:
+    - from: out/native/deskfleet-viewer.exe
+      to: native/deskfleet-viewer.exe
     - from: out/windows/deskfleet-desktop-service.exe
       to: windows/deskfleet-desktop-service.exe
   target:

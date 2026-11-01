@@ -428,7 +428,7 @@ cannot inject input.
 
 ## Native desktop window
 
-The Linux Electron client offers **Open in native window** for displays that
+The Linux and Windows Electron clients offer **Open in native window** for displays that
 advertise H.264. It opens `deskfleet-viewer`, a Rust executable whose thin entry
 point calls the reusable `deskfleet-desktop-viewer` library. The viewer owns its
 winit window, receive-only WebRTC peer, decoder, and wgpu renderer. The current
@@ -458,6 +458,21 @@ one FIFO position and `sync=false`; it does not wait for a PTS playback clock.
 VA-API and NVDEC factories are tried when installed. Hardware setup or stream
 errors remain visible rather than silently selecting a software decoder.
 
+On Windows, the viewer uses the system Media Foundation H.264 decoder with a
+D3D11 device manager and low-latency mode. `h264.rs` owns a bounded 64-packet,
+10 ms RTP reorder window and Annex B access-unit assembly for single NAL,
+STAP-A, and FU-A packets. Duplicate/late packets are ignored; loss or malformed
+fragmentation discards the incomplete picture, requests PLI, and waits for an
+IDR with cached SPS/PPS. Complete pictures are bounded to 8 MiB. A full reorder
+window or pending compressed access unit backpressures the receive worker.
+Media Foundation output is polled while idle, without EOS flushing or a PTS
+playback scheduler. Output type changes renegotiate NV12; owned RGBA pixels
+honor the output color matrix and nominal range. Hardware mode requires DXGI
+output surfaces and fails visibly if acceleration cannot start. The explicit
+`DESKFLEET_VIEWER_DECODER=software` diagnostic uses the same system decoder
+without a D3D11 manager. Windows requires the Media Foundation components
+(including the Media Feature Pack on Windows N editions), not GStreamer.
+
 Decoded images are copied into owned RGBA pixels and uploaded to a wgpu texture
 for scaling and display. This implementation has GPU readback and upload; it is
 not a shared-surface or zero-copy decoder integration. The decoder's reference
@@ -478,7 +493,7 @@ the viewer attaches `wp_presentation` feedback to the same surface commit as
 the image and allows at most one outstanding commit. A displayed or discarded
 feedback event releases that position. If the compositor lacks this extension,
 `wl_surface.frame` supplies pacing without claiming actual display feedback.
-X11 uses the swapchain's FIFO latency hint; that hint alone does not prove a
+X11 and Windows use the swapchain's FIFO latency hint; that hint alone does not prove a
 strict one-frame system presentation queue. GPU command completion is never
 reported as actual display completion.
 
@@ -492,7 +507,8 @@ latency by themselves.
 ### Build and validation
 
 `mise run desktop:dev` builds the native viewer alongside the native addon.
-Linux packaging stages the release viewer executable; the Linux client also
+Linux and Windows packaging stage the release viewer executable outside ASAR
+(`native/deskfleet-viewer.exe` on Windows). The Linux client also
 needs the GStreamer app, RTP, H.264 parser, video conversion, and hardware decoder
 plugins on the receiving machine.
 
@@ -510,6 +526,21 @@ GStreamer's `avdec_h264` for diagnostics; this requires the libav plugin and is
 never an automatic fallback. Runtime decoder tests separately exercise hardware
 encoding/decoding, delivery of an initial IDR and a final dependent P picture
 without another picture or EOS, and packet-loss recovery through PLI.
+
+Windows validation on the implementation host passed the fixture WebRTC →
+D3D11 decode → wgpu submission smoke with clean shutdown and at most two
+decoded candidates. The opt-in runtime test below also verifies red RGBA output
+and delivery of a single idle IDR without another input picture or EOS. The
+same test and window smoke pass with the explicit software diagnostic. Actual
+Windows display completion, final dependent-P delivery while idle, real remote
+desktop/input acceptance, and packaged installation remain unverified.
+
+```sh
+mise exec -- cargo test -p deskfleet-desktop-viewer --lib --locked windows_decoder::tests -- --include-ignored
+```
+
+The decoder setup follows Microsoft's [H.264 decoder contract](https://learn.microsoft.com/en-us/windows/win32/medfound/h-264-video-decoder)
+and [low-latency property type requirement](https://learn.microsoft.com/en-us/windows/win32/medfound/codecapi-avlowlatencymode).
 
 `DESKFLEET_SMOKE_HARDWARE=1` selects generated 320×240 pixels encoded by the host
 GPU. In that mode, `DESKFLEET_SMOKE_FPS` accepts a finite rate from 1 through 240,
