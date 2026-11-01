@@ -6,7 +6,6 @@ import { useI18n } from "vue-i18n"
 import { RouterLink, useRoute } from "vue-router"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
-import { useSearchFeature } from "../../services/search-feature.ts"
 import UiTooltip from "../common/UiTooltip.vue"
 import SidebarLink from "./SidebarLink.vue"
 
@@ -14,7 +13,6 @@ const { t } = useI18n()
 const route = useRoute()
 const { conversationPath } = storeToRefs(useLayoutStore())
 const searchPath = useAccountSession()?.searchPath ?? ref("/search")
-const searchEnabled = useSearchFeature()
 // Only the active section reveals its label, leaving room for more destinations.
 const sections = [
   { routeName: "new-session", label: "nav.conversations", icon: MessagesSquare },
@@ -22,10 +20,9 @@ const sections = [
   { routeName: "search", label: "search.title", icon: Search },
 ] as const
 type Section = typeof sections[number]
-const visibleSections = computed(() => sections.filter(section => section.routeName !== "search" || searchEnabled.value))
 /** Named routes that belong under Conversations; Settings and Schedules are excluded. */
 const conversationRouteNames = new Set(["new-session", "session", "worktree", "machine-control", "terminal"])
-const activeSection = computed(() => visibleSections.value.find(section => section.routeName === route.name)
+const activeSection = computed(() => sections.find(section => section.routeName === route.name)
   ?? (conversationRouteNames.has(String(route.name)) ? sections[0] : undefined))
 
 watch(() => route.fullPath, () => {
@@ -45,7 +42,7 @@ function destination(section: Section) {
 <template>
   <nav :aria-label="t('nav.label')" class="app-no-drag flex shrink-0 flex-col gap-1.5 px-2">
     <div class="flex min-w-0 items-center gap-1">
-      <RouterLink v-for="section in visibleSections" :key="section.routeName" v-slot="{ href, navigate }" :to="destination(section)" custom>
+      <RouterLink v-for="section in sections" :key="section.routeName" v-slot="{ href, navigate }" :to="destination(section)" custom>
         <UiTooltip :text="t(section.label)">
           <a
             :href="href" :aria-label="t(section.label)"

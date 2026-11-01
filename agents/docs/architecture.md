@@ -1047,11 +1047,10 @@ before results are returned. Previously synchronized content remains searchable
 while its Machine is offline. Scheduled Task snapshots are read-only replicas;
 their execution and mutation remain owned by the daemon.
 
-The `global_search` Statsig gate controls the shared frontend's Search entry,
-page, and requests. It defaults off, including builds without Statsig. The gate
-controls UI rollout; central indexing and schedule replication retain their
-existing data lifecycle. The [analytics guide](analytics.md#feature-gates-and-experiments)
-owns gate configuration and fallback behavior.
+Search is always available in the shared frontend, including builds without
+Statsig. Search requests require a selected Team and retain server-side Team
+authorization. Central indexing and schedule replication retain their existing
+data lifecycle.
 
 Agent replies enter search after their turn completes, is cancelled, fails, or
 is interrupted. The search projection advances a per-Session event cursor over
