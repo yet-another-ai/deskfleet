@@ -31,6 +31,7 @@
     "build",
     "scripts",
     "src",
+    "../../packages/components/benchmarks",
     "../../packages/components/src",
     "../../packages/client/src"
   ]

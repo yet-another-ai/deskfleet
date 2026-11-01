@@ -153,6 +153,10 @@ description = "Measure native WebRTC file upload/download throughput with SHA-25
 depends = ["native:debug"]
 run = "node scripts/benchmark-files.ts"
 
+[tasks."conversation:benchmark"]
+description = "Measure multi-turn Markdown streaming in the production Electron renderer"
+run = "node scripts/benchmark-conversation.ts"
+
 [tasks."desktop:dev"]
 description = "Run the Electron desktop app with Vite watchers"
 depends = ["native:debug"]

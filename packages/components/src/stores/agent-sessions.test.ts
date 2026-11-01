@@ -1,7 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { defineComponent, h } from "vue"
+import { computed, defineComponent, h } from "vue"
 import type { AgentCommand, AgentEvent } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
 import { catalogFixture } from "../test/catalog.ts"
@@ -11,6 +11,7 @@ import { useProvidersStore } from "./providers.ts"
 import { client as platformClient } from "@deskfleet/client/platform"
 import { captureAnalyticsContext, trackEvent } from "../services/analytics.ts"
 import { RelayConnectionError, type RelayDeniedReason } from "../../../client/src/relay.ts"
+import { projectConversation } from "../services/agent-conversation.ts"
 vi.mock("../services/analytics.ts", () => { const trackEvent = vi.fn(); return { trackEvent, captureAnalyticsContext: vi.fn(() => trackEvent) } })
 const mock = vi.hoisted(() => ({ call: vi.fn(), connect: vi.fn(async () => {}), close: vi.fn(), notification: (_value: { method: string; params: unknown }) => {}, request: (_value: { id: string; method: string; params: unknown }): Promise<unknown> => Promise.resolve(), state: (_state: string, _error?: string, _reason?: RelayDeniedReason) => {} }))
 vi.mock("../services/agent-client.ts", () => ({ AgentClient: class {
@@ -496,6 +497,39 @@ test("a live peer continues prompts during signaling loss and only disconnected 
     expect(history.snapshot).toHaveBeenCalledWith("30")
     await expect(store.submit("30", "No peer", "backlog")).rejects.toThrow("offline")
   } finally { platformClient.agent.history = previous }
+})
+
+test("appends live events without replacing history and updates rendered transcript consumers", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const chunk = (seq: number, text: string) => agentEvent(seq, "acp", {
+    sessionId: "provider-session", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
+  })
+  const history = store.views["30"]!.events
+  const rendered = mount(defineComponent({
+    setup() {
+      const entries = computed(() => projectConversation(store.views["30"]!.events, store.views["30"]!.snapshot!))
+      return () => h("div", entries.value.flatMap(entry => entry.kind === "message" ? entry.content.flatMap(block => block.type === "text" ? [block.text] : []) : []).join(""))
+    },
+  }))
+  try {
+    receive(chunk(1, "First "))
+    receive(chunk(2, "second "))
+    receive(chunk(2, "duplicate "))
+    await flushPromises()
+    expect(store.views["30"]!.events).toBe(history)
+    expect(history.map(event => event.seq)).toEqual(["1", "2"])
+    expect(rendered.text()).toBe("First second")
+
+    receive(chunk(4, "fourth"))
+    expect(store.views["30"]!.events).toBe(history)
+    expect(store.views["30"]!.historySeq).toBe("2")
+    receive(chunk(3, "third "))
+    await flushPromises()
+    expect(store.views["30"]!.events.map(event => event.seq)).toEqual(["1", "2", "3", "4"])
+    expect(store.views["30"]!.historySeq).toBe("4")
+    expect(store.views["30"]!.snapshotSeq).toBe("4")
+    expect(rendered.text()).toBe("First second third fourth")
+  } finally { rendered.unmount() }
 })
 
 test("merges snapshot, history pages and concurrent live events once without regressing snapshot state", async () => {

@@ -191,7 +191,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     resolveElicitations(current.snapshot)
   }
   function remember(events: AgentEvent[]): void {
-    const changed = new Set<string>()
+    const changed = new Map<string, AgentEvent[]>()
     for (const event of events) {
       if (deletedSessions.has(event.sessionId)) continue
       if (journal(event.sessionId).has(event.seq)) continue
@@ -219,10 +219,21 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         projectCommands(event.sessionId, event.payload.update.availableCommands)
         commandSequences.set(event.sessionId, event.seq)
       }
-      changed.add(event.sessionId)
+      const additions = changed.get(event.sessionId) ?? []
+      additions.push(event)
+      changed.set(event.sessionId, additions)
     }
-    for (const id of changed) {
-      view(id).events = [...journal(id).values()].sort((left, right) => sequenceCompare(left.seq, right.seq))
+    for (const [id, additions] of changed) {
+      const current = view(id)
+      let previous = current.events.at(-1)?.seq
+      const ordered = additions.every(event => {
+        const follows = previous === undefined || sequenceCompare(event.seq, previous) > 0
+        previous = event.seq
+        return follows
+      })
+      // Live notifications normally extend the journal; only late history needs a full merge.
+      if (ordered) current.events.push(...additions)
+      else current.events = [...journal(id).values()].sort((left, right) => sequenceCompare(left.seq, right.seq))
       advance(id)
     }
   }

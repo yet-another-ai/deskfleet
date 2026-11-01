@@ -311,6 +311,11 @@ Public tasks compose focused tasks in `mise.toml`. Independent checks can run in
 parallel. Cargo operations sharing `target/` use mise's `wait_for` ordering when
 they appear in the same run, avoiding repeated builds and lock contention.
 
+For multi-turn Markdown, disclosure, and scrolling measurements, use the
+[conversation rendering benchmark](conversation-performance.md). It runs the
+production Vue components in the locked Electron runtime and records comparable
+scenario samples and build provenance under `result/conversation/`.
+
 The full release build uses napi to compile the Cargo workspace once with an
 explicit host target, then emit the addon and its TypeScript declarations.
 `build` and the CI desktop bundle share this preparation task. The server is in

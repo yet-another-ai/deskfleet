@@ -69,6 +69,30 @@ test("streamed content renders without waiting for viewport or idle callbacks", 
   expect(view.find("[data-markstream-viewport-pending]").exists()).toBe(false)
 })
 
+test("mounting another message leaves completed Markdown renderers idle", async () => {
+  const updates = vi.fn()
+  wrapper = mount(AgentMarkdown, {
+    props: { text: "Completed **answer** with `code` and [a link](https://example.com)." },
+    global: {
+      plugins: [i18n, router],
+      mixins: [{ beforeUpdate() { if (this.$options.name === "NodeRenderer") updates() } }],
+    },
+  })
+  await flushPromises()
+  updates.mockClear()
+  const nextMessage = mount(AgentMarkdown, {
+    props: { text: "Another **message**." },
+    global: { plugins: [i18n, router] },
+  })
+  try {
+    await flushPromises()
+    expect(nextMessage.text()).toContain("Another message.")
+    expect(updates).not.toHaveBeenCalled()
+  } finally {
+    nextMessage.unmount()
+  }
+})
+
 test("loads images from the executing machine, shares reads through streamed text and releases URLs", async () => {
   let resolve!: (value: { data: Uint8Array; name: string; mimeType: string }) => void
   const readResource = vi.fn(() => new Promise<{ data: Uint8Array; name: string; mimeType: string }>(done => { resolve = done }))
