@@ -14,7 +14,7 @@ test("saved color overrides resolve on top of the selected preset without mutati
 
 test("existing appearance preferences gain the original terminal palette without losing their fonts", () => {
   const saved = { language: "system", theme: "light", interfaceFont: "Inter", terminalFont: "Menlo", terminalLigatures: true }
-  expect(validateAppearanceSettings(saved)).toEqual({ ...saved, terminalTheme: "deskfleet", terminalColors: {} })
+  expect(validateAppearanceSettings(saved)).toEqual({ ...DEFAULT_APPEARANCE_SETTINGS, ...saved, terminalTheme: "deskfleet", terminalColors: {} })
   expect(resolveTerminalTheme("deskfleet")).toMatchObject({ background: "#15171d", foreground: "#e3e6ee", red: "#cc0000" })
 })
 

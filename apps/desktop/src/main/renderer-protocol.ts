@@ -1,4 +1,4 @@
-import { net, protocol, session, type Protocol, type Session, type WebContents } from "electron"
+import { desktopCapturer, net, protocol, session, type Protocol, type Session, type WebContents } from "electron"
 import { isAbsolute, relative, resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
 import { isMainRendererUrl, RENDERER_HOST, RENDERER_SCHEME } from "../shared/renderer-security.ts"
@@ -98,18 +98,29 @@ function allowsRendererPermission(
   permission: string,
   details: { isMainFrame: boolean; requestingUrl?: string },
 ): boolean {
-  return (permission === "clipboard-sanitized-write" || permission === "fullscreen")
+  return (permission === "clipboard-sanitized-write" || permission === "fullscreen" || permission === "display-capture")
     && details.isMainFrame
     && isMainRendererUrl(details.requestingUrl ?? "")
     && isMainRendererUrl(webContents?.getURL() ?? "")
 }
 
-/** Allow the main renderer's copy and fullscreen actions; deny other permissions. */
+/** Allow the main renderer's copy, fullscreen, and system loopback audio actions; deny other permissions. */
 export function installRendererPermissions(
-  target: Pick<Session, "setPermissionCheckHandler" | "setPermissionRequestHandler"> = session.defaultSession,
+  target: Pick<Session, "setPermissionCheckHandler" | "setPermissionRequestHandler" | "setDisplayMediaRequestHandler"> = session.defaultSession,
 ): void {
   target.setPermissionCheckHandler((webContents, permission, _origin, details) =>
     allowsRendererPermission(webContents, permission, details))
   target.setPermissionRequestHandler((webContents, permission, callback, details) =>
     callback(allowsRendererPermission(webContents, permission, details)))
+  target.setDisplayMediaRequestHandler((request, callback) => {
+    const frame = request.frame
+    if (!request.audioRequested || !frame || frame !== frame.top || !isMainRendererUrl(frame.url)) {
+      callback({})
+      return
+    }
+    desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } }).then(
+      sources => callback(sources[0] ? { video: sources[0], audio: "loopback" } : {}),
+      () => callback({}),
+    )
+  })
 }

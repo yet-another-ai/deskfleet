@@ -288,7 +288,15 @@
       "black": "黒", "red": "赤", "green": "緑", "yellow": "黄", "blue": "青", "magenta": "マゼンタ", "cyan": "シアン", "white": "白",
       "brightBlack": "明るい黒", "brightRed": "明るい赤", "brightGreen": "明るい緑", "brightYellow": "明るい黄", "brightBlue": "明るい青", "brightMagenta": "明るいマゼンタ", "brightCyan": "明るいシアン", "brightWhite": "明るい白"
     },
-    "ligaturesHint": "ターミナルのフォントが対応している場合、=> や != などの文字を合字で表示します。"
+    "ligaturesHint": "ターミナルのフォントが対応している場合、=> や != などの文字を合字で表示します。",
+    "outlineAudio": "オーディオ連動",
+    "outlineAudioHint": "再生中の音声に合わせてアウトラインを動かします。",
+    "outlineAudioRgb": "RGB",
+    "outlineAudioRgbHint": "バーの色を虹色に変化させます。",
+    "outlineAudioMaxWidth": "最大幅",
+    "outlineAudioMaxWidthHint": "音声連動時のバーの最大幅。",
+    "outlineAudioDecayMs": "減衰時間",
+    "outlineAudioDecayMsHint": "バーが元の長さに戻るまでの時間。"
   },
   "githubSettings": {
     "title": "GitHub",
