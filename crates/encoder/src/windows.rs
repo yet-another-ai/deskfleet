@@ -71,8 +71,8 @@ impl WindowsEncoder {
                 self.config.max_bitrate_bps,
                 codec_guid,
                 profile_guid,
-                // Use P1 preset (fastest encode, best for real-time desktop).
-                deskfleet_nvenc_sys::NV_ENC_PRESET_P1_GUID,
+                // P3 improves compression over P1 without P4's extra encode cost.
+                deskfleet_nvenc_sys::NV_ENC_PRESET_P3_GUID,
                 deskfleet_nvenc_sys::NV_ENC_TUNING_INFO::NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,
             )
         }
