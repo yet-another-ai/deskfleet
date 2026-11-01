@@ -12,7 +12,7 @@ import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import WindowToolbar from "../components/chrome/WindowToolbar.vue"
-import { windowHeaderActionsTargetKey, windowedMainWindowKey } from "../components/chrome/windowHeaderActions.ts"
+import { windowHeaderActionsTargetKey } from "../components/chrome/windowHeaderActions.ts"
 import OpenWithMenu from "../components/catalog/OpenWithMenu.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import SessionAllowance from "../components/session/SessionAllowance.vue"
@@ -50,8 +50,8 @@ const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const windowHeaderActionsTarget = inject(windowHeaderActionsTargetKey, computed<string | undefined>(() => undefined))
-const windowedMainWindow = inject(windowedMainWindowKey, computed(() => false))
+const windowHeaderActionsTarget = inject(windowHeaderActionsTargetKey)
+const windowedMainWindow = !!windowHeaderActionsTarget
 let disposed = false
 onScopeDispose(() => { disposed = true })
 const sessionLabel = useSessionLabel()

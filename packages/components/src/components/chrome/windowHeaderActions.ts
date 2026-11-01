@@ -1,7 +1,6 @@
 import type { ComputedRef, InjectionKey } from "vue"
 
 export const windowHeaderActionsTargetKey: InjectionKey<ComputedRef<string | undefined>> = Symbol("windowHeaderActionsTarget")
-export const windowedMainWindowKey: InjectionKey<ComputedRef<boolean>> = Symbol("windowedMainWindow")
 
 export function windowHeaderActionsId(groupId: string): string {
   return `deskfleet-window-actions-${groupId.replace(/[^a-zA-Z0-9_-]/g, "_")}`

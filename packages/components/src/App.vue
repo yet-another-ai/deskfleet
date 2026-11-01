@@ -3,10 +3,9 @@ import { usePlatformClient } from "./composables/usePlatformClient.ts"
 
 import { storeToRefs } from "pinia"
 import { useEventListener, whenever } from "@vueuse/core"
-import { defineAsyncComponent, onBeforeUnmount, onMounted } from "vue"
+import { onBeforeUnmount, onMounted } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute } from "vue-router"
-import type { DockviewPanelApi } from "dockview-vue"
 import AppMainWindow from "./components/chrome/AppMainWindow.vue"
 import CompactPanel from "./components/chrome/CompactPanel.vue"
 import WindowManager from "./components/chrome/WindowManager.vue"
@@ -25,15 +24,10 @@ const layout = useLayoutStore()
 const { compact, sidebarOpen, detailsOpen } = storeToRefs(layout)
 const { t } = useI18n()
 const route = useRoute()
-const TerminalShellWindow = defineAsyncComponent(() => import("./components/terminal/TerminalShellWindow.vue"))
 const fleet = useFleetStore()
 const terminals = useTerminalsStore()
 const agents = useAgentSessionsStore()
 const providers = useProvidersStore()
-function updateTerminalTitle(api: DockviewPanelApi, terminalId: string, title: string): void {
-  terminals.titles[terminalId] = title
-  api.setTitle(title)
-}
 whenever(() => fleet.localDesktopTarget.online, () => { void terminals.refresh() })
 const refresh = () => { void fleet.refreshLocal().then(() => {
   if (fleet.localDesktopTarget.online || platformClient.agent.history) void agents.refresh()
@@ -66,13 +60,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex h-full overflow-hidden">
     <AppSidebar v-if="sidebarOpen && !compact && !route.meta.fullWindow" />
-    <WindowManager v-if="!compact && route.name === 'session'" :key="String(route.params.sessionId)" :session-id="String(route.params.sessionId)">
-      <template #chat="{ headerActionsTarget }"><AppMainWindow windowed :window-header-actions-target="headerActionsTarget" /></template>
-      <template #changes><ChangesPanel windowed class="h-full" /></template>
-      <template #terminal="{ api, params }">
-        <TerminalShellWindow :terminal-id="params.terminalId" @title="updateTerminalTitle(api, params.terminalId, $event)" />
-      </template>
-    </WindowManager>
+    <WindowManager v-if="!compact && route.name === 'session'" :key="String(route.params.sessionId)" :session-id="String(route.params.sessionId)" />
     <AppMainWindow v-else />
     <CompactPanel v-if="compact && sidebarOpen && !route.meta.fullWindow" side="left" :title="t('catalog.workspaces')" @close="layout.closeCompactPanel()">
       <AppSidebar class="h-full" />

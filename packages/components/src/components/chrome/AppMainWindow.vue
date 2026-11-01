@@ -6,15 +6,14 @@ import { useLayoutStore } from "../../stores/layout.ts"
 import { focusedPreviewFromRoute, performPreviewLocateDom } from "../../stores/previews.ts"
 import PreviewViewer from "../session/PreviewViewer.vue"
 import WindowToolbar from "./WindowToolbar.vue"
-import { windowHeaderActionsTargetKey, windowedMainWindowKey } from "./windowHeaderActions.ts"
+import { windowHeaderActionsTargetKey } from "./windowHeaderActions.ts"
 
 const props = defineProps<{ windowed?: boolean; windowHeaderActionsTarget?: string }>()
 const platform = usePlatformClient().platform
 const layout = useLayoutStore()
 const route = useRoute()
 const focusedPreview = computed(() => focusedPreviewFromRoute(route))
-provide(windowHeaderActionsTargetKey, computed(() => props.windowHeaderActionsTarget))
-provide(windowedMainWindowKey, computed(() => props.windowed ?? false))
+if (props.windowed) provide(windowHeaderActionsTargetKey, computed(() => props.windowHeaderActionsTarget))
 </script>
 
 <template>
