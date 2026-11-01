@@ -81,6 +81,30 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+test("opens the selected display in an independent native window without a browser peer", async () => {
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
+  await wrapper.get('[data-native-desktop]').trigger("click")
+  await flushPromises()
+  expect(openNative).toHaveBeenCalledWith({ displayId: 2, control: false })
+  expect(TestPeer.instances).toHaveLength(0)
+  expect(mock.api.offer).not.toHaveBeenCalled()
+  expect(mock.api.start).not.toHaveBeenCalled()
+})
+
+test("native startup failures remain visible and allow retry", async () => {
+  platformClient.desktop.openNative = vi.fn(async () => { throw new Error("No hardware decoder") })
+  const wrapper = await mountDesktop()
+  await wrapper.get('[data-native-desktop]').trigger("click")
+  await flushPromises()
+  expect(wrapper.text()).toContain("Could not open the desktop window")
+  expect(wrapper.text()).toContain("No hardware decoder")
+  expect(wrapper.get('[data-native-desktop]').attributes("disabled")).toBeUndefined()
+})
+
 test("discovers displays without capturing, then connects with the automatic codec", async () => {
   const wrapper = await mountDesktop()
   expect(wrapper.get('[role="status"]').text()).toBe("Choose a display and connect to start sharing.")

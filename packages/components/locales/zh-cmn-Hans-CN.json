@@ -703,6 +703,10 @@
     "unknown": "未知"
   },
   "desktop": {
+    "openNative": "在原生窗口中打开",
+    "nativeOpening": "正在打开原生桌面窗口…",
+    "nativeFailed": "无法打开桌面窗口",
+    "nativeHint": "在独立窗口中显示画面，并可选启用鼠标和键盘控制。暂不支持系统音频。",
     "notFound": "该机器不存在。",
     "unavailable": "远程桌面尚不可用。",
     "offline": "{machine} 已离线。",

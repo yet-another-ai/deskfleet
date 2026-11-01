@@ -6,7 +6,7 @@
 
 #![allow(unsafe_code)]
 
-use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
+use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_ulong, c_void};
 use std::sync::OnceLock;
 
 use libloading::Library;
@@ -19,6 +19,11 @@ pub(crate) const STATE_NULL: c_int = 1;
 pub(crate) const STATE_PLAYING: c_int = 4;
 pub(crate) const MESSAGE_ERROR: c_uint = 1 << 1;
 pub(crate) const BUFFER_DELTA_UNIT: c_uint = 1 << 13;
+pub(crate) const PAD_PROBE_EVENT_UPSTREAM: c_uint = 1 << 7;
+pub(crate) const PAD_PROBE_OK: c_int = 1;
+
+pub(crate) type PadProbeCallback =
+    unsafe extern "C" fn(*mut Object, *mut Object, *mut c_void) -> c_int;
 
 #[repr(C)]
 pub(crate) struct MiniObject {
@@ -141,12 +146,19 @@ api! {
     buffer_fill: unsafe extern "C" fn(*mut Buffer, usize, *const c_void, usize) -> usize = core::"gst_buffer_fill",
     util_set_object_arg: unsafe extern "C" fn(*mut Object, *const c_char, *const c_char) = core::"gst_util_set_object_arg",
     element_send_event: unsafe extern "C" fn(*mut Object, *mut Object) -> c_int = core::"gst_element_send_event",
+    element_get_static_pad: unsafe extern "C" fn(*mut Object, *const c_char) -> *mut Object = core::"gst_element_get_static_pad",
+    pad_add_probe: unsafe extern "C" fn(*mut Object, c_uint, PadProbeCallback, *mut c_void, unsafe extern "C" fn(*mut c_void)) -> c_ulong = core::"gst_pad_add_probe",
+    pad_remove_probe: unsafe extern "C" fn(*mut Object, c_ulong) = core::"gst_pad_remove_probe",
+    pad_probe_info_get_event: unsafe extern "C" fn(*mut Object) -> *mut Object = core::"gst_pad_probe_info_get_event",
     sink_try_pull_sample: unsafe extern "C" fn(*mut Object, u64) -> *mut Object = app::"gst_app_sink_try_pull_sample",
     sink_is_eos: unsafe extern "C" fn(*mut Object) -> c_int = app::"gst_app_sink_is_eos",
     source_push_buffer: unsafe extern "C" fn(*mut Object, *mut Buffer) -> c_int = app::"gst_app_src_push_buffer",
     source_end_of_stream: unsafe extern "C" fn(*mut Object) -> c_int = app::"gst_app_src_end_of_stream",
+    source_current_level_bytes: unsafe extern "C" fn(*mut Object) -> u64 = app::"gst_app_src_get_current_level_bytes",
+    source_current_level_buffers: unsafe extern "C" fn(*mut Object) -> u64 = app::"gst_app_src_get_current_level_buffers",
     buffer_get_video_meta: unsafe extern "C" fn(*mut Buffer) -> *mut VideoMeta = video::"gst_buffer_get_video_meta",
     force_key_unit: unsafe extern "C" fn(u64, c_int, c_uint) -> *mut Object = video::"gst_video_event_new_upstream_force_key_unit",
+    is_force_key_unit: unsafe extern "C" fn(*mut Object) -> c_int = video::"gst_video_event_is_force_key_unit",
     error_free: unsafe extern "C" fn(*mut GError) = glib::"g_error_free",
     free: unsafe extern "C" fn(*mut c_void) = glib::"g_free",
 }

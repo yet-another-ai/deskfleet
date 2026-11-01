@@ -40,6 +40,7 @@ files:
   - out/**/*
   - "!out/**/*.map"
   - "!out/windows/**/*"
+  - "!out/native/**/*"
   # Runtime window and tray images; build/ is otherwise packaging input only.
   - build/icon.png
   - build/tray*.png
@@ -68,6 +69,9 @@ nsis:
   include: build/windows-desktop-service.nsh
 
 linux:
+  extraResources:
+    - from: out/native/deskfleet-viewer
+      to: native/deskfleet-viewer
   category: Development
   # Match the stable Portal identity used by Electron and standalone daemons.
   syncDesktopName: true

@@ -3,6 +3,7 @@ members = [
     "apps/server",
     "apps/desktop-service",
     "crates/control-store",
+    "crates/desktop-viewer",
     "crates/capture",
     "crates/encoder",
     "crates/input",

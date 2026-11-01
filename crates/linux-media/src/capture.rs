@@ -96,7 +96,7 @@ impl Capture {
     }
 }
 
-fn packed_bgra(
+pub(crate) fn packed_bgra(
     bytes: &[u8],
     width: u32,
     height: u32,

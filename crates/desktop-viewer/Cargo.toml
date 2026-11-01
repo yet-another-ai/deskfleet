@@ -1,0 +1,36 @@
+[package]
+name = "deskfleet-desktop-viewer"
+description = "Native remote desktop window with shallow FIFO presentation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "deskfleet-viewer"
+path = "src/main.rs"
+
+[dependencies]
+deskfleet-native.workspace = true
+deskfleet-input.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "io-std"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+wgpu = "30.0.1"
+winit = "0.30.13"
+pollster = "0.4"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+deskfleet-linux-media.workspace = true
+wayland-client = "0.31.15"
+wayland-protocols = { version = "0.32.13", features = ["client"] }
+wayland-backend = { version = "0.3.17", features = ["client_system", "dlopen"] }
+nix = { workspace = true, features = ["poll"] }
+
+[lints]
+workspace = true

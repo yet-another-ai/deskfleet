@@ -20,6 +20,13 @@ and stays in the tray after its windows close. The local discovery socket serves
 host setup, enrollment, and shutdown; it does not authorize team resource access.
 Session-scoped MCP tools and Scheduled Tasks run alongside those daemon services.
 
+The Linux desktop client can also open a remote desktop in a separate native
+viewer process. Electron retains authentication, peer grants, and signaling;
+the viewer owns only its window, receiving media peer, decoder, input forwarding,
+and GPU presentation. The machine daemon continues running inside Electron's
+main process. Native viewer closure releases that viewing session without
+changing the daemon's lifetime.
+
 ## Components
 
 ```mermaid
@@ -28,6 +35,8 @@ flowchart LR
     Server <-->|"Outbound connection: presence, history, signaling"| Daemon["Machine daemon"]
     Client <-->|"WebRTC: operations, files, terminal, media"| Daemon
     Client <-->|"Electron local IPC: Agent, Git, terminal messages"| Daemon
+    Client <-->|"Native viewer control and signaling"| Viewer["Rust desktop viewer"]
+    Viewer <-->|"WebRTC: desktop video and input"| Daemon
     Daemon <-->|"ACP"| Agent["Agent process / adapter"]
     Agent <-->|"MCP tools"| MCP["DeskFleet MCP facade"]
     MCP <-->|"Operations on a target machine"| Target["Target daemon"]
@@ -42,6 +51,7 @@ flowchart LR
 | Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript library; Node.js SEA or bundled Electron host |
 | Native libraries | OS integration and performance-sensitive transport, capture, input, and media work | Rust with napi-rs bindings |
 | Desktop application | User interface, platform integration, and daemon installation/management | Electron / TypeScript |
+| Native desktop viewer | Optional independent remote desktop window, receiving media, input forwarding, and shallow FIFO presentation | Rust / winit / wgpu; Linux H.264 receive path |
 | Web application | Frontend for catalog, history, and browser-supported remote access, served by the central server or an independent static host | Vue / TypeScript |
 | MCP facade | Let agents discover resources and operate on explicit remote targets | TypeScript, sharing DeskFleet client operations |
 

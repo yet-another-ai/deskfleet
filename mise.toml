@@ -159,8 +159,18 @@ run = "node scripts/benchmark-conversation.ts"
 
 [tasks."desktop:dev"]
 description = "Run the Electron desktop app with Vite watchers"
-depends = ["native:debug"]
+depends = ["native:debug", "viewer:build"]
 run = "pnpm --filter @deskfleet/desktop dev"
+
+[tasks."viewer:build"]
+description = "Build the native remote desktop window"
+wait_for = ["native:debug"]
+run = "cargo build -p deskfleet-desktop-viewer --bin deskfleet-viewer --locked"
+
+[tasks."desktop:smoke-native-viewer"]
+description = "Verify native WebRTC decoding and shallow FIFO window presentation"
+depends = ["viewer:build"]
+run = ["cargo build -p deskfleet-native --example media_smoke --locked", "node apps/desktop/scripts/smoke-native-viewer.ts"]
 
 [tasks."web:dev"]
 description = "Run the Vue Web development server"

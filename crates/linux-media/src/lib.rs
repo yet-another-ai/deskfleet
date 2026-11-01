@@ -1,20 +1,24 @@
-//! In-process GStreamer capture and hardware encoding, loaded only on demand.
+//! In-process GStreamer capture, encoding, and decoding, loaded only on demand.
 //!
 //! No desktop shared library is linked into the daemon's addon. A headless
 //! installation can load the addon and use agents/terminals without GStreamer.
 //! Captured system-memory frames are copied before releasing PipeWire buffers;
 //! hardware encoding uploads these owned frames. This is not a zero-copy path.
+//! The native viewer's RTP decoder likewise returns owned RGBA pixels, leaving
+//! display timing and the shallow presentation queue to the viewer.
 
 #![cfg(target_os = "linux")]
 
 mod capture;
 mod codec;
+mod decoder;
 mod encoder;
 mod ffi;
 mod pipeline;
 
 pub use capture::{Capture, VideoFrame};
 pub use codec::Codec;
+pub use decoder::{DecodedFrame, RtpVideoDecoder};
 pub use encoder::{EncodedFrame, Encoder, EncoderSettings};
 
 /// Failure to load the optional runtime or operate a media pipeline.

@@ -14,8 +14,8 @@
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "icons": "node scripts/generate-icons.ts",
-    "package": "node scripts/stage-windows-service.ts && electron-builder --publish never",
-    "package:dir": "node scripts/stage-windows-service.ts && electron-builder --dir --publish never"
+    "package": "node scripts/stage-windows-service.ts && node scripts/stage-native-viewer.ts && electron-builder --publish never",
+    "package:dir": "node scripts/stage-windows-service.ts && node scripts/stage-native-viewer.ts && electron-builder --dir --publish never"
   },
   "devDependencies": {
     "@deskfleet/client": "workspace:*",

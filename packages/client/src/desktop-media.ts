@@ -6,6 +6,7 @@ import type {
   IceCandidate,
 } from "../../../apps/daemon/src/control-protocol.ts"
 import type { RelayDeniedReason } from "./relay.ts"
+import type { NativeDesktopOptions } from "./native-desktop.ts"
 
 export type {
   DesktopCapabilities,
@@ -29,6 +30,8 @@ export interface LocalDesktopTarget {
 }
 
 export interface DesktopMediaApi {
+  /** Opens a separate native window for this authorized machine. */
+  openNative?(options: NativeDesktopOptions): Promise<void>
   prepare?(sessionId: string): Promise<RTCIceServer[]>
   /** Additional context for a transport failure, without masking authorization errors. */
   connectionFailure?(sessionId: string): string | undefined
