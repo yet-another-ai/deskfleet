@@ -1,10 +1,12 @@
-#[cfg(target_os = "windows")]
 use std::env;
-#[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
-#[cfg(target_os = "windows")]
 fn main() {
+    // Build scripts execute on the host, including when checking Windows code
+    // from another OS. Select generation using Cargo's target instead.
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let header_dir = manifest_dir.join("./include");
     let header = header_dir.join("nvEncodeAPI.h");
@@ -112,6 +114,3 @@ fn main() {
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
 }
-
-#[cfg(not(target_os = "windows"))]
-fn main() {}

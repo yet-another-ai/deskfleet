@@ -92,6 +92,76 @@ For diagnostics, set `DESKFLEET_WINDOWS_ENCODER` in the daemon's environment to
 `auto` (default), `nvenc`, or `media-foundation` before starting the process.
 An explicit backend never falls back to another encoder. `media-foundation`
 advertises only H.264. This also allows testing MF on a machine with NVENC.
+With the Windows desktop service installed, this diagnostic setting belongs to
+the service's environment; changing only the user daemon's environment does not
+change the service workers' encoder selection.
+
+### Windows locked-desktop access
+
+The Windows welcome page and Settings → Preferences → **Remote control while
+locked** install the optional `DeskFleetDesktop` Windows service after explicit
+administrator approval. Welcome checks service status silently and uses the same
+installation controller as Preferences. Users can skip the step or retry after
+canceling approval; completed setup is not repeated. The NSIS app
+remains a per-user installation. The service and its desktop workers run from
+`Program Files/DeskFleet Desktop Service/deskfleet-desktop-service.exe`, with
+write access restricted to administrators and SYSTEM. No additional display or
+input driver is installed.
+
+When installed, display discovery, codec probing, capture/encoding, and input use
+the service. A missing service preserves the user-process backend. A stopped or
+failed installed service is reported as an error rather than silently selecting
+a backend that cannot access the lock screen. The native media pipeline is shared
+between both modes. Frames remain in Rust; only encoded packets cross a bounded
+named-pipe protocol before the user daemon sends them over its existing WebRTC peer.
+Video encoder errors retain the normal codec-fallback classification.
+
+The service accepts local pipe clients only. It checks the caller's token SID and
+OS session against the logged-in physical console user, then starts a SYSTEM
+worker in that session. Client connections verify the broker PID against Windows
+SCM and the worker PID against the broker's reply. Worker pipes restrict access
+to SYSTEM and the console owner, require a per-worker secret, and continuously
+recheck console ownership. Logout or switching to another OS user closes that
+access. The service is a desktop capability for the local OS user; Team grants
+remain enforced by the user daemon before accepting remote desktop operations.
+It offers no file, process-launch, or network-forwarding RPC.
+
+Capture and input threads bind to the current input desktop. A desktop change
+invalidates old captured surfaces and encoder output, recreates duplication, and
+requests a fresh keyframe. Input refresh releases held controls across desktop
+changes, including while no new input arrives. Closing a peer closes its worker
+connection; service shutdown signals workers to clean up before terminating any
+that fail to exit. The existing exclusive-controller rule remains per daemon.
+
+The supported scope is the same already-logged-in console session: connecting
+while locked and continuing through lock/unlock. A logged-out machine, another
+user's desktop, RDP-only sessions, and displays absent from Windows are outside
+this path. The Electron app or standalone user daemon must remain running.
+
+Windows controllers have a **Send Ctrl+Alt+Del** toolbar action when capability
+discovery reports a running service and policy that permits software SAS. It sends the
+explicit `secureAttention` input event after releasing remote held keys. The
+service calls Windows `SendSAS` for the authenticated console session. Existing
+`SoftwareSASGeneration` policy must allow services (value 1 or 3); a disallowed
+policy is reported as an error. DeskFleet does not modify this machine policy.
+
+Validate this path on Windows hardware with a working DXGI display and hardware
+encoder; a Linux cross-build does not exercise Winlogon, UAC, SCM, or GPU desktop
+switches. Install the packaged app, enable the setting, and use a second client:
+
+1. Connect with control, hold and release a modifier, lock the host, enter its
+   password remotely, and verify capture and input continue after unlock.
+2. Disconnect, lock the host locally, and create a fresh viewer/control peer.
+   Confirm display/codec discovery and the first frame work while locked.
+3. Exercise Ctrl+Alt+Del with service-allowed SAS policy. With disallowed policy,
+   confirm fresh capability discovery hides the action. If policy changes after
+   discovery, the action must report the failure without changing Windows policy.
+4. Switch to another OS user or log out. Verify existing workers stop and the
+   original user's daemon cannot attach to the new user's console desktop.
+5. Stop/remove the service during active control, then reinstall it. Check that
+   held controls release, stopped-service errors are visible, and a fresh
+   connection succeeds after restart. Test an app update and an uninstall with
+   both accepted and cancelled administrator approval.
 
 On macOS, the daemon owns Screen Recording and Accessibility consent through the
 shared `DesktopPermissions` lifecycle. The desktop app starts its enabled hosted
@@ -347,7 +417,8 @@ positions. Buttons follow DOM numbering (left, middle, right, back, forward).
 determines characters. Physical keys that the target cannot map are ignored without
 releasing held input or disconnecting the stream. Malformed messages and OS injection
 failures still fail the connection. Clipboard, text/IME composition forwarding, and operating
-system shortcuts intercepted by the viewer's OS are outside this contract.
+system shortcuts intercepted by the viewer's OS are outside this contract, apart
+from the explicit Windows `secureAttention` action described above.
 `releaseAll` releases only controls held by this controller.
 
 `deskfleet-input` owns validation, held state and platform injection behind one
@@ -376,9 +447,11 @@ macOS requires Accessibility permission for the process hosting the daemon.
 The desktop welcome flow requests it after Screen Recording; standalone daemons
 request it during startup. Remote input
 startup still checks current permission and reports denial without opening a consent dialog.
-Screen Recording permission is separate. Windows injection follows SendInput's
-integrity restrictions: it cannot control elevated applications from a lower
-integrity process or operate the secure desktop. Wayland input uses the
+Screen Recording permission is separate. Without the optional desktop service,
+Windows injection follows SendInput's integrity restrictions: it cannot control
+elevated applications from a lower integrity process or operate the secure
+desktop. Service workers inject within their authorized console session at
+SYSTEM integrity. Wayland input uses the
 authorized EIS devices and follows compositor restrictions.
 
 The native package can also be used directly:
@@ -513,3 +586,30 @@ token storage; on X11 it checks the current X server without opening a Portal
 dialog. Monitor coordinate mapping and display changes require acceptance checks
 on the target desktop. Wayland also needs persistent restoration across daemon
 restarts and compositor revocation checks.
+
+Windows capture smoke also opens/releases the input controller twice. After
+enabling **Remote control while locked**, require the service explicitly so an
+absent installation cannot pass by using the user-process backend:
+
+```powershell
+$env:DESKFLEET_SMOKE_CAPTURE = "1"
+$env:DESKFLEET_SMOKE_WINDOWS_SERVICE = "1"
+mise run desktop:smoke-media
+Remove-Item Env:DESKFLEET_SMOKE_WINDOWS_SERVICE
+Remove-Item Env:DESKFLEET_SMOKE_CAPTURE
+```
+
+This checks the current desktop's service-backed capture, encode, WebRTC decode,
+and input attach/detach. It does not lock the host, inject credentials, or exercise
+UAC, user switching, software SAS policy, or app installation/update recovery;
+those remain the interactive acceptance steps above.
+
+Set `DESKFLEET_SMOKE_CAPTURE_SECONDS=60` (an integer from 1 to 300) to keep the
+same capture peer open for that many seconds after its first decoded frame.
+The smoke prints timestamped frame/keyframe counters, dimensions, and connection
+state once per second without recording pixels. Lock and unlock the host during
+this observation, then compare counters around each transition; an overall smoke
+pass alone does not establish that every transition produced a fresh frame.
+Run a separate service-required smoke while the host is already locked to check
+fresh display discovery, capture startup, and input-controller attach/detach.
+Remove `Env:DESKFLEET_SMOKE_CAPTURE_SECONDS` afterward to restore the quick check.

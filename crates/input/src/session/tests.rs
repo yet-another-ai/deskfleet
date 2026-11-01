@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use super::*;
@@ -9,9 +9,17 @@ struct Fake {
     events: Rc<RefCell<Vec<String>>>,
     fail_release: Rc<RefCell<bool>>,
     key_error: Rc<RefCell<Option<InputError>>>,
+    desktop_changed: Rc<Cell<bool>>,
+    fail_prepare: Rc<Cell<bool>>,
 }
 
 impl Backend for Fake {
+    fn prepare(&mut self) -> Result<bool> {
+        if self.fail_prepare.get() {
+            return Err(InputError::Platform("bind input desktop failed".into()));
+        }
+        Ok(self.desktop_changed.replace(false))
+    }
     fn move_pointer(&mut self, x: f64, y: f64) -> Result<()> {
         self.events.borrow_mut().push(format!("move {x} {y}"));
         Ok(())
@@ -41,6 +49,80 @@ impl Backend for Fake {
         }
         Ok(())
     }
+}
+
+#[test]
+fn desktop_change_releases_old_controls_before_new_input_and_ignores_stale_repeat() {
+    let fake = Fake::default();
+    let mut controller = Controller::new(fake.clone());
+    controller.handle(key("ShiftLeft", true, false)).unwrap();
+    controller
+        .handle(InputEvent::PointerButton {
+            button: 0,
+            pressed: true,
+            x: 0.5,
+            y: 0.5,
+        })
+        .unwrap();
+    fake.desktop_changed.set(true);
+    controller.refresh_desktop().unwrap();
+    controller.handle(key("ShiftLeft", true, true)).unwrap();
+    controller.handle(key("KeyA", true, false)).unwrap();
+    assert_eq!(
+        *fake.events.borrow(),
+        [
+            "key ShiftLeft true false",
+            "move 0.5 0.5",
+            "button 0 true",
+            "key ShiftLeft false false",
+            "button 0 false",
+            "key KeyA true false",
+        ]
+    );
+    assert_eq!(controller.keys, ["KeyA"]);
+    assert!(controller.buttons.is_empty());
+}
+
+#[test]
+fn desktop_change_retries_failed_release_before_accepting_new_input() {
+    let fake = Fake::default();
+    let mut controller = Controller::new(fake.clone());
+    controller.handle(key("ControlLeft", true, false)).unwrap();
+    fake.desktop_changed.set(true);
+    *fake.fail_release.borrow_mut() = true;
+    assert!(controller.refresh_desktop().is_err());
+    assert!(controller.desktop_reset_pending);
+    *fake.fail_release.borrow_mut() = false;
+    controller.handle(key("KeyA", true, false)).unwrap();
+    assert_eq!(
+        *fake.events.borrow(),
+        [
+            "key ControlLeft true false",
+            "key ControlLeft false false",
+            "key ControlLeft false false",
+            "key KeyA true false",
+        ]
+    );
+    assert!(!controller.desktop_reset_pending);
+}
+
+#[test]
+fn secure_attention_releases_controls_and_reports_unsupported_backends() {
+    let fake = Fake::default();
+    let mut controller = Controller::new(fake.clone());
+    controller.handle(key("ControlLeft", true, false)).unwrap();
+    assert!(matches!(
+        controller.handle(InputEvent::SecureAttention),
+        Err(InputError::Unsupported(_))
+    ));
+    assert_eq!(
+        *fake.events.borrow(),
+        ["key ControlLeft true false", "key ControlLeft false false"]
+    );
+    assert_eq!(
+        serde_json::to_string(&InputEvent::SecureAttention).unwrap(),
+        r#"{"type":"secureAttention"}"#
+    );
 }
 
 fn key(code: &str, pressed: bool, repeat: bool) -> InputEvent {
@@ -235,6 +317,100 @@ fn cleanup_attempts_all_keys_and_buttons_and_retries_failed_releases() {
     assert!(controller.keys.is_empty());
     assert_eq!(
         &fake.events.borrow()[4..],
+        [
+            "key KeyC false false",
+            "key ControlLeft false false",
+            "button 2 false",
+            "key KeyC false false",
+            "key ControlLeft false false",
+        ]
+    );
+}
+
+fn held_inputs(fake: &Fake) -> Controller<Fake> {
+    let mut controller = Controller::new(fake.clone());
+    controller.handle(key("ControlLeft", true, false)).unwrap();
+    controller.handle(key("KeyC", true, false)).unwrap();
+    controller
+        .handle(InputEvent::PointerButton {
+            button: 2,
+            pressed: true,
+            x: 0.0,
+            y: 1.0,
+        })
+        .unwrap();
+    fake.events.borrow_mut().clear();
+    controller
+}
+
+#[test]
+fn explicit_cleanup_and_drop_release_held_inputs_when_desktop_binding_fails() {
+    for dropping in [false, true] {
+        let fake = Fake::default();
+        let mut controller = held_inputs(&fake);
+        fake.fail_prepare.set(true);
+        if dropping {
+            drop(controller);
+        } else {
+            assert_eq!(
+                controller.release_all().unwrap_err().to_string(),
+                "desktop input failed: bind input desktop failed"
+            );
+            assert!(controller.keys.is_empty());
+            assert!(controller.buttons.is_empty());
+        }
+        assert_eq!(
+            *fake.events.borrow(),
+            [
+                "key KeyC false false",
+                "key ControlLeft false false",
+                "button 2 false",
+            ]
+        );
+    }
+}
+
+#[test]
+fn desktop_binding_failure_rejects_new_input_but_releases_held_inputs() {
+    let fake = Fake::default();
+    let mut controller = held_inputs(&fake);
+    fake.fail_prepare.set(true);
+    assert_eq!(
+        controller
+            .handle(key("KeyA", true, false))
+            .unwrap_err()
+            .to_string(),
+        "desktop input failed: bind input desktop failed"
+    );
+    assert!(controller.keys.is_empty());
+    assert!(controller.buttons.is_empty());
+    assert_eq!(
+        *fake.events.borrow(),
+        [
+            "key KeyC false false",
+            "key ControlLeft false false",
+            "button 2 false",
+        ]
+    );
+}
+
+#[test]
+fn desktop_binding_failure_preserves_failed_releases_for_retry() {
+    let fake = Fake::default();
+    let mut controller = held_inputs(&fake);
+    controller.desktop_reset_pending = true;
+    fake.fail_prepare.set(true);
+    *fake.fail_release.borrow_mut() = true;
+    assert!(controller.release_all().is_err());
+    assert_eq!(controller.keys, ["ControlLeft", "KeyC"]);
+    assert!(controller.buttons.is_empty());
+    assert!(controller.desktop_reset_pending);
+    *fake.fail_release.borrow_mut() = false;
+    assert!(controller.release_all().is_err());
+    assert!(controller.keys.is_empty());
+    assert!(!controller.desktop_reset_pending);
+    assert_eq!(
+        *fake.events.borrow(),
         [
             "key KeyC false false",
             "key ControlLeft false false",

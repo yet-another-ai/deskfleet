@@ -4,10 +4,12 @@ import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import type { LocalAgentState, DesktopPermissionKind, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
 import type { LocalNetworkAccessRequest } from "../../../../packages/client/src/onboarding.ts"
+import type { WindowsDesktopServiceState } from "../../../../packages/client/src/windows-desktop-service.ts"
 import { establishedDesktopProfile, OnboardingController } from "./onboarding-controller.ts"
 
 const macPermissions = { permissionSteps: ["localNetwork", "fullDiskAccess", "screenCapture", "accessibility"] }
 const waylandPermissions = { permissionSteps: ["screenCapture", "accessibility"] }
+const windowsPermissions = { permissionSteps: ["windowsDesktopService"] }
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
 
@@ -26,7 +28,12 @@ async function fixture(platform: NodeJS.Platform = "darwin") {
     request: vi.fn(async (): Promise<LocalNetworkAccessRequest> => "attempted"),
     openSettings: vi.fn(async () => {}),
   }
-  const options = { path, platform, localAgent, localNetwork }
+  const serviceState: WindowsDesktopServiceState = { available: true, installed: false, running: false }
+  const windowsDesktopService = {
+    get: vi.fn(async () => serviceState),
+    setEnabled: vi.fn(async (_enabled: boolean) => ({ ...serviceState, installed: true, running: true })),
+  }
+  const options = { path, platform, localAgent, localNetwork, windowsDesktopService }
   return { ...options, controller: new OnboardingController(options), restart: () => new OnboardingController(options) }
 }
 
@@ -145,22 +152,83 @@ test("Linux welcome retries or defers desktop permissions without adding Full Di
   expect(await f.controller.advancePermission("accessibility")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "account" })
 })
 
-test("Windows skips OS permission steps", async () => {
+test("Windows silently checks the optional service and installs only on an explicit welcome action", async () => {
   const f = await fixture("win32")
-  expect(await f.controller.get()).toEqual({ permissionSteps: [], step: "account" })
+  expect(await f.controller.get()).toEqual({ ...windowsPermissions, step: "windowsDesktopService" })
+  expect(f.windowsDesktopService.get).not.toHaveBeenCalled()
+  expect(await f.controller.permissions()).toEqual({ windowsDesktopService: { available: true, installed: false, running: false } })
+  expect(f.windowsDesktopService.get).toHaveBeenCalledOnce()
+  expect(f.windowsDesktopService.setEnabled).not.toHaveBeenCalled()
+  expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
-  await expect(f.controller.requestPermission("localNetwork")).rejects.toThrow("permission step")
+  await expect(f.controller.requestPermission("localNetwork")).rejects.toThrow("step has changed")
   await expect(f.controller.openLocalNetworkSettings()).rejects.toThrow("step has changed")
   expect(f.localNetwork.request).not.toHaveBeenCalled()
   expect(f.localNetwork.openSettings).not.toHaveBeenCalled()
+  expect(await f.controller.requestPermission("windowsDesktopService")).toEqual({ windowsDesktopService: { available: true, installed: true, running: true } })
+  expect(f.windowsDesktopService.setEnabled).toHaveBeenCalledExactlyOnceWith(true)
+  expect(await f.restart().get()).toEqual({ ...windowsPermissions, step: "windowsDesktopService" })
+  expect(await f.controller.advancePermission("windowsDesktopService")).toEqual({ ...windowsPermissions, step: "account" })
+  expect(await f.restart().get()).toEqual({ ...windowsPermissions, step: "account" })
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+})
+
+test("Windows service elevation cancellation retains welcome progress and permits retry", async () => {
+  const f = await fixture("win32")
+  f.windowsDesktopService.setEnabled.mockRejectedValueOnce(new Error("Administrator approval was cancelled"))
+  await expect(f.controller.requestPermission("windowsDesktopService")).rejects.toThrow("cancelled")
+  expect(await f.restart().get()).toEqual({ ...windowsPermissions, step: "windowsDesktopService" })
+  expect(await f.controller.requestPermission("windowsDesktopService")).toMatchObject({ windowsDesktopService: { running: true } })
+  expect(f.windowsDesktopService.setEnabled).toHaveBeenCalledTimes(2)
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "windowsDesktopService" })
+})
+
+test("Windows service setup can be skipped without elevation, including builds without a helper", async () => {
+  const f = await fixture("win32")
+  const unavailable = new OnboardingController({ ...f, windowsDesktopService: undefined })
+  expect(await unavailable.permissions()).toEqual({ windowsDesktopService: { available: false, installed: false, running: false } })
+  await expect(unavailable.requestPermission("windowsDesktopService")).rejects.toThrow("unavailable")
+  expect(await unavailable.advancePermission("windowsDesktopService")).toEqual({ ...windowsPermissions, step: "account" })
+  expect(await f.restart().get()).toEqual({ ...windowsPermissions, step: "account" })
+  expect(f.windowsDesktopService.get).not.toHaveBeenCalled()
+  expect(f.windowsDesktopService.setEnabled).not.toHaveBeenCalled()
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+})
+
+test("Windows without a local Agent skips service setup and never queries or installs it", async () => {
+  const f = await fixture("win32")
+  f.localAgent.state.enabled = false
+  f.localAgent.state.status = "stopped"
+  expect(await f.controller.get()).toEqual({ permissionSteps: [], step: "account" })
+  await f.controller.complete()
+  expect(await f.controller.permissions()).toEqual({})
+  await expect(f.controller.requestPermission("windowsDesktopService")).rejects.toThrow("unavailable")
+  expect(f.windowsDesktopService.get).not.toHaveBeenCalled()
+  expect(f.windowsDesktopService.setEnabled).not.toHaveBeenCalled()
+})
+
+test.each(["account", "complete"] as const)("Windows saved %s progress does not restart for service guidance", async step => {
+  const f = await fixture("win32")
+  await writeFile(f.path, JSON.stringify({ step }))
+  expect(await f.controller.get()).toEqual({ ...windowsPermissions, step })
+  expect(f.windowsDesktopService.setEnabled).not.toHaveBeenCalled()
+})
+
+test("an established Windows profile completes welcome without installing the service", async () => {
+  const f = await fixture("win32")
+  const controller = new OnboardingController({ ...f, established: () => true })
+  expect(await controller.get()).toEqual({ ...windowsPermissions, step: "complete" })
+  expect(await f.restart().get()).toEqual({ ...windowsPermissions, step: "complete" })
+  expect(f.windowsDesktopService.get).not.toHaveBeenCalled()
+  expect(f.windowsDesktopService.setEnabled).not.toHaveBeenCalled()
 })
 
 test("Windows normalizes a saved permission step before completing account setup", async () => {
   const f = await fixture("win32")
   await writeFile(f.path, JSON.stringify({ step: "screenCapture" }))
-  expect(await f.controller.get()).toEqual({ permissionSteps: [], step: "account" })
+  expect(await f.controller.get()).toEqual({ ...windowsPermissions, step: "account" })
   expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "account" })
-  expect(await f.controller.complete()).toEqual({ permissionSteps: [], step: "complete" })
+  expect(await f.controller.complete()).toEqual({ ...windowsPermissions, step: "complete" })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })
 
@@ -193,8 +261,8 @@ test("an enabled Agent startup failure still exposes permission guidance for ret
 test.each(["darwin", "linux", "win32"] as const)("old server setup progress resumes at the first %s step", async platform => {
   const f = await fixture(platform)
   await writeFile(f.path, JSON.stringify({ step: "server" }))
-  const step = platform === "darwin" ? "localNetwork" : platform === "linux" ? "screenCapture" : "account"
-  const permissionSteps = platform === "darwin" ? macPermissions.permissionSteps : platform === "linux" ? waylandPermissions.permissionSteps : []
+  const step = platform === "darwin" ? "localNetwork" : platform === "linux" ? "screenCapture" : "windowsDesktopService"
+  const permissionSteps = platform === "darwin" ? macPermissions.permissionSteps : platform === "linux" ? waylandPermissions.permissionSteps : windowsPermissions.permissionSteps
   expect(await f.controller.get()).toEqual({ permissionSteps, step, ...(platform === "linux" ? { linuxDesktopBackend: "wayland" } : {}) })
   expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step })
 })
@@ -240,12 +308,17 @@ test("completed settings keep client network access available with the local Age
 test.each(["linux", "win32"] as const)("completed %s settings only request applicable permissions", async platform => {
   const f = await fixture(platform)
   await writeFile(f.path, JSON.stringify({ step: "complete" }))
-  expect(await f.controller.permissions()).toMatchObject(platform === "linux" ? { screenCapturePermission: { status: "denied" } } : {})
+  expect(await f.controller.permissions()).toMatchObject(platform === "linux" ? { screenCapturePermission: { status: "denied" } } : { windowsDesktopService: { available: true, installed: false, running: false } })
   expect(f.localAgent.refreshPermissions).toHaveBeenCalledTimes(platform === "linux" ? 1 : 0)
   if (platform === "linux") {
     await f.controller.requestPermission("accessibility")
     await f.controller.requestPermission("screenCapture")
     expect(f.localAgent.requestPermission).toHaveBeenCalledTimes(2)
+    expect(f.windowsDesktopService.get).not.toHaveBeenCalled()
+  } else {
+    await f.controller.requestPermission("windowsDesktopService")
+    expect(f.windowsDesktopService.setEnabled).toHaveBeenCalledExactlyOnceWith(true)
+    expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
   }
   await expect(f.controller.requestPermission("fullDiskAccess")).rejects.toThrow("unavailable")
   await expect(f.controller.requestPermission("localNetwork")).rejects.toThrow("unavailable")

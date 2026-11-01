@@ -9,6 +9,7 @@ import type { DesktopPermissionsState } from "@deskfleet/client/local-agent"
 import { DESKTOP_ONBOARDING_PERMISSIONS, type OnboardingPermission, type OnboardingPermissionsState, type OnboardingState, type OnboardingStep } from "@deskfleet/client/onboarding"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import BrandLogo from "../common/BrandLogo.vue"
+import WindowsDesktopServiceOnboarding from "./WindowsDesktopServiceOnboarding.vue"
 
 const props = defineProps<{ host: DeskfleetDesktopApi; state: OnboardingState }>()
 const emit = defineEmits<{ change: [state: OnboardingState] }>()
@@ -32,15 +33,18 @@ const wayland = computed(() => props.host.platform === "linux" && (
 const permissionSteps = computed(() => props.state.permissionSteps)
 const permission = computed(() => permissionSteps.value.find(value => value === step.value))
 const localNetwork = computed(() => permission.value === "localNetwork")
-const currentPermission = computed(() => permission.value && permission.value !== "localNetwork" ? permissions.value[`${permission.value}Permission`] : undefined)
+const windowsService = computed(() => permission.value === "windowsDesktopService")
+const currentPermission = computed(() => permission.value && permission.value !== "localNetwork" && permission.value !== "windowsDesktopService" ? permissions.value[`${permission.value}Permission`] : undefined)
 const granted = computed(() => ["granted", "not-required"].includes(currentPermission.value?.status ?? ""))
 const requesting = computed(() => currentPermission.value?.status === "requesting" || wayland.value
   && DESKTOP_ONBOARDING_PERMISSIONS.some(kind => permissions.value[`${kind}Permission`]?.status === "requesting"))
-const canRequest = computed(() => !granted.value && !requesting.value && (!wayland.value
-  || !refreshing.value && currentPermission.value?.status !== "checking"))
+const canRequest = computed(() => windowsService.value
+  ? permissions.value.windowsDesktopService?.available === true && !permissions.value.windowsDesktopService.running
+  : !granted.value && !requesting.value && (!wayland.value
+    || !refreshing.value && currentPermission.value?.status !== "checking"))
 const permissionMessages = computed(() => `welcome.${wayland.value ? "wayland" : "permissions"}.${permission.value}`)
 const steps = computed<OnboardingStep[]>(() => [...(firstRun ? permissionSteps.value : []), "account"])
-const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, account: KeyRound, complete: Check }
+const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, windowsDesktopService: ShieldCheck, account: KeyRound, complete: Check }
 const currentIndex = computed(() => steps.value.indexOf(step.value))
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 const stepLabel = (value: OnboardingStep) => t(wayland.value && (value === "screenCapture" || value === "accessibility")
@@ -105,6 +109,8 @@ async function refreshPermissions(): Promise<void> {
   const revision = permissionRevision
   try {
     const value = await onboarding.permissions()
+    // Service state belongs to the host; daemon permission events cannot replace it.
+    if (value.windowsDesktopService !== undefined) permissions.value.windowsDesktopService = value.windowsDesktopService
     if (revision === permissionRevision) {
       permissions.value = value
       noteBackend(value)
@@ -125,6 +131,7 @@ async function requestPermission(kind: OnboardingPermission): Promise<void> {
     const revision = ++permissionRevision
     const value = await onboarding!.requestPermission(kind)
     if (kind === "localNetwork") permissions.value.localNetwork = value.localNetwork
+    if (kind === "windowsDesktopService") permissions.value.windowsDesktopService = value.windowsDesktopService
     if (revision === permissionRevision) {
       permissions.value = value
       noteBackend(value)
@@ -182,30 +189,42 @@ onBeforeUnmount(() => { unsubscribe?.() })
           <ShieldCheck :size="30" :stroke-width="1.5" class="mb-5 text-ui-text-muted" aria-hidden="true" />
           <p class="m-0 mb-2 text-xs text-ui-text-muted">{{ t("welcome.stepCount", { current: currentIndex + 1, total: steps.length }) }}</p>
           <h1 class="m-0 text-xl font-semibold">{{ stepLabel(permission) }}</h1>
-          <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.description`) }}</p>
-          <div class="my-6 rounded-lg border border-ui-border bg-ui-sidebar p-4">
-            <p class="m-0 text-xs font-medium">{{ t(wayland ? "welcome.wayland.dialog" : "welcome.systemSettings") }}</p>
-            <p class="m-0 mt-2 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.${wayland ? 'instructions' : 'path'}`) }}</p>
-            <p class="m-0 mt-3 text-xs leading-relaxed text-ui-text-muted">{{ t(localNetwork ? `${permissionMessages}.instructions` : wayland ? "welcome.wayland.shared" : "welcome.permissionRestart") }}</p>
-          </div>
-          <p role="status" class="m-0 mb-4 text-sm" :class="granted ? 'text-ui-text' : 'text-ui-text-muted'">
-            {{ t(localNetwork ? `${permissionMessages}.status.${permissions.localNetwork ?? 'not-requested'}` : wayland && requesting ? 'welcome.wayland.requesting' : `welcome.permissionStatus.${currentPermission?.status ?? 'checking'}`) }}
-          </p>
-          <p v-if="error || currentPermission?.error" role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ error || currentPermission?.error }}</p>
-          <div class="flex flex-wrap gap-2">
-            <template v-if="localNetwork">
-              <UiButton v-if="permissions.localNetwork !== 'not-required'" type="button" :disabled="pending || refreshing" @click="requestPermission(permission)">{{ t(`${permissionMessages}.request`) }}</UiButton>
-              <UiButton type="button" :disabled="pending || refreshing" @click="openLocalNetworkSettings">{{ t(`${permissionMessages}.openSettings`) }}</UiButton>
+          <WindowsDesktopServiceOnboarding
+            v-if="windowsService"
+            :service="permissions.windowsDesktopService"
+            :pending="pending"
+            :refreshing="refreshing"
+            :error="error"
+            @request="requestPermission('windowsDesktopService')"
+            @refresh="refreshPermissions"
+            @advance="advancePermission('windowsDesktopService')"
+          />
+          <template v-else>
+            <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.description`) }}</p>
+            <div class="my-6 rounded-lg border border-ui-border bg-ui-sidebar p-4">
+              <p class="m-0 text-xs font-medium">{{ t(wayland ? "welcome.wayland.dialog" : "welcome.systemSettings") }}</p>
+              <p class="m-0 mt-2 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.${wayland ? 'instructions' : 'path'}`) }}</p>
+              <p class="m-0 mt-3 text-xs leading-relaxed text-ui-text-muted">{{ t(localNetwork ? `${permissionMessages}.instructions` : wayland ? "welcome.wayland.shared" : "welcome.permissionRestart") }}</p>
+            </div>
+            <p role="status" class="m-0 mb-4 text-sm" :class="granted ? 'text-ui-text' : 'text-ui-text-muted'">
+              {{ t(localNetwork ? `${permissionMessages}.status.${permissions.localNetwork ?? 'not-requested'}` : wayland && requesting ? 'welcome.wayland.requesting' : `welcome.permissionStatus.${currentPermission?.status ?? 'checking'}`) }}
+            </p>
+            <p v-if="error || currentPermission?.error" role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ error || currentPermission?.error }}</p>
+            <div class="flex flex-wrap gap-2">
+              <template v-if="localNetwork">
+                <UiButton v-if="permissions.localNetwork !== 'not-required'" type="button" :disabled="pending || refreshing" @click="requestPermission(permission)">{{ t(`${permissionMessages}.request`) }}</UiButton>
+                <UiButton type="button" :disabled="pending || refreshing" @click="openLocalNetworkSettings">{{ t(`${permissionMessages}.openSettings`) }}</UiButton>
+              </template>
+              <template v-else>
+                <UiButton variant="primary" v-if="!granted" type="button" :disabled="pending || refreshing || !canRequest" @click="requestPermission(permission)">{{ t(wayland ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
+                <UiButton type="button" :disabled="pending || refreshing" @click="refreshPermissions">{{ t(refreshing ? "welcome.checking" : "welcome.checkAgain") }}</UiButton>
+              </template>
+              <UiButton variant="primary" v-if="localNetwork || granted" type="button" class="ml-auto" :disabled="pending || refreshing" @click="advancePermission(permission)">{{ t("welcome.continue") }}<ChevronRight :size="15" aria-hidden="true" /></UiButton>
+            </div>
+            <template v-if="!granted">
+              <p class="m-0 mt-5 text-xs leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.skip`) }}</p>
+              <button type="button" class="mt-3 w-fit cursor-pointer border-0 bg-transparent p-0 text-sm text-ui-text-muted underline underline-offset-4 disabled:cursor-default disabled:opacity-50" :disabled="pending || refreshing || requesting" @click="advancePermission(permission)">{{ t("welcome.skip") }}</button>
             </template>
-            <template v-else>
-              <UiButton variant="primary" v-if="!granted" type="button" :disabled="pending || refreshing || !canRequest" @click="requestPermission(permission)">{{ t(wayland ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
-              <UiButton type="button" :disabled="pending || refreshing" @click="refreshPermissions">{{ t(refreshing ? "welcome.checking" : "welcome.checkAgain") }}</UiButton>
-            </template>
-            <UiButton variant="primary" v-if="localNetwork || granted" type="button" class="ml-auto" :disabled="pending || refreshing" @click="advancePermission(permission)">{{ t("welcome.continue") }}<ChevronRight :size="15" aria-hidden="true" /></UiButton>
-          </div>
-          <template v-if="!granted">
-            <p class="m-0 mt-5 text-xs leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.skip`) }}</p>
-            <button type="button" class="mt-3 w-fit cursor-pointer border-0 bg-transparent p-0 text-sm text-ui-text-muted underline underline-offset-4 disabled:cursor-default disabled:opacity-50" :disabled="pending || refreshing || requesting" @click="advancePermission(permission)">{{ t("welcome.skip") }}</button>
           </template>
         </template>
         <form v-else class="flex flex-col gap-5" @submit.prevent="submit">

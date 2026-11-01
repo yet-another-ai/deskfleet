@@ -11,6 +11,8 @@ import { rendererContentSecurityPolicy } from "../src/shared/renderer-csp.ts"
 
 // The default fixture needs no capture permission. DESKFLEET_SMOKE_CAPTURE=1
 // streams a real display into the hidden test window without saving a recording.
+// DESKFLEET_SMOKE_CAPTURE_SECONDS=1..300 keeps that peer open after its first frame
+// and prints decoder counters for interactive desktop-transition acceptance.
 // DESKFLEET_SMOKE_HARDWARE=1 encodes generated red pixels using Linux hardware;
 // DESKFLEET_SMOKE_CODEC selects h264 (default), h265 or av1 for that mode.
 // Recreate the 663-byte red-frame fixture with FFmpeg if changing its dimensions or profile:
@@ -19,6 +21,10 @@ import { rendererContentSecurityPolicy } from "../src/shared/renderer-csp.ts"
 //   -x264-params keyint=1:min-keyint=1:scenecut=0 -f h264 red-64x64.h264
 const root = resolve(import.meta.dirname, "../../..")
 const capture = process.env.DESKFLEET_SMOKE_CAPTURE === "1"
+const captureSecondsValue = process.env.DESKFLEET_SMOKE_CAPTURE_SECONDS
+const captureSeconds = Number(captureSecondsValue ?? "0")
+assert.ok(captureSecondsValue === undefined || (capture && Number.isInteger(captureSeconds) && captureSeconds >= 1 && captureSeconds <= 300),
+  "DESKFLEET_SMOKE_CAPTURE_SECONDS requires capture mode and an integer from 1 to 300")
 const hardware = process.env.DESKFLEET_SMOKE_HARDWARE === "1"
 const codec = process.env.DESKFLEET_SMOKE_CODEC ?? "h264"
 assert.ok(["h264", "h265", "av1"].includes(codec), "DESKFLEET_SMOKE_CODEC must be h264, h265 or av1")
@@ -55,7 +61,7 @@ try {
       compilerOptions: { target: ts.ScriptTarget.ES2023, module },
     }).outputText)
   }
-  await writeFile(join(directory, "index.html"), `<!doctype html><html data-source="${source}" data-codec="${codec}" data-consent-timeout="${waylandCapture ? "120000" : "20000"}">
+  await writeFile(join(directory, "index.html"), `<!doctype html><html data-source="${source}" data-codec="${codec}" data-consent-timeout="${waylandCapture ? "120000" : "20000"}" data-capture-duration="${captureSeconds * 1000}">
 <meta http-equiv="Content-Security-Policy" content="${rendererContentSecurityPolicy(true)}">
 <video autoplay muted playsinline></video><script type="module" src="/renderer.js"></script></html>`)
   const native = spawn(nativeExecutable, [], {
@@ -72,7 +78,7 @@ try {
   track(electron)
   const lines = createInterface({ input: native.stdout })
   const result = await new Promise<Record<string, unknown>>((resolveResult, rejectResult) => {
-    const timer = setTimeout(() => rejectResult(new Error("Electron media smoke timed out")), waylandCapture ? 120_000 : 30_000)
+    const timer = setTimeout(() => rejectResult(new Error("Electron media smoke timed out")), (waylandCapture ? 120_000 : 30_000) + captureSeconds * 1000)
     const fail = (error: unknown) => { clearTimeout(timer); rejectResult(error) }
     for (const child of children) {
       child.once("error", fail)
@@ -83,7 +89,8 @@ try {
       if (message.kind === "complete" && message.result) {
         clearTimeout(timer)
         resolveResult(message.result)
-      } else if (message.kind === "error") fail(new Error(message.error))
+      } else if (message.kind === "progress") console.log("Desktop capture progress", JSON.stringify(message.result))
+      else if (message.kind === "error") fail(new Error(message.error))
       else native.stdin.write(`${JSON.stringify(message)}\n`)
     })
     lines.on("line", line => {

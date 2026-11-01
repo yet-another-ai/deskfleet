@@ -39,6 +39,7 @@ publish:
 files:
   - out/**/*
   - "!out/**/*.map"
+  - "!out/windows/**/*"
   # Runtime window and tray images; build/ is otherwise packaging input only.
   - build/icon.png
   - build/tray*.png
@@ -54,8 +55,17 @@ mac:
     - zip
 
 win:
+  extraResources:
+    - from: out/windows/deskfleet-desktop-service.exe
+      to: windows/deskfleet-desktop-service.exe
   target:
     - nsis
+
+nsis:
+  # Keep the application's existing per-user install; only the optional service
+  # requests administrator privileges through its own fixed setup commands.
+  perMachine: false
+  include: build/windows-desktop-service.nsh
 
 linux:
   category: Development

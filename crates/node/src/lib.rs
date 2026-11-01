@@ -17,7 +17,8 @@ pub use catalog::{
 };
 pub use desktop_access::{
     LinuxDesktopAccess, check_linux_desktop_access, close_linux_desktop_access, desktop_supported,
-    linux_desktop_backend, request_linux_desktop_access, wait_linux_desktop_access_change,
+    linux_desktop_backend, request_linux_desktop_access, secure_attention_supported,
+    wait_linux_desktop_access_change,
 };
 pub use local_applications::{
     LocalApplication, LocalApplicationKind, open_local_application, scan_local_applications,

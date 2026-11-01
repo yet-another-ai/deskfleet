@@ -1,12 +1,15 @@
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { ONBOARDING_PERMISSIONS, onboardingPermissions, type LocalNetworkAccessRequest, type OnboardingPermission, type OnboardingPermissionsState, type OnboardingState, type OnboardingStep } from "../../../../packages/client/src/onboarding.ts"
+import { DESKTOP_ONBOARDING_PERMISSIONS, ONBOARDING_PERMISSIONS, onboardingPermissions, type LocalNetworkAccessRequest, type OnboardingPermission, type OnboardingPermissionsState, type OnboardingState, type OnboardingStep } from "../../../../packages/client/src/onboarding.ts"
+import type { WindowsDesktopServiceState } from "../../../../packages/client/src/windows-desktop-service.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"
+import type { WindowsDesktopServiceController } from "./windows-desktop-service-controller.ts"
 
 interface OnboardingOptions {
   path: string
   platform: NodeJS.Platform
   localAgent: Pick<LocalAgentController, "state" | "refreshPermissions" | "requestPermission">
+  windowsDesktopService?: Pick<WindowsDesktopServiceController, "get" | "setEnabled">
   localNetwork: {
     request(): Promise<LocalNetworkAccessRequest>
     openSettings(): Promise<void>
@@ -32,7 +35,7 @@ export async function establishedDesktopProfile(directory: string): Promise<bool
 
 const steps: readonly OnboardingStep[] = [...ONBOARDING_PERMISSIONS, "account", "complete"]
 
-/** The host requests its own network access; the daemon owns local machine permissions. */
+/** The host requests network access and service installation; the daemon owns native permissions. */
 export class OnboardingController {
   readonly #options: OnboardingOptions
   #state: Pick<OnboardingState, "step"> | undefined
@@ -94,16 +97,22 @@ export class OnboardingController {
   async permissions(): Promise<OnboardingPermissionsState> {
     const { step, permissionSteps } = await this.get()
     if (step === "complete") {
-      const desktop = permissionSteps.some(permission => permission !== "localNetwork")
+      const desktop = permissionSteps.some(permission => DESKTOP_ONBOARDING_PERMISSIONS.some(kind => kind === permission))
         ? await this.#options.localAgent.refreshPermissions() : {}
       return {
         ...desktop,
         ...(permissionSteps.includes("localNetwork") ? { localNetwork: this.#localNetwork } : {}),
+        ...(permissionSteps.includes("windowsDesktopService") ? { windowsDesktopService: await this.#windowsDesktopServiceState() } : {}),
       }
     }
     if (!ONBOARDING_PERMISSIONS.includes(step as OnboardingPermission)) throw new Error("Welcome setup is not on a permission step")
     if (step === "localNetwork") return { localNetwork: this.#localNetwork }
+    if (step === "windowsDesktopService") return { windowsDesktopService: await this.#windowsDesktopServiceState() }
     return this.#options.localAgent.refreshPermissions()
+  }
+
+  async #windowsDesktopServiceState(): Promise<WindowsDesktopServiceState> {
+    return this.#options.windowsDesktopService?.get() ?? { available: false, installed: false, running: false }
   }
 
   requestPermission(permission: OnboardingPermission): Promise<OnboardingPermissionsState> {
@@ -120,6 +129,11 @@ export class OnboardingController {
       if (permission === "localNetwork") {
         this.#localNetwork = await this.#options.localNetwork.request()
         return { localNetwork: this.#localNetwork }
+      }
+      if (permission === "windowsDesktopService") {
+        const service = this.#options.windowsDesktopService
+        if (!service) throw new Error("Windows desktop service is unavailable in this build")
+        return { windowsDesktopService: await service.setEnabled(true) }
       }
       return this.#options.localAgent.requestPermission(permission)
     })

@@ -30,6 +30,7 @@ import {
 } from "./renderer-protocol.ts"
 import { createTray } from "./tray.ts"
 import { installUpdates } from "./updates.ts"
+import { installWindowsDesktopService } from "./windows-desktop-service.ts"
 import { hideMainWindow, showMainWindow } from "./windows.ts"
 
 function start(): void {
@@ -45,6 +46,7 @@ function start(): void {
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
     installDesktopMediaIpc()
+    const windowsDesktopService = installWindowsDesktopService()
     const central = await installCentralAccount()
     installLocalApplications(central)
     const files = installFiles(central)
@@ -68,6 +70,7 @@ function start(): void {
     const userData = app.getPath("userData")
     const onboarding = new OnboardingController({
       path: join(userData, "onboarding.json"), platform: process.platform, localAgent,
+      windowsDesktopService,
       localNetwork: { request: requestLocalNetworkAccess, openSettings: openLocalNetworkSettings },
       established: () => establishedDesktopProfile(userData),
     })

@@ -433,6 +433,12 @@
     "launchAtStartupUnavailable": "Available in the installed app on Linux, macOS, and Windows.",
     "keepAwake": "Keep Awake",
     "keepAwakeDescription": "Prevent idle sleep while DeskFleet is running, including in the tray. The display can still turn off.",
+    "windowsLockControl": "Remote control while locked",
+    "windowsLockControlDescription": "Allow remote desktop access while this Windows session is locked. Keep DeskFleet running and this computer awake. Enabling or disabling requires administrator approval.",
+    "windowsLockControlUnavailable": "Install a Windows build with desktop service support to enable remote control while locked.",
+    "windowsLockControlWorking": "Checking or applying settings…",
+    "windowsLockControlStopped": "Installed, but not running",
+    "windowsLockControlStart": "Start",
     "worktreeRoot": "Worktree root directory",
     "worktreeRootDescription": "Store worktrees for new Sessions on this computer here. Existing files stay in place.",
     "chooseWorktreeRoot": "Choose folder…",
@@ -687,6 +693,7 @@
     "control": "Mouse and keyboard control",
     "pauseControl": "Pause control",
     "resumeControl": "Resume control",
+    "sendSecureAttention": "Send Ctrl+Alt+Del",
     "controlHint": "Click the desktop to send mouse and keyboard input.",
     "video": "Remote desktop video",
     "checking": "Checking the local desktop…",
@@ -1234,6 +1241,7 @@
       "fullDiskAccess": "Full Disk Access",
       "screenCapture": "Screen recording",
       "accessibility": "Accessibility",
+      "windowsDesktopService": "Remote control while locked",
       "account": "Your account"
     },
     "stepCount": "Step {current} of {total}",
@@ -1254,6 +1262,22 @@
       "not-required": "No additional permission needed",
       "denied": "Access is not enabled yet",
       "error": "Could not check access"
+    },
+    "windowsDesktopService": {
+      "description": "Allow remote desktop sessions to keep working when you lock this Windows session.",
+      "detailsTitle": "Optional Windows service",
+      "details": "Enabling installs or starts the DeskFleet desktop service and asks for administrator approval. Keep DeskFleet running and this computer awake.",
+      "enable": "Enable locked-session control",
+      "start": "Start service",
+      "skip": "You can enable this later in Settings → Preferences.",
+      "status": {
+        "checking": "Checking service status…",
+        "requesting": "Waiting for administrator approval…",
+        "running": "Ready for remote control while locked",
+        "stopped": "Installed, but not running",
+        "disabled": "Not enabled",
+        "unavailable": "This build does not include the Windows desktop service helper. Install a supported Windows build to enable this feature."
+      }
     },
     "wayland": {
       "dialog": "Desktop authorization",

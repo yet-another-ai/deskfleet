@@ -28,6 +28,9 @@ use crate::types::Display;
 
 /// Enumerate displays using the Win32 GDI API.
 pub fn displays() -> Result<Vec<Display>, CaptureError> {
+    deskfleet_windows_desktop::desktop::bind_input_desktop().map_err(|error| {
+        CaptureError::Platform(format!("bind display discovery desktop: {error}"))
+    })?;
     let mut monitors: Vec<Display> = Vec::new();
 
     // SAFETY: Enumeration is synchronous; LPARAM points to the live monitors Vec.
@@ -98,6 +101,8 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
 pub fn create_d3d11_device(
     monitor_id: u32,
 ) -> Result<(ID3D11Device, ID3D11DeviceContext), CaptureError> {
+    deskfleet_windows_desktop::desktop::bind_input_desktop()
+        .map_err(|error| CaptureError::Platform(format!("bind video device desktop: {error}")))?;
     let adapter = find_display_adapter(monitor_id)?;
     let mut device = None;
     let mut context = None;

@@ -29,6 +29,9 @@ filedescriptor.workspace = true
 nix = { workspace = true, features = ["net"] }
 
 [target.'cfg(windows)'.dependencies]
+deskfleet-windows-desktop.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 windows = { workspace = true, features = ["Win32_System_Threading"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

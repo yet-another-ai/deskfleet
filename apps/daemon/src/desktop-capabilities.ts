@@ -1,4 +1,4 @@
-import { captureDisplays, desktopSupported, supportedVideoCodecs } from "@deskfleet/native"
+import { captureDisplays, desktopSupported, secureAttentionSupported, supportedVideoCodecs } from "@deskfleet/native"
 import type { DesktopCapabilities, VideoCodec } from "./control-protocol.ts"
 
 /** Graphical capability discovery must not prevent headless machine access. */
@@ -8,9 +8,13 @@ export async function supportsDesktop(probe: () => Promise<boolean> = desktopSup
 }
 
 export async function desktopCapabilities(
-  native = { captureDisplays, supportedVideoCodecs },
+  native = { captureDisplays, supportedVideoCodecs, secureAttentionSupported },
 ): Promise<DesktopCapabilities> {
   const displays = await native.captureDisplays()
+  const secureAttention = native.secureAttentionSupported().catch(error => {
+    console.error("Secure attention capability probe failed", error)
+    return false
+  })
   return {
     displays: await Promise.all(displays.map(async display => {
       let codecs: string[]
@@ -26,5 +30,6 @@ export async function desktopCapabilities(
       }
     })),
     audio: process.platform === "darwin",
+    secureAttention: await secureAttention,
   }
 }

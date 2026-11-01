@@ -433,6 +433,12 @@
     "launchAtStartupUnavailable": "适用于 Linux、macOS 和 Windows 上已安装的应用。",
     "keepAwake": "保持唤醒",
     "keepAwakeDescription": "DeskFleet 运行时阻止本机因空闲而休眠，关闭到托盘后仍然有效。屏幕仍可自动关闭。",
+    "windowsLockControl": "锁屏时允许远程控制",
+    "windowsLockControlDescription": "允许在当前 Windows 会话锁屏时访问远程桌面。请保持 DeskFleet 运行，并确保本机未休眠。启用或停用需要管理员授权。",
+    "windowsLockControlUnavailable": "请安装包含桌面服务的 Windows 版本，以启用锁屏远程控制。",
+    "windowsLockControlWorking": "正在检查或应用设置…",
+    "windowsLockControlStopped": "已安装，但未运行",
+    "windowsLockControlStart": "启动",
     "worktreeRoot": "工作树根目录",
     "worktreeRootDescription": "本机新建会话的工作树将存储在此目录。已有文件保留在原位置。",
     "chooseWorktreeRoot": "选择文件夹…",
@@ -687,6 +693,7 @@
     "control": "鼠标和键盘控制",
     "pauseControl": "暂停控制",
     "resumeControl": "恢复控制",
+    "sendSecureAttention": "发送 Ctrl+Alt+Del",
     "controlHint": "点击远程桌面即可发送鼠标和键盘输入。",
     "video": "远程桌面视频",
     "checking": "正在检查本机桌面…",
@@ -1234,6 +1241,7 @@
       "fullDiskAccess": "完全磁盘访问权限",
       "screenCapture": "屏幕录制",
       "accessibility": "辅助功能",
+      "windowsDesktopService": "锁屏时允许远程控制",
       "account": "登录账户"
     },
     "stepCount": "第 {current} 步，共 {total} 步",
@@ -1254,6 +1262,22 @@
       "not-required": "无需额外权限",
       "denied": "尚未开启权限",
       "error": "无法检查权限"
+    },
+    "windowsDesktopService": {
+      "description": "锁定当前 Windows 会话后，仍可通过远程桌面查看和控制这台电脑。",
+      "detailsTitle": "可选的 Windows 服务",
+      "details": "启用时会安装或启动 DeskFleet 桌面服务，并请求管理员授权。请保持 DeskFleet 运行，并确保电脑不休眠。",
+      "enable": "启用锁屏远程控制",
+      "start": "启动服务",
+      "skip": "你可以稍后在“设置 → 偏好设置”中启用。",
+      "status": {
+        "checking": "正在检查服务状态…",
+        "requesting": "正在等待管理员授权…",
+        "running": "已启用锁屏远程控制",
+        "stopped": "已安装，但未运行",
+        "disabled": "尚未启用",
+        "unavailable": "此版本未包含 Windows 桌面服务程序。请安装支持此功能的 Windows 版本后启用。"
+      }
     },
     "wayland": {
       "dialog": "桌面授权",

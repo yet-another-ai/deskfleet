@@ -136,7 +136,7 @@ export class DesktopMediaController {
   }
 
   async #target(): Promise<LocalDesktopTarget> {
-    const target = { id: "local-daemon" as const, name: hostname(), desktop: false }
+    const target = { id: "local-daemon" as const, name: hostname(), desktop: false, platform: process.platform }
     try {
       const client = await this.#connect()
       return { ...target, ...client.info!, online: true }

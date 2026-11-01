@@ -36,6 +36,8 @@ const control = ref(false)
 const controlPaused = ref(false)
 const video = shallowRef<HTMLVideoElement | null>(null)
 const inputEnabled = computed(() => control.value && !controlPaused.value && connection.inputReady.value)
+const windowsTarget = computed(() => fleet.localDesktopTarget.platform === "win32")
+const secureAttentionAvailable = computed(() => windowsTarget.value && capabilities.value?.secureAttention === true)
 useDesktopInput(video, inputEnabled, connection.sendInput)
 const playbackBlocked = ref(false)
 const fullscreenError = ref(false)
@@ -132,6 +134,11 @@ function connect(): void {
 function toggleControl(): void {
   controlPaused.value = !controlPaused.value
   if (!controlPaused.value) video.value?.focus({ preventScroll: true })
+}
+
+function sendSecureAttention(): void {
+  if (!secureAttentionAvailable.value || state.value !== "connected" || !inputEnabled.value) return
+  if (connection.sendInput({ type: "secureAttention" })) video.value?.focus({ preventScroll: true })
 }
 
 async function fullscreen(): Promise<void> {
@@ -246,6 +253,9 @@ const errorDescription = computed(() => errorPresentation(detail.value, failure.
         <IconButton :portal-to="stage ?? undefined" v-if="isFullscreen || (stream && state === 'connected')" :icon="isFullscreen ? Minimize : Maximize" :label="t(isFullscreen ? 'desktop.exitFullscreen' : 'desktop.fullscreen')" @click="fullscreen" />
         <UiButton v-if="stream && control && state === 'connected'" type="button" class="py-1" :disabled="!connection.inputReady.value" :aria-pressed="!controlPaused" @click="toggleControl">
           {{ controlPaused ? t("desktop.resumeControl") : t("desktop.pauseControl") }}
+        </UiButton>
+        <UiButton v-if="stream && control && state === 'connected' && secureAttentionAvailable" type="button" class="py-1" data-desktop-secure-attention :disabled="!inputEnabled" @click="sendSecureAttention">
+          {{ t("desktop.sendSecureAttention") }}
         </UiButton>
         <PopoverTrigger :as="IconButton" :portal-to="stage ?? undefined" :icon="SlidersHorizontal" :label="t('desktop.settings')" :disabled="!capabilities" />
         <UiButton variant="danger" v-if="stream && active" type="button" class="py-1" @click="connection.disconnect()">

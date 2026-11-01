@@ -241,6 +241,9 @@ export declare function requestScreenCaptureAccess(): Promise<boolean | null>
 
 export declare function scanLocalApplications(): Promise<Array<LocalApplication>>
 
+/** Check the installed Windows desktop service and policy for Ctrl+Alt+Del. */
+export declare function secureAttentionSupported(): Promise<boolean>
+
 /** Probe the selected display's encoders on a worker thread. */
 export declare function supportedVideoCodecs(displayId: number): Promise<Array<string>>
 

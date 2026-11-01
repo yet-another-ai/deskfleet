@@ -555,6 +555,15 @@ app waits for its cleanup before exiting. The app never spawns a separate daemon
 process. The standalone Node.js SEA is the headless distribution of the same
 daemon and runs independently of any desktop app.
 
+On Windows, an optional Rust desktop service supplies access to an already
+logged-in console session while Windows is locked. It is installed separately
+from the user application through an administrator-approved setup action and
+runs as LocalSystem. It launches desktop-only workers in the requesting console
+user's OS session. Those workers own capture, encoding, and input; the user daemon
+retains Team authorization, WebRTC peers, Agents, files, and terminals. Authenticated
+local named pipes carry desktop commands and encoded packets. The service does
+not host a second business daemon or provide remote login after logout.
+
 The desktop host places daemon discovery and data in `<userData>/daemon`, using
 Electron's existing profile selection, including `--user-data-dir`. All desktop
 daemon consumers use that directory. Standalone headless daemons default to
@@ -1121,6 +1130,7 @@ The Rust workspace contains:
 | `deskfleet-native` | Native capabilities independent of Node.js |
 | `deskfleet-capture` | Native display capture and retained GPU surfaces |
 | `deskfleet-input` | Display-relative desktop input, held-state cleanup, and platform dispatch |
+| `deskfleet-windows-desktop` | Optional Windows desktop service installation, console-user authorization, named pipes, and desktop binding |
 | `deskfleet-linux-desktop` | Shared Linux session backend selection for permissions, capture, and input |
 | `deskfleet-wayland` | Daemon-owned Portal authorization, PipeWire source IDs, and EIS input |
 | `deskfleet-x11` | X server access, shared RandR source geometry, GetImage capture, and XTEST/XKB input |
@@ -1130,6 +1140,7 @@ The Rust workspace contains:
 | `deskfleet-nvenc-sys` | Windows NVENC FFI and runtime driver loading |
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
 | `deskfleet-server` | Actix Web application in `apps/server` |
+| `deskfleet-desktop-service` | Thin Windows service executable in `apps/desktop-service`, hosting native desktop workers |
 
 Dependencies flow `server -> protocol -> model`, `server -> control-store -> protocol`,
 `node -> store -> model/migration` for local catalog persistence,

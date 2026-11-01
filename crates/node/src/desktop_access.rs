@@ -1,4 +1,4 @@
-//! Thin bindings for the daemon's Linux desktop access.
+//! Thin bindings for desktop access and optional platform capabilities.
 
 use deskfleet_native::desktop_access;
 use napi::Result;
@@ -25,6 +25,14 @@ impl From<desktop_access::DesktopAccess> for LinuxDesktopAccess {
 #[napi]
 pub async fn desktop_supported() -> Result<bool> {
     desktop_access::supported().await.map_err(native_error)
+}
+
+/// Check the installed Windows desktop service and policy for Ctrl+Alt+Del.
+#[napi]
+pub async fn secure_attention_supported() -> Result<bool> {
+    desktop_access::secure_attention_supported()
+        .await
+        .map_err(native_error)
 }
 
 /// Identify the selected Linux session without connecting or prompting.

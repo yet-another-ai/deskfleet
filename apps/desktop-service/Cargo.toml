@@ -1,0 +1,16 @@
+[package]
+name = "deskfleet-desktop-service"
+description = "Optional Windows desktop access service for DeskFleet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+deskfleet-windows-desktop.workspace = true
+deskfleet-native.workspace = true
+
+[lints]
+workspace = true

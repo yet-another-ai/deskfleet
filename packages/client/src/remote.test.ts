@@ -196,6 +196,9 @@ test("desktop discovery reads capabilities published after enrollment and later 
   expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Remote", online: true, desktop: false })
   current.capabilities = { desktop: true }
   expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Remote", online: true, desktop: true })
+  current.capabilities.platform = "win32"
+  expect((await f.remote.api.desktop.target()).platform).toBe("win32")
+  expect(f.remote.api.platform).toBe("web")
   f.emit({ type: "presence", machineId: "central7", online: false })
   expect((await f.remote.api.desktop.target()).online).toBe(false)
   current.capabilities = { desktop: false }

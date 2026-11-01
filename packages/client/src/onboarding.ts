@@ -1,8 +1,10 @@
 import type { DesktopPermissionsState } from "./local-agent.ts"
+import type { WindowsDesktopServiceState } from "./windows-desktop-service.ts"
 
 export const ONBOARDING_CHANNEL = "deskfleet:onboarding"
 export const DESKTOP_ONBOARDING_PERMISSIONS = ["fullDiskAccess", "screenCapture", "accessibility"] as const
-export const ONBOARDING_PERMISSIONS = ["localNetwork", ...DESKTOP_ONBOARDING_PERMISSIONS] as const
+const MACOS_ONBOARDING_PERMISSIONS = ["localNetwork", ...DESKTOP_ONBOARDING_PERMISSIONS] as const
+export const ONBOARDING_PERMISSIONS = [...MACOS_ONBOARDING_PERMISSIONS, "windowsDesktopService"] as const
 export type OnboardingPermission = typeof ONBOARDING_PERMISSIONS[number]
 export type OnboardingStep = OnboardingPermission | "account" | "complete"
 export interface OnboardingState {
@@ -15,17 +17,19 @@ export interface OnboardingState {
 export type LocalNetworkAccessRequest = "attempted" | "unavailable" | "not-required"
 export interface OnboardingPermissionsState extends Partial<DesktopPermissionsState> {
   localNetwork?: "not-requested" | LocalNetworkAccessRequest
+  windowsDesktopService?: WindowsDesktopServiceState
 }
 
 /** Permission guidance follows the desktop host's platform. Linux Portal consent is Wayland-only. */
 export function onboardingPermissions(platform: string, backend?: DesktopPermissionsState["linuxDesktopBackend"], localAgent = true): readonly OnboardingPermission[] {
-  if (platform === "darwin") return localAgent ? ONBOARDING_PERMISSIONS : ["localNetwork"]
+  if (platform === "darwin") return localAgent ? MACOS_ONBOARDING_PERMISSIONS : ["localNetwork"]
   if (!localAgent) return []
+  if (platform === "win32") return ["windowsDesktopService"]
   if (platform === "linux" && backend === "wayland") return ["screenCapture", "accessibility"]
   return []
 }
 
-/** The desktop host owns setup and client network access; the daemon owns capture/file/input access. */
+/** The desktop host owns setup, service installation, and client network access; the daemon owns capture/file/input access. */
 export interface OnboardingApi {
   get(): Promise<OnboardingState>
   /** Silent checks for the active welcome step, or all applicable permissions after setup. */

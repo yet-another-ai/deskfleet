@@ -159,3 +159,8 @@ export function closeLinuxDesktopAccess(): Promise<void> {
 export function desktopSupported(): Promise<boolean> {
   return (bindings ??= loadBindings()).desktopSupported()
 }
+
+/** Read Windows service and policy support for Ctrl+Alt+Del; false elsewhere. */
+export function secureAttentionSupported(): Promise<boolean> {
+  return (bindings ??= loadBindings()).secureAttentionSupported()
+}

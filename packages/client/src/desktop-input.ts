@@ -12,6 +12,8 @@ export type DesktopInputMessage =
   | { type: "wheel"; deltaX: number; deltaY: number }
   /** Physical KeyboardEvent.code, interpreted using the target machine's layout. */
   | { type: "key"; code: string; pressed: boolean; repeat: boolean }
+  /** Windows secure attention sequence, handled by the authorized desktop service. */
+  | { type: "secureAttention" }
   | { type: "releaseAll" }
 
 export type DesktopInputReply = { type: "ready" } | { type: "error"; error: string }

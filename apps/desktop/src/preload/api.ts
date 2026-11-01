@@ -16,6 +16,7 @@ import { portsApi } from "./ports.ts"
 import { applicationsApi } from "./applications.ts"
 import { updatesApi } from "./updates.ts"
 import { localChannelsApi } from "./local-channels.ts"
+import { windowsDesktopServiceApi } from "./windows-desktop-service.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -55,6 +56,7 @@ return {
   appearance: appearanceApi(),
   applications: applicationsApi(),
   updates: updatesApi(),
+  ...(process.platform === "win32" ? { windowsDesktopService: windowsDesktopServiceApi() } : {}),
   files: filesApi(),
   ports: portsApi(),
   localChannels: localChannelsApi(),

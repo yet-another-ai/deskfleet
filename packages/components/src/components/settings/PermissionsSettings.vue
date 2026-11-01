@@ -11,7 +11,10 @@ import UiButton from "../common/UiButton.vue"
 const client = usePlatformClient()
 const onboarding = client.onboarding
 const { t } = useI18n()
-const permissionSteps = ref<readonly OnboardingPermission[]>([])
+type SystemPermission = Exclude<OnboardingPermission, "windowsDesktopService">
+// Windows service setup remains in Preferences after the welcome flow.
+const systemPermissions = (steps: readonly OnboardingPermission[]) => steps.filter((kind): kind is SystemPermission => kind !== "windowsDesktopService")
+const permissionSteps = ref<readonly SystemPermission[]>([])
 const permissions = ref<OnboardingPermissionsState>({})
 const backend = ref<DesktopPermissionsState["linuxDesktopBackend"]>()
 const refreshing = ref(false)
@@ -23,12 +26,12 @@ const wayland = computed(() => client.platform === "linux" && backend.value === 
 const sharedRequest = computed(() => wayland.value && DESKTOP_ONBOARDING_PERMISSIONS.some(kind => permissions.value[`${kind}Permission`]?.status === "requesting"))
 const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2 }
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
-const details = (kind: OnboardingPermission) => `welcome.${wayland.value ? "wayland" : "permissions"}.${kind}`
-const label = (kind: OnboardingPermission) => t(wayland.value ? `${details(kind)}.title` : `welcome.steps.${kind}`)
-const desktopPermission = (kind: OnboardingPermission) => kind === "localNetwork" ? undefined : permissions.value[`${kind}Permission`]
-const granted = (kind: OnboardingPermission) => ["granted", "not-required"].includes(desktopPermission(kind)?.status ?? "")
-const requesting = (kind: OnboardingPermission) => sharedRequest.value || desktopPermission(kind)?.status === "requesting"
-const canRequest = (kind: OnboardingPermission) => !busy.value && !granted(kind) && !requesting(kind)
+const details = (kind: SystemPermission) => `welcome.${wayland.value ? "wayland" : "permissions"}.${kind}`
+const label = (kind: SystemPermission) => t(wayland.value ? `${details(kind)}.title` : `welcome.steps.${kind}`)
+const desktopPermission = (kind: SystemPermission) => kind === "localNetwork" ? undefined : permissions.value[`${kind}Permission`]
+const granted = (kind: SystemPermission) => ["granted", "not-required"].includes(desktopPermission(kind)?.status ?? "")
+const requesting = (kind: SystemPermission) => sharedRequest.value || desktopPermission(kind)?.status === "requesting"
+const canRequest = (kind: SystemPermission) => !busy.value && !granted(kind) && !requesting(kind)
   && (!wayland.value || desktopPermission(kind)?.status !== "checking")
 
 function accept(value: OnboardingPermissionsState, requestedRevision: number): void {
@@ -38,7 +41,7 @@ function accept(value: OnboardingPermissionsState, requestedRevision: number): v
   permissions.value = { ...permissions.value, ...value }
   if (value.linuxDesktopBackend !== undefined) {
     backend.value = value.linuxDesktopBackend
-    permissionSteps.value = onboardingPermissions(client.platform, backend.value, permissionSteps.value.some(kind => kind !== "localNetwork"))
+    permissionSteps.value = systemPermissions(onboardingPermissions(client.platform, backend.value, permissionSteps.value.some(kind => kind !== "localNetwork")))
   }
 }
 
@@ -50,7 +53,7 @@ async function refresh(): Promise<void> {
   try {
     const state = await onboarding.get()
     if (revision === requestedRevision) {
-      permissionSteps.value = state.permissionSteps
+      permissionSteps.value = systemPermissions(state.permissionSteps)
       backend.value = state.linuxDesktopBackend
     }
     if (permissionSteps.value.length) accept(await onboarding.permissions(), requestedRevision)
@@ -58,7 +61,7 @@ async function refresh(): Promise<void> {
   finally { refreshing.value = false }
 }
 
-async function requestPermission(kind: OnboardingPermission): Promise<void> {
+async function requestPermission(kind: SystemPermission): Promise<void> {
   if (!onboarding || !canRequest(kind)) return
   pending.value = true
   error.value = undefined
@@ -79,7 +82,7 @@ async function openLocalNetworkSettings(): Promise<void> {
 
 const unsubscribe = onboarding ? client.settings.onChanged(state => {
   if (state.linuxDesktopBackend !== undefined) backend.value = state.linuxDesktopBackend
-  const nextSteps = onboardingPermissions(client.platform, backend.value, state.enabled || state.status === "running")
+  const nextSteps = systemPermissions(onboardingPermissions(client.platform, backend.value, state.enabled || state.status === "running"))
   const stepsChanged = nextSteps.length !== permissionSteps.value.length || nextSteps.some((kind, index) => kind !== permissionSteps.value[index])
   // Missing permission data in a lifecycle event is not a new access decision.
   if (stepsChanged || state.linuxDesktopBackend !== undefined || DESKTOP_ONBOARDING_PERMISSIONS.some(kind => state[`${kind}Permission`])) ++revision
