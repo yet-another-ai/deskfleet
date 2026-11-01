@@ -4,6 +4,7 @@ import AgentConversation from "../../src/components/session/AgentConversation.vu
 import AgentOutline from "../../src/components/session/AgentOutline.vue"
 import { projectConversation } from "../../src/services/agent-conversation.ts"
 import { CODE_MARKER, createFixture, FINAL_MARKER, type BenchmarkOptions } from "./fixture.ts"
+import { verifyConversationScrollback } from "./scrollback.ts"
 
 const props = defineProps<{ options: BenchmarkOptions }>()
 const fixture = createFixture(props.options)
@@ -13,6 +14,7 @@ const snapshot = ref(fixture.snapshot)
 const projection = computed(() => projectConversation(events.value, snapshot.value))
 const scroller = useTemplateRef<HTMLDivElement>("scroller")
 const conversation = useTemplateRef<HTMLDivElement>("conversation")
+const locateEntry = ref<string>()
 // Match SessionView's post-flush event-count watcher. History mode leaves scroll fixed.
 watch(() => events.value.length, () => {
   if (props.options.scroll === "bottom") scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
@@ -145,6 +147,7 @@ async function run(mountedAt: number) {
     frameId = requestAnimationFrame(sampleFrame)
   }
   frameId = requestAnimationFrame(sampleFrame)
+  performance.mark("conversation-stream-start")
   const started = performance.now()
   const preStreamSettleMs = started - mountedAt - mountMs - unfoldMs
   let delivered = 0
@@ -212,6 +215,7 @@ async function run(mountedAt: number) {
     deliver()
   })
   const lastDeliveryAt = performance.now()
+  performance.mark("conversation-stream-delivered")
   events.value.push(fixture.completion)
   snapshot.value = { ...snapshot.value, turns: [...snapshot.value.turns.slice(0, -1), fixture.completed] }
   await nextTick()
@@ -240,6 +244,7 @@ async function run(mountedAt: number) {
     if (stableFrames >= 3) { settledAt = performance.now(); break }
   }
   measuring = false
+  performance.mark("conversation-final-ready")
   cancelAnimationFrame(frameId)
   await Promise.all(pendingPaints)
   await expansion
@@ -251,6 +256,14 @@ async function run(mountedAt: number) {
   const finalDom = domCounts()
   await diagramReadiness
   const diagramValidation = diagramDiagnostics()
+  const historicalTurnIndex = Math.floor(props.options.turns / 2)
+  const historicalTurn = props.options.turns ? snapshot.value.turns[historicalTurnIndex] : undefined
+  const thought = historicalTurn && projection.value.find(entry => entry.kind === "message" && entry.role === "thought" && entry.turnId === historicalTurn.id)
+  const capture = (window as unknown as { captureConversationScrollback?: (name: string) => Promise<void> }).captureConversationScrollback
+  const scrollbackValidation = await verifyConversationScrollback(scroller.value!, conversation.value!, {
+    locate: thought ? { rowIndex: historicalTurnIndex * 2 + 1, entryId: thought.id, select: async id => { locateEntry.value = id; await nextTick() } } : undefined,
+    checkpoint: capture,
+  })
   return {
     options: props.options,
     fixture: { initialEvents: initialEventCount, streamedEvents: fixture.pending.length, sourceCharacters: fixture.sourceCharacters },
@@ -262,7 +275,7 @@ async function run(mountedAt: number) {
     frameIntervalMs: distribution(frameIntervals),
     longTasks: { supported: longTasksSupported, count: longTasks.length, totalMs: longTasks.reduce((sum, value) => sum + value, 0), maxMs: Math.max(0, ...longTasks) },
     deliveryBatches, largestDeliveryBatch,
-    initialDom, finalDom, diagramValidation,
+    initialDom, finalDom, diagramValidation, scrollbackValidation,
     completed: true,
   }
 }
@@ -272,7 +285,7 @@ defineExpose({ run })
 <template>
   <div ref="scroller" class="benchmark-scroller">
     <div ref="conversation" class="benchmark-conversation">
-      <AgentConversation :events="events" :snapshot="snapshot" :projection="projection" />
+      <AgentConversation :events="events" :snapshot="snapshot" :projection="projection" :locate-entry="locateEntry" />
     </div>
   </div>
   <aside class="benchmark-outline"><AgentOutline :events="events" :snapshot="snapshot" :projection="projection" /></aside>
@@ -282,7 +295,7 @@ defineExpose({ run })
 html, body, #app { margin: 0; height: 100%; }
 html { color-scheme: light; }
 body { background: var(--ui-color-canvas); color: var(--ui-color-text); }
-.benchmark-scroller { height: 100vh; overflow: auto; overflow-anchor: none; }
+.benchmark-scroller { height: 100vh; overflow: auto; }
 .benchmark-conversation { max-width: 960px; padding: 32px; margin: 0 auto; }
 .benchmark-outline { position: fixed; left: 8px; top: 20%; max-height: 60vh; }
 </style>

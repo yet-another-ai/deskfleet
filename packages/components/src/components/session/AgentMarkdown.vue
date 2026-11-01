@@ -25,9 +25,10 @@ setCustomComponents(CUSTOM_ID, {
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { watchImmediate } from "@vueuse/core"
 import { MarkdownRender } from "markstream-vue"
-import { computed, inject, onBeforeUnmount, provide, reactive, ref } from "vue"
+import { computed, inject, onBeforeUnmount, provide, reactive, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
-import { agentResourceContextKey, isFileResource } from "../../services/agent-resources.ts"
+import { agentResourceContextKey } from "../../services/agent-resources.ts"
+import { agentMarkdownParseOptions, createAgentMarkdownParser } from "../../services/agent-markdown.ts"
 import { previewKindFromMime } from "../../services/preview.ts"
 import { markdownHostKey, type LoadedImage } from "./markdown/context.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
@@ -35,7 +36,9 @@ import type { FileResourceRequest } from "../../../../client/src/files.ts"
 
 const client = usePlatformClient()
 
-defineProps<{ text: string; final?: boolean }>()
+const props = defineProps<{ text: string; final?: boolean }>()
+const parseMarkdown = createAgentMarkdownParser(useId())
+const nodes = computed(() => parseMarkdown(props.text, props.final ?? true))
 const { t } = useI18n()
 const context = inject(agentResourceContextKey, computed(() => undefined))
 const error = ref<string>()
@@ -115,16 +118,6 @@ provide(markdownHostKey, {
   },
 })
 
-function customizeMarkdownIt(md: any) {
-  const validate = md.validateLink.bind(md)
-  md.validateLink = (value: string) => isFileResource(value) || validate(value)
-  return md
-}
-
-const parseOptions = {
-  validateLink: (url: string) => isFileResource(url) || !/^(?:javascript|vbscript|data):/iu.test(url.trim()),
-}
-
 async function click(event: MouseEvent): Promise<void> {
   const target = event.target instanceof Element ? event.target : null
   const copyButton = target?.closest<HTMLButtonElement>("[data-math-copy], [data-code-copy]")
@@ -168,11 +161,10 @@ onBeforeUnmount(() => {
     <div class="ui-markdown" @click="click">
       <!-- Chat updates already arrive incrementally; do not queue another delayed reveal. -->
       <MarkdownRender
-        :content="text"
+        :nodes="nodes"
         :custom-id="CUSTOM_ID"
         :final="final ?? true"
-        :custom-markdown-it="customizeMarkdownIt"
-        :parse-options="parseOptions"
+        :parse-options="agentMarkdownParseOptions"
         :smooth-streaming="false"
         :batch-rendering="false"
         :max-live-nodes="0"
