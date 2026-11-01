@@ -1,0 +1,51 @@
+name: AUR
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Arch desktop (x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install locked Node
+        uses: jdx/mise-action@v5
+        with:
+          version: 2026.10.25
+          install_args: --locked node
+
+      - name: Download the desktop application payload from Build
+        uses: actions/download-artifact@v8
+        with:
+          name: deskfleet-desktop-linux-x64
+          path: desktop-artifacts
+
+      - name: Generate the AUR package from the same-run archive
+        run: mise exec node -- node scripts/package-aur-release.ts "$RUNNER_TEMP/aur-package" desktop-artifacts/*.tar.gz
+
+      - name: Enable Chromium's user namespace sandbox on the runner
+        # Match Nix validation: keep Chromium's sandbox enabled in the test.
+        run: sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Build, install, smoke test, and remove the Arch package
+        run: mise exec node -- node scripts/check-aur.ts "$RUNNER_TEMP/aur-package" --gui
+
+      - name: Upload package metadata and lint diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-aur-validation
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/aur-package/PKGBUILD
+            ${{ runner.temp }}/aur-package/.SRCINFO
+            ${{ runner.temp }}/aur-package/namcap.log
+          retention-days: 14
