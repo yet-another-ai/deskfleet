@@ -114,6 +114,53 @@ test("shutdown flush reads final producer state even after live synchronization 
   ])
 })
 
+test("a failed Session does not block later summaries and retries from its acknowledged cursor", async context => {
+  const records = [{ id: "1", lastEventSeq: "201" }, { id: "2", lastEventSeq: "1" }]
+  const snapshots = new Map(records.map(session => [session.id, { session }]))
+  const agents = {
+    onEvent: () => () => {},
+    journal: {
+      list: async () => records, read: async (id: string) => snapshots.get(id),
+      commandsSince: async () => ({ commands: [], revision: "0" }),
+      serial: async (_id: string, action: () => Promise<unknown>) => action(),
+      history: async (id: string, after: string, limit: number) => Array.from({
+        length: Math.min(limit, Number(snapshots.get(id)!.session.lastEventSeq) - Number(after)),
+      }, (_, offset) => ({ sessionId: id, seq: String(Number(after) + offset + 1) })),
+    },
+  } as unknown as AgentSessions
+  const catalog = { snapshot: async () => ({ sessionIds: records.map(session => session.id) }), onChange: () => () => {} } as unknown as DaemonCatalog
+  const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
+  const attempts: { sessionId: string; firstSeq: string; snapshot: boolean }[] = []
+  const acknowledged = new Map<string, string>()
+  const failure = new Error("Session 1 upload failed")
+  let failing = true
+  const sync = new CentralSync(agents, catalog, providers, async (path, body) => {
+    if (path.endsWith("catalog")) return {}
+    const value = body as { sessionId: string; snapshot?: unknown; events: { seq: string }[] }
+    attempts.push({ sessionId: value.sessionId, firstSeq: value.events[0]!.seq, snapshot: !!value.snapshot })
+    if (value.sessionId === "1" && value.events[0]!.seq === "201" && failing) throw failure
+    const lastEventSeq = value.events.at(-1)!.seq
+    acknowledged.set(value.sessionId, lastEventSeq)
+    return { lastEventSeq }
+  }, async () => false)
+  context.after(() => sync.close())
+  sync.enable()
+  await assert.rejects(sync.flush(), error => error === failure)
+  assert.equal(acknowledged.get("1"), "200")
+  assert.equal(acknowledged.get("2"), "1", "A later Session publishes despite the earlier failure")
+  await assert.rejects(sync.flush(), error => error === failure)
+  failing = false
+  await sync.flush()
+  assert.equal(acknowledged.get("1"), "201")
+  assert.deepEqual(attempts, [
+    { sessionId: "1", firstSeq: "1", snapshot: true },
+    { sessionId: "1", firstSeq: "201", snapshot: false },
+    { sessionId: "2", firstSeq: "1", snapshot: true },
+    { sessionId: "1", firstSeq: "201", snapshot: true },
+    { sessionId: "1", firstSeq: "201", snapshot: true },
+  ], "Retries preserve each Session's cursor without uploading an unchanged successful Session again")
+})
+
 test("receipt-only changes paginate independently and survive a lost response after the event ACK", async context => {
   let revision = "1", fail = true
   const snapshot = { session: { id: "session", lastEventSeq: "0" } }

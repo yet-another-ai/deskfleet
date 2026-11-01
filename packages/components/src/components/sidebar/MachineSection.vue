@@ -44,10 +44,11 @@ const account = useAccountSession()
 const addingWorkspace = ref(false)
 const openingTerminal = ref(false)
 const terminalError = ref<{ workspaceId: string; message: string } | null>(null)
-const sessions = useArrayFilter(() => props.machine.sessions, session => session.archiveState !== "archived")
+// Catalog-only entries can belong to archived Sessions; wait for their metadata.
+const sessions = useArrayFilter(() => props.machine.sessions, session => session.archiveState === "active" || session.archiveState === "archiving")
 const workspaces = computed(() => props.machine.workspaces.map(workspace => ({
   ...workspace,
-  sessions: workspace.sessions.filter(session => session.archiveState !== "archived"),
+  sessions: workspace.sessions.filter(session => session.archiveState === "active" || session.archiveState === "archiving"),
 })))
 
 function openRoute(destination: RouteLocationRaw): void {

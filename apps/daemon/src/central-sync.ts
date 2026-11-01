@@ -82,14 +82,18 @@ export class CentralSync {
         try { await this.#post("/api/daemon/schedules", { tasks: this.#schedules.snapshot() }) }
         catch (error) { this.#schedulesDirty = true; throw error }
       }
+      const errors: unknown[] = []
       for (const session of await this.#agents.journal.list()) {
-        if (!this.#enabled || this.#closed) return
+        if (!this.#enabled || this.#closed) break
         const acknowledged = this.#cursors.get(session.id)
         if (acknowledged !== undefined && BigInt(session.lastEventSeq) <= BigInt(acknowledged) && !this.#pendingSessions.has(session.id)) continue
         this.#pendingSessions.delete(session.id)
         try { await this.#syncSession(session.id) }
-        catch (error) { this.#pendingSessions.add(session.id); throw error }
+        catch (error) { this.#pendingSessions.add(session.id); errors.push(error) }
       }
+      // A failed history upload must not prevent other Sessions' summaries from
+      // reaching the already-published catalog. Keep the failure retriable below.
+      if (errors.length) throw errors[0]
     } catch (error) {
       this.#dirty = true
       // Retrying replays durable events. There is no in-memory-only history buffer.

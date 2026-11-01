@@ -82,7 +82,7 @@ test("workspace rows fold terminals and sessions without navigating", async () =
     workspaces: [{
       id: "workspace", name: "Project", directories: [{ path: "/project" }],
       terminals: [{ id: "workspace-shell", title: "Workspace shell", cwd: "/project" }],
-      sessions: [{ id: "session", title: "Implement feature", provider: "Codex" }],
+      sessions: [{ id: "session", title: "Implement feature", provider: "Codex", archiveState: "active" }],
     }],
   })
   expect(wrapper.findAll("a").map(link => [link.text(), link.attributes("href")])).toEqual([
@@ -242,7 +242,7 @@ test.each(["machine", "workspace"])("%s session rows show unread results after w
 })
 
 test.each(["machine", "workspace"])("%s session PR status stays beside unread and working indicators", async scope => {
-  const sessions = [{ id: "session", title: "Add feature", provider: "Codex", lastCompletedSeq: "6", lastReadSeq: "5" }]
+  const sessions: AgentSessionSummary[] = [{ id: "session", title: "Add feature", provider: "Codex", archiveState: "active", lastCompletedSeq: "6", lastReadSeq: "5" }]
   const { wrapper } = await setup(scope === "machine" ? { sessions } : {
     workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions }],
   }, undefined, { number: 78, title: "Add feature", url: "https://github.com/acme/app/pull/78", state: "open" })
@@ -271,17 +271,43 @@ test.each(["machine", "workspace"])("%s session rows hide completed archives and
     workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions }],
   })
   const visibleIds = () => wrapper.findAll('a[href^="/sessions/"]').map(link => link.attributes("href"))
-  expect(visibleIds()).toEqual(["/sessions/active", "/sessions/archiving", "/sessions/pending"])
+  expect(visibleIds()).toEqual(["/sessions/active", "/sessions/archiving"])
   expect(wrapper.find('button[aria-label="Retry archive"]').exists()).toBe(true)
 
   await router.push("/sessions/archived"); await flushPromises()
   expect(wrapper.find('a[href="/sessions/archived"]').exists()).toBe(false)
   sessions[0]!.archiveState = "archived"
   await flushPromises()
-  expect(visibleIds()).toEqual(["/sessions/archiving", "/sessions/pending"])
+  expect(visibleIds()).toEqual(["/sessions/archiving"])
   sessions[2]!.archiveState = "active"
   await flushPromises()
-  expect(visibleIds()).toEqual(["/sessions/archiving", "/sessions/archived", "/sessions/pending"])
+  expect(visibleIds()).toEqual(["/sessions/archiving", "/sessions/archived"])
+  wrapper.unmount()
+})
+
+test.each([
+  { scope: "machine", online: true },
+  { scope: "workspace", online: true },
+  { scope: "machine", online: false },
+  { scope: "workspace", online: false },
+])("$scope session rows wait for archive metadata while online=$online", async ({ scope, online }) => {
+  const sessions = reactive<AgentSessionSummary[]>([
+    { id: "old-chat" },
+    { id: "new-chat" },
+  ])
+  const { wrapper } = await setup(scope === "machine" ? { sessions, online } : {
+    online,
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions }],
+  })
+  const visibleIds = () => wrapper.findAll('a[href^="/sessions/"]').map(link => link.attributes("href"))
+  expect(visibleIds()).toEqual([])
+  Object.assign(sessions[0]!, { title: "Archived chat", provider: "Codex", archiveState: "archived" })
+  Object.assign(sessions[1]!, { title: "New chat", provider: "Codex", archiveState: "active" })
+  await flushPromises()
+  expect(visibleIds()).toEqual(["/sessions/new-chat"])
+  expect(wrapper.get('a[href="/sessions/new-chat"]').text()).toBe("New chat")
+  // An active Session can be visible before its execution context is provisioned.
+  expect(sessions[1]!.worktree).toBeUndefined()
   wrapper.unmount()
 })
 
