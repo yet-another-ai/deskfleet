@@ -110,6 +110,8 @@ pub enum PeerError {
     InvalidSample,
     #[error("remote SDP does not accept the configured video codec profile")]
     IncompatibleVideoCodec,
+    #[error("video reception: {0}")]
+    VideoReceive(&'static str),
 }
 
 pub type Result<T> = std::result::Result<T, PeerError>;

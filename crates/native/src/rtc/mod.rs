@@ -10,6 +10,7 @@ mod events;
 mod feedback;
 mod h265_payloader;
 mod ports;
+mod receive;
 mod runtime;
 mod sample_track;
 mod types;
@@ -25,6 +26,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 pub use channels::MAX_DATA_MESSAGE_SIZE;
+pub use receive::{ReceivedVideoPacket, VideoReceiver};
 use rtc::interceptor::Slot;
 use rtc::media::Sample;
 use rtc::rtp_transceiver::rtp_sender::RtpCodecKind;
@@ -50,6 +52,8 @@ pub struct Peer {
     video: Option<Arc<SampleTrack>>,
     audio: Option<Arc<SampleTrack>>,
     video_codec: Option<VideoCodec>,
+    receiving_video: bool,
+    video_receiver: StdMutex<Option<VideoReceiver>>,
     channels: channels::Channels,
     ports: ports::Forwarding,
     events: broadcast::Sender<PeerEvent>,
@@ -73,7 +77,30 @@ impl Peer {
 
     async fn with_media_engine(
         config: PeerConfig,
+        media: webrtc::peer_connection::MediaEngine,
+    ) -> Result<Self> {
+        Self::build(config, media, false).await
+    }
+
+    /// Create a receive-only video peer for a native viewer. The selected codec
+    /// is advertised in the offer, and no local media track is created.
+    ///
+    /// Take the single packet consumer with [`Self::take_video_receiver`].
+    /// Audio is not supported by this video-only receive path.
+    pub async fn new_video_receiver(config: PeerConfig) -> Result<Self> {
+        if config.video.is_none() || config.audio {
+            return Err(PeerError::VideoReceive(
+                "video reception requires a video codec and audio disabled",
+            ));
+        }
+        let media = codecs::media_engine(&config)?;
+        Self::build(config, media, true).await
+    }
+
+    async fn build(
+        config: PeerConfig,
         mut media: webrtc::peer_connection::MediaEngine,
+        receiving_video: bool,
     ) -> Result<Self> {
         let interceptors = register_default_interceptors(Registry::new(), &mut media)?
             .with(Slot::from(14_000), feedback::KeyframeFeedback::default());
@@ -97,7 +124,15 @@ impl Peer {
             .build();
         let (events, receiver) = broadcast::channel(EVENT_CAPACITY);
         let (closed, _) = watch::channel(false);
-        let keyframe_requested = Arc::new(AtomicBool::new(config.video.is_some()));
+        let (incoming_video, video_receiver) = match (receiving_video, config.video) {
+            (true, Some(codec)) => {
+                let (incoming, receiver) = receive::channel(codec, closed.subscribe());
+                (Some(incoming), Some(receiver))
+            }
+            _ => (None, None),
+        };
+        let sending_video = config.video.is_some() && !receiving_video;
+        let keyframe_requested = Arc::new(AtomicBool::new(sending_video));
         let channels = Arc::new(Mutex::new(HashMap::new()));
         let ports = ports::Forwarding::default();
         let pc = Arc::new(
@@ -110,7 +145,8 @@ impl Peer {
                     channels: Arc::clone(&channels),
                     events: events.clone(),
                     keyframe: Arc::clone(&keyframe_requested),
-                    has_video: config.video.is_some(),
+                    has_video: sending_video,
+                    incoming_video,
                     ports: ports.clone(),
                 }))
                 .with_data_channel_send_buffer_limit(channels::MAX_BUFFERED_AMOUNT)
@@ -123,6 +159,8 @@ impl Peer {
             video: None,
             audio: None,
             video_codec: config.video,
+            receiving_video,
+            video_receiver: StdMutex::new(video_receiver),
             channels,
             ports,
             events,
@@ -135,7 +173,18 @@ impl Peer {
             readers: Mutex::new(Vec::new()),
             runtime: tokio::runtime::Handle::current(),
         };
-        if let Some(codec) = config.video {
+        if receiving_video {
+            use rtc::rtp_transceiver::{RTCRtpTransceiverDirection, RTCRtpTransceiverInit};
+            peer.pc
+                .add_transceiver_from_kind(
+                    RtpCodecKind::Video,
+                    Some(RTCRtpTransceiverInit {
+                        direction: RTCRtpTransceiverDirection::Recvonly,
+                        ..Default::default()
+                    }),
+                )
+                .await?;
+        } else if let Some(codec) = config.video {
             let track = Arc::new(
                 SampleTrack::new(
                     peer.pc.as_ref(),
@@ -176,6 +225,19 @@ impl Peer {
 
     pub fn video_codec(&self) -> Option<VideoCodec> {
         self.video_codec
+    }
+
+    /// Transfer ownership of the receive-only video consumer. This succeeds
+    /// once per receiver peer; it does not consume signaling or input events.
+    pub fn take_video_receiver(&self) -> Result<VideoReceiver> {
+        self.ensure_open()?;
+        self.video_receiver
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+            .ok_or(PeerError::VideoReceive(
+                "video receiver is unavailable or already taken",
+            ))
     }
 
     pub fn has_audio(&self) -> bool {
@@ -230,7 +292,7 @@ impl Peer {
     pub async fn answer_offer(&self, sdp: String) -> Result<String> {
         self.ensure_open()?;
         let offer = RTCSessionDescription::offer(sdp)?;
-        codecs::validate_remote_video(&offer, self.video_codec)?;
+        codecs::validate_remote_video(&offer, self.video_codec, self.receiving_video)?;
         self.pc.set_remote_description(offer).await?;
         let answer = self.pc.create_answer(None).await?;
         let sdp = answer.sdp.clone();
@@ -241,7 +303,7 @@ impl Peer {
     pub async fn accept_answer(&self, sdp: String) -> Result<()> {
         self.ensure_open()?;
         let answer = RTCSessionDescription::answer(sdp)?;
-        codecs::validate_remote_video(&answer, self.video_codec)?;
+        codecs::validate_remote_video(&answer, self.video_codec, self.receiving_video)?;
         self.pc.set_remote_description(answer).await?;
         Ok(())
     }
@@ -415,6 +477,7 @@ impl Drop for Peer {
             task.abort();
         }
         if !*self.closed.borrow() {
+            self.closed.send_replace(true);
             let pc = Arc::clone(&self.pc);
             let ports = self.ports.clone();
             self.runtime.spawn(async move {

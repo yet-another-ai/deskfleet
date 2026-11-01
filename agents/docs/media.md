@@ -40,8 +40,17 @@ Video uses H.264 constrained baseline, H.265 Main, or AV1 Main, selected before
 negotiation. H.264/H.265 input is Annex B; AV1 is an OBU stream. Encoders select
 levels automatically; resolution/frame-rate adaptation to the remote decoder's
 level and congestion-driven bitrate control are not implemented. Callers must
-choose settings the receiving device can decode. The Electron/browser WebRTC
-stack owns receive-side decoding and playback.
+choose settings the receiving device can decode. The browser WebRTC stack owns
+receive-side decoding and playback for the embedded viewer. The optional
+[native desktop window](#native-desktop-window) uses the Rust receive path.
+
+`Peer::new_video_receiver()` creates a receive-only video transceiver without
+adding a sending video track. Its single `VideoReceiver` consumer reads complete
+RTP datagrams and can request PLI refreshes. Closing the owning peer cancels
+reads, including while waiting for the first remote track. Packet reordering,
+depacketization, and decoding belong to the receiving media pipeline; the
+transport does not discard compressed reference pictures to follow presentation
+backpressure.
 
 ## Capture and encoding
 
@@ -377,7 +386,7 @@ operate only on its own sessions. Disconnect releases those peers and capture
 workers. Agent sessions and the daemon remain running. Daemon shutdown closes
 all peers, including pending creation.
 
-## Electron playback
+## Browser playback
 
 After login and machine enrollment, select the target machine in the Web or
 Electron client and open **Remote control → Desktop**. Refresh capabilities if needed,
@@ -397,7 +406,8 @@ selects the first codec supported by Chromium and the native encoder, exchanges 
 and starts capture after the peer connects. Candidates received before the answer
 are queued. A media track feeds a standard `<video>` via `srcObject`; Chromium
 owns decoding, audio playback, scaling, and fullscreen. Raw frames never cross the
-preload bridge. No native decoder or independent GPU window is added.
+preload bridge. This embedded playback path remains available alongside the
+native window.
 
 Disconnect, switching away from the Desktop tab, navigation away from the desktop
 view, renderer reload/crash, and client exit release the corresponding media
@@ -415,6 +425,197 @@ including server-provided STUN/TURN configuration. The daemon checks the
 `desktop:control`, checked by both the server and daemon. Desktop grants issued
 to authorized Team members currently carry both actions; a stream-only grant
 cannot inject input.
+
+## Native desktop window
+
+The Linux, Windows, and macOS Electron clients offer **Open in native window**
+when the `native_presentor` Statsig gate passes and the display advertises H.264.
+The gate defaults off and remains in place for testing across several future
+versions; see [analytics rollout](analytics.md#feature-gates-and-experiments).
+Closing the gate blocks new launches while existing native windows retain their
+normal session lifecycle. Team authorization remains independent of the gate.
+It opens `deskfleet-viewer`, a Rust executable whose thin entry
+point calls the reusable `deskfleet-desktop-viewer` library. The viewer owns its
+winit window, receive-only WebRTC peer, decoder, and wgpu renderer. The current
+native receive path supports H.264 video and optional mouse/keyboard control;
+it does not negotiate system audio. The embedded browser viewer remains available.
+
+Electron's main process owns Team authorization, capability discovery, peer
+grants, signaling, and remote capture startup. It exchanges only control,
+SDP/ICE, and status messages with the child through private stdin/stdout pipes.
+The viewer never receives the account credential and pixels never pass through
+JavaScript. It uses the grant's STUN/TURN configuration and the existing
+`desktop:stream`/`desktop:control` authorization and input DataChannel contracts.
+Grant expiry or revocation, account changes, viewer closure, and application
+exit close the corresponding peer and capture stream. Navigating away from the
+Desktop tab leaves the separate native window running. Closing a native viewer
+does not stop the hosted daemon or another session.
+
+Once ICE is connected, a failed outgoing trickle-candidate request is logged
+without closing the established viewer; remaining candidates still get sent.
+Before connection, the same failure ends startup and releases the grant.
+Revocation, expiry, account changes, and transport failures retain their normal
+cleanup behavior.
+
+The window-to-session input queue holds at most 256 events and coalesces only
+adjacent pointer moves, preserving key/button/wheel ordering. On overflow, it
+discards pending input and the overflowing action, then queues `ReleaseAll`
+without closing the video. Focus-loss release also clears pending presses.
+Any event already being sent precedes the reset on the ordered DataChannel;
+fresh input follows it. Actual transport send failures still close the peer.
+
+The receive task and blocking decode worker run independently of the window.
+`deskfleet-linux-media::RtpVideoDecoder` loads GStreamer on demand and feeds full
+RTP packets through `rtpjitterbuffer`, `rtph264depay`, `h264parse`, and a hardware
+H.264 decoder. The RTP reorder budget is 10 ms; appsrc accepts at most 256 queued
+packets and 1 MiB, returning backpressure to its caller instead of silently
+discarding compressed input. The depayloader waits for a keyframe after loss and
+its upstream refresh events become WebRTC PLI requests. The decoded appsink has
+one FIFO position and `sync=false`; it does not wait for a PTS playback clock.
+VA-API and NVDEC factories are tried when installed. Hardware setup or stream
+errors remain visible rather than silently selecting a software decoder.
+
+On Windows, the viewer uses the system Media Foundation H.264 decoder with a
+D3D11 device manager and low-latency mode. `h264.rs` owns a bounded 64-packet,
+10 ms RTP reorder window and Annex B access-unit assembly for single NAL,
+STAP-A, and FU-A packets. Duplicate/late packets are ignored; loss or malformed
+fragmentation discards the incomplete picture, requests PLI, and waits for an
+IDR with cached SPS/PPS. Complete pictures are bounded to 8 MiB. A full reorder
+window or pending compressed access unit backpressures the receive worker.
+Media Foundation output is polled while idle, without EOS flushing or a PTS
+playback scheduler. Output type changes renegotiate NV12; owned RGBA pixels
+honor the output color matrix and nominal range. Hardware mode requires DXGI
+output surfaces and fails visibly if acceleration cannot start. The explicit
+`DESKFLEET_VIEWER_DECODER=software` diagnostic uses the same system decoder
+without a D3D11 manager. Windows requires the Media Foundation components
+(including the Media Feature Pack on Windows N editions), not GStreamer.
+
+On macOS, VideoToolbox decodes the same bounded H.264 RTP assembly into BGRA
+pixel buffers, copied row by row into owned RGBA. The default decoder requires
+hardware acceleration; `DESKFLEET_VIEWER_DECODER=software` explicitly disables
+hardware decoding for diagnostics. No additional media runtime is installed.
+The decode worker submits each access unit synchronously, with asynchronous and
+temporal processing disabled, so output does not wait for a later picture or
+EOS. Parameter-set changes recreate the decompression session. Session
+invalidation precedes releasing callback state. The viewer's AppKit menu is
+disabled so Command-key shortcuts can reach the remote input handler.
+The synchronous callback lifetime follows Apple's
+[VideoToolbox decoding contract](https://developer.apple.com/documentation/videotoolbox/vtdecompressionsessiondecodeframe%28_%3Asamplebuffer%3Aflags%3Aframerefcon%3Ainfoflagsout%3A%29).
+
+Decoded images are copied into owned RGBA pixels and uploaded to a wgpu texture
+for scaling and display. This implementation has GPU readback and upload; it is
+not a shared-surface or zero-copy decoder integration. The decoder's reference
+surface pool is independent of the presentation queue.
+
+### Shallow FIFO presentation
+
+The application retains at most two decoded, uncommitted candidates. A newly
+decoded picture evicts the oldest candidate only when both positions are full.
+Once a presentation position is available, the window takes the oldest retained
+candidate and submits it promptly. Later arrivals cannot replace that submitted
+picture. An empty queue leaves the existing image on screen; startup never
+waits to fill the queue. There is no PTS playback scheduler, predictive vsync
+timer, or three-frame prefill.
+
+The wgpu surface uses `Fifo` and `desired_maximum_frame_latency=1`. On Wayland,
+the viewer attaches `wp_presentation` feedback to the same surface commit as
+the image and allows at most one outstanding commit. A displayed or discarded
+feedback event releases that position. If the compositor lacks this extension,
+`wl_surface.frame` supplies pacing without claiming actual display feedback.
+X11, Windows, and macOS use the swapchain's FIFO latency hint; that hint alone
+does not prove a strict one-frame system presentation queue. On macOS, wgpu's
+Metal backend uses display synchronization and two CAMetalLayer drawables for
+this hint. GPU command completion is never reported as actual display completion.
+
+Status distinguishes decoded, submitted, and candidate-drop counts. Wayland
+presentation mode additionally reports displayed/discarded presentation events;
+those can include window redraws and are not a count of unique source pictures.
+The ready-to-submit measurement starts after decoding and excludes transport,
+decoder delay, and scanout. These measurements do not establish end-to-end
+latency by themselves.
+
+### Build and validation
+
+`mise run desktop:dev` builds the native viewer alongside the native addon.
+Linux, Windows, and macOS packaging stage the release viewer executable outside ASAR
+(`native/deskfleet-viewer.exe` on Windows). On macOS it lives at
+`Contents/Resources/native/deskfleet-viewer` and is included in application
+signing. The Linux client also
+needs the GStreamer app, RTP, H.264 parser, video conversion, and hardware decoder
+plugins on the receiving machine.
+
+```sh
+mise run viewer:build
+mise run desktop:smoke-native-viewer
+DESKFLEET_SMOKE_HARDWARE=1 DESKFLEET_SMOKE_FPS=60 mise run desktop:smoke-native-viewer
+mise exec -- cargo test -p deskfleet-linux-media --locked decoder::tests -- --ignored --nocapture
+```
+
+The smoke command opens a real native window and negotiates fixture H.264 video
+with another Rust peer. It checks decode and wgpu submission, without desktop
+capture or input injection. On Linux, `DESKFLEET_VIEWER_DECODER=software` explicitly selects
+GStreamer's `avdec_h264` for diagnostics; this requires the libav plugin and is
+never an automatic fallback. Runtime decoder tests separately exercise hardware
+encoding/decoding, delivery of an initial IDR and a final dependent P picture
+without another picture or EOS, and packet-loss recovery through PLI.
+
+Windows validation on the implementation host passed the fixture WebRTC →
+D3D11 decode → wgpu submission smoke with clean shutdown and at most two
+decoded candidates. The opt-in runtime test below also verifies red RGBA output
+and delivery of a single idle IDR without another input picture or EOS. The
+same test and window smoke pass with the explicit software diagnostic. Actual
+Windows display completion, final dependent-P delivery while idle, real remote
+desktop/input acceptance, and packaged installation remain unverified.
+
+```sh
+mise exec -- cargo test -p deskfleet-desktop-viewer --lib --locked windows_decoder::tests -- --include-ignored
+```
+
+The decoder setup follows Microsoft's [H.264 decoder contract](https://learn.microsoft.com/en-us/windows/win32/medfound/h-264-video-decoder)
+and [low-latency property type requirement](https://learn.microsoft.com/en-us/windows/win32/medfound/codecapi-avlowlatencymode).
+
+macOS runtime tests exercise an idle fixture IDR, a synthetic VideoToolbox
+IDR/dependent-P sequence, RTP timestamp wrap, and a resolution change. Each
+picture must arrive before the next input picture or EOS; decoded pixels are
+checked for red RGBA output. These tests use synthetic pixels and require no
+Screen Recording or Accessibility permission.
+
+```sh
+mise exec -- cargo test -p deskfleet-desktop-viewer --lib --locked macos_decoder::tests -- --include-ignored
+DESKFLEET_VIEWER_DECODER=software mise exec -- cargo test -p deskfleet-desktop-viewer --lib --locked macos_decoder::tests -- --include-ignored
+mise run desktop:smoke-native-viewer
+```
+
+`DESKFLEET_SMOKE_VIEWER` can select the executable inside a packaged app instead
+of `target/debug/deskfleet-viewer`, allowing the same WebRTC/decode/window/cleanup
+smoke to validate the packaged binary.
+
+On the macOS ARM64 implementation host, all 14 viewer tests passed, including
+both opt-in hardware runtime tests. Both runtime tests also passed with the
+explicit software decoder. The fixture WebRTC → VideoToolbox → Metal window
+smoke passed in both modes with clean shutdown and at most two candidates.
+Release staging and a local unpacked `.app` build also passed; the executable at
+`Contents/Resources/native/deskfleet-viewer` passed the same hardware smoke.
+That local build reused the existing native addon and disabled Developer ID
+signing and notarization. Formal signed installation and real remote input
+acceptance remain unverified.
+Presentation remains `fifo-hint`; these runs do not measure actual display
+completion or comparative end-to-end latency.
+
+`DESKFLEET_SMOKE_HARDWARE=1` selects generated 320×240 pixels encoded by the host
+GPU. In that mode, `DESKFLEET_SMOKE_FPS` accepts a finite rate from 1 through 240,
+defaulting to 10. Capture deadlines follow an elapsed monotonic clock so encoder
+work does not add to every frame interval; missed slots are skipped after a
+stall. The pre-encoded 64×64 fixture keeps its fixed 10 fps rate.
+
+GStreamer 1.26's VA H.264 decoder retains the final picture of the existing
+all-IDR `red-64x64.h264` fixture, whose SPS specifies a one-picture DPB, until
+another picture arrives. The fixture diagnostic reports this delay without
+flushing it away with EOS. The tested production VA encoder instead supplies a
+four-picture DPB with zero reorder frames; both its first IDR and final P picture
+are delivered while the source is idle. The software diagnostic decoder also
+delivers the single fixture picture immediately. This decoder behavior is
+separate from the shallow presentation policy.
 
 ## Mouse and keyboard control
 

@@ -1,8 +1,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use rtc::rtp_transceiver::rtp_sender::RtpCodecKind;
 use tokio::sync::broadcast;
 use webrtc::data_channel::DataChannel;
+use webrtc::media_stream::track_remote::TrackRemote;
 use webrtc::peer_connection::{
     PeerConnectionEventHandler, RTCIceGatheringState, RTCPeerConnectionIceEvent,
     RTCPeerConnectionState,
@@ -15,11 +17,20 @@ pub(super) struct Handler {
     pub(super) events: broadcast::Sender<PeerEvent>,
     pub(super) keyframe: Arc<AtomicBool>,
     pub(super) has_video: bool,
+    pub(super) incoming_video: Option<super::receive::IncomingVideo>,
     pub(super) ports: ports::Forwarding,
 }
 
 #[async_trait::async_trait]
 impl PeerConnectionEventHandler for Handler {
+    async fn on_track(&self, track: Arc<dyn TrackRemote>) {
+        if let Some(incoming) = &self.incoming_video
+            && track.kind().await == RtpCodecKind::Video
+        {
+            incoming.accept(track);
+        }
+    }
+
     async fn on_ice_candidate(&self, event: RTCPeerConnectionIceEvent) {
         let event = match event.candidate.to_json() {
             Ok(candidate) => PeerEvent::IceCandidate(Some(IceCandidate {

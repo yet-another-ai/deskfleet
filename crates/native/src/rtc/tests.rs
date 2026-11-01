@@ -1,5 +1,190 @@
 use super::*;
 
+#[tokio::test]
+async fn video_receiver_negotiates_receives_and_requests_refresh_without_a_sending_track() {
+    use rtc::shared::marshal::Unmarshal;
+
+    let config = PeerConfig {
+        video: Some(VideoCodec::H264),
+        ..Default::default()
+    };
+    let viewer = Peer::new_video_receiver(config.clone()).await.unwrap();
+    let sender = Peer::new(config).await.unwrap();
+    let mut receiver = viewer.take_video_receiver().unwrap();
+    assert!(viewer.take_video_receiver().is_err());
+    assert_eq!(receiver.codec(), VideoCodec::H264);
+    assert!(viewer.video.is_none());
+    connect(&viewer, &sender).await;
+    assert!(
+        sender
+            .pc
+            .remote_description()
+            .await
+            .unwrap()
+            .sdp
+            .contains("a=recvonly")
+    );
+    assert!(
+        viewer
+            .pc
+            .remote_description()
+            .await
+            .unwrap()
+            .sdp
+            .contains("a=sendonly")
+    );
+
+    // The viewer selects packet reads against control/refresh events. Cancelling
+    // an idle read must leave first-track discovery usable by the next read.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), receiver.next_packet())
+            .await
+            .is_err()
+    );
+
+    let video = Bytes::from_static(&[0, 0, 0, 1, 0x65, 0xab, 0xcd]);
+    sender
+        .write_video(video, Duration::from_millis(16))
+        .await
+        .unwrap();
+    let packet = tokio::time::timeout(Duration::from_secs(5), receiver.next_packet())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let mut bytes = packet.data.clone();
+    let parsed = rtc::rtp::Packet::unmarshal(&mut bytes).unwrap();
+    assert_eq!(parsed.payload.as_ref(), &[0x65, 0xab, 0xcd]);
+    assert_eq!(parsed.header.sequence_number, packet.sequence_number);
+    assert_eq!(parsed.header.timestamp, packet.timestamp);
+    assert_eq!(parsed.header.ssrc, packet.ssrc);
+    assert_eq!(parsed.header.payload_type, packet.payload_type);
+    assert!(packet.marker);
+
+    sender.take_keyframe_request();
+    let mut feedback = sender.events.subscribe();
+    receiver.request_keyframe().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !matches!(feedback.recv().await.unwrap(), PeerEvent::KeyframeRequested) {}
+    })
+    .await
+    .expect("receive-only track must deliver PLI to the sender");
+    assert!(sender.take_keyframe_request());
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let (packet, closed) = tokio::join!(receiver.next_packet(), viewer.close());
+        assert!(packet.unwrap().is_none());
+        closed.unwrap();
+    })
+    .await
+    .expect("closing the viewer must interrupt the packet reader");
+    sender.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn video_receiver_shutdown_cancels_waiting_for_the_first_track() {
+    let viewer = Peer::new_video_receiver(PeerConfig {
+        video: Some(VideoCodec::H264),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let mut receiver = viewer.take_video_receiver().unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let (packet, closed) = tokio::join!(receiver.next_packet(), viewer.close());
+        assert!(packet.unwrap().is_none());
+        closed.unwrap();
+    })
+    .await
+    .expect("close must interrupt track discovery");
+
+    let viewer = Peer::new_video_receiver(PeerConfig {
+        video: Some(VideoCodec::H264),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let mut receiver = viewer.take_video_receiver().unwrap();
+    drop(viewer);
+    assert!(receiver.next_packet().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn video_receiver_requires_video_and_rejects_unsupported_audio() {
+    assert!(matches!(
+        Peer::new_video_receiver(PeerConfig::default()).await,
+        Err(PeerError::VideoReceive(_))
+    ));
+    assert!(matches!(
+        Peer::new_video_receiver(PeerConfig {
+            video: Some(VideoCodec::H264),
+            audio: true,
+            ..Default::default()
+        })
+        .await,
+        Err(PeerError::VideoReceive(_))
+    ));
+}
+
+#[tokio::test]
+async fn video_receiver_works_without_a_data_channel() {
+    let config = PeerConfig {
+        video: Some(VideoCodec::H264),
+        ..Default::default()
+    };
+    let viewer = Peer::new_video_receiver(config.clone()).await.unwrap();
+    let sender = Peer::new(config).await.unwrap();
+    let mut receiver = viewer.take_video_receiver().unwrap();
+    let offer = viewer.create_offer().await.unwrap();
+    assert!(!offer.contains("m=application"));
+    let answer = sender.answer_offer(offer).await.unwrap();
+    viewer.accept_answer(answer).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let mut viewer_connected = false;
+        let mut sender_connected = false;
+        while !viewer_connected || !sender_connected {
+            tokio::select! {
+                event = viewer.next_event() => match event.unwrap().unwrap() {
+                    PeerEvent::IceCandidate(Some(candidate)) => sender.add_ice_candidate(candidate).await.unwrap(),
+                    PeerEvent::StateChanged(PeerState::Connected) => viewer_connected = true,
+                    PeerEvent::Error { message, .. } => panic!("viewer: {message}"),
+                    _ => {},
+                },
+                event = sender.next_event() => match event.unwrap().unwrap() {
+                    PeerEvent::IceCandidate(Some(candidate)) => viewer.add_ice_candidate(candidate).await.unwrap(),
+                    PeerEvent::StateChanged(PeerState::Connected) => sender_connected = true,
+                    PeerEvent::Error { message, .. } => panic!("sender: {message}"),
+                    _ => {},
+                },
+            }
+        }
+    }).await.expect("video-only peers should connect");
+    sender
+        .write_video(
+            Bytes::from_static(&[0, 0, 0, 1, 0x65, 0x11, 0x22]),
+            Duration::from_millis(16),
+        )
+        .await
+        .unwrap();
+    let packet = tokio::time::timeout(Duration::from_secs(5), receiver.next_packet())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(packet.marker);
+    sender.take_keyframe_request();
+    let mut feedback = sender.events.subscribe();
+    receiver.request_keyframe().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !matches!(feedback.recv().await.unwrap(), PeerEvent::KeyframeRequested) {}
+    })
+    .await
+    .expect("video-only peer should carry PLI");
+    let (a, b) = tokio::join!(viewer.close(), sender.close());
+    a.unwrap();
+    b.unwrap();
+}
+
 async fn connect(left: &Peer, right: &Peer) {
     left.create_data_channel("operations".to_owned())
         .await

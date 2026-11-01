@@ -40,12 +40,18 @@ files:
   - out/**/*
   - "!out/**/*.map"
   - "!out/windows/**/*"
+  - "!out/native/**/*"
   # Runtime window and tray images; build/ is otherwise packaging input only.
   - build/icon.png
   - build/tray*.png
   - package.json
 
 mac:
+  extraResources:
+    - from: out/native/deskfleet-viewer
+      to: native/deskfleet-viewer
+  binaries:
+    - Contents/Resources/native/deskfleet-viewer
   category: public.app-category.developer-tools
   hardenedRuntime: true
   extendInfo:
@@ -56,6 +62,8 @@ mac:
 
 win:
   extraResources:
+    - from: out/native/deskfleet-viewer.exe
+      to: native/deskfleet-viewer.exe
     - from: out/windows/deskfleet-desktop-service.exe
       to: windows/deskfleet-desktop-service.exe
   target:
@@ -68,6 +76,9 @@ nsis:
   include: build/windows-desktop-service.nsh
 
 linux:
+  extraResources:
+    - from: out/native/deskfleet-viewer
+      to: native/deskfleet-viewer
   category: Development
   # Match the stable Portal identity used by Electron and standalone daemons.
   syncDesktopName: true

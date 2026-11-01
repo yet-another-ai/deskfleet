@@ -39,6 +39,8 @@ struct Candidate {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let capture = std::env::var("DESKFLEET_SMOKE_CAPTURE").as_deref() == Ok("1");
     let hardware = std::env::var("DESKFLEET_SMOKE_HARDWARE").as_deref() == Ok("1");
+    let audio =
+        !capture && !hardware && std::env::var("DESKFLEET_SMOKE_VIDEO_ONLY").as_deref() != Ok("1");
     let require_service = std::env::var("DESKFLEET_SMOKE_WINDOWS_SERVICE").as_deref() == Ok("1");
     if require_service && (!capture || !cfg!(windows)) {
         return Err("Windows service smoke requires capture mode on Windows".into());
@@ -68,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let peer = Arc::new(
         Peer::new(PeerConfig {
             video: Some(codec),
-            audio: !capture && !hardware,
+            audio,
             ..Default::default()
         })
         .await?,
@@ -163,8 +165,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ = ticks.tick(), if connected && !capture && !hardware => {
                     peer.write_video(frame.clone(), Duration::from_millis(100)).await?;
                     // One valid 20 ms Opus silence packet, repeated five times per tick.
-                    for _ in 0..5 {
-                        peer.write_audio(Bytes::from_static(&[0xf8, 0xff, 0xfe]), Duration::from_millis(20)).await?;
+                    if audio {
+                        for _ in 0..5 {
+                            peer.write_audio(Bytes::from_static(&[0xf8, 0xff, 0xfe]), Duration::from_millis(20)).await?;
+                        }
                     }
                 },
             }

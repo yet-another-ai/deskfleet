@@ -17,6 +17,7 @@ import { applicationsApi } from "./applications.ts"
 import { updatesApi } from "./updates.ts"
 import { localChannelsApi } from "./local-channels.ts"
 import { windowsDesktopServiceApi } from "./windows-desktop-service.ts"
+import { NATIVE_DESKTOP_CHANNEL } from "@deskfleet/client/native-desktop"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -57,6 +58,7 @@ return {
   applications: applicationsApi(),
   updates: updatesApi(),
   ...(process.platform === "win32" ? { windowsDesktopService: windowsDesktopServiceApi() } : {}),
+  ...(process.platform === "linux" || process.platform === "win32" || process.platform === "darwin" ? { nativeDesktop: { open: (request: import("@deskfleet/client/native-desktop").NativeDesktopRequest) => ipcRenderer.invoke(NATIVE_DESKTOP_CHANNEL, request) as Promise<void> } } : {}),
   files: filesApi(),
   ports: portsApi(),
   localChannels: localChannelsApi(),

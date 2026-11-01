@@ -108,6 +108,7 @@ fn parameter<'a>(fmtp: &'a str, key: &str) -> Option<&'a str> {
 pub(super) fn validate_remote_video(
     description: &RTCSessionDescription,
     codec: Option<VideoCodec>,
+    receiving: bool,
 ) -> Result<()> {
     let Some(codec) = codec else {
         return Ok(());
@@ -118,7 +119,7 @@ pub(super) fn validate_remote_video(
         if media.media_name.media != "video"
             || media.media_name.port.value == 0
             || media.has_attribute("inactive")
-            || media.has_attribute("sendonly")
+            || media.has_attribute(if receiving { "recvonly" } else { "sendonly" })
         {
             continue;
         }

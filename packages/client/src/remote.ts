@@ -144,6 +144,10 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     },
     desktop: {
       ...signaling("desktop"),
+      ...(host.nativeDesktop ? { openNative: (options: import("./native-desktop.ts").NativeDesktopOptions) => {
+        if (disposed) return Promise.reject(new Error("Machine connection was closed"))
+        return host.nativeDesktop!.open({ ...options, target: { teamId: machine.teamId, machineId: machine.id } })
+      } } : {}),
       target: async () => {
         // Enrollment precedes the daemon's first capability report. Read the
         // current record so discovery also sees later capture-permission changes.

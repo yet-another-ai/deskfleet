@@ -10,6 +10,7 @@ import { desktopDaemonDirectory } from "./daemon-directory.ts"
 import { AppearanceSettingsController } from "./appearance-settings.ts"
 import { installAppearance } from "./appearance.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
+import { installNativeDesktop } from "./native-desktop.ts"
 import { keepRunningInBackground } from "./lifecycle.ts"
 import { KeepAwakeController } from "./keep-awake.ts"
 import { refreshLaunchAtStartup } from "./launch-at-startup.ts"
@@ -48,6 +49,7 @@ function start(): void {
     installDesktopMediaIpc()
     const windowsDesktopService = installWindowsDesktopService()
     const central = await installCentralAccount()
+    const nativeDesktop = installNativeDesktop(central)
     installLocalApplications(central)
     const files = installFiles(central)
     const ports = installPorts(central)
@@ -88,7 +90,7 @@ function start(): void {
     const closeServices = (): Promise<void> => {
       notificationMonitor.close()
       notifications.close()
-      closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close()]).then(results => {
+      closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close(), nativeDesktop.close()]).then(results => {
         const failure = results.find(result => result.status === "rejected")
         if (failure?.status === "rejected") throw failure.reason
         servicesClosed = true

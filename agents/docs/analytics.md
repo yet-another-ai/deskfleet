@@ -215,6 +215,20 @@ Feature gates control frontend rollout through the shared analytics helpers.
 Search is always available in Web and Electron, including builds without Statsig.
 Search requests require a selected Team and retain server-side Team authorization.
 
+| Gate | Controls | Default |
+| --- | --- | --- |
+| `native_presentor` | Native desktop window entry and new launches on Linux, Windows, and macOS | Off |
+
+Keep `native_presentor` at 0% rollout except for explicitly targeted testers
+while the native viewer is validated over several future versions. The native
+window action requires both this gate and the Electron host capability. Missing
+configuration, an unavailable evaluation, pending identity evaluation, or a gate
+that does not pass hides the action; the click handler also checks its current
+value before launching. Closing the gate prevents new windows without closing
+already running viewers. The embedded browser viewer remains available. This
+rollout gate does not replace the existing Team peer grants or desktop control
+authorization.
+
 ```ts
 import { useFeatureGate, useExperimentParameter } from "../services/analytics.ts"
 

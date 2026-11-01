@@ -21,6 +21,17 @@ function fixture(host: Partial<DeskfleetDesktopApi> = {}, local = false) {
   disposers.push(remote.dispose)
   return { remote, central, machine, emit: (event: CentralEvent) => listener(event) }
 }
+
+test("native desktop opens the adapter's authorized machine and outlives renderer signaling", async () => {
+  const open = vi.fn(async () => {})
+  const f = fixture({ platform: "linux", nativeDesktop: { open } })
+  await f.remote.api.desktop.openNative!({ displayId: 4, control: true })
+  expect(open).toHaveBeenCalledWith({ displayId: 4, control: true, target: { teamId: "team2", machineId: "central7" } })
+  expect(f.central.createPeer).not.toHaveBeenCalled()
+  f.remote.dispose()
+  await expect(f.remote.api.desktop.openNative!({ displayId: 4, control: false })).rejects.toThrow("closed")
+  expect(open).toHaveBeenCalledOnce()
+})
 test("a refreshed machine reconciles missed presence without replacing its peer", async () => {
   const f = fixture()
   const changed = vi.fn()
