@@ -94,10 +94,14 @@ impl<B: Backend> Controller<B> {
     }
 
     pub(super) fn release_all(&mut self) -> Result<()> {
-        self.backend.prepare()?;
-        self.release_held()?;
-        self.desktop_reset_pending = false;
-        Ok(())
+        let prepared = self.backend.prepare();
+        // A failed rebind leaves the previous desktop selected. Still attempt
+        // every release there, including during disconnect and Drop cleanup.
+        let released = self.release_held();
+        if released.is_ok() {
+            self.desktop_reset_pending = false;
+        }
+        prepared.and(released)
     }
 
     fn release_held(&mut self) -> Result<()> {
