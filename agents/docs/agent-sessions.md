@@ -241,6 +241,12 @@ Pi executes its tools locally; the adapter does not delegate filesystem or
 terminal operations, forward client-provided MCP servers, or expose additional
 Workspace directories. Pi extension select/confirm requests use the permission
 UI; extension free-text input requests are unsupported.
+The Oh My Pi template runs the installed [`omp` CLI](https://omp.sh/docs/acp)
+directly as `omp acp`, using its existing provider keys or OAuth credentials.
+Its native ACP server advertises model and thinking configuration, Default and
+Plan modes where enabled, and saved-session loading, resuming, and forking.
+It accepts client-provided MCP servers and delegates filesystem and terminal
+operations when the client advertises those capabilities.
 The DeepSeek Harness template runs the installed
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) CLI (`dsh`)
 directly as `dsh --profile acp`; its default binary is `dsh`. Set
@@ -303,6 +309,14 @@ Pi installation uses the official `pi.dev` installer. Its **Log in** action open
 Pi; enter `/login`, complete provider setup, then `/quit`. Discovery leaves Pi's
 credential status unknown because its credential check requires a specific model
 or model provider. **Test Connection** checks whether a session can be opened.
+Oh My Pi installation uses the official `omp.sh` installer in binary mode, so
+it does not require a separate Bun runtime. Discovery checks `PI_INSTALL_DIR`,
+`~/.local/bin`, and Bun's binary directory (`$BUN_INSTALL/bin` or `~/.bun/bin`),
+as well as PATH. Existing Bun-based installations require `bun` on the daemon's
+PATH. Its **Log in** action opens `omp --allow-home` in the machine
+user's home directory; enter `/login`, complete provider setup, then `/quit`.
+Discovery leaves credential status unknown; **Test Connection** opens a session
+using existing credentials without sending a prompt.
 
 The provider dialog's **Test Connection** button sends the unsaved settings to the daemon, which starts the agent,
 initializes ACP, and opens one session in an empty temporary directory without
@@ -568,11 +582,12 @@ backlog for a new turn, including when typed manually; they are not steered into
 the current turn.
 
 The `$` menu uses the same provider-advertised catalog. Codex's `$name` entries,
-Pi's `skill:name` entries, and Claude entries with explicit skill metadata are
-recognized as skills. Submission uses the provider's native invocation spelling;
-Pi and Claude skills use slash invocations at the start of the message and enter
-the backlog. Other advertised commands remain in `/`. The daemon does not scan
-skill directories or infer universal skill invocation semantics.
+Pi and Oh My Pi's `skill:name` entries, and Claude entries with explicit skill
+metadata are recognized as skills. Submission uses the provider's native
+invocation spelling; Pi, Oh My Pi, and Claude skills use slash invocations at
+the start of the message and enter the backlog. Other advertised commands remain
+in `/`. The daemon does not scan skill directories or infer universal skill
+invocation semantics.
 
 `composer-references.ts` owns file/Session discovery and resolution;
 `agent-composer-commands.ts` owns the initial command-notification wait. Shared
@@ -869,6 +884,7 @@ Provider capabilities determine which controls are available:
 | Cursor | Uses advertised ACP modes, including its documented Agent, Plan, and Ask workflows. These are not its Auto-review permission setting. | Uses model choices advertised by the installed CLI. Initialization requests parameterized model options so reasoning effort is separate from fast variants. Available choices depend on that CLI version. |
 | Grok | Current upstream session setup advertises no mode catalog. Its startup Auto/YOLO settings are not exposed as a Session mode selector. Reasoning levels carried beside the model are not Session modes. | Model and reasoning options support changes. A model that does not advertise adjustable effort leaves the reasoning control unavailable. |
 | Pi Coding Agent | Thinking levels are reasoning choices, not permission modes. | The bundled adapter advertises model and thinking-level configuration options and supports changing both. |
+| Oh My Pi | Advertises Default and Plan modes when plan mode is enabled. | Uses the native ACP model and thinking-level configuration options. |
 
 These are integration observations, not hardcoded option lists. See
 [Codex permission modes](https://learn.chatgpt.com/docs/permission-modes),

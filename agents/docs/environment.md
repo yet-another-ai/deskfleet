@@ -335,11 +335,14 @@ runtime commands.
 The ACP SDK, Codex adapter, Claude Agent adapter, and Pi ACP adapter are pinned daemon
 dependencies in pnpm. The SEA build embeds those adapters. Running a session
 still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`),
-Grok (`grok agent stdio`), Pi (`pi --mode rpc`), or DeepSeek Harness (`dsh --profile acp`).
+Grok (`grok agent stdio`), Pi (`pi --mode rpc`), Oh My Pi (`omp acp`), or
+DeepSeek Harness (`dsh --profile acp`).
 Antigravity uses a separate native ACP runtime with its matching local harness;
 Settings downloads the pinned Google package and verifies its SHA-256 for the
 executing machine. Pi's official installer can
 provide its required Node.js runtime; the bundled adapter does not include Pi.
+Oh My Pi uses native ACP; Settings installs its standalone binary through the
+official `omp.sh` installer without requiring a separate Bun runtime.
 Use `--binary-path` to select it and repeated `--env` options for environment
 overrides. See the [agent setup](../../apps/daemon/README.md#agents-through-acp)
 for initialization checks and prompt commands.

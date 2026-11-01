@@ -7,6 +7,7 @@ import { codexProvider } from "./agents/codex.ts"
 import { cursorProvider } from "./agents/cursor.ts"
 import { deepseekHarnessProvider } from "./agents/deepseek-harness.ts"
 import { grokProvider } from "./agents/grok.ts"
+import { ompProvider } from "./agents/omp.ts"
 import { piProvider } from "./agents/pi.ts"
 import type { ManagedWorkspaceSession } from "./session-worktrees.ts"
 
@@ -22,6 +23,7 @@ const agents: Record<string, { provider: AgentProvider; name: string }> = {
   cursor: { provider: cursorProvider, name: "Cursor" },
   grok: { provider: grokProvider, name: "Grok" },
   pi: { provider: piProvider, name: "Pi Coding Agent" },
+  omp: { provider: ompProvider, name: "Oh My Pi" },
   "deepseek-harness": { provider: deepseekHarnessProvider, name: "DeepSeek Harness" },
   antigravity: { provider: antigravityProvider, name: "Antigravity" },
 }
@@ -45,7 +47,7 @@ export async function runAgent(args: string[], dependencies: {
     },
   })
   if (values.help) {
-    console.log("Usage: deskfleet-daemon agent <codex|claude-code|cursor|grok|pi|deepseek-harness|antigravity> [--check | --prompt <text>] [--cwd <directory>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
+    console.log("Usage: deskfleet-daemon agent <codex|claude-code|cursor|grok|pi|omp|deepseek-harness|antigravity> [--check | --prompt <text>] [--cwd <directory>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
     return
   }
   const selected = positionals.length === 1 && Object.hasOwn(agents, positionals[0]!) ? agents[positionals[0]!] : undefined

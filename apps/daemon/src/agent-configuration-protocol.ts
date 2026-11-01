@@ -149,11 +149,11 @@ export function agentComposerCatalog(available: acp.AvailableCommand[], provider
     if (!command.name || seen.has(command.name)) continue
     seen.add(command.name)
     const { name, description } = command
-    // codex-acp advertises skills with a literal "$" prefix; pi-acp uses
-    // "skill:" commands from Pi's get_commands response.
+    // codex-acp advertises skills with a literal "$" prefix; Pi and Oh My Pi
+    // advertise "skill:" commands.
     if (providerKind === "codex" && name.startsWith("$") && name.length > 1) {
       skills.push({ id: name, name: name.slice(1), description, invocation: name })
-    } else if (providerKind === "pi" && name.startsWith("skill:") && name.length > 6) {
+    } else if ((providerKind === "pi" || providerKind === "omp") && name.startsWith("skill:") && name.length > 6) {
       skills.push({ id: name, name: name.slice(6), description, invocation: `/${name}` })
     } else {
       const jetbrains = command._meta?.jetbrains

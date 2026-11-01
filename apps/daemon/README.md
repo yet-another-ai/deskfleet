@@ -245,6 +245,7 @@ mise exec -- node apps/daemon/src/main.ts agent claude-code --check
 mise exec -- node apps/daemon/src/main.ts agent cursor --check
 mise exec -- node apps/daemon/src/main.ts agent grok --check
 mise exec -- node apps/daemon/src/main.ts agent pi --check
+mise exec -- node apps/daemon/src/main.ts agent omp --check
 mise exec -- node apps/daemon/src/main.ts agent deepseek-harness --check
 mise exec -- node apps/daemon/src/main.ts agent antigravity --binary-path /path/to/agy_acp_server.par --check
 ```
@@ -258,8 +259,8 @@ Agent configuration uses these common options:
 
 | Option | Meaning |
 | --- | --- |
-| `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, `Pi Coding Agent`, `DeepSeek Harness`, or `Antigravity`, separate from the provider ID |
-| `--binary-path <executable>` | Provider executable; omitted or empty uses `codex`, `claude`, `agent`, `grok`, `pi`, `dsh`, or `agy_acp_server.par` (`agy_acp_server.exe` on Windows) on PATH |
+| `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, `Pi Coding Agent`, `Oh My Pi`, `DeepSeek Harness`, or `Antigravity`, separate from the provider ID |
+| `--binary-path <executable>` | Provider executable; omitted or empty uses `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, `dsh`, or `agy_acp_server.par` (`agy_acp_server.exe` on Windows) on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` or
@@ -286,6 +287,14 @@ Settings installs Pi with the official `pi.dev` installer. For login, start `pi`
 enter `/login`, then `/quit` when setup is complete. Executable discovery leaves
 its credential status unknown; **Test Connection** opens a session using existing
 credentials.
+Oh My Pi uses native ACP: the daemon runs `` `<binary> acp` `` with `omp` as
+the default executable and uses existing provider keys or OAuth credentials.
+It supports model, thinking, and mode configuration, saved-session resumption
+and forking, and client-provided MCP servers. Settings installs the standalone
+binary through the official `omp.sh` installer. **Log in** opens
+`omp --allow-home`; enter `/login`, complete authentication, then `/quit`.
+Discovery leaves credential status unknown; **Test Connection** opens a session
+without sending a prompt.
 DeepSeek Harness is native ACP: the daemon runs `` `<binary> --profile acp` ``
 (`dsh acp` is the same launch). Credentials come from `DEEPSEEK_API_KEY` in the
 provider environment (optional `DEEPSEEK_BASE_URL`); the ACP server does not
