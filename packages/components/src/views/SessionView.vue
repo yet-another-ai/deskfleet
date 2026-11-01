@@ -19,6 +19,7 @@ import AgentBacklog from "../components/session/AgentBacklog.vue"
 import AgentConversation from "../components/session/AgentConversation.vue"
 import AgentNotice from "../components/session/AgentNotice.vue"
 import AgentOutline from "../components/session/AgentOutline.vue"
+import ReadingSpotlight from "../components/session/ReadingSpotlight.vue"
 import AgentPermissions from "../components/session/AgentPermissions.vue"
 import AgentSessionMenu from "../components/session/AgentSessionMenu.vue"
 import RenameSessionDialog from "../components/session/RenameSessionDialog.vue"
@@ -255,6 +256,7 @@ async function checkOperation(operationId: string): Promise<void> {
         </template>
       </div>
     </div>
+    <ReadingSpotlight />
     <AgentOutline
       v-if="snapshot && !view?.loading"
       :events="view!.events"

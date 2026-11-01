@@ -137,6 +137,23 @@ test("ligature switch updates the saved setting and terminal preview", async () 
   expect(wrapper.getComponent(TerminalSurfaceStub).props("ligatures")).toBe(false)
 })
 
+test("reading spotlight switch defaults off and persists when enabled", async () => {
+  const wrapper = await render()
+  const toggle = wrapper.get('[role="switch"][aria-labelledby="appearance-reading-spotlight-label"]')
+  expect(wrapper.get("#appearance-reading-spotlight-label").text()).toBe("Reading spotlight")
+  expect(toggle.attributes("aria-checked")).toBe("false")
+  expect(useAppearanceStore(pinia).settings.readingSpotlight).toBe(false)
+  await toggle.trigger("click")
+  await flushPromises()
+  expect(set).toHaveBeenLastCalledWith({ ...DEFAULT_APPEARANCE_SETTINGS, readingSpotlight: true })
+  expect(useAppearanceStore(pinia).settings.readingSpotlight).toBe(true)
+  expect(toggle.attributes("aria-checked")).toBe("true")
+  await toggle.trigger("click")
+  await flushPromises()
+  expect(set).toHaveBeenLastCalledWith(DEFAULT_APPEARANCE_SETTINGS)
+  expect(useAppearanceStore(pinia).settings.readingSpotlight).toBe(false)
+})
+
 test("keeps a failed font edit available to retry", async () => {
   set.mockRejectedValueOnce(new Error("Could not save appearance"))
   const wrapper = await render()

@@ -235,3 +235,16 @@ textarea {
   outline: 2px solid var(--ui-color-focus);
   outline-offset: 2px;
 }
+
+/* Reading spotlight: hover highlight with a canvas-tinted cutout around the active line/block. */
+.ui-reading-spotlight {
+  pointer-events: none;
+  position: fixed;
+  z-index: 50;
+  border-radius: 0.5rem;
+  background: light-dark(rgb(74 91 212 / 10%), rgb(142 155 255 / 12%));
+  box-shadow: 0 0 0 100vmax light-dark(rgb(251 251 253 / 58%), rgb(23 25 31 / 62%));
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-reading-spotlight { transition: none !important; }
+}

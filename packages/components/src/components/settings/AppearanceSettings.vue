@@ -95,6 +95,16 @@ onMounted(() => { void appearance.initialize() })
     <div class="border-t border-ui-border py-5">
       <div class="flex items-center justify-between gap-6">
         <div>
+          <div id="appearance-reading-spotlight-label" class="text-sm font-medium">{{ t("appearance.readingSpotlight") }}</div>
+          <p id="appearance-reading-spotlight-description" class="mb-0 mt-1 text-xs leading-relaxed text-ui-text-muted">{{ t("appearance.readingSpotlightHint") }}</p>
+        </div>
+        <UiSwitch :model-value="appearance.settings.readingSpotlight" :disabled="busy" aria-labelledby="appearance-reading-spotlight-label" aria-describedby="appearance-reading-spotlight-description" @update:model-value="appearance.set({ readingSpotlight: $event })" />
+      </div>
+    </div>
+
+    <div class="border-t border-ui-border py-5">
+      <div class="flex items-center justify-between gap-6">
+        <div>
           <div id="appearance-outline-audio-label" class="text-sm font-medium">{{ t("appearance.outlineAudio") }}</div>
           <p id="appearance-outline-audio-description" class="mb-0 mt-1 text-xs leading-relaxed text-ui-text-muted">{{ t("appearance.outlineAudioHint") }}</p>
         </div>

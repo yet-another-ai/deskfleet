@@ -18,6 +18,8 @@ export interface AppearanceSettings {
   outlineAudioRgb: boolean
   outlineAudioMaxWidth: number
   outlineAudioDecayMs: number
+  /** Highlight the hovered prose block/line and dim surroundings while reading. */
+  readingSpotlight: boolean
 }
 
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
@@ -32,6 +34,7 @@ export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   outlineAudioRgb: false,
   outlineAudioMaxWidth: 32,
   outlineAudioDecayMs: 200,
+  readingSpotlight: false,
 }
 
 export const DEFAULT_INTERFACE_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif'
@@ -58,7 +61,8 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
     || ("outlineAudio" in value && typeof value.outlineAudio !== "boolean")
     || ("outlineAudioRgb" in value && typeof value.outlineAudioRgb !== "boolean")
     || ("outlineAudioMaxWidth" in value && !isNonNegativeNumber(value.outlineAudioMaxWidth))
-    || ("outlineAudioDecayMs" in value && !isNonNegativeNumber(value.outlineAudioDecayMs))) {
+    || ("outlineAudioDecayMs" in value && !isNonNegativeNumber(value.outlineAudioDecayMs))
+    || ("readingSpotlight" in value && typeof value.readingSpotlight !== "boolean")) {
     throw new Error("Invalid appearance settings")
   }
   return {
@@ -77,5 +81,6 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
     outlineAudioDecayMs: "outlineAudioDecayMs" in value && typeof value.outlineAudioDecayMs === "number"
       ? value.outlineAudioDecayMs
       : DEFAULT_APPEARANCE_SETTINGS.outlineAudioDecayMs,
+    readingSpotlight: "readingSpotlight" in value && value.readingSpotlight === true,
   }
 }

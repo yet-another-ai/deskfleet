@@ -397,6 +397,8 @@
     },
     "ligatures": "Font ligatures",
     "ligaturesHint": "Combine characters like => and != when the terminal font supports it.",
+    "readingSpotlight": "Reading spotlight",
+    "readingSpotlightHint": "Highlight the line or block under the pointer and dim the rest while reading chat replies.",
     "outlineAudio": "Audio-reactive outline",
     "outlineAudioHint": "Animate the outline with playing audio.",
     "outlineAudioRgb": "RGB",

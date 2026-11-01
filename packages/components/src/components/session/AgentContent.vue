@@ -39,7 +39,7 @@ function resourcePreviewKind(block: Extract<AgentInput["content"][number], { typ
     <template v-for="(block, index) in content" :key="index">
       <template v-if="block.type === 'text'">
         <AgentMarkdown v-if="markdown" :text="block.text" :final="final" />
-        <div v-else class="whitespace-pre-wrap">{{ block.text }}</div>
+        <div v-else class="whitespace-pre-wrap" data-reading-surface>{{ block.text }}</div>
       </template>
       <PreviewViewer
         v-else-if="block.type === 'image'"

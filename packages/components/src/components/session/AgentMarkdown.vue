@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div>
-    <div class="ui-markdown" @click="click">
+    <div class="ui-markdown" data-reading-surface @click="click">
       <!-- Chat updates already arrive incrementally; do not queue another delayed reveal. -->
       <MarkdownRender
         :nodes="nodes"

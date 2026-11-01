@@ -93,8 +93,22 @@ test("existing browser preferences retain their values when new terminal setting
   await appearance.initialize()
   expect(appearance.settings).toEqual({ ...DEFAULT_APPEARANCE_SETTINGS, ...saved })
   expect(appearance.terminalLigatures).toBe(false)
+  expect(appearance.settings.readingSpotlight).toBe(false)
   await appearance.set({ terminalLigatures: true })
   expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toEqual({ ...DEFAULT_APPEARANCE_SETTINGS, ...saved, terminalLigatures: true })
+})
+
+test("reading spotlight preference defaults off and persists across reloads", async () => {
+  const appearance = useAppearanceStore(pinia)
+  await appearance.initialize()
+  expect(appearance.settings.readingSpotlight).toBe(false)
+  await appearance.set({ readingSpotlight: true })
+  expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toMatchObject({ readingSpotlight: true })
+  disposePinia(pinia)
+  pinia = createPinia()
+  const restored = useAppearanceStore(pinia)
+  await restored.initialize()
+  expect(restored.settings.readingSpotlight).toBe(true)
 })
 
 test("terminal colors persist, update the surrounding surface, and reset to the selected preset", async () => {
