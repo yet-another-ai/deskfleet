@@ -6,6 +6,7 @@ interface MediaSmokeBridge {
 const bridge = (window as unknown as { mediaSmoke: MediaSmokeBridge }).mediaSmoke
 const source = document.documentElement.dataset.source ?? "fixture"
 const capture = source === "desktop"
+const captureDuration = capture ? Number(document.documentElement.dataset.captureDuration ?? "0") : 0
 const hardware = source === "hardware"
 const codec = document.documentElement.dataset.codec ?? "h264"
 const audio = !capture && !hardware
@@ -95,18 +96,42 @@ async function run(): Promise<void> {
   offerSent = true
   for (const candidate of pendingLocal.splice(0)) bridge.send({ kind: "candidate", candidate })
 
-  const deadline = Date.now() + Number(document.documentElement.dataset.consentTimeout ?? "20000")
+  let deadline = Date.now() + Number(document.documentElement.dataset.consentTimeout ?? "20000")
+  let captureStartedAt: number | undefined
+  let lastProgress = 0
   while (Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 100))
     if (finished) return
     const reports = [...(await peer.getStats()).values()] as RTCInboundRtpStreamStats[]
     const receivedVideo = reports.find(report => report.type === "inbound-rtp" && report.kind === "video")
     const receivedAudio = reports.find(report => report.type === "inbound-rtp" && report.kind === "audio")
+    const now = Date.now()
+    const progress = () => {
+      lastProgress = now
+      bridge.send({ kind: "progress", result: {
+        timestamp: new Date(now).toISOString(),
+        elapsedMs: now - (captureStartedAt ?? now),
+        connection: peer.connectionState,
+        framesDecoded: receivedVideo?.framesDecoded ?? 0,
+        keyFramesDecoded: receivedVideo?.keyFramesDecoded,
+        width: video.videoWidth,
+        height: video.videoHeight,
+      } })
+    }
+    if (captureStartedAt !== undefined && now - lastProgress >= 1000) progress()
     if (
       !echoReceived || peer.connectionState !== "connected" || !receivedVideo ||
       (receivedVideo.framesDecoded ?? 0) < (capture ? 1 : 3) ||
       video.videoWidth <= 0 || video.videoHeight <= 0
     ) continue
+    if (captureDuration > 0) {
+      if (captureStartedAt === undefined) {
+        captureStartedAt = now
+        deadline = now + captureDuration + 1000
+        progress()
+      }
+      if (now - captureStartedAt < captureDuration) continue
+    }
     let pixel: number[] | undefined
     if (!capture) {
       const width = hardware ? 320 : 64
@@ -127,6 +152,8 @@ async function run(): Promise<void> {
       codec,
       connection: peer.connectionState,
       framesDecoded: receivedVideo.framesDecoded,
+      ...(capture ? { keyFramesDecoded: receivedVideo.keyFramesDecoded } : {}),
+      ...(captureStartedAt === undefined ? {} : { observedMs: now - captureStartedAt }),
       ...(audio ? { audioPackets: receivedAudio?.packetsReceived } : {}),
       ...(capture ? {} : { pixel }),
       width: video.videoWidth,
@@ -138,7 +165,9 @@ async function run(): Promise<void> {
     return
   }
   throw new Error(capture
-    ? "Chromium did not decode a desktop frame before timeout"
+    ? captureStartedAt === undefined
+      ? "Chromium did not decode a desktop frame before timeout"
+      : "Chromium desktop capture did not remain connected through the observation period"
     : `Chromium did not decode native ${codec}${audio ? "/Opus" : ""} media before timeout`)
 }
 

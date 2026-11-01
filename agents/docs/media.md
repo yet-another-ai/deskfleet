@@ -600,3 +600,13 @@ This checks the current desktop's service-backed capture, encode, WebRTC decode,
 and input attach/detach. It does not lock the host, inject credentials, or exercise
 UAC, user switching, software SAS policy, or app installation/update recovery;
 those remain the interactive acceptance steps above.
+
+Set `DESKFLEET_SMOKE_CAPTURE_SECONDS=60` (an integer from 1 to 300) to keep the
+same capture peer open for that many seconds after its first decoded frame.
+The smoke prints timestamped frame/keyframe counters, dimensions, and connection
+state once per second without recording pixels. Lock and unlock the host during
+this observation, then compare counters around each transition; an overall smoke
+pass alone does not establish that every transition produced a fresh frame.
+Run a separate service-required smoke while the host is already locked to check
+fresh display discovery, capture startup, and input-controller attach/detach.
+Remove `Env:DESKFLEET_SMOKE_CAPTURE_SECONDS` afterward to restore the quick check.
