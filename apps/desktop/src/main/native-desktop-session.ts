@@ -72,7 +72,13 @@ export function openNativeDesktopSession(
     localSending = localSending.then(async () => {
       for (const candidate of candidates) {
         if (closed) return
-        await central.candidatePeer(peerId!, candidate)
+        try { await central.candidatePeer(peerId!, candidate) }
+        catch (error) {
+          if (!connected) throw error
+          // A working ICE path does not depend on further trickle signaling.
+          // Revocation, expiry and peer failures still close the session.
+          if (!closed) console.warn("Native desktop ICE candidate send failed after connection", error)
+        }
       }
     }).catch(fail)
   }

@@ -3,13 +3,14 @@ use std::time::{Duration, Instant};
 
 use deskfleet_input::InputEvent;
 use serde_json::json;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent as NativeEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
 
 use crate::input::Input;
+use crate::input_queue;
 use crate::presentation::Presentation;
 use crate::renderer::Renderer;
 use crate::session::Frames;
@@ -17,7 +18,7 @@ use crate::{Error, WindowEvent, protocol};
 
 pub(crate) struct Viewer {
     pub(crate) frames: Frames,
-    pub(crate) input: mpsc::Sender<InputEvent>,
+    pub(crate) input: input_queue::Sender,
     pub(crate) shutdown: watch::Sender<bool>,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
@@ -35,7 +36,7 @@ pub(crate) struct Viewer {
 impl Viewer {
     pub(crate) fn new(
         frames: Frames,
-        input: mpsc::Sender<InputEvent>,
+        input: input_queue::Sender,
         shutdown: watch::Sender<bool>,
     ) -> Self {
         Self {
@@ -216,14 +217,14 @@ impl ApplicationHandler<WindowEvent> for Viewer {
                 renderer.video_size,
                 window.scale_factor(),
             )
-            && let Err(error) = self.input.try_send(event)
+            && let Err(error) = self.input.send(event)
         {
             self.fail(event_loop, error);
             return;
         }
         match event {
             NativeEvent::CloseRequested => {
-                let _ = self.input.try_send(InputEvent::ReleaseAll);
+                let _ = self.input.send(InputEvent::ReleaseAll);
                 self.shutdown.send_replace(true);
                 event_loop.exit();
             }

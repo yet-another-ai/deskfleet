@@ -12,6 +12,7 @@ use serde_json::json;
 use tokio::sync::{mpsc, watch};
 use winit::event_loop::EventLoopProxy;
 
+use crate::input_queue;
 use crate::protocol::{self, Candidate, Command};
 use crate::queue::FrameQueue;
 use crate::{Error, Frame, WindowEvent};
@@ -20,7 +21,7 @@ pub(crate) type Frames = Arc<Mutex<FrameQueue<Frame>>>;
 
 pub(crate) async fn run(
     mut commands: mpsc::Receiver<Command>,
-    mut input: mpsc::Receiver<InputEvent>,
+    mut input: input_queue::Receiver,
     frames: Frames,
     proxy: EventLoopProxy<WindowEvent>,
     mut shutdown: watch::Receiver<bool>,
@@ -75,7 +76,7 @@ pub(crate) async fn run(
                         Some(Command::Start { .. }) => return Err("viewer already started".into()),
                     },
                     event = input.recv(), if control => {
-                        if let Some(event) = event {
+                        if let Some(event) = event? {
                             if input_open {
                                 peer.send_text("deskfleet-input", &serde_json::to_string(&event)?).await?;
                             }

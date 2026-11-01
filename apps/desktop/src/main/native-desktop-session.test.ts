@@ -7,8 +7,9 @@ afterEach(async () => { await Promise.all(closing.splice(0).map(close => close()
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => { resolve = done })
-  return { promise, resolve }
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 
 function fixture() {
@@ -81,6 +82,55 @@ test("shutdown during grant creation closes the late grant without spawning a wi
   await vi.waitFor(() => expect(f.central.closePeer).toHaveBeenCalledWith("late"))
   expect(f.spawn).not.toHaveBeenCalled()
   await expect(session.ready).rejects.toThrow("closed")
+})
+
+test("candidate send failure after connection preserves the viewer and remaining trickle candidates", async () => {
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {})
+  const f = fixture()
+  const sending = deferred<void>()
+  f.central.candidatePeer.mockReturnValueOnce(sending.promise)
+  const session = f.open()
+  await vi.waitFor(() => expect(f.spawn).toHaveBeenCalled())
+  const first = { candidate: "first", sdpMid: "0" }
+  const second = { candidate: "second", sdpMid: "0" }
+  const third = { candidate: "third", sdpMid: "0" }
+  // Both candidates belong to one buffered batch; a failed send must not
+  // discard its tail or poison the promise chain for later batches.
+  f.receive({ type: "candidate", candidate: first })
+  f.receive({ type: "candidate", candidate: second })
+  f.receive({ type: "offer", sdp: "offer" })
+  await vi.waitFor(() => expect(f.central.candidatePeer).toHaveBeenCalledWith("peer", first))
+  f.receive({ type: "connected" })
+  await session.ready
+  sending.reject(new Error("Signaling unavailable"))
+  await vi.waitFor(() => expect(f.central.candidatePeer).toHaveBeenCalledWith("peer", second))
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.child.close).not.toHaveBeenCalled()
+  expect(f.central.closePeer).not.toHaveBeenCalled()
+  f.receive({ type: "candidate", candidate: third })
+  await vi.waitFor(() => expect(f.central.candidatePeer).toHaveBeenCalledWith("peer", third))
+  // A signaling blip does not weaken the separate authorization lifecycle.
+  f.emit({ type: "peerRevoked", peerId: "peer", reason: "Access revoked" } as CentralEvent)
+  await session.close()
+  expect(f.failed).toHaveBeenCalledExactlyOnceWith(new Error("Access revoked"))
+  expect(f.child.close).toHaveBeenCalledOnce()
+  expect(f.central.closePeer).toHaveBeenCalledOnce()
+  warning.mockRestore()
+})
+
+test("candidate send failure before connection rejects startup and closes the grant", async () => {
+  const f = fixture()
+  f.central.candidatePeer.mockRejectedValueOnce(new Error("Signaling unavailable"))
+  const session = f.open()
+  await vi.waitFor(() => expect(f.spawn).toHaveBeenCalled())
+  f.receive({ type: "candidate", candidate: { candidate: "early", sdpMid: "0" } })
+  f.receive({ type: "offer", sdp: "offer" })
+  await expect(session.ready).rejects.toThrow("Signaling unavailable")
+  await session.close()
+  expect(f.failed).toHaveBeenCalledExactlyOnceWith(new Error("Signaling unavailable"))
+  expect(f.central.startPeer).not.toHaveBeenCalled()
+  expect(f.child.close).toHaveBeenCalledOnce()
+  expect(f.central.closePeer).toHaveBeenCalledOnce()
 })
 
 test.each(["account", "revoked", "expired", "error"])("%s closes the native viewer and remote capture", async cause => {

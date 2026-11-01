@@ -3,6 +3,7 @@
 #[cfg(any(target_os = "windows", target_os = "macos", test))]
 mod h264;
 mod input;
+mod input_queue;
 #[cfg(target_os = "macos")]
 mod macos_decoder;
 mod presentation;
@@ -57,7 +58,7 @@ pub fn run() -> Result<(), Error> {
     let proxy = event_loop.create_proxy();
     let frames = Arc::new(Mutex::new(queue::FrameQueue::default()));
     let (commands_tx, commands) = mpsc::channel(32);
-    let (input, inputs) = mpsc::channel(256);
+    let (input, inputs) = input_queue::channel();
     let (shutdown, shutdown_rx) = watch::channel(false);
     let reader_proxy = proxy.clone();
     std::thread::Builder::new()

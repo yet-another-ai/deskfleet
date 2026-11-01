@@ -451,6 +451,19 @@ exit close the corresponding peer and capture stream. Navigating away from the
 Desktop tab leaves the separate native window running. Closing a native viewer
 does not stop the hosted daemon or another session.
 
+Once ICE is connected, a failed outgoing trickle-candidate request is logged
+without closing the established viewer; remaining candidates still get sent.
+Before connection, the same failure ends startup and releases the grant.
+Revocation, expiry, account changes, and transport failures retain their normal
+cleanup behavior.
+
+The window-to-session input queue holds at most 256 events and coalesces only
+adjacent pointer moves, preserving key/button/wheel ordering. On overflow, it
+discards pending input and the overflowing action, then queues `ReleaseAll`
+without closing the video. Focus-loss release also clears pending presses.
+Any event already being sent precedes the reset on the ordered DataChannel;
+fresh input follows it. Actual transport send failures still close the peer.
+
 The receive task and blocking decode worker run independently of the window.
 `deskfleet-linux-media::RtpVideoDecoder` loads GStreamer on demand and feeds full
 RTP packets through `rtpjitterbuffer`, `rtph264depay`, `h264parse`, and a hardware
