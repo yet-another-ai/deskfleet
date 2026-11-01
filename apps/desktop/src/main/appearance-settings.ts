@@ -19,14 +19,14 @@ export class AppearanceSettingsController {
       }
       try {
         this.#settings = stored === undefined
-          ? { ...DEFAULT_APPEARANCE_SETTINGS }
+          ? validateAppearanceSettings(DEFAULT_APPEARANCE_SETTINGS)
           : validateAppearanceSettings(JSON.parse(stored))
       } catch {
         // Keep corrupt bytes untouched until the user saves a valid preference.
-        this.#settings = { ...DEFAULT_APPEARANCE_SETTINGS }
+        this.#settings = validateAppearanceSettings(DEFAULT_APPEARANCE_SETTINGS)
       }
     }
-    return { ...this.#settings }
+    return { ...this.#settings, terminalColors: { ...this.#settings.terminalColors } }
   }
 
   set(value: AppearanceSettings): AppearanceSettings {
@@ -36,6 +36,6 @@ export class AppearanceSettingsController {
     writeFileSync(temporary, JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 })
     renameSync(temporary, this.#path)
     this.#settings = settings
-    return { ...settings }
+    return { ...settings, terminalColors: { ...settings.terminalColors } }
   }
 }

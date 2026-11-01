@@ -3,12 +3,13 @@ import { FitAddon } from "@xterm/addon-fit"
 import { ImageAddon } from "@xterm/addon-image"
 import { LigaturesAddon } from "@xterm/addon-ligatures"
 import { WebglAddon } from "@xterm/addon-webgl"
-import { Terminal, type ITheme } from "@xterm/xterm"
+import { Terminal } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
 import { useResizeObserver } from "@vueuse/core"
 import { storeToRefs } from "pinia"
 import { computed, onBeforeUnmount, onMounted, onUnmounted, useTemplateRef, watch } from "vue"
 import { DEFAULT_TERMINAL_FONT } from "@deskfleet/client/appearance"
+import type { TerminalColors } from "@deskfleet/client/terminal-theme"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 import TerminalToolbar from "./TerminalToolbar.vue"
 
@@ -33,6 +34,7 @@ const props = withDefaults(defineProps<{
   /** Preview overrides; omitted values use the saved appearance. */
   fontFamily?: string
   ligatures?: boolean
+  theme?: TerminalColors
 }>(), { ligatures: undefined })
 const emit = defineEmits<{
   ready: [size: { cols: number; rows: number }]
@@ -42,19 +44,12 @@ const emit = defineEmits<{
   title: [title: string]
 }>()
 
-// Terminals stay dark in both themes; the background matches --ui-color-terminal.
-const theme: ITheme = {
-  background: "#15171d",
-  foreground: "#e3e6ee",
-  cursor: "#e3e6ee",
-  selectionBackground: "#3a3f4c",
-}
-
 const container = useTemplateRef<HTMLDivElement>("container")
 const toolbar = useTemplateRef<InstanceType<typeof TerminalToolbar>>("toolbar")
-const { terminalFont, terminalLigatures } = storeToRefs(useAppearanceStore())
+const { terminalFont, terminalLigatures, terminalTheme } = storeToRefs(useAppearanceStore())
 const fontFamily = computed(() => props.fontFamily === undefined ? terminalFont.value : props.fontFamily.trim() || DEFAULT_TERMINAL_FONT)
 const ligatures = computed(() => props.ligatures ?? terminalLigatures.value)
+const theme = computed(() => props.theme ?? terminalTheme.value)
 const fit = new FitAddon()
 const terminal = new Terminal({
   // The official ligatures addon uses the character-joiner API.
@@ -66,7 +61,7 @@ const terminal = new Terminal({
   fontSize: 13,
   scrollback: props.scrollback ?? 5_000,
   overviewRuler: { width: props.tools ? 8 : 0 },
-  theme,
+  theme: theme.value,
 })
 terminal.loadAddon(fit)
 terminal.attachCustomKeyEventHandler(event => {
@@ -161,6 +156,7 @@ watch(fontFamily, (fontFamily) => {
   if (container.value) fit.fit()
 })
 watch(ligatures, updateLigatures)
+watch(theme, value => { terminal.options.theme = value })
 
 onMounted(() => {
   terminal.open(container.value!)
@@ -197,8 +193,11 @@ defineExpose({
 </script>
 
 <template>
-  <div class="relative flex h-full min-h-0 w-full flex-col">
-    <div ref="container" class="min-h-0 w-full flex-1" />
+  <div data-terminal-surface class="relative flex h-full min-h-0 w-full flex-col" :style="{ backgroundColor: theme.background, color: theme.foreground }">
+    <!-- FitAddon measures this inner host; keep the padding on its wrapper. -->
+    <div class="min-h-0 flex-1 p-3">
+      <div ref="container" data-terminal-container class="h-full min-h-0 w-full" />
+    </div>
     <TerminalToolbar v-if="tools" ref="toolbar" :terminal="terminal" :interactive="interactive ?? false" />
   </div>
 </template>

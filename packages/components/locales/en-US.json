@@ -381,9 +381,30 @@
     "fontHint": "Use an installed font. Leave blank for the default.",
     "terminalFontHint": "CSS fallbacks supported, e.g. \"Cascadia Code\", monospace. Leave blank for the default.",
     "interfacePreview": "The quick brown fox. 你好，世界。",
-    "terminalPreview": "Terminal font preview",
+    "terminalPreview": "Terminal preview",
+    "terminalColors": "Terminal colors",
+    "terminalColorsHint": "Choose a preset, then make it yours. Changes apply to all terminals on this client.",
+    "terminalPreset": "Terminal color preset",
+    "customizeTerminalColors": "Customize colors",
+    "customTerminalColors": "Customized colors",
+    "resetTerminalColors": "Reset to preset",
+    "ansiColors": "ANSI colors",
+    "invalidTerminalColor": "Enter a 6-digit hex color, e.g. #15171d.",
+    "terminalColorLabels": {
+      "background": "Background", "foreground": "Text", "cursor": "Cursor", "selectionBackground": "Selection",
+      "black": "Black", "red": "Red", "green": "Green", "yellow": "Yellow", "blue": "Blue", "magenta": "Magenta", "cyan": "Cyan", "white": "White",
+      "brightBlack": "Bright black", "brightRed": "Bright red", "brightGreen": "Bright green", "brightYellow": "Bright yellow", "brightBlue": "Bright blue", "brightMagenta": "Bright magenta", "brightCyan": "Bright cyan", "brightWhite": "Bright white"
+    },
     "ligatures": "Font ligatures",
-    "ligaturesHint": "Combine characters like => and != when the terminal font supports it."
+    "ligaturesHint": "Combine characters like => and != when the terminal font supports it.",
+    "outlineAudio": "Audio-reactive outline",
+    "outlineAudioHint": "Animate the outline with playing audio.",
+    "outlineAudioRgb": "RGB",
+    "outlineAudioRgbHint": "Cycle rainbow colors across the bars.",
+    "outlineAudioMaxWidth": "Maximum width",
+    "outlineAudioMaxWidthHint": "Peak bar width when audio plays.",
+    "outlineAudioDecayMs": "Release time",
+    "outlineAudioDecayMsHint": "Time for bars to settle."
   },
   "githubSettings": {
     "title": "GitHub",

@@ -4,6 +4,7 @@ import {
   validateAppearanceSettings, type AppearanceSettings,
 } from "@deskfleet/client/appearance"
 import { intlLocale, resolveAppLocale } from "@deskfleet/client/i18n"
+import { resolveTerminalTheme } from "@deskfleet/client/terminal-theme"
 import { usePreferredDark, usePreferredLanguages, useStorage } from "@vueuse/core"
 import { defineStore, type Pinia } from "pinia"
 import { computed, hasInjectionContext, inject, onScopeDispose, ref, watch, type InjectionKey } from "vue"
@@ -18,8 +19,8 @@ const defineAppearanceStore = defineStore("appearance", () => {
   const error = ref<string | null>(null)
   const reportError = (reason: unknown) => { error.value = reason instanceof Error ? reason.message : String(reason) }
   const settings = api
-    ? ref<AppearanceSettings>({ ...DEFAULT_APPEARANCE_SETTINGS })
-    : useStorage<AppearanceSettings>(APPEARANCE_STORAGE_KEY, { ...DEFAULT_APPEARANCE_SETTINGS }, undefined, {
+    ? ref<AppearanceSettings>(validateAppearanceSettings(DEFAULT_APPEARANCE_SETTINGS))
+    : useStorage<AppearanceSettings>(APPEARANCE_STORAGE_KEY, validateAppearanceSettings(DEFAULT_APPEARANCE_SETTINGS), undefined, {
       writeDefaults: false,
       flush: "sync",
       serializer: { read: raw => validateAppearanceSettings(JSON.parse(raw)), write: JSON.stringify },
@@ -33,6 +34,7 @@ const defineAppearanceStore = defineStore("appearance", () => {
   const interfaceFont = computed(() => settings.value.interfaceFont.trim() || DEFAULT_INTERFACE_FONT)
   const terminalFont = computed(() => settings.value.terminalFont.trim() || DEFAULT_TERMINAL_FONT)
   const terminalLigatures = computed(() => settings.value.terminalLigatures)
+  const terminalTheme = computed(() => resolveTerminalTheme(settings.value.terminalTheme, settings.value.terminalColors))
   const locale = computed(() => settings.value.language === "system"
     ? (host.platform === "web" ? resolveAppLocale(languages.value) : host.locale)
     : settings.value.language)
@@ -58,9 +60,10 @@ const defineAppearanceStore = defineStore("appearance", () => {
         } catch (reason) { if (!disposed) reportError(reason) }
       }
       if (disposed || stopApplying) return
-      stopApplying = watch([() => settings.value.theme, interfaceFont, locale], () => {
+      stopApplying = watch([() => settings.value.theme, interfaceFont, locale, terminalTheme], () => {
         document.documentElement.style.colorScheme = settings.value.theme === "system" ? "light dark" : settings.value.theme
         document.documentElement.style.setProperty("--ui-font-interface", interfaceFont.value)
+        document.documentElement.style.setProperty("--ui-color-terminal", terminalTheme.value.background)
         document.documentElement.lang = intlLocale(locale.value)
         i18n.global.locale.value = locale.value
       }, { immediate: true, flush: "sync" })
@@ -82,7 +85,7 @@ const defineAppearanceStore = defineStore("appearance", () => {
   }
 
   onScopeDispose(() => { disposed = true; unsubscribe?.(); stopApplying?.() })
-  return { settings, ready, saving, error, isDark, interfaceFont, terminalFont, terminalLigatures, initialize, set }
+  return { settings, ready, saving, error, isDark, interfaceFont, terminalFont, terminalLigatures, terminalTheme, initialize, set }
 })
 
 type AppearanceStore = ReturnType<typeof defineAppearanceStore>

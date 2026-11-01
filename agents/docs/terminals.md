@@ -15,6 +15,20 @@ no video/audio tracks, capture devices, codec selection, or screen-recording
 permission are involved. SDP and ICE reuse the authenticated central signaling
 service used by desktop streaming.
 
+## Appearance
+
+Every terminal surface has 12 px of padding around its output. The fit addon
+measures the inner host so terminal rows and columns exclude this space.
+Appearance settings belong to the viewing client and apply to live terminals,
+history, and Agent output. Presets include DeskFleet, Dracula, One Dark, Nord,
+and Solarized Light. Users can override the background, text, cursor, selection,
+and 16 ANSI colors, or reset overrides to the selected preset. Selecting another
+preset clears overrides. Colors update existing xterm instances without clearing
+their buffers; applications that explicitly emit truecolor retain those colors.
+Desktop preferences persist in the installation's appearance settings; Web
+preferences persist in browser storage. Existing saved preferences use DeskFleet
+colors until changed.
+
 ## Frontend addons
 
 The shared terminal pins xterm.js 6.0.0 and its compatible stable addons.

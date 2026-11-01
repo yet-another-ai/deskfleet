@@ -192,7 +192,7 @@ const errorDescription = computed(() => errorPresentation(detail.value, failure.
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!-- The stream fills the pane; its controls and settings float above it. -->
-    <div ref="stage" data-desktop-stage class="relative flex min-h-64 min-w-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors" :class="stream ? 'border-transparent bg-ui-terminal' : 'border-ui-border bg-ui-surface'" @fullscreenchange="updateFullscreen">
+    <div ref="stage" data-desktop-stage class="relative flex min-h-64 min-w-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors" :class="stream ? 'border-transparent bg-ui-desktop' : 'border-ui-border bg-ui-surface'" @fullscreenchange="updateFullscreen">
       <video
         v-if="local"
         v-show="stream"

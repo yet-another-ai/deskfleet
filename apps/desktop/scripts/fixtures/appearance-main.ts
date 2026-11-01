@@ -26,6 +26,7 @@ export interface AppearanceSmokeResult {
   interfaceFont: string
   terminalFont: string
   terminalLigatures: boolean
+  terminalBackground: string
   joinedOperators: string[]
   language: string
   nativeTheme: string
@@ -67,9 +68,48 @@ async function exerciseAppearance(phase: "change" | "restore", theme?: "light" |
   }
   const terminal = () => document.querySelector<HTMLElement>("[data-terminal-font-preview] .xterm")
   const rows = () => document.querySelector<HTMLElement>("[data-terminal-font-preview] .xterm-rows")
+  // xterm suspends rendering outside the viewport; appearance controls extend below the fold.
+  const showTerminal = () => document.querySelector<HTMLElement>("[data-terminal-font-preview]")!.scrollIntoView({ block: "center" })
   const joinedOperators = () => [...document.querySelectorAll<HTMLElement>("[data-terminal-font-preview] .xterm-rows span")]
     .map(span => span.textContent ?? "").filter(text => ["=>", "->", "===", "!=="].includes(text))
+  const terminalBackground = () => getComputedStyle(document.querySelector<HTMLElement>("[data-terminal-font-preview] .xterm-scrollable-element")!).backgroundColor
+  async function terminalColors(): Promise<void> {
+    const original = terminal()
+    const output = rows()!.textContent
+    const dracula = document.querySelector<HTMLButtonElement>('[data-terminal-theme="dracula"]')!
+    await until(() => !dracula.disabled, "Terminal preset controls")
+    require(dracula.getAttribute("role") === "radio", "Terminal presets must be radio choices")
+    dracula.click()
+    await until(async () => (await appearance.get()).terminalTheme === "dracula" && !dracula.disabled
+      && dracula.getAttribute("aria-checked") === "true" && terminalBackground() === "rgb(40, 42, 54)", "Live Dracula palette")
+
+    const color = document.querySelector<HTMLInputElement>("#appearance-terminal-color-background")!
+    color.value = "#102030"
+    color.dispatchEvent(new Event("input", { bubbles: true }))
+    color.dispatchEvent(new Event("change", { bubbles: true }))
+    await until(async () => (await appearance.get()).terminalColors.background === "#102030"
+      && !color.disabled && terminalBackground() === "rgb(16, 32, 48)", "Custom terminal color")
+
+    const reset = document.querySelector<HTMLButtonElement>("[data-terminal-colors-reset]")!
+    reset.click()
+    await until(async () => {
+      const saved = await appearance.get()
+      return saved.terminalTheme === "dracula" && Object.keys(saved.terminalColors).length === 0
+        && !document.querySelector<HTMLInputElement>("#appearance-terminal-color-background")!.disabled
+        && terminalBackground() === "rgb(40, 42, 54)"
+    }, "Restore selected terminal palette")
+
+    const hex = document.querySelector<HTMLInputElement>("#appearance-terminal-color-background-hex")!
+    hex.value = "#192b3d"
+    hex.dispatchEvent(new Event("input", { bubbles: true }))
+    hex.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    await until(async () => (await appearance.get()).terminalColors.background === "#192b3d"
+      && !hex.disabled && terminalBackground() === "rgb(25, 43, 61)", "Custom terminal hex color")
+    require(terminal() === original, "Palette changes must update the existing terminal")
+    require(rows()!.textContent === output, "Palette changes must retain terminal output")
+  }
   async function toggleLigatures(enabled: boolean): Promise<void> {
+    showTerminal()
     const toggle = () => document.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="appearance-terminal-ligatures-label"]')
     await until(() => !!toggle() && !toggle()!.disabled, "Terminal ligature switch")
     const original = terminal()
@@ -106,6 +146,7 @@ async function exerciseAppearance(phase: "change" | "restore", theme?: "light" |
     await until(() => document.querySelector("h1")?.textContent === "外观", "Chinese translation")
     require(document.documentElement.lang === "zh-Hans-CN", "Document language must update")
     await selectTheme("dark")
+    showTerminal()
     await until(() => !!terminal() && !!rows() && !!rows()!.textContent?.includes("==="), "Real terminal preview")
     require(!(await appearance.get()).terminalLigatures, "Terminal ligatures must default off")
     await font("interface", '"Segoe UI", "Microsoft YaHei", sans-serif')
@@ -113,22 +154,31 @@ async function exerciseAppearance(phase: "change" | "restore", theme?: "light" |
     await toggleLigatures(true)
     await toggleLigatures(false)
     await toggleLigatures(true)
+    await terminalColors()
   }
   if (theme) await selectTheme(theme)
   if (ligatures !== undefined) await toggleLigatures(ligatures)
   const settings = await appearance.get()
   await until(() => document.documentElement.style.colorScheme === (settings.theme === "system" ? "light dark" : settings.theme), "Applied color scheme")
   const interfaceFont = getComputedStyle(document.body).fontFamily
+  showTerminal()
   await until(() => !!rows() && (settings.terminalLigatures ? joinedOperators().length > 0 : joinedOperators().length === 0), "Restored terminal rendering")
   const terminalFont = getComputedStyle(rows()!).fontFamily
   require(interfaceFont.includes('"Segoe UI"') && interfaceFont.includes('"Microsoft YaHei"') && interfaceFont.includes("sans-serif"), "Interface font CSS fallback must apply")
   require(terminalFont.includes('"Cascadia Code"') && terminalFont.includes('"Noto Sans Mono CJK SC"') && terminalFont.includes("monospace"), "Terminal font CSS fallback must apply")
   const preview = document.querySelector<HTMLElement>("[data-terminal-font-preview]")!.getBoundingClientRect()
   const screen = document.querySelector<HTMLElement>("[data-terminal-font-preview] .xterm-screen")!.getBoundingClientRect()
+  const surface = document.querySelector<HTMLElement>("[data-terminal-font-preview] [data-terminal-surface]")!
+  const container = surface.getBoundingClientRect()
   require(screen.width > 0 && screen.height > 0 && screen.right <= preview.right + 1 && screen.bottom <= preview.bottom + 1, "Actual terminal must fit inside its preview")
+  require(Math.abs(screen.left - container.left - 12) <= 1 && Math.abs(screen.top - container.top - 12) <= 1
+    && container.right - screen.right >= 11 && container.bottom - screen.bottom >= 11, "Terminal text must keep 12px padding and fit within the padded container")
+  require(settings.terminalTheme === "dracula" && settings.terminalColors.background === "#192b3d", "Terminal palette and custom colors must persist")
+  await until(() => terminalBackground() === "rgb(25, 43, 61)", "Restored terminal background")
+  require(getComputedStyle(surface).backgroundColor === terminalBackground(), "Terminal padding must match its background")
   require(!document.querySelector('[role="alert"]'), "Appearance must not show a save error")
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-  return { settings, background: getComputedStyle(document.body).backgroundColor, interfaceFont, terminalFont, terminalLigatures: settings.terminalLigatures, joinedOperators: joinedOperators(), language: document.documentElement.lang }
+  return { settings, background: getComputedStyle(document.body).backgroundColor, interfaceFont, terminalFont, terminalLigatures: settings.terminalLigatures, terminalBackground: terminalBackground(), joinedOperators: joinedOperators(), language: document.documentElement.lang }
 }
 
 registerRendererScheme()
@@ -150,7 +200,8 @@ void app.whenReady().then(async () => {
   const window = new BrowserWindow({
     show: false, width: 1200, height: 900,
     ...windowChromeOptions(process.platform),
-    webPreferences: { preload: context.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true, additionalArguments: ["--deskfleet-locale=en-US"] },
+    // Inspect DOM glyph spans to verify font shaping and ligatures consistently on GPU hosts too.
+    webPreferences: { preload: context.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true, webgl: false, additionalArguments: ["--deskfleet-locale=en-US"] },
   })
   attachAppearance(window)
   followSystemTheme(window, process.platform)
@@ -204,6 +255,8 @@ void app.whenReady().then(async () => {
     await screenshot("appearance-minimum")
     await window.webContents.executeJavaScript(`document.querySelector('[data-terminal-font-preview]').parentElement.scrollIntoView({ block: 'end' })`)
     await screenshot("appearance-minimum-terminal")
+    await window.webContents.executeJavaScript(`document.querySelector('[data-terminal-colors]').scrollIntoView({ block: 'start' })`)
+    await screenshot("appearance-terminal-colors")
   }
   process.send?.({ result: { ...result, nativeTheme: nativeTheme.themeSource, screenshots } satisfies AppearanceSmokeResult })
 }).catch(error => { process.send?.({ error: String(error) }); app.quit() })

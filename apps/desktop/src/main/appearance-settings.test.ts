@@ -19,9 +19,10 @@ test.each(["zh-cmn-Hans-CN", "ja-JP"] as const)("appearance defaults follow the 
   const { path, controller } = fixture()
   expect(controller.get()).toEqual(DEFAULT_APPEARANCE_SETTINGS)
   const selected: AppearanceSettings = {
+    ...DEFAULT_APPEARANCE_SETTINGS,
     language, theme: "dark", interfaceFont: '"Segoe UI", sans-serif',
     terminalFont: '"Cascadia Code", "Noto Sans Mono CJK SC", monospace',
-    terminalLigatures: true,
+    terminalLigatures: true, terminalTheme: "dracula", terminalColors: { background: "#123456" },
   }
   expect(controller.set(selected)).toEqual(selected)
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(selected)
@@ -29,7 +30,10 @@ test.each(["zh-cmn-Hans-CN", "ja-JP"] as const)("appearance defaults follow the 
   selected.terminalFont = "changed"
   const copy = controller.get()
   copy.theme = "light"
+  copy.terminalColors.background = "#ffffff"
+  selected.terminalColors.background = "#000000"
   expect(controller.get()).toMatchObject({ theme: "dark", terminalFont: '"Cascadia Code", "Noto Sans Mono CJK SC", monospace' })
+  expect(controller.get().terminalColors.background).toBe("#123456")
   controller.set({ ...DEFAULT_APPEARANCE_SETTINGS })
   expect(new AppearanceSettingsController(path).get()).toEqual(DEFAULT_APPEARANCE_SETTINGS)
 })
@@ -46,7 +50,7 @@ test("existing desktop preferences keep their selected fonts and theme with liga
   const { path, controller } = fixture()
   const saved = { language: "zh-cmn-Hans-CN", theme: "dark", interfaceFont: "Arial, sans-serif", terminalFont: '"Cascadia Code", monospace' }
   writeFileSync(path, JSON.stringify(saved))
-  expect(controller.get()).toEqual({ ...saved, terminalLigatures: false })
+  expect(controller.get()).toEqual({ ...DEFAULT_APPEARANCE_SETTINGS, ...saved })
 })
 
 test.each([

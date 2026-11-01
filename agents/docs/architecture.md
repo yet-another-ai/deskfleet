@@ -530,7 +530,7 @@ Worktree; terminal transcripts stay solely on the daemon.
 ## Daemon and session lifecycle
 
 Settings → Appearance belongs to the client viewing the team. Language, color
-theme, interface font, and terminal font are saved in the desktop profile's
+theme, interface font, terminal font, and terminal palette are saved in the desktop profile's
 `appearance.json`, or in browser-local storage for Web. They do not modify the
 selected machine or synchronize through the backend. Changes apply to existing
 client windows, including native desktop chrome and menus; new windows load the
@@ -538,7 +538,9 @@ saved preferences before mounting their UI. Font fields accept CSS `font-family`
 lists, with an empty value restoring the application default. Theme cards preview
 the application palette. The terminal font editor uses the same xterm surface as
 live terminals, and its ligature preference updates both the preview and existing
-terminals without recreating them.
+terminals without recreating them. Terminal presets and per-color overrides also
+update existing surfaces; [terminal appearance](terminals.md#appearance) describes
+the palette and padding behavior.
 Malformed or invalid saved desktop appearance uses defaults without rewriting
 the file until a successful edit. Filesystem read errors remain visible errors.
 

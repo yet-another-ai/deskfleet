@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils"
+import { createPinia } from "pinia"
 import { computed, defineComponent, h, nextTick, ref } from "vue"
 import { expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
@@ -24,7 +25,7 @@ test("conversation and outline share one replay and update together after append
         h(AgentOutline, { events: events.value, snapshot: snapshot.value, projection: projection.value }),
       ])
     },
-  }), { global: { plugins: [i18n], stubs: { AgentResponse: true, AgentUserMessage: true } } })
+  }), { global: { plugins: [createPinia(), i18n], stubs: { AgentResponse: true, AgentUserMessage: true } } })
   try {
     expect(replay).toHaveBeenCalledTimes(1)
     expect(view.findComponent(AgentResponse).props("response").steps[0]).toMatchObject({ kind: "message", content: [{ type: "text", text: "First answer" }] })

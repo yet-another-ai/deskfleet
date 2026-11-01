@@ -66,9 +66,16 @@ jobs:
     permissions:
       contents: read
 
+  aur:
+    name: AUR
+    needs: build
+    uses: ./.github/workflows/aur.yml
+    permissions:
+      contents: read
+
   release:
     name: Create draft GitHub release
-    needs: [validate, test, build, nix]
+    needs: [validate, test, build, nix, aur]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -162,7 +169,7 @@ jobs:
 
   image:
     name: Publish server and Web image
-    needs: [validate, test, build, nix]
+    needs: [validate, test, build, nix, aur]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
