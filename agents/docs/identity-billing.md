@@ -41,6 +41,7 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 | Consumed turns per Agent Session, including inherited usage | 30 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Joined Team members, including administrators | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
 | TURN relay allowance | Unavailable | 2 GiB/month | 20 GiB/month | Unlimited | Unlimited on operator-configured TURN |
+| Team's own TURN server | Unavailable | Unavailable | Available | Available | Available |
 | Assignment | Default | Paid subscription | Paid subscription | Site Admin only | Deployment configuration |
 
 One GiB is 1,073,741,824 bytes. Go allows 2,147,483,648 bytes and Pro allows
@@ -371,6 +372,20 @@ The collector has a database lease and reports freshness/gaps; stale collection
 denies new metered Go/Pro relay grants. Enterprise and self-hosted grants remain
 unlimited. Redis Pub/Sub loss is still not reconstructable.
 
+### Team TURN servers
+
+Pro, Enterprise, and self-hosted Teams can relay through their own TURN REST
+server. Team owners and administrators manage its URLs and shared secret in Team
+settings. While it is in use, new grants carry only the Team's TURN URLs, with
+credentials signed by the Team's secret. These grants bypass the relay allowance
+and are not metered, because the traffic never reaches the site's relay. They
+never fall back to the site's relay when the Team server is unreachable.
+
+Site administrators can disable Team TURN servers for the whole site; this
+overrides every plan. After a downgrade or a site-wide disable, the saved server
+is kept but unused, and new grants follow the site relay rules above. Team owners
+and administrators can always remove it. Issued grants keep their snapshot.
+
 ### Effective policy and accepted work
 
 Check resource authorization before entitlements; unlimited never bypasses
@@ -429,7 +444,8 @@ names remain implementation details. Separate microservices are not required.
   enrolled machine, and shows the selected Team's effective plan, usage/limits,
   period and next reset, remaining TURN, and actionable restriction reasons.
   Unlimited and unavailable are distinct from numeric zero. Team settings keep
-  team details, members, and machines separate from subscription management.
+  team details, members, machines, and the Team TURN server separate from
+  subscription management.
 - Billing: checkout progress, renewal/cancellation state, payment methods,
   invoices, and recovery actions for the Team owner.
 - Session: consumed/remaining Free turns including inherited usage, capacity

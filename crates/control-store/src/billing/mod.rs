@@ -53,6 +53,7 @@ impl Plan {
                 Self::Pro => Some(21_474_836_480),
                 _ => None,
             },
+            team_turn_servers: matches!(self, Self::Pro | Self::Enterprise | Self::SelfHosted),
         }
     }
 }
@@ -76,6 +77,8 @@ pub struct Limits {
     pub max_turns_per_session: Option<i64>,
     pub max_members: Option<i64>,
     pub turn_bytes: Option<i64>,
+    /// A Team's own TURN server replaces the site relay without consuming allowance.
+    pub team_turn_servers: bool,
 }
 
 #[derive(Clone, Debug)]

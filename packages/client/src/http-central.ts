@@ -1,5 +1,5 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { AccountState, AccountUser, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, TurnSettings, Team, TeamMember, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, TurnSettings, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -173,6 +173,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string }) { return this.request<{ machine: Machine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine) }
   members(teamId: string) { return this.request<TeamMember[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/members`) }
   teamUsage(teamId: string) { return this.request<TeamUsage>("GET", `/api/teams/${encodeURIComponent(teamId)}/usage`) }
+  teamTurnSettings(teamId: string) { return this.request<TeamTurnSettings>("GET", `/api/teams/${encodeURIComponent(teamId)}/turn-settings`) }
+  updateTeamTurnSettings(teamId: string, settings: TeamTurnSettingsUpdate) { return this.request<TeamTurnSettings>("PATCH", `/api/teams/${encodeURIComponent(teamId)}/turn-settings`, settings) }
   aiUsage(teamId: string, query: AiUsageQuery) {
     return this.request<TeamAiUsage>("GET", `/api/teams/${encodeURIComponent(teamId)}/ai-usage?${new URLSearchParams({ period: query.period, timeZone: query.timeZone })}`)
   }

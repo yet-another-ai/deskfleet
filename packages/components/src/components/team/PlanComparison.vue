@@ -16,9 +16,9 @@ const { t, locale } = useI18n()
 // Hosted allowances mirror Plan::limits in crates/control-store/src/billing/mod.rs.
 // The current plan always uses the authoritative allowances returned by the server.
 const plans = [
-  { id: "free", limits: { maxActiveSessions: 3, maxTurnsPerSession: 30, maxMembers: 3, turnBytes: 0 } },
-  { id: "go", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: 2_147_483_648 } },
-  { id: "pro", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: 21_474_836_480 } },
+  { id: "free", limits: { maxActiveSessions: 3, maxTurnsPerSession: 30, maxMembers: 3, turnBytes: 0 }, teamTurnServers: false },
+  { id: "go", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: 2_147_483_648 }, teamTurnServers: false },
+  { id: "pro", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: 21_474_836_480 }, teamTurnServers: true },
 ] as const
 const features = [
   { key: "maxActiveSessions", label: "team.activeSessions" },
@@ -70,6 +70,11 @@ function relay(plan: typeof plans[number]) {
           <dd class="m-0 flex items-center gap-1.5 text-sm font-semibold tabular-nums" :class="limits(plan).turnBytes === 0 ? 'text-ui-text-muted' : 'text-ui-accent'">
             <Minus v-if="limits(plan).turnBytes === 0" :size="14" aria-hidden="true" />{{ relay(plan) }}
           </dd>
+        </div>
+        <div class="flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ui-border py-3" :data-plan-team-turn="plan.teamTurnServers">
+          <dt class="text-[13px] text-ui-text-muted">{{ t("billing.comparison.teamTurn") }}</dt>
+          <dd v-if="plan.teamTurnServers" class="m-0 flex items-center gap-1.5 text-sm"><Check :size="15" class="text-ui-accent" aria-hidden="true" />{{ t("billing.comparison.included") }}</dd>
+          <dd v-else class="m-0 flex items-center gap-1.5 text-sm text-ui-text-muted"><Minus :size="14" aria-hidden="true" />{{ t("billing.notIncluded") }}</dd>
         </div>
         <div class="flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-3">
           <dt class="text-[13px] text-ui-text-muted">{{ t("billing.comparison.direct") }}</dt>

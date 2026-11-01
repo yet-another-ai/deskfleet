@@ -238,6 +238,16 @@ An explicitly empty snapshot is never regenerated. The TURN shared secret remain
 deployment configuration. List edits affect new grants without restarting the
 API and do not control the lifecycle of TURN processes.
 
+A Team owner or administrator can instead configure the Team's own TURN REST
+server: ordered URLs and a shared secret stored in PostgreSQL. The secret is
+write-only through the API and signs the Team's peer credentials in place of the
+deployment secret. Like GitHub tokens, it is protected by database access rather
+than application-level encryption. Peer creation checks the Team's plan and the
+site switch on every grant. While both allow it, the Team server replaces the
+site list in the snapshot, with no fallback to site relays. Otherwise the stored
+server stays unused and the site rules apply, so issued snapshots are never
+rewritten.
+
 Authentication configuration also publishes the legal URLs. When either URL is
 configured, the registration page requires explicit checkbox acceptance and the
 registration endpoint rejects missing consent before issuing a mailbox challenge.

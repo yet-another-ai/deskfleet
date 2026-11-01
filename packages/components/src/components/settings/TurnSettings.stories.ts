@@ -2,11 +2,11 @@ import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import type { SiteAdministrationApi, TurnSettings as Settings } from "@deskfleet/client/central"
 import TurnSettings from "./TurnSettings.vue"
 
-function api(initial: string[]): Pick<SiteAdministrationApi, "turnSettings" | "updateTurnSettings"> {
-  let settings: Settings = { urls: [...initial] }
+function api(initial: string[], allowTeamServers = true): Pick<SiteAdministrationApi, "turnSettings" | "updateTurnSettings"> {
+  let settings: Settings = { urls: [...initial], allowTeamServers }
   return {
-    async turnSettings() { return { urls: [...settings.urls] } },
-    async updateTurnSettings(value) { settings = { urls: [...value.urls] }; return { urls: [...settings.urls] } },
+    async turnSettings() { return { ...settings, urls: [...settings.urls] } },
+    async updateTurnSettings(value) { settings = { ...value, urls: [...value.urls] }; return { ...settings, urls: [...settings.urls] } },
   }
 }
 const meta = {
@@ -20,6 +20,7 @@ type Story = StoryObj<typeof meta>
 
 export const Configured: Story = {}
 export const Empty: Story = { args: { api: api([]) } }
+export const TeamServersDisabled: Story = { args: { api: api(["turn:primary.example.com:3478?transport=udp"], false) } }
 export const LoadError: Story = {
   args: { api: { ...api([]), async turnSettings() { throw new Error("Unable to load TURN servers. Try again.") } } },
 }

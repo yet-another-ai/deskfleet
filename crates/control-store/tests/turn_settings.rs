@@ -46,6 +46,7 @@ impl Fixture {
 fn endpoints(urls: &[&str]) -> TurnSettings {
     TurnSettings {
         urls: urls.iter().map(|value| (*value).into()).collect(),
+        allow_team_servers: true,
     }
 }
 
@@ -102,16 +103,21 @@ async fn settings_are_seeded_once_private_persistent_and_audited() {
     }
     store.grant_site_admin(&admin.id).await.unwrap();
     assert_eq!(store.read_turn_settings(&admin.id).await.unwrap(), original);
-    let changed = endpoints(&[
-        "turns:second.test:5349?transport=tcp",
-        "turn:first.test:3478?transport=udp",
-    ]);
+    // The Team server switch is stored and audited with the URL list.
+    let changed = TurnSettings {
+        allow_team_servers: false,
+        ..endpoints(&[
+            "turns:second.test:5349?transport=tcp",
+            "turn:first.test:3478?transport=udp",
+        ])
+    };
     let padded = TurnSettings {
         urls: changed
             .urls
             .iter()
             .map(|value| format!(" {value} "))
             .collect(),
+        allow_team_servers: false,
     };
     assert_eq!(
         store
@@ -250,10 +256,11 @@ async fn upgrade_keeps_existing_settings_and_peer_snapshots_survive_list_changes
     store.database().execute_unprepared(
         "UPDATE cp_site_settings SET site_name='Existing fleet';
          ALTER TABLE cp_peers DROP COLUMN ice_servers;
+         DROP TABLE cp_team_turn_servers;
          DROP TABLE cp_turn_settings;
          ALTER TABLE cp_site_audit DROP CONSTRAINT cp_site_audit_action_check;
          ALTER TABLE cp_site_audit ADD CONSTRAINT cp_site_audit_action_check CHECK (action IN ('admin.grant', 'admin.revoke', 'settings.update', 'enterprise.update', 'account.disable', 'registration.update'));
-         DELETE FROM cp_migrations WHERE version=20",
+         DELETE FROM cp_migrations WHERE version IN (20, 21)",
     ).await.unwrap();
     let upgraded = ControlStore::connect(&fixture.url).await.unwrap();
     assert_eq!(

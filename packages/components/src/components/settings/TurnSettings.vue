@@ -5,6 +5,8 @@ import { computed, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import type { SiteAdministrationApi, TurnSettings } from "@deskfleet/client/central"
 import UiButton from "../common/UiButton.vue"
+import UiSwitch from "../common/UiSwitch.vue"
+import SettingsRow from "./SettingsRow.vue"
 
 const props = defineProps<{ api: Pick<SiteAdministrationApi, "turnSettings" | "updateTurnSettings"> }>()
 const { t } = useI18n()
@@ -14,22 +16,23 @@ const message = (reason: unknown) => reason instanceof Error ? reason.message : 
 const { state: current, isLoading: loading, error: loadError, executeImmediate: load } = useAsyncState(
   async () => {
     const settings = await props.api.turnSettings()
-    form.value = { urls: [...settings.urls] }
+    form.value = { ...settings, urls: [...settings.urls] }
     return settings
   },
   undefined,
 )
 const urls = computed(() => form.value?.urls.map(url => url.trim()) ?? [])
 const changed = computed(() => !!form.value && (
-  urls.value.length !== current.value?.urls.length
+  form.value.allowTeamServers !== current.value?.allowTeamServers
+  || urls.value.length !== current.value?.urls.length
   || urls.value.some((url, index) => url !== current.value?.urls[index])
 ))
 const valid = computed(() => urls.value.every(url => url.length > 0))
 const { isLoading: saving, isReady: saved, error: saveError, executeImmediate: save } = useAsyncState(
   async () => {
-    const settings = await props.api.updateTurnSettings({ urls: urls.value })
+    const settings = await props.api.updateTurnSettings({ urls: urls.value, allowTeamServers: form.value!.allowTeamServers })
     current.value = settings
-    form.value = { urls: [...settings.urls] }
+    form.value = { ...settings, urls: [...settings.urls] }
   },
   undefined,
   { immediate: false },
@@ -59,6 +62,12 @@ function submit(): void {
         <div class="py-3">
           <UiButton :disabled="saving" @click="form.urls.push('')"><Plus :size="14" aria-hidden="true" />{{ t("siteAdmin.turnAdd") }}</UiButton>
         </div>
+      </div>
+      <div class="ui-card px-4">
+        <SettingsRow :label="t('siteAdmin.allowTeamTurnServers')" :label-id="`${id}-team-servers`" :description-id="`${id}-team-servers-description`">
+          <template #description>{{ t("siteAdmin.allowTeamTurnServersDescription") }}</template>
+          <UiSwitch v-model="form.allowTeamServers" :aria-labelledby="`${id}-team-servers`" :aria-describedby="`${id}-team-servers-description`" name="allow-team-turn-servers" :disabled="saving" />
+        </SettingsRow>
       </div>
       <p v-if="saveError" role="alert" class="m-0 text-sm text-ui-danger">{{ message(saveError) }}</p>
       <p v-else-if="saved && !changed" role="status" class="m-0 text-sm text-ui-text-muted">{{ t("siteAdmin.turnSaved") }}</p>

@@ -181,6 +181,7 @@ test("annual billing creates a yearly checkout and keeps monthly request ids sep
   expect(usage().get('[data-plan-comparison="go"]').text()).toContain("2 GiB")
   expect(usage().get('[data-plan-comparison="pro"]').text()).toContain("20 GiB")
   expect(usage().get('[data-plan-comparison="free"]').text()).toContain("Current plan")
+  expect(usage().findAll("[data-plan-team-turn]").map(row => [row.attributes("data-plan-team-turn"), row.get("dd").text()])).toEqual([["false", "Not included"], ["false", "Not included"], ["true", "Included"]])
   await button("Upgrade to Go")!.trigger("click"); await flushPromises()
   expect(fake.central.checkout.mock.calls[0]).toEqual(["team-1", "go", expect.any(String), "year"])
   const yearlyId = fake.central.checkout.mock.calls[0]![2]
