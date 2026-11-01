@@ -191,7 +191,6 @@
   "mcpServers": {
     "title": "MCP Servers",
     "machines": "MCP server machines",
-    "description": "Configure tools available to agents on {machine}.",
     "servers": "Servers",
     "empty": "Add an MCP server to make its tools available to your agents.",
     "add": "Add MCP server",

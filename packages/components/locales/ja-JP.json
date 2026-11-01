@@ -158,7 +158,7 @@
   },
   "mcpServers": {
     "machines": "MCP サーバーのマシン",
-    "title": "MCP サーバー", "description": "{machine} 上のエージェントが利用できるツールを設定します。",
+    "title": "MCP サーバー",
     "servers": "サーバー", "empty": "MCP サーバーを追加すると、エージェントがそのツールを利用できるようになります。",
     "add": "MCP サーバーを追加", "edit": "MCP サーバーを編集",
     "name": "サーバー名", "transport": "通信方式",

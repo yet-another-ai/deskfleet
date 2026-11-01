@@ -86,7 +86,6 @@ onBeforeUnmount(() => { disposed = true; revision++; window.removeEventListener(
     <UiButton type="button" data-mcp-add  :disabled="!online || !loaded || pending" @click="editor = {}"><Plus :size="16" aria-hidden="true" />{{ t('mcpServers.add') }}</UiButton>
   </div>
   <MachineTabs :label="t('mcpServers.machines')" :disabled="pending" class="mb-5" />
-  <p class="m-0 mb-5 text-sm leading-6 text-ui-text-muted">{{ t('mcpServers.description', { machine: account?.machine.value?.name ?? fleet.machines[0]?.name }) }}</p>
   <p v-if="!online" role="status" class="m-0 mb-4 text-sm text-ui-text-muted">{{ t(api ? 'mcpServers.offline' : 'schedules.signIn') }}</p>
   <div v-if="error" class="mb-4 flex items-center justify-between gap-3"><p role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p><UiButton type="button" :disabled="!online || loading || pending" @click="refresh">{{ t('folderPicker.retry') }}</UiButton></div>
   <p v-if="loading && !loaded" role="status" class="m-0 py-5 text-sm text-ui-text-muted">{{ t('mcpServers.loading') }}</p>
