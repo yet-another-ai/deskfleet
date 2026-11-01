@@ -583,3 +583,20 @@ token storage; on X11 it checks the current X server without opening a Portal
 dialog. Monitor coordinate mapping and display changes require acceptance checks
 on the target desktop. Wayland also needs persistent restoration across daemon
 restarts and compositor revocation checks.
+
+Windows capture smoke also opens/releases the input controller twice. After
+enabling **Remote control while locked**, require the service explicitly so an
+absent installation cannot pass by using the user-process backend:
+
+```powershell
+$env:DESKFLEET_SMOKE_CAPTURE = "1"
+$env:DESKFLEET_SMOKE_WINDOWS_SERVICE = "1"
+mise run desktop:smoke-media
+Remove-Item Env:DESKFLEET_SMOKE_WINDOWS_SERVICE
+Remove-Item Env:DESKFLEET_SMOKE_CAPTURE
+```
+
+This checks the current desktop's service-backed capture, encode, WebRTC decode,
+and input attach/detach. It does not lock the host, inject credentials, or exercise
+UAC, user switching, software SAS policy, or app installation/update recovery;
+those remain the interactive acceptance steps above.

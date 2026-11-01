@@ -541,8 +541,12 @@ mod tests {
             Pipe::server(&name, &identity.sid).is_err(),
             "the broker must retain ownership of its pipe name"
         );
-        let mut next_client = Pipe::open(&name, pid).unwrap();
+        // A reused instance becomes connectable when ConnectNamedPipe starts
+        // listening again. Let the client retry concurrently, as it does with
+        // the broker loop, instead of blocking the server before accept().
+        let connecting = std::thread::spawn(move || Pipe::open(&name, pid));
         server.accept(&AtomicBool::new(false)).unwrap();
+        let mut next_client = connecting.join().unwrap().unwrap();
         next_client.write_all(&[2]).unwrap();
         let mut byte = [0u8];
         server.read_exact(&mut byte).unwrap();

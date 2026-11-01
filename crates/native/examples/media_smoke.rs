@@ -1,6 +1,7 @@
 //! Test-only peer for `mise run desktop:smoke-media`.
 //! Set DESKFLEET_SMOKE_CAPTURE=1 to stream the first display instead of the fixture.
 //! Set DESKFLEET_SMOKE_HARDWARE=1 and DESKFLEET_SMOKE_CODEC to encode generated pixels.
+//! Set DESKFLEET_SMOKE_WINDOWS_SERVICE=1 to require the installed service for capture.
 
 #[path = "media_smoke/hardware.rs"]
 mod hardware;
@@ -38,6 +39,17 @@ struct Candidate {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let capture = std::env::var("DESKFLEET_SMOKE_CAPTURE").as_deref() == Ok("1");
     let hardware = std::env::var("DESKFLEET_SMOKE_HARDWARE").as_deref() == Ok("1");
+    let require_service = std::env::var("DESKFLEET_SMOKE_WINDOWS_SERVICE").as_deref() == Ok("1");
+    if require_service && (!capture || !cfg!(windows)) {
+        return Err("Windows service smoke requires capture mode on Windows".into());
+    }
+    #[cfg(windows)]
+    if require_service {
+        let status = deskfleet_windows_desktop::status()?;
+        if !status.installed || !status.running {
+            return Err("Windows service smoke requires the running desktop service".into());
+        }
+    }
     let codec = match std::env::var("DESKFLEET_SMOKE_CODEC")
         .as_deref()
         .unwrap_or("h264")
@@ -165,13 +177,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 starting = Some(tokio::spawn(async move {
                     let display = media::displays().await?.into_iter().next()
                         .ok_or(MediaError::InvalidConfig("no display available for media smoke"))?;
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", windows))]
                     for _ in 0..2 {
                         // Exercise controller reuse without injecting desktop input.
                         let controller = deskfleet_native::input::InputWorker::start(display.id).await
-                            .map_err(|error| deskfleet_capture::CaptureError::Platform(format!("EIS smoke attach failed: {error}")))?;
+                            .map_err(|error| deskfleet_capture::CaptureError::Platform(format!("input smoke attach failed: {error}")))?;
                         controller.stop().await
-                            .map_err(|error| deskfleet_capture::CaptureError::Platform(format!("EIS smoke detach failed: {error}")))?;
+                            .map_err(|error| deskfleet_capture::CaptureError::Platform(format!("input smoke detach failed: {error}")))?;
                     }
                     DesktopStream::start(peer, DesktopConfig {
                         display_id: display.id,
