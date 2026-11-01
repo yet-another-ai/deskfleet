@@ -16,7 +16,8 @@ const { state, isLoading, error, executeImmediate } = useAsyncState(
     return enabled === undefined ? api.get() : api.setEnabled(enabled)
   },
   null,
-  { resetOnExecute: false },
+  // Setup failures (including cancelled UAC) are handled by the inline alert.
+  { resetOnExecute: false, onError: () => {} },
 )
 const requestError = computed(() => error.value instanceof Error ? error.value.message : error.value ? String(error.value) : null)
 useEventListener("focus", () => { if (!isLoading.value) void executeImmediate() })

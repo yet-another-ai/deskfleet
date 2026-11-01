@@ -22,6 +22,7 @@ afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
   configureClient(host)
+  vi.unstubAllGlobals()
   i18n.global.locale.value = "en-US"
 })
 
@@ -59,6 +60,8 @@ test("the switch waits for administrator approval and uses the confirmed service
 })
 
 test("cancelling removal preserves the enabled state and permits retry", async () => {
+  const reportError = vi.fn()
+  vi.stubGlobal("reportError", reportError)
   get.mockResolvedValue(enabled)
   setEnabled.mockRejectedValueOnce(new Error("Administrator approval was cancelled"))
   const view = await render()
@@ -67,6 +70,7 @@ test("cancelling removal preserves the enabled state and permits retry", async (
   expect(setEnabled).toHaveBeenCalledExactlyOnceWith(false)
   expect(view.get('[role="switch"]').attributes("aria-checked")).toBe("true")
   expect(view.get('[role="alert"]').text()).toContain("cancelled")
+  expect(reportError).not.toHaveBeenCalled()
   setEnabled.mockResolvedValueOnce(disabled)
   await view.get('[role="switch"]').trigger("click")
   await flushPromises()
