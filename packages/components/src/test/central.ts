@@ -1,7 +1,7 @@
 import { vi } from "vitest"
 import type { AdminTeamBilling, TeamBilling } from "../../../client/src/billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
-import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, Team, TeamMember } from "../../../client/src/central.ts"
+import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
 
 export function billingFixture(usage = { relayedBytes: "0", activeSessionCount: 0, memberCount: 1 }): TeamBilling {
   return { plan: "selfHosted", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: null }, usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false, enterpriseContactEmail: null }
@@ -19,7 +19,9 @@ export interface FakeCentralOptions {
   signedIn?: boolean
   siteAdmin?: boolean
   site?: Partial<SiteSettings>
-  turn?: TurnSettings
+  turn?: Partial<TurnSettings>
+  /** The Team relay; its secret is kept in state but never returned. */
+  teamTurn?: { availability?: TeamTurnAvailability; urls?: string[]; secret?: string }
   teams?: Team[]
   machines?: Machine[]
   members?: TeamMember[]
@@ -38,7 +40,8 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     signedIn: options.signedIn ?? true,
     siteAdmin: options.siteAdmin ?? false,
     site: { siteName: "DeskFleet", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "", ...options.site },
-    turn: { urls: [...(options.turn?.urls ?? [])] },
+    turn: { urls: [...(options.turn?.urls ?? [])], allowTeamServers: options.turn?.allowTeamServers ?? true },
+    teamTurn: { availability: options.teamTurn?.availability ?? "available" as TeamTurnAvailability, urls: [...(options.teamTurn?.urls ?? [])], secret: options.teamTurn?.secret },
     teams: options.teams ?? [{ id: "team-1", name: "Design team", role: "admin" as const }],
     machines: options.machines ?? [],
     members: options.members ?? [
@@ -48,6 +51,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     enrollment: options.enrollment,
   }
   const status = () => ({ serverUrl: "https://fleet.example", siteAdmin: state.signedIn && state.siteAdmin, user: state.signedIn ? { id: "user-1", name: "Ada", email: "ada@example.test" } : undefined })
+  const teamTurnSettings = () => ({ availability: state.teamTurn.availability, urls: [...state.teamTurn.urls], secretConfigured: state.teamTurn.secret !== undefined })
   const central = {
     status: vi.fn(async () => status()),
     login: vi.fn(async () => { state.signedIn = true }),
@@ -55,8 +59,8 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     site: vi.fn(async () => ({ ...state.site })),
     siteSettings: vi.fn(async () => ({ ...state.site })),
     updateSiteSettings: vi.fn(async (settings: SiteSettings) => { state.site = { ...settings }; return { ...state.site } }),
-    turnSettings: vi.fn(async () => ({ urls: [...state.turn.urls] })),
-    updateTurnSettings: vi.fn(async (settings: TurnSettings) => { state.turn = { urls: [...settings.urls] }; return { urls: [...state.turn.urls] } }),
+    turnSettings: vi.fn(async () => ({ ...state.turn, urls: [...state.turn.urls] })),
+    updateTurnSettings: vi.fn(async (settings: TurnSettings) => { state.turn = { ...settings, urls: [...settings.urls] }; return { ...state.turn, urls: [...state.turn.urls] } }),
     openAccountSettings: vi.fn(async () => {}),
     githubSettings: vi.fn<CentralApi["githubSettings"]>(async () => ({ configured: false, manageUrl: null, authorized: false, login: null, actAsYou: false })),
     githubPullRequest: vi.fn<CentralApi["githubPullRequest"]>(async () => ({ pullRequest: null })),
@@ -96,6 +100,14 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     }),
     members: vi.fn(async (_teamId: string) => state.members.map(member => ({ ...member }))),
     teamUsage: vi.fn(async (_teamId: string) => ({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
+    teamTurnSettings: vi.fn(async (_teamId: string) => teamTurnSettings()),
+    updateTeamTurnSettings: vi.fn(async (_teamId: string, settings: TeamTurnSettingsUpdate) => {
+      if (settings.urls.length === 0) state.teamTurn = { ...state.teamTurn, urls: [], secret: undefined }
+      else if (state.teamTurn.availability !== "available") throw new Error("Your own TURN server requires a Pro or Enterprise plan")
+      else if (settings.secret === undefined && state.teamTurn.secret === undefined) throw new Error("Enter the TURN shared secret")
+      else state.teamTurn = { ...state.teamTurn, urls: [...settings.urls], secret: settings.secret ?? state.teamTurn.secret }
+      return teamTurnSettings()
+    }),
     aiUsage: vi.fn(async (_teamId: string, query: AiUsageQuery) => aiUsageFixture(query)),
     aiUsageSessions: vi.fn(async (_teamId: string, query: { date: string; timeZone: string }): Promise<TeamAiUsageSessions> => ({ ...query, sessions: [], truncated: false })),
     setMemberRole: vi.fn(async (_teamId: string, userId: string, role: "admin" | "member") => {

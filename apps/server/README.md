@@ -243,10 +243,12 @@ again. Deployment secrets and startup options remain environment configuration.
 
 Site administration also manages the private TURN URL list through
 `GET /api/admin/turn-settings` and `PATCH /api/admin/turn-settings`. Both require
-the current site grant. PATCH replaces the ordered list with `{ "urls": [...] }`;
-an empty list disables TURN for new peer grants. URLs must use `turn:` or `turns:`
-with a host, an optional port, and an optional `transport=udp` or `transport=tcp`
-query. Changes are audited and take effect across API instances without restart.
+the current site grant. PATCH replaces the settings with
+`{ "urls": [...], "allowTeamServers": true }`; an empty list disables the site
+relay for new peer grants, and `allowTeamServers: false` stops Pro and Enterprise
+Teams from using their own TURN servers (`/api/teams/{teamId}/turn-settings`).
+URLs must use `turn:` or `turns:` with a host, an optional port, and an optional
+`transport=udp` or `transport=tcp` query. Changes are audited and take effect across API instances without restart.
 This list is not included in public site settings.
 
 The first API startup initializes the list from `DESKFLEET_TURN_URLS`, including

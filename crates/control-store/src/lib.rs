@@ -13,6 +13,7 @@ mod realtime;
 pub mod schema;
 mod search;
 mod site;
+mod team_turn;
 mod teams;
 mod turn_settings;
 mod turn_usage;
@@ -21,6 +22,7 @@ pub use github_app::{GithubAppAccess, GithubAppGrant, GithubAppStatus, GithubApp
 pub use identity::normalize_email;
 pub use peer_negotiations::{PeerCandidateState, PeerOfferState};
 pub use realtime::RealtimeRoute;
+pub use team_turn::TeamTurnServer;
 pub use turn_usage::{TurnUsage, TurnUsageSide};
 
 use chrono::{SecondsFormat, Utc};

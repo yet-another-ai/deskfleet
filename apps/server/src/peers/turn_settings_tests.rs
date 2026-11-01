@@ -1,6 +1,9 @@
 //! Runtime administration must affect new grants across API instances, not issued grants.
 use super::*;
 use actix_web::App;
+use base64::Engine;
+use hmac::{Hmac, KeyInit, Mac};
+use sha1::Sha1;
 
 async fn create_grant(fixture: &Fixture, state: web::Data<AppState>) -> Value {
     peers::create(
@@ -48,7 +51,8 @@ async fn turn_settings_http_authorization_and_live_grants() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    let first = json!({"urls": ["turn:first.example.test:3478?transport=udp"]});
+    let first =
+        json!({"urls": ["turn:first.example.test:3478?transport=udp"], "allowTeamServers": true});
     assert_eq!(call!(get, &json!({})).status(), StatusCode::FORBIDDEN);
     assert_eq!(call!(patch, &first).status(), StatusCode::FORBIDDEN);
     let user = fixture
@@ -60,9 +64,13 @@ async fn turn_settings_http_authorization_and_live_grants() {
         .user;
     fixture.a.store.grant_site_admin(&user.id).await.unwrap();
     let initial: Value = test::read_body_json(call!(get, &json!({}))).await;
-    assert_eq!(initial, json!({"urls": []}));
+    assert_eq!(initial, json!({"urls": [], "allowTeamServers": true}));
     assert_eq!(
-        call!(patch, &json!({"urls": ["https://invalid.test"]})).status(),
+        call!(
+            patch,
+            &json!({"urls": ["https://invalid.test"], "allowTeamServers": true})
+        )
+        .status(),
         StatusCode::BAD_REQUEST
     );
     let saved: Value = test::read_body_json(call!(patch, &first)).await;
@@ -74,7 +82,7 @@ async fn turn_settings_http_authorization_and_live_grants() {
     let second = json!({"urls": [
         "turn:second.example.test:3478?transport=udp",
         "turns:second.example.test:5349?transport=tcp"
-    ]});
+    ], "allowTeamServers": true});
     assert_eq!(call!(patch, &second).status(), StatusCode::OK);
     // An already-running independent API instance issues the new list immediately.
     let fresh = create_grant(&fixture, fixture.b.clone()).await;
@@ -90,7 +98,10 @@ async fn turn_settings_http_authorization_and_live_grants() {
     fixture.response(&id, json!({"sdp": sdp})).await;
     pending.await.unwrap().unwrap();
 
-    assert_eq!(call!(patch, &json!({"urls": []})).status(), StatusCode::OK);
+    assert_eq!(
+        call!(patch, &json!({"urls": [], "allowTeamServers": true})).status(),
+        StatusCode::OK
+    );
     let cleared = create_grant(&fixture, fixture.b.clone()).await;
     assert_eq!(cleared["iceServers"], json!([]));
     let public: Value = test::read_body_json(
@@ -130,6 +141,7 @@ async fn legacy_grants_recover_deployment_ice_without_replacing_empty_snapshots(
             &user.id,
             &deskfleet_protocol::control::TurnSettings {
                 urls: vec!["turn:replacement.example.test:3478".into()],
+                allow_team_servers: true,
             },
         )
         .await
@@ -189,6 +201,7 @@ async fn legacy_grants_recover_deployment_ice_without_replacing_empty_snapshots(
                 } else {
                     &[]
                 },
+                fixture.a.config.turn_secret.as_deref(),
             )
             .unwrap()
         };
@@ -251,7 +264,7 @@ async fn turn_settings_requires_a_deployment_secret_for_nonempty_lists() {
         test::TestRequest::patch()
             .uri("/api/admin/turn-settings")
             .insert_header(("Authorization", format!("Bearer {}", fixture.token)))
-            .set_json(json!({"urls": ["turn:relay.test:3478"]}))
+            .set_json(json!({"urls": ["turn:relay.test:3478"], "allowTeamServers": true}))
             .to_request(),
     )
     .await;
@@ -310,6 +323,113 @@ async fn turn_settings_requires_a_deployment_secret_for_nonempty_lists() {
             .unwrap()
             .urls
             .is_empty()
+    );
+    drop(app);
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn team_turn_server_replaces_site_relay_for_new_grants() {
+    let fixture = Fixture::with_turn_secret(Some("site-secret")).await;
+    let app = test::init_service(
+        App::new()
+            .app_data(fixture.a.clone())
+            .configure(crate::configure),
+    )
+    .await;
+    let team_uri = format!("/api/teams/{}/turn-settings", fixture.team);
+    macro_rules! call {
+        ($method:ident, $uri:expr, $body:expr) => {
+            test::call_service(
+                &app,
+                test::TestRequest::$method()
+                    .uri($uri)
+                    .insert_header(("Authorization", format!("Bearer {}", fixture.token)))
+                    .set_json($body)
+                    .to_request(),
+            )
+            .await
+        };
+    }
+    let response =
+        test::call_service(&app, test::TestRequest::get().uri(&team_uri).to_request()).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let initial: Value = test::read_body_json(call!(get, &team_uri, &json!({}))).await;
+    assert_eq!(
+        initial,
+        json!({"availability": "available", "urls": [], "secretConfigured": false})
+    );
+    let user = fixture
+        .a
+        .store
+        .authenticate(&fixture.token)
+        .await
+        .unwrap()
+        .user;
+    fixture.a.store.grant_site_admin(&user.id).await.unwrap();
+    let site = json!({"urls": ["turn:site.example.test:3478"], "allowTeamServers": true});
+    assert_eq!(
+        call!(patch, "/api/admin/turn-settings", &site).status(),
+        StatusCode::OK
+    );
+
+    let team_urls = json!(["turn:team.example.test:3478?transport=udp"]);
+    assert_eq!(
+        call!(patch, &team_uri, &json!({"urls": team_urls})).status(),
+        StatusCode::BAD_REQUEST
+    );
+    let saved: Value = test::read_body_json(call!(
+        patch,
+        &team_uri,
+        &json!({"urls": team_urls, "secret": "team-secret"})
+    ))
+    .await;
+    assert_eq!(
+        saved,
+        json!({"availability": "available", "urls": team_urls, "secretConfigured": true})
+    );
+
+    // The Team server replaces the site relay and is signed with the Team secret.
+    let issued = create_grant(&fixture, fixture.b.clone()).await;
+    assert_eq!(issued["relayAllowed"], true);
+    assert!(issued["relayDeniedReason"].is_null());
+    assert_eq!(issued["iceServers"].as_array().unwrap().len(), 1);
+    assert_eq!(issued["iceServers"][0]["urls"], team_urls);
+    let username = issued["iceServers"][0]["username"].as_str().unwrap();
+    let mut mac = Hmac::<Sha1>::new_from_slice(b"team-secret").unwrap();
+    mac.update(username.as_bytes());
+    assert_eq!(
+        issued["iceServers"][0]["credential"],
+        base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes())
+    );
+
+    // Disabling Team servers restores the site relay for new grants only.
+    let disabled = json!({"urls": ["turn:site.example.test:3478"], "allowTeamServers": false});
+    assert_eq!(
+        call!(patch, "/api/admin/turn-settings", &disabled).status(),
+        StatusCode::OK
+    );
+    let site_grant = create_grant(&fixture, fixture.a.clone()).await;
+    assert_eq!(site_grant["iceServers"][0]["urls"], site["urls"]);
+    let peer = issued["peerId"].as_str().unwrap();
+    assert_eq!(
+        json!(fixture.a.store.peer_ice_servers(peer).await.unwrap()),
+        issued["iceServers"]
+    );
+    assert_eq!(
+        call!(
+            patch,
+            &team_uri,
+            &json!({"urls": team_urls, "secret": "other"})
+        )
+        .status(),
+        StatusCode::CONFLICT
+    );
+    let removed: Value = test::read_body_json(call!(patch, &team_uri, &json!({"urls": []}))).await;
+    assert_eq!(
+        removed,
+        json!({"availability": "disabledBySite", "urls": [], "secretConfigured": false})
     );
     drop(app);
     fixture.close().await;

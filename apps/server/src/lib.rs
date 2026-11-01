@@ -112,6 +112,14 @@ pub fn configure(config: &mut ServiceConfig) {
                 web::post().to(api::transfer_ownership),
             )
             .route("/teams/{teamId}/usage", web::get().to(api::team_usage))
+            .route(
+                "/teams/{teamId}/turn-settings",
+                web::get().to(turn_settings::read_team),
+            )
+            .route(
+                "/teams/{teamId}/turn-settings",
+                web::patch().to(turn_settings::update_team),
+            )
             .route("/teams/{teamId}/search", web::get().to(search::search))
             .route("/teams/{teamId}/ai-usage", web::get().to(ai_usage::summary))
             .route(

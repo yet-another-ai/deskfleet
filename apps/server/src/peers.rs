@@ -6,7 +6,9 @@ use crate::{
 };
 use actix_web::{HttpRequest, web};
 use base64::Engine;
-use deskfleet_control_store::{AuthSession, now_ms, policies::MachineAction, timestamp};
+use deskfleet_control_store::{
+    AuthSession, TeamTurnServer, now_ms, policies::MachineAction, timestamp,
+};
 use deskfleet_protocol::control::{IceServer, PeerAuthorization, PeerTarget, PeerTransport};
 use hmac::{Hmac, KeyInit, Mac};
 use sdp::description::{common::Attribute, session::SessionDescription};
@@ -35,9 +37,14 @@ pub async fn create(
 ) -> Result<web::Json<Value>> {
     let (authorization, a, expires) = create_grant(&req, &s, &b, PeerTransport::Webrtc).await?;
     let id = &authorization.peer_id;
-    let relay_denied_reason = s.store.relay_denied_reason(&b.team_id).await?;
+    // A Team's own server replaces the site relay and never consumes allowance.
+    let team_turn = s.store.team_turn_server(&b.team_id).await?;
+    let relay_denied_reason = match team_turn {
+        Some(_) => None,
+        None => s.store.relay_denied_reason(&b.team_id).await?,
+    };
     let relay_allowed = relay_denied_reason.is_none();
-    let ice_servers = grant_ice_servers(&s, id, expires, relay_allowed).await?;
+    let ice_servers = grant_ice_servers(&s, id, expires, relay_allowed, team_turn.as_ref()).await?;
     s.store.save_peer(&authorization, &a.id, expires).await?;
     s.store.save_peer_relay_decision(id, relay_allowed).await?;
     let ice_servers = s.store.save_peer_ice_servers(id, &ice_servers).await?;
@@ -97,13 +104,24 @@ async fn grant_ice_servers(
     peer_id: &str,
     expires: i64,
     relay_allowed: bool,
+    team_turn: Option<&TeamTurnServer>,
 ) -> Result<Vec<IceServer>> {
+    if let Some(team) = team_turn {
+        return ice_servers(
+            &state.config,
+            peer_id,
+            expires,
+            &team.urls,
+            Some(&team.secret),
+        );
+    }
     let turn_urls = if relay_allowed {
         state.store.turn_settings().await?.urls
     } else {
         Vec::new()
     };
-    ice_servers(&state.config, peer_id, expires, &turn_urls)
+    let secret = state.config.turn_secret.as_deref();
+    ice_servers(&state.config, peer_id, expires, &turn_urls, secret)
 }
 
 async fn issued_ice_servers(
@@ -124,16 +142,20 @@ async fn issued_ice_servers(
     let expires = chrono::DateTime::parse_from_rfc3339(&authorization.expires_at)
         .map_err(|_| ApiError::internal())?
         .timestamp_millis();
-    let servers = ice_servers(&state.config, peer_id, expires, turn_urls)?;
+    let secret = state.config.turn_secret.as_deref();
+    let servers = ice_servers(&state.config, peer_id, expires, turn_urls, secret)?;
     // Concurrent recovery on another API instance must return the same snapshot.
     Ok(state.store.save_peer_ice_servers(peer_id, &servers).await?)
 }
 
+/// STUN plus TURN REST API credentials signed by the relay's shared secret:
+/// the site's deployment secret, or a Team's own secret for its own server.
 fn ice_servers(
     config: &ServerConfig,
     peer_id: &str,
     expires: i64,
     turn_urls: &[String],
+    turn_secret: Option<&str>,
 ) -> Result<Vec<IceServer>> {
     let mut servers = Vec::new();
     if !config.stun_urls.is_empty() {
@@ -144,7 +166,7 @@ fn ice_servers(
         });
     }
     if !turn_urls.is_empty() {
-        let key = config.turn_secret.as_ref().ok_or_else(ApiError::internal)?;
+        let key = turn_secret.ok_or_else(ApiError::internal)?;
         let username = format!("{}:{peer_id}", expires / 1000);
         let mut mac =
             Hmac::<Sha1>::new_from_slice(key.as_bytes()).map_err(|_| ApiError::internal())?;
@@ -407,6 +429,7 @@ pub(crate) mod tests {
                 "turn:turn.example.com:3478?transport=udp".into(),
                 "turn:turn.example.com:3478?transport=tcp".into(),
             ],
+            Some("shared-secret"),
         )
         .unwrap();
         assert_eq!(servers.len(), 2);
@@ -437,7 +460,7 @@ pub(crate) mod tests {
     #[test]
     fn ice_servers_omit_entries_when_lists_are_empty() {
         assert!(
-            ice_servers(&config(vec![], vec![], None), "peer", 1, &[])
+            ice_servers(&config(vec![], vec![], None), "peer", 1, &[], None)
                 .unwrap()
                 .is_empty()
         );
@@ -446,10 +469,30 @@ pub(crate) mod tests {
             "peer",
             1,
             &[],
+            None,
         )
         .unwrap();
         assert_eq!(stun_only.len(), 1);
         assert!(stun_only[0].credential.is_none());
+    }
+    #[test]
+    fn ice_servers_sign_credentials_with_the_relays_own_secret() {
+        let site = config(vec![], vec![], Some("site-secret"));
+        let urls = ["turn:team-relay.example.com:3478".to_owned()];
+        let credential = |secret| {
+            ice_servers(&site, "peer-1", 1_700_000_000_000, &urls, Some(secret)).unwrap()[0]
+                .credential
+                .clone()
+                .unwrap()
+        };
+        // coturn's TURN REST API: base64(HMAC-SHA1(secret, "expiry:peer")).
+        let mut mac = Hmac::<Sha1>::new_from_slice(b"team-secret").unwrap();
+        mac.update(b"1700000000:peer-1");
+        let expected =
+            base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+        assert_eq!(credential("team-secret"), expected);
+        assert_ne!(credential("site-secret"), expected);
+        assert!(ice_servers(&site, "peer-1", 1, &urls, None).is_err());
     }
     #[test]
     fn desktop_control_requires_an_explicit_boolean() {

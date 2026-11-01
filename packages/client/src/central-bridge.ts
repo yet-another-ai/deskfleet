@@ -4,7 +4,7 @@ import { deserializeCentralRequestError, serializeCentralRequestError, type Cent
 
 export const CENTRAL_METHODS = [
   "search", "scheduleSnapshot",
-  "status", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "aiUsage", "aiUsageSessions", "openAccountSettings", "githubSettings", "manageGithub", "authorizeGithubApp", "setGithubActAsYou", "githubPullRequest", "billing", "checkout", "billingPortal", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "transferOwnership", "machines", "renameMachine", "removeMachine", "localEnrollment", "enrollLocal", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
+  "status", "login", "logout", "site", "teams", "createTeam", "enrollHeadless", "members", "teamUsage", "teamTurnSettings", "updateTeamTurnSettings", "aiUsage", "aiUsageSessions", "openAccountSettings", "githubSettings", "manageGithub", "authorizeGithubApp", "setGithubActAsYou", "githubPullRequest", "billing", "checkout", "billingPortal", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "transferOwnership", "machines", "renameMachine", "removeMachine", "localEnrollment", "enrollLocal", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
 ] as const satisfies readonly (keyof CentralApi)[]
 
 export type CentralIpcResult = { ok: true; value: unknown } | {

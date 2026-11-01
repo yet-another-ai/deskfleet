@@ -132,6 +132,7 @@ pub enum TeamAction {
     Rename,
     Delete,
     ManageMembers,
+    ManageTurnServers,
     ManageBilling,
     TransferOwnership,
 }
@@ -162,7 +163,7 @@ impl Policy for TeamPolicy {
             | TeamAction::ReadUsage
             | TeamAction::ReadMachines
             | TeamAction::EnrollMachine => self.role.is_some(),
-            TeamAction::Rename | TeamAction::ManageMembers => {
+            TeamAction::Rename | TeamAction::ManageMembers | TeamAction::ManageTurnServers => {
                 matches!(self.role, Some(TeamRole::Owner | TeamRole::Admin))
             }
             TeamAction::Delete | TeamAction::ManageBilling | TeamAction::TransferOwnership => {

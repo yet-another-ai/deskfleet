@@ -192,14 +192,25 @@ test("loads public settings and saves site settings through the admin endpoint",
 
 test("loads, replaces, and clears the ordered TURN URL list through its admin endpoint", async () => {
   const f = setup()
-  const settings = { urls: ["turn:second.example:3478?transport=udp", "turns:first.example:5349?transport=tcp"] }
-  f.responses.push(settings, settings, { urls: [] })
+  const settings = { urls: ["turn:second.example:3478?transport=udp", "turns:first.example:5349?transport=tcp"], allowTeamServers: true }
+  const cleared = { urls: [], allowTeamServers: false }
+  f.responses.push(settings, settings, cleared)
   expect(await f.client.turnSettings()).toEqual(settings)
   expect(await f.client.updateTurnSettings(settings)).toEqual(settings)
-  expect(await f.client.updateTurnSettings({ urls: [] })).toEqual({ urls: [] })
+  expect(await f.client.updateTurnSettings(cleared)).toEqual(cleared)
   expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "GET" }))
   expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(settings) }))
-  expect(f.fetch).toHaveBeenNthCalledWith(3, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ urls: [] }) }))
+  expect(f.fetch).toHaveBeenNthCalledWith(3, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(cleared) }))
+})
+
+test("reads and writes a Team's TURN server through its Team endpoint", async () => {
+  const f = setup()
+  const settings = { availability: "available" as const, urls: ["turn:relay.example:3478"], secretConfigured: true }
+  f.responses.push(settings, settings)
+  expect(await f.client.teamTurnSettings("team/1")).toEqual(settings)
+  expect(await f.client.updateTeamTurnSettings("team/1", { urls: settings.urls, secret: "north-secret" })).toEqual(settings)
+  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/teams/team%2F1/turn-settings", expect.objectContaining({ method: "GET" }))
+  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team%2F1/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ urls: settings.urls, secret: "north-secret" }) }))
 })
 
 test("browser requests use cookie authentication and CSRF, with no bearer WebSocket frame", async () => {

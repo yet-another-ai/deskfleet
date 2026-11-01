@@ -1,4 +1,5 @@
 //! Private installation-wide TURN endpoints and the ICE snapshot of each peer grant.
+//! Team-owned TURN servers live in `team_turn`.
 use crate::{
     ControlStore, Error, Result, now_ms, one,
     policies::{SiteAction, SitePolicy, authorize},
@@ -11,10 +12,11 @@ use serde_json::json;
 fn settings(row: &QueryResult) -> Result<TurnSettings> {
     Ok(TurnSettings {
         urls: serde_json::from_value(row.try_get("", "urls")?)?,
+        allow_team_servers: row.try_get("", "allow_team_servers")?,
     })
 }
 
-fn turn_url(input: &str) -> Result<String> {
+pub(crate) fn turn_url(input: &str) -> Result<String> {
     let value = input.trim();
     let invalid = || {
         Error::Invalid(
@@ -50,23 +52,18 @@ fn turn_url(input: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
-fn normalized(urls: &[String]) -> Result<TurnSettings> {
-    Ok(TurnSettings {
-        urls: urls
-            .iter()
-            .map(|value| turn_url(value))
-            .collect::<Result<_>>()?,
-    })
+pub(crate) fn turn_urls(urls: &[String]) -> Result<Vec<String>> {
+    urls.iter().map(|value| turn_url(value)).collect()
 }
 
 impl ControlStore {
     /// Initialize from deployment configuration only once, including an empty list.
     pub async fn seed_turn_settings(&self, urls: &[String]) -> Result<()> {
-        let settings = normalized(urls)?;
+        let urls = turn_urls(urls)?;
         self.db
             .execute_raw(sql(
                 "INSERT INTO cp_turn_settings(singleton, urls) VALUES(TRUE, $1) ON CONFLICT(singleton) DO NOTHING",
-                vec![json!(settings.urls).into()],
+                vec![json!(urls).into()],
             ))
             .await?;
         Ok(())
@@ -77,7 +74,7 @@ impl ControlStore {
         settings(
             &one(
                 &self.db,
-                "SELECT urls FROM cp_turn_settings WHERE singleton",
+                "SELECT urls, allow_team_servers FROM cp_turn_settings WHERE singleton",
                 vec![],
             )
             .await?,
@@ -107,18 +104,21 @@ impl ControlStore {
             .await?
             .is_some();
         authorize(&SitePolicy::new(is_admin), SiteAction::UpdateTurnSettings)?;
-        let after = normalized(&input.urls)?;
+        let after = TurnSettings {
+            urls: turn_urls(&input.urls)?,
+            allow_team_servers: input.allow_team_servers,
+        };
         let before = settings(
             &one(
                 &tx,
-                "SELECT urls FROM cp_turn_settings WHERE singleton FOR UPDATE",
+                "SELECT urls, allow_team_servers FROM cp_turn_settings WHERE singleton FOR UPDATE",
                 vec![],
             )
             .await?,
         )?;
         tx.execute_raw(sql(
-            "UPDATE cp_turn_settings SET urls=$1 WHERE singleton",
-            vec![json!(after.urls).into()],
+            "UPDATE cp_turn_settings SET urls=$1, allow_team_servers=$2 WHERE singleton",
+            vec![json!(after.urls).into(), after.allow_team_servers.into()],
         ))
         .await?;
         tx.execute_raw(sql(

@@ -1,10 +1,11 @@
-//! Private, runtime TURN URL configuration for site administrators.
+//! Private, runtime TURN configuration: site URLs for site administrators and
+//! each eligible Team's own server for that Team's owners and administrators.
 use crate::{
     AppState, auth,
     error::{ApiError, Result},
 };
 use actix_web::{HttpRequest, web};
-use deskfleet_protocol::control::TurnSettings;
+use deskfleet_protocol::control::{TeamTurnSettings, TeamTurnSettingsUpdate, TurnSettings};
 
 pub async fn initialize(
     store: &deskfleet_control_store::ControlStore,
@@ -50,6 +51,35 @@ pub async fn update(
         state
             .store
             .update_turn_settings(&session.user.id, &body)
+            .await?,
+    ))
+}
+
+pub async fn read_team(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    team_id: web::Path<String>,
+) -> Result<web::Json<TeamTurnSettings>> {
+    let session = auth::user(&req, &state).await?;
+    Ok(web::Json(
+        state
+            .store
+            .team_turn_settings(&session.user.id, &team_id)
+            .await?,
+    ))
+}
+
+pub async fn update_team(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    team_id: web::Path<String>,
+    body: web::Json<TeamTurnSettingsUpdate>,
+) -> Result<web::Json<TeamTurnSettings>> {
+    let session = auth::user(&req, &state).await?;
+    Ok(web::Json(
+        state
+            .store
+            .update_team_turn_settings(&session.user.id, &team_id, &body)
             .await?,
     ))
 }

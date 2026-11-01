@@ -473,7 +473,8 @@ STUN. An empty ICE list is valid: peers then try direct candidates only.
 Clients and daemons take ICE servers only from peer grants. The first API startup
 seeds the persisted TURN list from `DESKFLEET_TURN_URLS`. Afterward, site
 administrators can add, edit, or remove URLs in Site administration or replace
-the list through `PATCH /api/admin/turn-settings` with `{ "urls": [...] }`.
+the list through `PATCH /api/admin/turn-settings` with
+`{ "urls": [...], "allowTeamServers": true }`.
 `GET /api/admin/turn-settings` reads that private list. Both endpoints require a
 current site administrator grant. Updates take effect for new peer grants across
 API instances without restart. Saving an empty list disables new TURN grants and
@@ -488,6 +489,26 @@ not stop TURN servers or disconnect existing peers. STUN changes still use
 TURN forwards DTLS. It does not decrypt sessions, and the API never sees the
 DTLS private keys. Relay ports are the TURN server's configuration; the API
 does not allocate them and does not have a port-range variable.
+
+### Team TURN servers
+
+Team owners and administrators can configure their own TURN REST server in Team
+settings, or through `GET` and `PATCH /api/teams/{team}/turn-settings` with
+`{ "urls": [...], "secret": "..." }`. The secret is write-only: responses report
+only `secretConfigured`. Omit `secret` to keep the stored one, and send an empty
+URL list to remove the server and its secret. The API signs that Team's
+credentials as above, using the Team's secret. The Team's server must use the
+same REST mechanism (`use-auth-secret` and `static-auth-secret` on coturn) and
+be reachable by both peers.
+
+While a Team server is in use, it replaces the site list for that Team's new
+grants, with no fallback to the site relay. Its traffic isn't reported to this
+deployment's usage collection. Self-hosted Teams are eligible; on hosted plans,
+Pro and Enterprise are. Site administrators can turn the feature off with
+**Allow teams to use their own TURN servers** in Site administration, or with
+`"allowTeamServers": false` in `PATCH /api/admin/turn-settings`. It is on by
+default. Turning it off keeps saved Team servers unused until it is turned back
+on; Teams can still remove them.
 
 ### Team TURN usage collection
 

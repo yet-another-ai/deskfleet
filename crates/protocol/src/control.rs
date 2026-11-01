@@ -23,10 +23,50 @@ pub struct SiteSettings {
 }
 
 /// Administrator-managed TURN endpoints; credentials remain deployment configuration.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// `allow_team_servers` lets eligible Teams replace these endpoints with their own.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TurnSettings {
     pub urls: Vec<String>,
+    pub allow_team_servers: bool,
+}
+
+impl Default for TurnSettings {
+    fn default() -> Self {
+        Self {
+            urls: Vec::new(),
+            allow_team_servers: true,
+        }
+    }
+}
+
+/// Whether a Team's own TURN server is used for its new peer grants.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum TeamTurnAvailability {
+    Available,
+    PlanRequired,
+    DisabledBySite,
+}
+
+/// A Team's own TURN REST API server. The shared secret is never returned.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamTurnSettings {
+    pub availability: TeamTurnAvailability,
+    pub urls: Vec<String>,
+    pub secret_configured: bool,
+}
+
+/// An empty URL list removes the Team server and its secret. A missing secret
+/// keeps the stored one and is required only when none is stored.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TeamTurnSettingsUpdate {
+    pub urls: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub secret: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
@@ -194,6 +234,9 @@ pub fn typescript() -> String {
         User::decl(&config),
         SiteSettings::decl(&config),
         TurnSettings::decl(&config),
+        TeamTurnAvailability::decl(&config),
+        TeamTurnSettings::decl(&config),
+        TeamTurnSettingsUpdate::decl(&config),
         Team::decl(&config),
         Machine::decl(&config),
         PeerActor::decl(&config),

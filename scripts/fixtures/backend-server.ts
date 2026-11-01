@@ -28,7 +28,7 @@ export async function startBackendFixture(options: { databaseUrl?: string; binar
   async function configureTurnSettings(login: FixtureLogin): Promise<void> {
     // CI reuses its database for direct and relay runs. Environment URLs only
     // seed a new database, so each smoke invocation must explicitly set its list.
-    const settings = { urls: (process.env.DESKFLEET_TURN_URLS ?? "").split(",").map(url => url.trim()).filter(Boolean) }
+    const settings = { urls: (process.env.DESKFLEET_TURN_URLS ?? "").split(",").map(url => url.trim()).filter(Boolean), allowTeamServers: true }
     const execute = promisify(execFile)
     const siteAdmin = (action: "grant" | "revoke") => execute(binary, ["site-admin", action, login.user.id], {
       cwd: root, env: { ...process.env, DATABASE_URL: databaseUrl },
