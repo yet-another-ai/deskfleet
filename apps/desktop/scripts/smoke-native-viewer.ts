@@ -9,6 +9,7 @@ import { createInterface } from "node:readline"
 // The viewer uses its normal decoder selection. Explicit diagnostic decoder
 // settings are inherited, so software and hardware runs remain distinguishable.
 // DESKFLEET_SMOKE_DURATION_SECONDS observes the valid stream for 1..300 seconds.
+// DESKFLEET_SMOKE_VIEWER can point at the executable inside a packaged app.
 const root = resolve(import.meta.dirname, "../../..")
 const hardware = process.env.DESKFLEET_SMOKE_HARDWARE === "1"
 assert.ok(!hardware || process.platform === "linux", "generated hardware smoke requires Linux")
@@ -43,7 +44,7 @@ interface Stats {
 }
 
 try {
-  const viewer = launch("viewer", join(root, "target/debug", `deskfleet-viewer${suffix}`))
+  const viewer = launch("viewer", process.env.DESKFLEET_SMOKE_VIEWER ?? join(root, "target/debug", `deskfleet-viewer${suffix}`))
   const source = launch("source", join(root, "target/debug/examples", `media_smoke${suffix}`))
   const viewerLines = createInterface({ input: viewer.stdout }), sourceLines = createInterface({ input: source.stdout })
   result = await new Promise<Stats>((resolveResult, rejectResult) => {

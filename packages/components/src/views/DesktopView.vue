@@ -17,8 +17,11 @@ import { useDesktopInput } from "../composables/useDesktopInput.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { errorPresentation } from "../services/error-presentation.ts"
+import { useFeatureGate } from "../services/analytics.ts"
 
 const platformClient = usePlatformClient()
+const nativePresenterEnabled = useFeatureGate("native_presentor")
+const showNative = computed(() => !!platformClient.desktop.openNative && nativePresenterEnabled.value)
 
 const props = withDefaults(defineProps<{ machineId: string; visible?: boolean }>(), { visible: true })
 const { t } = useI18n()
@@ -62,7 +65,7 @@ const codecLabel = computed(() => chosenCodec.value ? desktopCodecLabel(chosenCo
 const active = computed(() => ["connecting", "starting", "connected"].includes(state.value))
 const canConnect = computed(() => props.visible && local.value && !loading.value && !active.value && !nativeOpening.value
   && fleet.localDesktopTarget.online && displayId.value !== null && chosenCodec.value !== null)
-const canOpenNative = computed(() => !!platformClient.desktop.openNative && props.visible && local.value
+const canOpenNative = computed(() => showNative.value && props.visible && local.value
   && !loading.value && !active.value && !nativeOpening.value && fleet.localDesktopTarget.online
   && capabilities.value?.displays.some(display => display.id === displayId.value && display.codecs.includes("h264")))
 
@@ -235,7 +238,7 @@ const errorDescription = computed(() => errorPresentation(detail.value, failure.
         <div v-if="local" class="mt-2 flex flex-wrap items-center justify-center gap-2">
           <UiButton v-if="active" type="button" @click="connection.disconnect()">{{ t("desktop.disconnect") }}</UiButton>
           <UiButton variant="primary" v-else type="button" :disabled="!canConnect" @click="connect">{{ t("desktop.connect") }}</UiButton>
-          <UiButton v-if="platformClient.desktop.openNative" type="button" data-native-desktop :disabled="!canOpenNative" :title="t('desktop.nativeHint')" @click="openNative">{{ t("desktop.openNative") }}</UiButton>
+          <UiButton v-if="showNative" type="button" data-native-desktop :disabled="!canOpenNative" :title="t('desktop.nativeHint')" @click="openNative">{{ t("desktop.openNative") }}</UiButton>
           <UiButton variant="ghost" size="sm" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:op-40" :disabled="loading || active || nativeOpening" @click="refresh">
             <RefreshCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("desktop.retry") }}
           </UiButton>

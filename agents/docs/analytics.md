@@ -215,6 +215,7 @@ Feature gates control frontend rollout through the shared analytics helpers.
 | Gate | Controls | Default |
 | --- | --- | --- |
 | `global_search` | Search navigation, page access, and Team search requests | Off |
+| `native_presentor` | Native desktop window entry and new launches on Linux, Windows, and macOS | Off |
 
 Create `global_search` in the Statsig project with a 0% rollout before targeting
 test users or Teams. Web and Electron use the same gate. A missing or blank
@@ -224,6 +225,16 @@ clears its results, and prevents pending responses from repopulating them.
 Direct `/search` links cannot bypass the gate. This frontend rollout gate does
 not pause central history indexing or daemon schedule replication, and does
 not replace the server's Team authorization.
+
+Keep `native_presentor` at 0% rollout except for explicitly targeted testers
+while the native viewer is validated over several future versions. The native
+window action requires both this gate and the Electron host capability. Missing
+configuration, an unavailable evaluation, pending identity evaluation, or a gate
+that does not pass hides the action; the click handler also checks its current
+value before launching. Closing the gate prevents new windows without closing
+already running viewers. The embedded browser viewer remains available. This
+rollout gate does not replace the existing Team peer grants or desktop control
+authorization.
 
 ```ts
 import { useFeatureGate, useExperimentParameter } from "../services/analytics.ts"

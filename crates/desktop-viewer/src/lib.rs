@@ -1,8 +1,10 @@
 //! Native desktop viewer. Network, decoding and presentation run independently.
 
-#[cfg(any(target_os = "windows", test))]
+#[cfg(any(target_os = "windows", target_os = "macos", test))]
 mod h264;
 mod input;
+#[cfg(target_os = "macos")]
+mod macos_decoder;
 mod presentation;
 mod protocol;
 mod queue;
@@ -43,7 +45,15 @@ pub fn run() -> Result<(), Error> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(io::stderr)
         .try_init();
-    let event_loop = EventLoop::<WindowEvent>::with_user_event().build()?;
+    let mut event_loop = EventLoop::<WindowEvent>::with_user_event();
+    #[cfg(target_os = "macos")]
+    {
+        use winit::platform::macos::EventLoopBuilderExtMacOS;
+        // AppKit's default menu consumes Command-Q/H before the remote input
+        // handler can forward them. The native close button still closes us.
+        event_loop.with_default_menu(false);
+    }
+    let event_loop = event_loop.build()?;
     let proxy = event_loop.create_proxy();
     let frames = Arc::new(Mutex::new(queue::FrameQueue::default()));
     let (commands_tx, commands) = mpsc::channel(32);

@@ -58,7 +58,7 @@ return {
   applications: applicationsApi(),
   updates: updatesApi(),
   ...(process.platform === "win32" ? { windowsDesktopService: windowsDesktopServiceApi() } : {}),
-  ...(process.platform === "linux" || process.platform === "win32" ? { nativeDesktop: { open: (request: import("@deskfleet/client/native-desktop").NativeDesktopRequest) => ipcRenderer.invoke(NATIVE_DESKTOP_CHANNEL, request) as Promise<void> } } : {}),
+  ...(process.platform === "linux" || process.platform === "win32" || process.platform === "darwin" ? { nativeDesktop: { open: (request: import("@deskfleet/client/native-desktop").NativeDesktopRequest) => ipcRenderer.invoke(NATIVE_DESKTOP_CHANNEL, request) as Promise<void> } } : {}),
   files: filesApi(),
   ports: portsApi(),
   localChannels: localChannelsApi(),

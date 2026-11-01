@@ -47,6 +47,11 @@ files:
   - package.json
 
 mac:
+  extraResources:
+    - from: out/native/deskfleet-viewer
+      to: native/deskfleet-viewer
+  binaries:
+    - Contents/Resources/native/deskfleet-viewer
   category: public.app-category.developer-tools
   hardenedRuntime: true
   extendInfo:

@@ -25,6 +25,25 @@ wgpu = "30.0.1"
 winit = "0.30.13"
 pollster = "0.4"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation = { workspace = true, features = [
+    "CFNumber", "CFString", "CFDictionary",
+] }
+objc2-core-media = { workspace = true, features = [
+    "CMBlockBuffer", "CMFormatDescription", "CMSampleBuffer", "CMTime",
+] }
+objc2-core-video = { workspace = true, features = [
+    "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn",
+] }
+objc2-video-toolbox = { workspace = true, features = [
+    "VTDecompressionSession", "VTDecompressionProperties", "VTErrors", "VTSession",
+] }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2-video-toolbox = { workspace = true, features = [
+    "VTCompressionSession", "VTCompressionProperties",
+] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Media_MediaFoundation",

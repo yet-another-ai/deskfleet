@@ -918,8 +918,11 @@ trickle ICE, reliable ordered DataChannels, RTP media tracks, and RTCP feedback.
 `PeerSessions` gives the daemon ownership of peer creation and shutdown. These
 are exposed to the local Electron client over authenticated Unix-domain sockets
 or Windows named pipes. Central server signaling, remote enrollment, and remote
-operation routing use the authenticated control plane. Chromium receives the media into a
-standard HTML video element; a separate native GPU rendering window is deferred.
+operation routing use the authenticated control plane. Chromium receives media
+into a standard HTML video element. Linux, Windows, and macOS Electron clients
+also offer a separate native H.264 window. Electron owns its Team grant and
+signaling over private control pipes; the Rust viewer owns receive, decode,
+input, and GPU presentation. Its lifetime is independent of the hosted daemon.
 See [native media](media.md) for codec support, capture lifecycle, and validation.
 
 The [WebRTC key exchange design](webrtc-security.md) uses trusted HTTPS/WSS
@@ -1153,6 +1156,7 @@ The Rust workspace contains:
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
 | `deskfleet-server` | Actix Web application in `apps/server` |
 | `deskfleet-desktop-service` | Thin Windows service executable in `apps/desktop-service`, hosting native desktop workers |
+| `deskfleet-desktop-viewer` | Native H.264 receive/decode, shallow FIFO presentation, and remote input; thin viewer executable |
 
 Dependencies flow `server -> protocol -> model`, `server -> control-store -> protocol`,
 `node -> store -> model/migration` for local catalog persistence,

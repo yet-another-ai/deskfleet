@@ -428,13 +428,17 @@ cannot inject input.
 
 ## Native desktop window
 
-The Linux and Windows Electron clients offer **Open in native window** for displays that
-advertise H.264. It opens `deskfleet-viewer`, a Rust executable whose thin entry
+The Linux, Windows, and macOS Electron clients offer **Open in native window**
+when the `native_presentor` Statsig gate passes and the display advertises H.264.
+The gate defaults off and remains in place for testing across several future
+versions; see [analytics rollout](analytics.md#feature-gates-and-experiments).
+Closing the gate blocks new launches while existing native windows retain their
+normal session lifecycle. Team authorization remains independent of the gate.
+It opens `deskfleet-viewer`, a Rust executable whose thin entry
 point calls the reusable `deskfleet-desktop-viewer` library. The viewer owns its
 winit window, receive-only WebRTC peer, decoder, and wgpu renderer. The current
 native receive path supports H.264 video and optional mouse/keyboard control;
-it does not negotiate system audio. Other desktop platforms continue using the
-embedded browser viewer.
+it does not negotiate system audio. The embedded browser viewer remains available.
 
 Electron's main process owns Team authorization, capability discovery, peer
 grants, signaling, and remote capture startup. It exchanges only control,
@@ -473,6 +477,18 @@ output surfaces and fails visibly if acceleration cannot start. The explicit
 without a D3D11 manager. Windows requires the Media Foundation components
 (including the Media Feature Pack on Windows N editions), not GStreamer.
 
+On macOS, VideoToolbox decodes the same bounded H.264 RTP assembly into BGRA
+pixel buffers, copied row by row into owned RGBA. The default decoder requires
+hardware acceleration; `DESKFLEET_VIEWER_DECODER=software` explicitly disables
+hardware decoding for diagnostics. No additional media runtime is installed.
+The decode worker submits each access unit synchronously, with asynchronous and
+temporal processing disabled, so output does not wait for a later picture or
+EOS. Parameter-set changes recreate the decompression session. Session
+invalidation precedes releasing callback state. The viewer's AppKit menu is
+disabled so Command-key shortcuts can reach the remote input handler.
+The synchronous callback lifetime follows Apple's
+[VideoToolbox decoding contract](https://developer.apple.com/documentation/videotoolbox/vtdecompressionsessiondecodeframe%28_%3Asamplebuffer%3Aflags%3Aframerefcon%3Ainfoflagsout%3A%29).
+
 Decoded images are copied into owned RGBA pixels and uploaded to a wgpu texture
 for scaling and display. This implementation has GPU readback and upload; it is
 not a shared-surface or zero-copy decoder integration. The decoder's reference
@@ -493,9 +509,10 @@ the viewer attaches `wp_presentation` feedback to the same surface commit as
 the image and allows at most one outstanding commit. A displayed or discarded
 feedback event releases that position. If the compositor lacks this extension,
 `wl_surface.frame` supplies pacing without claiming actual display feedback.
-X11 and Windows use the swapchain's FIFO latency hint; that hint alone does not prove a
-strict one-frame system presentation queue. GPU command completion is never
-reported as actual display completion.
+X11, Windows, and macOS use the swapchain's FIFO latency hint; that hint alone
+does not prove a strict one-frame system presentation queue. On macOS, wgpu's
+Metal backend uses display synchronization and two CAMetalLayer drawables for
+this hint. GPU command completion is never reported as actual display completion.
 
 Status distinguishes decoded, submitted, and candidate-drop counts. Wayland
 presentation mode additionally reports displayed/discarded presentation events;
@@ -507,8 +524,10 @@ latency by themselves.
 ### Build and validation
 
 `mise run desktop:dev` builds the native viewer alongside the native addon.
-Linux and Windows packaging stage the release viewer executable outside ASAR
-(`native/deskfleet-viewer.exe` on Windows). The Linux client also
+Linux, Windows, and macOS packaging stage the release viewer executable outside ASAR
+(`native/deskfleet-viewer.exe` on Windows). On macOS it lives at
+`Contents/Resources/native/deskfleet-viewer` and is included in application
+signing. The Linux client also
 needs the GStreamer app, RTP, H.264 parser, video conversion, and hardware decoder
 plugins on the receiving machine.
 
@@ -521,7 +540,7 @@ mise exec -- cargo test -p deskfleet-linux-media --locked decoder::tests -- --ig
 
 The smoke command opens a real native window and negotiates fixture H.264 video
 with another Rust peer. It checks decode and wgpu submission, without desktop
-capture or input injection. `DESKFLEET_VIEWER_DECODER=software` explicitly selects
+capture or input injection. On Linux, `DESKFLEET_VIEWER_DECODER=software` explicitly selects
 GStreamer's `avdec_h264` for diagnostics; this requires the libav plugin and is
 never an automatic fallback. Runtime decoder tests separately exercise hardware
 encoding/decoding, delivery of an initial IDR and a final dependent P picture
@@ -541,6 +560,34 @@ mise exec -- cargo test -p deskfleet-desktop-viewer --lib --locked windows_decod
 
 The decoder setup follows Microsoft's [H.264 decoder contract](https://learn.microsoft.com/en-us/windows/win32/medfound/h-264-video-decoder)
 and [low-latency property type requirement](https://learn.microsoft.com/en-us/windows/win32/medfound/codecapi-avlowlatencymode).
+
+macOS runtime tests exercise an idle fixture IDR, a synthetic VideoToolbox
+IDR/dependent-P sequence, RTP timestamp wrap, and a resolution change. Each
+picture must arrive before the next input picture or EOS; decoded pixels are
+checked for red RGBA output. These tests use synthetic pixels and require no
+Screen Recording or Accessibility permission.
+
+```sh
+mise exec -- cargo test -p deskfleet-desktop-viewer --lib --locked macos_decoder::tests -- --include-ignored
+DESKFLEET_VIEWER_DECODER=software mise exec -- cargo test -p deskfleet-desktop-viewer --lib --locked macos_decoder::tests -- --include-ignored
+mise run desktop:smoke-native-viewer
+```
+
+`DESKFLEET_SMOKE_VIEWER` can select the executable inside a packaged app instead
+of `target/debug/deskfleet-viewer`, allowing the same WebRTC/decode/window/cleanup
+smoke to validate the packaged binary.
+
+On the macOS ARM64 implementation host, all 14 viewer tests passed, including
+both opt-in hardware runtime tests. Both runtime tests also passed with the
+explicit software decoder. The fixture WebRTC → VideoToolbox → Metal window
+smoke passed in both modes with clean shutdown and at most two candidates.
+Release staging and a local unpacked `.app` build also passed; the executable at
+`Contents/Resources/native/deskfleet-viewer` passed the same hardware smoke.
+That local build reused the existing native addon and disabled Developer ID
+signing and notarization. Formal signed installation and real remote input
+acceptance remain unverified.
+Presentation remains `fifo-hint`; these runs do not measure actual display
+completion or comparative end-to-end latency.
 
 `DESKFLEET_SMOKE_HARDWARE=1` selects generated 320×240 pixels encoded by the host
 GPU. In that mode, `DESKFLEET_SMOKE_FPS` accepts a finite rate from 1 through 240,

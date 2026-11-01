@@ -1,4 +1,4 @@
-//! Bounded RFC 6184 packetization-mode 1 receiver for the Windows decoder.
+//! Bounded RFC 6184 packetization-mode 1 receiver for the Windows/macOS decoders.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
