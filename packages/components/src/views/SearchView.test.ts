@@ -1,15 +1,11 @@
 import { flushPromises, mount } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
-import { computed, ref } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import type { SearchPage, SearchResult } from "@deskfleet/client/search"
 import { createAccountSession, accountSessionKey } from "../composables/useAccountSession.ts"
 import { i18n } from "../i18n/index.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import SearchView from "./SearchView.vue"
-import { useSearchFeature } from "../services/search-feature.ts"
-
-vi.mock("../services/search-feature.ts", () => ({ useSearchFeature: vi.fn() }))
 
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const dispose of cleanup.splice(0).reverse()) dispose(); vi.useRealTimers() })
@@ -18,10 +14,8 @@ const chat = (overrides: Partial<SearchResult> = {}): SearchResult => ({
   title: "Find a+b", snippet: "Literal A+B <img src=x onerror=alert(1)>", entryId: "message-8", updatedAt: "2026-10-31T12:00:00Z", ...overrides,
 } as SearchResult)
 
-async function setup(path = "/search", featureEnabled = true) {
+async function setup(path = "/search") {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
-  const enabled = ref(featureEnabled)
-  vi.mocked(useSearchFeature).mockReturnValue(computed(() => enabled.value))
   const fake = fakeCentral({ machines: [machineFixture("local", "team-1", "Local"), machineFixture("remote", "team-1", "Remote", false)] })
   const account = createAccountSession(fake.central)
   await flushPromises()
@@ -34,7 +28,7 @@ async function setup(path = "/search", featureEnabled = true) {
     plugins: [router, i18n], provide: { [accountSessionKey as symbol]: account }, stubs: { PaneHeader: { template: "<header><slot /></header>" } },
   } })
   cleanup.push(() => { wrapper.unmount(); account.dispose() })
-  return { ...fake, account, router, wrapper, enabled }
+  return { ...fake, account, router, wrapper }
 }
 async function settleSearch() { await vi.advanceTimersByTimeAsync(250); await flushPromises() }
 
@@ -124,28 +118,4 @@ test("Enter refreshes unchanged text and cancels an outstanding debounce", async
   await wrapper.get("form").trigger("submit")
   await flushPromises()
   expect(central.search).toHaveBeenCalledTimes(2)
-})
-
-test("a disabled direct link returns to Conversations without displaying or requesting search", async () => {
-  const { central, router, wrapper } = await setup("/search?q=private", false)
-  await settleSearch()
-  expect(router.currentRoute.value.name).toBe("new-session")
-  expect(wrapper.find("input").exists()).toBe(false)
-  expect(central.search).not.toHaveBeenCalled()
-})
-
-test("turning the gate off hides the page and discards an in-flight response", async () => {
-  const { central, router, wrapper, enabled } = await setup("/search?q=review")
-  const response = Promise.withResolvers<SearchPage>()
-  central.search.mockReturnValue(response.promise)
-  await settleSearch()
-  expect(central.search).toHaveBeenCalledOnce()
-  enabled.value = false
-  await flushPromises()
-  response.resolve({ results: [chat({ title: "Hidden result" })], nextCursor: "next" })
-  await settleSearch()
-  expect(router.currentRoute.value.name).toBe("new-session")
-  expect(wrapper.find("input").exists()).toBe(false)
-  expect(wrapper.text()).not.toContain("Hidden result")
-  expect(central.search).toHaveBeenCalledOnce()
 })

@@ -1,25 +1,18 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
-import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { computed, ref } from "vue"
+import { afterEach, expect, test } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
 import SidebarNavigation from "./SidebarNavigation.vue"
 import { accountSessionKey, createAccountSession } from "../../composables/useAccountSession.ts"
 import { fakeCentral } from "../../test/central.ts"
-import { useSearchFeature } from "../../services/search-feature.ts"
-
-vi.mock("../../services/search-feature.ts", () => ({ useSearchFeature: vi.fn() }))
-const searchEnabled = ref(false)
-beforeEach(() => { searchEnabled.value = false; vi.mocked(useSearchFeature).mockReturnValue(computed(() => searchEnabled.value)) })
 
 let wrapper: VueWrapper | undefined
 let pinia: ReturnType<typeof createPinia> | undefined
 const sectionLink = (label: string) => wrapper!.get<HTMLAnchorElement>(`a[aria-label="${label}"]`)
 const newSessionLink = () => wrapper!.findAll("a").find(link => link.text() === i18n.global.t("nav.newSession"))!
 
-async function setup(path = "/", enableSearch = false) {
-  searchEnabled.value = enableSearch
+async function setup(path = "/") {
   pinia = createPinia()
   const router = createRouter({
     history: createMemoryHistory(),
@@ -131,7 +124,7 @@ test.each([
   { path: "/schedules/new", section: "Schedules" },
   { path: "/search?q=hello&kind=chat", section: "Search" },
 ])("selecting the active $section section keeps $path", async ({ path, section }) => {
-  const router = await setup(path, section === "Search")
+  const router = await setup(path)
   expect(sectionLink(section).attributes("href")).toBe(path)
   await sectionLink(section).trigger("click")
   await flushPromises()
@@ -173,7 +166,7 @@ test("remounting while on Schedules keeps the last conversation path", async () 
 })
 
 test("Search returns to the Team's previous query after a result switches machine scopes", async () => {
-  const router = await setup("/search?q=review&kind=chat", true)
+  const router = await setup("/search?q=review&kind=chat")
   const account = createAccountSession(fakeCentral().central)
   await flushPromises()
   account.searchPath.value = router.currentRoute.value.fullPath
@@ -188,18 +181,11 @@ test("Search returns to the Team's previous query after a result switches machin
   account.dispose()
 })
 
-test("Search is hidden by default and follows its feature gate without affecting existing capsules", async () => {
+test("Search is always available alongside the existing capsules", async () => {
   await setup("/schedules")
-  expect(wrapper!.find('a[aria-label="Search"]').exists()).toBe(false)
+  expect(sectionLink("Search").attributes("href")).toBe("/search")
   expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
   expect(sectionLink("Conversations").attributes("href")).toBe("/")
-  searchEnabled.value = true
-  await flushPromises()
-  expect(sectionLink("Search").attributes("href")).toBe("/search")
-  searchEnabled.value = false
-  await flushPromises()
-  expect(wrapper!.find('a[aria-label="Search"]').exists()).toBe(false)
-  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
 })
 
 test("Settings does not overwrite the Conversations return path", async () => {

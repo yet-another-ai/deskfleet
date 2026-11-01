@@ -20,13 +20,10 @@ const query = ref(typeof route.query.q === "string" ? route.query.q : "")
 const kind = ref<SearchKind>(readKind(route.query.kind))
 const kinds = ["all", "chat", "schedule"] as const
 const search = useSearch(query, kind)
-const { results, nextCursor, loading, error, available, enabled } = search
+const { results, nextCursor, loading, error, available } = search
 const input = useTemplateRef<HTMLInputElement>("input")
 useFocus(input, { initialValue: true })
 const empty = computed(() => !!query.value.trim() && !loading.value && !error.value && !results.value.length)
-watch(enabled, value => {
-  if (!value && route.name === "search") void router.replace({ name: "new-session" })
-}, { immediate: true })
 
 watch(() => route.query, values => {
   if (route.name !== "search") return
@@ -50,7 +47,6 @@ function open(result: SearchResult): void {
 </script>
 
 <template>
-  <template v-if="enabled">
   <PaneHeader hide-details>{{ t('search.title') }}</PaneHeader>
   <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-10 pt-6 lg:px-8">
     <div class="mx-auto flex max-w-4xl flex-col gap-5">
@@ -90,5 +86,4 @@ function open(result: SearchResult): void {
       <UiButton v-else-if="nextCursor" class="self-center" type="button" @click="search.loadMore">{{ t('search.more') }}</UiButton>
     </div>
   </div>
-  </template>
 </template>

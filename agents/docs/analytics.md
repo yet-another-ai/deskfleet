@@ -212,18 +212,8 @@ Team navigation instead of assigning them to the new Team.
 
 Feature gates control frontend rollout through the shared analytics helpers.
 
-| Gate | Controls | Default |
-| --- | --- | --- |
-| `global_search` | Search navigation, page access, and Team search requests | Off |
-
-Create `global_search` in the Statsig project with a 0% rollout before targeting
-test users or Teams. Web and Electron use the same gate. A missing or blank
-`VITE_STATSIG_CLIENT_KEY`, an unavailable evaluation, or a gate that does not pass
-keeps search off. Closing the gate hides Search, navigates away from an open search page,
-clears its results, and prevents pending responses from repopulating them.
-Direct `/search` links cannot bypass the gate. This frontend rollout gate does
-not pause central history indexing or daemon schedule replication, and does
-not replace the server's Team authorization.
+Search is always available in Web and Electron, including builds without Statsig.
+Search requests require a selected Team and retain server-side Team authorization.
 
 ```ts
 import { useFeatureGate, useExperimentParameter } from "../services/analytics.ts"
