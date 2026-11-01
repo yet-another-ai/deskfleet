@@ -160,7 +160,7 @@ onBeforeUnmount(() => {
 <template>
   <div>
     <div class="ui-markdown" @click="click">
-      <!-- Fragment mode bypasses scheduling; keep all nodes and render new ones in small batches. -->
+      <!-- Chat updates already arrive incrementally; do not queue another delayed reveal. -->
       <MarkdownRender
         :content="text"
         :custom-id="CUSTOM_ID"
@@ -168,12 +168,8 @@ onBeforeUnmount(() => {
         :custom-markdown-it="customizeMarkdownIt"
         :parse-options="parseOptions"
         :smooth-streaming="false"
-        :batch-rendering="true"
+        :batch-rendering="false"
         :max-live-nodes="0"
-        :initial-render-batch-size="16"
-        :render-batch-size="16"
-        :render-batch-delay="8"
-        :render-batch-budget-ms="4"
         :typewriter="false"
         :fade="false"
       />
