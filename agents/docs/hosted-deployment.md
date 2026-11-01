@@ -207,8 +207,9 @@ setting. Changing a compiled API origin requires rebuilding that client; an
 unset production Web build follows the origin serving its page.
 
 Create the `production` environment under Repository Settings → Environments.
-Use **Selected branches and tags** with a **Tag** rule matching `v*` and no
-allowed branches. Store production variables and secrets only in this
+Use **Selected branches and tags** with a **Tag** rule matching `v*` and a
+**Branch** rule for `main` to allow manual AUR synchronization. Store production
+variables and secrets only in this
 environment, removing repository and organization copies. PR, main, and manual
 Build runs do not bind it: Statsig and Sentry stay disabled, and Electron retains
 its localhost backend. See [tagged releases](ci.md#tagged-releases) for the complete

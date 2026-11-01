@@ -121,8 +121,9 @@ only the release job receives `contents: write`, and only the image job receives
 
 Before the first tag, create the `production` environment under Repository
 Settings → Environments. Set its deployment branch and tag policy to
-**Selected branches and tags**, add a **Tag** rule matching `v*`, and allow no
-branches. Keep production configuration in this environment, removing any
+**Selected branches and tags**, add a **Tag** rule matching `v*`, and a **Branch**
+rule for `main` so AUR synchronization can also run by manual dispatch. Keep
+production configuration in this environment, removing any
 duplicate repository or organization variables and secrets. The Linux desktop
 archives carry this configuration in the compiled app, including when repackaged
 by Nix.
@@ -285,14 +286,15 @@ Arch, and uploads the recipe as an Actions artifact. Drafts and prereleases do
 not advance AUR. A release without both desktop archives cannot be synchronized.
 
 Stable release publication automatically synchronizes AUR after package
-validation. Prepare the following repository configuration before publishing:
+validation. The synchronization job uses the `production` environment. Prepare
+the following configuration before publishing:
 
 - Confirm `deskfleet-bin` is available in AUR, or arrange maintainership of the
   existing package. Register a dedicated SSH public key with the AUR account.
-- Add its private key as the Actions secret `AUR_SSH_PRIVATE_KEY` and a verified
-  `known_hosts` entry for `aur.archlinux.org` as the repository variable
-  `AUR_SSH_KNOWN_HOSTS`. Verify the host key through a trusted channel before
-  recording it.
+- In the `production` environment, add its private key as the Actions secret
+  `AUR_SSH_PRIVATE_KEY` and a verified `known_hosts` entry for `aur.archlinux.org`
+  as the variable `AUR_SSH_KNOWN_HOSTS`. Verify the host key through a trusted
+  channel before recording it.
 
 Manual dispatch defaults to dry-run and does not push to AUR:
 
