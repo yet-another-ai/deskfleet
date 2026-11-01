@@ -73,6 +73,73 @@ fn windows_hardware_encodes_static_frame_and_requested_keyframe() {
     capture.stop().unwrap();
 }
 
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires an interactive Windows desktop on an NVIDIA GPU supporting H.264, HEVC and AV1"]
+fn windows_nvenc_emits_each_frame_without_lookahead() {
+    use std::time::{Duration, Instant};
+
+    let display = deskfleet_capture::displays()
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("a display");
+    let capture = deskfleet_capture::create_capture_stream(
+        &display,
+        &deskfleet_capture::CaptureConfig {
+            fps: 60.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut frame = loop {
+        if let Some(frame) = capture.poll_frame().unwrap() {
+            break frame;
+        }
+        assert!(Instant::now() < deadline, "capture produced no frame");
+    };
+
+    for (codec, h264_profile) in [
+        (Codec::H264, H264Profile::ConstrainedBaseline),
+        (Codec::H264, H264Profile::Main),
+        (Codec::H264, H264Profile::High),
+        (Codec::H265, H264Profile::High),
+        (Codec::AV1, H264Profile::High),
+    ] {
+        let config = EncoderConfig {
+            width: frame.width,
+            height: frame.height,
+            codec,
+            h264_profile,
+            h265_profile: H265Profile::Main,
+            ..Default::default()
+        };
+        // Use NVENC directly: an H.264 fallback must not hide a failed preset.
+        let mut encoder = windows::WindowsEncoder::new(&config).unwrap();
+        for index in 0..6 {
+            frame.timestamp_ns = 100_000_000 + index * 16_666_667;
+            if index == 3 {
+                encoder.request_keyframe();
+            }
+            // Reuse a retained texture, as the idle-desktop keyframe path does.
+            // Every submission must complete without needing a future frame.
+            let packets = encoder.encode(&frame).unwrap();
+            assert_eq!(packets.len(), 1, "{codec:?} {h264_profile:?}");
+            let packet = &packets[0];
+            assert!(!packet.data.is_empty());
+            assert_eq!(packet.timestamp_ns, frame.timestamp_ns);
+            assert_eq!(packet.is_keyframe, index == 0 || index == 3);
+            assert!(packet.duration_ns > 0);
+        }
+        encoder.flush().unwrap();
+        eprintln!(
+            "NVENC {codec:?} {h264_profile:?}: six immediate frames, including requested IDR"
+        );
+    }
+    capture.stop().unwrap();
+}
+
 #[test]
 fn rejects_invalid_configuration_before_hardware_initialization() {
     for fps in [0.0, -1.0, f64::NAN, f64::INFINITY] {

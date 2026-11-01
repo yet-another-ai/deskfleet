@@ -76,6 +76,19 @@ display, ICE, and transport failures stop without another codec. The desktop
 error event includes `reason: "encoder"` for the failures that may continue.
 Older callers omit `reason`; those failures are not retried.
 
+Windows NVENC uses P3 with ultra-low-latency tuning and CBR for H.264, HEVC,
+and AV1. B-frames, lookahead, and temporal AQ are explicitly disabled; the
+infinite GOP and on-demand keyframes remain unchanged. The preset's VBV and
+multipass settings are retained. Spatial AQ remains disabled: a synthetic
+scrolling-text comparison on an RTX 4090 showed that spatial AQ and a one-frame
+VBV budget reduced text fidelity, especially on the first frame. An idle
+desktop does not continuously re-encode, so that first image must stand on its
+own. P3 modestly improved quality over P1 in that comparison, while P4 added
+encoding time for little further benefit. This is a workload-specific choice
+within the [NVENC tuning controls](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-video-encoder-api-prog-guide/index.html#encoder-tuning-info-and-preset-configurations);
+other GPUs and content still need measurement. Linux's GStreamer encoder
+configuration is separate.
+
 The Media Foundation backend converts BGRA to limited-range BT.709 NV12 on the
 GPU and supplies retained D3D11 textures to the asynchronous hardware encoder.
 It requires a D3D11-aware H.264 hardware MFT and a compatible video processor.
@@ -549,6 +562,18 @@ smoke mode validates real H.264 decoding without saving screen pixels to disk;
 the default smoke remains the generated fixture. Run again with `nvenc` to
 check the existing path. Intel/AMD and non-default-adapter displays require
 corresponding hardware; success on one GPU does not validate other drivers.
+
+On an NVIDIA-backed Windows display that supports all three codecs, also run:
+
+```powershell
+mise exec -- cargo test -p deskfleet-encoder --locked windows_nvenc_emits_each_frame_without_lookahead -- --ignored --nocapture
+```
+
+This directly exercises NVENC H.264 Baseline/Main/High, HEVC Main, and AV1.
+Each submitted frame must return one packet immediately, including an explicitly
+requested keyframe on an unchanged desktop. The test also checks submitted
+timestamps are preserved and EOS completes successfully. It checks output
+behavior, not decoded quality or end-to-end WebRTC latency.
 
 On a Linux graphical host with the runtime and GPU drivers installed, run:
 

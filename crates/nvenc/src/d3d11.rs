@@ -163,10 +163,18 @@ impl D3D11Encoder {
         } else {
             bitrate_bps
         };
+        // Keep the preset's VBV budget: a one-frame cap damages the initial
+        // desktop image, which may remain visible until the next capture update.
         // Zero reorder delay — no frame reordering latency.
         encode_config.rcParams.set_zeroReorderDelay(1);
-        // Disable adaptive quantization for speed.
+        // Never inherit lookahead from a higher-quality preset:
+        // encode() must produce output from one input, even on an idle desktop.
+        encode_config.rcParams.set_enableLookahead(0);
+        encode_config.rcParams.lookaheadDepth = 0;
+        // Spatial AQ shifts bits away from fine detail and blurred text in our
+        // desktop-pattern comparison. Temporal AQ can also cause bitrate spikes.
         encode_config.rcParams.set_enableAQ(0);
+        encode_config.rcParams.set_enableTemporalAQ(0);
 
         encode_config.profileGUID = profile_guid;
 
