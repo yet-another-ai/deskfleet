@@ -396,7 +396,15 @@
       "brightBlack": "亮黑", "brightRed": "亮红", "brightGreen": "亮绿", "brightYellow": "亮黄", "brightBlue": "亮蓝", "brightMagenta": "亮品红", "brightCyan": "亮青", "brightWhite": "亮白"
     },
     "ligatures": "字体连字",
-    "ligaturesHint": "在终端字体支持时，将 =>、!= 等字符组合显示为连字。"
+    "ligaturesHint": "在终端字体支持时，将 =>、!= 等字符组合显示为连字。",
+    "outlineAudio": "音乐律动",
+    "outlineAudioHint": "大纲随当前播放的声音律动。",
+    "outlineAudioRgb": "RGB",
+    "outlineAudioRgbHint": "横条随律动流转彩虹色彩。",
+    "outlineAudioMaxWidth": "最大宽度",
+    "outlineAudioMaxWidthHint": "横条展开的最大长度。",
+    "outlineAudioDecayMs": "回落时间",
+    "outlineAudioDecayMsHint": "横条恢复原长的过渡时间。"
   },
   "githubSettings": {
     "title": "GitHub",

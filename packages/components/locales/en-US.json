@@ -396,7 +396,15 @@
       "brightBlack": "Bright black", "brightRed": "Bright red", "brightGreen": "Bright green", "brightYellow": "Bright yellow", "brightBlue": "Bright blue", "brightMagenta": "Bright magenta", "brightCyan": "Bright cyan", "brightWhite": "Bright white"
     },
     "ligatures": "Font ligatures",
-    "ligaturesHint": "Combine characters like => and != when the terminal font supports it."
+    "ligaturesHint": "Combine characters like => and != when the terminal font supports it.",
+    "outlineAudio": "Audio-reactive outline",
+    "outlineAudioHint": "Animate the outline with playing audio.",
+    "outlineAudioRgb": "RGB",
+    "outlineAudioRgbHint": "Cycle rainbow colors across the bars.",
+    "outlineAudioMaxWidth": "Maximum width",
+    "outlineAudioMaxWidthHint": "Peak bar width when audio plays.",
+    "outlineAudioDecayMs": "Release time",
+    "outlineAudioDecayMsHint": "Time for bars to settle."
   },
   "githubSettings": {
     "title": "GitHub",

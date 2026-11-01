@@ -50,6 +50,7 @@ function permissionHandlers() {
   const target = {
     setPermissionCheckHandler: vi.fn<Session["setPermissionCheckHandler"]>(),
     setPermissionRequestHandler: vi.fn<Session["setPermissionRequestHandler"]>(),
+    setDisplayMediaRequestHandler: vi.fn<Session["setDisplayMediaRequestHandler"]>(),
   }
   installRendererPermissions(target)
   return {
@@ -78,7 +79,7 @@ test("clipboard reads, automatic fullscreen, and unrelated capabilities remain d
   const url = "deskfleet-app://bundle/index.html"
   const webContents = { getURL: () => url } as WebContents
   const details = { isMainFrame: true, requestingUrl: url }
-  for (const permission of ["clipboard-read", "deprecated-sync-clipboard-read", "automatic-fullscreen", "media", "display-capture", "notifications"] as const) {
+  for (const permission of ["clipboard-read", "deprecated-sync-clipboard-read", "automatic-fullscreen", "media", "notifications"] as const) {
     expect(check(webContents, permission, "deskfleet-app://bundle/", details)).toBe(false)
     const callback = vi.fn()
     request(webContents, permission, callback, details)
