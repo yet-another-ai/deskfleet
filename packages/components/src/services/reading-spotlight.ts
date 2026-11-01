@@ -13,19 +13,58 @@ export function findReadingSurface(el: Element | null): HTMLElement | null {
   return el?.closest<HTMLElement>(`[${READING_SURFACE_ATTR}]`) ?? null
 }
 
-/** Deepest block under the pointer that belongs to the reading surface. */
-export function findSpotlightBlock(from: Element | null, surface: HTMLElement): HTMLElement | null {
-  if (!from || !surface.contains(from)) return null
-  if (from === surface) return surface
+/** Closest matching block to `clientY` when the pointer is on a gap or wrapper. */
+function nearestSpotlightBlock(surface: HTMLElement, clientY: number): HTMLElement | null {
+  const blocks = surface.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)
+  let best: HTMLElement | null = null
+  let bestDistance = Infinity
 
-  let current: HTMLElement | null = from instanceof HTMLElement ? from : from.parentElement
-  while (current && current !== surface) {
-    if (current.matches(BLOCK_SELECTOR)) return current
-    current = current.parentElement
+  for (const block of blocks) {
+    const rect = block.getBoundingClientRect()
+    if (rect.width <= 0 && rect.height <= 0) continue
+    const distance = clientY < rect.top
+      ? rect.top - clientY
+      : clientY > rect.bottom
+        ? clientY - rect.bottom
+        : 0
+    if (distance > bestDistance) continue
+    if (distance < bestDistance) {
+      best = block
+      bestDistance = distance
+      continue
+    }
+    // Same distance: prefer the deeper block (e.g. `li` over `ul`).
+    if (best?.contains(block)) best = block
   }
+
+  return best
+}
+
+/**
+ * Deepest block under the pointer that belongs to the reading surface.
+ * Gaps and intermediate wrappers resolve to the nearest block so the overlay
+ * stays stable while crossing paragraph boundaries.
+ */
+export function findSpotlightBlock(
+  from: Element | null,
+  surface: HTMLElement,
+  clientY: number,
+): HTMLElement | null {
+  if (!from || !surface.contains(from)) return null
+
+  if (from !== surface) {
+    let current: HTMLElement | null = from instanceof HTMLElement ? from : from.parentElement
+    while (current && current !== surface) {
+      if (current.matches(BLOCK_SELECTOR)) return current
+      current = current.parentElement
+    }
+  }
+
   // Plain chat text is the surface itself when it has no block children.
   if (!surface.querySelector(BLOCK_SELECTOR)) return surface
-  return null
+
+  // Surface, markdown wrappers, or inter-block margin gaps: keep the nearest block.
+  return nearestSpotlightBlock(surface, clientY)
 }
 
 export function padSpotlightRect(rect: SpotlightRect, pad = 4): SpotlightRect {

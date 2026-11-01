@@ -30,7 +30,7 @@ function update(): void {
     clear()
     return
   }
-  const block = findSpotlightBlock(under, surface)
+  const block = findSpotlightBlock(under, surface, y.value)
   if (!block) {
     clear()
     return

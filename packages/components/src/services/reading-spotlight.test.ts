@@ -7,6 +7,12 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
+function mockRect(el: HTMLElement, top: number, height: number, left = 0, width = 200): void {
+  el.getBoundingClientRect = () => ({
+    x: left, y: top, top, left, width, height, right: left + width, bottom: top + height, toJSON() { return this },
+  })
+}
+
 test("finds the reading surface ancestor", () => {
   const surface = document.createElement("div")
   surface.setAttribute(READING_SURFACE_ATTR, "")
@@ -27,7 +33,7 @@ test("selects the deepest block under the pointer", () => {
   paragraph.append(bold)
   surface.append(paragraph)
   document.body.append(surface)
-  expect(findSpotlightBlock(bold, surface)).toBe(paragraph)
+  expect(findSpotlightBlock(bold, surface, 10)).toBe(paragraph)
 })
 
 test("uses the surface itself for plain chat text", () => {
@@ -35,7 +41,66 @@ test("uses the surface itself for plain chat text", () => {
   surface.setAttribute(READING_SURFACE_ATTR, "")
   surface.textContent = "plain message"
   document.body.append(surface)
-  expect(findSpotlightBlock(surface, surface)).toBe(surface)
+  expect(findSpotlightBlock(surface, surface, 10)).toBe(surface)
+})
+
+test("keeps the nearest paragraph when the pointer is on an inter-block gap", () => {
+  const surface = document.createElement("div")
+  surface.setAttribute(READING_SURFACE_ATTR, "")
+  const first = document.createElement("p")
+  first.textContent = "first"
+  const second = document.createElement("p")
+  second.textContent = "second"
+  surface.append(first, second)
+  document.body.append(surface)
+  mockRect(first, 100, 20)
+  mockRect(second, 140, 20)
+
+  // Gap between blocks hits the surface (margin collapse / empty space).
+  expect(findSpotlightBlock(surface, surface, 125)).toBe(first)
+  expect(findSpotlightBlock(surface, surface, 135)).toBe(second)
+})
+
+test("keeps the nearest paragraph when the pointer is on a markdown wrapper", () => {
+  const surface = document.createElement("div")
+  surface.setAttribute(READING_SURFACE_ATTR, "")
+  const renderer = document.createElement("div")
+  renderer.className = "markdown-renderer"
+  const slot = document.createElement("div")
+  slot.className = "node-slot"
+  const content = document.createElement("div")
+  content.className = "node-content"
+  const first = document.createElement("p")
+  first.textContent = "first"
+  const second = document.createElement("p")
+  second.textContent = "second"
+  content.append(first, second)
+  slot.append(content)
+  renderer.append(slot)
+  surface.append(renderer)
+  document.body.append(surface)
+  mockRect(first, 100, 20)
+  mockRect(second, 140, 20)
+
+  expect(findSpotlightBlock(content, surface, 122)).toBe(first)
+  expect(findSpotlightBlock(renderer, surface, 138)).toBe(second)
+  expect(findSpotlightBlock(slot, surface, 130)).toBe(first)
+})
+
+test("prefers a nested list item over its parent list when distances tie", () => {
+  const surface = document.createElement("div")
+  surface.setAttribute(READING_SURFACE_ATTR, "")
+  const list = document.createElement("ul")
+  const item = document.createElement("li")
+  item.textContent = "item"
+  list.append(item)
+  surface.append(list)
+  document.body.append(surface)
+  mockRect(list, 100, 40)
+  mockRect(item, 110, 20)
+
+  // Wrapper hit with Y inside both the list and the item.
+  expect(findSpotlightBlock(surface, surface, 120)).toBe(item)
 })
 
 test("pads spotlight rectangles evenly", () => {
