@@ -199,11 +199,13 @@ Pages build. Drafts and prereleases do not replace the website's stable download
 failed requests and unavailable assets retain a link to GitHub Releases.
 
 The installation section groups methods by platform: Homebrew and DMG on macOS;
-the Windows installer; and AppImage, Nix, and desktop archives on Linux. The macOS
+the Windows installer; and AppImage, AUR, Nix, and desktop archives on Linux. The macOS
 ZIP is reserved for the updater and is not offered as a website installation method.
 Nix and Linux desktop archives appear only when the published release contains
 their assets. The Nix command uses that release's versioned flake URL. Homebrew
-uses the official tap and does not display GitHub's release version as its own.
+uses the official tap. AUR links to the `deskfleet-bin` package page and remains
+available independently of GitHub release assets. Neither Homebrew nor AUR
+displays GitHub's release version as its own.
 Headless downloads remain separate server/daemon archives. English, Chinese,
 and Japanese pages share the same selection logic and localized instructions.
 

@@ -1,5 +1,11 @@
 # 运行 DeskFleet
 
+在已安装 yay 的 Arch Linux 上，可以从 [AUR](https://aur.archlinux.org/packages/deskfleet-bin) 安装桌面应用：
+
+```sh
+yay -S deskfleet-bin
+```
+
 打包版本请查看 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases)。也可以从源码运行当前开发版本。
 
 ## 配置开发环境

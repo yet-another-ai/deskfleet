@@ -1,7 +1,7 @@
 export type InstallMode = "desktop" | "headless"
 export type InstallPlatform = "macos" | "windows" | "linux"
 export type LinuxArchitecture = "x64" | "arm64"
-export type DesktopInstallMethod = "homebrew" | "installer" | "archive" | "nix"
+export type DesktopInstallMethod = "homebrew" | "installer" | "archive" | "nix" | "aur"
 
 export const releasesPage = "https://github.com/yet-another-ai/deskfleet/releases/latest"
 
@@ -71,7 +71,7 @@ export function findNixDownload(release: LatestRelease | undefined): ReleaseFile
 export function desktopInstallMethods(release: LatestRelease | undefined, platform: InstallPlatform): DesktopInstallMethod[] {
   if (platform === "macos") return ["homebrew", "installer"]
   if (platform === "windows") return ["installer"]
-  const methods: DesktopInstallMethod[] = ["installer"]
+  const methods: DesktopInstallMethod[] = ["installer", "aur"]
   if (findNixDownload(release)) methods.push("nix")
   if (findDownload(release, "desktop", "linux", "x64", "archive") || findDownload(release, "desktop", "linux", "arm64", "archive")) {
     methods.push("archive")

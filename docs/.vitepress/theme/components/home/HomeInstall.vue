@@ -32,6 +32,7 @@ const method = computed({
 const methodOptions = computed(() => availableMethods.value.map(value => ({
   value,
   label: value === "homebrew" ? t.value.homebrew : value === "nix" ? t.value.nix
+    : value === "aur" ? t.value.aur
     : value === "archive" ? ".tar.gz"
     : platform.value === "macos" ? ".dmg" : platform.value === "linux" ? t.value.appImage : ".exe",
 })))
@@ -43,6 +44,13 @@ const command = computed(() => {
     value: "brew install --cask yet-another-ai/tap/deskfleet",
     requirement: t.value.homebrewRequirement,
     href: "https://brew.sh/",
+  }
+  if (method.value === "aur") return {
+    title: t.value.aurTitle,
+    description: t.value.aurDescription,
+    value: "yay -S deskfleet-bin",
+    requirement: t.value.aurRequirement,
+    href: "https://aur.archlinux.org/packages/deskfleet-bin",
   }
   const nix = findNixDownload(release.value)
   if (method.value === "nix" && nix) return {
@@ -116,7 +124,7 @@ onMounted(() => {
           <SegmentedControl v-model="platform" :options="platforms" size="small" :label="t.platform">
             <template #icon="{ value }"><PlatformIcon :platform="value" /></template>
           </SegmentedControl>
-          <span v-if="mode !== 'desktop' || method !== 'homebrew'" class="install__release" :class="{ 'is-ready': releaseSummary }" aria-live="polite">
+          <span v-if="mode !== 'desktop' || (method !== 'homebrew' && method !== 'aur')" class="install__release" :class="{ 'is-ready': releaseSummary }" aria-live="polite">
             <i aria-hidden="true" />
             {{ releaseSummary ? `${t.latestRelease} · ${releaseSummary}` : isLoading ? t.checkingRelease : t.downloadAvailability }}
           </span>

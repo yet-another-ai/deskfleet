@@ -6,6 +6,13 @@ On macOS with Apple Silicon, install the desktop app using Homebrew:
 brew install --cask yet-another-ai/tap/deskfleet
 ```
 
+On Arch Linux with yay installed, install the desktop app from
+[AUR](https://aur.archlinux.org/packages/deskfleet-bin):
+
+```sh
+yay -S deskfleet-bin
+```
+
 For releases containing `deskfleet-nix.tar.gz`, install on x86-64 or ARM64 Linux
 with Nix and flakes enabled. Replace `<VERSION>` with the release version
 without its `v` prefix:
