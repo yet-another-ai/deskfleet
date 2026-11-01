@@ -284,7 +284,8 @@ both desktop archives, computes their checksums, builds the x86_64 package in
 Arch, and uploads the recipe as an Actions artifact. Drafts and prereleases do
 not advance AUR. A release without both desktop archives cannot be synchronized.
 
-Publication is disabled until the following repository configuration is ready:
+Stable release publication automatically synchronizes AUR after package
+validation. Prepare the following repository configuration before publishing:
 
 - Confirm `deskfleet-bin` is available in AUR, or arrange maintainership of the
   existing package. Register a dedicated SSH public key with the AUR account.
@@ -292,10 +293,8 @@ Publication is disabled until the following repository configuration is ready:
   `known_hosts` entry for `aur.archlinux.org` as the repository variable
   `AUR_SSH_KNOWN_HOSTS`. Verify the host key through a trusted channel before
   recording it.
-- Set the repository variable `AUR_PUBLISH_ENABLED` to `true` after reviewing a
-  dry run and confirming the account can maintain the package.
 
-Manual dispatch defaults to dry-run, including when publication is enabled:
+Manual dispatch defaults to dry-run and does not push to AUR:
 
 ```sh
 gh workflow run aur-publish.yml --ref main

@@ -96,7 +96,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish to AUR
-        if: ${{ vars.AUR_PUBLISH_ENABLED == 'true' && (github.event_name == 'release' || !inputs.dry_run) }}
+        if: ${{ github.event_name == 'release' || !inputs.dry_run }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
