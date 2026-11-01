@@ -411,12 +411,10 @@ test("a Team without machines opens its own settings and can add a machine", asy
   expect(fake.central.members).toHaveBeenCalledWith("team-1")
 })
 
-const settingsContexts = [
+test.each([
   ["web", "admin", false], ["darwin", "member", false],
   ["web", "member", true], ["darwin", "admin", true],
-] as const
-
-test.each(settingsContexts)("%s %s navigates Team settings and returns to the source (machine: %s)", async (platform, role, hasMachine) => {
+] as const)("%s %s enters separate Team and ordinary settings and returns to the source (machine: %s)", async (platform, role, hasMachine) => {
   const fake = fakeCentral({
     teams: [{ id: "team-1", name: "Design team", role }],
     machines: hasMachine ? [machineFixture("m1", "team-1", "Build server")] : [],
@@ -458,28 +456,16 @@ test.each(settingsContexts)("%s %s navigates Team settings and returns to the so
   expect(page().find("[data-team-plan]").exists()).toBe(false)
   await buttonText("Back to app")!.trigger("click")
   await settled(() => expect(router.currentRoute.value.fullPath).toBe(source))
-})
-
-test.each(settingsContexts)("%s %s navigates ordinary settings and returns to the source (machine: %s)", async (platform, role, hasMachine) => {
-  const fake = fakeCentral({
-    teams: [{ id: "team-1", name: "Design team", role }],
-    machines: hasMachine ? [machineFixture("m1", "team-1", "Build server")] : [],
-  })
-  withEmptyCatalogs(fake)
-  mountShell(fake.central, platform)
-  await settled(() => expect(page().find('button[aria-label="Settings"]').exists()).toBe(true))
-  const source = "/?from=settings-navigation"
-  await router.push(source)
+  await flushPromises()
   await page().get('button[aria-label="Settings"]').trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Preferences"))
   expect(router.currentRoute.value.path).toBe("/settings/preferences")
-  const settingsLinks = () => page().findAll('nav[aria-label="Settings sections"] a')
   expect(settingsLinks().map(link => link.attributes("href"))).toEqual([
     "#/settings/preferences", "#/settings/appearance", "#/settings/notifications", "#/settings/github",
     ...(hasMachine ? ["#/settings/agents", "#/settings/mcp-servers"] : []),
     "#/settings/about",
   ])
-  await settingsLinks().find(item => item.text() === "Appearance")!.trigger("click")
+  await navItem("Appearance").trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Appearance"))
   await buttonText("Back to app")!.trigger("click")
   await settled(() => expect(router.currentRoute.value.fullPath).toBe(source))

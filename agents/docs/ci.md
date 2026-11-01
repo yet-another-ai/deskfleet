@@ -428,10 +428,13 @@ mise checks the downloaded bytes against that checksum. Linux and Windows keep
 using nodejs.org. A throttled Actions cache restore or save is retried for up
 to two minutes; without that wait, HTTP 429 is treated as a missing tool cache.
 
-When both suites are scheduled, daemon tests wait for Rust tests to finish.
-Both create many SQLite catalogs; separating them avoids overlapping storage
-workloads while daemon IPC deadlines are active. Running only `check:daemon`
-does not add the Rust test suite.
+When the suites are scheduled together, daemon tests wait for Rust tests to
+finish, and desktop tests wait for native compilation, Rust tests, and daemon
+tests. Each suite sizes its own worker pool; hosted macOS runs hit renderer
+navigation deadlines while native compilation was active. Separating Rust and
+daemon tests also avoids overlapping SQLite storage
+workloads while daemon IPC deadlines are active. These are ordering constraints:
+running only `check:daemon` or `check:desktop` does not add the other suites.
 
 Choose each test's SQLite storage from the behavior it asserts:
 

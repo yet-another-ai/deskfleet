@@ -326,6 +326,9 @@ run = "node --test apps/daemon/src/*.test.ts packages/mcp/src/*.test.ts"
 [tasks."check:desktop"]
 hide = true
 depends = ["install"]
+# Each suite sizes its own worker pool. Keep renderer deadlines independent of
+# concurrent native compilation and daemon tests; focused desktop runs stay standalone.
+wait_for = ["native:debug", "rust:test", "check:daemon"]
 run = "pnpm --filter @deskfleet/desktop test"
 
 [tasks."check:scripts"]
