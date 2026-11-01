@@ -91,6 +91,23 @@ test("rewrites same-document absolute marker URLs and preserves external referen
   expect(result.querySelectorAll("use")[1]!.getAttribute("href")).toBe("https://example.com/other#node")
 })
 
+test.each([
+  "http://localhost:5173/#/sessions/original",
+  "file:///C:/Program%20Files/DeskFleet/index.html#/sessions/original",
+])("rewrites markers appended to hash route %s while preserving other routes", sourceDocumentUrl => {
+  const markerUrl = `${sourceDocumentUrl}#node`
+  const otherRoute = sourceDocumentUrl.replace("/original", "/another") + "#node"
+  const external = "https://example.com/#/sessions/original#node"
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg"><marker id="node"/><path marker-end="url('${markerUrl}')" style="filter: url('${markerUrl}')"/>
+    <use href="${markerUrl}"/><use href="${otherRoute}"/><use href="${external}"/>
+    <style>path { clip-path: url('${markerUrl}'); }</style></svg>`
+  const result = parse(instantiateMermaidSvg(svg, "copy", sourceDocumentUrl))
+  expect(result.querySelector("path")!.getAttribute("marker-end")).toBe('url("#copy-0")')
+  expect(result.querySelector("path")!.style.filter).toContain("#copy-0")
+  expect(result.querySelector("style")!.textContent).toContain("#copy-0")
+  expect([...result.querySelectorAll("use")].map(element => element.getAttribute("href"))).toEqual(["#copy-0", otherRoute, external])
+})
+
 test("matches escaped CSS IDs without rewriting escaped class hashes or quoted strings", () => {
   const svg = `<svg id="a:b"><style>#a\\:b, .\\#a, [data-label="#a:b"] { fill: red; }</style></svg>`
   const result = parse(instantiateMermaidSvg(svg, "copy"))

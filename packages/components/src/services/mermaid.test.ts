@@ -44,17 +44,22 @@ test("a failed render is retried and does not block later diagrams", async () =>
   expect(mermaid.render).toHaveBeenCalledTimes(3)
 })
 
-test("cached absolute marker references follow their SVG after route navigation", async () => {
+test.each([
+  ["/original-session", "/another-session"],
+  ["/#/sessions/original", "/#/sessions/another"],
+])("cached absolute marker references survive navigation from %s to %s", async (originalRoute, nextRoute) => {
   const { renderMermaidDiagram } = await import("./mermaid.ts")
   const originalUrl = location.href
   try {
-    history.replaceState(null, "", "/original-session")
+    history.replaceState(null, "", originalRoute)
     mermaid.render.mockImplementationOnce(async (id: string) => ({ svg: `<svg id="${id}"><marker id="arrow"/><path marker-end="url('${document.URL}#arrow')"/></svg>` }))
-    await renderMermaidDiagram("absolute markers", false)
-    history.replaceState(null, "", "/another-session")
+    const first = new DOMParser().parseFromString(await renderMermaidDiagram("absolute markers", false), "image/svg+xml")
+    expect(first.querySelector("path")!.getAttribute("marker-end")).toBe(`url("#${first.querySelector("marker")!.id}")`)
+    history.replaceState(null, "", nextRoute)
     const copy = new DOMParser().parseFromString(await renderMermaidDiagram("absolute markers", false), "image/svg+xml")
     expect(mermaid.render).toHaveBeenCalledTimes(1)
     expect(copy.querySelector("path")!.getAttribute("marker-end")).toBe(`url("#${copy.querySelector("marker")!.id}")`)
+    expect(copy.querySelector("marker")!.id).not.toBe(first.querySelector("marker")!.id)
   } finally { history.replaceState(null, "", originalUrl) }
 })
 

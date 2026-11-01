@@ -225,8 +225,9 @@ initialization mutates global configuration outside Mermaid's internal queue.
 Each consumer receives an SVG with fresh IDs. A detached-DOM/CSSOM pass updates
 local URL references, href/xlink, accessibility references, CSS ID selectors and
 exact ID/reference attribute selectors while preserving labels, colors and
-external links. Templates retain their originating document URL so cached
-absolute marker references still work after SPA navigation. The cache is neither
+external links. Templates retain their complete originating document URL,
+including the hash route, so cached absolute marker references still work after
+SPA navigation. The cache is neither
 persistent nor shared across renderer windows.
 
 The unchanged expanded/history workload already exercises repeat requests:
@@ -248,7 +249,8 @@ tail or cold rich-content setup materially. All six candidate rounds report zero
 duplicate SVG IDs, unresolved local references and missing fixture labels, with
 diagram reopen status `ready`. Focused tests additionally cover simultaneous
 copies, theme isolation, retry, LRU/byte limits, CSS/text preservation, and cached
-absolute references after route changes. Helper CSS tests isolate Happy DOM's
+absolute references after path and hash-route changes, including HTTP and file
+URLs. Helper CSS tests isolate Happy DOM's
 missing browser behavior in test-only shims; the real Electron runs exercise the
 native HTML/SVG/CSSOM path.
 

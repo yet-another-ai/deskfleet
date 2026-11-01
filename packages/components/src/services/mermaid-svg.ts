@@ -19,6 +19,7 @@ export function instantiateMermaidSvg(svg: string, instanceId: string, sourceDoc
     if (!ids.has(id)) ids.set(id, `${instanceId}-${ids.size}`)
   }
   const documentUrl = new URL(sourceDocumentUrl)
+  const markerPrefix = `${documentUrl.href}#`
   documentUrl.hash = ""
 
   function reference(value: string): string {
@@ -26,11 +27,12 @@ export function instantiateMermaidSvg(svg: string, instanceId: string, sourceDoc
       const id = ids.get(value.slice(1))
       return id ? `#${id}` : value
     }
-    // Mermaid can generate absolute marker URLs for the current document.
+    // Mermaid can append #marker to document.URL, including its hash route.
+    // Match that complete captured URL before treating a hash as the SVG ID.
     // External documents with coincidentally matching fragments stay external.
     try {
       const url = new URL(value, document.baseURI)
-      const fragment = url.hash.slice(1)
+      const fragment = url.href.startsWith(markerPrefix) ? url.href.slice(markerPrefix.length) : url.hash.slice(1)
       url.hash = ""
       const id = ids.get(fragment)
       return id && url.href === documentUrl.href ? `#${id}` : value
