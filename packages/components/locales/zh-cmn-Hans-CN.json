@@ -1241,6 +1241,7 @@
       "fullDiskAccess": "完全磁盘访问权限",
       "screenCapture": "屏幕录制",
       "accessibility": "辅助功能",
+      "windowsDesktopService": "锁屏时允许远程控制",
       "account": "登录账户"
     },
     "stepCount": "第 {current} 步，共 {total} 步",
@@ -1261,6 +1262,22 @@
       "not-required": "无需额外权限",
       "denied": "尚未开启权限",
       "error": "无法检查权限"
+    },
+    "windowsDesktopService": {
+      "description": "锁定当前 Windows 会话后，仍可通过远程桌面查看和控制这台电脑。",
+      "detailsTitle": "可选的 Windows 服务",
+      "details": "启用时会安装或启动 DeskFleet 桌面服务，并请求管理员授权。请保持 DeskFleet 运行，并确保电脑不休眠。",
+      "enable": "启用锁屏远程控制",
+      "start": "启动服务",
+      "skip": "你可以稍后在“设置 → 偏好设置”中启用。",
+      "status": {
+        "checking": "正在检查服务状态…",
+        "requesting": "正在等待管理员授权…",
+        "running": "已启用锁屏远程控制",
+        "stopped": "已安装，但未运行",
+        "disabled": "尚未启用",
+        "unavailable": "此版本未包含 Windows 桌面服务程序。请安装支持此功能的 Windows 版本后启用。"
+      }
     },
     "wayland": {
       "dialog": "桌面授权",

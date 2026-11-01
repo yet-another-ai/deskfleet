@@ -98,8 +98,11 @@ change the service workers' encoder selection.
 
 ### Windows locked-desktop access
 
-Settings → Preferences → **Remote control while locked** installs the optional
-`DeskFleetDesktop` Windows service after administrator approval. The NSIS app
+The Windows welcome page and Settings → Preferences → **Remote control while
+locked** install the optional `DeskFleetDesktop` Windows service after explicit
+administrator approval. Welcome checks service status silently and uses the same
+installation controller as Preferences. Users can skip the step or retry after
+canceling approval; completed setup is not repeated. The NSIS app
 remains a per-user installation. The service and its desktop workers run from
 `Program Files/DeskFleet Desktop Service/deskfleet-desktop-service.exe`, with
 write access restricted to administrators and SYSTEM. No additional display or

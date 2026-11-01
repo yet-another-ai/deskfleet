@@ -32,7 +32,7 @@ export function installWindowsDesktopServiceIpc(controller: WindowsDesktopServic
   })
 }
 
-export function installWindowsDesktopService(): void {
+export function installWindowsDesktopService(): WindowsDesktopServiceController | undefined {
   if (process.platform !== "win32") return
   const executable = app.isPackaged
     ? join(process.resourcesPath, "windows", "deskfleet-desktop-service.exe")
@@ -48,4 +48,5 @@ export function installWindowsDesktopService(): void {
     return stdout
   })
   installWindowsDesktopServiceIpc(controller)
+  return controller
 }

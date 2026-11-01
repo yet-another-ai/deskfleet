@@ -801,7 +801,7 @@
     "steps": {
       "localNetwork": "ローカルネットワーク",
       "fullDiskAccess": "フルディスクアクセス", "screenCapture": "画面収録",
-      "accessibility": "アクセシビリティ", "account": "アカウント"
+      "accessibility": "アクセシビリティ", "windowsDesktopService": "ロック中のリモート操作", "account": "アカウント"
     },
     "stepCount": "ステップ {current} / {total}", "continue": "続ける",
     "continueAs": "{name} として続ける", "systemSettings": "macOS システム設定",
@@ -813,6 +813,22 @@
       "checking": "アクセス権を確認中…", "requesting": "macOS の許可を待っています…",
       "granted": "アクセス許可済み", "not-required": "追加の権限は不要です",
       "denied": "アクセスはまだ許可されていません", "error": "アクセス権を確認できませんでした"
+    },
+    "windowsDesktopService": {
+      "description": "現在の Windows セッションをロックしても、リモートデスクトップからこのコンピューターを操作できるようにします。",
+      "detailsTitle": "任意の Windows サービス",
+      "details": "有効にすると DeskFleet デスクトップサービスをインストールまたは起動し、管理者の承認を求めます。DeskFleet を起動したまま、コンピューターをスリープさせないでください。",
+      "enable": "ロック中のリモート操作を有効化",
+      "start": "サービスを起動",
+      "skip": "後から「設定 → 環境設定」で有効にできます。",
+      "status": {
+        "checking": "サービスの状態を確認中…",
+        "requesting": "管理者の承認を待っています…",
+        "running": "ロック中のリモート操作が有効です",
+        "stopped": "インストール済みですが、停止しています",
+        "disabled": "まだ有効になっていません",
+        "unavailable": "このビルドには Windows デスクトップサービスのプログラムが含まれていません。対応する Windows ビルドをインストールしてから有効にしてください。"
+      }
     },
     "wayland": {
       "dialog": "デスクトップのアクセス許可", "shared": "画面共有とマウス・キーボードの操作は、1 回の許可で有効になります。許可したら、両方のステップを進めてください。",

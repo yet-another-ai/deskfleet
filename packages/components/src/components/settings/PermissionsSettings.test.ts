@@ -49,6 +49,20 @@ function setup(platform: DeskfleetDesktopApi["platform"] = "darwin", localAgent 
 }
 
 function card(kind: string) { return view!.get(`[data-permission="${kind}"]`) }
+
+test("Windows service remains in Preferences instead of appearing as a native permission", async () => {
+  const app = setup("win32")
+  app.mount()
+  await flushPromises()
+  expect(view!.findAll("[data-permission]")).toHaveLength(0)
+  expect(view!.text()).toContain("No additional system permissions")
+  app.changed()
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(view!.findAll("[data-permission]")).toHaveLength(0)
+  expect(app.onboarding.permissions).not.toHaveBeenCalled()
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+})
 async function click(text: string) {
   const button = view!.findAll("button").find(button => button.text() === text)
   expect(button, `Button ${text}`).toBeDefined()

@@ -446,6 +446,12 @@ The welcome page guides macOS Local Network access, Full Disk Access,
 screen/system-audio recording, and Accessibility in that order, then signs in
 to the compiled backend. Local Network access supports direct connections to
 other machines and is offered even when the local Agent is disabled.
+On Windows, the welcome page offers optional remote control while locked before
+sign-in. It checks the desktop service silently; **Enable locked-session control**
+requests administrator approval to install or start it. Skipping or
+canceling approval leaves sign-in available, and installation can be retried
+from the welcome page or Settings → Preferences. An already running service
+needs no further approval.
 The desktop host saves the current step in `onboarding.json` under `userData`;
 closing the window or restarting the app resumes the unfinished step. Startup
 starts or reuses the local Agent when its saved preference is enabled. macOS

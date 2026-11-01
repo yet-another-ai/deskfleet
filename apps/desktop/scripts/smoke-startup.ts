@@ -195,6 +195,15 @@ try {
   const onboarding = await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")
   const permissionSteps = onboarding.permissionSteps
   assert.equal(onboarding.step, permissionSteps[0] ?? "account")
+  if (process.platform === "win32") {
+    assert.deepEqual(permissionSteps, ["windowsDesktopService"])
+    const service = await evaluate<{ available: boolean; installed: boolean; running: boolean }>(
+      "window.deskfleet.onboarding.permissions().then(state => state.windowsDesktopService)",
+    )
+    assert.equal(typeof service.available, "boolean")
+    assert.equal(typeof service.installed, "boolean")
+    assert.equal(typeof service.running, "boolean")
+  }
   if (onboarding.linuxDesktopBackend === "x11") {
     assert.equal(await evaluate("document.querySelectorAll('ol li').length"), 1)
     assert.equal(await evaluate("document.body.innerText.includes('desktop sharing dialog')"), false)
