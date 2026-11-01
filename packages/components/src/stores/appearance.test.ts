@@ -102,13 +102,17 @@ test("reading spotlight preference defaults off and persists across reloads", as
   const appearance = useAppearanceStore(pinia)
   await appearance.initialize()
   expect(appearance.settings.readingSpotlight).toBe(false)
-  await appearance.set({ readingSpotlight: true })
-  expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toMatchObject({ readingSpotlight: true })
+  expect(appearance.settings.readingSpotlightStyle).toBe("aside")
+  await appearance.set({ readingSpotlight: true, readingSpotlightStyle: "under" })
+  expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toMatchObject({
+    readingSpotlight: true, readingSpotlightStyle: "under",
+  })
   disposePinia(pinia)
   pinia = createPinia()
   const restored = useAppearanceStore(pinia)
   await restored.initialize()
   expect(restored.settings.readingSpotlight).toBe(true)
+  expect(restored.settings.readingSpotlightStyle).toBe("under")
 })
 
 test("terminal colors persist, update the surrounding surface, and reset to the selected preset", async () => {

@@ -10,6 +10,7 @@ const appearance = useAppearanceStore()
 const finePointer = useMediaQuery("(pointer: fine)")
 const reducedMotion = usePreferredReducedMotion()
 const active = computed(() => appearance.settings.readingSpotlight && finePointer.value)
+const style = computed(() => appearance.settings.readingSpotlightStyle)
 
 const { x, y } = useMouse({ type: "client", touch: false })
 const { element, pause, resume } = useElementByPoint({ x, y })
@@ -35,7 +36,8 @@ function update(): void {
     clear()
     return
   }
-  const rect = padSpotlightRect(spotlightRectForBlock(block, y.value))
+  // Nólëbase pads +8px / −4px around the active rect.
+  const rect = padSpotlightRect(spotlightRectForBlock(block, y.value), 4)
   if (rect.width <= 0 || rect.height <= 0) {
     clear()
     return
@@ -46,7 +48,7 @@ function update(): void {
     height: `${rect.height}px`,
     left: `${rect.left}px`,
     top: `${rect.top}px`,
-    transition: reducedMotion.value === "reduce" ? "none" : "all 0.15s ease",
+    transition: reducedMotion.value === "reduce" ? "none" : "all 0.2s ease",
   }
 }
 
@@ -70,9 +72,11 @@ useEventListener("scroll", () => { if (active.value) update() }, true)
       v-if="active"
       v-show="box.display === 'block'"
       class="ui-reading-spotlight"
+      :class="style === 'under' ? 'ui-reading-spotlight-under' : 'ui-reading-spotlight-aside'"
       :style="box"
       aria-hidden="true"
       data-reading-spotlight
+      :data-reading-spotlight-style="style"
     />
   </Teleport>
 </template>

@@ -236,14 +236,28 @@ textarea {
   outline-offset: 2px;
 }
 
-/* Reading spotlight: hover highlight with a canvas-tinted cutout around the active line/block. */
+/*
+ * Reading spotlight — Nólëbase Enhanced Readabilities SpotlightHoverBlock.
+ * Fixed padded highlight only; page brightness stays unchanged (no 100vmax dim).
+ */
 .ui-reading-spotlight {
   pointer-events: none;
   position: fixed;
   z-index: 50;
-  border-radius: 0.5rem;
-  background: light-dark(rgb(74 91 212 / 10%), rgb(142 155 255 / 12%));
-  box-shadow: 0 0 0 100vmax light-dark(rgb(251 251 253 / 58%), rgb(23 25 31 / 62%));
+  border-radius: 8px;
+}
+.ui-reading-spotlight-under {
+  background-color: var(--ui-reading-spotlight-under-bg, rgb(240 197 52 / 10%));
+}
+.ui-reading-spotlight-aside::before {
+  content: "";
+  position: absolute;
+  display: block;
+  width: 4px;
+  height: 100%;
+  border-radius: 4px;
+  background-color: var(--ui-reading-spotlight-aside-bg, var(--ui-color-accent));
+  left: -24px;
 }
 @media (prefers-reduced-motion: reduce) {
   .ui-reading-spotlight { transition: none !important; }

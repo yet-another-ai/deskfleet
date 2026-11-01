@@ -87,12 +87,32 @@ test("highlights the hovered reading block when enabled and clears outside prose
     expect(overlay).not.toBeNull()
     expect(overlay!.style.display).toBe("block")
     expect(overlay!.style.width).toBe("328px")
+    expect(overlay!.dataset.readingSpotlightStyle).toBe("aside")
+    expect(overlay!.classList.contains("ui-reading-spotlight-aside")).toBe(true)
+    expect(overlay!.classList.contains("ui-reading-spotlight-under")).toBe(false)
   })
   vi.spyOn(document, "elementFromPoint").mockReturnValue(document.body)
   window.dispatchEvent(new MouseEvent("mousemove", { clientX: 8, clientY: 8, bubbles: true }))
   await vi.waitFor(() => {
     const overlay = document.querySelector<HTMLElement>("[data-reading-spotlight]")
     expect(overlay === null || overlay.style.display === "none" || getComputedStyle(overlay).display === "none").toBe(true)
+  })
+})
+
+test("applies the Under wash style without a page-dimming shadow", async () => {
+  localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({
+    ...DEFAULT_APPEARANCE_SETTINGS, readingSpotlight: true, readingSpotlightStyle: "under",
+  }))
+  const appearance = useAppearanceStore(pinia)
+  await appearance.initialize()
+  wrapper = mount(ReadingSpotlight, { attachTo: document.body, global: { plugins: [pinia, i18n] } })
+  await flushPromises()
+  pointerAt(40, 90)
+  await vi.waitFor(() => {
+    const overlay = document.querySelector<HTMLElement>("[data-reading-spotlight]")
+    expect(overlay?.dataset.readingSpotlightStyle).toBe("under")
+    expect(overlay?.classList.contains("ui-reading-spotlight-under")).toBe(true)
+    expect(overlay?.classList.contains("ui-reading-spotlight-aside")).toBe(false)
   })
 })
 

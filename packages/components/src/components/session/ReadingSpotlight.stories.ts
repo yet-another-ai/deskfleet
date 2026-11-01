@@ -1,18 +1,19 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import { onMounted } from "vue"
+import type { ReadingSpotlightStyle } from "@deskfleet/client/appearance"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 import AgentMarkdown from "./AgentMarkdown.vue"
 import ReadingSpotlight from "./ReadingSpotlight.vue"
 
 const sampleMarkdown = `### Reading with a spotlight
 
-When the Appearance toggle is on, move the pointer across this reply. The active line or block stays clear while the rest of the page softens, so your eye can stay on one thought at a time.
+When the Appearance toggle is on, move the pointer across this reply. The highlight box follows the active line or block — the rest of the page stays at normal brightness, matching Nólëbase Spotlight.
 
-The first paragraph is longer on purpose. It spans several lines so you can see line-level highlighting inside a single block of prose while neighboring sections fade into the background.
+This longer paragraph spans several lines on purpose. Hover within it to see line-level highlighting; neighboring headings, lists, and code keep their usual contrast.
 
 #### Why this helps
 
-Long agent replies mix explanations, lists, and code. Spotlighting one unit at a time reduces the visual noise without changing the words.
+Long agent replies mix explanations, lists, and code. Marking one unit at a time keeps focus without dimming the transcript.
 
 - Prefer short paragraphs when you can.
 - Keep related bullets together.
@@ -24,8 +25,31 @@ export function greet(name: string): string {
 }
 \`\`\`
 
-After the code sample, this closing paragraph should dim when you hover elsewhere, and brighten again when the pointer returns here. That contrast is the reading spotlight effect Delton asked to see.
+After the code sample, this closing paragraph should pick up the highlight when the pointer returns here.
 `
+
+function enableSpotlight(style: ReadingSpotlightStyle): void {
+  const appearance = useAppearanceStore()
+  appearance.settings.readingSpotlight = true
+  appearance.settings.readingSpotlightStyle = style
+  void appearance.initialize()
+}
+
+function renderStyle(style: ReadingSpotlightStyle) {
+  return {
+    components: { AgentMarkdown, ReadingSpotlight },
+    setup() {
+      onMounted(() => enableSpotlight(style))
+      return { text: sampleMarkdown }
+    },
+    template: `
+      <div class="mx-auto min-h-[80vh] w-full max-w-3xl px-10 py-6 text-[15px] leading-[1.65]">
+        <AgentMarkdown :text="text" />
+        <ReadingSpotlight />
+      </div>
+    `,
+  }
+}
 
 const meta = {
   title: "Domain/Agent Session/ReadingSpotlight",
@@ -39,22 +63,12 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const Enabled: Story = {
-  render: () => ({
-    components: { AgentMarkdown, ReadingSpotlight },
-    setup() {
-      const appearance = useAppearanceStore()
-      onMounted(() => {
-        appearance.settings.readingSpotlight = true
-        void appearance.initialize()
-      })
-      return { text: sampleMarkdown }
-    },
-    template: `
-      <div class="mx-auto min-h-[80vh] w-full max-w-3xl px-6 py-4 text-[15px] leading-[1.65]">
-        <AgentMarkdown :text="text" />
-        <ReadingSpotlight />
-      </div>
-    `,
-  }),
+/** Default style — matches Nólëbase `SpotlightStyle.Aside`. */
+export const Aside: Story = {
+  render: () => renderStyle("aside"),
+}
+
+/** Soft wash under the active line/block — Nólëbase `SpotlightStyle.Under`. */
+export const Under: Story = {
+  render: () => renderStyle("under"),
 }
