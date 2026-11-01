@@ -64,6 +64,11 @@ for (const directory of publicDirectories) {
   await writeFile(resolve(directory, "favicon.ico"), ico)
 }
 
+const webPublic = publicDirectories[0]!
+for (const size of [192, 512]) {
+  await resize(resolve(webPublic, `pwa-${size}x${size}.png`), size)
+}
+
 const websitePublic = publicDirectories[2]!
 await resize(resolve(websitePublic, "logo.png"), 256)
 await copyFile(artwork, resolve(websitePublic, "og.png"))
