@@ -42,7 +42,31 @@ afterEach(async () => {
   resetMermaidSidebarTabs()
   await router.replace("/")
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
+})
+
+test("streamed content renders without waiting for viewport or idle callbacks", async () => {
+  // Neither viewport notifications nor idle callbacks should gate streamed text.
+  vi.stubGlobal("IntersectionObserver", class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  })
+  const idle = vi.fn(() => 1)
+  vi.stubGlobal("requestIdleCallback", idle)
+  vi.stubGlobal("cancelIdleCallback", vi.fn())
+  const view = render({}, "First paragraph.")
+  await view.setProps({ final: false })
+  const text = Array.from({ length: 64 }, (_, i) => `Paragraph ${i} with **bold ${i}**.`).join("\n\n")
+  await view.setProps({ text })
+  await flushPromises()
+  await vi.waitFor(() => expect(view.findAll("strong")).toHaveLength(64))
+  await view.setProps({ final: true, text: `${text}\n\nFinished **answer**.` })
+  await flushPromises()
+  await vi.waitFor(() => expect(view.findAll("strong")).toHaveLength(65))
+  expect(view.text()).toContain("Finished answer.")
+  expect(view.find("[data-markstream-viewport-pending]").exists()).toBe(false)
 })
 
 test("loads images from the executing machine, shares reads through streamed text and releases URLs", async () => {
