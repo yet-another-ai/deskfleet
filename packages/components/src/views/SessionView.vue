@@ -34,7 +34,7 @@ import { useTerminalsStore } from "../stores/terminals.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useSessionRead } from "../composables/useSessionRead.ts"
-import { liveTurnStates } from "../services/agent-conversation.ts"
+import { liveTurnStates, projectConversation } from "../services/agent-conversation.ts"
 import { latestAgentUsage } from "../services/agent-usage.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
@@ -71,6 +71,7 @@ const location = computed(() => fleet.findSession(props.sessionId))
 const resourceTarget = useFileTarget(() => location.value?.machine.id)
 const view = computed(() => agents.views[props.sessionId])
 const snapshot = computed(() => view.value?.snapshot)
+const projection = computed(() => snapshot.value ? projectConversation(view.value?.events ?? [], snapshot.value) : [])
 const usage = computed(() => latestAgentUsage(view.value?.events ?? []))
 const run = computed(() => snapshot.value?.runs.at(-1))
 const activeTurn = computed(() => snapshot.value?.turns.find(turn => liveTurnStates.includes(turn.state)))
@@ -249,7 +250,7 @@ async function checkOperation(operationId: string): Promise<void> {
       <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
         <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
         <template v-else-if="snapshot">
-          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" />
+          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" />
           <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
         </template>
       </div>
@@ -258,6 +259,7 @@ async function checkOperation(operationId: string): Promise<void> {
       v-if="snapshot && !view?.loading"
       :events="view!.events"
       :snapshot="snapshot"
+      :projection="projection"
       :active="activeEntry"
       class="absolute left-1 top-1/2 z-20 max-h-[calc(100%-2rem)] -translate-y-1/2"
       @select="locateEntry"

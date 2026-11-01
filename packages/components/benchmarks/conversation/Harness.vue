@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { nextTick, ref, useTemplateRef, watch } from "vue"
+import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
 import AgentConversation from "../../src/components/session/AgentConversation.vue"
 import AgentOutline from "../../src/components/session/AgentOutline.vue"
+import { projectConversation } from "../../src/services/agent-conversation.ts"
 import { CODE_MARKER, createFixture, FINAL_MARKER, type BenchmarkOptions } from "./fixture.ts"
 
 const props = defineProps<{ options: BenchmarkOptions }>()
@@ -9,6 +10,7 @@ const fixture = createFixture(props.options)
 const initialEventCount = fixture.events.length
 const events = ref(fixture.events)
 const snapshot = ref(fixture.snapshot)
+const projection = computed(() => projectConversation(events.value, snapshot.value))
 const scroller = useTemplateRef<HTMLDivElement>("scroller")
 const conversation = useTemplateRef<HTMLDivElement>("conversation")
 // Match SessionView's post-flush event-count watcher. History mode leaves scroll fixed.
@@ -219,10 +221,10 @@ defineExpose({ run })
 <template>
   <div ref="scroller" class="benchmark-scroller">
     <div ref="conversation" class="benchmark-conversation">
-      <AgentConversation :events="events" :snapshot="snapshot" />
+      <AgentConversation :events="events" :snapshot="snapshot" :projection="projection" />
     </div>
   </div>
-  <aside class="benchmark-outline"><AgentOutline :events="events" :snapshot="snapshot" /></aside>
+  <aside class="benchmark-outline"><AgentOutline :events="events" :snapshot="snapshot" :projection="projection" /></aside>
 </template>
 
 <style>

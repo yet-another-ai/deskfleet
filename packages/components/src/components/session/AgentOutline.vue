@@ -2,7 +2,7 @@
 import { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from "reka-ui"
 import { computed, ref, useTemplateRef, watch } from "vue"
 import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import { projectConversation } from "../../services/agent-conversation.ts"
+import { projectConversation, type ConversationEntry } from "../../services/agent-conversation.ts"
 
 interface OutlineItem {
   id: string
@@ -11,7 +11,7 @@ interface OutlineItem {
   width: number
 }
 
-const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; active?: string }>()
+const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; projection?: ConversationEntry[]; active?: string }>()
 const emit = defineEmits<{ select: [id: string] }>()
 
 const rows = useTemplateRef<HTMLLIElement[]>("rows")
@@ -19,7 +19,7 @@ const hovered = ref<string>()
 
 const items = computed<OutlineItem[]>(() => {
   const result: OutlineItem[] = []
-  for (const entry of projectConversation(props.events, props.snapshot)) {
+  for (const entry of props.projection ?? projectConversation(props.events, props.snapshot)) {
     if (entry.kind === "input") {
       const label = plainText(entry.input.content)
       const width = 6 + (22 * label.length) / (label.length + 10)

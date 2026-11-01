@@ -184,20 +184,51 @@ Raw local evidence is in `result/conversation/baseline-v2-collapsed/`,
 the comparison. Generated evidence stays untracked; preserve those JSON files
 when sharing measurements. Earlier smoke and pre-calibration runs are excluded.
 
+## Shared-projection checkpoint
+
+The next checkpoint supplies a single computed projection from `SessionView` to
+both consumers. The benchmark mirrors that composition change; its fixture,
+pacing and measurement logic are unchanged. The integration test verifies one
+replay per update and synchronized conversation/outline output. No incremental
+reducer or final-message relocation is included.
+
+Comparing the initial candidate at `e6f7c95` with shared projection on the same
+machine and three rounds per scenario, all values are milliseconds:
+
+| History / scenario | Mount | Frame interval p95 | Update-to-frame p95 | Final catchup | Long-task total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 / collapsed, bottom | 34.4 → 34.8 | 16.8 → 16.8 | 28.4 → 24.6 | 120.0 → 137.5 | 172 → 184 |
+| 20 / collapsed, bottom | 474.6 → 471.7 | 50.0 → 33.3 | 77.8 → 23.8 | 260.2 → 271.8 | 442 → 463 |
+| 80 / collapsed, bottom | 1203.5 → 1196.0 | 250.0 → 200.1 | 100.9 → 31.4 | 661.3 → 632.6 | 1250 → 1172 |
+| 20 / expanded, history | 503.0 → 453.0 | 149.9 → 133.3 | 24.4 → 26.1 | 368.5 → 339.0 | 991 → 942 |
+| 80 / expanded, history | 1248.9 → 1206.4 | 533.3 → 533.4 | 130.1 → 109.9 | 1740.0 → 1741.9 | 3178 → 3071 |
+
+Sharing removes the duplicate replay, but does not substantially change the
+expanded 80-turn completion or frame tail. Some small-case timings increased.
+This is a limited optimization, not evidence that history-sized work or rich
+content stalls are resolved. Local samples are in
+`result/conversation/shared-projection-collapsed/` and
+`result/conversation/shared-projection-expanded-history/`.
+
 ## Next optimization candidates
 
 Evaluate each candidate with the collapsed and expanded/history scenarios, then
 verify its functional boundaries with focused tests:
 
-1. **Share and incrementally project the journal.** `AgentConversation` and
-   `AgentOutline` both call `projectConversation` as events change. Sharing a
-   projection can remove duplicate work; an incremental projection can avoid
-   replaying completed history. Reconnects, snapshot corrections, message IDs,
+1. **Incrementally project the journal.** `SessionView` now supplies one shared
+   `projectConversation` result to `AgentConversation` and `AgentOutline`; each
+   component retains its standalone fallback for isolated callers. The shared
+   projection still replays history and recreates response objects. An
+   incremental projection can avoid replaying completed history. Reconnects,
+   snapshot corrections, message IDs,
    and tool metadata must retain their existing ordering and merge semantics.
 2. **Preserve the final message across completion.** `AgentResponse` moves the
    last assistant message from its work section into the final-answer section.
    Keeping that message mounted could avoid repeating Markdown and rich-block
-   initialization at the exact point measured by final catchup.
+   initialization at the exact point measured by final catchup. The component
+   must also retain its identity when a later tool/thought follows an assistant
+   progress message; placing only the last message in a separate subtree moves
+   the remount cost to that transition and resets preview state.
 3. **Cache or coalesce Mermaid work.** The Mermaid service serializes rendering.
    Repeated identical diagrams and superseded streaming revisions can add queue
    work. Measure cache reuse and stale-request elimination with theme changes,
@@ -205,7 +236,11 @@ verify its functional boundaries with focused tests:
 4. **Keep parsing on the incremental path.** Inspect how custom parser settings
    and Markdown hooks affect the installed renderer's incremental parsing and
    stable-node reuse. Preserve local file-link validation while comparing the
-   same output and malformed/incomplete streaming syntax.
+   same output and malformed/incomplete streaming syntax. Removing the current
+   `customMarkdownIt` hook is not equivalent to using `parseOptions.validateLink`
+   alone: angle-delimited `file://server/share/report.md` and `file:relative.md`
+   destinations can retain literal brackets through parser recovery. The latter
+   option filters parsed links after tokenizer validation, so the hook remains.
 5. **Limit offscreen rendering.** A viewport strategy can bound mounted history,
    but must preserve disclosure state, scroll position, locate actions, copy,
    and accessibility. Compare history reading and disclosure expansion as well
