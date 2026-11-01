@@ -2,7 +2,7 @@
 import { MessageSquare } from "@lucide/vue"
 import { computed, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import { DEFAULT_INTERFACE_FONT, DEFAULT_TERMINAL_FONT, type AppearanceSettings } from "@deskfleet/client/appearance"
+import { DEFAULT_INTERFACE_FONT, DEFAULT_TERMINAL_FONT, type AppearanceSettings, type ReadingSpotlightStyle } from "@deskfleet/client/appearance"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 import UiButton from "../common/UiButton.vue"
 import UiNumberField from "../common/UiNumberField.vue"
@@ -26,6 +26,10 @@ const languages = computed(() => [
   { value: "en-US", label: "English" },
   { value: "zh-cmn-Hans-CN", label: "简体中文" },
   { value: "ja-JP", label: "日本語" },
+])
+const spotlightStyles = computed(() => [
+  { value: "aside", label: t("appearance.readingSpotlightAside") },
+  { value: "under", label: t("appearance.readingSpotlightUnder") },
 ])
 
 function saveFont(key: "interfaceFont" | "terminalFont"): void {
@@ -90,6 +94,32 @@ onMounted(() => { void appearance.initialize() })
       <AppearanceTerminalColors :disabled="busy">
         <AppearanceTerminalPreview :font-family="terminalFont.trim() || DEFAULT_TERMINAL_FONT" :ligatures="appearance.settings.terminalLigatures" />
       </AppearanceTerminalColors>
+    </div>
+
+    <div class="border-t border-ui-border py-5">
+      <div class="flex items-center justify-between gap-6">
+        <div>
+          <div id="appearance-reading-spotlight-label" class="text-sm font-medium">{{ t("appearance.readingSpotlight") }}</div>
+          <p id="appearance-reading-spotlight-description" class="mb-0 mt-1 text-xs leading-relaxed text-ui-text-muted">{{ t("appearance.readingSpotlightHint") }}</p>
+        </div>
+        <UiSwitch :model-value="appearance.settings.readingSpotlight" :disabled="busy" aria-labelledby="appearance-reading-spotlight-label" aria-describedby="appearance-reading-spotlight-description" @update:model-value="appearance.set({ readingSpotlight: $event })" />
+      </div>
+      <div v-if="appearance.settings.readingSpotlight" class="mt-4 flex items-center justify-between gap-6">
+        <div>
+          <div id="appearance-reading-spotlight-style-label" class="text-[13px] font-medium">{{ t("appearance.readingSpotlightStyle") }}</div>
+          <p id="appearance-reading-spotlight-style-description" class="mb-0 mt-1 text-xs text-ui-text-muted">{{ t("appearance.readingSpotlightStyleHint") }}</p>
+        </div>
+        <UiSelect
+          name="appearance-reading-spotlight-style"
+          class="w-36"
+          :model-value="appearance.settings.readingSpotlightStyle"
+          :options="spotlightStyles"
+          :disabled="busy"
+          aria-labelledby="appearance-reading-spotlight-style-label"
+          aria-describedby="appearance-reading-spotlight-style-description"
+          @update:model-value="appearance.set({ readingSpotlightStyle: $event as ReadingSpotlightStyle })"
+        />
+      </div>
     </div>
 
     <div class="border-t border-ui-border py-5">

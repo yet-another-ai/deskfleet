@@ -4,6 +4,13 @@ import { isTerminalThemeId, validateTerminalColors, type TerminalColors, type Te
 export const APPEARANCE_CHANNEL = "deskfleet:appearance"
 export const APPEARANCE_CHANGED_EVENT = "deskfleet:appearance-changed"
 
+/** Matches Nólëbase SpotlightStyle: Under = wash, Aside = left accent bar. */
+export type ReadingSpotlightStyle = "under" | "aside"
+
+export function isReadingSpotlightStyle(value: unknown): value is ReadingSpotlightStyle {
+  return value === "under" || value === "aside"
+}
+
 export interface AppearanceSettings {
   language: "system" | AppLocale
   theme: "system" | "light" | "dark"
@@ -18,6 +25,10 @@ export interface AppearanceSettings {
   outlineAudioRgb: boolean
   outlineAudioMaxWidth: number
   outlineAudioDecayMs: number
+  /** Highlight the hovered prose block/line while reading (Nólëbase-style box, no page dim). */
+  readingSpotlight: boolean
+  /** Spotlight visual style; defaults to Aside to match Nólëbase `defaultStyle`. */
+  readingSpotlightStyle: ReadingSpotlightStyle
 }
 
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
@@ -32,6 +43,8 @@ export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   outlineAudioRgb: false,
   outlineAudioMaxWidth: 32,
   outlineAudioDecayMs: 200,
+  readingSpotlight: false,
+  readingSpotlightStyle: "aside",
 }
 
 export const DEFAULT_INTERFACE_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif'
@@ -58,7 +71,9 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
     || ("outlineAudio" in value && typeof value.outlineAudio !== "boolean")
     || ("outlineAudioRgb" in value && typeof value.outlineAudioRgb !== "boolean")
     || ("outlineAudioMaxWidth" in value && !isNonNegativeNumber(value.outlineAudioMaxWidth))
-    || ("outlineAudioDecayMs" in value && !isNonNegativeNumber(value.outlineAudioDecayMs))) {
+    || ("outlineAudioDecayMs" in value && !isNonNegativeNumber(value.outlineAudioDecayMs))
+    || ("readingSpotlight" in value && typeof value.readingSpotlight !== "boolean")
+    || ("readingSpotlightStyle" in value && !isReadingSpotlightStyle(value.readingSpotlightStyle))) {
     throw new Error("Invalid appearance settings")
   }
   return {
@@ -77,5 +92,9 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
     outlineAudioDecayMs: "outlineAudioDecayMs" in value && typeof value.outlineAudioDecayMs === "number"
       ? value.outlineAudioDecayMs
       : DEFAULT_APPEARANCE_SETTINGS.outlineAudioDecayMs,
+    readingSpotlight: "readingSpotlight" in value && value.readingSpotlight === true,
+    readingSpotlightStyle: "readingSpotlightStyle" in value && isReadingSpotlightStyle(value.readingSpotlightStyle)
+      ? value.readingSpotlightStyle
+      : DEFAULT_APPEARANCE_SETTINGS.readingSpotlightStyle,
   }
 }

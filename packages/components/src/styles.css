@@ -235,3 +235,30 @@ textarea {
   outline: 2px solid var(--ui-color-focus);
   outline-offset: 2px;
 }
+
+/*
+ * Reading spotlight — Nólëbase Enhanced Readabilities SpotlightHoverBlock.
+ * Fixed padded highlight only; page brightness stays unchanged (no 100vmax dim).
+ */
+.ui-reading-spotlight {
+  pointer-events: none;
+  position: fixed;
+  z-index: 50;
+  border-radius: 8px;
+}
+.ui-reading-spotlight-under {
+  background-color: var(--ui-reading-spotlight-under-bg, rgb(240 197 52 / 10%));
+}
+.ui-reading-spotlight-aside::before {
+  content: "";
+  position: absolute;
+  display: block;
+  width: 4px;
+  height: 100%;
+  border-radius: 4px;
+  background-color: var(--ui-reading-spotlight-aside-bg, var(--ui-color-accent));
+  left: -24px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-reading-spotlight { transition: none !important; }
+}
