@@ -21,6 +21,7 @@ const { state, isLoading, error, executeImmediate } = useAsyncState(
 )
 const requestError = computed(() => error.value instanceof Error ? error.value.message : error.value ? String(error.value) : null)
 useEventListener("focus", () => { if (!isLoading.value) void executeImmediate() })
+defineExpose({ refresh: () => { if (!isLoading.value) void executeImmediate() } })
 </script>
 
 <template>

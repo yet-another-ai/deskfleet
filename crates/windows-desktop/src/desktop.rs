@@ -10,8 +10,8 @@ use std::{cell::RefCell, io};
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::System::StationsAndDesktops::{
     CloseDesktop, DESKTOP_ACCESS_FLAGS, DESKTOP_CONTROL_FLAGS, DESKTOP_CREATEWINDOW,
-    DESKTOP_READOBJECTS, DESKTOP_WRITEOBJECTS, GetThreadDesktop, GetUserObjectInformationW, HDESK,
-    OpenInputDesktop, SetThreadDesktop, UOI_NAME,
+    DESKTOP_JOURNALPLAYBACK, DESKTOP_READOBJECTS, DESKTOP_WRITEOBJECTS, GetThreadDesktop,
+    GetUserObjectInformationW, HDESK, OpenInputDesktop, SetThreadDesktop, UOI_NAME,
 };
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
@@ -36,17 +36,22 @@ struct Binding {
     selected: OpenDesktop,
     name: Vec<u16>,
     generation: u64,
+    control: bool,
 }
 
 impl Binding {
-    fn select(&mut self, desktop: OpenDesktop, name: Vec<u16>) -> io::Result<u64> {
-        if name != self.name {
+    fn select(&mut self, desktop: OpenDesktop, name: Vec<u16>, control: bool) -> io::Result<u64> {
+        let changed = name != self.name;
+        if changed || (control && !self.control) {
             // SAFETY: This TLS value is used only on its owning thread. The
             // handle belongs to this process's window station; no UI is created.
             unsafe { SetThreadDesktop(desktop.0) }.map_err(os_error)?;
             self.selected = desktop;
             self.name = name;
-            self.generation = self.generation.wrapping_add(1);
+            self.control = control;
+            if changed {
+                self.generation = self.generation.wrapping_add(1);
+            }
         }
         Ok(self.generation)
     }
@@ -72,15 +77,35 @@ impl Drop for Binding {
 /// Returns the Windows access or thread-binding error. Call only on windowless
 /// worker threads: Windows disallows moving a thread that owns windows or hooks.
 pub fn bind_input_desktop() -> io::Result<u64> {
-    // SAFETY: No handles are inherited. These rights allow capture/input and
-    // creation of the framework's internal desktop objects, never ACL changes.
+    bind(false)
+}
+
+/// Bind the input desktop with the additional right required by `SendInput`.
+///
+/// # Errors
+/// Returns the Windows access or thread-binding error. The caller must use a
+/// windowless worker thread, as with [`bind_input_desktop`].
+pub fn bind_input_desktop_for_control() -> io::Result<u64> {
+    bind(true)
+}
+
+fn bind(control: bool) -> io::Result<u64> {
+    // SAFETY: No handles are inherited. Control additionally needs journal
+    // playback for SendInput; neither binding requests ACL changes.
     let desktop = OpenDesktop(
         unsafe {
             OpenInputDesktop(
                 DESKTOP_CONTROL_FLAGS(0),
                 false,
                 DESKTOP_ACCESS_FLAGS(
-                    DESKTOP_READOBJECTS.0 | DESKTOP_WRITEOBJECTS.0 | DESKTOP_CREATEWINDOW.0,
+                    DESKTOP_READOBJECTS.0
+                        | DESKTOP_WRITEOBJECTS.0
+                        | DESKTOP_CREATEWINDOW.0
+                        | if control {
+                            DESKTOP_JOURNALPLAYBACK.0
+                        } else {
+                            0
+                        },
                 ),
             )
         }
@@ -90,7 +115,7 @@ pub fn bind_input_desktop() -> io::Result<u64> {
     DESKTOP.with(|state| {
         let mut state = state.borrow_mut();
         if let Some(binding) = state.as_mut() {
-            return binding.select(desktop, name);
+            return binding.select(desktop, name, control);
         }
         // SAFETY: The thread ID is this thread; GetThreadDesktop returns a
         // borrowed handle which is retained only in this thread's TLS value.
@@ -103,6 +128,7 @@ pub fn bind_input_desktop() -> io::Result<u64> {
             selected: desktop,
             name,
             generation: 1,
+            control,
         });
         Ok(1)
     })
