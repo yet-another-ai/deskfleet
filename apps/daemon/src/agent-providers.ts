@@ -15,7 +15,7 @@ import { piProvider } from "./agents/pi.ts"
 import { launchProviderCommand } from "./provider-setup-process.ts"
 import {
   AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, validateProviderId,
-  type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type ProviderSnapshot, type ProviderTestResult,
+  type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type AgentProviderTemplateId, type ProviderSnapshot, type ProviderTestResult,
 } from "./provider-protocol.ts"
 
 const acpProvider: AgentProvider = {
@@ -39,7 +39,7 @@ function testFailure(error: unknown, template: AgentProviderInput["template"]): 
 export class AgentProviders {
   readonly #directory: string
   readonly #path: string
-  readonly #codex: AgentProvider
+  readonly #providerByTemplate: Record<AgentProviderTemplateId, AgentProvider>
   readonly #listeners = new Set<() => void>()
   #providers: AgentProviderConfig[] = []
   #revision = randomUUID()
@@ -48,7 +48,17 @@ export class AgentProviders {
   constructor(directory: string, codexOverride: AgentProvider = codexProvider) {
     this.#directory = directory
     this.#path = join(directory, "agent-providers.json")
-    this.#codex = codexOverride
+    this.#providerByTemplate = {
+      codex: codexOverride,
+      "claude-code": claudeCodeProvider,
+      cursor: cursorProvider,
+      grok: grokProvider,
+      pi: piProvider,
+      omp: ompProvider,
+      "deepseek-harness": deepseekHarnessProvider,
+      antigravity: antigravityProvider,
+      acp: acpProvider,
+    }
   }
 
   async init(): Promise<void> {
@@ -136,15 +146,7 @@ export class AgentProviders {
   #launch(record: AgentProviderInput): { provider: AgentProvider; config: AgentConfig } {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
     return {
-      provider: record.template === "codex" ? this.#codex
-        : record.template === "claude-code" ? claudeCodeProvider
-          : record.template === "cursor" ? cursorProvider
-            : record.template === "grok" ? grokProvider
-              : record.template === "pi" ? piProvider
-                : record.template === "omp" ? ompProvider
-                  : record.template === "deepseek-harness" ? deepseekHarnessProvider
-                    : record.template === "antigravity" ? antigravityProvider
-                      : acpProvider,
+      provider: this.#providerByTemplate[record.template],
       config: { name: record.name, binaryPath: record.binaryPath ?? (record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath), env: record.env },
     }
   }
