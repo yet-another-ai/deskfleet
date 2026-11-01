@@ -26,6 +26,11 @@ async function mountApp(path = "/", pinia = createPinia()) {
 }
 function link(wrapper: VueWrapper, text: string) { return wrapper.findAll("a").find(a => a.text() === text)! }
 function button(wrapper: VueWrapper, text: string) { return wrapper.findAll("button").find(entry => entry.text() === text)! }
+function hydrateSession(pinia: ReturnType<typeof createPinia>, title = ""): void {
+  const agents = useAgentSessionsStore(pinia)
+  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, title }
+  vi.spyOn(agents, "refresh").mockResolvedValue()
+}
 async function workspaceAction(wrapper: VueWrapper, label: string): Promise<void> {
   await wrapper.get('button[aria-label="storefront"]').trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 })
   await flushPromises()
@@ -72,13 +77,17 @@ afterEach(async () => {
   i18n.global.locale.value = "en-US"
 })
 
-test("the app targets a workspace and lists its sessions without exposing an internal main worktree", async () => {
-  const wrapper = await mountApp()
+test("the app targets a workspace and waits for Session metadata without exposing an internal main worktree", async () => {
+  const pinia = createPinia()
+  const wrapper = await mountApp("/", pinia)
   expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])
   expect(wrapper.get<HTMLButtonElement>('[aria-label="Send"]').element.disabled).toBe(true)
   expect(wrapper.get("aside").text()).not.toContain("Example team")
   expect(wrapper.get('button[aria-label="storefront"]').attributes("aria-expanded")).toBe("true")
   expect(wrapper.find('a[href*="/workspaces/"]').exists()).toBe(false)
+  expect(wrapper.find(`a[href="#/sessions/${sessionId}"]`).exists()).toBe(false)
+  hydrateSession(pinia)
+  await flushPromises()
   expect(link(wrapper, `Session ${sessionId}`).attributes("href")).toBe(`#/sessions/${sessionId}`)
   expect(wrapper.find('a[href*="/worktrees/"]').exists()).toBe(false)
   expect(wrapper.text()).not.toContain("Main worktree")
@@ -87,6 +96,7 @@ test("the app targets a workspace and lists its sessions without exposing an int
 
 test("Pinned sessions appear above Workspaces while retaining their workspace entry", async () => {
   const pinia = createPinia()
+  hydrateSession(pinia, "Pinned investigation")
   const wrapper = await mountApp("/", pinia)
   usePinnedSessionsStore(pinia).pin("local-daemon", sessionId, "Pinned investigation")
   await flushPromises()
@@ -95,7 +105,7 @@ test("Pinned sessions appear above Workspaces while retaining their workspace en
   const workspaces = sidebar.findAll("span").find(element => element.text() === "Workspaces")!
   expect(pinned.element.compareDocumentPosition(workspaces.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(pinned.text()).toContain("Pinned investigation")
-  expect(sidebar.findAll("a").find(element => element.text() === `Session ${sessionId}`)!.attributes("href")).toBe(`#/sessions/${sessionId}`)
+  expect(sidebar.get(`a[href="#/sessions/${sessionId}"]`).text()).toBe("Pinned investigation")
 })
 
 test("the archive route retains the sidebar and hides resource details without changing their preference", async () => {
@@ -498,6 +508,7 @@ test("sidebar and Changes panel controls retain their layout behavior and ignore
 
 test("repeated navigation and browser history retain Changes without reviving Details", async () => {
   const pinia = createPinia()
+  hydrateSession(pinia)
   vi.spyOn(useAgentSessionsStore(pinia), "watchGit").mockResolvedValue(() => {})
   const status = vi.spyOn(useAgentSessionsStore(pinia), "gitStatus").mockResolvedValue({
     sessionId, directories: [{ path: "/worktrees/api/session", repositoryId: "checkout" }],
