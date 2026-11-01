@@ -8,23 +8,16 @@ const meta = {
   title: "Foundational/Layout & Chrome/PaneHeader",
   component: PaneHeader,
   tags: ["autodocs"],
-  argTypes: {
-    hideDetails: { control: "boolean" },
-  },
-  args: {
-    hideDetails: false,
-  },
-  render: (args) => ({
+  render: () => ({
     components: { PaneHeader, ResourcePath, UiButton },
     setup() {
       const layout = useLayoutStore()
       layout.sidebarOpen = true
-      layout.detailsOpen = true
-      return { args }
+      return {}
     },
     template: `
       <div class="rounded-lg border border-ui-border bg-ui-surface">
-        <PaneHeader v-bind="args">
+        <PaneHeader>
           <span>Add Storybook for UI components</span>
           <ResourcePath :segments="['MacBook Pro (Studio)', 'deskfleet-monorepo']" />
           <template #actions>
@@ -42,17 +35,16 @@ type Story = StoryObj<typeof meta>
 export const Default: Story = {}
 
 export const SidebarCollapsedWithWindowToolbar: Story = {
-  render: (args) => ({
+  render: () => ({
     components: { PaneHeader, ResourcePath },
     setup() {
       const layout = useLayoutStore()
       layout.sidebarOpen = false
-      layout.detailsOpen = false
-      return { args }
+      return {}
     },
     template: `
       <div class="rounded-lg border border-ui-border bg-ui-surface">
-        <PaneHeader v-bind="args">
+        <PaneHeader>
           <span>Add Storybook for UI components</span>
           <ResourcePath :segments="['MacBook Pro (Studio)', 'deskfleet-monorepo']" />
         </PaneHeader>

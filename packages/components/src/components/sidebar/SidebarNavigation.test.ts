@@ -20,7 +20,7 @@ async function setup(path = "/") {
       { path: "/", name: "new-session", component: {} },
       { path: "/search", name: "search", component: {} },
       { path: "/schedules/:scheduleId?", name: "schedules", component: {} },
-      { path: "/sessions/archived", name: "archived-sessions", component: {}, meta: { hideDetails: true } },
+      { path: "/sessions/archived", name: "archived-sessions", component: {} },
       { path: "/sessions/:sessionId", name: "session", component: {} },
       { path: "/terminals/:terminalId", name: "terminal", component: {} },
       { path: "/worktrees/:worktreeId", name: "worktree", component: {} },

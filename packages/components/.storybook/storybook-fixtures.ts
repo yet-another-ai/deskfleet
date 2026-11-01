@@ -1218,7 +1218,6 @@ export function createSeededStorybookState() {
 
   const layout = useLayoutStore(pinia)
   layout.sidebarOpen = true
-  layout.detailsOpen = true
 
   const pinned = usePinnedSessionsStore(pinia)
   pinned.pin("machine-1", "sess-1", "Add Storybook for UI components")

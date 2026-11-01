@@ -45,7 +45,7 @@ async function remove(): Promise<void> {
 </script>
 
 <template>
-  <PaneHeader hide-details>
+  <PaneHeader>
     <template v-if="scheduleId">
       <RouterLink :to="{ name: 'schedules' }" class="app-no-drag text-ui-text-muted no-underline hover:text-ui-text">{{ t('schedules.title') }}</RouterLink>
       <span class="mx-1.5 text-ui-text-faint" aria-hidden="true">/</span>{{ creating ? t('schedules.createTitle') : selected?.title }}

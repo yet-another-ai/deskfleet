@@ -6,14 +6,14 @@ import App from "./App.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import { useLayoutStore } from "./stores/layout.ts"
-import { catalogFixture } from "./test/catalog.ts"
+import { catalogFixture, sessionId } from "./test/catalog.ts"
 
 let wrapper: VueWrapper | undefined
 let pinia: ReturnType<typeof createPinia>
 let setWidth: (width: number) => void
 
 beforeAll(async () => {
-  await Promise.all([import("./views/NewSessionView.vue"), import("./views/ArchivedSessionsView.vue")])
+  await Promise.all([import("./views/NewSessionView.vue"), import("./views/SessionView.vue"), import("./views/ArchivedSessionsView.vue")])
 })
 beforeEach(() => {
   window.localStorage.clear()
@@ -43,8 +43,8 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-async function mountApp() {
-  await router.push("/")
+async function mountApp(path = "/") {
+  await router.push(path)
   wrapper = mount(App, {
     attachTo: document.body,
     global: { plugins: [pinia, router, i18n], stubs: { Teleport: { inheritAttrs: false, template: "<slot />" } } },
@@ -53,12 +53,10 @@ async function mountApp() {
   return wrapper
 }
 
-test("compact drawers preserve desktop widths and visibility across viewport changes", async () => {
+test("compact drawers preserve desktop sidebar state across viewport changes", async () => {
   window.localStorage.setItem("deskfleet.sidebar-open", "false")
-  window.localStorage.setItem("deskfleet.details-open", "true")
   window.localStorage.setItem("deskfleet.sidebar-width", "420")
-  window.localStorage.setItem("deskfleet.details-width", "380")
-  const view = await mountApp()
+  const view = await mountApp(`/sessions/${sessionId}`)
   const layout = useLayoutStore(pinia)
   expect(view.find("aside").exists()).toBe(false)
   await view.get('main [aria-label="Show sidebar"]').trigger("click")
@@ -72,15 +70,13 @@ test("compact drawers preserve desktop widths and visibility across viewport cha
   await view.get('[role="dialog"] [aria-label="Hide changes panel"]').trigger("click")
   expect(view.find("aside").exists()).toBe(false)
   expect(window.localStorage.getItem("deskfleet.sidebar-open")).toBe("false")
-  expect(window.localStorage.getItem("deskfleet.details-open")).toBe("true")
   expect(window.localStorage.getItem("deskfleet.sidebar-width")).toBe("420")
-  expect(window.localStorage.getItem("deskfleet.details-width")).toBe("380")
 
   setWidth(1024)
   await flushPromises()
   expect(view.find('[role="dialog"]').exists()).toBe(false)
   expect(view.findAll("aside")).toHaveLength(1)
-  expect(view.get<HTMLElement>('aside[aria-label="Changes"]').element.style.width).toBe("380px")
+  expect(view.get('aside[aria-label="Changes"]').classes()).toContain("w-full")
   layout.toggleSidebar()
   await flushPromises()
   expect(view.get<HTMLElement>("aside:not([aria-label])").element.style.width).toBe("420px")

@@ -32,6 +32,7 @@
     "@xterm/addon-web-links": "0.12.0",
     "@xterm/addon-webgl": "0.19.0",
     "@xterm/xterm": "6.0.0",
+    "dockview-vue": "8.8.3",
     "echarts": "6.1.0",
     "katex": "0.19.1",
     "markstream-vue": "2.0.21",
