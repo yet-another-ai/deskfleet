@@ -91,8 +91,10 @@ update; `deliveryBatches` and `largestDeliveryBatch` make this visible.
 | `frameIntervalMs` | Animation-frame intervals during streaming and final settling; reports count, p50, p95, and maximum. |
 | `longTasks` | Chromium long-task count, total duration, and maximum duration during the measured streaming/settling window; includes support status. |
 | `expandDuringStreamMs` | Opening historical work and its activity group through the next frame. It does not wait for asynchronous Mermaid rendering. Null when there is no historical turn. |
+| `diagramReopenReadyMs` / `diagramReopenStatus` | From the same expand click until the reopened response's mounted diagrams contain SVGs. Status distinguishes ready, timeout, and not-applicable; the 15-second wait does not extend existing timing windows. |
 | `finalCatchupMs` | Time from final text delivery through completion and final-answer readiness, including three stable frames. |
 | `initialDom` / `finalDom` | Element, Markdown, code-block, disclosure, hidden-descendant, and diagram counts at the scenario boundaries. Hidden descendants only count nodes under the HTML `hidden` attribute. |
+| `diagramValidation` | Post-measurement counts of duplicate SVG IDs, unresolved local references, and missing expected fixture labels. Diagnostic failures remain visible in JSON without preventing comparison with an older renderer. |
 
 Final readiness inspects only the last response, avoiding an extra
 history-sized layout/text scan on every settling frame. It requires visible
@@ -117,8 +119,9 @@ Results live under the gitignored `result/conversation/<label>/` directory:
 - Optional `<turns>-<round>.cpuprofile` files contain Chromium CPU samples.
 
 Build provenance records the Git commit, dirty status, tracked diff hash, and
-SHA-256 hashes of `pnpm-lock.yaml`, `AgentMarkdown.vue`, `fixture.ts`, and
-`Harness.vue`. Run metadata also records the built index hash. With
+SHA-256 hashes of `pnpm-lock.yaml`, `AgentMarkdown.vue`, the Mermaid service and
+SVG helper, `fixture.ts`, and `Harness.vue` (older runs predate the Mermaid source
+hashes). Run metadata also records the built index hash. With
 `--skip-build`, provenance describes the reused build rather than the current
 source tree. The tracked diff hash does not include untracked files; retain the
 benchmark source revision as well as JSON output when sharing a result.
@@ -210,6 +213,48 @@ content stalls are resolved. Local samples are in
 `result/conversation/shared-projection-collapsed/` and
 `result/conversation/shared-projection-expanded-history/`.
 
+## Mermaid template cache
+
+The renderer-local Mermaid service caches successful SVG templates by exact
+source and light/dark theme. An LRU limits retained templates to 64 entries and
+4 MiB of accounted UTF-16 source/SVG/document-URL text. Identical pending requests
+share one render. Failed renders are removed so incomplete streaming syntax can
+be retried. Mermaid initialization and rendering run in one queue because
+initialization mutates global configuration outside Mermaid's internal queue.
+
+Each consumer receives an SVG with fresh IDs. A detached-DOM/CSSOM pass updates
+local URL references, href/xlink, accessibility references, CSS ID selectors and
+exact ID/reference attribute selectors while preserving labels, colors and
+external links. Templates retain their originating document URL so cached
+absolute marker references still work after SPA navigation. The cache is neither
+persistent nor shared across renderer windows.
+
+The unchanged expanded/history workload already exercises repeat requests:
+completion remounts the live answer diagram, mid-stream reopening mounts a
+historical diagram again, and the expanded thought contains identical diagram
+sources. Both sides of this comparison use the added SVG-ready disclosure
+measurement and post-run reference/label diagnostics. The uncached service comes
+from `e31717a`; all other scenario settings match the earlier checkpoints.
+
+Three-round medians, in milliseconds:
+
+| Historical turns | Diagram reopen ready | Completion catchup | Frame interval p95 | Long-task total | Initial rich-content settle |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 20 | 234.3 → 72.0 | 334.6 → 193.2 | 133.3 → 50.0 | 972 → 496 | 1640.1 → 1541.0 |
+| 80 | 689.8 → 188.7 | 1688.2 → 634.9 | 516.7 → 516.7 | 3000 → 2163 | 22474.7 → 22384.7 |
+
+Caching reduces repeated rendering but does not improve the large-case frame
+tail or cold rich-content setup materially. All six candidate rounds report zero
+duplicate SVG IDs, unresolved local references and missing fixture labels, with
+diagram reopen status `ready`. Focused tests additionally cover simultaneous
+copies, theme isolation, retry, LRU/byte limits, CSS/text preservation, and cached
+absolute references after route changes. Helper CSS tests isolate Happy DOM's
+missing browser behavior in test-only shims; the real Electron runs exercise the
+native HTML/SVG/CSSOM path.
+
+Local evidence: `result/conversation/mermaid-uncached-expanded/` and
+`result/conversation/mermaid-cached-expanded/`.
+
 ## Next optimization candidates
 
 Evaluate each candidate with the collapsed and expanded/history scenarios, then
@@ -229,10 +274,11 @@ verify its functional boundaries with focused tests:
    must also retain its identity when a later tool/thought follows an assistant
    progress message; placing only the last message in a separate subtree moves
    the remount cost to that transition and resets preview state.
-3. **Cache or coalesce Mermaid work.** The Mermaid service serializes rendering.
-   Repeated identical diagrams and superseded streaming revisions can add queue
-   work. Measure cache reuse and stale-request elimination with theme changes,
-   disposal, and unique SVG identifiers covered.
+3. **Coalesce superseded Mermaid work.** The Mermaid service now shares identical
+   pending renders and caches completed templates by exact source and theme.
+   It still renders distinct queued streaming revisions. Further work should
+   measure stale-request elimination with theme changes, disposal and unique SVG
+   identifiers covered.
 4. **Keep parsing on the incremental path.** Inspect how custom parser settings
    and Markdown hooks affect the installed renderer's incremental parsing and
    stable-node reuse. Preserve local file-link validation while comparing the

@@ -50,7 +50,7 @@ if (!values["skip-build"]) {
     build: { outDir: buildDir, emptyOutDir: true, sourcemap: true },
   })
   const git = (args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim()
-  const sources = ["pnpm-lock.yaml", "packages/components/src/components/session/AgentMarkdown.vue", "packages/components/benchmarks/conversation/fixture.ts", "packages/components/benchmarks/conversation/Harness.vue"]
+  const sources = ["pnpm-lock.yaml", "packages/components/src/components/session/AgentMarkdown.vue", "packages/components/src/services/mermaid.ts", "packages/components/src/services/mermaid-svg.ts", "packages/components/benchmarks/conversation/fixture.ts", "packages/components/benchmarks/conversation/Harness.vue"]
   await writeFile(resolve(buildDir, "provenance.json"), JSON.stringify({
     commit: git(["rev-parse", "HEAD"]), dirty: Boolean(git(["status", "--porcelain"])),
     diffSha256: createHash("sha256").update(git(["diff", "HEAD"])).digest("hex"),
@@ -80,7 +80,7 @@ try {
     child.once("error", reject)
     child.once("exit", code => code === 0 ? done() : reject(new Error(`Electron benchmark exited ${code}`)))
   })
-  const results: Array<{ turns: number; mountMs: number; finalCatchupMs: number; frameIntervalMs: { p95: number }; eventToFrameMs: { p95: number }; longTasks: { totalMs: number } }> = JSON.parse(await readFile(resolve(output, "results.json"), "utf8"))
+  const results: Array<{ turns: number; mountMs: number; finalCatchupMs: number; diagramReopenReadyMs: number | null; frameIntervalMs: { p95: number }; eventToFrameMs: { p95: number }; longTasks: { totalMs: number } }> = JSON.parse(await readFile(resolve(output, "results.json"), "utf8"))
   const median = (numbers: number[]) => {
     const sorted = numbers.sort((a, b) => a - b)
     const mid = Math.floor(sorted.length / 2)
@@ -88,9 +88,11 @@ try {
   }
   for (const count of turns) {
     const runs = results.filter(result => result.turns === count)
+    const diagramReopens = runs.flatMap(result => result.diagramReopenReadyMs == null ? [] : [result.diagramReopenReadyMs])
     console.log(JSON.stringify({ label: values.label, turns: count, rounds: runs.length, medianMountMs: median(runs.map(r => r.mountMs)),
       medianFrameP95Ms: median(runs.map(r => r.frameIntervalMs.p95)), medianUpdateToFrameP95Ms: median(runs.map(r => r.eventToFrameMs.p95)),
       medianFinalCatchupMs: median(runs.map(r => r.finalCatchupMs)), medianLongTaskTotalMs: median(runs.map(r => r.longTasks.totalMs)),
+      medianDiagramReopenReadyMs: diagramReopens.length ? median(diagramReopens) : null,
     }))
   }
   console.log(`Raw samples and metadata: ${output}`)

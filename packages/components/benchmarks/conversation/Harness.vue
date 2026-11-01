@@ -39,6 +39,38 @@ function domCounts() {
   }
 }
 
+function diagramDiagnostics() {
+  const diagrams = [...conversation.value!.querySelectorAll<SVGElement>("[data-mermaid-stage] svg")]
+  const allIds = new Map<string, number>()
+  let unresolvedLocalReferences = 0
+  let missingFixtureLabels = 0
+  for (const svg of diagrams) {
+    const nodes = [svg, ...svg.querySelectorAll("*")]
+    const localIds = new Set(nodes.flatMap(node => node.id ? [node.id] : []))
+    for (const node of nodes) if (node.id) allIds.set(node.id, (allIds.get(node.id) ?? 0) + 1)
+    const references: string[] = []
+    for (const node of nodes) {
+      for (const attribute of node.attributes) {
+        if ((attribute.name === "href" || attribute.name === "xlink:href") && attribute.value.startsWith("#")) references.push(attribute.value.slice(1))
+        if (attribute.name === "aria-labelledby" || attribute.name === "aria-describedby") references.push(...attribute.value.split(/\s+/u).filter(Boolean))
+      }
+    }
+    // Includes SVG presentation attributes, inline styles, and embedded stylesheets.
+    for (const match of svg.outerHTML.matchAll(/url\(\s*["']?#([^"')\s]+)["']?\s*\)/gu)) references.push(match[1]!)
+    unresolvedLocalReferences += references.filter(id => !localIds.has(id)).length
+    const labels = [...svg.querySelectorAll(".nodeLabel")].map(node => node.textContent?.trim())
+    if (!["Read", "Parse", "Render"].every(label => labels.includes(label))) missingFixtureLabels++
+  }
+  // Diagnostics run outside the timing window. Legacy renderer ID collisions are
+  // reported so the same workload remains runnable against the uncached baseline.
+  return {
+    renderedDiagrams: diagrams.length,
+    duplicateIds: [...allIds.values()].reduce((total, count) => total + Math.max(0, count - 1), 0),
+    unresolvedLocalReferences,
+    missingFixtureLabels,
+  }
+}
+
 function closedDisclosures() {
   return [...conversation.value!.querySelectorAll<HTMLButtonElement>('button[aria-expanded="false"]:not([disabled])')]
     .filter(button => button.hasAttribute("data-turn-work") || button.hasAttribute("data-activity-trigger") || button.classList.contains("group/tool") || button.classList.contains("group/thought"))
@@ -92,7 +124,10 @@ async function run(mountedAt: number) {
   const deliveryLateness: number[] = []
   const eventToFrame: number[] = []
   let expandDuringStreamMs: number | null = null
+  let diagramReopenReadyMs: number | null = null
+  let diagramReopenStatus: "not-applicable" | "ready" | "timeout" = "not-applicable"
   let expansion: Promise<void> | undefined
+  let diagramReadiness: Promise<void> | undefined
   const longTasks: number[] = []
   const pendingPaints: Promise<void>[] = []
   const observer = new PerformanceObserver(list => {
@@ -155,6 +190,19 @@ async function run(mountedAt: number) {
             // Outer work + activity expansion through the next frame; this
             // does not include asynchronously completed Mermaid rendering.
             expandDuringStreamMs = performance.now() - expandingAt
+            diagramReadiness = (async () => {
+              const readyDeadline = expandingAt + 15_000
+              while (performance.now() < readyDeadline) {
+                const diagrams = response.querySelectorAll(".ui-mermaid")
+                if (diagrams.length && diagrams.length === response.querySelectorAll("[data-mermaid-stage] svg").length) {
+                  diagramReopenReadyMs = performance.now() - expandingAt
+                  diagramReopenStatus = "ready"
+                  return
+                }
+                await frame()
+              }
+              diagramReopenStatus = "timeout"
+            })()
           })()
         }
         if (delivered === fixture.pending.length) { resolve(); return }
@@ -200,10 +248,13 @@ async function run(mountedAt: number) {
   for (const entry of observer.takeRecords()) longTasks.push(entry.duration)
   observer.disconnect()
   if (!settledAt) throw new Error("Final answer/code did not settle within 15 seconds")
+  const finalDom = domCounts()
+  await diagramReadiness
+  const diagramValidation = diagramDiagnostics()
   return {
     options: props.options,
     fixture: { initialEvents: initialEventCount, streamedEvents: fixture.pending.length, sourceCharacters: fixture.sourceCharacters },
-    mountMs, unfoldMs, preStreamSettleMs, expandDuringStreamMs, streamMs: lastDeliveryAt - started,
+    mountMs, unfoldMs, preStreamSettleMs, expandDuringStreamMs, diagramReopenReadyMs, diagramReopenStatus, streamMs: lastDeliveryAt - started,
     offeredStreamMs: (fixture.pending.length - 1) * props.options.intervalMs,
     finalCatchupMs: settledAt - lastDeliveryAt,
     eventToFrameMs: distribution(eventToFrame),
@@ -211,7 +262,7 @@ async function run(mountedAt: number) {
     frameIntervalMs: distribution(frameIntervals),
     longTasks: { supported: longTasksSupported, count: longTasks.length, totalMs: longTasks.reduce((sum, value) => sum + value, 0), maxMs: Math.max(0, ...longTasks) },
     deliveryBatches, largestDeliveryBatch,
-    initialDom, finalDom: domCounts(),
+    initialDom, finalDom, diagramValidation,
     completed: true,
   }
 }
