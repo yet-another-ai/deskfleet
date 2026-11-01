@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils"
+import { resolveTerminalTheme } from "@deskfleet/client/terminal-theme"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { defineComponent, nextTick, ref } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
@@ -109,7 +110,7 @@ test("opens a read-only xterm.js terminal that fits its container", () => {
   terminal!.input("pasted command\r")
   expect(wrapper.emitted("input")).toBeUndefined()
   expect(terminal!.loadAddon).toHaveBeenCalledWith(fit)
-  expect(terminal!.open).toHaveBeenCalledWith(wrapper.element.firstElementChild)
+  expect(terminal!.open).toHaveBeenCalledWith(wrapper.get("[data-terminal-container]").element)
   expect(terminal!.loadAddon).toHaveBeenCalledWith(webgl)
   expect(terminal!.loadAddon).toHaveBeenCalledWith(image)
   expect(image!.options).toEqual({
@@ -142,7 +143,7 @@ test("keeps the default renderer when WebGL fails to attach", () => {
   const image = imageAddons.at(-1)!
   expect(webglAddons).toHaveLength(initialWebgl)
   expect(imageAddons).toHaveLength(initialImages + 1)
-  expect(terminal.open).toHaveBeenCalledWith(wrapper.element.firstElementChild)
+  expect(terminal.open).toHaveBeenCalledWith(wrapper.get("[data-terminal-container]").element)
   expect(terminal.loadAddon).toHaveBeenCalledWith(fit)
   expect(terminal.loadAddon).toHaveBeenCalledWith(image)
   expect(terminal.write).toHaveBeenCalledWith("fallback")
@@ -267,6 +268,47 @@ test("applies the terminal font fallback list to existing terminals and refits t
   expect(terminal.options.fontFamily).toBe(defaultFont)
   expect(fit.fit).toHaveBeenCalledTimes(2)
   expect(ligatureAddons).toHaveLength(initialAddons + 3)
+  wrapper.unmount()
+})
+
+test("updates saved terminal colors without recreating the terminal or clearing its output", async () => {
+  const appearance = useAppearanceStore()
+  const wrapper = mount(TerminalSurface, { props: { banner: "existing output" } })
+  const terminal = terminals.at(-1)!
+  const count = terminals.length
+  const written = terminal.write.mock.calls.slice()
+  expect(terminal.options.theme).toEqual(resolveTerminalTheme("deskfleet", {}))
+
+  appearance.settings.terminalTheme = "solarized-light"
+  await nextTick()
+  expect(terminal.options.theme).toEqual(resolveTerminalTheme("solarized-light", {}))
+  expect((wrapper.element as HTMLElement).style.backgroundColor).toBe("#fdf6e3")
+
+  appearance.settings.terminalColors = { background: "#112233", red: "#ee5533" }
+  await nextTick()
+  expect(terminal.options.theme).toMatchObject({ background: "#112233", red: "#ee5533" })
+  expect((wrapper.element as HTMLElement).style.backgroundColor).toBe("#112233")
+  expect(terminals).toHaveLength(count)
+  expect(terminal.open).toHaveBeenCalledOnce()
+  expect(terminal.reset).not.toHaveBeenCalled()
+  expect(terminal.write.mock.calls).toEqual(written)
+  wrapper.unmount()
+})
+
+test("preview colors override saved preferences and update in place", async () => {
+  const appearance = useAppearanceStore()
+  const theme = resolveTerminalTheme("nord", { cursor: "#123456" })
+  const wrapper = mount(TerminalSurface, { props: { theme } })
+  const terminal = terminals.at(-1)!
+  expect(terminal.options.theme).toEqual(theme)
+  appearance.settings.terminalTheme = "dracula"
+  await nextTick()
+  expect(terminal.options.theme).toEqual(theme)
+  await wrapper.setProps({ theme: resolveTerminalTheme("one-dark", {}) })
+  expect(terminal.options.theme).toEqual(resolveTerminalTheme("one-dark", {}))
+  await wrapper.setProps({ theme: undefined })
+  expect(terminal.options.theme).toEqual(resolveTerminalTheme("dracula", {}))
+  expect(terminal.open).toHaveBeenCalledOnce()
   wrapper.unmount()
 })
 

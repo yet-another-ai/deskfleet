@@ -1,5 +1,6 @@
 import { configureClient, getClient } from "@deskfleet/client/platform"
 import { DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings } from "@deskfleet/client/appearance"
+import { resolveTerminalTheme } from "@deskfleet/client/terminal-theme"
 import { createPinia, disposePinia, type Pinia } from "pinia"
 import { nextTick } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
@@ -28,6 +29,7 @@ test.each([
   ["ja-JP", "ja-JP"],
 ] as const)("restores browser preferences in %s before mounting and persists CSS fallback lists verbatim", async (language, documentLanguage) => {
   const saved: AppearanceSettings = {
+    ...DEFAULT_APPEARANCE_SETTINGS,
     language, theme: "dark", interfaceFont: '"Noto Sans", sans-serif',
     terminalFont: '"Cascadia Code", "Noto Sans Mono CJK SC", monospace',
     terminalLigatures: true,
@@ -84,28 +86,49 @@ test("explicit theme overrides OS changes and Follow System resumes tracking the
   expect(document.documentElement.style.colorScheme).toBe("light dark")
 })
 
-test("existing browser preferences retain their values when the ligatures setting is introduced", async () => {
+test("existing browser preferences retain their values when new terminal settings are introduced", async () => {
   const saved = { language: "zh-cmn-Hans-CN", theme: "dark", interfaceFont: "Arial, sans-serif", terminalFont: '"Cascadia Code", monospace' }
   localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(saved))
   const appearance = useAppearanceStore(pinia)
   await appearance.initialize()
-  expect(appearance.settings).toEqual({ ...saved, terminalLigatures: false })
+  expect(appearance.settings).toEqual({ ...DEFAULT_APPEARANCE_SETTINGS, ...saved })
   expect(appearance.terminalLigatures).toBe(false)
   await appearance.set({ terminalLigatures: true })
-  expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toEqual({ ...saved, terminalLigatures: true })
+  expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toEqual({ ...DEFAULT_APPEARANCE_SETTINGS, ...saved, terminalLigatures: true })
+})
+
+test("terminal colors persist, update the surrounding surface, and reset to the selected preset", async () => {
+  const appearance = useAppearanceStore(pinia)
+  await appearance.initialize()
+  await appearance.set({ terminalTheme: "nord", terminalColors: { background: "#123456", red: "#fF1234" } })
+  expect(appearance.terminalTheme).toEqual(resolveTerminalTheme("nord", { background: "#123456", red: "#ff1234" }))
+  expect(document.documentElement.style.getPropertyValue("--ui-color-terminal")).toBe("#123456")
+  expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toMatchObject({
+    terminalTheme: "nord", terminalColors: { background: "#123456", red: "#ff1234" },
+  })
+  disposePinia(pinia)
+  pinia = createPinia()
+  const restored = useAppearanceStore(pinia)
+  await restored.initialize()
+  expect(restored.terminalTheme.background).toBe("#123456")
+  await restored.set({ terminalColors: {} })
+  expect(restored.terminalTheme).toEqual(resolveTerminalTheme("nord"))
+  expect(document.documentElement.style.getPropertyValue("--ui-color-terminal")).toBe("#2e3440")
 })
 
 test("browser preferences synchronize with another tab", async () => {
   const appearance = useAppearanceStore(pinia)
   await appearance.initialize()
   await nextTick()
-  const saved = { ...DEFAULT_APPEARANCE_SETTINGS, theme: "dark", interfaceFont: "serif" }
+  const saved = { ...DEFAULT_APPEARANCE_SETTINGS, theme: "dark", interfaceFont: "serif", terminalTheme: "dracula", terminalColors: { cursor: "#123456" } }
   window.dispatchEvent(new StorageEvent("storage", {
     key: APPEARANCE_STORAGE_KEY, newValue: JSON.stringify(saved), storageArea: localStorage,
   }))
   await nextTick()
   expect(appearance.settings).toEqual(saved)
   expect(document.documentElement.style.colorScheme).toBe("dark")
+  expect(appearance.terminalTheme.cursor).toBe("#123456")
+  expect(document.documentElement.style.getPropertyValue("--ui-color-terminal")).toBe("#282a36")
 })
 
 test("desktop preferences retain the host API across machine changes and recover after a failed save", async () => {

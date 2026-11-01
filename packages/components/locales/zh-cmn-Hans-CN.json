@@ -381,7 +381,20 @@
     "fontHint": "使用已安装的字体，留空恢复默认。",
     "terminalFontHint": "支持 CSS 回退列表，如 \"Cascadia Code\", monospace。留空恢复默认。",
     "interfacePreview": "你好，世界。The quick brown fox.",
-    "terminalPreview": "终端字体预览",
+    "terminalPreview": "终端预览",
+    "terminalColors": "终端配色",
+    "terminalColorsHint": "选择预设，再按喜好调整。修改会应用到当前客户端的所有终端。",
+    "terminalPreset": "终端配色预设",
+    "customizeTerminalColors": "自定义颜色",
+    "customTerminalColors": "已自定义颜色",
+    "resetTerminalColors": "恢复预设",
+    "ansiColors": "ANSI 颜色",
+    "invalidTerminalColor": "请输入 6 位十六进制颜色，例如 #15171d。",
+    "terminalColorLabels": {
+      "background": "背景", "foreground": "文字", "cursor": "光标", "selectionBackground": "选区",
+      "black": "黑色", "red": "红色", "green": "绿色", "yellow": "黄色", "blue": "蓝色", "magenta": "品红", "cyan": "青色", "white": "白色",
+      "brightBlack": "亮黑", "brightRed": "亮红", "brightGreen": "亮绿", "brightYellow": "亮黄", "brightBlue": "亮蓝", "brightMagenta": "亮品红", "brightCyan": "亮青", "brightWhite": "亮白"
+    },
     "ligatures": "字体连字",
     "ligaturesHint": "在终端字体支持时，将 =>、!= 等字符组合显示为连字。"
   },

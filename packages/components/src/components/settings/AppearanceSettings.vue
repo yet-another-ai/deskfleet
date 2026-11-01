@@ -8,6 +8,7 @@ import UiSelect from "../common/UiSelect.vue"
 import UiSwitch from "../common/UiSwitch.vue"
 import AppearanceThemePicker from "./AppearanceThemePicker.vue"
 import AppearanceTerminalPreview from "./AppearanceTerminalPreview.vue"
+import AppearanceTerminalColors from "./AppearanceTerminalColors.vue"
 
 const { t } = useI18n()
 const appearance = useAppearanceStore()
@@ -71,7 +72,6 @@ onMounted(() => { void appearance.initialize() })
         @change="saveFont('terminalFont')" @keydown.enter.prevent="saveFont('terminalFont')"
       >
       <p id="appearance-terminal-font-description" class="mb-3 mt-2 text-xs leading-relaxed text-ui-text-muted">{{ t("appearance.terminalFontHint") }}</p>
-      <AppearanceTerminalPreview :font-family="terminalFont.trim() || DEFAULT_TERMINAL_FONT" :ligatures="appearance.settings.terminalLigatures" />
       <div class="flex items-center justify-between gap-6 py-4">
         <div>
           <div id="appearance-terminal-ligatures-label" class="text-[13px] font-medium">{{ t("appearance.ligatures") }}</div>
@@ -79,6 +79,9 @@ onMounted(() => { void appearance.initialize() })
         </div>
         <UiSwitch :model-value="appearance.settings.terminalLigatures" :disabled="busy" aria-labelledby="appearance-terminal-ligatures-label" aria-describedby="appearance-terminal-ligatures-description" @update:model-value="appearance.set({ terminalLigatures: $event })" />
       </div>
+      <AppearanceTerminalColors :disabled="busy">
+        <AppearanceTerminalPreview :font-family="terminalFont.trim() || DEFAULT_TERMINAL_FONT" :ligatures="appearance.settings.terminalLigatures" />
+      </AppearanceTerminalColors>
     </div>
     <p v-if="!appearance.ready && !appearance.error || appearance.saving" role="status" class="m-0 mt-2 text-[13px] text-ui-text-muted">{{ appearance.saving ? t("catalog.saving") : t("settings.loading") }}</p>
     <p v-if="appearance.error" role="alert" class="m-0 mt-2 break-words text-[13px] text-ui-danger">{{ appearance.error }}</p>
