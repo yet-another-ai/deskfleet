@@ -145,6 +145,7 @@ async function run(mountedAt: number) {
     frameId = requestAnimationFrame(sampleFrame)
   }
   frameId = requestAnimationFrame(sampleFrame)
+  performance.mark("conversation-stream-start")
   const started = performance.now()
   const preStreamSettleMs = started - mountedAt - mountMs - unfoldMs
   let delivered = 0
@@ -212,6 +213,7 @@ async function run(mountedAt: number) {
     deliver()
   })
   const lastDeliveryAt = performance.now()
+  performance.mark("conversation-stream-delivered")
   events.value.push(fixture.completion)
   snapshot.value = { ...snapshot.value, turns: [...snapshot.value.turns.slice(0, -1), fixture.completed] }
   await nextTick()
@@ -240,6 +242,7 @@ async function run(mountedAt: number) {
     if (stableFrames >= 3) { settledAt = performance.now(); break }
   }
   measuring = false
+  performance.mark("conversation-final-ready")
   cancelAnimationFrame(frameId)
   await Promise.all(pendingPaints)
   await expansion
