@@ -84,7 +84,7 @@ const banner = computed(() => `\x1b[2m${t("terminal.unavailable")}\x1b[0m\n`)
     class="flex min-h-0 flex-1 items-center justify-center px-6 text-ui-text-muted"
   >{{ t("terminal.notFound") }}</div>
   <div v-else-if="!redirecting" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
-    <div class="min-h-0 flex-1 overflow-hidden rounded-xl bg-ui-terminal p-3">
+    <div class="min-h-0 flex-1 overflow-hidden rounded-xl bg-ui-terminal">
       <TerminalSurface :key="terminalId" :banner="banner" />
     </div>
   </div>

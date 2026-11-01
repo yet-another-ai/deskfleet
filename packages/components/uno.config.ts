@@ -27,6 +27,7 @@ const colorNames = [
   "danger",
   "switch-thumb",
   "terminal",
+  "desktop",
 ] as const
 
 // Buttons share a shape; each variant sets its colors. Utilities on the element still override the shortcut.
