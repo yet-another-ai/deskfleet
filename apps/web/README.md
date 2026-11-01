@@ -35,6 +35,35 @@ and allow the Web origin in `DESKFLEET_WEB_ORIGINS` when it differs from the API
 origin. Web and API must share a site for SameSite cookies; unrelated cross-site
 hosting is unsupported.
 
+## Progressive Web App
+
+The Web client is an installable, online PWA. Supporting browsers use
+`public/manifest.webmanifest` to install DeskFleet with its own icon and launch
+`/` in a standalone window. The stable app ID and scope are `/`, so each hosted
+origin has its own installation. Deploy the entire `dist/` directory at the
+origin root, including the manifest and icons. The bundled server already serves
+these files; an independent static host should serve `.webmanifest` as
+`application/manifest+json` and revalidate it when checking for updates.
+
+Installation requires HTTPS in production; `localhost` and `127.0.0.1` work for
+local development. Use the browser's Install app command, or Add to Home Screen
+on iOS. Availability and wording depend on the browser. See the
+[browser installation requirements](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable).
+
+This configuration does not register a service worker. Login, synchronized
+history, and live operations retain their existing network requirements;
+installation adds neither offline access nor notifications after the app closes.
+New frontend builds load on normal navigation or reload without a service-worker
+cache or a forced refresh of active sessions.
+
+The 192px and 512px installation icons and the existing Apple touch icon come
+from the shared brand artwork. Regenerate them with
+`mise exec -- pnpm --filter @deskfleet/desktop icons`.
+After `mise run web:build`, check the manifest and icon previews in browser
+DevTools under Application → Manifest on an HTTPS or localhost deployment.
+
+## Backend and integrations
+
 The welcome page signs in to this compiled backend and has no address setting.
 Changing a compiled API origin requires rebuilding the Web client. A production
 build without an API override follows the origin serving its page.

@@ -116,7 +116,7 @@ Use **DeskFleet** for the product's display name; package names, commands, URLs,
 and other technical identifiers remain lowercase. The supplied Arctic fox brand
 master lives in `packages/components/src/assets/deskfleet.png`;
 `mise exec -- pnpm --filter @deskfleet/desktop icons` regenerates the application,
-tray, Web favicon, and website assets from it.
+tray, Web favicon and PWA installation icons, and website assets from it.
 
 ## Local Docker Compose
 
