@@ -1,7 +1,30 @@
+<script lang="ts">
+import { setCustomComponents } from "markstream-vue"
+import MarkdownCodeBlock from "./markdown/MarkdownCodeBlock.vue"
+import MarkdownImageNode from "./markdown/MarkdownImageNode.vue"
+import MarkdownLinkNode from "./markdown/MarkdownLinkNode.vue"
+import MarkdownMathBlock from "./markdown/MarkdownMathBlock.vue"
+import MarkdownMathInline from "./markdown/MarkdownMathInline.vue"
+import MarkdownMermaidNode from "./markdown/MarkdownMermaidNode.vue"
+
+const CUSTOM_ID = "deskfleet-markdown"
+
+// Registration invalidates every renderer's parser cache; run once per module,
+// not when a new message mounts or a folded response is opened.
+setCustomComponents(CUSTOM_ID, {
+  code_block: MarkdownCodeBlock,
+  mermaid: MarkdownMermaidNode,
+  math_block: MarkdownMathBlock,
+  math_inline: MarkdownMathInline,
+  image: MarkdownImageNode,
+  link: MarkdownLinkNode,
+})
+</script>
+
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { watchImmediate } from "@vueuse/core"
-import { MarkdownRender, setCustomComponents } from "markstream-vue"
+import { MarkdownRender } from "markstream-vue"
 import { computed, inject, onBeforeUnmount, provide, reactive, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { agentResourceContextKey, isFileResource } from "../../services/agent-resources.ts"
@@ -9,12 +32,6 @@ import { previewKindFromMime } from "../../services/preview.ts"
 import { markdownHostKey, type LoadedImage } from "./markdown/context.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
 import type { FileResourceRequest } from "../../../../client/src/files.ts"
-import MarkdownCodeBlock from "./markdown/MarkdownCodeBlock.vue"
-import MarkdownImageNode from "./markdown/MarkdownImageNode.vue"
-import MarkdownLinkNode from "./markdown/MarkdownLinkNode.vue"
-import MarkdownMathBlock from "./markdown/MarkdownMathBlock.vue"
-import MarkdownMathInline from "./markdown/MarkdownMathInline.vue"
-import MarkdownMermaidNode from "./markdown/MarkdownMermaidNode.vue"
 
 const client = usePlatformClient()
 
@@ -24,17 +41,6 @@ const context = inject(agentResourceContextKey, computed(() => undefined))
 const error = ref<string>()
 const resource = ref<FileResourceRequest>()
 const files = client.files
-
-const CUSTOM_ID = "deskfleet-markdown"
-
-setCustomComponents(CUSTOM_ID, {
-  code_block: MarkdownCodeBlock,
-  mermaid: MarkdownMermaidNode,
-  math_block: MarkdownMathBlock,
-  math_inline: MarkdownMathInline,
-  image: MarkdownImageNode,
-  link: MarkdownLinkNode,
-})
 
 const images = reactive(new Map<string, LoadedImage>())
 const diagramIds = new Map<string, string>()

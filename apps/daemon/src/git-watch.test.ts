@@ -370,6 +370,10 @@ test("a successful classify config-lock retry restores the full rebuild retry bu
 })
 
 test("submodules use their own ignore rules and watch metadata outside the working tree", async context => {
+  // Keep ownership/invalidations deterministic like the linked-worktree test;
+  // FSEvents may coalesce the first edit with writes from submodule creation.
+  // The OS event tests above cover delivery through real filesystem watches.
+  const callbacks = controlledWatches(context)
   const f = await fixture(context)
   // Finish submodule topology before watching. On Windows, `git submodule add`
   // briefly locks `.git/config`; racing an open watcher yields Permission denied
@@ -377,24 +381,41 @@ test("submodules use their own ignore rules and watch metadata outside the worki
   f.stop()
   const source = join(f.root, "source-repository")
   await repository(source)
+  await writeFile(join(source, ".gitignore"), "generated/\n")
+  await git(source, "add", ".gitignore")
+  await git(source, "commit", "--no-gpg-sign", "-m", "ignore generated files")
   await git(f.root, "-c", "protocol.file.allow=always", "submodule", "add", source, "module")
   await git(f.root, "commit", "--no-gpg-sign", "-am", "submodule")
+  const module = join(f.root, "module")
+  await mkdir(join(module, "generated"))
   let events = 0
   const errors: string[] = []
   await f.watch([f.root], error => { events++; if (error) errors.push(error) })
-  const module = join(f.root, "module")
-  async function changed(action: () => Promise<unknown>) {
-    const before = events
-    await action()
-    const until = Date.now() + 5_000
-    while (events === before && Date.now() < until) await delay(20)
-    assert.ok(events > before, "OS notification did not arrive")
-    assert.deepEqual(errors, [])
+  const gitDir = await realpath(await git(module, "rev-parse", "--absolute-git-dir"))
+  const notify = (directory: string, filename: string) => {
+    const callback = callbacks.get(directory)
+    assert.ok(callback, `missing watch for ${directory}`)
+    callback("change", filename)
   }
-  await changed(() => writeFile(join(module, "source.txt"), "module change\n"))
-  await changed(() => git(module, "add", "source.txt"))
+  const status = async () => (await f.inspection.status("1", [f.root])).repositories[0]!
+  const initial = await status()
+  assert.equal(initial.changes.some(change => change.path === "module"), false)
+  assert.equal(callbacks.has(join(module, "generated")), false)
+  await writeFile(join(module, "generated", "build.txt"), "ignored\n")
+  notify(module, "generated")
+  assert.equal(events, 0)
+  assert.equal(await status(), initial)
+  await writeFile(join(module, "source.txt"), "module change\n")
+  notify(module, "source.txt")
+  const edited = await status()
+  assert.equal(events, 1)
+  assert.notEqual(edited, initial)
+  assert.ok(edited.changes.some(change => change.path === "module"))
+  await git(module, "add", "source.txt")
+  notify(gitDir, "index")
+  assert.equal(events, 2)
+  assert.notEqual(await status(), edited)
   assert.deepEqual(errors, [])
-  assert.ok((await f.inspection.status("1", [f.root])).repositories[0]!.changes.some(change => change.path === "module"))
 })
 
 test("watcher failures stay visible through surviving events and another viewer can retry the shared watcher", async context => {

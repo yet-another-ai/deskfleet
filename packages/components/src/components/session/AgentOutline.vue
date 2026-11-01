@@ -3,7 +3,7 @@ import { fittedOklch } from "@proj-airi/chromatic"
 import { createSharedComposable, useEventListener, useRafFn, watchImmediate } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef, triggerRef, useTemplateRef, watch } from "vue"
 import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import { projectConversation } from "../../services/agent-conversation.ts"
+import { projectConversation, type ConversationEntry } from "../../services/agent-conversation.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 
 interface OutlineItem {
@@ -273,6 +273,7 @@ const props = withDefaults(defineProps<{
   active?: string
   events?: AgentEvent[]
   snapshot?: AgentSnapshot
+  projection?: ConversationEntry[]
 }>(), {
   preview: false,
   rgb: undefined,
@@ -307,7 +308,7 @@ function plainText(content: AgentInput["content"]): string {
 const items = computed<OutlineItem[]>(() => {
   if (!props.events || !props.snapshot) return PREVIEW_ITEMS
   const result: OutlineItem[] = []
-  for (const entry of projectConversation(props.events, props.snapshot)) {
+  for (const entry of props.projection ?? projectConversation(props.events, props.snapshot)) {
     if (entry.kind === "input") {
       result.push({ id: entry.id, label: plainText(entry.input.content) })
       continue

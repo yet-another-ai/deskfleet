@@ -3,14 +3,14 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { computed, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentEvent, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import { groupTranscript, projectConversation } from "../../services/agent-conversation.ts"
+import { groupTranscript, projectConversation, type ConversationEntry } from "../../services/agent-conversation.ts"
 import AgentResponse from "./AgentResponse.vue"
 import AgentUserMessage from "./AgentUserMessage.vue"
 import type { FileTarget } from "../../../../client/src/files.ts"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
 
 const client = usePlatformClient()
-const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; disabled?: boolean; resourceTarget?: FileTarget; canFork?: boolean; forkDisabled?: boolean; locateEntry?: string }>()
+const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; projection?: ConversationEntry[]; disabled?: boolean; resourceTarget?: FileTarget; canFork?: boolean; forkDisabled?: boolean; locateEntry?: string }>()
 const emit = defineEmits<{ fork: [] }>()
 const resourceActive = ref(true)
 watch([() => props.snapshot.session.id, () => JSON.stringify(props.resourceTarget)], () => { resourceActive.value = true })
@@ -21,7 +21,7 @@ provide(agentResourceContextKey, computed(() => {
   return target ? { target, sessionId: props.snapshot.session.id } : undefined
 }))
 const { t } = useI18n()
-const transcript = computed(() => groupTranscript(projectConversation(props.events, props.snapshot), props.snapshot))
+const transcript = computed(() => groupTranscript(props.projection ?? projectConversation(props.events, props.snapshot), props.snapshot))
 const items = useTemplateRef<HTMLLIElement[]>("items")
 defineExpose({ items })
 </script>

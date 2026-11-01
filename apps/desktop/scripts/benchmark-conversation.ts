@@ -1,0 +1,51 @@
+import { app, BrowserWindow } from "electron"
+import { writeFile } from "node:fs/promises"
+import { resolve } from "node:path"
+
+interface Configuration { url: string; output: string; turns: number[]; rounds: number; chunks: number; intervalMs: number; expanded: boolean; scroll: string; profile: boolean }
+const config: Configuration = JSON.parse(process.argv[2]!)
+app.setPath("userData", resolve(config.output, "electron-profile"))
+app.commandLine.appendSwitch("disable-renderer-backgrounding")
+app.commandLine.appendSwitch("disable-background-timer-throttling")
+app.on("window-all-closed", () => {})
+async function main(): Promise<void> {
+ await app.whenReady()
+ const results: unknown[] = []
+ try {
+  for (const turns of config.turns) {
+    for (let round = 0; round < config.rounds; round++) {
+      const window = new BrowserWindow({ show: false, width: 1280, height: 900, useContentSize: true,
+        webPreferences: { offscreen: true, backgroundThrottling: false, sandbox: true, contextIsolation: true },
+      })
+      try {
+        window.webContents.setFrameRate(60)
+        window.webContents.on("console-message", event => { if (event.level === "error") console.error(event.message) })
+        await window.loadURL(config.url)
+        await window.webContents.executeJavaScript("window.benchmarkReady")
+        if (config.profile) {
+          window.webContents.debugger.attach("1.3")
+          await window.webContents.debugger.sendCommand("Profiler.enable")
+          await window.webContents.debugger.sendCommand("Profiler.start")
+        }
+        const options = { turns, chunks: config.chunks, intervalMs: config.intervalMs, expanded: config.expanded, scroll: config.scroll }
+        const result = await Promise.race([
+          window.webContents.executeJavaScript(`window.runConversationBenchmark(${JSON.stringify(options)})`),
+          new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error("Benchmark exceeded 180 seconds")), 180_000); timer.unref() }),
+        ])
+        results.push({ ...options, round: round + 1, electron: process.versions.electron, chrome: process.versions.chrome, ...result })
+        await writeFile(resolve(config.output, "results.json"), JSON.stringify(results, null, 2))
+        if (config.profile) {
+          const { profile } = await window.webContents.debugger.sendCommand("Profiler.stop")
+          await writeFile(resolve(config.output, `${turns}-${round + 1}.cpuprofile`), JSON.stringify(profile))
+        }
+        console.log(`Completed ${turns} historical turns, round ${round + 1}/${config.rounds}`)
+      } finally { window.destroy() }
+    }
+  }
+  app.exit(0)
+ } catch (error) {
+  console.error(error)
+  app.exit(1)
+ }
+}
+void main()

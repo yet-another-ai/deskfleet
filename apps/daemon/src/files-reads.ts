@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto"
-import type { Stats } from "node:fs"
+import type { BigIntStats } from "node:fs"
 import { open, stat, type FileHandle } from "node:fs/promises"
 import { FILE_CHUNK_BYTES, FILE_MAX_OPEN_READS, type FileMethods, type FileReply } from "./files-protocol.ts"
 import { absolutePath, fileError, text, whole } from "./files-paths.ts"
 
-interface ReadSession { path: string; handle: FileHandle; initial: Stats }
+interface ReadSession { path: string; handle: FileHandle; initial: BigIntStats; size: number; modifiedAt: number }
 
 /** A source handle belongs to an explicit read session on one file endpoint. */
 export class FileReads {
@@ -16,19 +16,22 @@ export class FileReads {
     if (params.modifiedAt !== undefined && (!Number.isFinite(params.modifiedAt) || params.modifiedAt < 0)) throw fileError("Invalid file timestamp", "invalid")
     const handle = await open(path, "r")
     try {
-      const initial = await handle.stat()
+      // Native file IDs can exceed Number's integer precision on NTFS.
+      const initial = await handle.stat({ bigint: true })
       if (!initial.isFile()) throw fileError("Only regular files can be read", "unsupported")
-      if (params.modifiedAt !== undefined && params.modifiedAt !== initial.mtimeMs) throw fileError("Source file changed during transfer", "changed")
+      // Preserve the protocol's numeric size and timestamp from Node itself.
+      const { size, mtimeMs: modifiedAt } = await handle.stat()
+      if (params.modifiedAt !== undefined && params.modifiedAt !== modifiedAt) throw fileError("Source file changed during transfer", "changed")
       const readId = randomUUID()
-      this.#sessions.set(readId, { path, handle, initial })
+      this.#sessions.set(readId, { path, handle, initial, size, modifiedAt })
       return { readId }
     } catch (error) { await handle.close(); throw error }
   }
 
   async #validate(session: ReadSession): Promise<void> {
-    const current = await stat(session.path)
+    const current = await stat(session.path, { bigint: true })
     const initial = session.initial
-    if (current.dev !== initial.dev || current.ino !== initial.ino || current.size !== initial.size || current.mtimeMs !== initial.mtimeMs) {
+    if (current.dev !== initial.dev || current.ino !== initial.ino || current.size !== initial.size || current.mtimeNs !== initial.mtimeNs) {
       throw fileError("Source file changed during transfer", "changed")
     }
   }
@@ -42,9 +45,9 @@ export class FileReads {
     if (!session) throw fileError("File read was not found", "not_found")
     try {
       if (absolutePath(params.path) !== session.path) throw fileError("File read path does not match its session", "invalid")
-      if (params.modifiedAt !== undefined && params.modifiedAt !== session.initial.mtimeMs) throw fileError("Source file changed during transfer", "changed")
-      if (offset > session.initial.size) throw fileError("Read offset exceeds file size", "invalid")
-      const buffer = Buffer.alloc(Math.min(length, session.initial.size - offset))
+      if (params.modifiedAt !== undefined && params.modifiedAt !== session.modifiedAt) throw fileError("Source file changed during transfer", "changed")
+      if (offset > session.size) throw fileError("Read offset exceeds file size", "invalid")
+      const buffer = Buffer.alloc(Math.min(length, session.size - offset))
       const { bytesRead } = await session.handle.read(buffer, 0, buffer.length, offset)
       // No bytes leave the endpoint until the path still identifies the original
       // file with the metadata captured when this read session opened.

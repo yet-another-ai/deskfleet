@@ -54,7 +54,7 @@ test("source changes fail reads and final validation still closes the retained h
 
 test("a replacement with the same size and timestamp cannot silently reuse the old source handle", async context => {
   const { path, service, bytes, handles } = await fixture(context)
-  const timestamp = 1_700_000_000
+  const timestamp = 1_700_000_000.123456
   await utimes(path, timestamp, timestamp)
   const file = (await service.call("stat", { path })).value
   const { readId } = (await service.call("openRead", { path, modifiedAt: file.modifiedAt })).value
@@ -64,6 +64,36 @@ test("a replacement with the same size and timestamp cannot silently reuse the o
   const replacement = (await service.call("stat", { path })).value
   assert.equal(replacement.modifiedAt, file.modifiedAt)
   assert.equal(replacement.size, file.size)
+  await assert.rejects(service.call("read", { path, readId, offset: 0, length: 1 }), { code: "changed" })
+  await assert.rejects(service.call("closeRead", { readId }), { code: "changed" })
+  assert.equal(handles[0]!.fd, -1)
+})
+
+test("read validation distinguishes file identities that round to the same JavaScript number", async context => {
+  const { path, service, handles } = await fixture(context)
+  const originalInode = 2n ** 60n, replacementInode = originalInode + 1n
+  assert.equal(Number(originalInode), Number(replacementInode))
+  const originalOpen = fs.promises.open, originalStat = fs.promises.stat
+  let replaced = false
+  context.mock.method(fs.promises, "open", async (...args: Parameters<typeof originalOpen>) => {
+    const handle = await originalOpen(...args)
+    const handleStat = handle.stat.bind(handle)
+    context.mock.method(handle, "stat", async (...options: Parameters<typeof handleStat>) => {
+      const info = await handleStat(...options)
+      assert.ok(info)
+      return Object.assign(info, { ino: typeof info.ino === "bigint" ? originalInode : Number(originalInode) })
+    })
+    return handle
+  })
+  context.mock.method(fs.promises, "stat", async (...args: Parameters<typeof originalStat>) => {
+    const info = await originalStat(...args)
+    const inode = replaced ? replacementInode : originalInode
+    return Object.assign(info, { ino: typeof info.ino === "bigint" ? inode : Number(inode) })
+  })
+  syncBuiltinESMExports()
+  const { readId } = (await service.call("openRead", { path })).value
+  await service.call("read", { path, readId, offset: 0, length: 1 })
+  replaced = true
   await assert.rejects(service.call("read", { path, readId, offset: 0, length: 1 }), { code: "changed" })
   await assert.rejects(service.call("closeRead", { readId }), { code: "changed" })
   assert.equal(handles[0]!.fd, -1)
