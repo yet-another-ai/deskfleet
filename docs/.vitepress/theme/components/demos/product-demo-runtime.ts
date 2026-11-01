@@ -20,7 +20,6 @@ export interface ProductDemoOptions {
   locale?: AppLocale
   initialRoute?: string
   sidebar?: boolean
-  details?: boolean
 }
 
 /** Mount the production application with browser-local state and no daemon connection. */
@@ -77,9 +76,8 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   // Compact drawers would portal over the website and block its install controls.
   Reflect.set(layout, "compact", ref(false))
   // Embedded applications get independent, nonpersistent layout preferences.
-  for (const [key, value] of Object.entries({ sidebarOpen: options.sidebar ?? target.clientWidth >= 700, sidebarWidth: 260, detailsOpen: options.details ?? false, detailsWidth: 288, sessionContext: "worktree", terminalPanelOpen: false, terminalPanelHeight: 220 })) Reflect.set(layout, key, ref(value))
+  for (const [key, value] of Object.entries({ sidebarOpen: options.sidebar ?? target.clientWidth >= 700, sidebarWidth: 260, sessionContext: "worktree", terminalPanelOpen: false, terminalPanelHeight: 220 })) Reflect.set(layout, key, ref(value))
   layout.toggleSidebar = () => { layout.sidebarOpen = !layout.sidebarOpen }
-  layout.toggleDetails = () => { layout.detailsOpen = !layout.detailsOpen }
 
   const providers = useProvidersStore(pinia)
   providers.providers = structuredClone(demoProviders)
