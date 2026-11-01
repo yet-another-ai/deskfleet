@@ -98,10 +98,10 @@ change the service workers' encoder selection.
 
 ### Windows locked-desktop access
 
-The Windows welcome page and Settings → Preferences → **Remote control while
+The Windows welcome page and Settings → Permissions → **Remote control while
 locked** install the optional `DeskFleetDesktop` Windows service after explicit
 administrator approval. Welcome checks service status silently and uses the same
-installation controller as Preferences. Users can skip the step or retry after
+installation controller as Permissions. Users can skip the step or retry after
 canceling approval; completed setup is not repeated. The NSIS app
 remains a per-user installation. The service and its desktop workers run from
 `Program Files/DeskFleet Desktop Service/deskfleet-desktop-service.exe`, with
@@ -126,7 +126,9 @@ access. The service is a desktop capability for the local OS user; Team grants
 remain enforced by the user daemon before accepting remote desktop operations.
 It offers no file, process-launch, or network-forwarding RPC.
 
-Capture and input threads bind to the current input desktop. A desktop change
+Capture and input threads bind to the current input desktop. Input requests
+`DESKTOP_JOURNALPLAYBACK` on its desktop handle so Windows accepts `SendInput`;
+capture does not require that right. A desktop change
 invalidates old captured surfaces and encoder output, recreates duplication, and
 requests a fresh keyframe. Input refresh releases held controls across desktop
 changes, including while no new input arrives. Closing a peer closes its worker
@@ -149,8 +151,9 @@ Validate this path on Windows hardware with a working DXGI display and hardware
 encoder; a Linux cross-build does not exercise Winlogon, UAC, SCM, or GPU desktop
 switches. Install the packaged app, enable the setting, and use a second client:
 
-1. Connect with control, hold and release a modifier, lock the host, enter its
-   password remotely, and verify capture and input continue after unlock.
+1. Connect with control, move the pointer and hold and release a modifier. Lock
+   the host, enter its password remotely, and verify capture and input continue
+   after unlock.
 2. Disconnect, lock the host locally, and create a fresh viewer/control peer.
    Confirm display/codec discovery and the first frame work while locked.
 3. Exercise Ctrl+Alt+Del with service-allowed SAS policy. With disallowed policy,

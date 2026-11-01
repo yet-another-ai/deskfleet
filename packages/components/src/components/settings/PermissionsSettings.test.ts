@@ -50,18 +50,67 @@ function setup(platform: DeskfleetDesktopApi["platform"] = "darwin", localAgent 
 
 function card(kind: string) { return view!.get(`[data-permission="${kind}"]`) }
 
-test("Windows service remains in Preferences instead of appearing as a native permission", async () => {
+test("Windows permissions can enable remote control while locked", async () => {
   const app = setup("win32")
+  const get = vi.fn(async () => ({ available: true, installed: false, running: false }))
+  const setEnabled = vi.fn(async () => ({ available: true, installed: true, running: true }))
+  app.host.windowsDesktopService = { get, setEnabled }
   app.mount()
   await flushPromises()
-  expect(view!.findAll("[data-permission]")).toHaveLength(0)
-  expect(view!.text()).toContain("No additional system permissions")
-  app.changed()
-  window.dispatchEvent(new Event("focus"))
+  expect(view!.text()).toContain("Remote control while locked")
+  expect(view!.text()).not.toContain("No additional system permissions")
+  expect(view!.get('[role="switch"]').attributes("aria-checked")).toBe("false")
+  await view!.get('[role="switch"]').trigger("click")
   await flushPromises()
-  expect(view!.findAll("[data-permission]")).toHaveLength(0)
-  expect(app.onboarding.permissions).not.toHaveBeenCalled()
-  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+  expect(setEnabled).toHaveBeenCalledExactlyOnceWith(true)
+  expect(view!.get('[role="switch"]').attributes("aria-checked")).toBe("true")
+})
+
+test("Windows without a service API shows the empty permissions state", async () => {
+  const app = setup("win32")
+  app.host.windowsDesktopService = undefined
+  app.mount()
+  await flushPromises()
+  expect(view!.find('[role="switch"]').exists()).toBe(false)
+  expect(view!.text()).toContain("No additional system permissions")
+})
+
+test("refreshing permissions also refreshes Windows service status", async () => {
+  const app = setup("win32")
+  const get = vi.fn()
+    .mockResolvedValueOnce({ available: true, installed: false, running: false })
+    .mockResolvedValueOnce({ available: true, installed: true, running: true })
+  app.host.windowsDesktopService = { get, setEnabled: vi.fn() }
+  app.mount()
+  await flushPromises()
+  expect(view!.get('[role="switch"]').attributes("aria-checked")).toBe("false")
+  await click(i18n.global.t("permissionsSettings.refresh"))
+  expect(get).toHaveBeenCalledTimes(2)
+  expect(view!.get('[role="switch"]').attributes("aria-checked")).toBe("true")
+})
+
+test("Windows service remains available without the onboarding API", async () => {
+  const app = setup("win32")
+  const get = vi.fn(async () => ({ available: true, installed: false, running: false }))
+  app.host.onboarding = undefined
+  app.host.windowsDesktopService = { get, setEnabled: vi.fn() }
+  app.mount()
+  await flushPromises()
+  expect(view!.text()).toContain("Remote control while locked")
+  expect(view!.text()).not.toContain(i18n.global.t("permissionsSettings.unavailable"))
+  expect(view!.get('[role="switch"]').attributes("aria-checked")).toBe("false")
+  await click(i18n.global.t("permissionsSettings.refresh"))
+  expect(get).toHaveBeenCalledTimes(2)
+})
+
+test.each(["darwin", "linux"] as const)("%s does not show the Windows service control", async platform => {
+  const app = setup(platform)
+  const get = vi.fn(async () => ({ available: true, installed: false, running: false }))
+  app.host.windowsDesktopService = { get, setEnabled: vi.fn() }
+  app.mount()
+  await flushPromises()
+  expect(view!.text()).not.toContain("Remote control while locked")
+  expect(get).not.toHaveBeenCalled()
 })
 async function click(text: string) {
   const button = view!.findAll("button").find(button => button.text() === text)

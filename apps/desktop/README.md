@@ -450,7 +450,7 @@ On Windows, the welcome page offers optional remote control while locked before
 sign-in. It checks the desktop service silently; **Enable locked-session control**
 requests administrator approval to install or start it. Skipping or
 canceling approval leaves sign-in available, and installation can be retried
-from the welcome page or Settings → Preferences. An already running service
+from the welcome page or Settings → Permissions. An already running service
 needs no further approval.
 The desktop host saves the current step in `onboarding.json` under `userData`;
 closing the window or restarting the app resumes the unfinished step. Startup
@@ -582,7 +582,7 @@ electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
 
 Windows packaging also builds and bundles `deskfleet-desktop-service.exe` in
-`resources/windows/`. Settings → Preferences → **Remote control while locked**
+`resources/windows/`. Settings → Permissions → **Remote control while locked**
 uses this helper's fixed setup commands to install or remove the optional
 `DeskFleetDesktop` system service with UAC approval. The application remains a
 per-user install; merely opening Settings does not request elevation. The helper

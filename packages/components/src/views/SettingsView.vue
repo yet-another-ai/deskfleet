@@ -28,7 +28,7 @@ function leave(): void {
       <SidebarLink :to="{ name: 'settings-appearance' }" :icon="Palette" :label="t('settings.appearance')" replace />
       <SidebarLink :to="{ name: 'settings-notifications' }" :icon="Bell" :label="t('settings.notifications')" replace />
       <SidebarLink v-if="account" :to="{ name: 'settings-github' }" :icon="GithubIcon" :label="t('githubSettings.title')" replace />
-      <SidebarLink v-if="client.platform !== 'web' && client.onboarding" :to="{ name: 'settings-permissions' }" :icon="ShieldCheck" :label="t('permissionsSettings.title')" replace />
+      <SidebarLink v-if="client.platform !== 'web' && (client.onboarding || (client.platform === 'win32' && client.windowsDesktopService))" :to="{ name: 'settings-permissions' }" :icon="ShieldCheck" :label="t('permissionsSettings.title')" replace />
       <SidebarLink v-if="!account || account.machine.value" :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
       <SidebarLink v-if="!account || account.machine.value" :to="{ name: 'settings-mcp-servers' }" :icon="Plug" :label="t('mcpServers.title')" replace />
       <SidebarLink :to="{ name: 'settings-about' }" :icon="Info" :label="t('aboutSettings.title')" replace />

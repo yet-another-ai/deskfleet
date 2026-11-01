@@ -7,13 +7,15 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
+import WindowsDesktopServiceSettings from "./WindowsDesktopServiceSettings.vue"
 
 const client = usePlatformClient()
 const onboarding = client.onboarding
 const { t } = useI18n()
 type SystemPermission = Exclude<OnboardingPermission, "windowsDesktopService">
-// Windows service setup remains in Preferences after the welcome flow.
 const systemPermissions = (steps: readonly OnboardingPermission[]) => steps.filter((kind): kind is SystemPermission => kind !== "windowsDesktopService")
+const hasWindowsService = client.platform === "win32" && !!client.windowsDesktopService
+const windowsService = ref<InstanceType<typeof WindowsDesktopServiceSettings>>()
 const permissionSteps = ref<readonly SystemPermission[]>([])
 const permissions = ref<OnboardingPermissionsState>({})
 const backend = ref<DesktopPermissionsState["linuxDesktopBackend"]>()
@@ -61,6 +63,11 @@ async function refresh(): Promise<void> {
   finally { refreshing.value = false }
 }
 
+function refreshAll(): void {
+  windowsService.value?.refresh()
+  void refresh()
+}
+
 async function requestPermission(kind: SystemPermission): Promise<void> {
   if (!onboarding || !canRequest(kind)) return
   pending.value = true
@@ -100,16 +107,16 @@ onBeforeUnmount(() => { unsubscribe?.() })
 <template>
   <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
     <h1 class="ui-page-title m-0">{{ t("permissionsSettings.title") }}</h1>
-    <UiButton v-if="onboarding" type="button" :disabled="busy" @click="refresh">
+    <UiButton v-if="onboarding || hasWindowsService" type="button" :disabled="busy" @click="refreshAll">
       <RefreshCw :size="14" :class="refreshing && 'animate-spin'" aria-hidden="true" />
       {{ t(refreshing ? "permissionsSettings.refreshing" : "permissionsSettings.refresh") }}
     </UiButton>
   </div>
   <p class="m-0 mb-6 text-sm leading-relaxed text-ui-text-muted">{{ t("permissionsSettings.description") }}</p>
-  <p v-if="!onboarding" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("permissionsSettings.unavailable") }}</p>
-  <template v-else>
+  <p v-if="!onboarding && !hasWindowsService" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("permissionsSettings.unavailable") }}</p>
+  <template v-if="onboarding">
     <p v-if="refreshing && !permissionSteps.length" role="status" class="m-0 text-sm text-ui-text-muted">{{ t("permissionsSettings.refreshing") }}</p>
-    <p v-else-if="!permissionSteps.length && !error" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("permissionsSettings.noPermissions") }}</p>
+    <p v-else-if="!permissionSteps.length && !error && !hasWindowsService" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("permissionsSettings.noPermissions") }}</p>
     <p v-if="error" role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ error }}</p>
     <div class="flex flex-col gap-4">
       <section v-for="kind in permissionSteps" :key="kind" :data-permission="kind" :aria-labelledby="`permission-${kind}`" class="ui-card p-4">
@@ -137,4 +144,7 @@ onBeforeUnmount(() => { unsubscribe?.() })
       </section>
     </div>
   </template>
+  <section v-if="hasWindowsService" data-permission="windowsDesktopService" class="ui-card mt-4 px-4">
+    <WindowsDesktopServiceSettings ref="windowsService" />
+  </section>
 </template>

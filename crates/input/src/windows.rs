@@ -15,7 +15,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::BOOL;
 
 use crate::{InputError, Result};
-use deskfleet_windows_desktop::desktop::bind_input_desktop;
+use deskfleet_windows_desktop::desktop::bind_input_desktop_for_control;
 
 pub(super) struct PlatformInput {
     display_id: u32,
@@ -27,7 +27,7 @@ pub(super) struct PlatformInput {
 
 impl PlatformInput {
     pub(super) fn new(display_id: u32) -> Result<Self> {
-        let desktop_generation = bind_input_desktop()
+        let desktop_generation = bind_input_desktop_for_control()
             .map_err(|error| InputError::Platform(format!("bind input desktop: {error}")))?;
         let _dpi = DpiScope::enter()?;
         display_bounds(display_id)?;
@@ -41,7 +41,7 @@ impl PlatformInput {
     }
 
     pub(super) fn prepare(&mut self) -> Result<bool> {
-        let generation = bind_input_desktop()
+        let generation = bind_input_desktop_for_control()
             .map_err(|error| InputError::Platform(format!("bind input desktop: {error}")))?;
         if generation == self.desktop_generation {
             return Ok(false);
@@ -284,6 +284,24 @@ impl Drop for DpiScope {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires an interactive Windows desktop and injects a zero-distance mouse move"]
+    fn desktop_binding_can_upgrade_for_input_injection() {
+        std::thread::spawn(|| {
+            let before = deskfleet_windows_desktop::desktop::bind_input_desktop().unwrap();
+            let after = bind_input_desktop_for_control().unwrap();
+            assert_eq!(before, after);
+            send(&[mouse_input(MOUSEEVENTF_MOVE, 0, 0, 0)]).unwrap();
+            assert_eq!(
+                after,
+                deskfleet_windows_desktop::desktop::bind_input_desktop().unwrap()
+            );
+            send(&[mouse_input(MOUSEEVENTF_MOVE, 0, 0, 0)]).unwrap();
+        })
+        .join()
+        .unwrap();
+    }
 
     #[test]
     fn coordinates_include_negative_origin_and_both_display_edges() {
