@@ -24,7 +24,7 @@ const meta = {
       return { args }
     },
     template: `
-      <div class="h-72 overflow-hidden rounded-lg border border-ui-border bg-ui-terminal p-2">
+      <div class="h-72 overflow-hidden rounded-lg border border-ui-border bg-ui-terminal">
         <TerminalSurface v-bind="args" />
       </div>
     `,
