@@ -1,0 +1,164 @@
+name: Synchronize AUR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Prepare and verify the latest stable package without pushing to AUR.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aur-publish
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: ${{ github.event_name != 'release' || !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Release workflows run on the release tag. Use the current trusted
+      # packaging implementation even when reconciling an older release.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Install locked Node
+        uses: jdx/mise-action@v5
+        with:
+          version: 2026.10.25
+          install_args: --locked node
+
+      - name: Select the latest stable release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name)
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Latest release tag is not a stable version: $tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download desktop archives
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/aur-downloads"
+          gh release download "$TAG" --repo "$GH_REPO" --dir "$RUNNER_TEMP/aur-downloads" \
+            --pattern "deskfleet-$VERSION-linux-x64.tar.gz" \
+            --pattern "deskfleet-$VERSION-linux-arm64.tar.gz"
+          test -s "$RUNNER_TEMP/aur-downloads/deskfleet-$VERSION-linux-x64.tar.gz"
+          test -s "$RUNNER_TEMP/aur-downloads/deskfleet-$VERSION-linux-arm64.tar.gz"
+
+      - name: Prepare the package
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mise exec node -- node scripts/package-aur-release.ts "$RUNNER_TEMP/aur-package" \
+            "$RUNNER_TEMP/aur-downloads/deskfleet-$VERSION-linux-x64.tar.gz" \
+            "$RUNNER_TEMP/aur-downloads/deskfleet-$VERSION-linux-arm64.tar.gz" \
+            --version "$VERSION"
+
+      - name: Build package and generate AUR metadata
+        shell: bash
+        run: mise exec -- node scripts/check-aur.ts "$RUNNER_TEMP/aur-package"
+
+      - name: Upload package recipe for review
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-aur-recipe
+          path: |
+            ${{ runner.temp }}/aur-package/PKGBUILD
+            ${{ runner.temp }}/aur-package/.SRCINFO
+            ${{ runner.temp }}/aur-package/deskfleet
+            ${{ runner.temp }}/aur-package/io.github.yet_another_ai.deskfleet.desktop
+            ${{ runner.temp }}/aur-package/icon.png
+            ${{ runner.temp }}/aur-package/LICENSE
+            ${{ runner.temp }}/aur-package/LICENSE.packaging
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - name: Publish to AUR
+        if: ${{ vars.AUR_PUBLISH_ENABLED == 'true' && (github.event_name == 'release' || !inputs.dry_run) }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_SSH_KNOWN_HOSTS: ${{ vars.AUR_SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$AUR_SSH_PRIVATE_KEY"
+          test -n "$AUR_SSH_KNOWN_HOSTS"
+          mkdir -p "$RUNNER_TEMP/aur-ssh"
+          trap 'rm -rf "$RUNNER_TEMP/aur-ssh"' EXIT
+          chmod 700 "$RUNNER_TEMP/aur-ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/aur-ssh/key"
+          printf '%s\n' "$AUR_SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/aur-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/aur-ssh/key" "$RUNNER_TEMP/aur-ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/aur-ssh/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/aur-ssh/known_hosts"
+          git init --initial-branch=master "$RUNNER_TEMP/aur-repo"
+          git -C "$RUNNER_TEMP/aur-repo" remote add origin ssh://aur@aur.archlinux.org/deskfleet-bin.git
+          if git -C "$RUNNER_TEMP/aur-repo" ls-remote --exit-code --heads origin master >/dev/null; then
+            git -C "$RUNNER_TEMP/aur-repo" fetch origin master
+            git -C "$RUNNER_TEMP/aur-repo" reset --hard FETCH_HEAD
+          fi
+          cd "$RUNNER_TEMP/aur-repo"
+          new_pkgver=$(awk '$1 == "pkgver" {print $3; exit}' "$RUNNER_TEMP/aur-package/.SRCINFO")
+          new_pkgrel=$(awk '$1 == "pkgrel" {print $3; exit}' "$RUNNER_TEMP/aur-package/.SRCINFO")
+          test -n "$new_pkgver" && test -n "$new_pkgrel"
+          new_version="$new_pkgver-$new_pkgrel"
+          comparison=1
+          if [[ -f .SRCINFO ]]; then
+            old_pkgver=$(awk '$1 == "pkgver" {print $3; exit}' .SRCINFO)
+            old_pkgrel=$(awk '$1 == "pkgrel" {print $3; exit}' .SRCINFO)
+            test -n "$old_pkgver" && test -n "$old_pkgrel"
+            old_version="$old_pkgver-$old_pkgrel"
+            comparison=$(docker run --rm archlinux:base vercmp "$new_version" "$old_version")
+            if (( comparison < 0 )); then
+              echo "::error::AUR already has newer version $old_version; refusing downgrade to $new_version."
+              exit 1
+            fi
+          elif [[ -f PKGBUILD ]]; then
+            echo "::error::Existing AUR repository has a PKGBUILD but no .SRCINFO."
+            exit 1
+          fi
+          for file in PKGBUILD .SRCINFO deskfleet io.github.yet_another_ai.deskfleet.desktop icon.png LICENSE LICENSE.packaging; do
+            cp "$RUNNER_TEMP/aur-package/$file" "$file"
+          done
+          git add PKGBUILD .SRCINFO deskfleet io.github.yet_another_ai.deskfleet.desktop icon.png LICENSE LICENSE.packaging
+          if git diff --cached --quiet; then
+            echo "AUR already contains the generated recipe."
+            exit 0
+          fi
+          if (( comparison == 0 )); then
+            echo "::error::AUR already has version $new_version with different metadata; update pkgrel."
+            exit 1
+          fi
+          latest=$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name)
+          if [[ "$latest" != "$TAG" ]]; then
+            echo "::error::The latest stable release changed to $latest; retry synchronization."
+            exit 1
+          fi
+          git config user.name "Delton Ding"
+          git config user.email "dsh0416@gmail.com"
+          git commit -m "Update deskfleet-bin to $VERSION"
+          git push origin master

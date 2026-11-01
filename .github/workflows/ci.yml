@@ -68,10 +68,17 @@ jobs:
     permissions:
       contents: read
 
+  aur:
+    name: AUR
+    needs: build
+    uses: ./.github/workflows/aur.yml
+    permissions:
+      contents: read
+
   gate:
     name: Gate
     if: ${{ always() }}
-    needs: [changes, test, build, nix]
+    needs: [changes, test, build, nix, aur]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -82,14 +89,15 @@ jobs:
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
+          AUR_RESULT: ${{ needs.aur.result }}
           NIX_RESULT: ${{ needs.nix.result }}
         run: |
           expected_build=success
           if [[ "$CHANGES_RESULT" == "success" && "$DOCS_ONLY" == "true" ]]; then
             expected_build=skipped
           fi
-          if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" || "$NIX_RESULT" != "$expected_build" ]]; then
-            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix: $NIX_RESULT)."
+          if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" || "$NIX_RESULT" != "$expected_build" || "$AUR_RESULT" != "$expected_build" ]]; then
+            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix: $NIX_RESULT, AUR: $AUR_RESULT)."
             exit 1
           fi
 

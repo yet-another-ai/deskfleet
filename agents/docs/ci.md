@@ -1,14 +1,14 @@
 # Continuous integration
 
 DeskFleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
-one orchestrator, reusable Test, Build, and Nix workflows, a shared setup action, and
+one orchestrator, reusable Test, Build, Nix, and AUR workflows, a shared setup action, and
 a stable `Gate` result for branch protection.
 
 ## Workflow ownership
 
 - `.github/workflows/ci.yml` handles pull requests, pushes to `main`, and manual
   runs. It classifies the changed files with the hosted runner's Node, calls
-  Test, Build, and Nix, and combines their results in `Gate`. Configure `Gate` under
+  Test, Build, Nix, and AUR, and combines their results in `Gate`. Configure `Gate` under
   the `CI` workflow as the required status check in repository branch protection.
   Successful runs on `main` then deploy the product website to GitHub Pages.
 - `.github/workflows/test.yml` runs static checks and the desktop/Web/website builds
@@ -51,8 +51,8 @@ a stable `Gate` result for branch protection.
   the production environment: Statsig and Sentry stay disabled, and Electron
   defaults to `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
-  calls Nix with the desktop archives from Build. It creates a draft GitHub
-  Release and pushes the server image to GHCR after all three workflows succeed.
+  calls Nix and AUR with the desktop archives from Build. It creates a draft
+  GitHub Release and pushes the server image after all four workflows succeed.
 - `.github/workflows/nix.yml` consumes the same-run Linux desktop archives from
   Build, generates a flake bundle, and checks the repackaged app under Xvfb.
   It preloads the archives into Nix's fixed-output store so checks can run before
@@ -60,6 +60,11 @@ a stable `Gate` result for branch protection.
   changes skip it alongside Build. Publish reuses the workflow and includes its
   generated `deskfleet-nix.tar.gz` in the release. The Nix workflow does not bind
   the production environment or read its variables or secrets.
+- `.github/workflows/aur.yml` generates the Arch package from the same-run Linux
+  x86_64 desktop archive and builds, installs, smoke-tests, and removes it inside
+  a disposable Arch container. CI includes it in `Gate`; documentation-only
+  changes skip it alongside Build. Publish also requires it before creating the
+  draft or pushing the server image. It needs no AUR credentials.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
   and configures shared caches for the Test and Build workflows.
 
@@ -109,7 +114,7 @@ accepted because it cannot be represented in a container tag.
 
 Publish calls the same Test and Build workflows used by CI, with the full
 platform matrix and mandatory macOS signing/notarization, then validates the
-Linux archives through Nix. It waits for all three before publishing. The Build
+Linux archives through Nix and AUR. It waits for all four before publishing. The Build
 workflow keeps read-only repository access;
 only the release job receives `contents: write`, and only the image job receives
 `packages: write`.
@@ -263,6 +268,52 @@ delayed or failed sync leaves the published Release and desktop updater
 available; the tap retains its previous Cask until synchronization and merge
 succeed.
 
+### AUR distribution
+
+The `deskfleet-bin` package repackages the versioned Linux desktop archives used
+by Nix, retaining their bundled Electron and hosted daemon. The AUR recipe
+installs the application and its desktop integration; Arch manages upgrades and
+the AppImage updater stays disabled. The generator accepts the two desktop
+archives and produces `PKGBUILD` and its helper files. The generated `.SRCINFO`
+and package must be verified on Arch before publication.
+
+`.github/workflows/aur-publish.yml` reconciles GitHub's latest published stable
+release on release publication or manual dispatch. It uses the current default
+branch packaging implementation and the selected release version, downloads
+both desktop archives, computes their checksums, builds the x86_64 package in
+Arch, and uploads the recipe as an Actions artifact. Drafts and prereleases do
+not advance AUR. A release without both desktop archives cannot be synchronized.
+
+Publication is disabled until the following repository configuration is ready:
+
+- Confirm `deskfleet-bin` is available in AUR, or arrange maintainership of the
+  existing package. Register a dedicated SSH public key with the AUR account.
+- Add its private key as the Actions secret `AUR_SSH_PRIVATE_KEY` and a verified
+  `known_hosts` entry for `aur.archlinux.org` as the repository variable
+  `AUR_SSH_KNOWN_HOSTS`. Verify the host key through a trusted channel before
+  recording it.
+- Set the repository variable `AUR_PUBLISH_ENABLED` to `true` after reviewing a
+  dry run and confirming the account can maintain the package.
+
+Manual dispatch defaults to dry-run, including when publication is enabled:
+
+```sh
+gh workflow run aur-publish.yml --ref main
+```
+
+To retry publication of the latest stable release, explicitly disable dry-run:
+
+```sh
+gh workflow run aur-publish.yml --ref main -f dry_run=false
+```
+
+The workflow compares `pkgver` and `pkgrel` with the existing AUR package; it
+refuses downgrades and changes without a version increase. For an intentional
+same-version recipe change, increase `pkgrel` in `packaging/aur/PKGBUILD.in`,
+run and review a dry run, then retry publication. A failed sync leaves the
+previous AUR package intact. The AUR repository contains the recipe and helper
+files, not the downloaded application archives.
+
 ### Nix distribution
 
 Nix installs the prebuilt Linux desktop archive for `x86_64-linux` or
@@ -271,7 +322,7 @@ architecture under the existing `production` environment and packages it as both
 an AppImage and a `tar.gz`. The archive already contains the official API,
 Statsig, and Sentry configuration. Changes to those variables take effect in the
 next release.
-Distribution packaging can reuse the archive for future deb, rpm, or AUR
+Distribution packaging can reuse the archive for deb, rpm, or AUR
 packages as well.
 
 Every release automatically generates `deskfleet-nix.tar.gz` from the templates
@@ -359,9 +410,9 @@ full tier. Manual runs use full validation. Classification uses the hosted
 runner's Node and does not install a toolchain. An older runtime or missing
 output keeps the full tier.
 
-`Gate` requires successful classification and Test. A skipped Build is accepted
-only for a positively classified documentation-only change. Failed, cancelled,
-or unexpectedly skipped required work fails the gate.
+`Gate` requires successful classification and Test. Skipped Build, Nix, and AUR
+workflows are accepted only for a positively classified documentation-only
+change. Failed, cancelled, or unexpectedly skipped required work fails the gate.
 
 ## Toolchains and caches
 

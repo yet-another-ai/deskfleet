@@ -8,20 +8,24 @@ import { promisify } from "node:util"
 
 // Run with a plain Node runtime; every application probe uses the installed
 // package, without workspace node_modules or a separately built native addon.
-const [output, option, ...extra] = process.argv.slice(2)
-assert.ok(output && (!option || option === "--gui") && extra.length === 0,
-  "Usage: node scripts/smoke-nix.ts <package-output> [--gui]")
-assert.equal(process.platform, "linux", "The Nix package smoke supports Linux")
+const [output, ...options] = process.argv.slice(2)
+const layouts = options.filter(option => option.startsWith("--layout="))
+assert.ok(output && layouts.length === 1 && options.every(option => option === "--gui" || option === layouts[0])
+  && options.filter(option => option === "--gui").length <= 1,
+"Usage: node scripts/smoke-linux-package.ts <package-root> --layout=arch|nix [--gui]")
+const layout = layouts[0]?.slice("--layout=".length)
+assert.ok(layout === "arch" || layout === "nix", "Package layout must be arch or nix")
+assert.equal(process.platform, "linux", "The package smoke supports Linux")
 const packagePath = await realpath(output)
-const executable = join(packagePath, "bin", "deskfleet")
-const resources = join(packagePath, "lib", "deskfleet", "resources")
+const executable = join(packagePath, layout === "arch" ? "usr/bin/deskfleet" : "bin/deskfleet")
+const resources = join(packagePath, layout === "arch" ? "opt/deskfleet/resources" : "lib/deskfleet/resources")
 const entry = join(resources, "app.asar", "out", "main", "index.js")
 const addon = join(resources, "app.asar.unpacked", "out", "main", "deskfleet.node")
 const manifest = JSON.parse(await readFile(new URL("../apps/daemon/package.json", import.meta.url), "utf8")) as {
   version: string
   dependencies: Record<string, string>
 }
-const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-nix-smoke-")))
+const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-package-smoke-")))
 const profile = join(directory, "profile")
 const configHome = join(directory, "config")
 const env: NodeJS.ProcessEnv = {
@@ -145,7 +149,7 @@ async function gui(): Promise<void> {
   assert.ok(enrollment.value.identity.machineId)
   assert.deepEqual(await evaluate("window.deskfleet.settings.setLaunchAtStartup(true)"), { available: true, enabled: true })
   const startup = join(configHome, "autostart", "io.github.yet_another_ai.deskfleet.desktop")
-  assert.ok((await readFile(startup, "utf8")).includes(`Exec="${executable}"`), "Autostart must use the installed Nix wrapper")
+  assert.ok((await readFile(startup, "utf8")).includes(`Exec="${executable}"`), "Autostart must use the installed wrapper")
   assert.deepEqual(await evaluate("window.deskfleet.settings.setLaunchAtStartup(false)"), { available: true, enabled: false })
   await assert.rejects(stat(startup), { code: "ENOENT" })
   await stop()
@@ -162,7 +166,7 @@ try {
     (async () => {
       const terminal = await addon.exports.createTerminal({
         cwd: process.cwd(), cols: 80, rows: 24,
-        command: "/bin/sh", args: ["-c", "printf deskfleet-nix-pty"],
+        command: "/bin/sh", args: ["-c", "printf deskfleet-package-pty"],
       });
       let output = "", exitCode;
       try {
@@ -186,8 +190,8 @@ try {
   assert.deepEqual(info.native, {
     version: manifest.version, os: "linux", arch: process.arch === "arm64" ? "aarch64" : "x86_64",
   })
-  assert.equal(info.launcher, executable, "The Nix wrapper must preserve its launcher for autostart")
-  assert.deepEqual(info.terminal, { output: "deskfleet-nix-pty", exitCode: 0 })
+  assert.equal(info.launcher, executable, "The wrapper must preserve its launcher for autostart")
+  assert.deepEqual(info.terminal, { output: "deskfleet-package-pty", exitCode: 0 })
   for (const [argument, dependency, prefix] of [
     ["--codex-acp", "@agentclientprotocol/codex-acp", "@agentclientprotocol/codex-acp "],
     ["--claude-agent-acp", "@agentclientprotocol/claude-agent-acp", ""],
@@ -195,8 +199,8 @@ try {
   ]) {
     assert.equal(await node([entry, argument, "--version"]), `${prefix}${manifest.dependencies[dependency]}`)
   }
-  if (option === "--gui") await gui()
-  console.log(`Nix package smoke passed: native addon, PTY command, and bundled ACP adapters${option === "--gui" ? ", packaged renderer, hosted daemon, autostart wrapper, and disabled updater" : ""}`)
+  if (options.includes("--gui")) await gui()
+  console.log(`Linux package smoke passed: native addon, PTY command, and bundled ACP adapters${options.includes("--gui") ? ", packaged renderer, hosted daemon, autostart wrapper, and disabled updater" : ""}`)
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error
