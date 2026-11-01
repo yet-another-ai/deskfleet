@@ -233,6 +233,10 @@ selection and resuming saved sessions.
 The Cursor template runs the installed Cursor CLI as `agent acp`.
 The Grok template runs the installed Grok CLI as `grok agent stdio`.
 Their multiple-choice questions use the session question cards.
+The Oh My Pi template runs the installed `omp` CLI as `omp acp`. Settings can
+install its standalone binary, and **Log in** opens its terminal interface:
+enter `/login`, complete authentication, then `/quit`. Model, thinking, and
+mode choices come from its native ACP configuration.
 The ACP template runs a configured ACP executable directly. **New session**
 creates a persistent Session for the selected Workspace and provider, then submits the prompt.
 The composer's context menu chooses **New worktree**, isolated Git checkouts from

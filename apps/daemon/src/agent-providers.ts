@@ -10,6 +10,7 @@ import { codexProvider } from "./agents/codex.ts"
 import { cursorProvider } from "./agents/cursor.ts"
 import { deepseekHarnessProvider } from "./agents/deepseek-harness.ts"
 import { grokProvider } from "./agents/grok.ts"
+import { ompProvider } from "./agents/omp.ts"
 import { piProvider } from "./agents/pi.ts"
 import { launchProviderCommand } from "./provider-setup-process.ts"
 import {
@@ -140,9 +141,10 @@ export class AgentProviders {
           : record.template === "cursor" ? cursorProvider
             : record.template === "grok" ? grokProvider
               : record.template === "pi" ? piProvider
-                : record.template === "deepseek-harness" ? deepseekHarnessProvider
-                  : record.template === "antigravity" ? antigravityProvider
-                    : acpProvider,
+                : record.template === "omp" ? ompProvider
+                  : record.template === "deepseek-harness" ? deepseekHarnessProvider
+                    : record.template === "antigravity" ? antigravityProvider
+                      : acpProvider,
       config: { name: record.name, binaryPath: record.binaryPath ?? (record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath), env: record.env },
     }
   }

@@ -58,16 +58,19 @@ function locations(template: AgentProviderTemplateId, ctx: Context): string[] {
   const directories: string[] = []
   if (template === "codex" && env.CODEX_INSTALL_DIR) directories.push(env.CODEX_INSTALL_DIR)
   if (template === "grok" && env.GROK_BIN_DIR) directories.push(env.GROK_BIN_DIR)
+  if (template === "omp" && env.PI_INSTALL_DIR) directories.push(env.PI_INSTALL_DIR)
   if (template === "antigravity") directories.push(antigravityInstallDirectory(ctx))
   directories.push(path.join(home, ".local", "bin"))
   if (template === "grok") directories.push(path.join(home, ".grok", "bin"))
   if (template === "claude-code") directories.push(path.join(home, ".claude", "local"))
   if (template === "pi") directories.push(...npmLocations(ctx), path.join(env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent"), "bin"))
+  if (template === "omp") directories.push(path.join(env.BUN_INSTALL ?? path.join(home, ".bun"), "bin"))
   if (template === "deepseek-harness") directories.push(...npmLocations(ctx))
   if (platform === "win32") {
     const local = env.LOCALAPPDATA ?? path.join(home, "AppData", "Local")
     if (template === "codex") directories.push(path.join(local, "Programs", "OpenAI", "Codex", "bin"))
     if (template === "cursor") directories.push(path.join(local, "cursor-agent"))
+    if (template === "omp") directories.push(path.join(local, "omp"))
   } else directories.push("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin")
   return directories
 }
@@ -113,6 +116,8 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
     ])
     if (!shell) return "PowerShell is required to run the official installer."
     if (template === "antigravity") return antigravityInstaller({ ...ctx, shell })
+    if (template === "omp") return { command: shell, args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+      "$ErrorActionPreference = 'Stop'; & ([scriptblock]::Create((Invoke-RestMethod 'https://omp.sh/install.ps1'))) -Binary; if ($LASTEXITCODE) { exit $LASTEXITCODE }"] }
     const url = template === "codex" ? "https://chatgpt.com/codex/install.ps1"
       : template === "claude-code" ? "https://claude.ai/install.ps1"
         : template === "pi" ? "https://pi.dev/install.ps1" : "https://cursor.com/install?win32=true"
@@ -129,6 +134,7 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
     : await findCommand("bash", ctx, bashDirectories)
   if (!shell) return ctx.platform === "win32" ? "Git for Windows is required to install Grok." : "Bash is required to run the official installer."
   if (template === "antigravity") return antigravityInstaller({ ...ctx, shell })
+  if (template === "omp") return { command: shell, args: ["-o", "pipefail", "-c", "curl -fsSL 'https://omp.sh/install' | sh -s -- --binary"] }
   const url = template === "codex" ? "https://chatgpt.com/codex/install.sh"
     : template === "claude-code" ? "https://claude.ai/install.sh"
       : template === "cursor" ? "https://cursor.com/install"
@@ -151,9 +157,9 @@ async function identity(template: AgentProviderTemplateId, binary: string, ctx: 
   }
   const pattern = template === "codex" ? /\bcodex\b/iu : template === "claude-code" ? /\bclaude\b/iu
     : template === "cursor" ? /\bcursor\b/iu : template === "pi" ? /\bpi\s+-\s+AI coding assistant\b/iu
-      : template === "deepseek-harness" ? /\bdsh\b|DeepSeek Harness/iu : /\bgrok\b/iu
+      : template === "omp" ? /\bomp\b|Oh My Pi/iu : template === "deepseek-harness" ? /\bdsh\b|DeepSeek Harness/iu : /\bgrok\b/iu
   if (!pattern.test(version)) {
-    // Cursor, Pi, and DeepSeek Harness may print just a version; their help identifies the provider.
+    // Some CLIs print just a version; their help identifies the provider.
     const help = await ctx.run(binary, ["--help"], ctx.env, ctx.home)
     if (help.code !== 0 || !pattern.test(text(`${help.stdout}\n${help.stderr}`))) return undefined
   }
@@ -164,8 +170,8 @@ async function authentication(template: AgentProviderTemplateId, binary: string,
   if (template === "acp" || template === "antigravity") return "unknown"
   // DeepSeek Harness authenticates through DEEPSEEK_API_KEY (or a stored credential the CLI resolves).
   if (template === "deepseek-harness") return ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown"
-  // Grok has no noninteractive status command; Pi's check requires a selected model/provider.
-  if (template === "grok" || template === "pi") return "unknown"
+  // Grok has no noninteractive status command; Pi and OMP authenticate individual model providers.
+  if (template === "grok" || template === "pi" || template === "omp") return "unknown"
   try {
     const args = template === "codex" ? ["login", "status"] : template === "claude-code" ? ["auth", "status"] : ["status", "--format", "json"]
     const result = await ctx.run(binary, args, ctx.env, ctx.home)
@@ -281,8 +287,10 @@ export class ProviderSetup {
     const result = await this.probe(provider)
     if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
     const ctx = context(provider, this.#dependencies)
+    // Pi and OMP use /login in their TUI; OMP needs --allow-home for this setup terminal.
     const args = provider.template === "claude-code" ? ["auth", "login"]
-      : provider.template === "cursor" ? ["login"] : provider.template === "pi" ? [] : ["login", "--device-auth"]
+      : provider.template === "cursor" ? ["login"] : provider.template === "pi" ? []
+        : provider.template === "omp" ? ["--allow-home"] : ["login", "--device-auth"]
     const launch = launchProviderCommand(result.binaryPath, args,
       provider.template === "cursor" ? { ...ctx.env, NO_OPEN_BROWSER: "1" } : ctx.env, ctx.platform)
     return this.#run({ ...launch, cwd: ctx.home }, `${provider.name} sign in`)

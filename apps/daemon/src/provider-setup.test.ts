@@ -122,6 +122,35 @@ test("Pi validates its bare version with help and leaves authentication unknown"
   assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
 })
 
+test("OMP discovers native and Bun installs and leaves model-provider authentication unknown", async () => {
+  for (const [platform, env, binary, shell] of [
+    ["linux", { PATH: "" }, "/home/someone/.local/bin/omp", "/bin/bash"],
+    ["darwin", { PATH: "" }, "/home/someone/.bun/bin/omp", "/bin/bash"],
+    ["linux", { PATH: "", BUN_INSTALL: "/custom/bun" }, "/custom/bun/bin/omp", "/bin/bash"],
+    ["linux", { PATH: "", PI_INSTALL_DIR: "/custom/omp" }, "/custom/omp/omp", "/bin/bash"],
+    ["win32", { PATH: "C:\\tools", LOCALAPPDATA: "C:\\Local" }, "C:\\Local\\omp\\omp.exe", "C:\\tools\\pwsh.exe"],
+    ["win32", { PATH: "C:\\tools" }, "C:\\Users\\someone\\.bun\\bin\\omp.exe", "C:\\tools\\pwsh.exe"],
+    ["win32", { PATH: "C:\\tools", BUN_INSTALL: "C:\\Bun" }, "C:\\Bun\\bin\\omp.cmd", "C:\\tools\\pwsh.exe"],
+    ["win32", { PATH: "C:\\tools", PI_INSTALL_DIR: "C:\\OMP" }, "C:\\OMP\\omp.exe", "C:\\tools\\pwsh.exe"],
+  ] as const) {
+    const f = fixture({ platform, env, files: [binary, shell], answer: async (_command, args) =>
+      args[0] === "--version" ? result("18.13.1") : result("Usage: omp <command> [options]") })
+    assert.deepEqual(await f.setup.probe(input("omp", { env: { ANTHROPIC_API_KEY: "configured-key" } })), {
+      status: "found", binaryPath: binary, version: "18.13.1", auth: "unknown", installable: true, loginAvailable: true,
+    })
+    assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+    assert.equal(f.runs.length, 0)
+  }
+})
+
+test("OMP rejects a different provider with a bare version", async () => {
+  const f = fixture({ files: ["/tools/omp"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("1.4.0") : result("pi - AI coding assistant with read, bash, edit, write tools") })
+  const value = await f.setup.probe(input("omp"))
+  assert.equal(value.status, "invalid")
+  assert.equal(value.loginAvailable, false)
+})
+
 test("DeepSeek Harness validates its bare version with help and reports DEEPSEEK_API_KEY readiness", async () => {
   const f = fixture({ files: ["/home/someone/.local/bin/dsh", "/tools/npm", "/bin/bash"], answer: async (_command, args) =>
     args[0] === "--version" ? result("0.2.1-rc.2") : result("dsh: boot a DeepSeek Harness profile") })
@@ -210,6 +239,7 @@ test("official installers start dedicated terminals and do not start login or AC
   for (const [template, url] of [
     ["codex", "https://chatgpt.com/codex/install.sh"], ["claude-code", "https://claude.ai/install.sh"],
     ["cursor", "https://cursor.com/install"], ["grok", "https://x.ai/cli/install.sh"], ["pi", "https://pi.dev/install.sh"],
+    ["omp", "https://omp.sh/install"],
   ] as const) {
     const f = fixture({ files: ["/bin/bash"] })
     const terminal = await f.setup.install(input(template, { binaryPath: "/missing/old", env: { TOKEN: "sensitive-value" } }))
@@ -219,6 +249,7 @@ test("official installers start dedicated terminals and do not start login or AC
     assert.ok(f.runs[0]!.args?.join(" ").includes(url))
     assert.ok(!f.runs[0]!.args?.join(" ").includes("sensitive-value"))
     assert.equal(f.runs[0]!.env?.TOKEN, "sensitive-value")
+    if (template === "omp") assert.match(f.runs[0]!.args!.at(-1)!, /\| sh -s -- --binary$/u)
   }
 })
 
@@ -269,6 +300,38 @@ test("Pi sign in opens its interactive CLI without sending a slash command as a 
   assert.deepEqual(f.runs[0]!.args, [])
   assert.equal(f.runs[0]!.env?.PI_CODING_AGENT_DIR, "/custom/pi-agent")
   assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+})
+
+test("OMP sign in opens its TUI in the setup home directory without sending a prompt", async () => {
+  const f = fixture({ files: ["/tools/omp"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("18.13.1") : result("Usage: omp <command> [options]") })
+  await f.setup.login(input("omp", { env: { OMP_PROFILE: "work" } }))
+  assert.equal(f.runs[0]!.command, "/tools/omp")
+  assert.deepEqual(f.runs[0]!.args, ["--allow-home"])
+  assert.equal(f.runs[0]!.cwd, "/home/someone")
+  assert.equal(f.runs[0]!.env?.OMP_PROFILE, "work")
+  assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+})
+
+test("OMP Windows setup installs the standalone binary and signs in through its selected launcher", async () => {
+  const directory = "C:\\User's $tools\\omp"
+  const binary = `${directory}\\omp.cmd`
+  const powershell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+  const f = fixture({ platform: "win32", env: { PATH: "", SYSTEMROOT: "C:\\Windows" }, files: [binary, powershell], answer: async (_command, args) =>
+    args[0] === "--version" ? result("18.13.1") : result("Usage: omp <command> [options]") })
+  const provider = input("omp", { env: { PI_INSTALL_DIR: directory, TOKEN: "sensitive-value" } })
+  await f.setup.install(provider)
+  assert.equal(f.runs[0]!.command, powershell)
+  assert.match(f.runs[0]!.args!.at(-1)!, /https:\/\/omp\.sh\/install\.ps1/u)
+  assert.match(f.runs[0]!.args!.at(-1)!, /\)\)\) -Binary;/u)
+  assert.equal(f.runs[0]!.env?.PI_INSTALL_DIR, directory)
+  assert.equal(f.runs[0]!.env?.TOKEN, "sensitive-value")
+  assert.ok(!f.runs[0]!.args!.join(" ").includes("sensitive-value"))
+  await f.setup.login(provider)
+  assert.equal(f.runs[1]!.command, powershell)
+  assert.equal(f.runs[1]!.env?.DESKFLEET_PROVIDER_COMMAND, binary)
+  assert.ok(!f.runs[1]!.args!.join(" ").includes(binary))
+  assert.equal(f.runs[1]!.args!.at(-1), "& $env:DESKFLEET_PROVIDER_COMMAND '--allow-home'; exit $LASTEXITCODE")
 })
 
 test("Pi Windows setup uses the native installer and safely launches its managed shim", async () => {

@@ -14,9 +14,11 @@ test("composer catalogs preserve native commands and recognize only provider-con
       { name: "skill:release", description: "Prepare release" }],
     skills: [{ id: "$rust-skills", name: "rust-skills", description: "Rust guidance", invocation: "$rust-skills" }],
   })
-  assert.deepEqual(agentComposerCatalog(available, "pi").skills, [
-    { id: "skill:release", name: "release", description: "Prepare release", invocation: "/skill:release" },
-  ])
+  for (const provider of ["pi", "omp"]) {
+    assert.deepEqual(agentComposerCatalog(available, provider).skills, [
+      { id: "skill:release", name: "release", description: "Prepare release", invocation: "/skill:release" },
+    ])
+  }
   assert.deepEqual(agentComposerCatalog(available, "acp").skills, [])
 })
 

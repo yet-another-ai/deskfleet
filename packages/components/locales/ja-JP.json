@@ -665,6 +665,7 @@
       "codex": "OpenAI のコーディングエージェント。", "claude-code": "Anthropic のコーディングエージェント。",
       "cursor": "Cursor のエージェント CLI。", "grok": "xAI の Grok CLI。",
       "pi": "Pi のコーディングエージェント CLI。", "deepseek-harness": "DeepSeek のエージェントハーネス CLI（dsh）。",
+      "omp": "Oh My Pi のコーディングエージェント CLI。",
       "antigravity": "Google の Antigravity コーディングエージェント。",
       "acp": "Agent Client Protocol に対応した任意のエージェント。"
     },
@@ -682,7 +683,7 @@
       "login": "ログイン", "refresh": "再確認",
       "setPath": "パスを設定", "starting": "起動中…",
       "installing": "インストール中…", "loggingIn": "ログインを待っています。以下の案内に従ってください。",
-      "piLoginHint": "/login を入力してログインし、/quit で戻ってください。", "output": "セットアップの出力",
+      "interactiveLoginHint": "/login を入力してログインし、/quit で戻ってください。", "output": "セットアップの出力",
       "installNotFound": "インストーラーは終了しましたが、実行ファイルが見つかりません。出力を確認するか、詳細設定でパスを指定してください。", "interrupted": "セットアップが中断されました。",
       "failed": "セットアップがステータス {code} で終了しました。", "unknownExit": "不明",
       "stop": "停止"
