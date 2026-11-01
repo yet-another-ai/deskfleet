@@ -20,7 +20,9 @@ try {
   copyFileSync(new URL("./smoke-linux-package.ts", import.meta.url), join(staging, "scripts/smoke-linux-package.ts"))
   copyFileSync(new URL("../apps/daemon/package.json", import.meta.url), join(staging, "apps/daemon/package.json"))
   execFileSync("docker", [
-    "run", "--rm", "--security-opt", "seccomp=unconfined",
+    // Chromium needs more shared memory than Docker's default 64 MiB. Allow
+    // namespace syscalls for its own sandbox, which remains enabled.
+    "run", "--rm", "--shm-size=1g", "--security-opt", "seccomp=unconfined",
     "--env", `DESKFLEET_CHECK_GUI=${option === "--gui" ? "1" : "0"}`,
     "--volume", `${resolve(directory)}:/package`,
     "--volume", `${staging}:/verification:ro`,
