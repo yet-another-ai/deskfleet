@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n"
 import { mcpServersClient, type McpServerConfig, type McpServerInput } from "@deskfleet/client/mcp-servers"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
+import MachineTabs from "../account/MachineTabs.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import McpServerDialog from "./McpServerDialog.vue"
 
@@ -84,6 +85,7 @@ onBeforeUnmount(() => { disposed = true; revision++; window.removeEventListener(
     <h1 class="ui-page-title">{{ t('mcpServers.title') }}</h1>
     <UiButton type="button" data-mcp-add  :disabled="!online || !loaded || pending" @click="editor = {}"><Plus :size="16" aria-hidden="true" />{{ t('mcpServers.add') }}</UiButton>
   </div>
+  <MachineTabs :label="t('mcpServers.machines')" :disabled="pending" class="mb-5" />
   <p class="m-0 mb-5 text-sm leading-6 text-ui-text-muted">{{ t('mcpServers.description', { machine: account?.machine.value?.name ?? fleet.machines[0]?.name }) }}</p>
   <p v-if="!online" role="status" class="m-0 mb-4 text-sm text-ui-text-muted">{{ t(api ? 'mcpServers.offline' : 'schedules.signIn') }}</p>
   <div v-if="error" class="mb-4 flex items-center justify-between gap-3"><p role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p><UiButton type="button" :disabled="!online || loading || pending" @click="refresh">{{ t('folderPicker.retry') }}</UiButton></div>

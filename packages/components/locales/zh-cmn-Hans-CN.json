@@ -190,6 +190,7 @@
   },
   "mcpServers": {
     "title": "MCP 服务器",
+    "machines": "MCP 服务器所属机器",
     "description": "配置 {machine} 上 Agent 可使用的工具。",
     "servers": "服务器",
     "empty": "添加 MCP 服务器，让 Agent 使用它提供的工具。",
