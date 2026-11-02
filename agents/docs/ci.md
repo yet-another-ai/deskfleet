@@ -167,6 +167,11 @@ The release overlay requires signing and notarization; missing credentials or a
 failure prevents publication. PR, main, and manual Build runs package without
 those credentials. Windows installers are unsigned in this initial pipeline.
 
+Signed macOS builds use the desktop `package` script with the release overlay,
+so the native viewer is built and staged before electron-builder bundles and
+signs it. Keep this shared packaging entry point for both signed and unsigned
+installers.
+
 macOS packaging rewrites the main and helper executables' Mach-O build UUIDs
 before signing, giving each DeskFleet executable its own identity instead of
 reusing Electron's UUIDs. macOS Local Network privacy uses those UUIDs to identify

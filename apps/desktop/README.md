@@ -644,7 +644,7 @@ configured:
 
 ```sh
 mise run desktop:release-build
-mise exec -- pnpm --filter @deskfleet/desktop exec electron-builder --config electron-builder.release.yml --publish never
+mise exec -- pnpm --filter @deskfleet/desktop run package --config electron-builder.release.yml
 ```
 
 The tagged build stages macOS arm64 DMG/ZIP, Windows x64 NSIS, and Linux x64/arm64

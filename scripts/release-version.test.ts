@@ -8,6 +8,20 @@ import { readReleaseVersions, validateReleaseTag } from "./release-version.ts"
 
 const versions = (version: string) => ({ root: version, desktop: version, cargo: version })
 
+test("repository Node packages and Cargo share the release version", () => {
+  const directory = join(import.meta.dirname, "..")
+  const release = readReleaseVersions(directory)
+  validateReleaseTag(`v${release.root}`, release)
+  for (const manifest of [
+    "apps/daemon/package.json", "apps/desktop/package.json", "apps/web/package.json",
+    "crates/node/package.json", "docs/package.json", "packages/client/package.json",
+    "packages/components/package.json", "packages/mcp/package.json",
+  ]) {
+    const { version } = JSON.parse(readFileSync(join(directory, manifest), "utf8"))
+    assert.equal(version, release.root, `${manifest} must match the release version`)
+  }
+})
+
 test("stable and prerelease tags must match every shipped version", () => {
   for (const version of ["0.1.0", "1.2.3", "10.20.30-rc.1", "0.1.0-beta.0", "1.0.0-1a.2-3"]) {
     assert.deepEqual(validateReleaseTag(`v${version}`, versions(version)), {
