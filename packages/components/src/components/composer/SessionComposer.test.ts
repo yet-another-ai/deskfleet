@@ -13,6 +13,81 @@ import SessionComposer from "./SessionComposer.vue"
 
 let pinia: ReturnType<typeof createPinia> | undefined
 
+function dragEvent(type: string, dataTransfer: DataTransfer): DragEvent {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer })
+  return event as DragEvent
+}
+
+test("composer leaves tab moves and other non-file drags untouched for the window drop target", async () => {
+  pinia = createPinia()
+  const wrapper = mount(SessionComposer, {
+    props: { location: null },
+    global: { plugins: [pinia, router, i18n] },
+  })
+  const transfer = new DataTransfer()
+  // Dockview's HTML5 backend uses an empty text payload and permits only moves.
+  transfer.setData("text/plain", "")
+  transfer.effectAllowed = "move"
+  transfer.dropEffect = "move"
+  const received = vi.fn()
+  wrapper.element.addEventListener("drop", received)
+  await flushPromises()
+  try {
+    for (const type of ["dragenter", "dragover", "dragleave", "drop"]) {
+      const event = dragEvent(type, transfer)
+      wrapper.get("textarea").element.dispatchEvent(event)
+      await flushPromises()
+      expect(event.defaultPrevented).toBe(false)
+      expect(transfer.dropEffect).toBe("move")
+      expect(wrapper.find(".border-ui-accent").exists()).toBe(false)
+    }
+    expect(received).toHaveBeenCalledOnce()
+    expect(wrapper.emitted("update:attachments")).toBeUndefined()
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+test("composer highlights file drags across its children and attaches files with no MIME type", async () => {
+  pinia = createPinia()
+  const wrapper = mount(SessionComposer, {
+    props: { location: null },
+    global: { plugins: [pinia, router, i18n] },
+  })
+  const transfer = new DataTransfer()
+  transfer.items.add(new File(["hello"], "README"))
+  // happy-dom exposes MIME types here instead of the browser's file marker.
+  Object.defineProperty(transfer, "types", { value: ["Files"] })
+  const textarea = wrapper.get("textarea").element
+  const zone = textarea.parentElement!
+  await flushPromises()
+  try {
+    zone.dispatchEvent(dragEvent("dragenter", transfer))
+    textarea.dispatchEvent(dragEvent("dragenter", transfer))
+    textarea.dispatchEvent(dragEvent("dragleave", transfer))
+    await flushPromises()
+    expect(zone.classList.contains("border-ui-accent")).toBe(true)
+    zone.dispatchEvent(dragEvent("dragleave", transfer))
+    await flushPromises()
+    expect(zone.classList.contains("border-ui-accent")).toBe(false)
+
+    for (const type of ["dragenter", "dragover", "drop"]) {
+      const event = dragEvent(type, transfer)
+      textarea.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+      expect(transfer.dropEffect).toBe("copy")
+    }
+    await flushPromises()
+    expect(zone.classList.contains("border-ui-accent")).toBe(false)
+    expect(wrapper.emitted("update:attachments")?.[0]?.[0]).toEqual([
+      expect.objectContaining({ kind: "local_file", name: "README", size: 5 }),
+    ])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 afterEach(() => {
   if (pinia) disposePinia(pinia)
   pinia = undefined

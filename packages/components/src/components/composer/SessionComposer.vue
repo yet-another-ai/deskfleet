@@ -4,7 +4,7 @@ import UiButton from "../common/UiButton.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
 import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, MessageSquare, Monitor, Plus, Sparkles, Square, Upload, X } from "@lucide/vue"
-import { useDropZone, useTextareaAutosize } from "@vueuse/core"
+import { useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -131,10 +131,22 @@ watch([
     baseBranch.value = undefined
   }
 }, { immediate: true })
-const { isOverDropZone } = useDropZone(dropZoneRef, {
-  onDrop(files) {
-    if (files?.length && !props.disabled && !props.submitting) void addFiles(files)
-  },
+const fileDragDepth = ref(0)
+const isOverDropZone = computed(() => fileDragDepth.value > 0)
+useEventListener(dropZoneRef, ["dragenter", "dragover", "dragleave", "drop"], event => {
+  // Non-file drags belong to the window manager. Changing their dropEffect
+  // (even to "none") prevents Dockview's move-only tab drops from completing.
+  const transfer = event.dataTransfer
+  if (!transfer?.types.includes("Files")) return
+
+  event.preventDefault()
+  transfer.dropEffect = "copy"
+  if (event.type === "dragenter") fileDragDepth.value += 1
+  else if (event.type === "dragleave") fileDragDepth.value = Math.max(0, fileDragDepth.value - 1)
+  else if (event.type === "drop") {
+    fileDragDepth.value = 0
+    if (transfer.files.length && !props.disabled && !props.submitting) void addFiles(transfer.files)
+  }
 })
 
 const attachmentPreviewUrls = reactive(new Map<string, string>())
