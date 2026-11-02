@@ -317,3 +317,27 @@ test("GitHub pull-request lookup keeps fork identity and branch punctuation in q
   expect(await client.githubPullRequest({ owner: "upstream", repo: "deskfleet", headOwner: "contributor", branch: "feat/status&checks#78" })).toEqual({ pullRequest })
   expect(fetch).toHaveBeenCalledWith("https://fleet.example/api/integrations/github/pull-request?owner=upstream&repo=deskfleet&branch=feat%2Fstatus%26checks%2378&headOwner=contributor", expect.objectContaining({ method: "GET", headers: { Authorization: "Bearer secret" } }))
 })
+
+test("replaces a silent signaling socket instead of waiting for a close event", async () => {
+  vi.useFakeTimers()
+  const f = setup(); const events = vi.fn()
+  f.client.onEvent(events)
+  f.sockets[0]!.onopen!()
+  f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
+  expect(events.mock.calls.map(([event]) => event)).toEqual([{ type: "connection", connected: true }])
+  await vi.advanceTimersByTimeAsync(20_000)
+  expect(f.sockets[0]!.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "ping" }))
+  // Liveness traffic is not a client event, and it refreshes the idle deadline.
+  f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "pong" }) })
+  expect(events).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(80_000)
+  expect(f.sockets[0]!.close).toHaveBeenCalledTimes(1)
+  expect(events.mock.calls.map(([event]) => event)).toEqual([
+    { type: "connection", connected: true }, { type: "connection", connected: false },
+  ])
+  // The close handshake is still in flight; the replacement follows the grace period.
+  await vi.advanceTimersByTimeAsync(5_000)
+  expect(f.sockets).toHaveLength(1)
+  await vi.advanceTimersByTimeAsync(2_000)
+  expect(f.sockets).toHaveLength(2)
+})

@@ -99,6 +99,14 @@ or expired process lease stops that process from using its local sockets as
 authority. Closing signaling for recovery does not revoke an already authorized
 WebRTC connection or stop the daemon's execution.
 
+An established control socket is not recovered by its close handshake alone: a
+dead peer never answers it and the WebSocket implementation has no closing
+deadline. The daemon and the client signaling socket therefore declare a link
+dead after 60 seconds without traffic, abandon it when an orderly close does not
+finish within 5 seconds, and reconnect with bounded backoff. The daemon reports
+`connected` false as soon as the link is declared dead, so a lost link cannot
+leave a machine offline until its process restarts.
+
 Each daemon signaling socket also reconciles its peer grants from PostgreSQL at
 its 20-second heartbeat. If a revocation commits but its broadcast is lost, the
 next successful reconciliation closes the revoked peers while retaining active
