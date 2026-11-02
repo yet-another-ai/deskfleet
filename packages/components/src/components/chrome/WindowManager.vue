@@ -2,7 +2,7 @@
 import "dockview-vue/dist/styles/dockview.css"
 import { Plus, SquareTerminal } from "@lucide/vue"
 import { StorageSerializers, useLocalStorage, useTimeoutFn } from "@vueuse/core"
-import { computed, defineAsyncComponent, onScopeDispose, shallowRef, toRaw, watch } from "vue"
+import { computed, defineAsyncComponent, onScopeDispose, provide, shallowRef, toRaw, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import {
   DockviewVue,
@@ -32,7 +32,7 @@ import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import AppMainWindow from "./AppMainWindow.vue"
 import WindowTab from "./WindowTab.vue"
 import WindowToolbar from "./WindowToolbar.vue"
-import { windowHeaderActionsId, windowHeaderActionsTarget } from "./windowHeaderActions.ts"
+import { newTerminalWindowKey, windowHeaderActionsId, windowHeaderActionsTarget } from "./windowHeaderActions.ts"
 
 type WorkspaceWindowId = "changes" | "terminal"
 
@@ -69,6 +69,11 @@ const sessionShells = computed(() => {
     : []
 })
 const sessionShellIds = computed(() => sessionShells.value.map(terminal => terminal.id))
+
+provide(newTerminalWindowKey, () => {
+  const group = api.value?.groups.find(group => group.id === topLeftGroupId.value)
+  if (group) void openTerminalTab(group, "below")
+})
 
 function tabPresentation(params: IDockviewPanelHeaderProps): { title: string; tooltip: string; closable: boolean } {
   if (params.api.id === "chat") {
@@ -418,16 +423,7 @@ onScopeDispose(() => {
         </DropdownMenuRoot>
       </template>
       <template #rightHeaderActions="{ group }">
-        <div :id="windowHeaderActionsId(group.id)" class="app-no-drag mr-[6px] flex h-full items-center gap-[6px]" data-window-header-actions :data-window-header-actions-group="group.id">
-          <IconButton
-            v-if="group.id === topLeftGroupId"
-            :icon="SquareTerminal"
-            :label="t('terminal.new')"
-            :disabled="!sessionWorktreeId"
-            data-new-terminal-window
-            @click="openTerminalTab(group, 'below')"
-          />
-        </div>
+        <div :id="windowHeaderActionsId(group.id)" class="app-no-drag mr-[6px] flex h-full items-center gap-[6px]" data-window-header-actions :data-window-header-actions-group="group.id" />
       </template>
     </DockviewVue>
   </section>

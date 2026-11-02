@@ -115,7 +115,7 @@ test("Session actions use the right side of the top-left window tab bar", async 
   const actionGroup = actions.element.parentElement?.dataset.windowHeaderActionsGroup
   const toolbarGroup = wrapper.get("[data-window-toolbar-group]").attributes("data-window-toolbar-group")
   expect(actionGroup).toBe(toolbarGroup)
-  expect(actions.element.parentElement?.firstElementChild).toBe(page().get("[data-new-terminal-window]").element)
+  expect(actions.get("[data-new-terminal-window]").element.nextElementSibling).toBe(actions.element.lastElementChild)
   expect(page().get("[data-new-terminal-window]").attributes("aria-label")).toBe(i18n.global.t("terminal.new"))
 })
 
