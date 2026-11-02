@@ -8,6 +8,7 @@ import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
 import { centralRequestFailure } from "./request-diagnostics.ts"
+import type { NetworkConfiguration } from "../../../crates/protocol/control.ts"
 import { isDesktopErrorReason, type DesktopErrorReason } from "./desktop-media.ts"
 
 export interface SavedAccount { serverUrl: string; token?: string; user?: AccountUser }
@@ -79,15 +80,16 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     }
   }
   async #save(account: SavedAccount): Promise<void> { await this.#options.persist(account); this.#account = account }
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     const requestStack = new Error()
     if (this.#options.cookieAuth && !["GET", "HEAD"].includes(method) && !this.#csrf) {
-      await this.request("GET", "/api/auth/config")
+      await this.request("GET", "/api/auth/config", undefined, signal)
     }
     const init: RequestInit = {
       method, credentials: this.#options.cookieAuth ? "include" : "omit",
       headers: { ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(this.#options.cookieAuth && this.#csrf ? { "X-CSRF-Token": this.#csrf } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(signal === undefined ? {} : { signal }),
     }
     const started = performance.now()
     let response: Response
@@ -165,6 +167,10 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   }
   async setEnterprise(teamId: string, enabled: boolean) { await this.request("PUT", `/api/admin/teams/${encodeURIComponent(teamId)}/enterprise`, { enabled }) }
   site() { return this.request<SiteSettings>("GET", "/api/site") }
+  /** Used by the desktop main process; renderer diagnostics never choose endpoints. */
+  networkConfiguration() {
+    return this.request<NetworkConfiguration>("GET", "/api/network-configuration", undefined, AbortSignal.timeout(5_000))
+  }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }
   updateSiteSettings(settings: SiteSettings) { return this.request<SiteSettings>("PATCH", "/api/admin/site-settings", settings) }
   turnSettings() { return this.request<TurnSettings>("GET", "/api/admin/turn-settings") }

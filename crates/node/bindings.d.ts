@@ -176,6 +176,8 @@ export interface MediaFailure {
   reason?: string
 }
 
+export type NatFiltering = 'unknown' | 'endpoint-independent' | 'address-dependent' | 'address-and-port-dependent'
+
 /** Report the loaded addon version and platform without requiring a display. */
 export declare function nativeInfo(): NativeInfo
 
@@ -185,6 +187,20 @@ export interface NativeInfo {
   os: string
   arch: string
 }
+
+export type NatMapping = 'unknown' | 'direct' | 'endpoint-independent' | 'address-dependent' | 'address-and-port-dependent'
+
+export interface NatTestResult {
+  server: string
+  localAddress: string
+  publicAddress?: string
+  mapping: NatMapping
+  filtering: NatFiltering
+  status: NatTestStatus
+  durationMs: number
+}
+
+export type NatTestStatus = 'complete' | 'server-unsupported' | 'inconclusive' | 'udp-unreachable'
 
 export declare function openCatalog(databasePath: string, machineName: string): Promise<NativeCatalog>
 
@@ -280,6 +296,9 @@ export interface TerminalEvent {
   exitCode?: number
   error?: string
 }
+
+/** Discover IPv4 NAT behavior using a configured RFC 5780 STUN host:port. */
+export declare function testNat(server: string): Promise<NatTestResult>
 
 export type VideoCodec = 'h264' | 'h265' | 'av1'
 

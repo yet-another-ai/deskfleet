@@ -3,6 +3,7 @@ import { installFiles } from "./files.ts"
 import { installPorts } from "./ports.ts"
 import { installLocalChannels } from "./local-channels.ts"
 import { installLocalApplications } from "./applications.ts"
+import { installNetworkDiagnostics } from "./network-diagnostics.ts"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { join } from "node:path"
@@ -53,6 +54,7 @@ function start(): void {
     const central = await installCentralAccount()
     const nativeDesktop = installNativeDesktop(central)
     installLocalApplications(central)
+    installNetworkDiagnostics(central)
     const files = installFiles(central)
     const ports = installPorts(central)
     const localChannels = installLocalChannels(central)

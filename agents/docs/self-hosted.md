@@ -490,6 +490,36 @@ TURN forwards DTLS. It does not decrypt sessions, and the API never sees the
 DTLS private keys. Relay ports are the TURN server's configuration; the API
 does not allocate them and does not have a port-range variable.
 
+### NAT diagnostics
+
+Desktop **Settings → Developer settings → NAT network type** tests the network
+of the computer running the app. Open **NAT network type** from the developer
+settings list to reach its dedicated page (`/settings/developer/nat`), then click
+**Test NAT type**; the app automatically
+uses the current installation's `DESKFLEET_STUN_URLS`, the same deployment-owned
+STUN list advertised to peers. No address input or separate public-server default
+is offered. The authenticated `GET /api/network-configuration` endpoint returns
+this ordered list without TURN credentials. Electron selects the first `stun:`
+hostname or IPv4 endpoint with UDP transport; an omitted port means 3478.
+TLS/TCP and IPv6-literal endpoints cannot be used by this IPv4 UDP diagnostic.
+If no compatible endpoint is configured, the page asks users to contact the
+service administrator. The diagnostic does not modify the deployment's ICE list.
+
+Full IPv4 UDP mapping and filtering discovery requires a server implementing
+[RFC 5780](https://www.rfc-editor.org/rfc/rfc5780), with two externally reachable
+IPv4 addresses and two ports, `OTHER-ADDRESS`, and `CHANGE-REQUEST` support. An
+ordinary STUN Binding server can still reveal the observed public endpoint but
+cannot classify all NAT behaviors. Missing support, partial results, and no UDP
+response are shown separately; no response alone does not prove UDP is blocked.
+
+The test reports the observed mapping and filtering behaviors, a conventional
+NAT classification when available, local/public endpoints, and elapsed time.
+Filtering runs before alternate-destination mapping probes so those probes do
+not open the filters being measured. Configuration retrieval has a 5-second
+timeout, and the native probes finish within 30 seconds. The
+result describes one IPv4 UDP path at that time; it does not guarantee that a
+particular peer can connect directly. Web clients show a desktop-app requirement.
+
 ### Team TURN servers
 
 Team owners and administrators can configure their own TURN REST server in Team

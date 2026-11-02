@@ -3,12 +3,14 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
 import type { DisplayInfo, LocalApplication, LocalNetworkAccessRequest, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
+import type { NatTestResult } from "./bindings.d.ts"
 
 export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, LinuxDesktopAccess } from "./bindings.d.ts"
 export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
 export type { SystemStatus } from "./bindings.d.ts"
 export type { LocalApplication, LocalApplicationKind } from "./bindings.d.ts"
 export type { LocalNetworkAccessRequest } from "./bindings.d.ts"
+export type { NatMapping, NatFiltering, NatTestStatus, NatTestResult } from "./bindings.d.ts"
 
 type Bindings = typeof import("./bindings.d.ts")
 let bindings: Bindings | undefined
@@ -54,6 +56,11 @@ export function nativeInfo(): NativeInfo {
 /** Read machine CPU and memory usage on a native worker. */
 export function systemStatus(): Promise<SystemStatus> {
   return (bindings ??= loadBindings()).systemStatus()
+}
+
+/** Test the desktop client's current IPv4 NAT behavior against an RFC 5780 server. */
+export function testNat(server: string): Promise<NatTestResult> {
+  return (bindings ??= loadBindings()).testNat(server)
 }
 
 /** Discover supported applications installed on this desktop client. */

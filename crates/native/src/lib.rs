@@ -6,6 +6,7 @@ pub mod input;
 pub mod local_applications;
 pub mod local_network;
 pub mod media;
+pub mod nat;
 #[cfg(target_os = "macos")]
 mod permission_settings;
 pub mod rtc;

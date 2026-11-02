@@ -69,6 +69,47 @@
     "openSourceDescription": "DeskFleet is built with open-source software. Here are some of the projects that make it possible.",
     "thanks": "Thank you to all open-source contributors. Your work makes DeskFleet possible."
   },
+  "developerSettings": {
+    "title": "Developer settings",
+    "natTitle": "NAT network type",
+    "description": "Test this computer's IPv4 UDP network using the STUN service configured for this DeskFleet installation.",
+    "desktopRequired": "Open Developer settings in the desktop app to test this computer's NAT type. Browsers cannot perform the required UDP probes.",
+    "server": "STUN server",
+    "noStunServer": "This DeskFleet service has no IPv4 UDP STUN server configured. Contact the service administrator.",
+    "test": "Test NAT type",
+    "testing": "Testing…",
+    "testingHelp": "Checking network behavior. This can take up to 35 seconds.",
+    "result": "Detected NAT type",
+    "mapping": "Mapping behavior",
+    "filtering": "Filtering behavior",
+    "localAddress": "Local address and port",
+    "publicAddress": "Public address and port",
+    "duration": "Time elapsed",
+    "milliseconds": "{value} ms",
+    "resultHelp": "This result describes the observed IPv4 UDP path. A direct connection also depends on the other peer's network.",
+    "types": {
+      "unknown": "Undetermined",
+      "open": "Open internet (no NAT)",
+      "firewall": "UDP firewall (no NAT)",
+      "fullCone": "Full-cone NAT",
+      "restrictedCone": "Restricted-cone NAT",
+      "portRestrictedCone": "Port-restricted-cone NAT",
+      "symmetric": "Symmetric NAT"
+    },
+    "behavior": {
+      "unknown": "Undetermined",
+      "direct": "No address translation",
+      "endpoint-independent": "Endpoint-independent",
+      "address-dependent": "Address-dependent",
+      "address-and-port-dependent": "Address-and-port-dependent"
+    },
+    "status": {
+      "complete": "The network behavior checks completed. The NAT type summarizes the mapping and filtering behavior below.",
+      "server-unsupported": "The configured STUN service responded but does not support the required behavior discovery. The available results are shown below, but the full NAT type could not be determined.",
+      "inconclusive": "Some probes could not be verified. Review the available results below or retry the test.",
+      "udp-unreachable": "No response was received from the configured STUN service. Check your network, then retry. This alone does not establish that UDP is blocked."
+    }
+  },
   "permissionsSettings": {
     "title": "Permissions",
     "description": "Review the access DeskFleet needs on this computer. You can change permissions and check their status here at any time.",

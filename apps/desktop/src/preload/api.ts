@@ -14,6 +14,7 @@ import { onboardingApi } from "./onboarding.ts"
 import { appearanceApi } from "./appearance.ts"
 import { portsApi } from "./ports.ts"
 import { applicationsApi } from "./applications.ts"
+import { networkDiagnosticsApi } from "./network-diagnostics.ts"
 import { updatesApi } from "./updates.ts"
 import { localChannelsApi } from "./local-channels.ts"
 import { windowsDesktopServiceApi } from "./windows-desktop-service.ts"
@@ -58,6 +59,7 @@ return {
   application: { restart: () => ipcRenderer.invoke(APPLICATION_RESTART_CHANNEL) as Promise<void> },
   appearance: appearanceApi(),
   applications: applicationsApi(),
+  networkDiagnostics: networkDiagnosticsApi(),
   updates: updatesApi(),
   ...(process.platform === "win32" ? { windowsDesktopService: windowsDesktopServiceApi() } : {}),
   ...(process.platform === "linux" || process.platform === "win32" || process.platform === "darwin" ? { nativeDesktop: { open: (request: import("@deskfleet/client/native-desktop").NativeDesktopRequest) => ipcRenderer.invoke(NATIVE_DESKTOP_CHANNEL, request) as Promise<void> } } : {}),
