@@ -27,12 +27,23 @@ test("message times render in every app locale", () => {
 })
 test("backlog exposes steer/withdraw only for candidates and retry only for confirmed failures", async () => {
   const view = mount(AgentBacklog, { props: { inputs: [agentInput(), agentInput({ id: "41", state: "failed" }), agentInput({ id: "42", state: "uncertain" }), agentInput({ id: "43", state: "delivered" })], canSteer: true, disabled: false }, global: { plugins: [i18n] } }); wrappers.push(view)
-  expect(view.findAll("li")).toHaveLength(3)
+  expect(view.findAll("li")).toHaveLength(2)
   await button(view, "Steer now").trigger("click"); expect(view.emitted("steer")).toEqual([["40"]])
   await button(view, "Withdraw").trigger("click"); expect(view.emitted("withdraw")).toEqual([["40"]])
   await button(view, "Retry delivery").trigger("click"); expect(view.emitted("retry")).toEqual([["41"]])
-  expect(view.get('[data-input-id="42"]').find("button").exists()).toBe(false)
+  expect(view.find('[data-input-id="42"]').exists()).toBe(false)
   await view.setProps({ canSteer: false }); expect(view.text()).not.toContain("Steer now")
+})
+test("an uncertain dispatch leaves the backlog but remains visible in the conversation", async () => {
+  const dispatched = agentInput({ state: "dispatching", actualDelivery: "turn_start" })
+  const uncertain = { ...dispatched, state: "uncertain" as const }
+  const snapshot = agentSnapshot(); snapshot.inputs = [uncertain]
+  const backlog = mount(AgentBacklog, { props: { inputs: [agentInput()], canSteer: false, disabled: false }, global: { plugins: [i18n] } }); wrappers.push(backlog)
+  await backlog.setProps({ inputs: [uncertain] })
+  expect(backlog.find("section").exists()).toBe(false)
+  const conversation = mount(AgentConversation, { props: { snapshot, events: [agentEvent(1, "input", dispatched), agentEvent(2, "input", uncertain)] }, global: { plugins: [i18n] } }); wrappers.push(conversation)
+  expect(conversation.get('[data-conversation-entry="input-40"]').text()).toContain("Delivery uncertain")
+  expect(conversation.text()).toContain("Check the conversation before submitting again")
 })
 test("queued commands and native skill commands remain withdrawable without a steer action", () => {
   const view = mount(AgentBacklog, { props: { inputs: [
