@@ -369,7 +369,9 @@ test("returning to unchanged conversation history scrolls after loading, while l
   await router.push({ name: "session", params: { sessionId: "30" } })
   await flushPromises()
   const session = wrapper.findComponent(SessionView)
-  const scroller = session.get<HTMLElement>(".overflow-y-auto")
+  expect(session.find("[data-session-scroll-area]").exists()).toBe(true)
+  const scroller = session.get<HTMLElement>("[data-session-scroll-viewport]")
+  expect(scroller.attributes("data-reka-scroll-area-viewport")).toBe("")
   Object.defineProperties(scroller.element, { scrollHeight: { value: 1600 }, clientHeight: { value: 400 }, scrollTop: { value: 0, writable: true } })
   const scrollTo = vi.spyOn(scroller.element, "scrollTo").mockImplementation(() => {
     expect(session.find('[data-testid="agent-elicitation"]').exists()).toBe(true)
