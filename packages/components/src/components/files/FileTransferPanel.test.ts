@@ -2,7 +2,7 @@ import { client } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi, CentralEvent } from "../../../../client/src/central.ts"
-import type { FileListing, FilesApi, FileTransfer } from "../../../../client/src/files.ts"
+import type { FileListing, FilesApi, FileTransfer, FileTransferRequest } from "../../../../client/src/files.ts"
 import { i18n } from "../../i18n/index.ts"
 import FileTransferPanel from "./FileTransferPanel.vue"
 
@@ -16,7 +16,8 @@ function setup(overrides: Partial<FilesApi> = {}) {
   const unsubscribe = vi.fn()
   const api: FilesApi = {
     list: vi.fn(async value => value.kind === "local" ? local : remote),
-    chooseLocalDirectory: vi.fn(async () => local), enqueue: vi.fn(async () => "new-transfer"),
+    chooseLocalDirectory: vi.fn(async () => local),
+    enqueue: vi.fn(async (request: FileTransferRequest) => { structuredClone(request); return "new-transfer" }),
     transfers: vi.fn(async () => [task]), cancel: vi.fn(async () => {}), retry: vi.fn(async () => {}),
     onChanged: listener => { update = listener; return unsubscribe },
     resolveResource: vi.fn(), readResource: vi.fn(), saveResource: vi.fn(),
@@ -43,6 +44,7 @@ test("copies each selected folder as one task into the other pane's actual direc
   await view.get('button[aria-label="Send to remote"]').trigger("click")
   await flushPromises()
   expect(api.enqueue).toHaveBeenCalledExactlyOnceWith({ kind: "directory", source: task.source, destination: task.destination })
+  expect(view.find('[role="alert"]').exists()).toBe(false)
   expect(view.get('[role="checkbox"][aria-label="Select assets"]').attributes("aria-checked")).toBe("false")
   wrapper!.unmount(); wrapper = undefined
   expect(unsubscribe).toHaveBeenCalledOnce()
@@ -59,6 +61,8 @@ test("downloads into the desktop home directory without choosing or authorizing 
   await view.get('button[aria-label="Download to this computer"]').trigger("click")
   await flushPromises()
   expect(api.enqueue).toHaveBeenCalledExactlyOnceWith({ kind: "file", source: { target, path: remoteEntry.path }, destination: { target: { kind: "local", grantId: "local-files" }, path: local.path } })
+  expect(view.find('[role="alert"]').exists()).toBe(false)
+  expect(view.get('[role="checkbox"][aria-label="Select report.txt"]').attributes("aria-checked")).toBe("false")
   expect(api.chooseLocalDirectory).not.toHaveBeenCalled()
 })
 
@@ -90,6 +94,7 @@ test("keeps local access grants through navigation and both transfer directions"
   await view.get('button[aria-label="Send to remote"]').trigger("click")
   await flushPromises()
   expect(api.enqueue).toHaveBeenLastCalledWith({ kind: "directory", source: { target: { kind: "local", grantId: "chosen-folder" }, path: local.entries[0]!.path }, destination: task.destination })
+  expect(view.find('[role="alert"]').exists()).toBe(false)
 
   const remoteEntry = { name: "report.txt", path: "D:\\output\\report.txt", kind: "file" as const, size: 5, modifiedAt: 1 }
   vi.mocked(api.list).mockImplementation(async value => value.kind === "local" ? chosen : { ...remote, entries: [remoteEntry] })
@@ -100,6 +105,7 @@ test("keeps local access grants through navigation and both transfer directions"
   await view.get('button[aria-label="Download to this computer"]').trigger("click")
   await flushPromises()
   expect(api.enqueue).toHaveBeenLastCalledWith({ kind: "file", source: { target, path: remoteEntry.path }, destination: { target: { kind: "local", grantId: "chosen-folder" }, path: local.path } })
+  expect(view.find('[role="alert"]').exists()).toBe(false)
 })
 
 test("an account change clears folder listings, paths, selections, and grants", async () => {
