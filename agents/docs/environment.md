@@ -61,21 +61,33 @@ component demos; `mise run docs:build` generates `docs/.vitepress/dist/` and
 validates internal links. Preview that output with `mise run docs:preview`.
 
 The landing page follows Heron's refactored VitePress homepage at commit
-`b61a783b` (v0.9.1): assembling desktop windows, a scroll-driven showcase,
-staggered text reveals, and segmented installation controls. Its hero scales the
-actual application into windows that fan out in depth, respond to pointer
-movement, and disperse on scroll. Hero sizing reserves VitePress's navigation
-height and the copy's actual height before sizing the scene. Reduced-motion
-preferences show the assembled scene without animation. The showcase mounts the same
-`App.vue`, routes, stores, and controls with independent browser-local sample
-state. It needs no backend, agent credentials, or model calls. English,
-Simplified Chinese, and Japanese content share those components. The sticky showcase reserves
-the fixed navigation height; short viewports use normal page flow with tabs so
-the application controls and explanatory text remain reachable.
+`b61a783b` (v0.9.1): assembling desktop windows, staggered text reveals, and
+segmented installation controls. Its hero scales the actual application into
+windows that fan out in depth, respond to pointer movement, and disperse on
+scroll. Hero sizing reserves VitePress's navigation height and the copy's actual
+height before sizing the scene. Reduced-motion preferences show the assembled
+scene without animation.
+
+The showcase (`#explore`) uses normal page flow, not scroll-driven pinning. Its
+chapter tabs show every value proposition before any interaction. They switch a
+single framed demo window. Each demo mounts on first selection and then stays
+alive, so a reader's changes survive switching. Each chapter opens on the view that
+shows its point. Agents opens on a running session at desktop widths and on a new
+session on narrow pages. The demos mount the same `App.vue`, routes, stores,
+and controls with independent browser-local sample state. They need no backend,
+agent credentials, or model calls. The trust section (`#open`) is a bento grid:
+the repository layout links to its source, and the machine and data cards
+illustrate what stays local and what is never used for training. English,
+Simplified Chinese, and Japanese content share those components.
 
 Embedded demos keep their application layout inside the preview window even on
 mobile pages. Their compact drawer mode is disabled so app panels cannot portal
-over the website navigation or installation controls.
+over the website navigation or installation controls. The demo runtime keeps its
+own memory-history route table, because importing the product router would
+install hash history on the website. When a view the demos can reach links a
+new named route, add that route to `product-demo-runtime.ts`. Each embedded app
+has its own error handler. A failing demo then logs inside its window instead of
+corrupting the shared Vue runtime and breaking VitePress navigation.
 
 `packages/components/src/theme-tokens.css` owns the product palette. Both the
 application and website consume it; `color-scheme` selects the website's explicit
