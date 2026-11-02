@@ -4,6 +4,7 @@ import { access, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { posix, win32 } from "node:path"
 import { antigravityInstallDirectory, antigravityInstaller } from "./antigravity-install.ts"
+import { antigravityLoginProcess } from "./agents/antigravity.ts"
 import { AGENT_PROVIDER_TEMPLATES, providerInput, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
 import { launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
 import type { TerminalSummary } from "./terminal-protocol.ts"
@@ -245,7 +246,7 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
         const version = await identity(provider.template, binary, ctx)
         if (version === undefined) { invalid = true; continue }
         // DeepSeek Harness has no interactive CLI login; configure DEEPSEEK_API_KEY in environment variables.
-        const loginAvailable = provider.template !== "deepseek-harness" && provider.template !== "antigravity"
+        const loginAvailable = provider.template !== "deepseek-harness"
         return { ...base, status: "found", binaryPath: binary, version, loginAvailable,
           auth: await authentication(provider.template, binary, ctx) }
       } catch { invalid = true }
@@ -281,12 +282,12 @@ export class ProviderSetup {
     if (provider.template === "deepseek-harness") {
       throw new Error("Set DEEPSEEK_API_KEY in the provider environment variables (optional DEEPSEEK_BASE_URL).")
     }
-    if (provider.template === "antigravity") {
-      throw new Error("Sign in to Antigravity through an ACP client on this machine, then retry. Its ACP runtime has no CLI login command.")
-    }
     const result = await this.probe(provider)
     if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
     const ctx = context(provider, this.#dependencies)
+    if (provider.template === "antigravity") {
+      return this.#run({ ...antigravityLoginProcess(result.binaryPath, ctx.env), cwd: ctx.home }, `${provider.name} sign in`)
+    }
     // Pi and OMP use /login in their TUI; OMP needs --allow-home for this setup terminal.
     const args = provider.template === "claude-code" ? ["auth", "login"]
       : provider.template === "cursor" ? ["login"] : provider.template === "pi" ? []

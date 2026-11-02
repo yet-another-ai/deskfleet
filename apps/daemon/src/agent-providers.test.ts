@@ -261,7 +261,7 @@ test("Antigravity launches its ACP runtime without interactive authentication", 
   assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, process.platform === "linux" ? ["--uid="] : [])
   assert.match((await connection.newSession({ cwd: directory, mcpServers: [] })).sessionId, /^fixture-session-/u)
   await connection.close()
-  await assert.rejects(registry.test({ template: "antigravity", name: "Antigravity", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "antigravity-signed-out" } }), /Sign in to Antigravity through an ACP client/u)
+  await assert.rejects(registry.test({ template: "antigravity", name: "Antigravity", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "antigravity-signed-out" } }), /Use the Log in button before testing the connection/u)
 })
 
 test("Grok launches grok agent stdio and authenticates with xai.api_key", { timeout: 15_000, skip: process.platform === "win32" }, async t => {

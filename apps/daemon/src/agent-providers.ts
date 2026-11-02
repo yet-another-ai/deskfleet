@@ -24,9 +24,8 @@ const acpProvider: AgentProvider = {
 }
 
 /** ACP adapters often put the actual cause in error data behind a generic JSON-RPC message. */
-function testFailure(error: unknown, template: AgentProviderInput["template"]): string {
+function testFailure(error: unknown): string {
   if ((error as { code?: unknown } | null)?.code === RequestError.authRequired().code) {
-    if (template === "antigravity") return "Authentication required. Sign in to Antigravity through an ACP client on this machine, then retry."
     return "Authentication required. Use the Log in button before testing the connection."
   }
   const data = (error as { data?: unknown } | null | undefined)?.data
@@ -135,7 +134,7 @@ export class AgentProviders {
       const agent = connection.initialization.agentInfo
       return { agentName: agent?.title || agent?.name || config.name }
     } catch (error) {
-      throw new Error(testFailure(error, input.template), { cause: error })
+      throw new Error(testFailure(error), { cause: error })
     } finally {
       clearTimeout(timer)
       await connecting.then(connection => connection.close(), () => {})

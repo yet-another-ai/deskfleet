@@ -191,14 +191,16 @@ test("Antigravity discovers managed runtimes and reads build metadata without st
   ] as const) {
     const f = fixture({ platform, env, files: [binary, shell], answer: async () => result("Build timestamp: yesterday\nBuilt as //cloud/developer_experience/antigravity_extensions/acp_server:_agy_acp_server_bin\nBuild label: 1.4.5") })
     assert.deepEqual(await f.setup.probe(input("antigravity")), {
-      status: "found", binaryPath: binary, version: "Antigravity 1.4.5", auth: "unknown", installable: true, loginAvailable: false,
+      status: "found", binaryPath: binary, version: "Antigravity 1.4.5", auth: "unknown", installable: true, loginAvailable: true,
     })
     assert.deepEqual(f.calls.map(call => call.args), [["--version"]])
     await f.setup.install(input("antigravity"))
     assert.equal(f.runs[0]!.command, shell)
     assert.match(f.runs[0]!.args!.at(-1)!, /https:\/\/dl\.google\.com\/agy-extensions\/releases\//u)
-    await assert.rejects(f.setup.login(input("antigravity")), /Sign in to Antigravity through an ACP client/u)
-    assert.equal(f.runs.length, 1)
+    await f.setup.login(input("antigravity"))
+    assert.ok(f.runs[1]!.args?.includes("--antigravity-login"))
+    assert.equal(f.runs[1]!.env?.DESKFLEET_ANTIGRAVITY_BINARY, binary)
+    assert.equal(f.runs.length, 2)
   }
 })
 
