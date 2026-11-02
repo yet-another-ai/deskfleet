@@ -7,8 +7,6 @@ declare module "vue-router" {
     titleKey?: string
     /** The page draws its own navigation in place of the sidebar and details panel. */
     fullWindow?: boolean
-    /** Management pages have no selected resource for the details panel. */
-    hideDetails?: boolean
   }
 }
 
@@ -32,14 +30,12 @@ export const router = createRouter({
       path: "/search",
       name: "search",
       component: () => import("../views/SearchView.vue"),
-      meta: { hideDetails: true },
     },
     {
       path: "/schedules/:scheduleId?",
       name: "schedules",
       component: () => import("../views/ScheduledTasksView.vue"),
       props: true,
-      meta: { hideDetails: true },
     },
     {
       path: "/worktrees/:worktreeId",
@@ -51,7 +47,6 @@ export const router = createRouter({
       path: "/sessions/archived",
       name: "archived-sessions",
       component: () => import("../views/ArchivedSessionsView.vue"),
-      meta: { hideDetails: true },
     },
     {
       path: "/sessions/:sessionId",

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { X } from "@lucide/vue"
-import { useEventListener } from "@vueuse/core"
 import { storeToRefs } from "pinia"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
-import { computed, ref } from "vue"
+import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouteWorktree } from "../../composables/useRouteWorktree.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
@@ -14,32 +13,12 @@ import PreviewViewer from "../session/PreviewViewer.vue"
 import GitChanges from "./GitChanges.vue"
 import IconButton from "../common/IconButton.vue"
 
+defineProps<{ windowed?: boolean }>()
 const { t } = useI18n()
 const worktree = useRouteWorktree()
 const agents = useAgentSessionsStore()
 const layout = useLayoutStore()
-const { compact, detailsWidth } = storeToRefs(layout)
-const minimum = 220
-const maximum = 520
-const clamp = (width: number) => Math.round(Math.min(Math.max(width, minimum), maximum))
-const width = computed(() => clamp(detailsWidth.value))
-const resizing = ref<{ startX: number; startWidth: number } | null>(null)
-
-function startResize(event: PointerEvent): void {
-  resizing.value = { startX: event.clientX, startWidth: width.value }
-  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-}
-useEventListener("pointermove", (event: PointerEvent) => {
-  if (resizing.value) detailsWidth.value = clamp(resizing.value.startWidth + resizing.value.startX - event.clientX)
-})
-useEventListener(["pointerup", "pointercancel"], () => { resizing.value = null })
-function keyResize(event: KeyboardEvent): void {
-  const step = event.shiftKey ? 64 : 16
-  if (event.key === "ArrowLeft") detailsWidth.value = clamp(width.value + step)
-  else if (event.key === "ArrowRight") detailsWidth.value = clamp(width.value - step)
-  else return
-  event.preventDefault()
-}
+const { compact } = storeToRefs(layout)
 
 const unavailable = computed(() => {
   const session = worktree.value && agents.sessions[worktree.value.session.id]
@@ -63,23 +42,9 @@ function tabTitle(index: number): string {
 <template>
   <aside
     :aria-label="t('panel.changes')"
-    class="relative flex shrink-0 flex-col border-l border-ui-border bg-ui-canvas"
-    :style="{ width: compact ? '100%' : `${width}px` }"
+    class="relative flex h-full w-full shrink-0 flex-col bg-ui-canvas"
+    :class="!windowed && 'border-l border-ui-border'"
   >
-    <div
-      v-if="!compact"
-      role="separator"
-      aria-orientation="vertical"
-      tabindex="0"
-      :aria-label="t('toolbar.resizePanel')"
-      :aria-valuenow="width"
-      :aria-valuemin="minimum"
-      :aria-valuemax="maximum"
-      class="app-no-drag absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize after:pointer-events-none after:absolute after:inset-y-0 after:left-3.5px after:w-0.5 after:bg-transparent after:transition-colors after:duration-125 after:ease-out after:content-[''] hover:after:bg-ui-focus/50 focus-visible:after:bg-ui-focus/50"
-      :class="resizing && 'after:!bg-ui-focus/50'"
-      @pointerdown="startResize"
-      @keydown="keyResize"
-    />
     <TabsRoot v-if="mermaidSidebarTabs.length || previewSidebarTabs.length" :model-value="currentTab" class="flex min-h-0 flex-1 flex-col" @update:model-value="activeDetailsTab = String($event)">
       <div class="titlebar-overlay-inset app-drag flex h-12 shrink-0 items-center border-b border-ui-border px-2">
         <TabsList :aria-label="t('panel.changes')" class="app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto" loop>
@@ -115,7 +80,7 @@ function tabTitle(index: number): string {
       </TabsContent>
     </TabsRoot>
     <template v-else>
-      <div class="titlebar-overlay-inset app-drag flex h-12 shrink-0 items-center pl-4">
+      <div v-if="!windowed" class="titlebar-overlay-inset app-drag flex h-12 shrink-0 items-center pl-4">
         <h2 class="m-0 flex-1 text-[13px] font-medium">{{ t('panel.changes') }}</h2>
         <IconButton v-if="compact" :icon="X" :label="t('toolbar.hidePanel')" @click="layout.toggleDetails()" />
       </div>

@@ -293,7 +293,6 @@ test("keeps archived lists and their Conversations return path scoped to the sel
     session: vi.fn(async (machineId: string) => ({ snapshot: snapshot(machineId), lastEventSeq: "0", lastObservedAt: "2026-10-25T00:00:00Z" })),
     events: vi.fn(async () => ({ events: [], lastEventSeq: "0" })),
   })
-  localStorage.setItem("deskfleet.details-open", "true")
   await router.push("/sessions/archived")
   mountShell(fake.central, "web")
   await settled(() => expect(page().get("main").text()).toContain("Archived conversation m1"))
@@ -319,7 +318,6 @@ test("keeps archived lists and their Conversations return path scoped to the sel
   expect(router.currentRoute.value.name).toBe("archived-sessions")
   expect(router.currentRoute.value.path).toBe("/sessions/archived")
   expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
-  expect(localStorage.getItem("deskfleet.details-open")).toBe("true")
   // The second machine also has Session 30, but it must not inherit the first
   // machine's selection when leaving this management list.
   expect(conversations().attributes("href")).toBe("#/")

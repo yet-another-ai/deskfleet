@@ -47,7 +47,7 @@ async function render(options: { empty?: boolean; online?: boolean; refresh?: (a
   const refresh = vi.spyOn(agents, "refresh").mockImplementation(async () => { await options.refresh?.(agents) })
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/", name: "new-session", component: { template: "<div>New session</div>" } },
-    { path: "/sessions/archived", name: "archived-sessions", component: ArchivedSessionsView, meta: { hideDetails: true } },
+    { path: "/sessions/archived", name: "archived-sessions", component: ArchivedSessionsView },
     { path: "/sessions/:sessionId", name: "session", component: { template: "<div>Session conversation</div>" } },
   ] })
   await router.push("/sessions/archived")

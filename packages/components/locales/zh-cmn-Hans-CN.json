@@ -345,9 +345,10 @@
     "resizeSidebar": "调整侧边栏宽度",
     "back": "后退",
     "forward": "前进",
-    "showPanel": "显示变更面板",
     "hidePanel": "隐藏变更面板",
-    "resizePanel": "调整变更面板宽度"
+    "windows": "工作区窗口",
+    "closeWindow": "关闭{title}",
+    "addWindow": "添加窗口"
   },
   "nav": {
     "label": "导航",
@@ -744,6 +745,7 @@
     "play": "播放桌面视频"
   },
   "panel": {
+    "chat": "聊天",
     "changes": "变更",
     "noWorktree": "Git 变更会显示在会话中。",
     "notGit": "不是 Git 检出",

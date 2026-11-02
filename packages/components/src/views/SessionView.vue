@@ -4,14 +4,15 @@ import UiButton from "../components/common/UiButton.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
 import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
-import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
-import { computed, defineAsyncComponent, nextTick, onScopeDispose, ref, useTemplateRef, watch } from "vue"
+import { createReusableTemplate, useElementSize, useScroll, watchImmediate } from "@vueuse/core"
+import { computed, defineAsyncComponent, inject, nextTick, onScopeDispose, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import WindowToolbar from "../components/chrome/WindowToolbar.vue"
+import { windowHeaderActionsTargetKey } from "../components/chrome/windowHeaderActions.ts"
 import OpenWithMenu from "../components/catalog/OpenWithMenu.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import SessionAllowance from "../components/session/SessionAllowance.vue"
@@ -41,6 +42,7 @@ import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
 
 const client = usePlatformClient()
+const [DefineHeaderActions, ReuseHeaderActions] = createReusableTemplate({ inheritAttrs: false })
 
 // xterm stays out of the session bundle until the panel is opened.
 const SessionTerminalPanel = defineAsyncComponent(() => import("../components/terminal/SessionTerminalPanel.vue"))
@@ -48,6 +50,8 @@ const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const windowHeaderActionsTarget = inject(windowHeaderActionsTargetKey)
+const windowedMainWindow = !!windowHeaderActionsTarget
 let disposed = false
 onScopeDispose(() => { disposed = true })
 const sessionLabel = useSessionLabel()
@@ -238,10 +242,18 @@ async function checkOperation(operationId: string): Promise<void> {
 </script>
 
 <template>
-  <PaneHeader>
+  <DefineHeaderActions>
+    <div v-if="snapshot" data-session-window-actions class="app-no-drag flex items-center gap-1">
+      <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
+      <IconButton v-if="compact && terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" />
+      <AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
+    </div>
+  </DefineHeaderActions>
+  <PaneHeader v-if="!windowedMainWindow">
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, ...(location.workspace ? [location.workspace.name] : [])]" /></template>
-    <template v-if="snapshot" #actions><OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error /><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" /></template>
+    <template v-if="snapshot" #actions><ReuseHeaderActions /></template>
   </PaneHeader>
+  <Teleport v-if="snapshot && windowHeaderActionsTarget" defer :to="windowHeaderActionsTarget"><ReuseHeaderActions /></Teleport>
   <div class="relative flex min-h-0 flex-1">
     <div
       aria-hidden="true"
@@ -297,7 +309,7 @@ async function checkOperation(operationId: string): Promise<void> {
       </div>
     </div>
   </div>
-  <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
+  <SessionTerminalPanel v-if="compact && terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
   <RenameSessionDialog v-if="renameOpen && snapshot" :key="sessionId" :title="snapshot.session.title" :disabled="!location?.machine.online" :confirm="title => agents.rename(sessionId, title)" @close="renameOpen = false" />
   <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
   <div v-if="focusedMermaid" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">

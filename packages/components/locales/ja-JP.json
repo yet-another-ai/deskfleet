@@ -251,8 +251,9 @@
   "toolbar": {
     "showSidebar": "サイドバーを表示", "hideSidebar": "サイドバーを非表示",
     "resizeSidebar": "サイドバーのサイズを変更", "back": "戻る",
-    "forward": "進む", "showPanel": "変更パネルを表示",
-    "hidePanel": "変更パネルを非表示", "resizePanel": "変更パネルのサイズを変更"
+    "forward": "進む", "hidePanel": "変更パネルを非表示",
+    "windows": "ワークスペースウィンドウ", "closeWindow": "{title} を閉じる",
+    "addWindow": "ウィンドウを追加"
   },
   "nav": {
     "label": "ナビゲーション", "conversations": "会話",
@@ -516,7 +517,7 @@
     "fullscreenFailed": "全画面表示を切り替えられませんでした。", "play": "デスクトップ映像を再生"
   },
   "panel": {
-    "changes": "変更", "noWorktree": "Git の変更はセッション内で確認できます。",
+    "chat": "チャット", "changes": "変更", "noWorktree": "Git の変更はセッション内で確認できます。",
     "notGit": "Git チェックアウトではありません", "clean": "変更はありません",
     "gitUnavailable": "Git の状態はオンラインのローカルマシン上にあるセッションで確認できます。", "gitLive": "リアルタイム更新中",
     "gitPaused": "リアルタイム更新を一時停止中", "gitStale": "最後に読み込んだ変更を表示しています。",

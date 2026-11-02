@@ -9,10 +9,12 @@ import { TerminalClient, type TerminalConnectionState, type TerminalListener } f
 export const useTerminalsStore = defineStore("terminals", () => {
   const platformClient = usePlatformClient()
   const sessions = ref<TerminalSummary[]>([])
+  /** Whether the daemon's complete terminal list has been loaded at least once. */
+  const loaded = ref(false)
   const state = ref<TerminalConnectionState>("idle")
   const error = ref<string | null>(null)
   const relayDeniedReason = ref<RelayDeniedReason>()
-  /** The tab last shown in each Session Worktree's terminal panel. */
+  /** The shell last shown in each terminal window owner. */
   const selected = ref<Record<string, string>>({})
   /** The title each shell's running program last reported; replay restores it after reattaching. */
   const titles = ref<Record<string, string>>({})
@@ -63,6 +65,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
         else merged.delete(id)
       }
       sessions.value = [...merged.values()]
+      loaded.value = true
       error.value = null
       relayDeniedReason.value = undefined
     }).catch((reason: unknown) => {
@@ -131,5 +134,5 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
   function closeTransport(): void { client?.close(); client = null }
   onScopeDispose(() => { unsubscribe(); closeTransport() })
-  return { sessions, state, error, relayDeniedReason, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup, closeTransport }
+  return { sessions, loaded, state, error, relayDeniedReason, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup, closeTransport }
 })

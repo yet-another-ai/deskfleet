@@ -85,7 +85,7 @@ function refresh(): void {
       class="app-drag flex h-12 shrink-0 items-center justify-end pr-2"
       :class="platform === 'darwin' ? 'pl-20' : 'pl-2'"
     >
-      <WindowToolbar />
+      <WindowToolbar :sidebar="compact" />
     </div>
 
     <TeamSwitcher />

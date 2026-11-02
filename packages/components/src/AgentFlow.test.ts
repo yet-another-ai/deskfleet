@@ -36,6 +36,7 @@ function emit(kind: AgentEvent["kind"], payload: AgentEvent["payload"]): void {
 beforeEach(async () => {
   window.localStorage.removeItem("deskfleet.agent-configuration")
   window.localStorage.removeItem("deskfleet.session-context")
+  window.localStorage.removeItem("deskfleet.window-layout-v4:30")
   snapshot = agentSnapshot(); snapshot.session.workspaceId = workspaceId
   events = []
   const catalog = catalogFixture()
@@ -103,6 +104,17 @@ test("the Session disconnect notice retains guidance and diagnostics for real fa
   agents.views["30"]!.relayDeniedReason = "turn_quota_exhausted"
   await flushPromises()
   expect(wrapper.get("[data-error-notice]").text()).toContain(i18n.global.t("errors.turn_quota_exhausted.description"))
+})
+
+test("Session actions use the right side of the top-left window tab bar", async () => {
+  await wrapper.get("textarea").setValue("Open the Session")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+
+  const actions = page().get<HTMLElement>("[data-session-window-actions]")
+  const actionGroup = actions.element.parentElement?.dataset.windowHeaderActionsGroup
+  const toolbarGroup = wrapper.get("[data-window-toolbar-group]").attributes("data-window-toolbar-group")
+  expect(actionGroup).toBe(toolbarGroup)
 })
 
 test("a disconnected Session ignores a relay reason without its error", async () => {
@@ -602,7 +614,7 @@ test("unsupported multiple directories show a warning while the Session can keep
   expect(warning()).toBeUndefined()
 })
 
-test("a Session's shells open in its bottom panel, belong to its Worktree, and stay out of the sidebar", async () => {
+test("each Session shell opens as its own window tab, belongs to its Worktree, and stays out of the sidebar", async () => {
   await wrapper.get("textarea").setValue("Implement the feature")
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
@@ -611,26 +623,17 @@ test("a Session's shells open in its bottom panel, belong to its Worktree, and s
     id: options.terminalId, title: "new", cwd: "/worktree/new", cols: 80, rows: 24, status: "running",
     ...(options.mode === "create" && options.worktreeId ? { worktreeId: options.worktreeId } : {}),
   }))
-  expect(wrapper.find('[aria-label="Session terminals"]').exists()).toBe(false)
-  await wrapper.get('[aria-label="Show terminal"]').trigger("click")
+  const hangup = vi.spyOn(platformClient.terminal, "hangup").mockResolvedValue()
+  await wrapper.get('[aria-label="Add window"]').trigger("click")
+  await flushPromises()
+  await page().get('[data-window-type="terminal"]').trigger("click")
   await vi.waitFor(() => expect(dial).toHaveBeenCalledOnce())
   expect(dial).toHaveBeenCalledWith(expect.objectContaining({ mode: "create", worktreeId: "31" }))
-  expect(dial.mock.calls[0]![0]).not.toHaveProperty("cwd")
-  expect(wrapper.get('[aria-label="Session terminals"]').findAll('[role="tab"]')).toHaveLength(1)
+  await vi.waitFor(() => expect(wrapper.find('[aria-label="Shell 1"][role="tab"]').exists()).toBe(true))
   expect(wrapper.get("aside").find('a[href^="#/terminals/"]').exists()).toBe(false)
-  await wrapper.get('[aria-label="Hide terminal"]').trigger("click")
-  expect(wrapper.find('[aria-label="Session terminals"]').exists()).toBe(false)
-  await wrapper.get('[aria-label="Show terminal"]').trigger("click")
-  await vi.waitFor(() => expect(wrapper.find('[aria-label="Session terminals"]').exists()).toBe(true))
-  expect(dial).toHaveBeenCalledOnce()
-  await wrapper.get('[aria-label="Session terminals"] [aria-label="Hang up Shell 1"]').trigger("click")
-  await flushPromises()
-  expect(wrapper.find('[aria-label="Session terminals"]').exists()).toBe(false)
-  expect(wrapper.find('[aria-label="Show terminal"]').exists()).toBe(true)
-  await wrapper.get('[aria-label="Show terminal"]').trigger("click")
-  await vi.waitFor(() => expect(dial).toHaveBeenCalledTimes(2))
-  expect(wrapper.get('[aria-label="Session terminals"]').findAll('[role="tab"]')).toHaveLength(1)
-  window.localStorage.removeItem("deskfleet.terminal-panel-open")
+  await wrapper.get('[aria-label="Close Shell 1"]').trigger("click")
+  await vi.waitFor(() => expect(hangup).toHaveBeenCalledOnce())
+  await vi.waitFor(() => expect(wrapper.find('[aria-label="Shell 1"][role="tab"]').exists()).toBe(false))
 })
 
 
@@ -706,7 +709,7 @@ test("the latest Agent response opens the fork dialog and navigates to the indep
   forkResponse.resolve(structuredClone(forked))
   await flushPromises()
   expect(router.currentRoute.value.params.sessionId).toBe("32")
-  expect(wrapper.get("main").text()).toContain("Fork from the response")
+  expect(wrapper.get('[data-window-tab-id="chat"]').text()).toContain("Fork from the response")
   expect(wrapper.find('aside a[href="#/sessions/30"]').exists()).toBe(true)
 })
 
@@ -750,7 +753,7 @@ test("a supported idle Session forks in the chosen workspace context and navigat
   forkResponse.resolve(structuredClone(forked))
   await flushPromises()
   expect(router.currentRoute.value.params.sessionId).toBe("32")
-  expect(wrapper.get("main").text()).toContain("Forked conversation")
+  expect(wrapper.get('[data-window-tab-id="chat"]').text()).toContain("Forked conversation")
   expect(wrapper.find('aside a[href="#/sessions/30"]').exists()).toBe(true)
   expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit")).toHaveLength(submittedBefore)
 })
@@ -830,7 +833,7 @@ test.each(["completed", "failed"] as const)("checking a lost fork response recov
   await flushPromises()
   if (status === "completed") {
     expect(router.currentRoute.value.params.sessionId).toBe("32")
-    expect(wrapper.get("main").text()).toContain("Recovered fork")
+    expect(wrapper.get('[data-window-tab-id="chat"]').text()).toContain("Recovered fork")
   } else {
     expect(router.currentRoute.value.params.sessionId).toBe("30")
     expect(wrapper.get("main").text()).toContain("Fork failed")

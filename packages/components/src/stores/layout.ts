@@ -99,10 +99,9 @@ export const useLayoutStore = defineStore("layout", () => {
   // Per-device preferences; they fall back to the defaults when storage is unavailable.
   const desktopSidebarOpen = useLocalStorage("deskfleet.sidebar-open", true)
   const sidebarWidth = useLocalStorage("deskfleet.sidebar-width", 260)
-  const desktopDetailsOpen = useLocalStorage("deskfleet.details-open", true)
-  const detailsWidth = useLocalStorage("deskfleet.details-width", 288)
   const compact = useBreakpoints({ desktop: 1024 }).smaller("desktop")
   const compactPanel = ref<"sidebar" | "details" | null>(null)
+  const detailsOpenRequest = ref(0)
   const sidebarOpen = computed({
     get: () => compact.value ? compactPanel.value === "sidebar" : desktopSidebarOpen.value,
     set: value => {
@@ -111,14 +110,7 @@ export const useLayoutStore = defineStore("layout", () => {
       else if (compactPanel.value === "sidebar") compactPanel.value = null
     },
   })
-  const detailsOpen = computed({
-    get: () => compact.value ? compactPanel.value === "details" : desktopDetailsOpen.value,
-    set: value => {
-      if (!compact.value) desktopDetailsOpen.value = value
-      else if (value) compactPanel.value = "details"
-      else if (compactPanel.value === "details") compactPanel.value = null
-    },
-  })
+  const detailsOpen = computed(() => compactPanel.value === "details")
   function closeCompactPanel(): void { compactPanel.value = null }
   watch(compact, closeCompactPanel)
   onScopeDispose(router.afterEach(closeCompactPanel))
@@ -131,9 +123,15 @@ export const useLayoutStore = defineStore("layout", () => {
   const terminalPanelHeight = useLocalStorage("deskfleet.terminal-panel-height", 280)
 
   function toggleSidebar(): void { sidebarOpen.value = !sidebarOpen.value }
-  function toggleDetails(): void { detailsOpen.value = !detailsOpen.value }
+  function toggleDetails(): void {
+    compactPanel.value = detailsOpen.value ? null : "details"
+  }
+  function requestDetailsOpen(): void {
+    if (compact.value) compactPanel.value = "details"
+    else detailsOpenRequest.value++
+  }
   function openMermaidInSidebar(code: string, source?: MermaidSource): string {
-    detailsOpen.value = true
+    requestDetailsOpen()
     return openMermaidSidebarTab(code, source)
   }
 
@@ -143,7 +141,7 @@ export const useLayoutStore = defineStore("layout", () => {
     sidebarOpen,
     sidebarWidth,
     detailsOpen,
-    detailsWidth,
+    detailsOpenRequest,
     conversationPath,
     sessionContext,
     terminalPanelOpen,
@@ -152,6 +150,7 @@ export const useLayoutStore = defineStore("layout", () => {
     activeDetailsTab,
     toggleSidebar,
     toggleDetails,
+    requestDetailsOpen,
     openMermaidInSidebar,
     closeMermaidTab: closeMermaidSidebarTab,
   }

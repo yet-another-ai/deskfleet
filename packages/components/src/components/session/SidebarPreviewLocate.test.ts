@@ -51,7 +51,7 @@ test.each([
   const Harness = defineComponent({
     setup() {
       const layout = useLayoutStore()
-      return () => layout.detailsOpen ? h(PreviewViewer, {
+      return () => (!compact || layout.detailsOpen) ? h(PreviewViewer, {
         kind, content, mode: "sidebar", source: { sessionId: "30", entryId: "message-7", itemId: "0" },
       }) : null
     },
@@ -62,14 +62,14 @@ test.each([
   })
   await flushPromises()
   const layout = useLayoutStore(pinia)
-  layout.detailsOpen = true
+  layout.requestDetailsOpen()
   await flushPromises()
 
   // Another retained machine may become the active Pinia before the click.
   const otherPinia = createPinia()
   stores.push(otherPinia)
   const otherLayout = useLayoutStore(otherPinia)
-  otherLayout.detailsOpen = true
+  otherLayout.requestDetailsOpen()
   setActivePinia(otherPinia)
   if (kind === "image") {
     await wrapper.get('[data-preview-action="more"]').trigger("click")
@@ -79,8 +79,7 @@ test.each([
   await flushPromises()
   expect(navigate).not.toHaveBeenCalled()
   expect(scroll).toHaveBeenCalledWith({ behavior: "smooth", block: "center" })
-  expect(layout.detailsOpen).toBe(!compact)
+  expect(layout.detailsOpen).toBe(false)
   expect(wrapper.find(`[data-${kind === "mermaid" ? "mermaid" : "preview"}-mode="sidebar"]`).exists()).toBe(!compact)
-  expect(otherLayout.detailsOpen).toBe(true)
-  expect(localStorage.getItem("deskfleet.details-open")).toBe("true")
+  expect(otherLayout.detailsOpen).toBe(compact)
 })

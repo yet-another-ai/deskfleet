@@ -7,6 +7,7 @@ import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { usePinnedSessionsStore } from "./stores/pinned-sessions.ts"
+import { openPreviewInSidebar } from "./stores/previews.ts"
 import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
 import type { LocalAgentState } from "../../client/src/local-agent.ts"
 import { agentEvent, agentSnapshot } from "./test/agent.ts"
@@ -50,6 +51,7 @@ beforeAll(async () => {
     import("./views/WorktreeView.vue"),
     import("./views/ArchivedSessionsView.vue"),
     import("./views/RemoteControlView.vue"),
+    import("./components/terminal/TerminalShellWindow.vue"),
     import("./views/SettingsView.vue"),
     import("./components/settings/PreferencesSettings.vue"),
     import("./components/settings/AppearanceSettings.vue"),
@@ -91,7 +93,7 @@ test("the app targets a workspace and waits for Session metadata without exposin
   expect(link(wrapper, `Session ${sessionId}`).attributes("href")).toBe(`#/sessions/${sessionId}`)
   expect(wrapper.find('a[href*="/worktrees/"]').exists()).toBe(false)
   expect(wrapper.text()).not.toContain("Main worktree")
-  expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
 })
 
 test("Pinned sessions appear above Workspaces while retaining their workspace entry", async () => {
@@ -108,7 +110,7 @@ test("Pinned sessions appear above Workspaces while retaining their workspace en
   expect(sidebar.get(`a[href="#/sessions/${sessionId}"]`).text()).toBe("Pinned investigation")
 })
 
-test("the archive route retains the sidebar and hides resource details without changing their preference", async () => {
+test("the archive route retains the sidebar without tiled windows", async () => {
   const pinia = createPinia()
   vi.spyOn(useAgentSessionsStore(pinia), "refresh").mockResolvedValue()
   const wrapper = await mountApp("/sessions/archived", pinia)
@@ -116,12 +118,8 @@ test("the archive route retains the sidebar and hides resource details without c
   expect(wrapper.get("main h1").text()).toBe("Archived sessions")
   expect(wrapper.get("aside").text()).toContain("Workspaces")
   expect(wrapper.get('[data-archived-sessions]').attributes("aria-current")).toBe("page")
-  expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(false)
-  expect(wrapper.find('[aria-label="Show changes panel"]').exists()).toBe(false)
-  expect(wrapper.find('[aria-label="Hide changes panel"]').exists()).toBe(false)
-  expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
-  await router.push("/"); await flushPromises()
-  expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(true)
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Add window"]').exists()).toBe(false)
 })
 
 test("workspace creation opens a dialog, requires paths, supports choosing the first path by reordering, and retains input after failure", async () => {
@@ -163,7 +161,7 @@ test("workspace creation opens a dialog, requires paths, supports choosing the f
   expect(wrapper.get("main").text()).not.toContain("Main worktree")
   expect(wrapper.get("main").find('a[href*="/worktrees/"]').exists()).toBe(false)
   expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"].map((item, index) => index === 1 ? "notes" : item))
-  expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
 })
 
 test("cancelling workspace creation closes its dialog without creating", async () => {
@@ -212,7 +210,7 @@ test("workspace New session chooses that workspace before opening the composer",
   await wrapper.findAll('.workspace-row button[aria-label="New session"]')[1]!.trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
-  expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
 })
 
 test("workspace deletion requires confirmation and clears its composer target", async () => {
@@ -237,7 +235,7 @@ test("the workspace sidebar opens a terminal in its default directory and retain
   expect(dial).toHaveBeenCalledWith({ mode: "create", terminalId: expect.any(String), cols: 80, rows: 24, cwd })
   expect(router.currentRoute.value.query).toEqual({ tab: "terminal", terminal: dial.mock.calls[0]![0].terminalId })
   expect(wrapper.get('[role="tablist"][aria-label="Local control"] [aria-selected="true"]').text()).toBe("Terminal")
-  expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
 })
 
 test("refresh failure preserves the workspace and disables its terminal action until retry", async () => {
@@ -263,7 +261,8 @@ test("a session links to its own read-only worktree", async () => {
   const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
   expect(status).toHaveBeenCalledWith(sessionId, false)
   expect(panel(wrapper).text()).toContain("session-branch")
-  expect(wrapper.get("main header").text()).toContain(`Session ${sessionId}`)
+  expect(wrapper.find("main header").exists()).toBe(false)
+  expect(wrapper.get('[data-window-tab-id="chat"]').text()).toContain(`Session ${sessionId}`)
   const worktreeLink = wrapper.get(`main a[href="#/worktrees/${sessionWorktreeId}"]`)
   expect(worktreeLink.text()).toBe("session-branch")
   expect(worktreeLink.attributes("title")).toBe("session-branch")
@@ -276,8 +275,8 @@ test("a session links to its own read-only worktree", async () => {
   expect(button(wrapper, "Edit worktree")).toBeUndefined()
   expect(button(wrapper, "Delete worktree")).toBeUndefined()
   await flushPromises()
-  expect(panel(wrapper).text()).toContain("session-branch")
-  expect(panel(wrapper).text()).toContain("/worktrees/api/session")
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
+  expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(false)
 })
 
 test.each(["worktree", "directory"] as const)("archiving a %s Session stops Git observation and disables its unavailable filesystem actions", async context => {
@@ -451,12 +450,10 @@ test("returning focus to the window refreshes the local machine", async () => {
   expect(list.mock.calls.length).toBeGreaterThan(afterMount)
 })
 
-test("sidebar and Changes panel controls retain their layout behavior and ignore the removed Details tab", async () => {
-  window.localStorage.setItem("deskfleet.details-tab", "details")
-  const wrapper = await mountApp()
-  expect(panel(wrapper).find('[role="tablist"]').exists()).toBe(false)
-  expect(wrapper.find('aside[aria-label="Details"]').exists()).toBe(false)
-  expect(wrapper.find('[id="details-tab-details"]').exists()).toBe(false)
+test("fixed sidebar and tiled window controls retain their layout behavior", async () => {
+  const pinia = createPinia()
+  hydrateSession(pinia)
+  const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
   const sidebar = () => wrapper.get<HTMLElement>("aside:not([aria-label])")
   const separator = () => wrapper.get<HTMLElement>('[role="separator"][aria-label="Resize sidebar"]')
   expect(sidebar().element.style.width).toBe("260px")
@@ -478,69 +475,111 @@ test("sidebar and Changes panel controls retain their layout behavior and ignore
   await separator().trigger("keydown", { key: "ArrowLeft", shiftKey: true })
   expect(sidebar().element.style.width).toBe("416px")
   expect(window.localStorage.getItem("deskfleet.sidebar-width")).toBe("416")
+  expect(sidebar().find('[aria-label="Hide sidebar"]').exists()).toBe(false)
+  expect(wrapper.find('.deskfleet-windows [aria-label="Hide sidebar"]').exists()).toBe(true)
   await wrapper.get('[aria-label="Hide sidebar"]').trigger("click")
-  expect(wrapper.get("main header").find('[aria-label="Show sidebar"]').exists()).toBe(true)
+  expect(wrapper.find('.deskfleet-windows [aria-label="Show sidebar"]').exists()).toBe(true)
   expect(window.localStorage.getItem("deskfleet.sidebar-open")).toBe("false")
-  await wrapper.get('[aria-label="Show sidebar"]').trigger("click")
-  expect(sidebar().element.style.width).toBe("416px")
-  const changesSeparator = () => wrapper.get<HTMLElement>('[role="separator"][aria-label="Resize changes panel"]')
-  expect(panel(wrapper).element.style.width).toBe("288px")
-  expect(changesSeparator().attributes("aria-valuenow")).toBe("288")
-  ;(changesSeparator().element as HTMLElement & { setPointerCapture: (id: number) => void }).setPointerCapture = vi.fn()
-  await changesSeparator().trigger("pointerdown", { clientX: 900, pointerId: 2 })
-  window.dispatchEvent(new PointerEvent("pointermove", { clientX: 828 }))
+  await router.push("/")
   await flushPromises()
-  expect(panel(wrapper).element.style.width).toBe("360px")
-  expect(changesSeparator().attributes("aria-valuenow")).toBe("360")
-  expect(window.localStorage.getItem("deskfleet.details-width")).toBe("360")
-  window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 2 }))
-  await changesSeparator().trigger("keydown", { key: "ArrowRight", shiftKey: true })
-  expect(panel(wrapper).element.style.width).toBe("296px")
-  expect(window.localStorage.getItem("deskfleet.details-width")).toBe("296")
-  await wrapper.get('[aria-label="Hide changes panel"]').trigger("click")
-  expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(false)
-  expect(window.localStorage.getItem("deskfleet.details-open")).toBe("false")
-  await wrapper.get('[aria-label="Show changes panel"]').trigger("click")
-  expect(panel(wrapper).element.style.width).toBe("296px")
-  expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
-  expect(window.localStorage.getItem("deskfleet.details-open")).toBe("true")
+  expect(wrapper.find('.deskfleet-windows').exists()).toBe(false)
+  await wrapper.get('main [aria-label="Show sidebar"]').trigger("click")
+  await router.push(`/sessions/${sessionId}`)
+  await flushPromises()
+  expect(sidebar().element.style.width).toBe("416px")
+  expect(wrapper.find('[aria-label="Close Chat"]').exists()).toBe(false)
+  await wrapper.get('[aria-label="Close Changes"]').trigger("click")
+  await flushPromises()
+  openPreviewInSidebar({ kind: "image", content: "data:image/png;base64,AA==", source: { sessionId } })
+  await flushPromises()
+  expect(panel(wrapper).attributes("aria-label")).toBe("Changes")
+  await wrapper.get('[aria-label="Close Changes"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('[aria-label="Add window"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.get('[data-window-type="changes"]').attributes("data-disabled")).toBeUndefined()
+  await wrapper.get('[data-window-type="changes"]').trigger("click")
+  await flushPromises()
+  expect(panel(wrapper).attributes("aria-label")).toBe("Changes")
 })
 
-test("repeated navigation and browser history retain Changes without reviving Details", async () => {
+test("only a selected Session uses tiled windows and offers new window tabs", async () => {
   const pinia = createPinia()
   hydrateSession(pinia)
-  vi.spyOn(useAgentSessionsStore(pinia), "watchGit").mockResolvedValue(() => {})
-  const status = vi.spyOn(useAgentSessionsStore(pinia), "gitStatus").mockResolvedValue({
-    sessionId, directories: [{ path: "/worktrees/api/session", repositoryId: "checkout" }],
-    repositories: [{ id: "checkout", root: "/worktrees/api/session", branch: "session-branch", head: "abc123", changes: [] }],
-  })
   const wrapper = await mountApp("/", pinia)
-  for (let index = 0; index < 3; index++) {
-    await link(wrapper, `Session ${sessionId}`).trigger("click")
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("session"))
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Add window"]').exists()).toBe(false)
+  await link(wrapper, `Session ${sessionId}`).trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("session"))
+  await flushPromises()
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(true)
+  await wrapper.get('[aria-label="Add window"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.find('[data-window-type="terminal"]').exists()).toBe(true)
+  expect(wrapper.get('[data-window-type="terminal"]').text()).toBe("New terminal")
+  expect(wrapper.get('[data-window-type="terminal"]').attributes("data-disabled")).toBeUndefined()
+  await link(wrapper, "New session").trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
+  await flushPromises()
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Add window"]').exists()).toBe(false)
+})
+
+test("each Session restores its own tiled window layout", async () => {
+  const pinia = createPinia()
+  hydrateSession(pinia)
+  const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
+
+  async function expectChangesMenuDisabled(disabled: boolean): Promise<void> {
+    await wrapper.get('[aria-label="Add window"]').trigger("click")
     await flushPromises()
-    expect(panel(wrapper).text()).toContain("session-branch")
-    await wrapper.get('[aria-label="Back"]').trigger("click")
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
+    expect(wrapper.get('[data-window-type="changes"]').attributes("data-disabled") !== undefined).toBe(disabled)
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
     await flushPromises()
-    expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
-    await wrapper.get('[aria-label="Forward"]').trigger("click")
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("session"))
-    await flushPromises()
-    expect(panel(wrapper).text()).toContain("session-branch")
-    await link(wrapper, "New session").trigger("click")
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   }
-  expect(status).toHaveBeenCalledWith(sessionId, false)
-  expect(wrapper.find('aside[aria-label="Details"]').exists()).toBe(false)
-  expect(panel(wrapper).find('[role="tab"]').exists()).toBe(false)
+
+  await wrapper.get('[aria-label="Close Changes"]').trigger("click")
+  await flushPromises()
+  await expectChangesMenuDisabled(false)
+
+  const secondSessionId = "session-layout-2"
+  await router.push(`/sessions/${secondSessionId}`)
+  await flushPromises()
+  await expectChangesMenuDisabled(true)
+
+  await router.push(`/sessions/${sessionId}`)
+  await flushPromises()
+  await expectChangesMenuDisabled(false)
+  expect(window.localStorage.getItem(`deskfleet.window-layout-v4:${sessionId}`)).toBeTruthy()
+})
+
+test("the Chat window tab uses the Session title and exposes its location as a tooltip", async () => {
+  const pinia = createPinia()
+  hydrateSession(pinia, "Initial title")
+  const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
+  const chatTab = () => wrapper.get('[data-window-tab-id="chat"]')
+  expect(wrapper.find("main header").exists()).toBe(false)
+  expect(chatTab().text()).toContain("Initial title")
+  vi.useFakeTimers()
+  try {
+    await chatTab().trigger("pointermove", { pointerType: "mouse" })
+    await vi.advanceTimersByTimeAsync(400)
+    await flushPromises()
+    expect(wrapper.get('[role="tooltip"]').text()).toBe("test-host / storefront")
+  } finally {
+    vi.useRealTimers()
+  }
+
+  useAgentSessionsStore(pinia).sessions[sessionId]!.title = "Renamed title"
+  await flushPromises()
+  expect(chatTab().text()).toContain("Renamed title")
 })
 
 test.each(["/details", `/workspaces/${workspaceId}`])("removed page %s falls back to the composer and Settings returns there", async path => {
   const wrapper = await mountApp(path)
   expect(router.currentRoute.value.name).toBe("new-session")
   expect(wrapper.find('a[href="#/details"]').exists()).toBe(false)
-  expect(panel(wrapper).find('[role="tab"]').exists()).toBe(false)
+  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
   await wrapper.get('[aria-label="Settings"]').trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("settings-preferences"))
   await flushPromises()
@@ -548,5 +587,5 @@ test.each(["/details", `/workspaces/${workspaceId}`])("removed page %s falls bac
   await button(wrapper, "Back to app").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
   await flushPromises()
-  expect(panel(wrapper).text()).toContain("Git changes are available within a session.")
+  expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(false)
 })

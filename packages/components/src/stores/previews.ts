@@ -79,7 +79,7 @@ export function openPreviewInSidebar(item: PreviewDescriptor): string {
     previewSidebarTabs.value = [...previewSidebarTabs.value, tab]
     activeDetailsTab.value = tab.id
   }
-  useLayoutStore().detailsOpen = true
+  useLayoutStore().requestDetailsOpen()
   return activeDetailsTab.value
 }
 

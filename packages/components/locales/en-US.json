@@ -345,9 +345,10 @@
     "resizeSidebar": "Resize sidebar",
     "back": "Back",
     "forward": "Forward",
-    "showPanel": "Show changes panel",
     "hidePanel": "Hide changes panel",
-    "resizePanel": "Resize changes panel"
+    "windows": "Workspace windows",
+    "closeWindow": "Close {title}",
+    "addWindow": "Add window"
   },
   "nav": {
     "label": "Navigation",
@@ -744,6 +745,7 @@
     "play": "Play desktop video"
   },
   "panel": {
+    "chat": "Chat",
     "changes": "Changes",
     "noWorktree": "Git changes are available within a session.",
     "notGit": "Not a Git checkout",

@@ -76,7 +76,7 @@ async function confirmAction(): Promise<void> {
 </script>
 
 <template>
-  <PaneHeader hide-details>{{ t('archivedSessions.title') }}</PaneHeader>
+  <PaneHeader>{{ t('archivedSessions.title') }}</PaneHeader>
   <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-10 pt-6 lg:px-8">
     <div class="mx-auto flex max-w-4xl flex-col gap-5">
       <div class="flex flex-wrap items-end justify-between gap-4">

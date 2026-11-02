@@ -76,6 +76,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   // Unopened machines have a button; retained trees select their owner through resource links.
   const machineRow = (index: number) => document.querySelector<HTMLButtonElement>(`aside button[data-machine-id="${context.machines[index]}"]`)
   const machineTree = (index: number) => document.querySelector<HTMLElement>(`aside section[data-machine-id="${context.machines[index]}"]`)
+  const chatTab = () => document.querySelector<HTMLElement>('[data-window-tab-id="chat"]')
   async function session(index: number): Promise<void> {
     const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean } }).__deskfleetRtcGuard
     guard.blocked = context.mode === "electron" && index === 0
@@ -84,7 +85,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     const link = () => machineTree(index)?.querySelector<HTMLAnchorElement>(`a[href="#/sessions/${context.sessionId}"]`)
     await until(() => !!link(), "machine session link")
     link()!.click()
-    await until(() => !!document.querySelector("main")?.textContent?.includes(`Machine ${index} conversation`), "session route")
+    await until(() => !!chatTab()?.textContent?.includes(`Machine ${index} conversation`), "session route")
   }
   if (context.mode === "web") require(!("deskfleet" in window), "Web must not receive an Electron preload")
   else {
@@ -164,7 +165,7 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
   }
   for (const trigger of document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"][aria-expanded="true"]')) trigger.click()
   location.hash = `/sessions/${context.sessionId}`
-  await until(() => !!document.querySelector('button[aria-label="Team"]') && !!document.querySelector("main")?.textContent?.includes("Machine 0 conversation"), "session")
+  await until(() => !!document.querySelector('button[aria-label="Team"]') && !!document.querySelector('[data-window-tab-id="chat"]')?.textContent?.includes("Machine 0 conversation"), "session")
   if (view === "workspace-edit") {
     const row = document.querySelector<HTMLButtonElement>(`aside section[data-machine-id="${context.machines[0]}"] .workspace-row button[aria-expanded]`)
     if (!row) throw new Error("Fixture workspace row is missing")

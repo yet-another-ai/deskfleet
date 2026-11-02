@@ -313,6 +313,9 @@ importers:
       '@xterm/xterm':
         specifier: 6.0.0
         version: 6.0.0
+      dockview-vue:
+        specifier: 8.8.3
+        version: 8.8.3(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
       echarts:
         specifier: 6.1.0
         version: 6.1.0
@@ -3890,6 +3893,17 @@ packages:
 
   dmg-builder@26.18.1:
     resolution: {integrity: sha512-ihBAAhXUQiO+fIQGirYSLuKfgGa81zIrIzgSSkbm1fPcE0cXqnxNLtUQgxYHpezxWOaeXxmh9AuPemONZuMKbg==}
+
+  dockview-core@8.8.3:
+    resolution: {integrity: sha512-B9v+ibiXnZ5qgFJ7VEqMcNxpG0S5Y7Yx7uuGqqSyEFSC3bRZktUoXWo3HCrFp+QTdFmA1dJD1ye/gI4yL3hU2g==}
+
+  dockview-vue@8.8.3:
+    resolution: {integrity: sha512-cBhbeIYZG7yqi+/olAI1q7pG8kZcEO3uAWssPD7VhcZ8HEPTDNeYTw07gwQeDJWv5ZFbyncLtWS9VLBgYOchow==}
+    peerDependencies:
+      vue: ^3.4.0
+
+  dockview@8.8.3:
+    resolution: {integrity: sha512-hTb5X4Z74k0+5wtOlx1gNsx/q5ve1p0JQ6s7Ovl24YhdkaR9AhfWFlq1dQYwXjXIoWm8RFW6aTZMhCTiEv94EA==}
 
   doctypes@1.1.0:
     resolution: {integrity: sha512-LLBi6pEqS6Do3EKQ3J0NqHWV5hhb78Pi8vvESYwyOy2c31ZEZVdtitdzsQsKb7878PEERhzUk0ftqGhG6Mz+pQ==}
@@ -9153,6 +9167,17 @@ snapshots:
     transitivePeerDependencies:
       - electron-builder-squirrel-windows
       - supports-color
+
+  dockview-core@8.8.3: {}
+
+  dockview-vue@8.8.3(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2)):
+    dependencies:
+      dockview: 8.8.3
+      vue: 3.6.0-rc.13(@typescript/typescript6@6.0.2)
+
+  dockview@8.8.3:
+    dependencies:
+      dockview-core: 8.8.3
 
   doctypes@1.1.0: {}
 
