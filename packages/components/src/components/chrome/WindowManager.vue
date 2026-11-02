@@ -2,7 +2,7 @@
 import "dockview-vue/dist/styles/dockview.css"
 import { Plus, SquareTerminal } from "@lucide/vue"
 import { StorageSerializers, useLocalStorage, useTimeoutFn } from "@vueuse/core"
-import { computed, defineAsyncComponent, onScopeDispose, shallowRef, toRaw, watch } from "vue"
+import { computed, defineAsyncComponent, onScopeDispose, provide, shallowRef, toRaw, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import {
   DockviewVue,
@@ -32,7 +32,7 @@ import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import AppMainWindow from "./AppMainWindow.vue"
 import WindowTab from "./WindowTab.vue"
 import WindowToolbar from "./WindowToolbar.vue"
-import { windowHeaderActionsId, windowHeaderActionsTarget } from "./windowHeaderActions.ts"
+import { newTerminalWindowKey, windowHeaderActionsId, windowHeaderActionsTarget } from "./windowHeaderActions.ts"
 
 type WorkspaceWindowId = "changes" | "terminal"
 
@@ -70,6 +70,11 @@ const sessionShells = computed(() => {
 })
 const sessionShellIds = computed(() => sessionShells.value.map(terminal => terminal.id))
 
+provide(newTerminalWindowKey, () => {
+  const group = api.value?.groups.find(group => group.id === topLeftGroupId.value)
+  if (group) void openTerminalTab(group, "below")
+})
+
 function tabPresentation(params: IDockviewPanelHeaderProps): { title: string; tooltip: string; closable: boolean } {
   if (params.api.id === "chat") {
     return {
@@ -104,7 +109,7 @@ function addChangesPanel(group?: DockviewGroupPanel): void {
   changesOpen.value = true
 }
 
-function addTerminalPanel(terminalId: string, title: string, group: DockviewGroupPanel, activate = false): void {
+function addTerminalPanel(terminalId: string, title: string, group: DockviewGroupPanel, activate = false, direction: "within" | "below" = "within"): void {
   const current = api.value
   const panelId = `terminal:${terminalId}`
   if (!current || current.getPanel(panelId)) return
@@ -113,7 +118,7 @@ function addTerminalPanel(terminalId: string, title: string, group: DockviewGrou
     component: "terminal",
     title,
     params: { terminalId },
-    position: { referenceGroup: group, direction: "within" },
+    position: { referenceGroup: group, direction },
     inactive: !activate,
     minimumHeight: 120,
   })
@@ -311,14 +316,14 @@ function shellTitle(terminalId: string): string {
   return terminals.titles[terminalId]?.trim() || t("terminal.tab", { number })
 }
 
-async function openTerminalTab(group: DockviewGroupPanel): Promise<void> {
+async function openTerminalTab(group: DockviewGroupPanel, direction: "within" | "below" = "within"): Promise<void> {
   const worktreeId = sessionWorktreeId.value
   if (!worktreeId) return
   try {
     const terminal = await terminals.create({ worktreeId })
-    addTerminalPanel(terminal.id, shellTitle(terminal.id), group, true)
+    addTerminalPanel(terminal.id, shellTitle(terminal.id), group, true, direction)
     const panel = api.value?.getPanel(`terminal:${terminal.id}`)
-    if (panel && panel.api.group.id !== group.id) panel.api.moveTo({ group, index: group.panels.length })
+    if (direction === "within" && panel && panel.api.group.id !== group.id) panel.api.moveTo({ group, index: group.panels.length })
     panel?.api.setActive()
     saveLayout()
   } catch (reason) {

@@ -13,7 +13,7 @@ import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import WindowToolbar from "../components/chrome/WindowToolbar.vue"
-import { windowHeaderActionsTargetKey } from "../components/chrome/windowHeaderActions.ts"
+import { newTerminalWindowKey, windowHeaderActionsTargetKey } from "../components/chrome/windowHeaderActions.ts"
 import OpenWithMenu from "../components/catalog/OpenWithMenu.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import SessionAllowance from "../components/session/SessionAllowance.vue"
@@ -52,6 +52,7 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const windowHeaderActionsTarget = inject(windowHeaderActionsTargetKey)
+const newTerminalWindow = inject(newTerminalWindowKey, undefined)
 const windowedMainWindow = !!windowHeaderActionsTarget
 let disposed = false
 onScopeDispose(() => { disposed = true })
@@ -247,6 +248,7 @@ async function checkOperation(operationId: string): Promise<void> {
   <DefineHeaderActions>
     <div v-if="snapshot" data-session-window-actions class="app-no-drag flex items-center gap-1">
       <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
+      <IconButton v-if="newTerminalWindow" :icon="SquareTerminal" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow" />
       <IconButton v-if="compact && terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" />
       <AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
     </div>
