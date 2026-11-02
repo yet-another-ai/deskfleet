@@ -3,6 +3,7 @@ import UiButton from "../components/common/UiButton.vue"
 import UiSelect from "../components/common/UiSelect.vue"
 import UiCheckbox from "../components/common/UiCheckbox.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
+import { useConnectionResume } from "../composables/useConnectionResume.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 
 import { GripVertical, LoaderCircle, Maximize, Minimize, MonitorPlay, Play, RefreshCw, SlidersHorizontal, Unplug } from "@lucide/vue"
@@ -103,6 +104,14 @@ watchImmediate(() => props.machineId, () => {
   if (local.value) void refresh()
 })
 whenever(() => !props.visible, () => { void connection.disconnect() })
+// A suspended page can lose its media peer without switching tabs. Retry only
+// transport failures; capture and permission errors keep their manual action.
+useConnectionResume(() => {
+  const reason = failure.value
+  if (!props.visible || !canConnect.value || !reason) return
+  if (!["connection", "timeout"].includes(reason.kind) || reason.relayDeniedReason) return
+  connect()
+})
 // Encoder fallback clears the stream while the next peer connects. Stay in fullscreen through that gap.
 watch([() => props.visible, stream, isFullscreen, state], ([visible, media, , connectionState]) => {
   const recovering = !media && (connectionState === "connecting" || connectionState === "starting")

@@ -1,5 +1,6 @@
 import { relayFailureError, type RelayDeniedReason } from "./relay.ts"
 import { observePeerGrant, type PeerConnectionTelemetry } from "./peer-telemetry.ts"
+import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard } from "./peer-lifecycle.ts"
 import type { CentralApi } from "./central.ts"
 import type { IceCandidate } from "./desktop-media.ts"
 
@@ -47,7 +48,8 @@ export async function connectPortPeer(
   void ready.catch(() => {})
   let unsubscribe = () => {}
   let lifetime: ReturnType<typeof setTimeout> | undefined
-  const setup = setTimeout(() => connectionFailed(new Error("Port connection timed out")), 20_000)
+  const setup = setTimeout(() => connectionFailed(new Error("Port connection timed out")), PEER_SETUP_TIMEOUT_MS)
+  const disconnects = createPeerDisconnectGuard(() => connectionFailed(new Error("Port peer disconnected")))
   function closeGrant(): void {
     if (!peerId || grantClosed) return
     grantClosed = true
@@ -61,7 +63,7 @@ export async function connectPortPeer(
   function close(): Promise<void> {
     if (closing) return closing
     closed = true
-    clearTimeout(setup); clearTimeout(lifetime); unsubscribe()
+    clearTimeout(setup); clearTimeout(lifetime); disconnects.clear(); unsubscribe()
     signal?.removeEventListener("abort", abort)
     rejectReady(new Error("Port connection is closed"))
     closeGrant()
@@ -80,7 +82,7 @@ export async function connectPortPeer(
     fail(relayFailureError(relayDeniedReason, error))
   }
   function checkReady(): void {
-    if (opened && remoteReady && !closed) { clearTimeout(setup); telemetry?.connected(); resolveReady() }
+    if (opened && remoteReady && !closed) { clearTimeout(setup); disconnects.clear(); telemetry?.connected(); resolveReady() }
   }
   function flushLocal(): void {
     if (!offered || closed) return
@@ -110,8 +112,10 @@ export async function connectPortPeer(
     if (value.kind === "iceCandidate" && "candidate" in value) {
       remoteCandidates.push(value.candidate as IceCandidate); flushRemote()
     } else if (value.kind === "error") fail(new Error("error" in value ? String(value.error) : "Port peer failed"))
-    else if (value.kind === "stateChanged" && "state" in value && ["failed", "closed"].includes(String(value.state))) {
-      connectionFailed(new Error("Port peer closed"))
+    else if (value.kind === "stateChanged" && "state" in value) {
+      const state = String(value.state).toLowerCase()
+      if (["failed", "closed"].includes(state)) connectionFailed(new Error("Port peer closed"))
+      else disconnects.update(state)
     }
   })
   signal?.addEventListener("abort", abort, { once: true })

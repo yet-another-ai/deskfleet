@@ -3,7 +3,14 @@ import { HttpCentralClient, HttpError } from "./http-central.ts"
 import { CentralRequestError, serializeCentralRequestError } from "./request-diagnostics.ts"
 
 const clients: HttpCentralClient[] = []
-afterEach(() => { for (const client of clients.splice(0)) client.dispose(); vi.useRealTimers() })
+afterEach(() => { for (const client of clients.splice(0)) client.dispose(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
+function pageGlobals() {
+  const windowTarget = new EventTarget()
+  const documentTarget = Object.assign(new EventTarget(), { visibilityState: "visible" })
+  vi.stubGlobal("window", windowTarget)
+  vi.stubGlobal("document", documentTarget)
+  return { windowTarget, documentTarget }
+}
 class Socket {
   onopen?: () => void
   onmessage?: (event: { data: string }) => void
@@ -108,7 +115,7 @@ test("authenticates the WebSocket in its first message and reports signaling los
   f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
   f.sockets[0]!.onclose!({ code: 1006 })
   expect(events.mock.calls.map(([event]) => event)).toEqual([{ type: "connection", connected: true }, { type: "connection", connected: false }])
-  await vi.advanceTimersByTimeAsync(2_000)
+  await vi.advanceTimersByTimeAsync(1_000)
   expect(f.sockets).toHaveLength(2)
 })
 
@@ -374,9 +381,9 @@ test("replaces a silent signaling socket instead of waiting for a close event", 
     { type: "connection", connected: true }, { type: "connection", connected: false },
   ])
   // The close handshake is still in flight; the replacement follows the grace period.
-  await vi.advanceTimersByTimeAsync(5_000)
-  expect(f.sockets).toHaveLength(1)
   await vi.advanceTimersByTimeAsync(2_000)
+  expect(f.sockets).toHaveLength(1)
+  await vi.advanceTimersByTimeAsync(1_000)
   expect(f.sockets).toHaveLength(2)
 })
 
@@ -389,4 +396,63 @@ test("heartbeat never sends while the upgrade is still connecting", async () => 
   await vi.advanceTimersByTimeAsync(80_000)
   expect(f.sockets[0]!.send).not.toHaveBeenCalled()
   expect(f.sockets[0]!.close).toHaveBeenCalledTimes(1)
+})
+
+test("an online event reconnects without waiting for the backoff delay", async () => {
+  vi.useFakeTimers()
+  const page = pageGlobals()
+  const f = setup()
+  f.client.onEvent(vi.fn())
+  f.sockets[0]!.onclose!({ code: 1006 })
+  page.windowTarget.dispatchEvent(new Event("online"))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(f.sockets).toHaveLength(2)
+})
+
+test("a recovered network keeps an open socket that answers its probe", async () => {
+  vi.useFakeTimers()
+  const page = pageGlobals()
+  const f = setup()
+  f.client.onEvent(vi.fn())
+  f.sockets[0]!.onopen!()
+  f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
+  page.windowTarget.dispatchEvent(new Event("online"))
+  expect(f.sockets[0]!.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "ping" }))
+  f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "pong" }) })
+  await vi.advanceTimersByTimeAsync(3_000)
+  expect(f.sockets[0]!.close).not.toHaveBeenCalled()
+  expect(f.sockets).toHaveLength(1)
+})
+
+test("a recovered network replaces an open socket that misses its probe", async () => {
+  vi.useFakeTimers()
+  const page = pageGlobals()
+  const f = setup()
+  f.client.onEvent(vi.fn())
+  f.sockets[0]!.onopen!()
+  f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
+  page.windowTarget.dispatchEvent(new Event("online"))
+  await vi.advanceTimersByTimeAsync(3_001)
+  await vi.advanceTimersByTimeAsync(10)
+  expect(f.sockets[0]!.close).toHaveBeenCalledTimes(1)
+  expect(f.sockets).toHaveLength(2)
+})
+
+test("returning to a suspended page replaces a silent signaling socket immediately", async () => {
+  vi.useFakeTimers()
+  const page = pageGlobals()
+  page.documentTarget.visibilityState = "hidden"
+  const f = setup()
+  f.client.onEvent(vi.fn())
+  f.sockets[0]!.onopen!()
+  f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
+  await vi.advanceTimersByTimeAsync(120_000)
+  // Hidden pages skip liveness traffic instead of tearing down a live upgrade.
+  expect(f.sockets[0]!.close).not.toHaveBeenCalled()
+
+  page.documentTarget.visibilityState = "visible"
+  page.documentTarget.dispatchEvent(new Event("visibilitychange"))
+  await vi.advanceTimersByTimeAsync(1)
+  expect(f.sockets[0]!.close).toHaveBeenCalledTimes(1)
+  expect(f.sockets).toHaveLength(2)
 })

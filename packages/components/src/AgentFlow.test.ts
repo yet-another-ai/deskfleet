@@ -85,6 +85,20 @@ test.each(["idle", "connecting"])("a retained Session in %s state does not inven
   expect(notice.get("button").attributes("disabled") !== undefined).toBe(state === "connecting")
 })
 
+test("a resumed page reconnects a failed Session without a manual action", async () => {
+  await wrapper.get("textarea").setValue("Keep this Session available")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  transport.state("error")
+  await flushPromises()
+  transport.call.mockClear()
+
+  window.dispatchEvent(new Event("online"))
+  await flushPromises()
+  expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/session/subscribe")).toBe(true)
+  expect(useAgentSessionsStore(pinia).state).toBe("connected")
+})
+
 test("the Session disconnect notice retains guidance and diagnostics for real failures", async () => {
   await wrapper.get("textarea").setValue("Keep this Session available")
   await wrapper.get('[aria-label="Send"]').trigger("click")

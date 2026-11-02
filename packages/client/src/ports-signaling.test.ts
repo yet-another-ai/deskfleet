@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi, CentralEvent } from "./central.ts"
 import { connectPortPeer, type PortPeer, type PortPeerEvents, type PortPeerFactory } from "./ports-signaling.ts"
+import { PEER_SETUP_TIMEOUT_MS } from "./peer-lifecycle.ts"
 import { setPeerTelemetrySink } from "./peer-telemetry.ts"
 
 afterEach(() => { setPeerTelemetrySink(undefined); vi.useRealTimers() })
@@ -102,7 +103,7 @@ test("setup timeout covers a stalled grant and revokes its late result", async (
   const granting = deferred<typeof f.grant>()
   f.api.createPeer.mockImplementation(() => granting.promise)
   const rejected = expect(f.connect()).rejects.toThrow("timed out")
-  await vi.advanceTimersByTimeAsync(20_000)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS)
   await rejected
   granting.resolve(f.grant)
   await vi.advanceTimersByTimeAsync(0)
@@ -144,7 +145,7 @@ test("setup timeout closes the local listener when the offer never returns", asy
   const f = fixture()
   f.api.offerPeer.mockImplementation(() => new Promise(() => {}))
   const rejected = expect(f.connect()).rejects.toThrow("timed out")
-  await vi.advanceTimersByTimeAsync(20_000)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS)
   await rejected
   expect(f.close).toHaveBeenCalledOnce()
 })

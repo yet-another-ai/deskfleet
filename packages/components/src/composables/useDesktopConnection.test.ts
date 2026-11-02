@@ -2,6 +2,7 @@ import { flushPromises } from "@vue/test-utils"
 import { effectScope } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { HttpError } from "../../../client/src/http-central.ts"
+import { PEER_SETUP_TIMEOUT_MS } from "../../../client/src/peer-lifecycle.ts"
 import { browserCodecs, deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
 import { browserCodecPreferences, commonDesktopCodecs, useDesktopConnection } from "./useDesktopConnection.ts"
 
@@ -226,11 +227,43 @@ test("times out stalled connection attempts and closes both ends", async () => {
   vi.useFakeTimers()
   const { connection, api } = setup()
   await connection.connect(options)
-  await vi.advanceTimersByTimeAsync(20_000)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS)
   expect(connection.failure.value).toEqual({ kind: "timeout" })
   expect(connection.state.value).toBe("error")
   expect(TestPeer.instances[0]!.close).toHaveBeenCalled()
   expect(api.close).toHaveBeenCalledTimes(1)
+})
+
+test("a transient disconnected state does not tear down a recoverable desktop peer", async () => {
+  vi.useFakeTimers()
+  const { connection } = setup()
+  await connection.connect(options)
+  const peer = TestPeer.instances[0]!
+  peer.changeState("connected")
+  await flushPromises()
+  peer.changeState("disconnected")
+  await vi.advanceTimersByTimeAsync(9_999)
+  expect(connection.failure.value).toBeNull()
+  expect(connection.state.value).toBe("connected")
+  peer.changeState("connected")
+  await vi.advanceTimersByTimeAsync(10_000)
+  expect(connection.failure.value).toBeNull()
+  expect(peer.close).not.toHaveBeenCalled()
+})
+
+test("late input readiness cannot cancel the desktop disconnect grace", async () => {
+  vi.useFakeTimers()
+  const { connection } = setup()
+  await connection.connect({ ...options, control: true })
+  const peer = TestPeer.instances[0]!
+  peer.changeState("connected")
+  peer.input.ready()
+  await flushPromises()
+  peer.changeState("disconnected")
+  peer.input.ready()
+  await vi.advanceTimersByTimeAsync(10_000)
+  expect(connection.failure.value).toEqual({ kind: "connection", detail: "Desktop connection lost" })
+  expect(peer.close).toHaveBeenCalled()
 })
 
 test("view-only sessions never create an input channel; control waits for native readiness", async () => {
@@ -303,7 +336,7 @@ test("control startup times out when the native side never acknowledges input re
   peer.changeState("connected")
   await flushPromises()
   expect(connection.inputReady.value).toBe(false)
-  await vi.advanceTimersByTimeAsync(20_000)
+  await vi.advanceTimersByTimeAsync(10_000)
   expect(connection.failure.value).toEqual({ kind: "timeout" })
   expect(peer.close).toHaveBeenCalled()
 })
@@ -403,7 +436,7 @@ test("desktop timeout retains the relay reason but capture errors do not inherit
   const { connection, api } = setup()
   Object.assign(api, { connectionFailureReason: () => "turn_quota_exhausted" })
   await connection.connect(options)
-  await vi.advanceTimersByTimeAsync(20_000)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS)
   expect(connection.failure.value).toEqual({ kind: "connection", relayDeniedReason: "turn_quota_exhausted" })
   await connection.connect(options)
   api.start.mockRejectedValue(new Error("Screen recording permission denied"))

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useTimeoutFn, watchImmediate } from "@vueuse/core"
+import { useConnectionResume } from "../../composables/useConnectionResume.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { computed, onBeforeUnmount, ref, shallowRef, useTemplateRef } from "vue"
 import type { RelayDeniedReason } from "@deskfleet/client/relay"
@@ -149,7 +150,9 @@ async function connect(): Promise<void> {
     }
     await activate()
   } catch (reason) {
-    if (attachment === active) failed(reason)
+    if (attachment === active) {
+      failed(reason, independentClient ? independentRelayDeniedReason.value : terminals.relayDeniedReason)
+    }
   } finally {
     if (!disposed && attachment === active) connecting.value = false
   }
@@ -170,6 +173,14 @@ function resize(next: { cols: number; rows: number }): void {
 function input(data: string): void {
   if (!readonly.value && interactive.value) void terminals.input(props.terminalId, data).catch(failed)
 }
+
+// Mobile PWAs freeze this component while the shell keeps running. A failed
+// attachment is safe to re-establish; the daemon replays history on attach.
+useConnectionResume(() => {
+  const relayDenied = failureRelayDeniedReason.value
+    ?? (independentClient ? independentRelayDeniedReason.value : terminals.relayDeniedReason)
+  if (!disposed && error.value && !connecting.value && !relayDenied) void connect()
+})
 
 onBeforeUnmount(() => {
   disposed = true

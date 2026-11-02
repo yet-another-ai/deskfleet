@@ -294,6 +294,17 @@ test("hiding Desktop during encoder fallback still exits fullscreen", async () =
   closed.resolve()
 })
 
+test("resuming the page retries a lost desktop stream", async () => {
+  const { wrapper, peer } = await connectDesktop()
+  peer.changeState("failed")
+  await flushPromises()
+  expect(button(wrapper, "Connect").attributes("disabled")).toBeUndefined()
+  mock.api.offer.mockClear()
+  window.dispatchEvent(new Event("online"))
+  await flushPromises()
+  expect(mock.api.offer).toHaveBeenCalledOnce()
+})
+
 test("hiding Desktop exits its fullscreen stage while disconnecting the stream", async () => {
   const { wrapper, peer, track } = await connectDesktop()
   const { exit } = mockFullscreen(wrapper.get("[data-desktop-stage]").element)

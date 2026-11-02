@@ -43,7 +43,7 @@ function setup(readOnly = false, independent = false) {
   })
   const resolve = (status: TerminalSummary["status"] = "running", kind?: "acp") => pending.resolve({ id: "terminal-1", title: "zsh", cwd: "/home/user", cols: 80, rows: 24, status, ...(kind ? { kind } : {}) })
   const connection = () => wrapper.emitted("connection")?.at(-1)
-  return { wrapper, terminals, detach, write, reset, focus, resolve, connection, emit: (...args: Parameters<TerminalListener>) => listener(...args) }
+  return { wrapper, terminals, pending, detach, write, reset, focus, resolve, connection, emit: (...args: Parameters<TerminalListener>) => listener(...args) }
 }
 
 test("renders byte output and acknowledges only when xterm consumed it; leaving detaches the running shell", async () => {
@@ -88,6 +88,21 @@ test("a transport error disables input and is reported as the connection state",
   fixture.wrapper.unmount()
 })
 
+test("resuming the page reattaches a terminal after a transport error", async () => {
+  const fixture = setup()
+  fixture.resolve()
+  await flushPromises()
+  fixture.emit({ kind: "ready", sessionId: "terminal-1" }, () => {})
+  fixture.emit({ kind: "error", sessionId: "terminal-1", error: "Peer disconnected" }, () => {})
+  await flushPromises()
+  expect(fixture.terminals.attach).toHaveBeenCalledOnce()
+
+  window.dispatchEvent(new Event("online"))
+  await flushPromises()
+  expect(fixture.terminals.attach).toHaveBeenCalledTimes(2)
+  fixture.wrapper.unmount()
+})
+
 test("a displayed relay failure keeps its cause when another terminal refresh clears shared errors", async () => {
   const fixture = setup()
   fixture.resolve()
@@ -99,6 +114,24 @@ test("a displayed relay failure keeps its cause when another terminal refresh cl
   fixture.terminals.relayDeniedReason = undefined
   await flushPromises()
   expect(fixture.wrapper.get('[role="alert"]').text()).toContain(i18n.global.t("errors.turn_quota_exhausted.title"))
+  const calls = vi.mocked(fixture.terminals.attach).mock.calls.length
+  window.dispatchEvent(new Event("online"))
+  await flushPromises()
+  expect(fixture.terminals.attach).toHaveBeenCalledTimes(calls)
+  fixture.wrapper.unmount()
+})
+
+test("a setup-time relay denial is not retried after the shared reason clears", async () => {
+  const fixture = setup()
+  fixture.terminals.relayDeniedReason = "turn_quota_exhausted"
+  fixture.pending.reject(new Error("Relay unavailable"))
+  await flushPromises()
+  expect(fixture.connection()).toEqual(["error", "Relay unavailable"])
+  fixture.terminals.relayDeniedReason = undefined
+  const calls = vi.mocked(fixture.terminals.attach).mock.calls.length
+  window.dispatchEvent(new Event("online"))
+  await flushPromises()
+  expect(fixture.terminals.attach).toHaveBeenCalledTimes(calls)
   fixture.wrapper.unmount()
 })
 
