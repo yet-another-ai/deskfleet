@@ -50,6 +50,15 @@ Reporting is independent of Statsig. A missing or invalid DSN leaves the Sentry
 client uninitialized. With a configured DSN, delivery is best effort; the app
 does not wait for a Sentry server before becoming usable.
 
+The explicit integration list retains Sentry's standard `EventFilters` noise
+filters. These drop opaque `Script error.` reports, the browser's
+`ResizeObserver loop completed with undelivered notifications.` message, and
+other browser/extension noise recognized by the installed SDK. This restores
+the SDK's default filtering without enabling its other default integrations or
+collecting additional data. Filtering an opaque report does not establish that
+its underlying error is harmless; application exceptions with actionable
+messages continue to be reported.
+
 Desktop events include the operating system name and version, CPU architecture,
 application version, and Electron, Node.js, and Chromium versions. Electron's
 system version reports the macOS product version rather than the Darwin kernel

@@ -1,4 +1,4 @@
-import { attachErrorHandler, browserApiErrorsIntegration, captureException, dedupeIntegration, globalHandlersIntegration, init, type ErrorEvent } from "@sentry/vue"
+import { attachErrorHandler, browserApiErrorsIntegration, captureException, dedupeIntegration, eventFiltersIntegration, globalHandlersIntegration, init, type ErrorEvent } from "@sentry/vue"
 import type { App } from "vue"
 import type { DesktopErrorReportingContext } from "@deskfleet/client/error-reporting-context"
 import { CentralRequestError } from "@deskfleet/client/request-diagnostics"
@@ -43,7 +43,7 @@ export function initializeErrorReporting(platform: "web" | "desktop", context?: 
     },
     // Explicit error-only integrations omit URL, DOM, console and session collection.
     defaultIntegrations: false,
-    integrations: [browserApiErrorsIntegration(), globalHandlersIntegration(), dedupeIntegration()],
+    integrations: [eventFiltersIntegration(), browserApiErrorsIntegration(), globalHandlersIntegration(), dedupeIntegration()],
     dataCollection: { userInfo: false, cookies: false, httpHeaders: false, httpBodies: [], urlQueryParams: false },
     maxBreadcrumbs: 0,
     sendClientReports: false,

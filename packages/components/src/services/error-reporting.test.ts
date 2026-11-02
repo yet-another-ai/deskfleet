@@ -154,6 +154,26 @@ test("captures uncaught errors and unhandled rejections with the SDK global hand
   expect(events().every(event => event.exception?.values?.[0]?.mechanism?.handled === false)).toBe(true)
 })
 
+test.each(["web", "desktop"] as const)("filters browser noise while retaining application failures on %s", async platform => {
+  initializeErrorReporting(platform)
+  for (const message of ["Script error.", "ResizeObserver loop completed with undelivered notifications."]) {
+    globalThis.onerror?.call(window, message, "", 0, 0)
+  }
+  await getClient()?.flush(1000)
+  expect(events()).toHaveLength(0)
+
+  const messages = [
+    "[VueUse] Failed to find the definition of reusable template",
+    "Failed to fetch dynamically imported module: https://app.example.com/assets/SettingsView.js",
+    "ResizeObserver callback failed while updating the terminal",
+  ]
+  for (const message of messages) {
+    globalThis.onerror?.call(window, message, "https://app.example.com/assets/index.js", 10, 20, new Error(message))
+  }
+  await getClient()?.flush(1000)
+  expect(events().map(event => event.exception?.values?.[0]?.value)).toEqual(messages)
+})
+
 test("omits request, identity, breadcrumbs, arbitrary payloads and stack URL queries", async () => {
   initializeErrorReporting("web")
   captureEvent({
