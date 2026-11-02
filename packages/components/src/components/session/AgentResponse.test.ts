@@ -213,14 +213,14 @@ test("tool-ending responses preserve explicit collapse choices across completed-
   expect(view.find("[data-activity-trigger]").exists()).toBe(false)
 })
 
-test("pending approval and failed tools remain visible in a collapsed activity summary", () => {
+test("collapsed activity shows pending approval without promoting tool failures", () => {
   const pending = tool("approve")
   pending.permission = agentPermission()
   const view = render(response([pending, tool("failed", { status: "failed" })]))
 
   expect(view.get("[data-activity-trigger]").attributes("aria-expanded")).toBe("false")
   expect(view.get("[data-activity-trigger]").text()).toContain("Awaiting approval")
-  expect(view.get("[data-activity-trigger]").text()).toContain("Failed")
+  expect(view.get("[data-activity-trigger]").text()).not.toContain("Failed")
   expect(view.find('[data-conversation-entry="failed"]').exists()).toBe(false)
 })
 
