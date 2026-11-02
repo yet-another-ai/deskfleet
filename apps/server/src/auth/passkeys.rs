@@ -1,6 +1,7 @@
 //! WebAuthn ceremonies remain server-side, purpose- and session-bound.
 use super::passwords::{Email, field};
 use super::*;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -126,12 +127,14 @@ pub(super) async fn register(
         .webauthn
         .finish_passkey_registration(&body.credential, &ceremony)
         .map_err(|_| ApiError::unauthorized())?;
-    let credential = encoded(key.cred_id())?;
+    // webauthn-rs 0.6 stores CredentialID as Vec<u8>; keep the DB key as the
+    // same URL-safe unpadded Base64 form the Passkey JSON record uses.
+    let credential = URL_SAFE_NO_PAD.encode(key.cred_id());
     state
         .store
         .save_passkey(
             &auth.user.id,
-            credential.as_str().ok_or_else(ApiError::internal)?,
+            &credential,
             encoded(&key)?,
             &body.name,
             &auth.id,
