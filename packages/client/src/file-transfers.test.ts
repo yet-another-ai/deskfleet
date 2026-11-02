@@ -154,7 +154,10 @@ test("the same endpoint cannot copy a directory into its own descendant", async 
 test.each([
   ["preview.BMP", "image/bmp", [0x42, 0x4d]],
   ["preview.ico", "image/vnd.microsoft.icon", [0, 0, 1, 0]],
-])("reads %s resources with their image MIME type", async (name, mimeType, bytes) => {
+  ["before.MP4", "video/mp4", [0, 0, 0, 24]],
+  ["after.webm", "video/webm", [0x1a, 0x45, 0xdf, 0xa3]],
+  ["audio.mp3", "audio/mpeg", [0xff, 0xfb]],
+])("reads %s resources with their media MIME type", async (name, mimeType, bytes) => {
   const directory = await mkdtemp(join(tmpdir(), "deskfleet-resource-"))
   cleanups.push(() => rm(directory, { recursive: true, force: true }))
   const endpoint = new FilesService(async () => directory)

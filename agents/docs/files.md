@@ -226,9 +226,12 @@ separators remain filename characters. Invalid or unavailable line numbers do
 not select another line.
 Other files can be downloaded from that dialog.
 
-Images are fetched through the same authenticated file endpoint and rendered
-using locally created Blob URLs. The renderer permits `blob:` image sources and
-releases those URLs when their content or Session context leaves the view.
+Markdown embeds such as `![Clip](./clip.mp4)` use the shared media viewer for
+supported image, audio, and video MIME types. Files are fetched through the same
+authenticated file endpoint and rendered using typed Blob URLs, which are
+released when their content or Session context leaves the view. The file client
+assigns media MIME types from filename extensions; playback also requires browser
+codec support. Raw HTML `<video>` tags remain escaped.
 BMP uses `image/bmp`; ICO uses `image/vnd.microsoft.icon`, with the legacy
 `image/x-icon` type also accepted for previews.
 Preview reads are capped at 16 MiB; larger files use the streaming transfer queue.
