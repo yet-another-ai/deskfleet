@@ -206,8 +206,8 @@ const { offset, dragging } = useMobileViewportSwipe({
           </button>
         </div>
       </div>
-      <div v-show="!overviewOpen" ref="left" data-viewport-edge="left" aria-hidden="true" class="absolute inset-y-0 left-0 z-30 w-5" />
-      <div v-show="!overviewOpen" ref="right" data-viewport-edge="right" aria-hidden="true" class="absolute inset-y-0 right-0 z-30 w-5" />
+      <div v-show="!overviewOpen" ref="left" data-viewport-edge="left" aria-hidden="true" class="absolute inset-y-0 left-0 z-30 w-5" style="touch-action: pan-y" />
+      <div v-show="!overviewOpen" ref="right" data-viewport-edge="right" aria-hidden="true" class="absolute inset-y-0 right-0 z-30 w-5" style="touch-action: pan-y" />
     </div>
   </main>
 </template>
