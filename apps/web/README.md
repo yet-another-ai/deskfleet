@@ -110,6 +110,12 @@ Email links open verification/recovery pages; `/auth/account` manages credential
 and login sessions. Electron keeps an encrypted application token in its main
 process and uses the system browser with a one-use code/verifier exchange.
 
+Authentication pages read mailed `#token=...` fragments before removing them from
+browser history. Their shared components must not initialize the application's
+hash router, which would rewrite those fragments. Account-context consumers on
+these pages use `account-session-context.ts`, independent of session creation
+and routing.
+
 The Team menu opens `/team/settings`, independently of application settings at
 `/settings`. Its Plans & Usages section at `/team/settings/plans` shows the
 effective plan, current usage, monthly/annual Checkout offers when payments are

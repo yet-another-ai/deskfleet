@@ -3,7 +3,7 @@ import { CircleAlert, ChevronRight } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import type { RelayDeniedReason } from "@deskfleet/client/relay"
-import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { useAccountSession } from "../../composables/account-session-context.ts"
 import { errorPresentation } from "../../services/error-presentation.ts"
 import UiButton from "./UiButton.vue"
 
