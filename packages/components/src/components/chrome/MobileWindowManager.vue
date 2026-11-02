@@ -168,11 +168,12 @@ function dismissOverview(): void {
 }
 const left = useTemplateRef<HTMLElement>("left")
 const right = useTemplateRef<HTMLElement>("right")
-const { offset, dragging } = useMobileViewportSwipe({
+const { offset, dragging, settling } = useMobileViewportSwipe({
   viewport, left, right,
   index: () => activeIndex.value,
   count: () => views.value.length,
   enabled: () => !overviewOpen.value && !zooming.value && !layout.sidebarOpen,
+  reducedMotion: () => reducedMotion.value === "reduce",
   select, reveal,
 })
 </script>
@@ -186,10 +187,10 @@ const { offset, dragging } = useMobileViewportSwipe({
       <IconButton :icon="overviewOpen ? X : Grid3x3" :label="overviewOpen ? t('common.close') : t('mobileViews.overview')" :aria-expanded="overviewOpen" data-open-overview @click="toggleOverview" />
     </header>
     <ErrorNotice v-if="error" :error="error" />
-    <div ref="viewport" data-mobile-viewport class="relative min-h-0 flex-1 overflow-hidden" :class="{ dragging, zooming }">
+    <div ref="viewport" data-mobile-viewport class="relative min-h-0 flex-1 overflow-hidden" :class="{ dragging: dragging || settling, zooming }">
       <div ref="scroller" class="absolute inset-0 overscroll-contain" :class="overviewOpen ? 'overflow-x-hidden overflow-y-auto' : 'overflow-clip'" :data-view-overview="overviewOpen ? '' : undefined">
-        <div ref="stage" class="relative w-full" :style="{ height: `${overviewOpen ? gridHeight + (worktree ? 64 : 0) : viewportHeight}px` }">
-          <MobileViewFrame v-for="(view, index) in views" :key="view.id" :data-mobile-view="view.id" :aria-hidden="!overviewOpen && view.id !== activeId" :title="view.title" :active="view.id === activeId" :preview="overviewOpen" :source-width="viewportWidth" :source-height="viewportHeight" :x="overviewOpen ? 16 + (index % 3) * (cardWidth + 12) : (index - activeIndex) * viewportWidth + offset" :y="overviewOpen ? 48 + Math.floor(index / 3) * rowHeight : 0" :scale="overviewOpen ? cardScale : 1" :closable="view.kind === 'terminal' || view.kind === 'preview'" :busy="busy" @select="select(index)" @close="closeView(view)">
+        <div ref="stage" class="relative w-full" :style="{ height: `${overviewOpen ? gridHeight + (worktree ? 64 : 0) : viewportHeight}px`, transform: `translate3d(${offset}px, 0, 0)` }">
+          <MobileViewFrame v-for="(view, index) in views" :key="view.id" :data-mobile-view="view.id" :aria-hidden="!overviewOpen && view.id !== activeId" :title="view.title" :active="view.id === activeId" :preview="overviewOpen" :source-width="viewportWidth" :source-height="viewportHeight" :x="overviewOpen ? 16 + (index % 3) * (cardWidth + 12) : (index - activeIndex) * viewportWidth" :y="overviewOpen ? 48 + Math.floor(index / 3) * rowHeight : 0" :scale="overviewOpen ? cardScale : 1" :closable="view.kind === 'terminal' || view.kind === 'preview'" :busy="busy" @select="select(index)" @close="closeView(view)">
             <template v-if="visited.has(view.id)">
               <SessionView v-if="view.kind === 'chat'" :session-id="sessionId" />
               <ChangesPanel v-else-if="view.kind === 'changes'" windowed standalone />
