@@ -151,7 +151,8 @@ jobs:
           APPLE_API_KEY: ${{ steps.macos_credentials.outputs.key_path }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: mise exec -- pnpm --filter @deskfleet/desktop exec electron-builder --config electron-builder.release.yml --publish never
+        # Stage native executables through the shared packaging script before signing.
+        run: mise exec -- pnpm --filter @deskfleet/desktop run package --config electron-builder.release.yml
 
       - name: Remove macOS notarization key
         if: ${{ always() && runner.os == 'macOS' && inputs.production_release }}
