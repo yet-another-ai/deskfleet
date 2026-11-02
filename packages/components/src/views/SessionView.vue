@@ -34,6 +34,7 @@ import { pendingMermaidLocate, performMermaidLocateDom, useLayoutStore, type Mer
 import { focusedPreviewFromRoute, pendingPreviewLocate, performPreviewLocateDom } from "../stores/previews.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
+import { useConnectionResume } from "../composables/useConnectionResume.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useSessionRead } from "../composables/useSessionRead.ts"
@@ -84,6 +85,40 @@ const run = computed(() => snapshot.value?.runs.at(-1))
 const activeTurn = computed(() => snapshot.value?.turns.find(turn => liveTurnStates.includes(turn.state)))
 const active = computed(() => !snapshot.value || snapshot.value.session.archiveState === "active")
 const connected = computed(() => agents.state === "connected")
+// A suspended PWA can lose its peer without unmounting this view. Retry a
+// bounded number of times, then wait for a resume or network change.
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+let reconnectAttempt = 0
+function clearReconnect(): void {
+  clearTimeout(reconnectTimer)
+  reconnectTimer = undefined
+}
+function reconnectSession(): void {
+  clearReconnect()
+  if (disposed || agents.state === "connecting") return
+  if (agents.state === "connected" && !view.value?.error) return
+  if (agents.relayDeniedReason || location.value?.machine.online === false) return
+  void agents.open(props.sessionId)
+}
+function scheduleReconnect(): void {
+  if (disposed || reconnectTimer || agents.relayDeniedReason
+    || location.value?.machine.online === false || reconnectAttempt >= 5) return
+  const delay = Math.min(1_000 * 2 ** reconnectAttempt, 15_000)
+  reconnectAttempt++
+  reconnectTimer = setTimeout(() => { reconnectTimer = undefined; reconnectSession() }, delay)
+}
+watch(() => [agents.state, location.value?.machine.online] as const, ([state, online]) => {
+  if (state === "connected") {
+    reconnectAttempt = 0
+    clearReconnect()
+  } else if (state === "error" && online !== false) scheduleReconnect()
+}, { immediate: true })
+useConnectionResume(() => {
+  reconnectAttempt = 0
+  clearReconnect()
+  if (agents.state !== "connected" || view.value?.error) reconnectSession()
+})
+onScopeDispose(clearReconnect)
 const canResume = computed(() => !snapshot.value?.session.providerSessionId || !!snapshot.value.session.capabilities?.resume)
 const canSteer = computed(() => !!snapshot.value?.session.capabilities?.steering && activeTurn.value?.state === "running")
 const runActive = computed(() => !!run.value && ["starting", "running"].includes(run.value.state))

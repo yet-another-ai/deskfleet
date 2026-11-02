@@ -1,5 +1,6 @@
 import { relayFailureError } from "./relay.ts"
 import { observePeerGrant } from "./peer-telemetry.ts"
+import { PEER_SETUP_TIMEOUT_MS } from "./peer-lifecycle.ts"
 import type { CentralApi } from "./central.ts"
 import type { IceCandidate } from "./desktop-media.ts"
 import type { FileTarget } from "./files.ts"
@@ -43,7 +44,7 @@ export async function connectFilePeer(
   void ready.catch(() => {})
   let unsubscribe = () => {}
   let lifetime: ReturnType<typeof setTimeout> | undefined
-  const setup = setTimeout(() => connectionFailed(new Error("File connection timed out")), 20_000)
+  const setup = setTimeout(() => connectionFailed(new Error("File connection timed out")), PEER_SETUP_TIMEOUT_MS)
   async function close(): Promise<void> {
     if (closed) return
     closed = true; clearTimeout(setup); clearTimeout(lifetime); unsubscribe()

@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi, CentralEvent } from "./central.ts"
 import { connectFilePeer, type FilePeerEvents } from "./files-signaling.ts"
+import { PEER_SETUP_TIMEOUT_MS } from "./peer-lifecycle.ts"
 import { setPeerTelemetrySink } from "./peer-telemetry.ts"
 
 afterEach(() => { setPeerTelemetrySink(undefined); vi.useRealTimers() })
@@ -67,7 +68,7 @@ test("the setup deadline rejects a stalled offer without waiting for signaling t
     offer: async () => sdp, answer: async () => {}, candidate: async () => {}, send: async () => {}, close,
   }), () => {}, failed)
   const rejected = expect(connecting).rejects.toThrow("timed out")
-  await vi.advanceTimersByTimeAsync(20_000)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS)
   await rejected
   expect(close).toHaveBeenCalledOnce()
 })

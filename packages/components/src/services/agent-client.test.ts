@@ -2,6 +2,7 @@ import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentSignalingApi } from "../../../client/src/agent.ts"
 import { LocalDataChannel, type LocalChannelsApi } from "../../../client/src/local-channels.ts"
+import { PEER_DISCONNECT_GRACE_MS } from "../../../client/src/peer-lifecycle.ts"
 import { deferred } from "../test/desktop-media.ts"
 import { AgentClient } from "./agent-client.ts"
 import { AgentMessageDecoder } from "./agent-stream.ts"
@@ -23,7 +24,7 @@ class TestPeer {
   connectionState: RTCPeerConnectionState = "new"
   sctp = { maxMessageSize: 4096 }
   onicecandidate: unknown = null
-  onconnectionstatechange: unknown = null
+  onconnectionstatechange: (() => void) | null = null
   channel = new TestChannel()
   createDataChannel = vi.fn(() => this.channel)
   createOffer = vi.fn(async () => ({ type: "offer", sdp: "offer" }))
@@ -44,7 +45,7 @@ async function connect(client: AgentClient) {
   const pending = client.connect(); await flushPromises(); const peer = TestPeer.instances.at(-1)!; peer.channel.open(); await pending; return peer
 }
 beforeEach(() => { TestPeer.instances = []; vi.stubGlobal("RTCPeerConnection", TestPeer) })
-afterEach(() => { for (const client of clients.splice(0)) client.close(); vi.unstubAllGlobals() })
+afterEach(() => { for (const client of clients.splice(0)) client.close(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
 test("sends serialized UTF-8 frames within negotiated size and resumes after backpressure", async () => {
   const { client } = setup(); const peer = await connect(client)
@@ -82,6 +83,27 @@ test("disconnect rejects mutations and reconnect never replays them", async () =
   await flushPromises(); client.close(); await rejected
   const next = await connect(client)
   expect(next.channel.send).not.toHaveBeenCalled()
+})
+
+test("a transient disconnected transport recovers without failing the agent", async () => {
+  const { client, state } = setup(); const peer = await connect(client)
+  vi.useFakeTimers()
+  peer.connectionState = "disconnected"; peer.onconnectionstatechange!()
+  await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS - 1)
+  expect(state).toHaveBeenLastCalledWith("connected")
+  peer.connectionState = "connected"; peer.onconnectionstatechange!()
+  await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
+  expect(state).toHaveBeenLastCalledWith("connected")
+  expect(peer.close).not.toHaveBeenCalled()
+})
+
+test("a disconnected transport that never recovers fails after the grace period", async () => {
+  const { client, state } = setup(); const peer = await connect(client)
+  vi.useFakeTimers()
+  peer.connectionState = "disconnected"; peer.onconnectionstatechange!()
+  await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
+  expect(state).toHaveBeenLastCalledWith("error", "Agent connection lost")
+  expect(peer.close).toHaveBeenCalled()
 })
 
 test("changing an existing client's transport never replays an accepted command", async () => {

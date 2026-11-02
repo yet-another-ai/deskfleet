@@ -107,8 +107,12 @@ retry by its owner can retrieve the same negotiation result; changing the offer,
 answer, actor, target, or purpose cannot mutate an established binding. A failed
 or replacement connection uses a new `peerId`, new authorization, and new
 PeerConnections. In-place renegotiation/ICE restart is not required for this
-release. Pending setup still has an ordinary connection timeout, independently
-of the 24-hour authorization ceiling.
+release. Pending setup has a 45-second deadline, independently of the 24-hour
+authorization ceiling; mobile NAT traversal can consume several seconds before
+media starts. A `disconnected` connection is transient during network switches
+and page suspension, so clients wait 10 seconds for recovery before treating it
+as failed. `failed` and `closed` remain immediate failures. A resumed page
+creates a new authorized peer rather than renegotiating the old transport.
 
 ## Transport encryption and TURN
 

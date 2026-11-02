@@ -105,9 +105,17 @@ An established control socket is not recovered by its close handshake alone: a
 dead peer never answers it and the WebSocket implementation has no closing
 deadline. The daemon and the client signaling socket therefore declare a link
 dead after 60 seconds without traffic, abandon it when an orderly close does not
-finish within 5 seconds, and reconnect with bounded backoff. The daemon reports
-`connected` false as soon as the link is declared dead, so a lost link cannot
-leave a machine offline until its process restarts.
+finish within 2 seconds, and reconnect with bounded backoff starting at 1 second.
+The daemon reports `connected` false as soon as the link is declared dead, so a
+lost link cannot leave a machine offline until its process restarts.
+
+Browser and installed-PWA pages suspend timers while hidden, so heartbeat ticks
+alone cannot time out a stale socket. Heartbeat traffic is skipped while the
+page is hidden. Returning to a visible page, restoring a page from the
+back/forward cache, or receiving an `online` event probes a recently active
+socket with an immediate ping and replaces it only when the 3-second round trip
+misses. A socket idle beyond the 60-second deadline is replaced immediately, and
+a pending retry is executed without waiting for its backoff.
 
 Each daemon signaling socket also reconciles its peer grants from PostgreSQL at
 its 20-second heartbeat. If a revocation commits but its broadcast is lost, the

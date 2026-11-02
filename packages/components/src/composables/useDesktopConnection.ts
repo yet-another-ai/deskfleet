@@ -1,5 +1,6 @@
 import { onScopeDispose, ref, shallowRef } from "vue"
 import type { RelayDeniedReason } from "../../../client/src/relay.ts"
+import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard, type PeerDisconnectGuard } from "../../../client/src/peer-lifecycle.ts"
 import { DESKTOP_INPUT_CHANNEL, type DesktopInputMessage } from "../../../client/src/desktop-input.ts"
 import type {
   DesktopMediaApi,
@@ -66,7 +67,11 @@ interface Session {
   input: RTCDataChannel | null
   inputReady: boolean
   inputFailure: DesktopFailure | null
+  disconnects: PeerDisconnectGuard
 }
+
+/** Native input ownership is acknowledged after media connects; that wait is not NAT latency. */
+const INPUT_READY_TIMEOUT_MS = 10_000
 
 export function desktopCodecLabel(codec: VideoCodec): string {
   if (codec === "h264") return "H.264"
@@ -104,6 +109,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
 
   function release(session: Session): void {
     clearTimeout(session.timeout)
+    session.disconnects.clear()
     if (session.input) {
       if (session.input.readyState === "open") {
         try { session.input.send(JSON.stringify({ type: "releaseAll" })) } catch { /* Peer closure also releases held input. */ }
@@ -237,7 +243,10 @@ export function useDesktopConnection(api: DesktopMediaApi) {
         fail(session, session.inputFailure)
         return
       }
-      if (!session.options.control || session.inputReady) clearTimeout(session.timeout)
+      clearTimeout(session.timeout)
+      if (session.options.control && !session.inputReady) {
+        session.timeout = setTimeout(() => { if (session) fail(session, { kind: "timeout" }) }, INPUT_READY_TIMEOUT_MS)
+      }
       state.value = "connected"
       inputReady.value = session.inputReady
     } catch (error) {
@@ -265,12 +274,13 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       const peer = new RTCPeerConnection({ iceServers })
       session = {
         id, peer, stream: new MediaStream(), unsubscribe: () => {},
-        timeout: setTimeout(() => { if (session) fail(session, { kind: "timeout" }) }, 20_000),
+        timeout: setTimeout(() => { if (session) fail(session, { kind: "timeout" }) }, PEER_SETUP_TIMEOUT_MS),
         offered: false, remoteReady: false, startRequested: false, startSettled: false,
         localCandidates: [], remoteCandidates: [], localSending: Promise.resolve(), remoteAdding: Promise.resolve(),
         start: { sessionId: id, displayId: options.displayId, ...(options.control ? { control: true } : {}) },
         options, replaced: false,
         input: null, inputReady: false, inputFailure: null,
+        disconnects: createPeerDisconnectGuard(() => { if (session) fail(session, { kind: "connection", detail: "Desktop connection lost" }) }),
       }
       current = session
       stream.value = session.stream
@@ -287,7 +297,10 @@ export function useDesktopConnection(api: DesktopMediaApi) {
             if (message.type === "ready") {
               active.inputReady = true
               inputReady.value = state.value === "connected"
-              if (inputReady.value) clearTimeout(active.timeout)
+              if (inputReady.value) {
+                clearTimeout(active.timeout)
+                active.disconnects.clear()
+              }
             } else if (message.type === "error" && typeof message.error === "string") {
               operationFailed(active, message.error)
             } else {
@@ -309,8 +322,11 @@ export function useDesktopConnection(api: DesktopMediaApi) {
             const reason = event.reason ?? desktopErrorReason(event.error)
             fail(active, { kind: "operation", detail: event.error, ...(reason ? { reason } : {}) })
           }
-        } else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) {
+        } else if (["failed", "closed"].includes(event.state.toLowerCase())) {
           fail(active, { kind: "connection" })
+        } else {
+          active.disconnects.update(event.state)
+          if (event.state.toLowerCase() === "connected") void startWhenConnected(active)
         }
       })
       peer.onicecandidate = ({ candidate }) => {
@@ -328,9 +344,10 @@ export function useDesktopConnection(api: DesktopMediaApi) {
         if (current === active) active.stream.addTrack(track)
       }
       peer.onconnectionstatechange = () => {
-        if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
+        if (["failed", "closed"].includes(peer.connectionState)) {
           fail(active, { kind: "connection" })
         } else {
+          active.disconnects.update(peer.connectionState)
           void startWhenConnected(active)
         }
       }

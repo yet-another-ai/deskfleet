@@ -14,9 +14,11 @@ import { isDesktopErrorReason, type DesktopErrorReason } from "./desktop-media.t
 const HEARTBEAT_MS = 20_000
 const IDLE_TIMEOUT_MS = 60_000
 /** WebSocket close only requests a handshake; a dead peer never answers and no deadline exists. */
-const CLOSE_GRACE_MS = 5_000
-const RETRY_MIN_MS = 2_000
+const CLOSE_GRACE_MS = 2_000
+const RETRY_MIN_MS = 1_000
 const RETRY_MAX_MS = 30_000
+/** Resume probes replace a socket only when the link misses this round trip. */
+const PROBE_TIMEOUT_MS = 3_000
 
 type SocketMessage = CentralEvent | { type: "ready" } | { type: "ping" } | { type: "pong" }
 
@@ -50,11 +52,56 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   #retryDelay = RETRY_MIN_MS
   #heartbeat: ReturnType<typeof setInterval> | undefined
   #closeDeadline: ReturnType<typeof setTimeout> | undefined
+  #probeTimer: ReturnType<typeof setTimeout> | undefined
   #lastReceived = 0
   #connected = false
   #disposed = false
   #csrf: string | undefined
-  constructor(options: HttpCentralOptions) { this.#options = options; this.#account = { ...options.account, serverUrl: serverAddress(options.account.serverUrl) } }
+  readonly #wake = (): void => {
+    if (this.#disposed || !(this.#account.token || (this.#options.cookieAuth && this.#account.user))) return
+    if (this.#retry) {
+      clearTimeout(this.#retry)
+      this.#retry = undefined
+      this.#retryDelay = RETRY_MIN_MS
+    }
+    const socket = this.#socket
+    if (!socket) { this.#connect(); return }
+    // Mobile browsers suspend timers and sockets while the app is backgrounded.
+    // A resumed page must prove the link is alive instead of waiting for a tick.
+    const fresh = Date.now() - this.#lastReceived <= IDLE_TIMEOUT_MS
+    if (socket.readyState === WebSocket.CONNECTING && fresh) return
+    if (socket.readyState === WebSocket.OPEN && fresh) { this.#probeLink(socket); return }
+    this.#stale(socket, 0)
+  }
+  readonly #visibility = (): void => {
+    if (document.visibilityState === "visible") this.#wake()
+  }
+  /**
+   * A suspended page can resume with an OPEN socket whose route is already
+   * dead. Probe before replacing it so the server never holds two viewer
+   * connections that both deliver the same event.
+   */
+  #probeLink(socket: WebSocket): void {
+    if (this.#probeTimer || this.#socket !== socket) return
+    const received = this.#lastReceived
+    try { socket.send(JSON.stringify({ type: "ping" })) }
+    catch { this.#stale(socket, 0); return }
+    this.#probeTimer = setTimeout(() => {
+      this.#probeTimer = undefined
+      if (this.#socket === socket && this.#lastReceived === received) this.#stale(socket, 0)
+    }, PROBE_TIMEOUT_MS)
+  }
+  constructor(options: HttpCentralOptions) {
+    this.#options = options
+    this.#account = { ...options.account, serverUrl: serverAddress(options.account.serverUrl) }
+    // Installed windows and mobile PWAs are suspended without closing the page.
+    // Recover on resume and on network changes rather than on a throttled timer.
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+      window.addEventListener("online", this.#wake)
+      window.addEventListener("pageshow", this.#wake)
+      document.addEventListener("visibilitychange", this.#visibility)
+    }
+  }
   async status(): Promise<AccountState> {
     let siteAdmin = false
     if (this.#account.token || this.#options.cookieAuth) {
@@ -268,6 +315,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       let event: SocketMessage
       try { event = JSON.parse(String(data)) as SocketMessage } catch { return }
       this.#lastReceived = Date.now()
+      clearTimeout(this.#probeTimer); this.#probeTimer = undefined
       if (event.type === "ready") { this.#retryDelay = RETRY_MIN_MS; this.#setConnected(true) }
       else if (event.type === "ping") socket.send(JSON.stringify({ type: "pong" }))
       else if (event.type !== "pong") this.#emit(event)
@@ -278,6 +326,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       this.#socket = undefined
       clearInterval(this.#heartbeat); this.#heartbeat = undefined
       clearTimeout(this.#closeDeadline); this.#closeDeadline = undefined
+      clearTimeout(this.#probeTimer); this.#probeTimer = undefined
       // A signaling outage is not a peer revocation. Existing DataChannels keep running.
       this.#setConnected(false)
       if (event.code === 4401) {
@@ -286,6 +335,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     }
     this.#heartbeat = setInterval(() => {
       if (this.#socket !== socket) return
+      // Suspended pages cannot answer pings; reconnect when the page resumes.
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return
       if (Date.now() - this.#lastReceived > IDLE_TIMEOUT_MS) this.#stale(socket)
       // Sending while CONNECTING or CLOSING throws; an unfinished upgrade only ages out.
       else if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" }))
@@ -295,8 +346,9 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
    * A silent socket never reports close, and the WebSocket close handshake has no
    * deadline. Declare the link dead, then replace it if the orderly close stalls.
    */
-  #stale(socket: WebSocket): void {
+  #stale(socket: WebSocket, graceMs = CLOSE_GRACE_MS): void {
     if (this.#socket !== socket || this.#closeDeadline) return
+    clearTimeout(this.#probeTimer); this.#probeTimer = undefined
     this.#setConnected(false)
     socket.close()
     this.#closeDeadline = setTimeout(() => {
@@ -304,22 +356,32 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       if (this.#socket !== socket) return
       this.#socket = undefined
       clearInterval(this.#heartbeat); this.#heartbeat = undefined
-      this.#schedule()
-    }, CLOSE_GRACE_MS)
+      this.#schedule(graceMs === 0)
+    }, graceMs)
   }
-  #schedule(): void {
+  #schedule(immediate = false): void {
     if (this.#disposed || this.#retry || !(this.#account.token || (this.#options.cookieAuth && this.#account.user))) return
-    this.#retry = setTimeout(() => { this.#retry = undefined; this.#connect() }, this.#retryDelay)
-    this.#retryDelay = Math.min(this.#retryDelay * 2, RETRY_MAX_MS)
+    this.#retry = setTimeout(() => { this.#retry = undefined; this.#connect() }, immediate ? 0 : this.#retryDelay)
+    if (!immediate) this.#retryDelay = Math.min(this.#retryDelay * 2, RETRY_MAX_MS)
   }
   #disconnect(): void {
     clearTimeout(this.#retry); this.#retry = undefined
     clearInterval(this.#heartbeat); this.#heartbeat = undefined
     clearTimeout(this.#closeDeadline); this.#closeDeadline = undefined
+    clearTimeout(this.#probeTimer); this.#probeTimer = undefined
     this.#connected = false
     const socket = this.#socket; this.#socket = undefined; socket?.close()
   }
-  dispose(): void { this.#disposed = true; this.#disconnect(); this.#listeners.clear() }
+  dispose(): void {
+    this.#disposed = true
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+      window.removeEventListener("online", this.#wake)
+      window.removeEventListener("pageshow", this.#wake)
+      document.removeEventListener("visibilitychange", this.#visibility)
+    }
+    this.#disconnect()
+    this.#listeners.clear()
+  }
 }
 export class HttpError extends Error {
   readonly status: number

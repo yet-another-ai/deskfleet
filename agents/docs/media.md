@@ -412,8 +412,11 @@ native window.
 Disconnect, switching away from the Desktop tab, navigation away from the desktop
 view, renderer reload/crash, and client exit release the corresponding media
 session. Tab switches retain display and stream settings; returning to Desktop
-does not reconnect automatically. Hiding the desktop view or ending its stream
-also exits its fullscreen stage; an unsuccessful exit keeps the manual exit
+does not reconnect automatically. A browser page or installed PWA that resumes
+from suspension retries a connection or setup timeout automatically, while
+capture and permission failures keep their manual Connect action. Hiding the
+desktop view or ending its stream also exits its fullscreen stage; an
+unsuccessful exit keeps the manual exit
 control available when the view is shown. Closing the window to the
 tray keeps the renderer and its current stream alive. Failed or timed-out
 connections expose an error and can be retried. The renderer retains its sandbox

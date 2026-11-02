@@ -1,6 +1,7 @@
 import type { CentralApi } from "@deskfleet/client/central"
 import type { DesktopCapabilities, IceCandidate } from "@deskfleet/client/desktop-media"
 import type { NativeDesktopRequest } from "@deskfleet/client/native-desktop"
+import { PEER_SETUP_TIMEOUT_MS } from "@deskfleet/client/peer-lifecycle"
 import { observePeerGrant, type PeerConnectionTelemetry } from "@deskfleet/client/peer-telemetry"
 
 export type ViewerCommand =
@@ -41,7 +42,7 @@ export function openNativeDesktopSession(
   let resolveReady!: () => void, rejectReady!: (error: Error) => void
   const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })
   void ready.catch(() => {})
-  const startup = setTimeout(() => fail(new Error("Native desktop connection timed out")), 20_000)
+  const startup = setTimeout(() => fail(new Error("Native desktop connection timed out")), PEER_SETUP_TIMEOUT_MS)
 
   function closeGrant(): void {
     if (!peerId || grantClosed) return

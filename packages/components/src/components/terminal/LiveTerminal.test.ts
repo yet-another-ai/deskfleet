@@ -88,6 +88,21 @@ test("a transport error disables input and is reported as the connection state",
   fixture.wrapper.unmount()
 })
 
+test("resuming the page reattaches a terminal after a transport error", async () => {
+  const fixture = setup()
+  fixture.resolve()
+  await flushPromises()
+  fixture.emit({ kind: "ready", sessionId: "terminal-1" }, () => {})
+  fixture.emit({ kind: "error", sessionId: "terminal-1", error: "Peer disconnected" }, () => {})
+  await flushPromises()
+  expect(fixture.terminals.attach).toHaveBeenCalledOnce()
+
+  window.dispatchEvent(new Event("online"))
+  await flushPromises()
+  expect(fixture.terminals.attach).toHaveBeenCalledTimes(2)
+  fixture.wrapper.unmount()
+})
+
 test("a displayed relay failure keeps its cause when another terminal refresh clears shared errors", async () => {
   const fixture = setup()
   fixture.resolve()

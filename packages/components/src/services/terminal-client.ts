@@ -2,6 +2,7 @@ import type { TerminalSignalingApi } from "../../../client/src/terminal.ts"
 import { RelayConnectionError, relayFailureError, type RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { IceCandidate } from "../../../client/src/desktop-media.ts"
 import { DataChannelErrorEvent, type DataChannel } from "../../../client/src/data-channel.ts"
+import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard, type PeerDisconnectGuard } from "../../../client/src/peer-lifecycle.ts"
 import {
   MAX_TERMINAL_MESSAGE_BYTES,
   TERMINAL_CHANNEL,
@@ -35,6 +36,7 @@ interface PeerSession {
   remoteCandidates: IceCandidate[]
   localSending: Promise<void>
   remoteAdding: Promise<void>
+  disconnects: PeerDisconnectGuard
 }
 
 interface InputEntry {
@@ -99,10 +101,11 @@ export class TerminalClient {
         const channel: DataChannel = this.#api.connectChannel?.(id) ?? peer!.createDataChannel(TERMINAL_CHANNEL, { ordered: true })
         const session: PeerSession = {
           id, peer, channel, unsubscribe: () => {},
-          timeout: setTimeout(() => this.#connectionFailed(session, "Terminal connection timed out"), 20_000),
+          timeout: setTimeout(() => this.#connectionFailed(session, "Terminal connection timed out"), PEER_SETUP_TIMEOUT_MS),
           resolve, reject, offered: false, remoteReady: !peer,
           localCandidates: [], remoteCandidates: [],
           localSending: Promise.resolve(), remoteAdding: Promise.resolve(),
+          disconnects: createPeerDisconnectGuard(() => this.#connectionFailed(session, "Terminal connection lost")),
         }
         this.#current = session
         if (peer) {
@@ -113,8 +116,10 @@ export class TerminalClient {
               this.#addCandidates(session)
             } else if (event.kind === "error") {
               this.#fail(session, new Error(event.error))
-            } else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) {
+            } else if (["failed", "closed"].includes(event.state.toLowerCase())) {
               this.#connectionFailed(session, "Terminal connection closed")
+            } else {
+              session.disconnects.update(event.state)
             }
           })
           peer.onicecandidate = ({ candidate }) => {
@@ -129,8 +134,10 @@ export class TerminalClient {
             this.#sendCandidates(session)
           }
           peer.onconnectionstatechange = () => {
-            if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
+            if (["failed", "closed"].includes(peer.connectionState)) {
               this.#connectionFailed(session, "Terminal connection closed")
+            } else {
+              session.disconnects.update(peer.connectionState)
             }
           }
         }
@@ -180,6 +187,7 @@ export class TerminalClient {
   #ready(session: PeerSession): void {
     if (this.#current !== session || !session.remoteReady || session.channel.readyState !== "open") return
     clearTimeout(session.timeout)
+    session.disconnects.clear()
     this.#state("connected")
     session.resolve()
   }
@@ -329,6 +337,7 @@ export class TerminalClient {
     this.#current = null
     this.#connecting = null
     clearTimeout(session.timeout)
+    session.disconnects.clear()
     session.unsubscribe()
     if (session.peer) {
       session.peer.onicecandidate = null

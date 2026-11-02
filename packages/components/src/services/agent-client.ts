@@ -2,6 +2,7 @@ import type { AgentSignalingApi } from "../../../client/src/agent.ts"
 import { RelayConnectionError, relayFailureError, type RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { IceCandidate } from "../../../client/src/desktop-media.ts"
 import { DataChannelErrorEvent, type DataChannel } from "../../../client/src/data-channel.ts"
+import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard, type PeerDisconnectGuard } from "../../../client/src/peer-lifecycle.ts"
 import { AGENT_CHANNEL, AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { AgentMessageDecoder } from "./agent-stream.ts"
 
@@ -31,6 +32,7 @@ interface PeerSession {
   sending: Promise<void>
   queuedBytes: number
   decoder: AgentMessageDecoder
+  disconnects: PeerDisconnectGuard
 }
 const errorOf = (value: unknown): Error => value instanceof Error ? value : new Error(String(value))
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value)
@@ -77,10 +79,11 @@ export class AgentClient {
         channel.bufferedAmountLowThreshold = 64 * 1024
         const session: PeerSession = {
           id, peer, channel, unsubscribe: () => {}, resolve, reject,
-          timeout: setTimeout(() => this.#connectionFailed(session, "Agent connection timed out"), 20_000),
+          timeout: setTimeout(() => this.#connectionFailed(session, "Agent connection timed out"), PEER_SETUP_TIMEOUT_MS),
           offered: false, remoteReady: !peer, localCandidates: [], remoteCandidates: [],
           localSending: Promise.resolve(), remoteAdding: Promise.resolve(), sending: Promise.resolve(), queuedBytes: 0,
           decoder: new AgentMessageDecoder(message => this.#message(session, message)),
+          disconnects: createPeerDisconnectGuard(() => this.#connectionFailed(session, "Agent connection lost")),
         }
         this.#current = session
         if (peer) {
@@ -90,7 +93,8 @@ export class AgentClient {
               session.remoteCandidates.push(event.candidate)
               this.#addCandidates(session)
             } else if (event.kind === "error") this.#fail(session, new Error(event.error))
-            else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) this.#connectionFailed(session, "Agent connection closed")
+            else if (["failed", "closed"].includes(event.state.toLowerCase())) this.#connectionFailed(session, "Agent connection closed")
+            else session.disconnects.update(event.state)
           })
           peer.onicecandidate = ({ candidate }) => {
             if (!candidate || this.#current !== session) return
@@ -104,7 +108,8 @@ export class AgentClient {
             this.#sendCandidates(session)
           }
           peer.onconnectionstatechange = () => {
-            if (["failed", "closed", "disconnected"].includes(peer.connectionState)) this.#connectionFailed(session, "Agent connection closed")
+            if (["failed", "closed"].includes(peer.connectionState)) this.#connectionFailed(session, "Agent connection closed")
+            else session.disconnects.update(peer.connectionState)
           }
         }
         channel.onopen = () => this.#ready(session)
@@ -150,6 +155,7 @@ export class AgentClient {
   #ready(session: PeerSession): void {
     if (this.#current !== session || !session.remoteReady || session.channel.readyState !== "open") return
     clearTimeout(session.timeout)
+    session.disconnects.clear()
     this.#state("connected")
     session.resolve()
   }
@@ -269,6 +275,7 @@ export class AgentClient {
     this.#current = null
     this.#connecting = null
     clearTimeout(session.timeout)
+    session.disconnects.clear()
     session.unsubscribe()
     if (session.peer) {
       session.peer.onicecandidate = null
