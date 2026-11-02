@@ -1,8 +1,8 @@
 import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { computed, defineComponent, h } from "vue"
-import type { AgentCommand, AgentEvent } from "../../../../apps/daemon/src/agent-protocol.ts"
+import { computed, defineComponent, h, isReactive } from "vue"
+import type { AgentCommand, AgentEvent, AgentPreview } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
 import { catalogFixture } from "../test/catalog.ts"
 import { deferred } from "../test/desktop-media.ts"
@@ -31,7 +31,7 @@ beforeEach(() => {
     return null
   })
 })
-afterEach(() => { disposePinia(pinia); vi.mocked(platformClient.catalog.list).mockRestore() })
+afterEach(() => { disposePinia(pinia); vi.mocked(platformClient.catalog.list).mockRestore(); vi.useRealTimers() })
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
 const tracked = (event: string) => vi.mocked(trackEvent).mock.calls.filter(([name]) => name === event).map(([, metadata]) => metadata)
 
@@ -500,6 +500,7 @@ test("a live peer continues prompts during signaling loss and only disconnected 
 })
 
 test("appends live events without replacing history and updates rendered transcript consumers", async () => {
+  vi.useFakeTimers()
   const store = useAgentSessionsStore(); await store.open("30")
   const chunk = (seq: number, text: string) => agentEvent(seq, "acp", {
     sessionId: "provider-session", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
@@ -515,7 +516,7 @@ test("appends live events without replacing history and updates rendered transcr
     receive(chunk(1, "First "))
     receive(chunk(2, "second "))
     receive(chunk(2, "duplicate "))
-    await flushPromises()
+    await vi.advanceTimersByTimeAsync(33)
     expect(store.views["30"]!.events).toBe(history)
     expect(history.map(event => event.seq)).toEqual(["1", "2"])
     expect(rendered.text()).toBe("First second")
@@ -524,12 +525,121 @@ test("appends live events without replacing history and updates rendered transcr
     expect(store.views["30"]!.events).toBe(history)
     expect(store.views["30"]!.historySeq).toBe("2")
     receive(chunk(3, "third "))
-    await flushPromises()
+    await vi.advanceTimersByTimeAsync(33)
     expect(store.views["30"]!.events.map(event => event.seq)).toEqual(["1", "2", "3", "4"])
     expect(store.views["30"]!.historySeq).toBe("4")
     expect(store.views["30"]!.snapshotSeq).toBe("4")
     expect(rendered.text()).toBe("First second third fourth")
   } finally { rendered.unmount() }
+})
+
+const textChunk = (seq: number, text: string) => agentEvent(seq, "acp", {
+  sessionId: "provider-session", update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text } },
+})
+function preview(streamId: string, baseSeq: string, offset: number, texts: string[]): AgentPreview {
+  return { sessionId: "30", streamId, baseSeq, offset, events: texts.map(text => {
+    const { seq: _seq, ...draft } = textChunk(0, text)
+    return draft
+  }) }
+}
+const receivePreview = (value: AgentPreview) => mock.notification({ method: "_deskfleet/session/preview", params: value })
+const transcriptText = (store: ReturnType<typeof useAgentSessionsStore>) => projectConversation(store.views["30"]!.events, store.views["30"]!.snapshot!)
+  .flatMap(entry => entry.kind === "message" ? entry.content.flatMap(block => block.type === "text" ? [block.text] : []) : []).join("")
+
+test("coalesces preview display without advancing durable cursors or requesting uncommitted history", async () => {
+  vi.useFakeTimers()
+  const store = useAgentSessionsStore(); await store.open("30")
+  mock.call.mockClear()
+  for (let offset = 0; offset < 1000; offset++) receivePreview(preview("stream", "0", offset, ["x"]))
+  expect(store.views["30"]!.events).toHaveLength(0)
+  await vi.advanceTimersByTimeAsync(33)
+  expect(transcriptText(store)).toBe("x".repeat(1000))
+  expect(store.views["30"]!.events).toHaveLength(1000)
+  expect(isReactive(store.views["30"]!.events[0])).toBe(false)
+  expect(store.views["30"]!).toMatchObject({ historySeq: "0", snapshotSeq: "0", snapshot: { session: { lastEventSeq: "0" } } })
+  expect(mock.call).not.toHaveBeenCalled()
+  receivePreview(preview("stream", "0", 0, ["x", "x"]))
+  await vi.advanceTimersByTimeAsync(33)
+  expect(store.views["30"]!.events).toHaveLength(1000)
+})
+
+test("committed chunks replace previews once and control events flush pending display immediately", async () => {
+  vi.useFakeTimers()
+  const store = useAgentSessionsStore(); await store.open("30")
+  receivePreview(preview("stream", "0", 0, ["Hello ", "world"]))
+  await vi.advanceTimersByTimeAsync(33)
+  const displayed = store.views["30"]!.events
+  const first = displayed[0]
+  receive(textChunk(1, "Hello "))
+  await vi.advanceTimersByTimeAsync(33)
+  expect(transcriptText(store)).toBe("Hello world")
+  expect(store.views["30"]!.events.map(event => event.seq)).toEqual(["1", "2"])
+  expect(store.views["30"]!.historySeq).toBe("1")
+  expect(store.views["30"]!.events).toBe(displayed)
+  expect(displayed[0]).toBe(first)
+  receive(textChunk(2, "world"))
+  receive(agentEvent(3, "permission", agentPermission()))
+  expect(transcriptText(store)).toBe("Hello world")
+  expect(store.views["30"]!.events.map(event => event.seq)).toEqual(["1", "2", "3"])
+  expect(store.views["30"]!.historySeq).toBe("3")
+  expect(store.views["30"]!.snapshot?.permissions).toHaveLength(1)
+  expect(store.views["30"]!.events).toBe(displayed)
+  await vi.advanceTimersByTimeAsync(33)
+  expect(store.views["30"]!.events).toHaveLength(3)
+})
+
+test("disconnect drops only volatile text and reconnect can reuse its uncommitted sequence", async () => {
+  vi.useFakeTimers()
+  const store = useAgentSessionsStore(); await store.open("30")
+  receive(textChunk(1, "Saved "))
+  receivePreview(preview("before-crash", "1", 0, ["lost"] ))
+  await vi.advanceTimersByTimeAsync(33)
+  expect(transcriptText(store)).toBe("Saved lost")
+  mock.state("error", "Disconnected")
+  expect(transcriptText(store)).toBe("Saved ")
+  expect(store.views["30"]!.historySeq).toBe("1")
+  receivePreview(preview("after-restart", "1", 0, ["replacement"]))
+  await vi.advanceTimersByTimeAsync(33)
+  expect(transcriptText(store)).toBe("Saved replacement")
+  receive(textChunk(2, "replacement"))
+  await vi.advanceTimersByTimeAsync(33)
+  expect(transcriptText(store)).toBe("Saved replacement")
+  expect(store.views["30"]!.historySeq).toBe("2")
+})
+
+test("closing with a buffered history gap does not reconnect or leave a display timer running", async () => {
+  vi.useFakeTimers()
+  const store = useAgentSessionsStore(); await store.open("30")
+  mock.call.mockClear()
+  receive(textChunk(2, "Committed after a gap"))
+  receivePreview(preview("stream", "2", 0, ["volatile"]))
+  store.closeTransport()
+  await vi.advanceTimersByTimeAsync(100)
+  expect(mock.call).not.toHaveBeenCalled()
+  expect(mock.close).toHaveBeenCalledOnce()
+  expect(store.views["30"]!.events.map(event => event.seq)).toEqual(["2"])
+  expect(store.views["30"]!.historySeq).toBe("0")
+})
+
+test("history loading finishes at the durable watermark while a preview tail is visible", async () => {
+  vi.useFakeTimers()
+  const snapshot = agentSnapshot(); snapshot.session.lastEventSeq = "1"
+  const history = deferred<AgentEvent[]>()
+  mock.call.mockImplementation(async (method: string) => {
+    if (method === "initialize") return {}
+    if (method === "_deskfleet/session/subscribe") return snapshot
+    if (method === "_deskfleet/session/history") return history.promise
+  })
+  const store = useAgentSessionsStore()
+  const opening = store.open("30")
+  await flushPromises()
+  receivePreview(preview("stream", "1", 0, ["live"]))
+  await vi.advanceTimersByTimeAsync(33)
+  history.resolve([textChunk(1, "Saved ")])
+  await opening
+  expect(transcriptText(store)).toBe("Saved live")
+  expect(store.views["30"]!).toMatchObject({ loading: false, error: null, historySeq: "1", snapshotSeq: "1" })
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/history")).toHaveLength(1)
 })
 
 test("merges snapshot, history pages and concurrent live events once without regressing snapshot state", async () => {

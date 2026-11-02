@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { setTimeout as delay } from "node:timers/promises"
 import {
   AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES,
-  type AgentActor, type AgentEvent, type AgentMethod, type AgentPermission, type AgentSnapshot,
+  type AgentActor, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot,
 } from "./agent-protocol.ts"
 
 export interface AgentChannelSessions {
@@ -11,6 +11,8 @@ export interface AgentChannelSessions {
   sessionAttachmentDirectory?(sessionId: string): Promise<string>
   handle(method: AgentMethod, params: unknown, actor: AgentActor): Promise<unknown>
   onEvent(listener: (event: AgentEvent) => void): () => void
+  onPreview?(listener: (preview: AgentPreview) => void): () => void
+  preview?(sessionId: string): AgentPreview | undefined
   watchGit?(sessionId: string, actor: AgentActor, listener: (error?: string) => void): Promise<() => void>
 }
 
@@ -50,6 +52,7 @@ export class AgentChannel {
   readonly #send: (bytes: Uint8Array) => Promise<void>
   readonly #onFailure: (error: unknown) => void
   readonly #unsubscribe: () => void
+  readonly #unsubscribePreview: (() => void) | undefined
   readonly #subscriptions = new Map<string, Subscription>()
   readonly #gitSubscriptions = new Map<string, GitSubscription>()
   readonly #permissionCalls = new Map<string, PermissionCall>()
@@ -61,6 +64,7 @@ export class AgentChannel {
   #requestBytes = 0
   #outgoing: Uint8Array[] = []
   #queuedBytes = 0
+  #writeScheduled: ReturnType<typeof setImmediate> | undefined
   #writing = false
   #initialized = false
   #closed = false
@@ -72,6 +76,9 @@ export class AgentChannel {
     this.#send = send
     this.#onFailure = onFailure
     this.#unsubscribe = sessions.onEvent(event => this.#event(event))
+    this.#unsubscribePreview = sessions.onPreview?.(preview => {
+      if (this.#subscriptions.get(preview.sessionId)?.ready) this.#preview(preview)
+    })
   }
 
   receive(data: Uint8Array, isString = false): void {
@@ -101,7 +108,10 @@ export class AgentChannel {
     if (this.#closed) return
     this.#closed = true
     this.#closing.abort()
+    clearImmediate(this.#writeScheduled)
+    this.#writeScheduled = undefined
     this.#unsubscribe()
+    this.#unsubscribePreview?.()
     for (const subscription of this.#gitSubscriptions.values()) subscription.stop?.()
     this.#gitSubscriptions.clear()
     this.#subscriptions.clear()
@@ -211,6 +221,8 @@ export class AgentChannel {
         }
         subscription.events = []
         subscription.ready = true
+        const preview = this.#sessions.preview?.(subscribing.sessionId)
+        if (preview) this.#preview(preview)
         const snapshot = result as AgentSnapshot
         for (const permission of snapshot.permissions) {
           if ((permissionChanges.get(permission.id) ?? permission.state) === "pending") this.#permission(permission)
@@ -279,6 +291,17 @@ export class AgentChannel {
     }
   }
 
+  #preview(preview: AgentPreview): void {
+    // A reconnect can replay five seconds of text. Keep each notification
+    // bounded like an ordinary event instead of encoding the whole tail once.
+    for (const [index, event] of preview.events.entries()) {
+      this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/preview", params: {
+        ...preview, offset: preview.offset + index, events: [event],
+      } })
+      if (this.#closed) return
+    }
+  }
+
   #permission(permission: AgentPermission): void {
     if (this.#closed) return
     for (const call of this.#permissionCalls.values()) {
@@ -326,43 +349,62 @@ export class AgentChannel {
     }
     this.#queuedBytes += bytes.byteLength
     this.#outgoing.push(bytes)
-    if (!this.#writing) void this.#write()
+    if (!this.#writing && !this.#writeScheduled) {
+      // Collect the current burst without adding a timer to interactive replies.
+      this.#writeScheduled = setImmediate(() => {
+        this.#writeScheduled = undefined
+        void this.#write()
+      })
+    }
+  }
+
+  #chunk(): Uint8Array {
+    const parts: Uint8Array[] = []
+    let bytes = 0
+    while (this.#outgoing.length && bytes < AGENT_CHUNK_BYTES) {
+      const message = this.#outgoing[0]!
+      const size = Math.min(message.byteLength, AGENT_CHUNK_BYTES - bytes)
+      parts.push(message.subarray(0, size))
+      bytes += size
+      if (size === message.byteLength) this.#outgoing.shift()
+      else this.#outgoing[0] = message.subarray(size)
+    }
+    return parts.length === 1 ? parts[0]! : Buffer.concat(parts, bytes)
   }
 
   async #write(): Promise<void> {
     this.#writing = true
     try {
       while (!this.#closed && this.#outgoing.length) {
-        const message = this.#outgoing.shift()!
-        for (let offset = 0; offset < message.byteLength && !this.#closed; offset += AGENT_CHUNK_BYTES) {
-          const chunk = message.subarray(offset, offset + AGENT_CHUNK_BYTES)
-          const deadline = Date.now() + SEND_TIMEOUT_MS
-          for (;;) {
-            let timer: ReturnType<typeof setTimeout> | undefined
-            const stopped = () => rejectStopped(new Error("ACP channel closed"))
-            let rejectStopped!: (error: Error) => void
-            try {
-              const stopping = new Promise<never>((_, reject) => { rejectStopped = reject })
-              this.#closing.signal.addEventListener("abort", stopped, { once: true })
-              await Promise.race([
-                this.#send(chunk),
-                stopping,
-                new Promise<never>((_, reject) => {
-                  timer = setTimeout(() => reject(new Error("ACP send buffer stalled")), Math.max(1, deadline - Date.now()))
-                }),
-              ])
-              break
-            } catch (error) {
-              if (!/backpressure|send buffer is full/i.test(errorMessage(error)) || Date.now() >= deadline) throw error
-              await delay(10, undefined, { signal: this.#closing.signal })
-              if (this.#closed) return
-            } finally {
-              clearTimeout(timer)
-              this.#closing.signal.removeEventListener("abort", stopped)
-            }
+        // NDJSON is a byte stream: a frame can contain several messages or part
+        // of one. Keep the same bytes in flight when retrying backpressure.
+        const chunk = this.#chunk()
+        const deadline = Date.now() + SEND_TIMEOUT_MS
+        for (;;) {
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const stopped = () => rejectStopped(new Error("ACP channel closed"))
+          let rejectStopped!: (error: Error) => void
+          try {
+            const stopping = new Promise<never>((_, reject) => { rejectStopped = reject })
+            this.#closing.signal.addEventListener("abort", stopped, { once: true })
+            await Promise.race([
+              this.#send(chunk),
+              stopping,
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error("ACP send buffer stalled")), Math.max(1, deadline - Date.now()))
+              }),
+            ])
+            break
+          } catch (error) {
+            if (!/backpressure|send buffer is full/i.test(errorMessage(error)) || Date.now() >= deadline) throw error
+            await delay(10, undefined, { signal: this.#closing.signal })
+            if (this.#closed) return
+          } finally {
+            clearTimeout(timer)
+            this.#closing.signal.removeEventListener("abort", stopped)
           }
         }
-        this.#queuedBytes = Math.max(0, this.#queuedBytes - message.byteLength)
+        this.#queuedBytes = Math.max(0, this.#queuedBytes - chunk.byteLength)
       }
     } catch (error) { this.#fail(error) }
     finally { this.#writing = false }

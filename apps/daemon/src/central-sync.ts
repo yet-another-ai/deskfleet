@@ -109,7 +109,7 @@ export class CentralSync {
     const { snapshot, receipts } = await this.#agents.journal.serial(sessionId, async () => ({
       snapshot: await this.#agents.journal.read(sessionId),
       receipts: await this.#agents.journal.commandsSince(sessionId, this.#commandCursors.get(sessionId) ?? "-1"),
-    }))
+    }), { flushStreaming: false })
     let cursor = this.#cursors.get(sessionId) ?? "0"
     let commandOffset = 0
     let first = true

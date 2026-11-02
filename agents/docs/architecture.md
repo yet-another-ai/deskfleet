@@ -1052,8 +1052,16 @@ session names. The daemon retains unsynchronized events during server outages.
 Synchronization must tolerate retries and distinguish incomplete history from a
 complete recording. The [Agent Session persistence design](agent-sessions.md)
 extends the SQLite/SeaORM catalog with command audit and a per-Session sequence.
-The daemon commits events before publishing them; the server synchronizes a
-qualified Session identity and completeness watermark. The owning daemon remains
+The daemon commits journal events before publishing them; the server synchronizes a
+qualified Session identity and completeness watermark. Streaming Agent text and
+thoughts also have a separate, transient preview feed for immediate display.
+Their original events accumulate in a time window of at most five seconds,
+then commit together; subsequent domain operations and non-text ACP updates
+flush the window first. Preview offsets never advance durable history cursors.
+An abnormal daemon exit can lose the uncommitted tail. Reconnecting viewers
+discard their old preview and obtain the current tail after their authorized
+snapshot, while central synchronization reads only committed history.
+The owning daemon remains
 the single writer even when multiple clients operate concurrently.
 Central event pages and their completeness watermark are read in one SQL
 statement so concurrent synchronization cannot mix different snapshots.

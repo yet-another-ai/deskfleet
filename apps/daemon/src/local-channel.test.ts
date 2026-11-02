@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { randomUUID } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -11,6 +12,9 @@ import { startControlServer } from "./control-server.ts"
 import type { PeerAuthorization } from "./central-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
 import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
+import type { AgentClient, AgentProvider } from "./agents/acp.ts"
+import type { AgentEvent, AgentEventDraft, AgentPreview, AgentSnapshot } from "./agent-protocol.ts"
+import { AgentPreviews } from "../../../packages/components/src/services/agent-preview.ts"
 
 type LocalMessage = Extract<DaemonEvent, { kind: "localChannelMessage" }>
 type NativeEvent = Awaited<ReturnType<NativeTerminal["nextEvent"]>>
@@ -39,7 +43,7 @@ class EchoTerminal {
   async close(): Promise<void> { this.closed = true; this.emit(null) }
 }
 
-async function fixture(context: TestContext) {
+async function fixture(context: TestContext, agentProvider?: AgentProvider) {
   const directory = await mkdtemp(join(tmpdir(), "df-local-channel-"))
   const replies = new Map<string, { result?: unknown; error?: { message: string } }>()
   let socket!: ControlSocket
@@ -68,7 +72,7 @@ async function fixture(context: TestContext) {
   const daemon = await startControlServer({
     create: async () => { nativePeers++; throw new Error("WebRTC is disabled in this test") },
     close: async () => { throw new Error("Local channels must not close native peers") },
-  }, directory, async () => ({ displays: [], audio: false }), terminals, undefined, undefined, undefined, {
+  }, directory, async () => ({ displays: [], audio: false }), terminals, undefined, undefined, agentProvider, {
     agentQuotas: new TestAgentQuotas(), openCatalog: (_path, name) => openInMemoryCatalog(name),
   })
   const clients: DaemonClient[] = []
@@ -107,16 +111,126 @@ async function fixture(context: TestContext) {
     }, () => {}, directory)
     clients.push(client)
     const messages = (peerId: string): LocalMessage[] => events.filter((event): event is LocalMessage => event.kind === "localChannelMessage" && event.peerId === peerId)
-    const packets = (peerId: string): Record<string, unknown>[] => messages(peerId).flatMap(event =>
-      Buffer.from(event.data, event.isString ? "utf8" : "base64").toString().trim().split("\n").map(line => JSON.parse(line) as Record<string, unknown>))
+    const packets = (peerId: string): Record<string, unknown>[] => {
+      const frames = messages(peerId)
+      if (frames[0]?.isString) return frames.map(event => JSON.parse(event.data) as Record<string, unknown>)
+      const bytes = Buffer.concat(frames.map(event => Buffer.from(event.data, "base64")))
+      // Agent frames can end inside a JSON message or a UTF-8 character.
+      const complete = bytes.subarray(0, bytes.lastIndexOf(10) + 1).toString().trim()
+      return complete ? complete.split("\n").map(line => JSON.parse(line) as Record<string, unknown>) : []
+    }
     const send = (peerId: string, message: unknown, isString = false) => {
       const bytes = Buffer.from(JSON.stringify(message) + (isString ? "" : "\n"))
       return client.call("localSend", { peerId, data: bytes.toString(isString ? "utf8" : "base64"), isString })
     }
     return { client, events, messages, packets, send }
   }
-  return { daemon, central, prepare, connect, native, socket, nativePeers: () => nativePeers }
+  return { daemon, central, prepare, connect, native, socket, directory, nativePeers: () => nativePeers }
 }
+
+test("local terminal opens during fast Agent previews and durable events replace the preview exactly once", { timeout: 15_000 }, async context => {
+  let providerClient!: AgentClient
+  let promptStarted = false
+  let finishPrompt!: () => void
+  const prompted = new Promise<void>(resolve => { finishPrompt = resolve })
+  let streaming = true
+  let producing: Promise<void> | undefined
+  context.after(async () => { streaming = false; await producing })
+  const provider: AgentProvider = {
+    id: "fixture",
+    async connect(_config, client) {
+      providerClient = client
+      return {
+        initialization: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true } } },
+        newSession: async () => ({ sessionId: "provider-session" }),
+        resume: async () => ({}), setConfigOption: async () => ({ configOptions: [] }),
+        prompt: async () => { promptStarted = true; await prompted; return { stopReason: "end_turn" } },
+        steer: async () => ({ outcome: "inactive" }), cancel: async () => { finishPrompt() }, close: async () => { finishPrompt() },
+      }
+    },
+  }
+  const f = await fixture(context, provider)
+  const configured = await f.central("providerCreate", { provider: { template: "codex", name: "Fixture", env: {} } }) as { id: string }
+  const workspace = await f.central("workspaceCreate", { name: "Streaming", directories: [{ path: f.directory }] }) as { id: string }
+  const snapshot = await f.central("_deskfleet/session/create", {
+    operationId: randomUUID(), workspaceId: workspace.id, provider: configured.id, context: "directory",
+  }) as AgentSnapshot
+  assert.equal(snapshot.session.lifecycle, "ready")
+  const sessionId = snapshot.session.id
+  const agent = await f.connect(), terminal = await f.connect()
+  await f.prepare("streaming-agent", "agent")
+  await agent.client.call("localOpen", { peerId: "streaming-agent", token })
+  const rpc = (id: number, method: string, params: unknown = {}) => agent.send("streaming-agent", { jsonrpc: "2.0", id, method, params })
+  await rpc(1, "initialize", { protocolVersion: 1 })
+  await rpc(2, "_deskfleet/session/subscribe", { sessionId })
+  await until(() => agent.packets("streaming-agent").some(packet => packet.id === 2))
+  await rpc(3, "_deskfleet/input/submit", {
+    sessionId, operationId: randomUUID(), content: [{ type: "text", text: "Stream thoughts" }], delivery: "backlog",
+  })
+  await until(() => promptStarted)
+  const chunks: string[] = []
+  producing = (async () => {
+    while (streaming || chunks.length < 1_024) {
+      const text = `思考 ${chunks.length} 🌍\n`
+      chunks.push(text)
+      await providerClient.onUpdate({ sessionId: "provider-session", update: {
+        sessionUpdate: "agent_thought_chunk", content: { type: "text", text },
+      } })
+      if (chunks.length % 32 === 0) await delay(1)
+    }
+  })()
+  await until(() => agent.packets("streaming-agent").some(packet => packet.method === "_deskfleet/session/preview"))
+  const beforeTerminal = chunks.length
+  await f.central("terminalDial", { terminalId: "during-stream", mode: "create", cols: 80, rows: 24 })
+  await f.prepare("streaming-terminal", "terminal")
+  await terminal.client.call("localOpen", { peerId: "streaming-terminal", token })
+  await terminal.send("streaming-terminal", { id: 1, method: "attach", params: { sessionId: "during-stream" } }, true)
+  await until(() => terminal.packets("streaming-terminal").some(packet => packet.id === 1))
+  const echo = "terminal remains interactive 中文\n"
+  await terminal.send("streaming-terminal", { id: 2, method: "input", params: {
+    sessionId: "during-stream", data: Buffer.from(echo).toString("base64"),
+  } }, true)
+  const output = () => terminal.packets("streaming-terminal").flatMap(packet => {
+    const event = packet.event as { kind?: string; data?: string }
+    return event?.kind === "output" ? [Buffer.from(event.data!, "base64")] : []
+  })
+  await until(() => Buffer.concat(output()).toString() === echo)
+  assert.ok(chunks.length > beforeTerminal, "Agent continues producing while the terminal opens and echoes")
+  streaming = false
+  await producing
+  finishPrompt()
+  await until(() => agent.packets("streaming-agent").some(packet => {
+    const event = packet.params as AgentEvent | undefined
+    return packet.method === "_deskfleet/session/event" && event?.kind === "turn" && "state" in event.payload && event.payload.state === "completed"
+  }))
+
+  const text = (events: (AgentEvent | AgentEventDraft)[]) => events.map(event => {
+    if (event.kind !== "acp" || !("update" in event.payload)) return ""
+    const update = event.payload.update
+    return update.sessionUpdate === "agent_thought_chunk" && update.content.type === "text" ? update.content.text : ""
+  }).join("")
+  const packets = agent.packets("streaming-agent")
+  const previews = packets.filter(packet => packet.method === "_deskfleet/session/preview").map(packet => packet.params as AgentPreview)
+  const offsets = new Map<string, number>()
+  for (const preview of previews) {
+    assert.equal(preview.offset, offsets.get(preview.streamId) ?? 0)
+    offsets.set(preview.streamId, preview.offset + preview.events.length)
+  }
+  assert.ok(packets.findIndex(packet => packet.method === "_deskfleet/session/preview")
+    < packets.findIndex(packet => packet.method === "_deskfleet/session/event" && (packet.params as AgentEvent).kind === "acp"))
+  assert.equal(text(previews.flatMap(preview => preview.events)), chunks.join(""))
+  const durable = packets.filter(packet => packet.method === "_deskfleet/session/event").map(packet => packet.params as AgentEvent)
+  assert.equal(new Set(durable.map(event => event.seq)).size, durable.length)
+  assert.equal(text(durable), chunks.join(""))
+  const display = new AgentPreviews()
+  for (const preview of previews) display.receive(preview)
+  const through = durable.at(-1)!.seq
+  display.committed(sessionId, through)
+  assert.equal(text([...durable, ...display.after(sessionId, through)]), chunks.join(""))
+  assert.equal(display.has(sessionId), false)
+  assert.ok([...agent.events, ...terminal.events].every(event => event.kind !== "localChannelClosed"))
+  assert.equal(f.nativePeers(), 0)
+})
 
 test("authenticated IPC carries Agent and terminal messages with WebRTC disabled and retains shells across reconnect", { timeout: 15_000 }, async context => {
   const f = await fixture(context)

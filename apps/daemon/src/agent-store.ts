@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto"
 import type {
   AgentActor, AgentCommand, AgentCommit, AgentEvent, AgentEventDraft,
-  AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn,
+  AgentPreview, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn,
 } from "./agent-protocol.ts"
 
 export interface AgentPersistence {
@@ -21,6 +22,13 @@ export interface AgentPersistence {
 export const timestamp = () => new Date().toISOString()
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
 
+const STREAM_COMMIT_MS = 5_000
+interface PendingStream {
+  preview: AgentPreview
+  session: AgentSessionRecord
+  timer: ReturnType<typeof setTimeout>
+}
+
 export function requireActiveSession(session: AgentSessionRecord): void {
   if (session.archiveState !== "active") throw new Error("Restore this Session before starting or changing its execution")
 }
@@ -30,6 +38,8 @@ export class AgentJournal {
   readonly native: AgentPersistence
   readonly #queues = new Map<string, Promise<unknown>>()
   readonly #listeners = new Set<(event: AgentEvent) => void>()
+  readonly #previewListeners = new Set<(preview: AgentPreview) => void>()
+  readonly #streams = new Map<string, PendingStream>()
   identity!: { originId: string; machineId: string }
 
   constructor(native: AgentPersistence) { this.native = native }
@@ -73,8 +83,11 @@ export class AgentJournal {
   async history(id: string, afterSeq: string, limit = 100): Promise<AgentEvent[]> {
     return JSON.parse(await this.native.agentHistory(id, afterSeq, Math.max(1, Math.min(limit, 200))))
   }
-  serial<T>(id: string, action: () => Promise<T>): Promise<T> {
-    const running = (this.#queues.get(id) ?? Promise.resolve()).then(action)
+  serial<T>(id: string, action: () => Promise<T>, options: { flushStreaming?: boolean } = {}): Promise<T> {
+    const running = (this.#queues.get(id) ?? Promise.resolve()).then(async () => {
+      if (options.flushStreaming !== false) await this.#flushStream(id)
+      return action()
+    })
     const settled = running.catch(() => {})
     this.#queues.set(id, settled)
     void settled.then(() => {
@@ -85,6 +98,45 @@ export class AgentJournal {
   onEvent(listener: (event: AgentEvent) => void): () => void {
     this.#listeners.add(listener)
     return () => this.#listeners.delete(listener)
+  }
+  onPreview(listener: (preview: AgentPreview) => void): () => void {
+    this.#previewListeners.add(listener)
+    return () => this.#previewListeners.delete(listener)
+  }
+  preview(id: string): AgentPreview | undefined {
+    const preview = this.#streams.get(id)?.preview
+    return preview && { ...preview, events: preview.events.slice() }
+  }
+  /** Display text immediately, then persist it at most five seconds after the first chunk. */
+  stream(event: AgentEventDraft, failed: (error: unknown) => void): Promise<void> {
+    return this.serial(event.sessionId, async () => {
+      let pending = this.#streams.get(event.sessionId)
+      if (!pending) {
+        const session = await this.session(event.sessionId)
+        const timer = setTimeout(() => {
+          void this.serial(event.sessionId, async () => {}).catch(failed)
+        }, STREAM_COMMIT_MS)
+        timer.unref()
+        pending = {
+          session, timer,
+          preview: { sessionId: event.sessionId, streamId: randomUUID(), baseSeq: session.lastEventSeq, offset: 0, events: [] },
+        }
+        this.#streams.set(event.sessionId, pending)
+      }
+      const offset = pending.preview.events.length
+      pending.preview.events.push(event)
+      const preview = { ...pending.preview, offset, events: [event] }
+      for (const listener of this.#previewListeners) listener(preview)
+    }, { flushStreaming: false })
+  }
+  async #flushStream(id: string): Promise<void> {
+    const pending = this.#streams.get(id)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    // Keep the tail available until persistence succeeds. A failed write must
+    // not turn already displayed text into an acknowledged history cursor.
+    await this.commit(pending.session, { events: pending.preview.events })
+    this.#streams.delete(id)
   }
   event(sessionId: string, kind: AgentEvent["kind"], payload: AgentEvent["payload"], context: Partial<AgentEventDraft> = {}): AgentEventDraft {
     return { sessionId, kind, payload, createdAt: timestamp(), ...context }
