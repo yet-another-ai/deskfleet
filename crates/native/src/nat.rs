@@ -12,7 +12,10 @@ use rtc::stun::{
     message::{BINDING_ERROR, BINDING_REQUEST, BINDING_SUCCESS, Getter, Message, TransactionId},
     xoraddr::XorMappedAddress,
 };
-use tokio::{net::UdpSocket, time::timeout};
+use tokio::{
+    net::UdpSocket,
+    time::{sleep, timeout},
+};
 
 #[cfg(test)]
 mod tests;
@@ -67,7 +70,7 @@ pub enum NatTestError {
     Request(String),
 }
 
-/// Test this process's current IPv4 route to a user-selected STUN server.
+/// Test this process's current IPv4 route to a caller-selected STUN server.
 ///
 /// The server must support RFC 5780 to identify mapping and filtering behavior.
 /// Results describe these sockets at test time, not guaranteed peer connectivity.
@@ -172,6 +175,13 @@ struct UdpProbe {
     retry_delays: [Duration; 3],
 }
 
+fn is_port_unreachable(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionRefused
+    )
+}
+
 #[async_trait::async_trait]
 impl Probe for UdpProbe {
     async fn request(
@@ -189,10 +199,24 @@ impl Probe for UdpProbe {
         }
         let mut buffer = [0_u8; 2048];
         for delay in self.retry_delays {
-            self.socket.send_to(&request.raw, destination).await?;
+            if let Err(error) = self.socket.send_to(&request.raw, destination).await {
+                if !is_port_unreachable(&error) {
+                    return Err(error.into());
+                }
+                // A queued ICMP error can surface on the next send. Keep the
+                // normal retry schedule without interpreting it as a NAT type.
+                sleep(delay).await;
+                continue;
+            }
             let received = timeout(delay, async {
                 loop {
-                    let (length, sender) = self.socket.recv_from(&mut buffer).await?;
+                    let (length, sender) = match self.socket.recv_from(&mut buffer).await {
+                        Ok(datagram) => datagram,
+                        // Windows reports ICMP Port Unreachable as ConnectionReset.
+                        // It is not a STUN response; keep this attempt's deadline.
+                        Err(error) if is_port_unreachable(&error) => continue,
+                        Err(error) => return Err(error),
+                    };
                     if let Some(response) = read_response(
                         &buffer[..length],
                         sender,

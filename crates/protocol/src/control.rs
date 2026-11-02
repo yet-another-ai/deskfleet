@@ -22,6 +22,14 @@ pub struct SiteSettings {
     pub privacy_terms_url: String,
 }
 
+/// Deployment-owned STUN endpoints, in the same order advertised on peer grants.
+/// No relay credentials or Team-specific configuration are included.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkConfiguration {
+    pub stun_urls: Vec<String>,
+}
+
 /// Administrator-managed TURN endpoints; credentials remain deployment configuration.
 /// `allow_team_servers` lets eligible Teams replace these endpoints with their own.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -233,6 +241,7 @@ pub fn typescript() -> String {
     let declarations = [
         User::decl(&config),
         SiteSettings::decl(&config),
+        NetworkConfiguration::decl(&config),
         TurnSettings::decl(&config),
         TeamTurnAvailability::decl(&config),
         TeamTurnSettings::decl(&config),

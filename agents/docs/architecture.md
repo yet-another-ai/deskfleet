@@ -555,9 +555,12 @@ Malformed or invalid saved desktop appearance uses defaults without rewriting
 the file until a successful edit. Filesystem read errors remain visible errors.
 
 Settings → Developer settings exposes client-local network diagnostics. Its NAT
-test probes a user-selected IPv4 STUN server from the computer running Electron,
+test uses the current DeskFleet installation's configured STUN service from the computer running Electron,
 independently of the selected Machine and the hosted daemon. The sandboxed
-renderer invokes a dedicated, trusted-main-frame IPC capability; reusable UDP
+renderer invokes a parameterless, trusted-main-frame IPC capability. Electron
+reads deployment-owned STUN URLs from authenticated `GET /api/network-configuration`
+and selects the first IPv4 UDP-compatible `stun:` endpoint in deployment order.
+It does not create a peer grant or accept a renderer-supplied server. Reusable UDP
 probing lives in `deskfleet-native` behind a thin async napi-rs binding. Tests run
 only on request and have bounded lifetimes. Results are transient and are not
 sent to the backend. The Web client explains that this test requires the desktop

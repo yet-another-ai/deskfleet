@@ -2,7 +2,7 @@
 import type { NatTestResult } from "@deskfleet/client/network-diagnostics"
 import { LoaderCircle, Network } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
-import { computed, ref, useId } from "vue"
+import { computed, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
@@ -10,11 +10,10 @@ import UiButton from "../common/UiButton.vue"
 const { t } = useI18n()
 const id = useId()
 const diagnostics = usePlatformClient().networkDiagnostics
-const server = ref("")
 const { state: result, isLoading: testing, error, executeImmediate } = useAsyncState<NatTestResult | null, []>(
   async () => {
     if (!diagnostics) throw new Error(t("developerSettings.desktopRequired"))
-    return diagnostics.testNat(server.value.trim())
+    return diagnostics.testNat()
   },
   null,
   { immediate: false },
@@ -32,7 +31,7 @@ const natType = computed(() => {
 const errorMessage = computed(() => error.value instanceof Error ? error.value.message : String(error.value))
 
 function testNat(): void {
-  if (diagnostics && server.value.trim() && !testing.value) void executeImmediate()
+  if (diagnostics && !testing.value) void executeImmediate()
 }
 </script>
 
@@ -46,30 +45,16 @@ function testNat(): void {
     <p class="m-0 mb-4 text-[13px] text-ui-text-muted">{{ t("developerSettings.description") }}</p>
     <p v-if="!diagnostics" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("developerSettings.desktopRequired") }}</p>
     <template v-else>
-      <form class="ui-card flex flex-col gap-3 p-4" :aria-labelledby="`${id}-title`" @submit.prevent="testNat">
-        <label :for="`${id}-server`" class="text-sm font-medium">{{ t("developerSettings.server") }}</label>
-        <input
-          :id="`${id}-server`"
-          v-model="server"
-          class="ui-input min-w-0 w-full font-mono text-sm"
-          name="nat-stun-server"
-          placeholder="stun.example.com:3478"
-          :aria-describedby="`${id}-server-help`"
-          :disabled="testing"
-          required
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <p :id="`${id}-server-help`" class="m-0 text-[13px] text-ui-text-muted">{{ t("developerSettings.serverHelp") }}</p>
+      <div class="ui-card flex flex-col gap-3 p-4">
         <div class="flex flex-wrap items-center gap-3">
-          <UiButton variant="primary" type="submit" :disabled="testing || !server.trim()">
+          <UiButton variant="primary" type="button" :disabled="testing" @click="testNat">
             <LoaderCircle v-if="testing" :size="14" class="animate-spin" aria-hidden="true" />
             {{ t(testing ? "developerSettings.testing" : "developerSettings.test") }}
           </UiButton>
           <span v-if="testing" role="status" class="text-[13px] text-ui-text-muted">{{ t("developerSettings.testingHelp") }}</span>
         </div>
         <p v-if="error" role="alert" class="m-0 break-words text-sm text-ui-danger">{{ errorMessage }}</p>
-      </form>
+      </div>
       <div v-if="result" class="ui-card mt-4 p-4" role="status" aria-live="polite">
         <p class="m-0 mb-1 text-xs text-ui-text-muted">{{ t("developerSettings.result") }}</p>
         <h3 class="m-0 text-base font-semibold">{{ t(`developerSettings.types.${natType}`) }}</h3>

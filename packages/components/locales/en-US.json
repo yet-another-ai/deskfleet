@@ -72,13 +72,13 @@
   "developerSettings": {
     "title": "Developer settings",
     "natTitle": "NAT network type",
-    "description": "Test the IPv4 UDP network used by this computer to help diagnose direct connections.",
+    "description": "Test this computer's IPv4 UDP network using the STUN service configured for this DeskFleet installation.",
     "desktopRequired": "Open Developer settings in the desktop app to test this computer's NAT type. Browsers cannot perform the required UDP probes.",
     "server": "STUN server",
-    "serverHelp": "Enter a hostname or IPv4 address and port. Full NAT detection requires a server that supports RFC 5780 behavior discovery.",
+    "noStunServer": "This DeskFleet service has no IPv4 UDP STUN server configured. Contact the service administrator.",
     "test": "Test NAT type",
     "testing": "Testing…",
-    "testingHelp": "Checking network behavior. This can take up to 30 seconds.",
+    "testingHelp": "Checking network behavior. This can take up to 35 seconds.",
     "result": "Detected NAT type",
     "mapping": "Mapping behavior",
     "filtering": "Filtering behavior",
@@ -105,9 +105,9 @@
     },
     "status": {
       "complete": "The network behavior checks completed. The NAT type summarizes the mapping and filtering behavior below.",
-      "server-unsupported": "The STUN server responded but does not support the required behavior discovery. Try an RFC 5780 server to determine the NAT type.",
-      "inconclusive": "Some probes could not be verified. Review the available results or try another RFC 5780 server.",
-      "udp-unreachable": "No STUN response was received. Check the server address and network, then retry. This alone does not establish that UDP is blocked."
+      "server-unsupported": "The configured STUN service responded but does not support the required behavior discovery. The available results are shown below, but the full NAT type could not be determined.",
+      "inconclusive": "Some probes could not be verified. Review the available results below or retry the test.",
+      "udp-unreachable": "No response was received from the configured STUN service. Check your network, then retry. This alone does not establish that UDP is blocked."
     }
   },
   "permissionsSettings": {

@@ -28,8 +28,7 @@ function render(api?: NetworkDiagnosticsApi) {
 }
 
 async function submit(wrapper: VueWrapper) {
-  await wrapper.get("input").setValue("  stun.example.com:3478  ")
-  await wrapper.get("form").trigger("submit")
+  await wrapper.get("button").trigger("click")
   await flushPromises()
 }
 
@@ -39,25 +38,23 @@ afterEach(() => {
   i18n.global.locale.value = "en-US"
 })
 
-test("starts only on request, trims the server, and prevents duplicate probes while running", async () => {
+test("starts only on click, uses the configured service, and prevents duplicate probes while running", async () => {
   let complete!: (value: NatTestResult) => void
   const testNat = vi.fn(() => new Promise<NatTestResult>(resolve => { complete = resolve }))
   const wrapper = render({ testNat })
   expect(testNat).not.toHaveBeenCalled()
-  expect(wrapper.get("button").attributes("disabled")).toBeDefined()
-  await wrapper.get("input").setValue("   ")
-  await wrapper.get("form").trigger("submit")
-  expect(testNat).not.toHaveBeenCalled()
+  expect(wrapper.get("button").attributes("disabled")).toBeUndefined()
+  expect(wrapper.find("input").exists()).toBe(false)
   await submit(wrapper)
-  expect(testNat).toHaveBeenCalledExactlyOnceWith("stun.example.com:3478")
+  expect(testNat).toHaveBeenCalledExactlyOnceWith()
   expect(wrapper.get("button").attributes("disabled")).toBeDefined()
-  expect(wrapper.get("input").attributes("disabled")).toBeDefined()
-  expect(wrapper.get('[role="status"]').text()).toContain("30 seconds")
-  await wrapper.get("form").trigger("submit")
+  expect(wrapper.get('[role="status"]').text()).toContain("35 seconds")
+  await wrapper.get("button").trigger("click")
   expect(testNat).toHaveBeenCalledTimes(1)
   complete(fullCone)
   await flushPromises()
   expect(wrapper.get("h3").text()).toBe("Full-cone NAT")
+  expect(wrapper.text()).toContain(fullCone.server)
   expect(wrapper.text()).toContain(fullCone.publicAddress)
   expect(wrapper.get("button").attributes("disabled")).toBeUndefined()
 })
@@ -68,13 +65,13 @@ test("clears the previous result on retry and recovers after a failed probe", as
   await submit(wrapper)
   expect(wrapper.find("h3").exists()).toBe(true)
   testNat.mockRejectedValueOnce(new Error("STUN hostname could not be resolved"))
-  await wrapper.get("form").trigger("submit")
+  await wrapper.get("button").trigger("click")
   await flushPromises()
   expect(wrapper.find("h3").exists()).toBe(false)
   expect(wrapper.get('[role="alert"]').text()).toBe("STUN hostname could not be resolved")
   expect(wrapper.get("button").attributes("disabled")).toBeUndefined()
   testNat.mockResolvedValueOnce(fullCone)
-  await wrapper.get("form").trigger("submit")
+  await wrapper.get("button").trigger("click")
   await flushPromises()
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   expect(wrapper.get("h3").text()).toBe("Full-cone NAT")
@@ -110,7 +107,7 @@ test.each([
 test("shows the desktop requirement when the host has no native diagnostics", () => {
   const wrapper = render()
   expect(wrapper.text()).toContain("Browsers cannot perform the required UDP probes")
-  expect(wrapper.find("form").exists()).toBe(false)
+  expect(wrapper.find("button").exists()).toBe(false)
 })
 
 test.each([

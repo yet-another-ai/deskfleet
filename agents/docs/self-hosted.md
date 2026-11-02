@@ -493,9 +493,15 @@ does not allocate them and does not have a port-range variable.
 ### NAT diagnostics
 
 Desktop **Settings → Developer settings → NAT network type** tests the network
-of the computer running the app. Enter a STUN server as `hostname:port`, for
-example `stun.example.com:3478`, then start the test. There is no public-server
-default, and this diagnostic does not change the ICE servers advertised to peers.
+of the computer running the app. Click **Test NAT type**; the app automatically
+uses the current installation's `DESKFLEET_STUN_URLS`, the same deployment-owned
+STUN list advertised to peers. No address input or separate public-server default
+is offered. The authenticated `GET /api/network-configuration` endpoint returns
+this ordered list without TURN credentials. Electron selects the first `stun:`
+hostname or IPv4 endpoint with UDP transport; an omitted port means 3478.
+TLS/TCP and IPv6-literal endpoints cannot be used by this IPv4 UDP diagnostic.
+If no compatible endpoint is configured, the page asks users to contact the
+service administrator. The diagnostic does not modify the deployment's ICE list.
 
 Full IPv4 UDP mapping and filtering discovery requires a server implementing
 [RFC 5780](https://www.rfc-editor.org/rfc/rfc5780), with two externally reachable
@@ -507,7 +513,8 @@ response are shown separately; no response alone does not prove UDP is blocked.
 The test reports the observed mapping and filtering behaviors, a conventional
 NAT classification when available, local/public endpoints, and elapsed time.
 Filtering runs before alternate-destination mapping probes so those probes do
-not open the filters being measured. Each test finishes within 30 seconds. The
+not open the filters being measured. Configuration retrieval has a 5-second
+timeout, and the native probes finish within 30 seconds. The
 result describes one IPv4 UDP path at that time; it does not guarantee that a
 particular peer can connect directly. Web clients show a desktop-app requirement.
 

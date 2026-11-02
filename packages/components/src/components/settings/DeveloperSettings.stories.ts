@@ -3,6 +3,7 @@ import { getClient } from "@deskfleet/client/platform"
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import { nextTick, provide } from "vue"
 import { platformClientKey } from "../../composables/usePlatformClient.ts"
+import { i18n } from "../../i18n/index.ts"
 import DeveloperSettings from "./DeveloperSettings.vue"
 
 const fullCone: NatTestResult = {
@@ -31,11 +32,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const runTest: Story["play"] = async ({ canvasElement }) => {
-  const input = canvasElement.querySelector("input")!
-  input.value = "stun.example.com:3478"
-  input.dispatchEvent(new Event("input", { bubbles: true }))
-  await nextTick()
-  canvasElement.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+  canvasElement.querySelector("button")!.click()
   await nextTick()
 }
 
@@ -51,4 +48,8 @@ export const UnsupportedServer: Story = {
   play: runTest,
 }
 export const Failed: Story = { args: { api: { testNat: async () => { throw new Error("STUN hostname could not be resolved") } } }, play: runTest }
+export const NoStunServer: Story = {
+  args: { api: { testNat: async () => { throw new Error(i18n.global.t("developerSettings.noStunServer")) } } },
+  play: runTest,
+}
 export const Browser: Story = { args: { api: undefined } }

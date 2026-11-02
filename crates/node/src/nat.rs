@@ -42,7 +42,7 @@ pub struct NatTestResult {
     pub duration_ms: u32,
 }
 
-/// Discover IPv4 NAT behavior using a user-selected RFC 5780 STUN host:port.
+/// Discover IPv4 NAT behavior using a configured RFC 5780 STUN host:port.
 #[napi]
 pub async fn test_nat(server: String) -> Result<NatTestResult> {
     let result = nat::test_nat(&server).await.map_err(native_error)?;

@@ -33,6 +33,34 @@ test("exchanges the callback code with its client verifier and exposes account d
   expect(f.persist).toHaveBeenCalledWith(expect.objectContaining({ token: "new-token" }))
 })
 
+test("loads deployment STUN configuration without creating a peer and preserves URL order", async () => {
+  const f = setup()
+  const configuration = { stunUrls: ["stun:primary.example:3478", "stuns:secure.example:5349", "stun:secondary.example:3478"] }
+  f.responses.push(configuration)
+  expect(await f.client.networkConfiguration()).toEqual(configuration)
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/network-configuration", expect.objectContaining({
+    method: "GET", headers: { Authorization: "Bearer application-token" }, signal: expect.any(AbortSignal),
+  }))
+})
+
+test("bounds network configuration fetch to five seconds and propagates cancellation", async () => {
+  const controller = new AbortController()
+  const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal)
+  const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => new Promise((_resolve, reject) => {
+    init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true })
+  }))
+  const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "application-token" }, persist: async () => {}, authorize: async () => {}, fetch })
+  clients.push(client)
+  try {
+    const result = client.networkConfiguration()
+    const rejected = expect(result).rejects.toBeInstanceOf(CentralRequestError)
+    expect(timeout).toHaveBeenCalledExactlyOnceWith(5_000)
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({ signal: controller.signal }))
+    controller.abort(new DOMException("Configuration request timed out", "TimeoutError"))
+    await rejected
+  } finally { timeout.mockRestore() }
+})
+
 test("authenticates the WebSocket in its first message and reports signaling loss without fabricating peer revocation", async () => {
   vi.useFakeTimers()
   const f = setup(); const events = vi.fn()

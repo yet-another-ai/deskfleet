@@ -72,13 +72,13 @@
   "developerSettings": {
     "title": "开发者设置",
     "natTitle": "NAT 网络类型",
-    "description": "检测本机使用的 IPv4 UDP 网络，帮助排查点对点直连问题。",
+    "description": "使用当前 DeskFleet 服务配置的 STUN 服务，检测本机的 IPv4 UDP 网络。",
     "desktopRequired": "请在桌面应用的开发者设置中检测本机 NAT 类型。浏览器无法执行所需的 UDP 探测。",
     "server": "STUN 服务器",
-    "serverHelp": "输入主机名或 IPv4 地址及端口。完整检测 NAT 类型需要服务器支持 RFC 5780 行为发现。",
+    "noStunServer": "当前 DeskFleet 服务未配置 IPv4 UDP STUN 服务器，请联系服务管理员。",
     "test": "检测 NAT 类型",
     "testing": "正在检测…",
-    "testingHelp": "正在检查网络行为，最多需要 30 秒。",
+    "testingHelp": "正在检查网络行为，最多需要 35 秒。",
     "result": "检测到的 NAT 类型",
     "mapping": "映射行为",
     "filtering": "过滤行为",
@@ -105,9 +105,9 @@
     },
     "status": {
       "complete": "网络行为检测已完成。NAT 类型由下方的映射和过滤行为归纳得出。",
-      "server-unsupported": "STUN 服务器已响应，但不支持所需的行为发现。请使用支持 RFC 5780 的服务器来确定 NAT 类型。",
-      "inconclusive": "部分探测未能确认。可以查看已有结果，或尝试其他支持 RFC 5780 的服务器。",
-      "udp-unreachable": "未收到 STUN 响应。请检查服务器地址和网络后重试；仅凭这一结果无法确定 UDP 被阻止。"
+      "server-unsupported": "已配置的 STUN 服务已响应，但不支持所需的行为发现。下方展示已有结果，完整 NAT 类型暂时无法确定。",
+      "inconclusive": "部分探测未能确认，可以查看下方已有结果，或重新检测。",
+      "udp-unreachable": "未收到已配置的 STUN 服务的响应。请检查网络后重试；仅凭这一结果无法确定 UDP 被阻止。"
     }
   },
   "permissionsSettings": {

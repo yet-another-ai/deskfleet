@@ -461,8 +461,11 @@ test.each([
   expect(settingsLinks().map(link => link.attributes("href"))).toEqual([
     "#/settings/preferences", "#/settings/appearance", "#/settings/notifications", "#/settings/github",
     ...(hasMachine ? ["#/settings/agents", "#/settings/mcp-servers"] : []),
-    "#/settings/about",
+    "#/settings/developer", "#/settings/about",
   ])
+  await navItem("Developer settings").trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Developer settings"))
+  expect(router.currentRoute.value.path).toBe("/settings/developer")
   await navItem("Appearance").trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Appearance"))
   await buttonText("Back to app")!.trigger("click")

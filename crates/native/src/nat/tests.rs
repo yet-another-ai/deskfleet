@@ -339,6 +339,35 @@ fn validates_host_and_port_without_accepting_urls_or_ipv6() {
 }
 
 #[tokio::test]
+async fn closed_udp_port_is_unreachable_without_claiming_a_nat_type() {
+    let server = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let SocketAddr::V4(server_address) = server.local_addr().unwrap() else {
+        panic!("IPv4 fixture")
+    };
+    drop(server);
+    let probe = UdpProbe {
+        socket: UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap(),
+        retry_delays: [Duration::from_millis(20); 3],
+    };
+    let SocketAddr::V4(local) = probe.socket.local_addr().unwrap() else {
+        panic!("IPv4 fixture")
+    };
+    // Windows can report ICMP Port Unreachable here as ConnectionReset, while
+    // other systems may silently drop these datagrams until the retries expire.
+    let result = timeout(
+        Duration::from_secs(2),
+        discover(&probe, server_address, local),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(result.status, NatTestStatus::UdpUnreachable);
+    assert_eq!(result.public_address, None);
+    assert_eq!(result.mapping, NatMapping::Unknown);
+    assert_eq!(result.filtering, NatFiltering::Unknown);
+}
+
+#[tokio::test]
 async fn udp_probe_retries_the_same_transaction_and_closes_after_response() {
     let server = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let SocketAddr::V4(server_address) = server.local_addr().unwrap() else {

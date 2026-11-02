@@ -297,7 +297,7 @@ export interface TerminalEvent {
   error?: string
 }
 
-/** Discover IPv4 NAT behavior using a user-selected RFC 5780 STUN host:port. */
+/** Discover IPv4 NAT behavior using a configured RFC 5780 STUN host:port. */
 export declare function testNat(server: string): Promise<NatTestResult>
 
 export type VideoCodec = 'h264' | 'h265' | 'av1'

@@ -52,7 +52,7 @@ function start(): void {
     const central = await installCentralAccount()
     const nativeDesktop = installNativeDesktop(central)
     installLocalApplications(central)
-    installNetworkDiagnostics()
+    installNetworkDiagnostics(central)
     const files = installFiles(central)
     const ports = installPorts(central)
     const localChannels = installLocalChannels(central)

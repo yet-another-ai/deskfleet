@@ -14,8 +14,8 @@ export interface NatTestResult {
   durationMs: number
 }
 
-/** Client-owned diagnostics; never forwarded to a selected machine or the backend. */
+/** Client-owned diagnostics; probes stay local and results are never sent to the backend. */
 export interface NetworkDiagnosticsApi {
-  /** Probe a user-selected STUN hostname:port. Full classification requires RFC 5780 support. */
-  testNat(server: string): Promise<NatTestResult>
+  /** Probe the current DeskFleet service's configured STUN server. */
+  testNat(): Promise<NatTestResult>
 }
