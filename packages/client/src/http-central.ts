@@ -182,8 +182,16 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   async setEnterprise(teamId: string, enabled: boolean) { await this.request("PUT", `/api/admin/teams/${encodeURIComponent(teamId)}/enterprise`, { enabled }) }
   site() { return this.request<SiteSettings>("GET", "/api/site") }
   /** Used by the desktop main process; renderer diagnostics never choose endpoints. */
-  networkConfiguration() {
-    return this.request<NetworkConfiguration>("GET", "/api/network-configuration", undefined, AbortSignal.timeout(5_000))
+  async networkConfiguration(): Promise<NetworkConfiguration> {
+    const signal = AbortSignal.timeout(5_000)
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.request<NetworkConfiguration>("GET", "/api/network-configuration", undefined, signal) }
+      catch (error) {
+        // This configuration endpoint can return intermittent 404s. Bound retries
+        // by both attempt count and the original deadline.
+        if (!(error instanceof HttpError) || error.status !== 404 || attempt >= 2 || signal.aborted) throw error
+      }
+    }
   }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }
   updateSiteSettings(settings: SiteSettings) { return this.request<SiteSettings>("PATCH", "/api/admin/site-settings", settings) }
