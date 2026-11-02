@@ -73,4 +73,6 @@ for (const size of [192, 512]) {
 
 const websitePublic = publicDirectories[2]!
 await copyFile(artwork, resolve(websitePublic, "logo.svg"))
+// The AUR package installs this PNG in the 256x256 hicolor icon directory.
+await resize(resolve(websitePublic, "logo.png"), 256)
 await sharp(artwork).png().toFile(resolve(websitePublic, "og.png"))

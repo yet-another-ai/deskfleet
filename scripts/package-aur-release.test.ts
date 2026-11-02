@@ -17,7 +17,7 @@ function fixture(context: TestContext, version = "1.2.3"): string {
   mkdirSync(join(directory, "docs/content/public"), { recursive: true })
   writeFileSync(join(directory, "package.json"), JSON.stringify({ version }))
   writeFileSync(join(directory, "LICENSE"), "Product license\n")
-  writeFileSync(join(directory, "docs/content/public/logo.png"), Buffer.from([137, 80, 78, 71]))
+  copyFileSync(join(repository, "docs/content/public/logo.png"), join(directory, "docs/content/public/logo.png"))
   for (const filename of ["PKGBUILD.in", "deskfleet", "io.github.yet_another_ai.deskfleet.desktop", "LICENSE.packaging"]) {
     copyFileSync(join(repository, "packaging/aur", filename), join(directory, "packaging/aur", filename))
   }
