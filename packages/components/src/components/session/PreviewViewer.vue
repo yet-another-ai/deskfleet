@@ -18,7 +18,7 @@ import {
   broadcastPreviewSidebar,
   focusPreview,
   locatePreviewInMainView,
-  openPreviewInSidebar,
+  openPreviewFromAction,
 } from "../../stores/previews.ts"
 import IconButton from "../common/IconButton.vue"
 import MermaidViewer from "./MermaidViewer.vue"
@@ -73,6 +73,7 @@ const request = computed<FileResourceRequest | undefined>(() =>
 )
 const pannable = computed(() => kind.value === "image")
 const title = computed(() => props.title || (kind.value === "image" ? t("agent.image") : t("agent.contentType", { type: kind.value })))
+const sidePreviewLabel = computed(() => t(layout?.sessionWindowsAvailable ? "mermaid.showInRightTab" : "mermaid.showInSidebar"))
 
 function clearLoadedUrl(): void {
   if (loadedUrl.value) URL.revokeObjectURL(loadedUrl.value)
@@ -135,7 +136,7 @@ function showInSidebar(): void {
     window.opener?.focus?.()
     return
   }
-  openPreviewInSidebar(item)
+  openPreviewFromAction(item)
 }
 
 function showInNewWindow(): void {
@@ -251,7 +252,7 @@ onBeforeUnmount(() => {
                 <Download :size="14" aria-hidden="true" />{{ t('files.downloadResource') }}
               </DropdownMenuItem>
               <DropdownMenuItem v-if="mode !== 'sidebar'" as="button" type="button" class="ui-menu-item" data-preview-action="show-in-sidebar" @select="showInSidebar">
-                <PanelRight :size="14" aria-hidden="true" />{{ t('mermaid.showInSidebar') }}
+                <PanelRight :size="14" aria-hidden="true" />{{ sidePreviewLabel }}
               </DropdownMenuItem>
               <DropdownMenuItem v-if="mode !== 'window'" as="button" type="button" class="ui-menu-item" data-preview-action="show-in-new-window" @select="showInNewWindow">
                 <ExternalLink :size="14" aria-hidden="true" />{{ t('mermaid.showInNewWindow') }}

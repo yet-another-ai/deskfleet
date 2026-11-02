@@ -1371,6 +1371,7 @@
     "focus": "Focus",
     "more": "More",
     "showInSidebar": "Show in sidebar",
+    "showInRightTab": "Show in new tab on the right",
     "showInNewWindow": "Show in new window",
     "closeTab": "Close {title}"
   },

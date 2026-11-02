@@ -2,7 +2,7 @@
 import "dockview-vue/dist/styles/dockview.css"
 import { Plus, SquareTerminal } from "@lucide/vue"
 import { StorageSerializers, useLocalStorage, useTimeoutFn } from "@vueuse/core"
-import { computed, defineAsyncComponent, onScopeDispose, shallowRef, watch } from "vue"
+import { computed, defineAsyncComponent, onScopeDispose, shallowRef, toRaw, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import {
   DockviewVue,
@@ -24,10 +24,11 @@ import {
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
-import { useLayoutStore } from "../../stores/layout.ts"
+import { useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import IconButton from "../common/IconButton.vue"
 import ChangesPanel from "../details/ChangesPanel.vue"
+import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import AppMainWindow from "./AppMainWindow.vue"
 import WindowTab from "./WindowTab.vue"
 import WindowToolbar from "./WindowToolbar.vue"
@@ -118,6 +119,40 @@ function addTerminalPanel(terminalId: string, title: string, group: DockviewGrou
   })
 }
 
+function isPreviewPanel(panelId: string): boolean {
+  return panelId.startsWith("preview:") || panelId.startsWith("mermaid-preview:")
+}
+
+function rightWindowGroup(current: DockviewApi): DockviewGroupPanel | undefined {
+  const openPreview = current.panels.find(panel => isPreviewPanel(panel.id))
+  return openPreview?.api.group ?? current.getPanel("changes")?.api.group
+}
+
+function openSessionWindow(request: SessionWindowRequest): void {
+  const current = api.value
+  if (!current) return
+  const contentRequest = structuredClone(toRaw(request))
+  const windowId = `${contentRequest.kind === "preview" ? "preview" : "mermaid-preview"}:${crypto.randomUUID()}`
+  const group = rightWindowGroup(current)
+
+  current.addPanel({
+    id: windowId,
+    component: "sessionPreview",
+    title: contentRequest.kind === "preview"
+      ? contentRequest.item.title || (contentRequest.item.kind === "image" ? t("agent.image") : t("agent.contentType", { type: contentRequest.item.kind }))
+      : t("mermaid.title"),
+    params: { request: contentRequest },
+    position: group
+      ? { referenceGroup: group, direction: "within" }
+      : { referencePanel: "chat", direction: "right" },
+    minimumWidth: 220,
+  })
+  const panel = current.getPanel(windowId)
+  panel?.api.group.api.setVisible(true)
+  panel?.api.setActive()
+  saveLayout()
+}
+
 function setChangesVisible(visible: boolean): void {
   const current = api.value
   if (!current) return
@@ -141,7 +176,11 @@ function setChangesVisible(visible: boolean): void {
 function saveLayout(): void {
   const current = api.value
   if (syncing || !current) return
-  stored.value = current.toJSON()
+  const serialized = current.toJSON()
+  for (const [panelId, panel] of Object.entries(serialized.panels)) {
+    if (isPreviewPanel(panelId)) delete panel.params
+  }
+  stored.value = serialized
 }
 
 function updateTopLeftGroup(): void {
@@ -197,6 +236,17 @@ function onReady(event: DockviewReadyEvent): void {
     stored.value = null
   }
 
+  // Preview contents are intentionally transient; their data is removed before layout
+  // persistence, so restored preview entries have no content and are discarded.
+  let removedStoredPreview = false
+  for (const panel of [...event.api.panels]) {
+    if (isPreviewPanel(panel.id)) {
+      event.api.removePanel(panel)
+      removedStoredPreview = true
+    }
+  }
+  if (removedStoredPreview) saveLayout()
+
   const chat = event.api.getPanel("chat")
   if (chat) chat.api.setTitle(chatTitle.value)
   else seed(event.api)
@@ -239,9 +289,21 @@ function closeTab(params: IDockviewPanelHeaderProps): void {
     return
   }
 
-  syncing = true
-  setChangesVisible(false)
-  queueMicrotask(() => { syncing = false; saveLayout() })
+  if (params.api.id === "changes") {
+    syncing = true
+    setChangesVisible(false)
+    queueMicrotask(() => { syncing = false; saveLayout() })
+    return
+  }
+
+  const panelId = params.api.id
+  queueMicrotask(() => {
+    const current = api.value
+    const panel = current?.getPanel(panelId)
+    if (!current || !panel) return
+    panel.api.close()
+    saveLayout()
+  })
 }
 
 function shellTitle(terminalId: string): string {
@@ -288,6 +350,10 @@ function openChangesPanel(group?: DockviewGroupPanel): void {
 
 watch([sessionShellIds, () => terminals.loaded, sessionWorktreeId], scheduleTerminalReconcile)
 watch(() => layout.detailsOpenRequest, () => openChangesPanel())
+watch(() => layout.sessionWindowRequest?.id, () => {
+  const request = layout.sessionWindowRequest
+  if (request) openSessionWindow(request)
+})
 
 onScopeDispose(() => {
   api.value = undefined
@@ -314,6 +380,9 @@ onScopeDispose(() => {
           :terminal-id="params.terminalId"
           @title="updateTerminalTitle(panelApi, params.terminalId, $event)"
         />
+      </template>
+      <template #panel-sessionPreview="{ params }">
+        <SessionPreviewWindow v-if="params.request" :request="params.request" />
       </template>
       <template #defaultTab="params">
         <WindowTab

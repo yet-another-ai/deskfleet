@@ -9,7 +9,7 @@ import { router } from "../../router/index.ts"
 import { agentResourceContextKey, type AgentResourceContext } from "../../services/agent-resources.ts"
 import * as mermaidService from "../../services/mermaid.ts"
 import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appearance.ts"
-import { mermaidSidebarTabs, resetMermaidSidebarTabs } from "../../stores/layout.ts"
+import { mermaidSidebarTabs, resetMermaidSidebarTabs, useLayoutStore } from "../../stores/layout.ts"
 import AgentMarkdown from "./AgentMarkdown.vue"
 import MermaidViewer from "./MermaidViewer.vue"
 
@@ -188,8 +188,14 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
 
   await view.get('[data-mermaid-action="more"]').trigger("click")
   await flushPromises()
+  expect(view.get('[data-mermaid-action="show-in-sidebar"]').text()).toBe("Show in new tab on the right")
   await view.get('[data-mermaid-action="show-in-sidebar"]').trigger("click")
-  expect(mermaidSidebarTabs.value).toEqual([{ id: "mermaid-1", code: "graph TD\n  A --> B", source: { sessionId: "12", diagramId: "0" } }])
+  expect(mermaidSidebarTabs.value).toEqual([])
+  expect(useLayoutStore().sessionWindowRequest).toMatchObject({
+    kind: "mermaid",
+    code: "graph TD\n  A --> B",
+    source: { sessionId: "12", diagramId: "0" },
+  })
 
   await view.get('[data-mermaid-action="more"]').trigger("click")
   await flushPromises()

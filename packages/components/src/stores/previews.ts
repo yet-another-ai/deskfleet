@@ -83,6 +83,13 @@ export function openPreviewInSidebar(item: PreviewDescriptor): string {
   return activeDetailsTab.value
 }
 
+/** Desktop Sessions use a Dockview tab; compact and non-Session surfaces retain the details drawer. */
+export function openPreviewFromAction(item: PreviewDescriptor): string | undefined {
+  const layout = useLayoutStore()
+  if (layout.requestSessionWindow({ kind: "preview", item })) return undefined
+  return openPreviewInSidebar(item)
+}
+
 export function closePreviewSidebarTab(id: string): void {
   const index = previewSidebarTabs.value.findIndex(tab => tab.id === id)
   if (index === -1) return
@@ -160,7 +167,7 @@ export function listenPreviewWindowMessages(
     const channel = new BroadcastChannel(PREVIEW_WINDOW_CHANNEL)
     channel.onmessage = ({ data }) => {
       if (data?.type === "sidebar" && data.item && typeof data.item.content === "string") {
-        openPreviewInSidebar(data.item as PreviewDescriptor)
+        openPreviewFromAction(data.item as PreviewDescriptor)
       } else if (data?.type === "locate" && typeof data.content === "string") {
         locate(data.content, data.source)
       }

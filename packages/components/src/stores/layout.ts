@@ -1,19 +1,27 @@
 import { useBreakpoints, useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { computed, nextTick, onScopeDispose, ref, watch } from "vue"
+import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from "vue"
 import type { AgentSessionContext } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { router } from "../router/index.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
+import type { PreviewDescriptor } from "../services/preview.ts"
 
 export interface MermaidSource { sessionId?: string; entryId?: string; diagramId?: string }
 export interface MermaidLocateRequest extends MermaidSource { id: number; code: string }
 export interface MermaidSidebarTab { id: string; code: string; source?: MermaidSource }
+export type SessionWindowRequest =
+  | { id: number; kind: "preview"; item: PreviewDescriptor }
+  | { id: number; kind: "mermaid"; code: string; source?: MermaidSource }
+type NewSessionWindowRequest =
+  | { kind: "preview"; item: PreviewDescriptor }
+  | { kind: "mermaid"; code: string; source?: MermaidSource }
 
 export const mermaidSidebarTabs = ref<MermaidSidebarTab[]>([])
 export const activeDetailsTab = ref("changes")
 export const pendingMermaidLocate = ref<MermaidLocateRequest | null>(null)
 const MERMAID_LOCATE_CHANNEL = "deskfleet.mermaid-locate"
 let nextId = 1
+let nextWindowRequestId = 1
 let locatedTimer: ReturnType<typeof setTimeout> | undefined
 
 export function openMermaidSidebarTab(code: string, source?: MermaidSource): string {
@@ -102,6 +110,8 @@ export const useLayoutStore = defineStore("layout", () => {
   const compact = useBreakpoints({ desktop: 1024 }).smaller("desktop")
   const compactPanel = ref<"sidebar" | "details" | null>(null)
   const detailsOpenRequest = ref(0)
+  const sessionWindowRequest = shallowRef<SessionWindowRequest>()
+  const sessionWindowsAvailable = computed(() => !compact.value && router.currentRoute.value.name === "session")
   const sidebarOpen = computed({
     get: () => compact.value ? compactPanel.value === "sidebar" : desktopSidebarOpen.value,
     set: value => {
@@ -130,7 +140,16 @@ export const useLayoutStore = defineStore("layout", () => {
     if (compact.value) compactPanel.value = "details"
     else detailsOpenRequest.value++
   }
+  function requestSessionWindow(request: NewSessionWindowRequest): boolean {
+    if (!sessionWindowsAvailable.value) return false
+    const routeSessionId = router.currentRoute.value.params.sessionId
+    const sourceSessionId = request.kind === "preview" ? request.item.source?.sessionId : request.source?.sessionId
+    if (sourceSessionId && sourceSessionId !== routeSessionId) return false
+    sessionWindowRequest.value = { id: nextWindowRequestId++, ...request } as SessionWindowRequest
+    return true
+  }
   function openMermaidInSidebar(code: string, source?: MermaidSource): string {
+    if (requestSessionWindow({ kind: "mermaid", code, source })) return `window:${sessionWindowRequest.value!.id}`
     requestDetailsOpen()
     return openMermaidSidebarTab(code, source)
   }
@@ -142,6 +161,8 @@ export const useLayoutStore = defineStore("layout", () => {
     sidebarWidth,
     detailsOpen,
     detailsOpenRequest,
+    sessionWindowsAvailable,
+    sessionWindowRequest,
     conversationPath,
     sessionContext,
     terminalPanelOpen,
@@ -151,6 +172,7 @@ export const useLayoutStore = defineStore("layout", () => {
     toggleSidebar,
     toggleDetails,
     requestDetailsOpen,
+    requestSessionWindow,
     openMermaidInSidebar,
     closeMermaidTab: closeMermaidSidebarTab,
   }
