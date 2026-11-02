@@ -230,7 +230,7 @@ async fn finish(
     }
     let user_id = field(&saved, "userId")?;
     let result = if purpose == "passkey_login" {
-        let (credential_user, _) = state
+        let (credential_user, credential_id) = state
             .auth
             .webauthn
             .identify_discoverable_authentication(&body.credential)
@@ -239,15 +239,15 @@ async fn finish(
             return Err(ApiError::unauthorized());
         }
         let ceremony: DiscoverableAuthentication = decoded(saved["record"]["state"].clone())?;
-        let credentials: Vec<DiscoverableKey> = keys(state, user_id)
+        let credential = keys(state, user_id)
             .await?
             .into_iter()
-            .map(Into::into)
-            .collect();
-        state.auth.webauthn.finish_discoverable_authentication(
+            .find(|key| key.cred_id().as_slice() == credential_id)
+            .ok_or_else(ApiError::unauthorized)?;
+        state.auth.webauthn.finish_discoverable_authentication_v2(
             &body.credential,
             ceremony,
-            &credentials,
+            &credential,
         )
     } else {
         let ceremony: PasskeyAuthentication = decoded(saved["record"]["state"].clone())?;

@@ -1,5 +1,6 @@
 //! Test-only resident storage around the real software authenticator. The
 //! upstream SoftPasskey signs assertions but cannot discover its own keys.
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::json;
 use webauthn_authenticator_rs::{
     WebauthnAuthenticator, error::WebauthnCError, softpasskey::SoftPasskey,
@@ -7,14 +8,14 @@ use webauthn_authenticator_rs::{
 use webauthn_rs::prelude::*;
 
 pub struct ResidentPasskey {
-    authenticator: WebauthnAuthenticator<SoftPasskey>,
-    credentials: Vec<(String, Base64UrlSafeData, Base64UrlSafeData)>,
+    authenticator: SoftPasskey,
+    credentials: Vec<(String, Vec<u8>, Vec<u8>)>,
 }
 
 impl ResidentPasskey {
     pub fn new() -> Self {
         Self {
-            authenticator: WebauthnAuthenticator::new(SoftPasskey::new(true)),
+            authenticator: SoftPasskey::new(true),
             credentials: Vec::new(),
         }
     }
@@ -52,8 +53,10 @@ impl ResidentPasskey {
                 .iter()
                 .find(|(rp, _, _)| rp == &options.public_key.rp_id)
                 .ok_or(WebauthnCError::NotSupported)?;
-            options.public_key.allow_credentials =
-                serde_json::from_value(json!([{"type":"public-key","id":id}])).unwrap();
+            options.public_key.allow_credentials = serde_json::from_value(
+                json!([{"type":"public-key","id":URL_SAFE_NO_PAD.encode(id)}]),
+            )
+            .unwrap();
         }
         let mut credential = self.authenticator.do_authentication(origin, options)?;
         let (_, user, _) = self
