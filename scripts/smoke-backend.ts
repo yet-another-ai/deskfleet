@@ -279,8 +279,10 @@ try {
   const secondProvider = await secondRpc<AgentProviderConfig>("providerCreate", { provider: { template: "codex", name: "Second Team", env: {} } })
   const secondSession = await secondRpc<AgentSnapshot>("_deskfleet/session/create", { provider: secondProvider.id, operationId: randomUUID(), context: "directory", title: "Second Team only" })
   assert.equal(secondSession.session.id, sessionId, "Two Team catalogs may allocate the same local Session ID")
-  const secondHistoryPath = `/teams/${secondTeam.id}/machines/${machines[0]}/sessions/${sessionId}`
-  await until(() => admin!<{ snapshot: AgentSnapshot }>(secondHistoryPath), value => value.snapshot.session.title === "Second Team only", "second Team history synchronization")
+  const secondSessionsPath = `/teams/${secondTeam.id}/machines/${machines[0]}/sessions`
+  await until(() => admin!<{ sessions: AgentSnapshot[] }>(secondSessionsPath), page => page.sessions.some(value => value.session.id === sessionId && value.session.title === "Second Team only"), "second Team history synchronization")
+  const secondHistoryPath = `${secondSessionsPath}/${sessionId}`
+  assert.equal((await admin!<{ snapshot: AgentSnapshot }>(secondHistoryPath)).snapshot.session.title, "Second Team only")
   await assert.rejects(member(secondHistoryPath), /403/u)
   assert.equal((await readCentral()).snapshot.inputs.length, 3)
   await admin(`/teams/${teamId}/machines/${machines[0]}`, undefined, "DELETE")
