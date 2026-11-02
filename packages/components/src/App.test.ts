@@ -503,6 +503,25 @@ test("fixed sidebar and tiled window controls retain their layout behavior", asy
   expect(panel(wrapper).attributes("aria-label")).toBe("Changes")
 })
 
+test("window headers prevent group drags while individual tabs remain draggable", async () => {
+  const pinia = createPinia()
+  hydrateSession(pinia)
+  const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
+
+  for (const header of wrapper.findAll(".dv-tabs-and-actions-container")) {
+    const groupDrag = new Event("dragstart", { bubbles: true, cancelable: true })
+    header.get(".dv-void-container").element.dispatchEvent(groupDrag)
+    expect(groupDrag.defaultPrevented).toBe(true)
+
+    const tab = header.get<HTMLElement>(".dv-tab")
+    const tabDrag = new Event("dragstart", { bubbles: true, cancelable: true })
+    expect(tab.element.draggable).toBe(true)
+    tab.element.dispatchEvent(tabDrag)
+    expect(tabDrag.defaultPrevented).toBe(false)
+    await tab.trigger("dragend")
+  }
+})
+
 test("only a selected Session uses tiled windows and offers new window tabs", async () => {
   const pinia = createPinia()
   hydrateSession(pinia)

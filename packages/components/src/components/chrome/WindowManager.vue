@@ -254,6 +254,8 @@ function onReady(event: DockviewReadyEvent): void {
   changesOpen.value = !!changes?.api.group.api.isVisible
   updateTopLeftGroup()
   disposables.push(
+    // Only individual tabs move between groups; header space moves the app window.
+    event.api.onWillDragGroup(event => event.nativeEvent.preventDefault()),
     event.api.onDidLayoutChange(() => {
       updateTopLeftGroup()
       saveLayout()
@@ -395,7 +397,7 @@ onScopeDispose(() => {
       <template #prefixHeaderActions="{ group }">
         <div
           v-if="group.id === topLeftGroupId"
-          class="app-no-drag ml-1 flex h-full items-center pr-[3px]"
+          class="ml-1 flex h-full items-center pr-[3px]"
           :class="{ 'pl-20': toolbarNeedsTrafficLightInset }"
           :data-window-toolbar-group="group.id"
         >
@@ -418,7 +420,7 @@ onScopeDispose(() => {
         </DropdownMenuRoot>
       </template>
       <template #rightHeaderActions="{ group }">
-        <div :id="windowHeaderActionsId(group.id)" class="app-no-drag mr-[6px] flex h-full items-center gap-[6px]" data-window-header-actions :data-window-header-actions-group="group.id" />
+        <div :id="windowHeaderActionsId(group.id)" class="mr-[6px] flex h-full items-center gap-[6px]" data-window-header-actions :data-window-header-actions-group="group.id" />
       </template>
     </DockviewVue>
   </section>
@@ -451,8 +453,15 @@ onScopeDispose(() => {
   --dv-floating-box-shadow: var(--ui-shadow-dialog);
 }
 .deskfleet-windows :deep(.dv-tabs-and-actions-container) {
+  app-region: drag;
+  -webkit-app-region: drag;
   padding-left: 2px;
   border-bottom: 1px solid var(--ui-color-border);
+}
+.deskfleet-windows :deep(.dv-tab),
+.deskfleet-windows :deep(.dv-tabs-overflow-dropdown-default) {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 .deskfleet-windows :deep(.dv-tab) {
   height: 36px;
