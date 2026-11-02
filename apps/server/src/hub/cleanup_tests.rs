@@ -25,15 +25,23 @@ async fn postgres_socket_cleanup_releases_route_after_local_failure() {
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
     let (hub, router) = Hub::connect(store.clone()).await.unwrap();
     let (send, _messages) = mpsc::channel(8);
     let (shutdown, stopped) = watch::channel(None);
-    hub.add_daemon(&machine.id, "socket", send, shutdown)
-        .await
-        .unwrap();
+    hub.add_daemon(
+        &machine.id,
+        &machine.team_id,
+        &machine.machine_id,
+        "socket",
+        send,
+        shutdown,
+    )
+    .await
+    .unwrap();
 
     hub.fail_local().await;
     assert_eq!(*stopped.borrow(), Some(1012));

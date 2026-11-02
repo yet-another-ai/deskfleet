@@ -723,7 +723,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       }
     },
     machines: async () => structuredClone(machines),
-    renameMachine: async (machineId: string, name: string) => {
+    renameMachine: async (_teamId: string, machineId: string, name: string) => {
       const m = machines.find(item => item.id === machineId) ?? machines[0]!
       m.name = name
       return { ...m }
@@ -742,12 +742,12 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       }
       return { machine: created, token: "df_machine_tok_demo123456" }
     },
-    localEnrollment: async () => ({ ...enrollment }),
+    localEnrollment: async () => ({ machineName: enrollment.machineName, registrations: enrollment.configured ? [{ ...enrollment }] : [] }),
     enrollLocal: async (teamId: string, name?: string) => {
       enrollment = { ...enrollment, configured: true, revoked: false, teamId, machineName: name || enrollment.machineName }
       return { ...enrollment }
     },
-    catalog: async (machineId: string) => ({
+    catalog: async (_teamId: string, machineId: string) => ({
       machineId,
       snapshot: structuredClone(storybookCatalog),
       lastObservedAt: "2026-10-29T14:25:00Z",
@@ -1248,7 +1248,7 @@ export function createSeededStorybookState() {
   accountSession.members.value = structuredClone(storybookMembers)
   accountSession.machines.value = structuredClone(storybookMachines)
   accountSession.machineId.value = "machine-1"
-  accountSession.enrollment.value = {
+  accountSession.localStatus.value = { machineName: "MacBook Pro (Studio)", registrations: [{
     configured: true,
     connected: true,
     revoked: false,
@@ -1257,7 +1257,7 @@ export function createSeededStorybookState() {
     teamId: "team-1",
     identity: { originId: "origin-1", machineId: "local-1" },
     machineName: "MacBook Pro (Studio)",
-  }
+  }]}
 
   const resourceContext: ComputedRef<AgentResourceContext | undefined> = computed(() => ({
     target: { kind: "machine", machineId: "machine-1", teamId: "team-1" },

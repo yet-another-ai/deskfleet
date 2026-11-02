@@ -20,13 +20,14 @@ mod turn_usage;
 
 pub use github_app::{GithubAppAccess, GithubAppGrant, GithubAppStatus, GithubAppTokens};
 pub use identity::normalize_email;
+pub use machines::MachineRegistration;
 pub use peer_negotiations::{PeerCandidateState, PeerOfferState};
 pub use realtime::RealtimeRoute;
 pub use team_turn::TeamTurnServer;
 pub use turn_usage::{TurnUsage, TurnUsageSide};
 
 use chrono::{SecondsFormat, Utc};
-use deskfleet_protocol::control::{Machine, User};
+use deskfleet_protocol::control::User;
 use sea_orm::{
     ConnectionTrait, Database, DatabaseConnection, DbBackend, DbErr, QueryResult, Statement, Value,
 };
@@ -69,7 +70,7 @@ pub struct AuthSession {
 
 #[derive(Clone, Debug)]
 pub struct MachineAuth {
-    pub machine: Machine,
+    pub machine: MachineRegistration,
 }
 
 impl ControlStore {

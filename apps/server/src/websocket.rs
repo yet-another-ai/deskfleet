@@ -79,19 +79,22 @@ async fn connect(
             }
         };
         let identity = if is_daemon {
-            state
-                .store
-                .authenticate_machine(&token)
-                .await
-                .map(|m| (m.machine.id, Some(m.machine.team_id), None))
+            state.store.authenticate_machine(&token).await.map(|m| {
+                (
+                    m.machine.id,
+                    Some(m.machine.team_id),
+                    None,
+                    Some(m.machine.machine_id),
+                )
+            })
         } else {
             state
                 .store
                 .authenticate(&token)
                 .await
-                .map(|s| (s.id, None, Some(s.user.id)))
+                .map(|s| (s.id, None, Some(s.user.id), None))
         };
-        let (id, team, user) = match identity {
+        let (id, team, user, machine_id) = match identity {
             Ok(identity) => identity,
             Err(error) => {
                 let _ = session
@@ -116,7 +119,16 @@ async fn connect(
         } else {
             if state
                 .hub
-                .add_daemon(&id, &connection_id, send, shutdown)
+                .add_daemon(
+                    &id,
+                    team.as_deref().expect("daemon identity has a Team"),
+                    machine_id
+                        .as_deref()
+                        .expect("daemon identity has a Machine"),
+                    &connection_id,
+                    send,
+                    shutdown,
+                )
                 .await
                 .is_err()
             {
@@ -128,7 +140,7 @@ async fn connect(
         }
         let ready = ControlMessage::Ready {
             server_id: state.config.public_url.clone(),
-            machine_id: is_daemon.then(|| id.clone()),
+            machine_id: machine_id.clone(),
             team_id: team.clone(),
         };
         let setup = async {
@@ -144,7 +156,10 @@ async fn connect(
                         .notify_team(
                             team,
                             ControlMessage::Presence {
-                                machine_id: id.clone(),
+                                team_id: team.clone(),
+                                machine_id: machine_id
+                                    .clone()
+                                    .expect("daemon identity has a Machine"),
                                 online: true,
                             },
                         )
@@ -224,7 +239,8 @@ async fn connect(
                     .notify_team(
                         &team,
                         ControlMessage::Presence {
-                            machine_id: id,
+                            team_id: team.clone(),
+                            machine_id: machine_id.expect("daemon identity has a Machine"),
                             online: false,
                         },
                     )

@@ -93,7 +93,7 @@ export async function startDaemon(port = 0, options: {
     throw error
   }
   // Request OS access when creating the owning daemon, before clients use its files or desktop.
-  permissions.onChange(() => control?.central.desktopCapabilitiesChanged())
+  permissions.onChange(() => control?.registrations.desktopCapabilitiesChanged())
   const stopReportingFileAccess = permissions.onChange(({ fullDiskAccessPermission }) => {
     if (fullDiskAccessPermission.status === "checking" || fullDiskAccessPermission.status === "requesting") return
     stopReportingFileAccess()
@@ -119,6 +119,7 @@ export async function startDaemon(port = 0, options: {
     peers,
     get terminals() { return control!.terminals },
     get central() { return control!.central },
+    get registrations() { return control!.registrations },
     /** Completes after discovery and all native/server resources have closed. */
     closed,
     close,

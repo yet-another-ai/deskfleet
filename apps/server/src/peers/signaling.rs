@@ -1,6 +1,6 @@
 //! Shared SDP exchanges without retaining SQL locks while awaiting a daemon.
 
-use super::{authorize_webrtc, binding, issued_ice_servers, normalize_candidate};
+use super::{authorize_webrtc, binding, issued_ice_servers, normalize_candidate, registration};
 use crate::{
     AppState,
     error::{ApiError, Result},
@@ -84,10 +84,11 @@ async fn exchange_offer(
     authorization: &PeerAuthorization,
 ) -> Result<String> {
     let ice_servers = issued_ice_servers(s, authorization).await?;
+    let registration_id = registration(s, authorization).await?;
     let result = s
         .hub
         .request(
-            &authorization.target_machine.id,
+            &registration_id,
             "peer.offer",
             json!({
                 "peerId": peer_id, "sdp": offer.sdp, "authorization": authorization,
@@ -104,10 +105,8 @@ async fn exchange_offer(
     let pending = s.store.finish_peer_offer(peer_id, answer).await?;
     for candidate in pending {
         let candidate = normalize_candidate(&offer.sdp, candidate)?;
-        s.store
-            .peer_login(peer_id, &authorization.target_machine.id)
-            .await?;
-        send_candidate(s, peer_id, &authorization.target_machine.id, candidate).await?;
+        s.store.peer_login(peer_id, &registration_id).await?;
+        send_candidate(s, peer_id, &registration_id, candidate).await?;
     }
     Ok(answer.into())
 }
@@ -146,7 +145,7 @@ pub async fn candidate(
         s.store.queue_peer_candidate(&p, &b.candidate).await?
     {
         let candidate = normalize_candidate(&offer, b.candidate.clone())?;
-        send_candidate(&s, &p, &authorization.target_machine.id, candidate).await?;
+        send_candidate(&s, &p, &registration(&s, &authorization).await?, candidate).await?;
     }
     Ok(web::Json(json!({})))
 }

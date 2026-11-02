@@ -36,7 +36,7 @@ pub(crate) async fn project_history(
     terminal_seq: i64,
 ) -> Result<()> {
     db.execute_raw(sql(
-        "INSERT INTO cp_search_progress(machine_id,session_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+        "INSERT INTO cp_search_progress(registration_id,session_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
         vec![machine.into(),session.into()],
     )).await?;
     if let Some(snapshot) = snapshot {
@@ -61,12 +61,12 @@ pub(crate) async fn project_history(
             0
         };
         db.execute_raw(sql(
-            "UPDATE cp_search_progress SET snapshot_idle_seq=$3 WHERE machine_id=$1 AND session_id=$2 AND snapshot_idle_seq<$3",
+            "UPDATE cp_search_progress SET snapshot_idle_seq=$3 WHERE registration_id=$1 AND session_id=$2 AND snapshot_idle_seq<$3",
             vec![machine.into(),session.into(),idle_seq.into()],
         )).await?;
     }
     let row = one(db,
-        "SELECT indexed_seq,stable_seq,snapshot_idle_seq,previous_key,previous_turn FROM cp_search_progress WHERE machine_id=$1 AND session_id=$2",
+        "SELECT indexed_seq,stable_seq,snapshot_idle_seq,previous_key,previous_turn FROM cp_search_progress WHERE registration_id=$1 AND session_id=$2",
         vec![machine.into(),session.into()],
     ).await?;
     let mut cursor: i64 = row.try_get("", "indexed_seq")?;
@@ -82,7 +82,7 @@ pub(crate) async fn project_history(
     let mut previous_turn: Option<String> = row.try_get("", "previous_turn")?;
     while cursor < stable {
         let rows = db.query_all_raw(sql(
-            "SELECT seq,record FROM cp_events WHERE machine_id=$1 AND session_id=$2 AND seq>$3 AND seq<=$4 ORDER BY seq LIMIT $5",
+            "SELECT seq,record FROM cp_events WHERE registration_id=$1 AND session_id=$2 AND seq>$3 AND seq<=$4 ORDER BY seq LIMIT $5",
             vec![machine.into(),session.into(),cursor.into(),stable.into(),PAGE_SIZE.into()],
         )).await?;
         if rows.is_empty() {
@@ -106,7 +106,7 @@ pub(crate) async fn project_history(
         previous_turn = page.previous_turn;
     }
     db.execute_raw(sql(
-        "UPDATE cp_search_progress SET indexed_seq=$3,stable_seq=$4,previous_key=$5,previous_turn=$6 WHERE machine_id=$1 AND session_id=$2",
+        "UPDATE cp_search_progress SET indexed_seq=$3,stable_seq=$4,previous_key=$5,previous_turn=$6 WHERE registration_id=$1 AND session_id=$2",
         vec![machine.into(),session.into(),cursor.into(),stable.into(),previous.into(),previous_turn.into()],
     )).await?;
     Ok(())
@@ -134,7 +134,7 @@ impl<C: ConnectionTrait> Projector<'_, C> {
             return Ok(false);
         }
         let row = self.db.query_one_raw(sql(
-            "SELECT entry_id,tail,next_block FROM cp_search_entries WHERE machine_id=$1 AND session_id=$2 AND entry_key=$3",
+            "SELECT entry_id,tail,next_block FROM cp_search_entries WHERE registration_id=$1 AND session_id=$2 AND entry_key=$3",
             vec![self.machine.into(),self.session.into(),key.into()],
         )).await?;
         let created = row.is_none();
@@ -335,8 +335,8 @@ impl<C: ConnectionTrait> Projector<'_, C> {
                 .await?;
             }
             self.db.execute_raw(sql(
-                "INSERT INTO cp_search_entries(machine_id,session_id,entry_key,entry_id,tail,next_block) VALUES($1,$2,$3,$4,$5,$6)
-                 ON CONFLICT(machine_id,session_id,entry_key) DO UPDATE SET tail=excluded.tail,next_block=excluded.next_block",
+                "INSERT INTO cp_search_entries(registration_id,session_id,entry_key,entry_id,tail,next_block) VALUES($1,$2,$3,$4,$5,$6)
+                 ON CONFLICT(registration_id,session_id,entry_key) DO UPDATE SET tail=excluded.tail,next_block=excluded.next_block",
                 vec![self.machine.into(),self.session.into(),key.as_str().into(),entry.id.as_str().into(),entry.tail.as_str().into(),entry.next_block.into()],
             )).await?;
         }
@@ -368,23 +368,23 @@ pub(crate) async fn backfill(db: &impl ConnectionTrait) -> Result<()> {
     let mut session = String::new();
     loop {
         let rows = db.query_all_raw(sql(
-            "SELECT machine_id,session_id FROM cp_sessions WHERE (machine_id,session_id)>($1,$2) ORDER BY machine_id,session_id LIMIT 100",
+            "SELECT registration_id,session_id FROM cp_sessions WHERE (registration_id,session_id)>($1,$2) ORDER BY registration_id,session_id LIMIT 100",
             vec![machine.into(),session.as_str().into()],
         )).await?;
         if rows.is_empty() {
             break;
         }
         for row in rows {
-            machine = row.try_get("", "machine_id")?;
+            machine = row.try_get("", "registration_id")?;
             session = row.try_get("", "session_id")?;
             let row = one(db,
-                "SELECT snapshot,event_seq FROM cp_sessions WHERE machine_id=$1 AND session_id=$2 FOR UPDATE",
+                "SELECT snapshot,event_seq FROM cp_sessions WHERE registration_id=$1 AND session_id=$2 FOR UPDATE",
                 vec![machine.into(),session.as_str().into()],
             ).await?;
             let snapshot: Value = row.try_get("", "snapshot")?;
             let watermark: i64 = row.try_get("", "event_seq")?;
             let terminal_seq: i64 = one(db,
-                "SELECT COALESCE(max(seq),0) AS seq FROM cp_events WHERE machine_id=$1 AND session_id=$2 AND seq<=$3 AND record->>'kind'='turn' AND record#>>'{payload,state}' IN ('completed','cancelled','interrupted','failed')",
+                "SELECT COALESCE(max(seq),0) AS seq FROM cp_events WHERE registration_id=$1 AND session_id=$2 AND seq<=$3 AND record->>'kind'='turn' AND record#>>'{payload,state}' IN ('completed','cancelled','interrupted','failed')",
                 vec![machine.into(),session.as_str().into(),watermark.into()],
             ).await?.try_get("","seq")?;
             project_history(

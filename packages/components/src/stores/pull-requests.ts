@@ -103,7 +103,7 @@ export const usePullRequestsStore = defineStore("pull-requests", () => {
     const request = (async () => {
       do {
         catalogDirty.delete(machineId)
-        const { snapshot } = await account.central.catalog(machineId)
+        const { snapshot } = await account.central.catalog(account.teamId.value!, machineId)
         if (current !== generation || disposed || !account.machines.value.some(machine => machine.id === machineId)) return
         if (!catalogDirty.has(machineId)) catalogs.value = { ...catalogs.value, [machineId]: snapshot }
       } while (catalogDirty.has(machineId) && active.value)
@@ -163,7 +163,7 @@ export const usePullRequestsStore = defineStore("pull-requests", () => {
     void refresh(false)
   })
   const unsubscribe = account?.central.onEvent(event => {
-    if (event.type === "catalogChanged") {
+    if (event.type === "catalogChanged" && event.teamId === account.teamId.value) {
       invalidateCatalog(event.machineId)
       if ([...sessions.value.values()].some(session => session.machineId === event.machineId)) {
         void readCatalog(event.machineId).then(() => refresh(false))

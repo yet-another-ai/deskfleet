@@ -14,9 +14,14 @@ the current journal and execution behavior below are not proof of enforcement.
 
 All authorized clients can operate on a Session simultaneously, without a control
 lease. The daemon orders state
-changes, input delivery, and permission decisions. Client connections, provider
-processes, and durable Sessions have separate lifetimes: closing every viewer
-leaves the Agent running and its approvals pending.
+changes, input delivery, and permission decisions within the owning Team
+registration. One physical daemon can host several Team registrations under the
+same public Machine ID on one backend. Each registration has a separate catalog origin,
+conversation journal, provider settings, Session service, and terminal registry;
+equal local Session IDs in different Teams refer to different resources.
+Switching the selected Team changes the client scope without stopping another
+Team's Sessions. Client connections, provider processes, and durable Sessions
+have separate lifetimes: closing every viewer leaves the Agent running and its approvals pending.
 
 ```mermaid
 flowchart LR
@@ -195,10 +200,12 @@ and the [backend scope](backend.md#session-archive-and-restore).
 
 ## Provider configuration
 
-Each daemon owns its machine's provider settings in
-`agent-providers.json` in the active machine directory (initially
-`<daemon directory>/machine/`). Settings → Agents lists those providers
-and supports adding, editing, and removing them through authenticated backend
+The daemon owns a separate `agent-providers.json` in each Team registration's
+runtime directory. The first uses `<daemon directory>/machine/`; later
+registrations use `<daemon directory>/machines/<uuid>/`, recorded in the host's
+`machine-registrations.json`. Configuration is isolated by Team while installed
+executables and the OS user's CLI credentials can be shared. Settings → Agents
+lists those providers and supports adding, editing, and removing them through authenticated backend
 management RPC to the target daemon.
 The machine tabs list every machine in the selected Team. Selecting a tab switches
 the active machine while keeping the Agents settings route open, so provider
@@ -349,8 +356,18 @@ never copied into Session creation commands or the conversation journal.
 
 Database resource IDs remain signed 64-bit integers, encoded as decimal strings
 on the wire. A persistent catalog origin UUID qualifies remote references as
-`{ originId, id }`. A new database gets a new origin. Session IDs, opaque provider
-conversation IDs, and connection-local JSON-RPC request IDs are distinct.
+`{ originId, id }`. Every Team registration has its own database and origin.
+Public APIs additionally qualify a resource by backend, Team, shared Machine ID,
+and local resource ID; the public Machine ID alone cannot select a Team's
+Session. Session IDs, opaque provider conversation IDs, and connection-local
+JSON-RPC request IDs are distinct.
+
+Leaving and rejoining the same Team retains the catalog origin, Session IDs,
+conversation history, and admission generations. The backend reactivates the
+existing registration and rotates its execution credential. Retained admissions
+stop counting while the registration is revoked; rejoining checks them against
+current Team capacity and can fail with `active_session_limit`. After reconnection,
+the daemon reconciles those same receipts against durable Session outcomes.
 
 Every mutation has a client-generated UUID `operationId` and a daemon-assigned
 command ID. Its actor comes from the authenticated connection, never request
@@ -366,8 +383,8 @@ machine is never assigned as the browser's identity. Local discovery credentials
 permit host setup; `local_token` actors remain only in explicit in-process test
 fixtures and internal development helpers.
 The [WebRTC authorization context](webrtc-security.md) binds that actor to the
-authenticated SDP exchange, target Machine, allowed actions, and a maximum
-24-hour peer lifetime. The daemon supplies the actor from this context and
+authenticated SDP exchange, target Team registration and Machine, allowed actions,
+and a maximum 24-hour peer lifetime. The daemon supplies the actor from this context and
 enforces revocation/expiry; neither ACP parameters nor a channel label grants
 authority. Peer closure detaches viewers without stopping the provider or
 resolving pending approvals.
@@ -785,7 +802,9 @@ narrow IPC bridge and the daemon's existing dispatcher. It preserves actor and
 action checks, expiry/revocation, framing, backpressure, concurrent request
 dispatch, and journal replay. It does not introduce another conversation API or
 use discovery credentials as Team authorization. Main claims a one-use secret
-from a centrally authorized local grant; the renderer never receives the secret.
+from a centrally authorized local grant bound to the selected server, Team,
+Machine, and catalog origin. The host routes the claim to that registration;
+the renderer never receives the secret.
 Each binary frame waits for the preload delivery acknowledgement before the
 next frame, retaining the existing five-second send deadline.
 

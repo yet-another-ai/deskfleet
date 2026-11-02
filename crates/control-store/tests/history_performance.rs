@@ -39,6 +39,7 @@ impl Fixture {
                 &uuid::Uuid::new_v4().to_string(),
                 "1",
                 json!({}),
+                &deskfleet_control_store::secret(),
             )
             .await
             .unwrap()
@@ -123,7 +124,7 @@ async fn event_pages_keep_their_watermark_consistent_with_concurrent_sync() {
     writer
         .execute_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "INSERT INTO cp_events(machine_id,session_id,seq,record) VALUES($1,'1',2,$2)",
+            "INSERT INTO cp_events(registration_id,session_id,seq,record) VALUES($1,'1',2,$2)",
             vec![machine.parse::<i64>().unwrap().into(), event("2").into()],
         ))
         .await
@@ -131,7 +132,7 @@ async fn event_pages_keep_their_watermark_consistent_with_concurrent_sync() {
     writer
         .execute_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "UPDATE cp_sessions SET event_seq=2 WHERE machine_id=$1 AND session_id='1'",
+            "UPDATE cp_sessions SET event_seq=2 WHERE registration_id=$1 AND session_id='1'",
             vec![machine.parse::<i64>().unwrap().into()],
         ))
         .await
@@ -359,7 +360,7 @@ async fn command_batches_keep_last_duplicate_and_ignore_stale_snapshots() {
     );
     let query = Statement::from_sql_and_values(
         DbBackend::Postgres,
-        "SELECT xmin::text AS revision FROM cp_commands WHERE machine_id=$1 AND command_id='10'",
+        "SELECT xmin::text AS revision FROM cp_commands WHERE registration_id=$1 AND command_id='10'",
         vec![machine.parse::<i64>().unwrap().into()],
     );
     let before: String = store
@@ -528,7 +529,7 @@ async fn numeric_pages_return_only_notification_and_sidebar_summary_fields() {
     )
     .await
     .unwrap();
-    tx.execute_unprepared("PREPARE history_all(bigint,bigint,bigint) AS SELECT summary FROM cp_sessions WHERE machine_id=$1 AND session_id::bigint>$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $3; PREPARE history_archive(bigint,text,bigint,bigint) AS SELECT summary FROM cp_sessions WHERE machine_id=$1 AND summary#>>'{session,archiveState}'=$2 AND session_id::bigint>$3 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $4; PREPARE history_commands(bigint,text,bigint,bigint) AS SELECT record FROM cp_commands WHERE machine_id=$1 AND record->>'sessionId'=$2 AND command_id::bigint>$3 ORDER BY command_id::bigint LIMIT $4").await.unwrap();
+    tx.execute_unprepared("PREPARE history_all(bigint,bigint,bigint) AS SELECT summary FROM cp_sessions WHERE registration_id=$1 AND session_id::bigint>$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE registration_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $3; PREPARE history_archive(bigint,text,bigint,bigint) AS SELECT summary FROM cp_sessions WHERE registration_id=$1 AND summary#>>'{session,archiveState}'=$2 AND session_id::bigint>$3 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE registration_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $4; PREPARE history_commands(bigint,text,bigint,bigint) AS SELECT record FROM cp_commands WHERE registration_id=$1 AND record->>'sessionId'=$2 AND command_id::bigint>$3 ORDER BY command_id::bigint LIMIT $4").await.unwrap();
     for (execute, index) in [
         (format!("history_all({machine},2,3)"), "cp_sessions_numeric"),
         (

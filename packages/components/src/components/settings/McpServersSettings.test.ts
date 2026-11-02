@@ -25,7 +25,7 @@ async function setup(initial: McpServerConfig[] = []) {
   platformClient.target = { id: "machine-1", local: false }
   const fake = fakeCentral({ machines: [machineFixture("machine-1", "team-1", "Build machine")] })
   let servers = clone(initial)
-  const rpc = vi.fn(async (_machineId: string, method: string, params: unknown): Promise<unknown> => {
+  const rpc = vi.fn(async (_teamId: string, _machineId: string, method: string, params: unknown): Promise<unknown> => {
     if (method === "mcpServerList") return { revision: "1", servers: clone(servers) }
     if (method === "mcpServerCreate") {
       const created = { ...(params as { server: McpServerInput }).server, id: "server-new" }
@@ -63,7 +63,7 @@ test("settings lists only user-configured servers", async () => {
   expect(wrapper.get('[data-mcp-server="server-1"]').text()).toContain("Repository tools")
   expect(wrapper.text()).not.toContain("deskfleet")
   expect(wrapper.text()).not.toContain("Always enabled")
-  expect(rpc).toHaveBeenCalledWith("machine-1", "mcpServerList", {})
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "mcpServerList", {})
   await wrapper.get("[data-mcp-add]").trigger("click")
   await wrapper.get('[name="mcp-name"]').setValue("Deskfleet")
   await wrapper.get('[name="mcp-command"]').setValue("C:\\tools\\other.exe")
@@ -83,7 +83,7 @@ test("creates a stdio server with ordered arguments, empty arguments, and exact 
   await wrapper.get('[name="mcp-value-0"]').setValue("token=with=equals")
   await wrapper.get("[role=dialog] form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "mcpServerCreate", { server: {
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "mcpServerCreate", { server: {
     name: "Repository tools", enabled: true, transport: "stdio", command: "C:\\tools\\mcp.exe", args: ["--root=C:\\My Code", ""], env: { ACCESS_TOKEN: "token=with=equals" },
   } })
   expect(wrapper.find("[role=dialog]").exists()).toBe(false)
@@ -100,11 +100,11 @@ test("edits HTTP settings, preserving headers when switching to SSE and rejectin
   await wrapper.get('[name="mcp-value-1"]').setValue("duplicate")
   await wrapper.get("[role=dialog] form").trigger("submit")
   expect(wrapper.get('[role="alert"]').text()).toContain("must be unique")
-  expect(rpc.mock.calls.filter(([, method]) => method === "mcpServerUpdate")).toHaveLength(0)
+  expect(rpc.mock.calls.filter(([, , method]) => method === "mcpServerUpdate")).toHaveLength(0)
   await wrapper.get('button[aria-label="Remove entry 2"]').trigger("click")
   await wrapper.get("[role=dialog] form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "mcpServerUpdate", { serverId: "remote", changes: {
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "mcpServerUpdate", { serverId: "remote", changes: {
     name: "Remote tools", enabled: true, transport: "sse", url: "https://mcp.example.test/tools", headers: { Authorization: "Bearer test-token" },
   } })
 })
@@ -114,7 +114,7 @@ test("disable sends the complete config without its ID", async () => {
   await wrapper.get("[data-mcp-toggle]").trigger("click")
   await flushPromises()
   const { id, ...input } = server
-  expect(rpc).toHaveBeenCalledWith("machine-1", "mcpServerUpdate", { serverId: id, changes: { ...input, enabled: false } })
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "mcpServerUpdate", { serverId: id, changes: { ...input, enabled: false } })
   expect(wrapper.get("[data-mcp-toggle]").text()).toBe("Disabled")
 })
 
@@ -141,5 +141,5 @@ test("losing the machine connection disables editing and saving an open form", a
   expect(wrapper.get("[data-mcp-save]").attributes("disabled")).toBeDefined()
   expect(wrapper.get("[data-mcp-toggle]").attributes("disabled")).toBeDefined()
   await wrapper.get("[role=dialog] form").trigger("submit")
-  expect(rpc.mock.calls.filter(([, method]) => method === "mcpServerUpdate")).toHaveLength(0)
+  expect(rpc.mock.calls.filter(([, , method]) => method === "mcpServerUpdate")).toHaveLength(0)
 })

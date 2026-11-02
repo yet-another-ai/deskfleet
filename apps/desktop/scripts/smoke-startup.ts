@@ -11,7 +11,7 @@ import { startDaemon } from "../../daemon/src/daemon.ts"
 import { connectAcpProcess } from "../../daemon/src/agents/acp.ts"
 import { createPeer } from "../../../crates/node/index.ts"
 import type { OnboardingState } from "../../../packages/client/src/onboarding.ts"
-import type { LocalEnrollment } from "../../../packages/client/src/central.ts"
+import type { LocalEnrollment, LocalMachineStatus } from "../../../packages/client/src/central.ts"
 
 // Exercise the real package entry, including its static imports and startup
 // routing. Feature fixtures replace main and cannot detect import-time crashes.
@@ -31,6 +31,7 @@ let socket: WebSocket | undefined
 let diagnostics = ""
 let nextId = 0
 let headless: Awaited<ReturnType<typeof startDaemon>> | undefined
+const enrollmentTarget = { serverUrl: "http://127.0.0.1:8080", teamId: "startup-smoke" }
 
 function launch(args: string[]): void {
   diagnostics = ""
@@ -164,9 +165,10 @@ async function probeHostedDaemon(otherIdentity: LocalEnrollment["identity"]): Pr
   const peer = await createPeer()
   try {
     const status = await control.call("centralStatus", {})
-    assert.equal(status.configured, false)
-    assert.ok(status.identity.originId && status.identity.machineId)
-    assert.notDeepEqual(status.identity, otherIdentity, "Distinct Electron profiles must own distinct daemon identities")
+    assert.deepEqual(status.registrations, [])
+    const prepared = await control.call("centralPrepareEnrollment", enrollmentTarget)
+    assert.ok(prepared.identity.originId && prepared.identity.machineId)
+    assert.notDeepEqual(prepared.identity, otherIdentity, "Distinct Electron profiles must own distinct daemon identities")
     await peer.createDataChannel("deskfleet-acp")
     await assert.rejects(control.call("agentOffer", { sessionId: "unauthorized-agent", sdp: await peer.createOffer() }), /central|backend|authorized/iu)
     await assert.rejects(control.call("catalogList", {}), /central|backend|authorized/iu)
@@ -188,7 +190,7 @@ try {
     controlDirectory: headlessDirectory, permissionPlatform: "darwin",
     requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null,
   })
-  const headlessIdentity = headless.central.status().identity
+  const headlessIdentity = (await headless.registrations.prepareEnrollment(enrollmentTarget)).identity
   const headlessDiscovery = await readFile(join(headlessDirectory, "daemon.json"), "utf8")
   await mkdir(profile)
   await inspectRenderer()
@@ -211,7 +213,10 @@ try {
   assert.equal(await evaluate("document.querySelector('input[name=server-url]') === null && !('saveServer' in window.deskfleet.onboarding)"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   await stat(join(daemonDirectory, "daemon.json"))
-  const identity = (await evaluate<LocalEnrollment>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).identity
+  const profileControl = await DaemonClient.connect(() => {}, () => {}, daemonDirectory)
+  try { await profileControl.call("centralPrepareEnrollment", enrollmentTarget) }
+  finally { profileControl.close() }
+  const identity = (await evaluate<LocalMachineStatus>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).registrations[0]!.identity
   assert.notDeepEqual(identity, headlessIdentity, "Desktop IPC must use the profile daemon rather than headless discovery")
   await screenshot("welcome-initial")
   // OS permission dialogs require manual interaction; skip them through
@@ -227,7 +232,7 @@ try {
   assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "account")
   assert.equal(await evaluate("document.querySelector('input[type=url]') === null"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
-  assert.deepEqual((await evaluate<LocalEnrollment>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).identity, identity, "The profile daemon identity must survive an app restart")
+  assert.deepEqual((await evaluate<LocalMachineStatus>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).registrations[0]!.identity, identity, "The profile daemon identity must survive an app restart")
   await screenshot("welcome-account")
   // The UI completes this after browser authentication; exercise persisted host progress here.
   assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.complete()")).step, "complete")
@@ -263,7 +268,7 @@ try {
   } finally { await pi.close() }
   await probeHostedDaemon(identity)
   const headlessClient = await DaemonClient.connect(() => {}, () => {}, headlessDirectory)
-  try { assert.deepEqual((await headlessClient.call("centralStatus", {})).identity, headlessIdentity) }
+  try { assert.deepEqual((await headlessClient.call("centralStatus", {})).registrations[0]!.identity, headlessIdentity) }
   finally { headlessClient.close() }
   assert.equal(await readFile(join(headlessDirectory, "daemon.json"), "utf8"), headlessDiscovery, "Desktop startup, disable, and shutdown must leave headless discovery untouched")
   console.log("Electron startup smoke passed: welcome without server configuration, saved progress, disabled auto-start, Codex, Claude Code, and Pi adapters, isolated profile daemon identities, untouched headless daemon, and authenticated management boundary")

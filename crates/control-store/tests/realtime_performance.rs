@@ -74,6 +74,7 @@ impl Fixture {
                 &uuid::Uuid::new_v4().to_string(),
                 "1",
                 json!({}),
+                &deskfleet_control_store::secret(),
             )
             .await
             .unwrap()
@@ -124,7 +125,7 @@ async fn batched_presence_preserves_lease_and_revocation_filters() {
     store
         .database()
         .execute_raw(sql(
-            "UPDATE cp_machines SET revoked=TRUE WHERE id=$1",
+            "UPDATE cp_machine_registrations SET revoked=TRUE WHERE id=$1",
             vec![revoked.parse::<i64>().unwrap().into()],
         ))
         .await

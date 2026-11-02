@@ -28,10 +28,10 @@ const routes = [
   "/api/teams/:teamId/billing/portal", "/api/teams/:teamId/machines", "/api/teams/:teamId/members",
   "/api/teams/:teamId/members/:userId", "/api/teams/:teamId/usage", "/api/teams/:teamId/ai-usage",
   "/api/teams/:teamId/ai-usage/sessions", "/api/teams/:teamId/invites", "/api/teams/:teamId/ownership",
-  "/api/teams/:teamId/search", "/api/machines/:machineId/schedules",
-  "/api/machines/:machineId", "/api/machines/:machineId/catalog", "/api/machines/:machineId/sessions",
-  "/api/machines/:machineId/sessions/:sessionId", "/api/machines/:machineId/sessions/:sessionId/events",
-  "/api/machines/:machineId/rpc", "/api/peers", "/api/peers/local", "/api/peers/:peerId",
+  "/api/teams/:teamId/search", "/api/teams/:teamId/machines/:machineId/schedules",
+  "/api/teams/:teamId/machines/:machineId", "/api/teams/:teamId/machines/:machineId/catalog", "/api/teams/:teamId/machines/:machineId/sessions",
+  "/api/teams/:teamId/machines/:machineId/sessions/:sessionId", "/api/teams/:teamId/machines/:machineId/sessions/:sessionId/events",
+  "/api/teams/:teamId/machines/:machineId/rpc", "/api/peers", "/api/peers/local", "/api/peers/:peerId",
   "/api/peers/:peerId/offer", "/api/peers/:peerId/start", "/api/peers/:peerId/candidate",
 ].map(route => ({ route, pattern: new RegExp(`^${route.replace(/:[A-Za-z]+/gu, "[^/]+")}$`, "u") }))
 
@@ -98,7 +98,7 @@ export function centralRequestFailure(
   const path = request.path.split(/[?#]/u, 1)[0]!
   const route = routes.find(candidate => candidate.pattern.test(path))?.route ?? "unknown"
   const body = request.body && typeof request.body === "object" ? request.body as { method?: unknown } : undefined
-  const rpcMethod = route === "/api/machines/:machineId/rpc" && typeof body?.method === "string" && rpcMethods.has(body.method) ? body.method : undefined
+  const rpcMethod = route === "/api/teams/:teamId/machines/:machineId/rpc" && typeof body?.method === "string" && rpcMethods.has(body.method) ? body.method : undefined
   const error = new CentralRequestError(cause instanceof Error ? cause.message : "fetch failed", {
     method: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].includes(request.method) ? request.method : "unknown",
     route, ...(rpcMethod && { rpcMethod }), elapsedMs: Math.max(0, Math.round(request.elapsedMs)), causes: causesOf(cause),

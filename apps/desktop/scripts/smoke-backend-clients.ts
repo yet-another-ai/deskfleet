@@ -63,7 +63,7 @@ async function request<T>(path: string, body?: unknown, method = body === undefi
   if (!response.ok) throw new Error(`${path}: ${response.status} ${text}`)
   return (text ? JSON.parse(text) : undefined) as T
 }
-const rpc = <T>(machine: string, method: string, params: unknown) => request<T>(`/machines/${machine}/rpc`, { method, params })
+const rpc = <T>(machine: string, method: string, params: unknown) => request<T>(`/teams/${teamId}/machines/${machine}/rpc`, { method, params })
 const daemons: Awaited<ReturnType<typeof startDaemon>>[] = []
 const providers: BackendAgent[] = []
 const machines: string[] = []
@@ -107,7 +107,7 @@ async function launch(mode: BackendClientsContext["mode"]): Promise<void> {
         else if (message.phase === "online") {
           if (mode === "electron") console.log(`Electron local transport evidence: ${JSON.stringify(message.result)}`)
           void (async () => {
-            const snapshot = await until(() => request<{ snapshot: AgentSnapshot }>(`/machines/${machines[0]}/sessions/${sessions[0]}`), value => value.snapshot.session.archiveState === "active" && value.snapshot.inputs.some(input => input.content.some(block => block.type === "text" && block.text === `Prompt from ${mode}`)), "central archive/restore synchronization")
+            const snapshot = await until(() => request<{ snapshot: AgentSnapshot }>(`/teams/${teamId}/machines/${machines[0]}/sessions/${sessions[0]}`), value => value.snapshot.session.archiveState === "active" && value.snapshot.inputs.some(input => input.content.some(block => block.type === "text" && block.text === `Prompt from ${mode}`)), "central archive/restore synchronization")
             assert.equal(snapshot.snapshot.session.archiveState, "active")
             await daemons[0]!.close()
             electron!.send({ offline: true })
@@ -125,6 +125,7 @@ try {
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/backend-clients-main.ts")], outfile: join(directory, "client.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24", define })
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/local-channels-renderer.ts")], outfile: join(directory, "local-probe.js"), bundle: true, platform: "browser", format: "iife", globalName: "localChannelSmoke", target: "chrome140" })
   const team = await request<{ id: string }>("/teams", { name: `Clients ${randomUUID()}` }); teamId = team.id
+  const registrationTarget = { serverUrl: fixture.backend, teamId: team.id }
   for (let index = 0; index < 2; index++) {
     const repository = join(directory, `repo-${index}`); await mkdir(repository)
     await execute("git", ["init", repository]); await writeFile(join(repository, "README.md"), "client smoke\n")
@@ -132,11 +133,11 @@ try {
     await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
     const provider = new BackendAgent(); providers.push(provider)
     const daemon = await startDaemon(0, { controlDirectory: index === 0 ? localDaemonDirectory : join(directory, `daemon-${index}`), agentProvider: provider, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false, requestFullDiskAccess: async () => null }); daemons.push(daemon)
-    const { identity } = daemon.central.status()
-    const enrollment = await request<{ machine: { id: string }; token: string }>(`/teams/${teamId}/machines`, { name: `Machine ${index}`, originId: identity.originId, localMachineId: identity.machineId })
+    const { identity, identityToken } = await daemon.registrations.prepareEnrollment(registrationTarget)
+    const enrollment = await request<{ machine: { id: string }; token: string }>(`/teams/${teamId}/machines`, { name: `Machine ${index}`, identityToken, originId: identity.originId, localMachineId: identity.machineId })
     machines.push(enrollment.machine.id)
-    await daemon.central.enroll({ serverUrl: fixture.backend, machineId: enrollment.machine.id, teamId, token: enrollment.token })
-    await until(() => daemon.central.status(), status => status.connected, "daemon connection")
+    await daemon.registrations.enroll({ ...registrationTarget, machineId: enrollment.machine.id, token: enrollment.token, originId: identity.originId })
+    await until(() => daemon.registrations.forTeam(registrationTarget).central.status(), status => status.connected, "daemon connection")
     const workspace = await rpc<{ id: string }>(machines[index]!, "workspaceCreate", { name: `Machine ${index}`, directories: [{ path: repository }] })
     const configured = await rpc<{ id: string }>(machines[index]!, "providerCreate", { provider: { template: "codex", name: "Fixture", env: {} } })
     const snapshot = await rpc<AgentSnapshot>(machines[index]!, "_deskfleet/session/create", { workspaceId: workspace.id, provider: configured.id, operationId: randomUUID(), context: "directory", title: `Machine ${index} conversation` })
@@ -145,14 +146,14 @@ try {
   assert.equal(sessions[0], sessions[1])
   await launch("web")
   daemons[0] = await startDaemon(0, { controlDirectory: localDaemonDirectory, agentProvider: providers[0]!, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => false, requestFullDiskAccess: async () => null })
-  await until(() => daemons[0]!.central.status(), status => status.connected, "daemon restart")
+  await until(() => daemons[0]!.registrations.forTeam(registrationTarget).central.status(), status => status.connected, "daemon restart")
   await launch("electron")
   assert.deepEqual(providers[0]!.prompts, ["Prompt from web", "Prompt from electron"])
   console.log("Production Web and Electron: owned authentication, remote WebRTC, local Agent/Git/terminal with WebRTC disabled, Git invalidations, terminal replay, session reattachment, transport timing, archive/restore, equal-local-ID isolation and offline central history passed")
 } catch (error) { console.error(diagnostics); console.error(fixture.diagnostics()); throw error }
 finally {
   await stopClient(); await Promise.allSettled(daemons.map(daemon => daemon.close()))
-  for (const machine of machines) await request(`/machines/${machine}`, undefined, "DELETE").catch(() => {})
+  for (const machine of machines) await request(`/teams/${teamId}/machines/${machine}`, undefined, "DELETE").catch(() => {})
   if (teamId) await request(`/teams/${teamId}`, undefined, "DELETE").catch(() => {})
   await fixture.close(); await web[Symbol.asyncDispose]()
   await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

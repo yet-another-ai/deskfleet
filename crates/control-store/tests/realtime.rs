@@ -63,6 +63,7 @@ impl Fixture {
                 &uuid::Uuid::new_v4().to_string(),
                 "1",
                 json!({}),
+                &deskfleet_control_store::secret(),
             )
             .await
             .unwrap()

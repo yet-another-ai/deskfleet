@@ -34,7 +34,7 @@ test("otherwise opens a reachable machine, and presence updates it in place", as
   session = createAccountSession(fake.central)
   await flushPromises()
   expect(session.machineId.value).toBe("b")
-  fake.emit({ type: "presence", machineId: "a", online: true } as never)
+  fake.emit({ type: "presence", teamId: "team-1", machineId: "a", online: true } as never)
   expect(session.machines.value.find(machine => machine.id === "a")?.online).toBe(true)
 })
 
@@ -264,7 +264,7 @@ test("renaming keeps the open machine selected and rejects for its caller on fai
   await flushPromises()
   expect(session.machineId.value).toBe("a")
   await session.renameMachine("a", "GPU runner")
-  expect(fake.central.renameMachine).toHaveBeenCalledExactlyOnceWith("a", "GPU runner")
+  expect(fake.central.renameMachine).toHaveBeenCalledExactlyOnceWith("team-1", "a", "GPU runner")
   expect(session.machineId.value).toBe("a")
   expect(session.machine.value?.name).toBe("GPU runner")
   expect(session.machines.value.map(machine => machine.name)).toEqual(["GPU runner", "laptop"])
@@ -372,4 +372,102 @@ test("account refresh updates site privileges and creation policy even without a
   fake.central.site.mockRejectedValueOnce(new Error("Site unavailable"))
   await expect(session.reload()).rejects.toThrow("Site unavailable")
   expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "" })
+})
+
+test("the same local Machine selects the current Team's registration and revocation state", async () => {
+  const fake = fakeCentral({
+    teams: [{ id: "first", name: "First", role: "admin" }, { id: "second", name: "Second", role: "admin" }],
+    machines: [machineFixture("shared", "first", "First machine"), machineFixture("shared", "second", "Second machine")],
+    enrollment: enrollment(),
+  })
+  const registrations = [
+    enrollment({ configured: true, connected: true, serverUrl: "https://fleet.example", teamId: "first", machineId: "shared", identity: { originId: "first-origin", machineId: "1" } }),
+    enrollment({ configured: true, connected: true, serverUrl: "https://fleet.example", teamId: "second", machineId: "shared", identity: { originId: "second-origin", machineId: "1" } }),
+  ]
+  fake.central.localEnrollment!.mockImplementation(async () => ({ machineName: "Host", registrations: structuredClone(registrations) }))
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  expect(session.teamId.value).toBe("first")
+  expect(session.localMachineId.value).toBe("shared")
+  expect(session.enrollment.value?.identity.originId).toBe("first-origin")
+  expect(session.canEnrollLocal.value).toBe(false)
+  await session.selectTeam("second")
+  expect(session.localMachineId.value).toBe("shared")
+  expect(session.enrollment.value?.identity.originId).toBe("second-origin")
+  expect(session.machine.value?.name).toBe("Second machine")
+  expect(session.canEnrollLocal.value).toBe(false)
+  fake.emit({ type: "presence", teamId: "first", machineId: "shared", online: false })
+  expect(session.machine.value?.online).toBe(true)
+
+  registrations[0]!.revoked = true
+  await session.refreshMachines()
+  expect(session.canEnrollLocal.value).toBe(false)
+  await session.selectTeam("first")
+  expect(session.localMachineId.value).toBeUndefined()
+  expect(session.enrollment.value?.identity.originId).toBe("first-origin")
+  expect(session.canEnrollLocal.value).toBe(true)
+  await session.selectTeam("second")
+  expect(session.localMachineId.value).toBe("shared")
+  expect(fake.central.enrollLocal).not.toHaveBeenCalled()
+})
+
+test.each(["team", "account"] as const)("a pending rename cannot change the same Machine ID after a %s switch", async change => {
+  const fake = fakeCentral({
+    teams: [{ id: "first", name: "First", role: "admin" }, { id: "second", name: "Second", role: "admin" }],
+    machines: [machineFixture("shared", "first", "First machine"), machineFixture("shared", "second", "Second machine")],
+  })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const response = Promise.withResolvers<ReturnType<typeof machineFixture>>()
+  fake.central.renameMachine.mockReturnValueOnce(response.promise)
+  const renaming = session.renameMachine("shared", "A's new name")
+  if (change === "team") await session.selectTeam("second")
+  else {
+    fake.central.status.mockResolvedValueOnce({ ...session.account.value, user: { id: "user-2", name: "Bob", email: "bob@example.test" } })
+    await session.reload()
+  }
+  const selected = session.machine.value!.name
+  response.resolve(machineFixture("shared", "first", "A's new name"))
+  await renaming
+  expect(fake.central.renameMachine).toHaveBeenCalledExactlyOnceWith("first", "shared", "A's new name")
+  expect(session.machine.value!.name).toBe(selected)
+})
+
+test("removing a Team's registration cannot reset another Team's selection after switching", async () => {
+  const fake = fakeCentral({
+    teams: [{ id: "first", name: "First", role: "admin" }, { id: "second", name: "Second", role: "admin" }],
+    machines: [machineFixture("shared", "first", "First machine"), machineFixture("other", "second", "Other machine"), machineFixture("shared", "second", "Second machine")],
+  })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const response = Promise.withResolvers<void>()
+  fake.central.removeMachine.mockReturnValueOnce(response.promise)
+  const removing = session.removeMachine("shared")
+  await session.selectTeam("second")
+  session.selectMachine("shared")
+  const reads = fake.central.machines.mock.calls.length
+  response.resolve()
+  await removing
+  expect(session.machineId.value).toBe("shared")
+  expect(session.machine.value!.name).toBe("Second machine")
+  expect(fake.central.machines).toHaveBeenCalledTimes(reads)
+})
+
+test("local enrollment completion keeps the selection made after changing Teams", async () => {
+  const fake = fakeCentral({
+    teams: [{ id: "first", name: "First", role: "admin" }, { id: "second", name: "Second", role: "admin" }],
+    machines: [machineFixture("shared", "second", "Second machine"), machineFixture("other", "second", "Other machine")],
+    enrollment: enrollment(),
+  })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const response = Promise.withResolvers<LocalEnrollment>()
+  fake.central.enrollLocal!.mockReturnValueOnce(response.promise)
+  const enrolling = session.enrollLocal("First machine")
+  await session.selectTeam("second")
+  session.selectMachine("other")
+  response.resolve(enrollment({ configured: true, serverUrl: "https://fleet.example", teamId: "first", machineId: "shared" }))
+  await enrolling
+  expect(session.machineId.value).toBe("other")
+  expect(session.machine.value!.name).toBe("Other machine")
 })

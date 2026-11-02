@@ -145,37 +145,43 @@ pub fn configure(config: &mut ServiceConfig) {
             .route("/teams/{teamId}/machines", web::get().to(api::machines))
             .route("/teams/{teamId}/machines", web::post().to(api::enroll))
             .route(
-                "/machines/{machineId}",
+                "/teams/{teamId}/machines/{machineId}",
                 web::patch().to(api::rename_machine),
             )
             .route(
-                "/machines/{machineId}",
+                "/teams/{teamId}/machines/{machineId}",
                 web::delete().to(api::remove_machine),
             )
-            .route("/machines/{machineId}/rpc", web::post().to(api::rpc))
-            .route("/machines/{machineId}/catalog", web::get().to(api::catalog))
             .route(
-                "/machines/{machineId}/schedules",
+                "/teams/{teamId}/machines/{machineId}/rpc",
+                web::post().to(api::rpc),
+            )
+            .route(
+                "/teams/{teamId}/machines/{machineId}/catalog",
+                web::get().to(api::catalog),
+            )
+            .route(
+                "/teams/{teamId}/machines/{machineId}/schedules",
                 web::get().to(search::schedules),
             )
             .route(
-                "/machines/{machineId}/sessions",
+                "/teams/{teamId}/machines/{machineId}/sessions",
                 web::get().to(api::sessions),
             )
             .route(
-                "/machines/{machineId}/sessions/{sessionId}",
+                "/teams/{teamId}/machines/{machineId}/sessions/{sessionId}",
                 web::get().to(api::snapshot),
             )
             .route(
-                "/machines/{machineId}/sessions/{sessionId}/events",
+                "/teams/{teamId}/machines/{machineId}/sessions/{sessionId}/events",
                 web::get().to(api::events),
             )
             .route(
-                "/machines/{machineId}/sessions/{sessionId}/commands",
+                "/teams/{teamId}/machines/{machineId}/sessions/{sessionId}/commands",
                 web::get().to(api::commands),
             )
             .route(
-                "/machines/{machineId}/commands/{operationId}",
+                "/teams/{teamId}/machines/{machineId}/commands/{operationId}",
                 web::get().to(api::command),
             )
             .route("/daemon/me", web::get().to(api::daemon_me))
@@ -205,6 +211,8 @@ async fn health() -> web::Json<HealthResponse> {
 
 #[cfg(test)]
 mod integration_tests;
+#[cfg(test)]
+mod multiteam_tests;
 
 #[cfg(test)]
 mod ownership_tests;

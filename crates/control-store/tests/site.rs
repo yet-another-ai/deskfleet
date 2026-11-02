@@ -147,6 +147,7 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();

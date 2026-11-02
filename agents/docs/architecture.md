@@ -87,8 +87,10 @@ Electron permits only the DSN's origin through its renderer Content Security Pol
 
 API instances share one PostgreSQL database and the same public service origin.
 Each process owns its open WebSockets, while PostgreSQL owns expiring process
-leases and the current process/connection identity for each machine. Management
-requests reach that owner through a short-lived PostgreSQL inbox; responses,
+leases and the current process/connection identity for each Team registration.
+One physical daemon opens an independent control connection for each registration;
+routing uses its internal registration ID, so another Team's connection cannot
+replace it. Management requests reach that owner through a short-lived PostgreSQL inbox; responses,
 client events, and revocation notices use the same routing. An HTTP request and
 the daemon or client socket it addresses can land on different instances, without
 load-balancer affinity or a separate message broker.
@@ -228,7 +230,7 @@ operation reads the current grant, so existing login sessions observe revocation
 
 Central authorization uses resource policies with typed actions and explicit
 `authorize` calls. `TeamPolicy` and `MachinePolicy` receive membership in the
-target resource's actual Team; `SitePolicy` receives the current site grant.
+target registration's Team; `SitePolicy` receives the current site grant.
 `TeamScope` and `MachineScope` restrict collection queries in SQL. The policies
 live alongside central store operations and do not depend on HTTP, so management,
 signaling, and delegated Agent operations share the same Team rules. Existing
@@ -331,7 +333,7 @@ machine credentials, resource ownership, or existing peer expiry/revocation.
 
 ```text
 Team
-  Machine
+  Machine registration [shared public Machine ID; unique Machine + Team]
     TerminalSessions [machine scope]
     AgentSessions [optional machine scope; no Workspace]
     Workspace
@@ -345,12 +347,27 @@ Team
 | Resource | Meaning |
 | --- | --- |
 | Team | Membership and shared access boundary |
-| Machine | An enrolled daemon installation and its OS user execution context |
+| Machine | A physical daemon installation and OS user execution context, with one stable public ID per backend |
+| Machine registration | The unique association of a Machine and Team; owns that Team's catalog, credentials, settings, Sessions, and terminals |
 | Workspace | A named, machine-local configuration of one or more ordered directory paths |
 | Worktree | An execution context owned by one Session; the catalog also keeps an internal main context for Workspace directories |
 | Directory binding | An unnamed path with a stable position; position zero is the default directory |
 | AgentSession | A session with its captured execution context and provider identity; ordinarily owned by a Workspace, or machine-scoped when started without one |
 | TerminalSession | A terminal owned by one Machine, Workspace, or Worktree, with a separate cwd |
+
+A single daemon hosts all Team registrations concurrently. Each registration has
+its own SQLite catalog and origin, provider and MCP configuration, Scheduled Tasks,
+Agent Sessions, terminals, synchronization state, and peer authorization. The
+public Machine ID stays the same across Teams on one backend; a Machine ID from
+another backend belongs to a separate identity namespace. Resource APIs resolve
+`(Team ID, Machine ID)` to the registration before authorization and routing.
+Removing one Team's registration or switching the client's selected Team leaves
+other registrations running.
+
+This boundary isolates DeskFleet APIs, resource records, and history. All
+registrations still execute as the same OS user and can use the same source
+paths, installed tools, CLI credentials, and desktop. It does not provide an OS
+process or filesystem sandbox.
 
 A Workspace must be created with at least one existing directory. Its paths are
 ordered and have no user-assigned aliases; the first path is the default working
@@ -396,7 +413,8 @@ editor, external terminal, or system file manager. The default action opens the
 first directory; each additional directory has its own action. Discovery and
 launching belong to the client's native platform integration, with a maintained
 application registry. The main process verifies that the requested Machine is
-its daemon's active registration on the signed-in server, then resolves the
+one of its daemon's registrations on the signed-in server and selected Team,
+then resolves the
 Workspace directory from the daemon's live catalog through the authenticated
 `catalogList` management RPC. This read observes completed Workspace edits
 without waiting for catalog replication. The renderer supplies resource IDs and
@@ -481,36 +499,68 @@ The store is a persistence boundary, not an authorization boundary.
 central server uses independent PostgreSQL migrations in `deskfleet-control-store`
 and applies them before accepting requests. Central storage owns user identities,
 login sessions, Team policy, enrollment, peer grants, and replicas qualified by
-central machine and local resource IDs. The local journal retains SQLite-specific
-SQL. Both stores have integration tests against their actual database engines.
+internal registration and local resource IDs. `cp_machines` owns the public
+Machine identity and its proof-token hash. `cp_machine_registrations` owns the
+Team association and enforces `UNIQUE(machine_id, team_id)`, including revoked
+rows. Catalogs, history, search, quota admissions, peers, and realtime routes
+reference its internal registration ID. Public responses continue to expose the
+shared Machine ID together with their Team scope. The local journal retains
+SQLite-specific SQL. Both stores have integration tests against their actual database engines.
 See the [server guide](../../apps/server/README.md) for configuration and migration
 commands.
 
-The daemon opens the active machine's `catalog.db` through a thin `NativeCatalog`
-napi binding after acquiring discovery. The initial directory is `machine/`;
-later registrations use `machines/<uuid>/`, selected by `active-machine.json`.
-The local catalog
-keeps its persistent origin and integer machine/resource IDs. Enrollment binds
-that origin to the central Team and Machine. Earlier unauthenticated development
-data outside `machine/` is not imported into the enrolled machine.
+After acquiring host discovery, the daemon loads `machine-registrations.json`,
+which maps `(server URL, Team ID)` to each runtime directory. It opens each
+registration's `catalog.db` through the thin `NativeCatalog` napi binding. The
+first registration uses `machine/`; additional registrations use
+`machines/<uuid>/`. Each catalog retains its own persistent origin and integer
+machine/resource IDs. Enrollment binds that catalog to its central registration.
 
-Machine removal revokes its credential without removing the user's Team
-membership or stopping accepted execution. HTTP requests retire the daemon's
-stored credential only on a JSON `401` response with
+The host's private `machine-identity.json` contains an `identityToken` used to
+prove the shared physical Machine identity during enrollment. The server stores
+only its hash. Its role differs from each registration's execution token in
+`central.json`: Team membership authorizes enrollment, the identity token proves
+the Machine being joined, and the execution token authorizes only that Team's
+control connection and synchronization. The public Machine ID cannot establish
+that proof. Ordinary host status lists registrations without either secret;
+explicit enrollment preparation returns the private bundle for a chosen backend
+and Team.
+
+On upgrade, the daemon adopts the old `machine/` directory or the directory named
+by `active-machine.json` in place, preserving absolute checkout paths, catalog
+origin, and history. Its former execution token seeds the host identity proof.
+PostgreSQL migration 22 preserves the original public Machine and registration
+IDs, backfills the corresponding proof hash, and moves existing resource foreign
+keys to the registration. No source files or SQLite resources are copied.
+Earlier unauthenticated development data outside the registered machine directory
+is not imported.
+
+Machine removal revokes only the selected Team's credential and access without
+removing the user's Team membership or stopping accepted execution. HTTP requests
+retire the daemon's stored credential only on a JSON `401` response with
 `error.code = "machine_credential_rejected"`, issued when the backend rejects
 the machine token. Generic `401`/`403` responses, including gateway errors and
 user or quota denials, fail the request without retiring the machine. Signaling
 retains its explicit `4401`/`4403` credential-rejection close codes.
-Explicit re-enrollment closes the
-old execution context and selects a new empty directory and origin. The old
-directory remains at its original path, preserving Git worktree registrations
-and history. The new identity may join the original Team or a different Team;
-it never imports the previous registration's resources. Valid registrations
-cannot be reset through this flow.
+Preparing the same backend and Team again reuses its directory and origin.
+After removal, re-enrollment reactivates the same association and rotates only
+its execution token; Workspaces, Sessions, history, and other Teams' runtimes are
+retained. Active registrations cannot be overwritten by a new token. Adding a
+different Team creates a separate empty catalog under the same public Machine ID.
+
+Revoked registrations retain their durable Session admission receipts but do not
+occupy Team capacity. Reactivation checks the retained admissions together with
+the Team's currently active admissions under the same Team lock used for new
+Session creation. It fails with `active_session_limit` if restoring them would
+exceed the current plan. Reconnected daemon reconciliation confirms or releases
+the original generations from its durable local outcomes.
 
 Authenticated backend management exposes catalog queries, Workspace
-create/update/delete, and Session create/archive/restore/delete. The daemon
-validates Workspace paths as absolute, existing directories. There are no manual
+create/update/delete, and Session create/archive/restore/delete under
+`/api/teams/{teamId}/machines/{machineId}/...`. The server resolves the pair to
+its registration before checking permissions or selecting a daemon connection.
+Presence and catalog-change events carry both Team and public Machine IDs. The
+daemon validates Workspace paths as absolute, existing directories. There are no manual
 Worktree mutations. Changes synchronize to the central catalog and notify Team
 clients. Workspace deletion never removes its configured source directories,
 and retained archived Sessions block deletion.
@@ -551,8 +601,9 @@ addresses only scope credentials to that backend and never override the compiled
 choice. Web authentication uses HttpOnly cookies, without storing the backend
 address in browser storage.
 Both retain an independent client adapter and store scope for each opened
-Machine in the selected Team. Selecting another Machine changes the active
-route view while preserving the other resource trees, drafts, and Agent and
+Machine in the selected Team. Persistent client resource keys include server,
+account, and Team as well as Machine and local resource IDs where applicable.
+Selecting another Machine changes the active route view while preserving the other resource trees, drafts, and Agent and
 terminal peers. Sidebar navigation selects the owning central Machine before
 opening its local resource; integer local IDs do not identify resources across
 machines. Closing the account, changing Teams, or removing a Machine releases
@@ -884,9 +935,9 @@ created on demand.
 ### Local message channel
 
 Electron selects a direct message channel for each opened Machine that matches
-the local daemon's active registration on the signed-in server and selected Team.
-Locality follows that registration, never a hostname, loopback API URL, or LAN
-address. Enrollment changes update a retained Machine's transport choice without
+one of the local daemon's registrations on the signed-in server and selected Team.
+Locality follows that specific registration, never a hostname, loopback API URL,
+or LAN address. Enrollment changes update a retained Machine's transport choice without
 discarding its stores or drafts. Web clients and other machines use WebRTC.
 
 The shared [DataChannel interface](../../packages/client/src/data-channel.ts)
@@ -1032,7 +1083,8 @@ opening its Changes panel.
 
 The machine's Remote control page groups Terminal, Desktop, File transfer, and
 System status. The current Electron client's own daemon is identified by its
-active registration with the signed-in server and marked as the local machine.
+registration with the signed-in server and selected Team, and marked as the local
+machine.
 Its Local control page omits Desktop and defaults to Terminal, retaining File
 transfer and System status. Locality is client-relative; the machine's advertised
 desktop capability remains available to other clients. Web clients have no local

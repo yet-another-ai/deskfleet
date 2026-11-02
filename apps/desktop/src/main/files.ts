@@ -1,10 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, type WebContents } from "electron"
-import { desktopDaemonDirectory } from "./daemon-directory.ts"
 import type { CentralApi } from "@deskfleet/client/central"
 import { FILES_CHANGED_EVENT, FILES_IPC_CHANNEL, type FileAttachmentUploadRequest, type FileConflict, type FileLocation, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer } from "@deskfleet/client/files"
-import { activeMachineDirectory } from "../../../daemon/src/machine-directory.ts"
-import { SessionAttachments } from "../../../daemon/src/session-attachments.ts"
-import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { createNativeFileEndpoint } from "./files-peer.ts"
 import { WindowFiles } from "./files-controller.ts"
@@ -67,23 +63,12 @@ export async function invokeFiles(api: FilesApi, method: unknown, args: unknown)
   }
 }
 
-/** Local development Sessions still resolve their captured context in the daemon. */
-export async function localSessionDirectory(sessionId: string): Promise<string> {
-  const client = await DaemonClient.connect(() => {}, () => {})
-  try {
-    const catalog = await client.call("catalogList", {})
-    const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(item => item.sessionId === sessionId)
-    const path = worktree?.directories[0]?.path
-    if (!path) throw new Error("Session worktree is unavailable")
-    return path
-  } finally { client.close() }
+/** Session IDs are local to a Team registration; bare local targets have no such authority. */
+export async function localSessionDirectory(_sessionId: string): Promise<string> {
+  throw new Error("Session resources require an authorized Team and Machine target")
 }
 
-export async function localSessionAttachmentDirectory(sessionId: string): Promise<string> {
-  await localSessionDirectory(sessionId)
-  const machineDirectory = await activeMachineDirectory(desktopDaemonDirectory())
-  return new SessionAttachments(machineDirectory).directory(sessionId)
-}
+export const localSessionAttachmentDirectory = localSessionDirectory
 
 /** Main owns queues; each renderer document receives its own revocable authority. */
 export function installFiles(central: CentralApi): { close(): Promise<void> } {

@@ -18,6 +18,7 @@ struct Fixture {
     a: web::Data<AppState>,
     b: web::Data<AppState>,
     machine: String,
+    registration: String,
     team: String,
     token: String,
     login: String,
@@ -86,6 +87,7 @@ impl Fixture {
                 &uuid::Uuid::new_v4().to_string(),
                 "1",
                 json!({}),
+                &deskfleet_control_store::secret(),
             )
             .await
             .unwrap();
@@ -95,7 +97,14 @@ impl Fixture {
         let (send, requests) = mpsc::channel(64);
         let (shutdown, _shutdown) = watch::channel(None);
         b.hub
-            .add_daemon(&machine.id, "daemon-b", send, shutdown)
+            .add_daemon(
+                &machine.id,
+                &machine.team_id,
+                &machine.machine_id,
+                "daemon-b",
+                send,
+                shutdown,
+            )
             .await
             .unwrap();
         let (send, events) = mpsc::channel(64);
@@ -109,7 +118,8 @@ impl Fixture {
             schema,
             a,
             b,
-            machine: machine.id,
+            machine: machine.machine_id,
+            registration: machine.id,
             team: team.id,
             token,
             login,
@@ -136,7 +146,7 @@ impl Fixture {
     async fn response(&self, id: &str, value: Value) {
         self.b
             .hub
-            .response(&self.machine, "daemon-b", id, Ok(value))
+            .response(&self.registration, "daemon-b", id, Ok(value))
             .await;
     }
 
@@ -160,7 +170,10 @@ impl Fixture {
     }
 
     async fn close(self) {
-        self.b.hub.remove_daemon(&self.machine, "daemon-b").await;
+        self.b
+            .hub
+            .remove_daemon(&self.registration, "daemon-b")
+            .await;
         self.a.hub.remove_client(&self.login, "client-a").await;
         let a = self.a.store.clone();
         let b = self.b.store.clone();
@@ -263,7 +276,7 @@ async fn shared_offer_candidates_and_daemon_ice_cross_instances() {
     .unwrap();
     assert!(fixture.requests.try_recv().is_err());
     let state = fixture.b.clone();
-    let machine = fixture.machine.clone();
+    let machine = fixture.registration.clone();
     let event_peer = peer.clone();
     let early_ice = actix_web::rt::spawn(async move {
         daemon_event(
@@ -349,7 +362,7 @@ async fn closing_shared_peer_during_offer_prevents_answer_and_ice_publication() 
     );
     let (id, _) = fixture.next_request("peer.offer").await;
     let state = fixture.b.clone();
-    let machine = fixture.machine.clone();
+    let machine = fixture.registration.clone();
     let event_peer = peer.clone();
     let early_ice = actix_web::rt::spawn(async move {
         daemon_event(
@@ -565,7 +578,7 @@ async fn closed_peer_revokes_grant_when_client_notify_fails() {
         .unwrap();
     let result = daemon_event(
         &fixture.b,
-        &fixture.machine,
+        &fixture.registration,
         "daemon-b",
         peer.clone(),
         json!({"kind":"stateChanged","state":"closed"}),
@@ -591,7 +604,7 @@ async fn closed_peer_revokes_grant_when_client_notify_fails() {
         fixture
             .a
             .store
-            .valid_machine_peers(&fixture.machine)
+            .valid_machine_peers(&fixture.registration)
             .await
             .unwrap()
             .is_empty()

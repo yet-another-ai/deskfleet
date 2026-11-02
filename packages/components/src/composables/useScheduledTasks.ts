@@ -15,7 +15,7 @@ export function useScheduledTasks() {
   const { t } = useI18n()
   const account = useAccountSession()
   const fleet = useFleetStore()
-  const api = account && schedulesClient(account.central, fleet.targetId)
+  const api = account && schedulesClient(account.central, account.teamId.value!, fleet.targetId)
   const online = computed(() => !!api && (account?.machine.value?.online ?? fleet.localDesktopTarget.online))
   const tasks = ref<ScheduledTask[]>([])
   const loaded = ref(false)
@@ -31,7 +31,7 @@ export function useScheduledTasks() {
     if (!api || !account) { loading.value = false; return }
     loading.value = true
     try {
-      const result = online.value ? { tasks: await api.list(), lastObservedAt: null } : await account.central.scheduleSnapshot(fleet.targetId)
+      const result = online.value ? { tasks: await api.list(), lastObservedAt: null } : await account.central.scheduleSnapshot(account.teamId.value!, fleet.targetId)
       if (disposed || request !== revision) return
       tasks.value = result.tasks
       lastObservedAt.value = result.lastObservedAt
@@ -91,7 +91,7 @@ export function useScheduledTasks() {
 
   watch(online, () => { void refresh() }, { immediate: true })
   const unsubscribe = account?.central.onEvent(event => {
-    if (event.type === "catalogChanged" && event.machineId === fleet.targetId && !pending.value) void refresh()
+    if (event.type === "catalogChanged" && event.teamId === account.teamId.value && event.machineId === fleet.targetId && !pending.value) void refresh()
   })
   // The visible page follows execution status; switching routes or hiding the window stops reads.
   useIntervalFn(() => { if (online.value && !document.hidden && !loading.value && !pending.value) void refresh() }, 15_000)

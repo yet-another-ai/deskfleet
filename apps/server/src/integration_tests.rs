@@ -151,18 +151,24 @@ async fn postgres_http_permissions_replication_and_signaling() {
         post,
         &path,
         token,
-        &json!({"name":"Machine","originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"})
+        &json!({"name":"Machine","identityToken":deskfleet_control_store::secret(),"originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"})
     ))
     .await;
     let machine_id = enrollment["machine"]["id"].as_str().unwrap();
     let machine_token = enrollment["token"].as_str().unwrap();
+    let registration = state
+        .store
+        .authenticate_machine(machine_token)
+        .await
+        .unwrap()
+        .machine;
     assert!(
         matches!(roster.try_recv().unwrap(), ControlMessage::MachinesChanged { team_id: changed } if changed == team_id)
     );
     assert_eq!(
         call!(
             patch,
-            &format!("/api/machines/{machine_id}"),
+            &format!("/api/teams/{team_id}/machines/{machine_id}"),
             token,
             &json!({"name":"Renamed"})
         )
@@ -170,7 +176,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
         StatusCode::OK
     );
     assert!(
-        matches!(roster.try_recv().unwrap(), ControlMessage::CatalogChanged { machine_id: changed, session_id: None } if changed == machine_id)
+        matches!(roster.try_recv().unwrap(), ControlMessage::CatalogChanged { machine_id: changed, session_id: None, .. } if changed == machine_id)
     );
     assert!(
         matches!(roster.try_recv().unwrap(), ControlMessage::MachinesChanged { team_id: changed } if changed == team_id)
@@ -180,7 +186,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
         post,
         &path,
         token,
-        &json!({"name":"Offline","originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"})
+        &json!({"name":"Offline","identityToken":deskfleet_control_store::secret(),"originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"})
     ))
     .await;
     assert!(
@@ -190,7 +196,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
         call!(
             delete,
             &format!(
-                "/api/machines/{}",
+                "/api/teams/{team_id}/machines/{}",
                 offline["machine"]["id"].as_str().unwrap()
             ),
             token,
@@ -260,7 +266,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     assert_eq!(call!(post,"/api/daemon/catalog",machine_token,&json!({"snapshot":{"machineId":"1","workspaces":[]},"providers":{"templates":[{"id":"x","name":"X","binaryPath":"hidden"}],"providers":[{"id":"1","template":"x","name":"X","env":{"SECRET":"hidden"}}]}})).status(),StatusCode::OK);
     let catalog: Value = test::read_body_json(call!(
         get,
-        &format!("/api/machines/{machine_id}/catalog"),
+        &format!("/api/teams/{team_id}/machines/{machine_id}/catalog"),
         token,
         &json!({})
     ))
@@ -339,11 +345,18 @@ async fn postgres_http_permissions_replication_and_signaling() {
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
         .hub
-        .add_daemon(machine_id, "fixture", send, shutdown)
+        .add_daemon(
+            &registration.id,
+            team_id,
+            machine_id,
+            "fixture",
+            send,
+            shutdown,
+        )
         .await
         .unwrap();
     let hub = state.hub.clone();
-    let machine = machine_id.to_owned();
+    let machine = registration.id.clone();
     let worker = actix_web::rt::spawn(async move {
         while let Some(message) = receive.recv().await {
             if let ControlMessage::Request {
@@ -495,19 +508,19 @@ async fn postgres_http_permissions_replication_and_signaling() {
     assert_eq!(
         call!(
             post,
-            &format!("/api/machines/{machine_id}/rpc"),
+            &format!("/api/teams/{team_id}/machines/{machine_id}/rpc"),
             token,
             &json!({"method":"session/prompt","params":{}})
         )
         .status(),
         StatusCode::BAD_REQUEST
     );
-    assert_eq!(call!(post,&format!("/api/machines/{machine_id}/rpc"),token,&json!({"method":"_deskfleet/session/archive","params":{"sessionId":"1","operationId":"fixture"}})).status(),StatusCode::OK);
+    assert_eq!(call!(post,&format!("/api/teams/{team_id}/machines/{machine_id}/rpc"),token,&json!({"method":"_deskfleet/session/archive","params":{"sessionId":"1","operationId":"fixture"}})).status(),StatusCode::OK);
     let rename = json!({"method":"_deskfleet/session/rename","params":{"sessionId":"1","operationId":"rename-fixture","title":"Renamed investigation"}});
     assert_eq!(
         call!(
             post,
-            &format!("/api/machines/{machine_id}/rpc"),
+            &format!("/api/teams/{team_id}/machines/{machine_id}/rpc"),
             outside_token,
             &rename
         )
@@ -517,7 +530,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     assert_eq!(
         call!(
             post,
-            &format!("/api/machines/{machine_id}/rpc"),
+            &format!("/api/teams/{team_id}/machines/{machine_id}/rpc"),
             token,
             &rename
         )
@@ -528,7 +541,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     assert_eq!(
         call!(
             post,
-            &format!("/api/machines/{machine_id}/rpc"),
+            &format!("/api/teams/{team_id}/machines/{machine_id}/rpc"),
             outside_token,
             &read
         )
@@ -537,7 +550,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     );
     let response = call!(
         post,
-        &format!("/api/machines/{machine_id}/rpc"),
+        &format!("/api/teams/{team_id}/machines/{machine_id}/rpc"),
         token,
         &read
     );
@@ -551,7 +564,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     assert!(
         state
             .store
-            .valid_machine_peers(machine_id)
+            .valid_machine_peers(&registration.id)
             .await
             .unwrap()
             .is_empty()
@@ -560,7 +573,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
         call!(get, "/api/me", token, &json!({})).status(),
         StatusCode::UNAUTHORIZED
     );
-    state.hub.remove_daemon(machine_id, "fixture").await;
+    state.hub.remove_daemon(&registration.id, "fixture").await;
     let renewed_login = state.store.new_session(&user.id).await.unwrap();
     let renewed_token = renewed_login["token"].as_str().unwrap();
     let usage: Value =
@@ -601,7 +614,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     );
     state
         .store
-        .revoke_machine(&user.id, machine_id)
+        .revoke_machine(&user.id, &registration.id)
         .await
         .unwrap();
     let usage: Value =

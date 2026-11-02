@@ -33,6 +33,7 @@ async fn fixture() -> (ControlStore, String, String, String) {
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -275,7 +276,7 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
             source_machine: None,
         },
         target_machine: PeerTarget {
-            id: machine,
+            id: m.machine_id,
             origin_id: m.origin_id,
             local_machine_id: "1".into(),
         },

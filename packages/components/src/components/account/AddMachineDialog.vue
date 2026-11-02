@@ -27,12 +27,18 @@ const pending = ref(false)
 const error = ref<string>()
 const credentials = ref("")
 const team = computed(() => session.team.value)
-const parsed = computed(() => statusText.value.trim() ? parseDaemonStatus(statusText.value.trim()) : undefined)
+const parsed = computed(() => {
+  if (!statusText.value.trim()) return undefined
+  const result = parseDaemonStatus(statusText.value.trim())
+  return result.ok && (result.teamId !== session.teamId.value || result.serverUrl !== session.account.value.serverUrl)
+    ? { ok: false as const, reason: "invalid" as const } : result
+})
 const identity = computed(() => parsed.value?.ok ? parsed.value : undefined)
+const prepareCommand = computed(() => `deskfleet-daemon prepare-enrollment --server-url ${session.account.value.serverUrl} --team-id ${session.teamId.value}`)
 const enrollCommand = computed(() => `deskfleet-daemon enroll --server-url ${session.account.value.serverUrl}`)
 
 const local = computed(() => session.enrollment.value)
-// A computer that already belongs to a Team is never silently reassigned.
+// Enrollment is unique within the selected Team. Other Teams keep their own runtime.
 const localTeam = computed(() => {
   if (!local.value?.configured || local.value.revoked) return undefined
   if (local.value.serverUrl !== session.account.value.serverUrl) return local.value.serverUrl ?? ""
@@ -53,7 +59,7 @@ async function run(work: () => Promise<void>): Promise<void> {
 async function chooseLocal(): Promise<void> {
   step.value = "local"
   error.value = undefined
-  name.value = local.value?.machineName ?? ""
+  name.value = session.localStatus.value?.machineName ?? ""
   await nextTick()
   localName.value?.focus()
   localName.value?.select()
@@ -73,8 +79,8 @@ async function chooseHeadless(): Promise<void> {
 const register = () => run(async () => {
   if (!identity.value) return
   const teamId = session.teamId.value
-  const result = await session.enrollHeadless({ name: name.value.trim(), originId: identity.value.originId, localMachineId: identity.value.localMachineId })
-  credentials.value = JSON.stringify({ machineId: result.machine.id, teamId, token: result.token }, null, 2)
+  const result = await session.enrollHeadless({ name: name.value.trim(), originId: identity.value.originId, localMachineId: identity.value.localMachineId, identityToken: identity.value.identityToken })
+  credentials.value = JSON.stringify({ machineId: result.machine.id, teamId, token: result.token, originId: identity.value.originId }, null, 2)
   step.value = "credentials"
   await nextTick()
   credentialField.value?.focus()
@@ -93,7 +99,7 @@ function focusInitial(event: Event): void {
       <button type="button" class="ui-option-card" :disabled="pending || !session.canEnrollLocal.value" data-add-machine="local" @click="chooseLocal">
         <Laptop :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
         <span class="min-w-0 flex-1">
-          <span class="block text-sm">{{ t("account.thisComputer") }}<span v-if="local" class="text-ui-text-muted"> · {{ local.machineName }}</span></span>
+          <span class="block text-sm">{{ t("account.thisComputer") }}<span v-if="session.localStatus.value" class="text-ui-text-muted"> · {{ session.localStatus.value.machineName }}</span></span>
           <span class="mt-0.5 block text-[13px] text-ui-text-muted">
             {{ localTeam !== undefined ? t("addMachine.localConnected", { team: localTeam }) : local?.revoked ? t("addMachine.localRevoked") : t("addMachine.localDescription") }}
           </span>
@@ -130,7 +136,7 @@ function focusInitial(event: Event): void {
       <ol class="m-0 flex list-none flex-col gap-5 p-0">
         <li class="flex gap-3">
           <span class="mt-px flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-full bg-ui-accent/12 text-xs font-semibold text-ui-accent" aria-hidden="true">1</span>
-          <div class="min-w-0 flex-1"><CopyField :label="t('addMachine.statusStep')" value="deskfleet-daemon status" /></div>
+          <div class="min-w-0 flex-1"><CopyField :label="t('addMachine.statusStep')" :value="prepareCommand" multiline style="height: 4.5rem" /></div>
         </li>
         <li class="flex gap-3">
           <span class="mt-px flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-full bg-ui-accent/12 text-xs font-semibold text-ui-accent" aria-hidden="true">2</span>

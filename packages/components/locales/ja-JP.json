@@ -786,7 +786,7 @@
   "account": {
     "signIn": "DeskFleet にログイン", "signInDescription": "アカウントで DeskFleet サーバーにログインし、チームを選択してください。",
     "signingIn": "ログイン中…", "signOut": "ログアウト",
-    "signalingOffline": "サーバーとの接続が中断されました。既存のピアセッションは、認可の有効期限まで引き続き利用できます。", "enrollmentRevoked": "このコンピューターはチームから削除されました。再接続すると空の新しい ID が割り当てられます。以前のローカルデータはディスクに残ります。",
+    "signalingOffline": "サーバーとの接続が中断されました。既存のピアセッションは、認可の有効期限まで引き続き利用できます。", "enrollmentRevoked": "このコンピューターはこのチームから削除されました。再接続すると既存のセッションと履歴にアクセスできます。",
     "reconnectThisComputer": "このコンピューターを再接続", "dismiss": "閉じる",
     "addMachine": "マシンを追加", "openMachine": "{name} を開く",
     "thisComputer": "このコンピューター", "done": "完了",
@@ -838,18 +838,18 @@
     "neverConnected": "接続履歴なし", "noMachines": "マシンがありません",
     "noMachinesDescription": "チームメンバーがエージェントを実行したりターミナルを開いたりできるよう、マシンを追加してください。", "renameMachineLabel": "{name} の名前を変更",
     "machineNameFor": "{name} の新しい名前", "removeMachineLabel": "{name} を削除",
-    "removeMachineTitle": "{name} を削除しますか？", "removeMachineDescription": "認証情報が失効し、現在の接続が切断されます。ファイルと履歴はマシンに残り、後で新しい ID で再参加できます。"
+    "removeMachineTitle": "{name} を削除しますか？", "removeMachineDescription": "このチームの認証情報が失効し、このチームとの接続が切断されます。ファイルと履歴は再参加に備えて保持されます。他のチームとの接続は維持されます。"
   },
   "addMachine": {
     "title": "{team} にマシンを追加", "description": "マシンでは、チーム用のエージェント、ターミナル、リモートデスクトップを実行します。",
-    "localDescription": "現在使用中のコンピューターでエージェントを実行します。", "localRevoked": "空の新しい ID で再接続します。以前のデータはディスクに残ります。",
+    "localDescription": "現在使用中のコンピューターでエージェントを実行します。", "localRevoked": "以前のセッションを保持して、このチームに再接続します。",
     "localConnected": "すでに {team} に接続しています。", "connecting": "接続中…",
     "other": "別のマシン", "otherDescription": "deskfleet-daemon を実行しているサーバーまたは別のコンピューター。",
     "statusStep": "そのマシンでデーモンを起動し、次を実行します", "pasteStep": "コマンドの出力を貼り付けます",
-    "pasteHint": "この出力はデーモンのインストールを識別します。機密情報は含まれていません。", "identityFound": "マシン ID が見つかりました。",
+    "pasteHint": "このチームの登録情報を貼り付けます。マシンの秘密認証情報が含まれるため、このサーバー以外と共有しないでください。", "identityFound": "マシン ID が見つかりました。",
     "status": {
-      "invalid": "deskfleet-daemon status の出力ではないようです。", "enrolled": "このマシンはすでにチームに所属しています。再度追加するには、管理者が先に削除する必要があります。",
-      "revoked": "このマシンはチームから削除されています。deskfleet-daemon prepare-enrollment を実行し、その出力を貼り付けてください。"
+      "invalid": "このサーバーとチーム用の prepare-enrollment の出力を貼り付けてください。", "enrolled": "このマシンはすでにこのチームに登録されています。",
+      "revoked": "このチームの登録をもう一度準備してください。"
     },
     "nameStep": "チームで使用する名前を付けます", "nameHint": "デフォルトではマシンのホスト名を使用します。後でチーム設定から変更できます。",
     "connect": "接続", "back": "戻る",

@@ -2,7 +2,7 @@ import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "./term
 import type { CatalogEvent, CatalogMethods } from "./catalog-protocol.ts"
 import type { FilesystemMethods } from "./filesystem-protocol.ts"
 import type { ProviderEvent, ProviderMethods } from "./provider-protocol.ts"
-import type { CentralStatus, MachineEnrollment } from "./central-protocol.ts"
+import type { CentralStatus, EnrollmentTarget, HostCentralStatus, MachineEnrollment, PreparedEnrollment } from "./central-protocol.ts"
 import type { SystemMethods } from "./system-protocol.ts"
 
 /** Provisional local IPC contract. Media remains on WebRTC. */
@@ -132,10 +132,10 @@ export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent | P
 export interface ControlMethods extends CatalogMethods, FilesystemMethods, ProviderMethods, SystemMethods {
   permissionsRefresh: { params: Record<string, never>; result: DesktopPermissionsState }
   permissionRequest: { params: { permission: DesktopPermissionKind }; result: DesktopPermissionsState }
-  centralStatus: { params: Record<string, never>; result: CentralStatus }
-  centralPrepareEnrollment: { params: Record<string, never>; result: CentralStatus }
+  centralStatus: { params: Record<string, never>; result: HostCentralStatus }
+  centralPrepareEnrollment: { params: EnrollmentTarget; result: PreparedEnrollment }
   centralEnroll: { params: MachineEnrollment; result: CentralStatus }
-  localOpen: { params: { peerId: string; token: string }; result: null }
+  localOpen: { params: { peerId: string; token: string; teamId: string; machineId: string }; result: null }
   localSend: { params: { peerId: string; data: string; isString: boolean }; result: null }
   localAck: { params: { peerId: string; sequence: number }; result: null }
   localClose: { params: { peerId: string }; result: null }

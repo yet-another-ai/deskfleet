@@ -24,6 +24,8 @@ export interface LocalEnrollment {
   configured: boolean; connected: boolean; revoked: boolean; serverUrl?: string; machineId?: string; teamId?: string
   identity: { originId: string; machineId: string }; machineName: string
 }
+export interface LocalMachineStatus { machineName: string; registrations: LocalEnrollment[] }
+export interface MachineEnrollmentRequest { name: string; originId: string; localMachineId: string; identityToken: string }
 export interface PeerGrant { peerId: string; authorization: PeerAuthorization; iceServers: RTCIceServer[]; relayDeniedReason?: RelayDeniedReason | null }
 /** Kept in Electron main; the one-use token binds a grant to a local IPC connection. */
 export interface LocalPeerGrant { peerId: string; authorization: PeerAuthorization; token: string }
@@ -86,7 +88,7 @@ export interface CentralApi {
   aiUsage(teamId: string, query: AiUsageQuery): Promise<TeamAiUsage>
   aiUsageSessions(teamId: string, query: { date: string; timeZone: string }): Promise<TeamAiUsageSessions>
   search(teamId: string, query: SearchQuery): Promise<SearchPage>
-  scheduleSnapshot(machineId: string): Promise<ScheduleSnapshot>
+  scheduleSnapshot(teamId: string, machineId: string): Promise<ScheduleSnapshot>
   renameTeam(teamId: string, name: string): Promise<Team>
   invite(teamId: string, email: string, role: "admin" | "member"): Promise<{ token: string; expiresAt: string }>
   acceptInvite(token: string): Promise<Team>
@@ -95,18 +97,18 @@ export interface CentralApi {
   transferOwnership(teamId: string, userId: string): Promise<void>
   machines(teamId: string): Promise<Machine[]>
   /** Any Team member can rename a machine; its daemon's hostname is unchanged. */
-  renameMachine(machineId: string, name: string): Promise<Machine>
+  renameMachine(teamId: string, machineId: string, name: string): Promise<Machine>
   /** Administrator removal revokes the machine's credential and its live peers. */
-  removeMachine(machineId: string): Promise<void>
-  enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string }): Promise<{ machine: Machine; token: string }>
-  localEnrollment?(): Promise<LocalEnrollment>
+  removeMachine(teamId: string, machineId: string): Promise<void>
+  enrollHeadless(teamId: string, machine: MachineEnrollmentRequest): Promise<{ machine: Machine; token: string }>
+  localEnrollment?(): Promise<LocalMachineStatus>
   /** The name defaults to this computer's hostname. */
   enrollLocal?(teamId: string, name?: string): Promise<LocalEnrollment>
-  catalog(machineId: string): Promise<{ machineId: string; snapshot: CatalogSnapshot; lastObservedAt: string; providers?: ProviderDisplaySnapshot }>
-  sessions(machineId: string, sessionId?: string): Promise<AgentSessionSummary[]>
-  session(machineId: string, sessionId: string): Promise<{ snapshot: AgentSnapshot; lastEventSeq: string; lastObservedAt: string }>
-  events(machineId: string, sessionId: string, after: string, limit: number): Promise<{ events: AgentEvent[]; lastEventSeq: string }>
-  rpc<T = unknown>(machineId: string, method: string, params: unknown): Promise<T>
+  catalog(teamId: string, machineId: string): Promise<{ machineId: string; snapshot: CatalogSnapshot; lastObservedAt: string; providers?: ProviderDisplaySnapshot }>
+  sessions(teamId: string, machineId: string, sessionId?: string): Promise<AgentSessionSummary[]>
+  session(teamId: string, machineId: string, sessionId: string): Promise<{ snapshot: AgentSnapshot; lastEventSeq: string; lastObservedAt: string }>
+  events(teamId: string, machineId: string, sessionId: string, after: string, limit: number): Promise<{ events: AgentEvent[]; lastEventSeq: string }>
+  rpc<T = unknown>(teamId: string, machineId: string, method: string, params: unknown): Promise<T>
   createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files" | "ports"): Promise<PeerGrant>
   offerPeer(peerId: string, sdp: string, options?: unknown): Promise<{ sdp: string }>
   startPeer(peerId: string, options: { displayId: number; control?: boolean }): Promise<void>

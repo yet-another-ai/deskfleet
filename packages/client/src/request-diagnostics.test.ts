@@ -6,7 +6,7 @@ test("summarizes nested network and aggregate causes without their addresses or 
   const timeout = Object.assign(new Error("connect to private.fleet.example timed out"), { code: "ETIMEDOUT" })
   const cause = new TypeError("fetch failed", { cause: new AggregateError([denied, timeout], "private host") })
   const error = centralRequestFailure(cause, {
-    method: "POST", path: "/api/machines/private-machine/rpc?token=secret",
+    method: "POST", path: "/api/teams/private-team/machines/private-machine/rpc?token=secret",
     body: { method: "_deskfleet/agent/configuration", params: { provider: "private-provider", model: "private-model" } }, elapsedMs: 12.6,
   })
   expect(error).toBeInstanceOf(CentralRequestError)
@@ -14,7 +14,7 @@ test("summarizes nested network and aggregate causes without their addresses or 
   expect(error.message).toBe("fetch failed")
   expect(error.cause).toBe(cause)
   expect(error.diagnostics).toEqual({
-    method: "POST", route: "/api/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", elapsedMs: 13,
+    method: "POST", route: "/api/teams/:teamId/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", elapsedMs: 13,
     causes: [{ name: "TypeError" }, { name: "AggregateError" }, { name: "Error", code: "ECONNREFUSED" }, { name: "Error", code: "ETIMEDOUT" }],
   })
   const serialized = JSON.stringify(serializeCentralRequestError(error))
@@ -27,16 +27,16 @@ test("unknown routes, methods and cause properties cannot become diagnostic valu
     method: "private-method", path: "/api/private-workspace/private-file?token=secret", body: { method: "private-rpc" }, elapsedMs: 2,
   })
   expect(error.diagnostics).toEqual({ method: "unknown", route: "unknown", elapsedMs: 2, causes: [{ name: "Error" }] })
-  const rpc = centralRequestFailure(cause, { method: "POST", path: "/api/machines/private/rpc", body: { method: "private-rpc" }, elapsedMs: 2 })
+  const rpc = centralRequestFailure(cause, { method: "POST", path: "/api/teams/private-team/machines/private/rpc", body: { method: "private-rpc" }, elapsedMs: 2 })
   expect(rpc.diagnostics.rpcMethod).toBeUndefined()
   expect(JSON.stringify(serializeCentralRequestError(error))).not.toContain("private")
 })
 
 test("route templates remove encoded identifiers and query values", () => {
   const error = centralRequestFailure(new TypeError("fetch failed"), {
-    method: "GET", path: "/api/machines/user%2Fmachine/sessions/private-session/events?after=secret#private", elapsedMs: 1,
+    method: "GET", path: "/api/teams/private-team/machines/user%2Fmachine/sessions/private-session/events?after=secret#private", elapsedMs: 1,
   })
-  expect(error.diagnostics.route).toBe("/api/machines/:machineId/sessions/:sessionId/events")
+  expect(error.diagnostics.route).toBe("/api/teams/:teamId/machines/:machineId/sessions/:sessionId/events")
 })
 
 test("cause summaries are bounded and terminate on cycles", () => {

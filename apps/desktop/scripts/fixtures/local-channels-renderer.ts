@@ -106,6 +106,6 @@ export async function exercise(context: { teamId: string; machineId: string; ses
   } finally {
     guard.blocked = true
     terminal?.close(); agent.close(); local.dispose()
-    if (terminalId) await central.rpc(context.machineId, "terminalHangup", { terminalId })
+    if (terminalId) await central.rpc(context.teamId, context.machineId, "terminalHangup", { terminalId })
   }
 }

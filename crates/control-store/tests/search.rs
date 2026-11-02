@@ -39,6 +39,7 @@ impl Fixture {
                 &uuid::Uuid::new_v4().to_string(),
                 "1",
                 json!({}),
+                &deskfleet_control_store::secret(),
             )
             .await
             .unwrap()
@@ -366,7 +367,7 @@ async fn authorization_current_inventory_schedules_and_keyset_pages_filter_befor
     assert_eq!(f.search("schedule body").await["results"], json!([]));
     f.store
         .database()
-        .execute_unprepared("UPDATE cp_machines SET revoked=true")
+        .execute_unprepared("UPDATE cp_machine_registrations SET revoked=true")
         .await
         .unwrap();
     assert_eq!(f.search("needle").await["results"], json!([]));
@@ -432,7 +433,13 @@ async fn migration_backfills_existing_stable_history_once_and_keeps_streaming_bo
         .await
         .unwrap();
 
-    // Recreate only this isolated fixture's migration-19 read models.
+    // Return the isolated fixture to the pre-registration schema before
+    // recreating migration 19's read models.
+    f.store
+        .database()
+        .execute_unprepared(include_str!("../src/machine_registrations_down.sql"))
+        .await
+        .unwrap();
     f.store
         .database()
         .execute_unprepared(include_str!("../src/search/schema_down.sql"))
@@ -440,7 +447,7 @@ async fn migration_backfills_existing_stable_history_once_and_keeps_streaming_bo
         .unwrap();
     f.store
         .database()
-        .execute_unprepared("DELETE FROM cp_migrations WHERE version=19")
+        .execute_unprepared("DELETE FROM cp_migrations WHERE version IN (19,22)")
         .await
         .unwrap();
     deskfleet_control_store::schema::migrate(f.store.database())

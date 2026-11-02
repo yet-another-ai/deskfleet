@@ -86,6 +86,7 @@ async fn postgres_roles_tokens_replication_and_revocation() {
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -251,7 +252,7 @@ async fn postgres_roles_tokens_replication_and_revocation() {
             source_machine: None,
         },
         target_machine: PeerTarget {
-            id: machine.id.clone(),
+            id: machine.machine_id.clone(),
             origin_id: machine.origin_id.clone(),
             local_machine_id: "1".into(),
         },
@@ -349,6 +350,7 @@ async fn postgres_team_usage_counts_current_members_and_durable_session_admissio
                 &uuid::Uuid::new_v4().to_string(),
                 "1",
                 json!({}),
+                &deskfleet_control_store::secret(),
             )
             .await
             .unwrap();

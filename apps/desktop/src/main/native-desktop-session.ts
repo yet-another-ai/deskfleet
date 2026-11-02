@@ -136,7 +136,7 @@ export function openNativeDesktopSession(
     if (closed) return
     const machine = machines.find(machine => machine.id === request.target.machineId)
     if (!machine) throw new Error("Machine is no longer available in this team")
-    const capabilities = await central.rpc<DesktopCapabilities>(machine.id, "capabilities", {})
+    const capabilities = await central.rpc<DesktopCapabilities>(request.target.teamId, machine.id, "capabilities", {})
     if (closed) return
     if (!capabilities.displays.some(display => display.id === request.displayId && display.codecs.includes("h264"))) {
       throw new Error("This display does not support H.264 for the native window")

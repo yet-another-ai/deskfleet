@@ -1,11 +1,11 @@
-//! Re-enrollment starts a new machine identity while retaining Team membership.
+//! Re-enrollment restores the same Team registration, retaining its identity and history.
 use actix_web::{App, http::StatusCode, test, web};
 use deskfleet_server::{AppState, config::ServerConfig, configure};
 use serde_json::{Value, json};
 
 #[actix_web::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
-async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
+async fn revoked_machine_rejoins_the_same_registration_and_preserves_history() {
     let state = web::Data::new(
         AppState::new(ServerConfig {
             bind_addrs: vec!["127.0.0.1:0".parse().unwrap()],
@@ -75,8 +75,10 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
         assert_eq!(error["error"]["code"], expected_code);
     }
     let registration_path = format!("/api/teams/{}/machines", team.id);
+    let identity_token = deskfleet_control_store::secret();
+    let team_id = &team.id;
     let old_origin = uuid::Uuid::new_v4().to_string();
-    let registration = json!({"name":"Old machine","originId":old_origin,"localMachineId":"1"});
+    let registration = json!({"name":"Old machine","identityToken":identity_token,"originId":old_origin,"localMachineId":"1"});
     let old: Value =
         test::read_body_json(call!(post, &registration_path, token, &registration)).await;
     let old_id = old["machine"]["id"].as_str().unwrap();
@@ -88,7 +90,7 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
     assert_eq!(
         call!(
             delete,
-            &format!("/api/machines/{old_id}"),
+            &format!("/api/teams/{team_id}/machines/{old_id}"),
             token,
             &json!({})
         )
@@ -124,21 +126,17 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
             .iter()
             .any(|value| value["id"] == team.id)
     );
+    // Replacing the catalog would make retained local Session IDs ambiguous.
+    let wrong_origin = json!({"name":"Fresh machine", "identityToken":identity_token,
+        "originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"});
     assert_eq!(
-        call!(post, &registration_path, token, &registration).status(),
+        call!(post, &registration_path, token, &wrong_origin).status(),
         StatusCode::CONFLICT
     );
-    let fresh: Value = test::read_body_json(call!(
-        post,
-        &registration_path,
-        token,
-        &json!({
-            "name":"Fresh machine","originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"
-        })
-    ))
-    .await;
+    let fresh: Value =
+        test::read_body_json(call!(post, &registration_path, token, &registration)).await;
     let new_id = fresh["machine"]["id"].as_str().unwrap();
-    assert_ne!(new_id, old_id);
+    assert_eq!(new_id, old_id);
     assert_eq!(fresh["machine"]["teamId"], team.id);
     assert_ne!(fresh["token"], old["token"]);
     assert_eq!(
@@ -157,7 +155,7 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
     );
     let sessions: Value = test::read_body_json(call!(
         get,
-        &format!("/api/machines/{new_id}/sessions"),
+        &format!("/api/teams/{team_id}/machines/{new_id}/sessions"),
         token,
         &json!({})
     ))
@@ -167,10 +165,18 @@ async fn revoked_machine_rejoins_original_team_only_with_a_fresh_origin() {
         test::read_body_json(call!(get, &registration_path, token, &json!({}))).await;
     assert_eq!(machines.as_array().unwrap().len(), 1);
     assert_eq!(machines[0]["id"], new_id);
-    // Old history remains scoped to the revoked identity, never imported into
-    // the new machine even when both local catalogs allocated Session ID 1.
+    // Restoring access preserves the original Team catalog and its retained history.
+    let registration = state
+        .store
+        .authenticate_machine(fresh["token"].as_str().unwrap())
+        .await
+        .unwrap();
     assert_eq!(
-        state.store.session_snapshot(old_id, "1").await.unwrap()["snapshot"]["session"]["id"],
+        state
+            .store
+            .session_snapshot(&registration.machine.id, "1")
+            .await
+            .unwrap()["snapshot"]["session"]["id"],
         "1"
     );
     state.store.close().await.unwrap();

@@ -5,6 +5,7 @@ import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenu
 import { computed, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { LocalApplicationsApi } from "../../../../client/src/applications.ts"
+import { useAccountSession } from "../../composables/useAccountSession.ts"
 import ApplicationIcon from "./ApplicationIcon.vue"
 
 const props = defineProps<{
@@ -20,6 +21,7 @@ const props = defineProps<{
   disabled?: boolean
 }>()
 const { t } = useI18n()
+const account = useAccountSession()
 const open = ref(false)
 const launching = ref(false)
 const launchError = ref<string>()
@@ -52,7 +54,9 @@ async function launch(application: Application): Promise<void> {
   launching.value = true
   launchError.value = undefined
   try {
+    if (!account?.teamId.value) throw new Error("Select a Team before opening its Workspace")
     await props.api.openWorkspace({
+      teamId: account.teamId.value,
       applicationId: application.id, machineId: props.machineId,
       ...(props.workspaceId === undefined ? {} : { workspaceId: props.workspaceId }),
       ...(props.worktreeId === undefined ? {} : { worktreeId: props.worktreeId }),

@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { EventEmitter } from "node:events"
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { CentralApi, CentralEvent } from "@deskfleet/client/central"
@@ -11,7 +11,7 @@ vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./files-peer.ts", () => ({ createNativeFileEndpoint: vi.fn() }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
 import { DaemonClient } from "./daemon-client.ts"
-import { app, BrowserWindow, dialog, ipcMain } from "electron"
+import { BrowserWindow, dialog, ipcMain } from "electron"
 import { installFiles, invokeFiles, localSessionAttachmentDirectory, localSessionDirectory } from "./files.ts"
 
 test("file bridge accepts explicit endpoints and rejects malformed write requests", async () => {
@@ -115,37 +115,8 @@ test.each(["navigation", "account", "crash", "destroy"])("pending directory sele
   await rejected
 })
 
-test("local resources use the Session's captured directory and release the control connection", async () => {
-  const call = vi.fn(async () => ({ workspaces: [{ worktrees: [
-    { directories: [{ path: "/workspace/current" }] },
-    { sessionId: "session", directories: [{ path: "/workspace/captured" }, { path: "/workspace/secondary" }] },
-  ] }] }))
-  const close = vi.fn()
-  vi.mocked(DaemonClient.connect).mockResolvedValue({ call, close } as unknown as DaemonClient)
-  expect(await localSessionDirectory("session")).toBe("/workspace/captured")
-  expect(call).toHaveBeenCalledWith("catalogList", {})
-  expect(close).toHaveBeenCalledOnce()
-  await expect(localSessionDirectory("missing")).rejects.toThrow("unavailable")
-  expect(close).toHaveBeenCalledTimes(2)
-  call.mockRejectedValueOnce(new Error("Sign in and select a team"))
-  await expect(localSessionDirectory("session")).rejects.toThrow("Sign in and select a team")
-  expect(close).toHaveBeenCalledTimes(3)
-})
-
-test.each(["machine", "machines/00000000-0000-0000-0000-000000000001"])("attachments use the desktop profile's active %s directory", async machine => {
-  const profile = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-attachments-")))
-  fileRoots.push(profile)
-  vi.mocked(app.getPath).mockReturnValue(profile)
-  vi.mocked(DaemonClient.connect).mockResolvedValue({
-    call: vi.fn(async () => ({ workspaces: [{ worktrees: [{ sessionId: "42", directories: [{ path: profile }] }] }] })),
-    close: vi.fn(),
-  } as unknown as DaemonClient)
-  const headless = join(profile, "headless")
-  vi.stubEnv("DESKFLEET_DAEMON_DIRECTORY", headless)
-  await mkdir(headless)
-  await writeFile(join(headless, "active-machine.json"), "invalid headless state")
-  const daemon = join(profile, "daemon")
-  await mkdir(daemon)
-  if (machine !== "machine") await writeFile(join(daemon, "active-machine.json"), JSON.stringify({ directory: machine }))
-  expect(await localSessionAttachmentDirectory("42")).toBe(join(daemon, machine, "session-attachments", "42"))
+test("local Session resources require an explicit authorized Team and Machine target", async () => {
+  await expect(localSessionDirectory("1")).rejects.toThrow("authorized Team and Machine")
+  await expect(localSessionAttachmentDirectory("1")).rejects.toThrow("authorized Team and Machine")
+  expect(DaemonClient.connect).not.toHaveBeenCalled()
 })

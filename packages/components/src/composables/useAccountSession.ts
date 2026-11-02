@@ -1,6 +1,6 @@
 import { computed, ref, type ComputedRef, type Ref } from "vue"
 import type { RouteLocationRaw } from "vue-router"
-import type { AccountState, CentralApi, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
+import type { AccountState, CentralApi, LocalEnrollment, LocalMachineStatus, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
 import { router } from "../router/index.ts"
 import { captureAnalyticsContext } from "../services/analytics.ts"
 
@@ -8,7 +8,7 @@ export { accountSessionKey, useAccountSession } from "./account-session-context.
 
 export type AccountDialog = "create-team" | "join-team" | "add-machine"
 export type AccountSettingsSection = "preferences" | "appearance" | "notifications" | "team" | "plans"
-export interface HeadlessMachine { name: string; originId: string; localMachineId: string }
+export interface HeadlessMachine { name: string; originId: string; localMachineId: string; identityToken: string }
 
 /**
  * The signed-in account, its selected Team and Machine, and the actions that change them.
@@ -31,7 +31,8 @@ export interface AccountSession {
   machine: ComputedRef<Machine | undefined>
   /** Team-wide search survives switching a result into another machine's surface. */
   searchPath: Ref<string>
-  enrollment: Ref<LocalEnrollment | undefined>
+  localStatus: Ref<LocalMachineStatus | undefined>
+  enrollment: ComputedRef<LocalEnrollment | undefined>
   /** The central ID of this computer's active registration with the signed-in server. */
   localMachineId: ComputedRef<string | undefined>
   /** This computer can register (again) with the selected Team. */
@@ -77,7 +78,8 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   const machines = ref<Machine[]>([])
   const machineId = ref<string>()
   const searchPath = ref("/search")
-  const enrollment = ref<LocalEnrollment>()
+  const localStatus = ref<LocalMachineStatus>()
+  const enrollment = computed(() => localStatus.value?.registrations.find(value => value.serverUrl === account.value.serverUrl && value.teamId === teamId.value))
   const connected = ref(true)
   const notice = ref(initialNotice)
   const dialog = ref<AccountDialog>()
@@ -87,17 +89,18 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     const value = enrollment.value
     return value?.configured && !value.revoked && value.serverUrl === account.value.serverUrl ? value.machineId : undefined
   })
-  const canEnrollLocal = computed(() => !!central.enrollLocal && !!enrollment.value && (!enrollment.value.configured || enrollment.value.revoked))
+  const canEnrollLocal = computed(() => !!central.enrollLocal && !!localStatus.value && (!enrollment.value?.configured || enrollment.value.revoked))
   // A slower response for a Team the user has already left must not replace the current list.
   let machinesRevision = 0
   let membersRevision = 0
   let machineDestination: { teamId: string; machineId: string; route: RouteLocationRaw } | undefined
+  const resourceScope = () => JSON.stringify([account.value.serverUrl, account.value.user?.id, teamId.value])
 
   async function background(work: () => Promise<void>): Promise<void> {
     try { await work(); notice.value = undefined } catch (reason) { notice.value = message(reason) }
   }
   async function loadEnrollment(): Promise<void> {
-    enrollment.value = await central.localEnrollment?.().catch(() => undefined)
+    localStatus.value = await central.localEnrollment?.().catch(() => undefined)
   }
   async function loadMembers(): Promise<void> {
     const revision = ++membersRevision
@@ -140,7 +143,8 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     teams.value = list
     if (!list.some(value => value.id === teamId.value)) {
       searchPath.value = "/search"
-      const enrolledTeam = enrollment.value?.serverUrl === account.value.serverUrl ? enrollment.value.teamId : undefined
+      const registrations = localStatus.value?.registrations.filter(value => value.serverUrl === account.value.serverUrl) ?? []
+      const enrolledTeam = (registrations.find(value => !value.revoked) ?? registrations[0])?.teamId
       teamId.value = (list.find(value => value.id === enrolledTeam) ?? list[0])?.id
       machineId.value = undefined
       members.value = []
@@ -187,22 +191,31 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   }
   async function enrollLocal(name?: string): Promise<void> {
     if (!central.enrollLocal || !teamId.value) throw new Error("This computer cannot be connected from this client")
-    enrollment.value = await central.enrollLocal(teamId.value, name)
-    await loadMachines(enrollment.value.machineId)
+    const selected = teamId.value, scope = resourceScope()
+    const enrolled = await central.enrollLocal(selected, name)
+    if (resourceScope() !== scope) return
+    await loadEnrollment()
+    if (resourceScope() !== scope) return
+    await loadMachines(enrolled.machineId)
   }
   async function enrollHeadless(value: HeadlessMachine): Promise<{ machine: Machine; token: string }> {
     if (!teamId.value) throw new Error("Select a team first")
-    const result = await central.enrollHeadless(teamId.value, value)
-    await background(() => loadMachines())
+    const selected = teamId.value, scope = resourceScope()
+    const result = await central.enrollHeadless(selected, value)
+    if (resourceScope() === scope) await background(() => loadMachines())
     return result
   }
   // The open machine's own catalog follows through the server's change notification.
   async function renameMachine(id: string, name: string): Promise<void> {
-    const renamed = await central.renameMachine(id, name)
-    machines.value = machines.value.map(value => value.id === id ? { ...value, name: renamed.name } : value)
+    const selected = teamId.value!, scope = resourceScope()
+    const renamed = await central.renameMachine(selected, id, name)
+    if (resourceScope() !== scope) return
+    machines.value = machines.value.map(value => value.id === id && value.teamId === selected ? { ...value, name: renamed.name } : value)
   }
   async function removeMachine(id: string): Promise<void> {
-    await central.removeMachine(id)
+    const selected = teamId.value!, scope = resourceScope()
+    await central.removeMachine(selected, id)
+    if (resourceScope() !== scope) return
     if (machineId.value === id) machineId.value = undefined
     await Promise.all([loadEnrollment(), loadMachines()])
   }
@@ -217,7 +230,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       connected.value = event.connected
       if (event.connected) void background(reload)
     } else if (event.type === "machinesChanged" && event.teamId === teamId.value) void refreshMachines()
-    else if (event.type === "presence") {
+    else if (event.type === "presence" && event.teamId === teamId.value) {
       const target = machines.value.find(value => value.id === event.machineId)
       if (target) target.online = event.online
     }
@@ -225,7 +238,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   void background(reload).finally(() => { ready.value = true; if (initialNotice) notice.value = initialNotice })
 
   return {
-    central, ready, account, site, teams, teamId, team, members, machines, machineId, machine, searchPath, enrollment, localMachineId, canEnrollLocal,
+    central, ready, account, site, teams, teamId, team, members, machines, machineId, machine, searchPath, localStatus, enrollment, localMachineId, canEnrollLocal,
     connected, notice, dialog, reload,
     refreshMachines,
     async signIn() { await central.login(); await reload() },

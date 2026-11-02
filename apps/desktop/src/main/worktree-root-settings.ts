@@ -1,5 +1,3 @@
-import { join } from "node:path"
-import { activeMachineDirectory } from "../../../daemon/src/machine-directory.ts"
 import { readWorktreeRoot, writeWorktreeRoot } from "../../../daemon/src/worktree-settings.ts"
 import type { WorktreeRootState } from "../../../../packages/client/src/settings.ts"
 
@@ -12,7 +10,9 @@ export class WorktreeRootSettingsController {
   async get(): Promise<WorktreeRootState> {
     return {
       root: await readWorktreeRoot(this.#directory),
-      defaultRoot: join(await activeMachineDirectory(this.#directory), "session-worktrees"),
+      // Existing machine/ and newer machines/<id>/ catalogs each keep their own
+      // session-worktrees directory. Show their common parent, not one Team.
+      defaultRoot: this.#directory,
     }
   }
 

@@ -1,265 +1,218 @@
-import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
-import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import test from "node:test"
-import { promisify } from "node:util"
-import { openCatalog, openInMemoryCatalog } from "@deskfleet/native"
+import test, { type TestContext } from "node:test"
+import { openInMemoryCatalog } from "@deskfleet/native"
 import { BackendAgent } from "../../../scripts/fixtures/backend-agent.ts"
 import { until } from "../../../scripts/fixtures/backend-peer.ts"
 import type { AgentSnapshot } from "./agent-protocol.ts"
-import { AgentProviders } from "./agent-providers.ts"
+import type { EnrollmentTarget } from "./central-protocol.ts"
 import { DaemonClient } from "./control-client.ts"
 import { readDaemonDiscovery } from "./control-discovery.ts"
 import { startDaemon } from "./daemon.ts"
-import { activeMachineDirectory } from "./machine-directory.ts"
+import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import { MachineRuntime } from "./machine-runtime.ts"
 
-const execute = promisify(execFile)
-const credentials = { serverUrl: "http://127.0.0.1:9", serverId: "server", teamId: "team", machineId: "machine", token: "retired-token", revoked: true }
+const serverUrl = "http://127.0.0.1:8080"
+const targetA = { serverUrl, teamId: "team-a" }
+const targetB = { serverUrl, teamId: "team-b" }
+const credentials = { ...targetA, serverId: "server", machineId: "machine", token: "original-host-token", revoked: true }
 const options = {
   agentQuotas: new TestAgentQuotas(),
-  peers: { create: async () => { throw new Error("Unexpected peer creation") }, close: async () => {} },
+  peers: { create: async () => { throw new Error("Unexpected native peer creation") }, close: async () => { throw new Error("No native peer may be closed") } },
   capabilities: async () => ({ displays: [], audio: false }),
 }
-async function seed(directory: string, revoked = true): Promise<void> {
-  await mkdir(join(directory, "machine"), { recursive: true })
-  await writeFile(join(directory, "machine", "central.json"), JSON.stringify({ ...credentials, revoked }))
+
+async function seed(directory: string, path = "machine"): Promise<void> {
+  await mkdir(join(directory, path), { recursive: true })
+  await writeFile(join(directory, path, "central.json"), JSON.stringify(credentials))
+  if (path !== "machine") await writeFile(join(directory, "active-machine.json"), JSON.stringify({ directory: path }))
 }
 
-test("explicit registration reset stops resources and preserves their original paths and durable records", { timeout: 120_000 }, async context => {
-  const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-"))
-  const provider = new BackendAgent()
-  let runtime = new MachineRuntime(directory, { ...options, agentProvider: provider })
-  let release = () => {}
-  context.after(async () => { release(); await runtime.close(); await rm(directory, { recursive: true, force: true }) })
-  await seed(directory)
-  await runtime.init()
-  const previous = runtime.current
-  const originalIdentity = previous.central.status().identity
-  const repository = join(directory, "repository")
-  await mkdir(repository)
-  await execute("git", ["init", repository])
-  await writeFile(join(repository, "README.md"), "original\n")
-  await execute("git", ["-C", repository, "add", "."])
-  await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
-  const workspace = await previous.catalog.native.createWorkspace("Previous workspace", [{ path: repository }])
-  const configured = await previous.providers.create({ template: "codex", name: "Private previous configuration", env: { OLD_SECRET: "retained-locally" } })
-  const actor = previous.agents.actor()
-  const created = await previous.agents.handle("_deskfleet/session/create", {
-    workspaceId: workspace.id, provider: configured.id, operationId: randomUUID(), context: "worktree",
-  }, actor) as AgentSnapshot
-  const sessionId = created.session.id
-  const worktree = await previous.catalog.sessionWorktree(sessionId)
-  const cwd = worktree!.directories[0]!.path
-  await writeFile(join(cwd, "README.md"), "uncommitted changes\n")
-  await writeFile(join(cwd, "untracked.txt"), "untracked data\n")
-  await previous.agents.handle("_deskfleet/input/submit", {
-    sessionId, operationId: randomUUID(), delivery: "backlog", content: [{ type: "text", text: "Retain this conversation" }],
-  }, actor)
-  await until(() => previous.agents.journal.read(sessionId), value => value.permissions.some(permission => permission.state === "pending"), "pending permission")
-  const terminalId = "retained-terminal"
-  await previous.terminals.dial({ mode: "create", terminalId, cols: 80, rows: 24, cwd, worktreeId: worktree!.id })
-  await previous.terminals.input(terminalId, Buffer.from("echo retained-machine-transcript\r"))
-  await until(() => previous.terminals.read(terminalId, 0, 64 * 1024), value => value.includes("retained-machine-transcript"), "terminal transcript")
-  assert.equal(provider.closes, 0)
-  const closeTerminals = previous.terminals.close.bind(previous.terminals)
-  let terminalClosing!: () => void
-  const closingTerminals = new Promise<void>(resolve => { terminalClosing = resolve })
-  const gate = new Promise<void>(resolve => { release = resolve })
-  previous.terminals.close = async () => { terminalClosing(); await gate; await closeTerminals() }
-  const preparing = runtime.prepareEnrollment()
-  assert.equal(runtime.prepareEnrollment(), preparing, "Concurrent resets share one operation")
-  // Opening the replacement file catalog can be slow on Windows CI. Observe
-  // the shutdown barrier directly instead of imposing a separate storage deadline.
-  await Promise.race([
-    closingTerminals,
-    preparing.then(() => { throw new Error("Registration reset completed without closing the previous terminals") }),
-  ])
-  assert.equal(runtime.current, previous)
-  assert.equal(await activeMachineDirectory(directory), join(directory, "machine"), "The active directory changes only after resource shutdown")
-  release()
-  const status = await preparing
-  assert.equal(status.configured, false)
-  assert.equal(status.revoked, false)
-  assert.notEqual(status.identity.originId, originalIdentity.originId)
-  assert.equal(provider.closes, 1)
-  assert.notEqual(runtime.current.terminals, previous.terminals)
-  assert.deepEqual(runtime.current.terminals.list(), [])
-  assert.deepEqual((await runtime.current.catalog.native.snapshot()).workspaces, [])
-  assert.deepEqual(await runtime.current.agents.journal.list(), [])
-  assert.deepEqual(runtime.current.providers.snapshot().providers, [])
-  assert.notEqual(runtime.current.directory, previous.directory)
-  assert.equal(await activeMachineDirectory(directory), runtime.current.directory)
-  assert.deepEqual(await runtime.prepareEnrollment(), status, "Retrying prepare on the fresh identity does not rotate it again")
+function backend(context: TestContext) {
+  const registrations = new Map<string, { teamId: string; originId: string; localMachineId: string }>()
+  const uploads: { token: string; path: string; body: Record<string, unknown> }[] = []
+  const sockets: Socket[] = []
+  class Socket extends EventTarget {
+    static OPEN = 1
+    readyState = Socket.OPEN
+    token?: string
+    constructor() { super(); sockets.push(this); queueMicrotask(() => this.dispatchEvent(new Event("open"))) }
+    send(data: string): void {
+      const message = JSON.parse(data) as { type: string; token?: string }
+      if (message.type === "authenticate") {
+        this.token = message.token!
+        const registration = registrations.get(this.token)!
+        queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "ready", serverId: "server", machineId: "machine", teamId: registration.teamId }) })))
+      }
+    }
+    close(code = 1000): void { this.readyState = 3; this.dispatchEvent(new CloseEvent("close", { code })) }
+  }
+  context.mock.property(globalThis, "WebSocket", Socket as unknown as typeof WebSocket)
+  context.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    const token = new Headers(init?.headers).get("authorization")!.slice(7)
+    const path = new URL(String(input)).pathname
+    const registration = registrations.get(token)
+    if (!registration) return Response.json({ error: { code: "machine_credential_rejected" } }, { status: 401 })
+    if (path === "/api/daemon/me") return Response.json({ serverId: "server", machine: { id: "machine", ...registration } })
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : {}
+    uploads.push({ token, path, body })
+    const snapshot = body.snapshot as AgentSnapshot | undefined
+    return Response.json({ lastEventSeq: snapshot?.session?.lastEventSeq ?? body.snapshotSeq ?? "0" })
+  })
+  return { registrations, uploads, sockets }
+}
 
-  assert.deepEqual(JSON.parse(await readFile(join(previous.directory, "central.json"), "utf8")), credentials)
-  assert.deepEqual(JSON.parse(await readFile(join(previous.directory, "agent-providers.json"), "utf8")).providers, [configured])
-  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "uncommitted changes\n")
-  assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "untracked data\n")
-  const gitStatus = (await execute("git", ["-C", cwd, "status", "--porcelain"])).stdout
-  assert.match(gitStatus, /README\.md/u)
-  assert.match(gitStatus, /untracked\.txt/u)
-  const metadata = JSON.parse(await readFile(join(previous.directory, "terminals", terminalId, "session.json"), "utf8"))
-  assert.equal(metadata.terminal.status, "interrupted")
-  assert.match(await readFile(join(previous.directory, "terminals", terminalId, "output.bin"), "utf8"), /retained-machine-transcript/u)
-  const retained = await openCatalog(join(previous.directory, "catalog.db"), "retained")
-  try {
-    const snapshot = JSON.parse(await retained.agentSnapshot(sessionId)) as AgentSnapshot
-    assert.equal(snapshot.inputs.length, 1)
-    assert.ok(snapshot.runs.every(run => run.state === "stopped"))
-    assert.ok(snapshot.permissions.every(permission => permission.state !== "pending"))
-    assert.equal((await retained.snapshot()).workspaces.length, 1)
-  } finally { await retained.close() }
+test("Team registrations run concurrently with separate catalogs, preserve same local IDs, and recover after restart", { timeout: 120_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-team-runtimes-"))
+  const provider = new BackendAgent()
+  const api = backend(context)
+  let runtime = new MachineRuntime(directory, { ...options, agentProvider: provider })
+  context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
+  await runtime.init()
+  const prepareA = runtime.prepareEnrollment(targetA)
+  assert.equal(runtime.prepareEnrollment(targetA), prepareA)
+  const [preparedA, preparedB] = await Promise.all([prepareA, runtime.prepareEnrollment(targetB)])
+  assert.notEqual(preparedA.identity.originId, preparedB.identity.originId)
+  assert.equal(preparedA.identityToken, preparedB.identityToken)
+  assert.equal(preparedA.identityToken.length, 64)
+  for (const [target, prepared, token] of [[targetA, preparedA, "token-a"], [targetB, preparedB, "token-b"]] as const) {
+    api.registrations.set(token, { teamId: target.teamId, originId: prepared.identity.originId, localMachineId: prepared.identity.machineId })
+    await runtime.enroll({ ...target, machineId: "machine", token, originId: prepared.identity.originId })
+  }
+  const a = runtime.forTeam(targetA), b = runtime.forTeam(targetB)
+  assert.equal(runtime.forLocalChannel("team-a", "machine"), a.central)
+  assert.equal(runtime.forLocalChannel("team-b", "machine"), b.central)
+  assert.throws(() => runtime.forLocalChannel("team-c", "machine"), /not found/)
+  const session = async (target: EnrollmentTarget, text: string) => {
+    const machine = runtime.forTeam(target)
+    const configured = await machine.providers.create({ template: "codex", name: text, env: { TEAM: text } })
+    const workspace = await machine.catalog.native.createWorkspace(text, [{ path: directory }])
+    const created = await machine.agents.handle("_deskfleet/session/create", {
+      workspaceId: workspace.id, provider: configured.id, operationId: randomUUID(), context: "directory",
+    }, machine.agents.actor()) as AgentSnapshot
+    await machine.agents.handle("_deskfleet/input/submit", {
+      sessionId: created.session.id, operationId: randomUUID(), delivery: "backlog", content: [{ type: "text", text }],
+    }, machine.agents.actor())
+    await until(() => machine.agents.journal.read(created.session.id), value => value.permissions.some(permission => permission.state === "pending"), "running Team Session")
+    return created.session.id
+  }
+  const [idA, idB] = await Promise.all([session(targetA, "Only Team A"), session(targetB, "Only Team B")])
+  assert.equal(idA, idB, "Local IDs can repeat in distinct catalogs")
+  const snapshotA = await a.agents.journal.read(idA), snapshotB = await b.agents.journal.read(idB)
+  assert.match(JSON.stringify(snapshotA), /Only Team A/)
+  assert.doesNotMatch(JSON.stringify(snapshotA), /Only Team B/)
+  assert.match(JSON.stringify(snapshotB), /Only Team B/)
+  assert.doesNotMatch(JSON.stringify(snapshotB), /Only Team A/)
+  const before = a.agents.journal.identity
+  const again = await runtime.prepareEnrollment(targetA)
+  assert.deepEqual(again.identity, before)
+  assert.equal(again.configured, true)
+  assert.equal(provider.closes, 0, "Adding or preparing a Team does not stop accepted work")
+  assert.equal("identityToken" in runtime.status(), false)
+  assert.doesNotMatch(JSON.stringify(runtime.status()), /token-a|token-b|identityToken/)
+  await assert.rejects(runtime.enroll({ ...targetB, machineId: "different-machine", token: "token-b", originId: preparedB.identity.originId }), /retain this host/)
+  await assert.rejects(runtime.enroll({ ...targetB, machineId: "machine", token: "token-b", originId: preparedA.identity.originId }), /another catalog/)
+  await until(async () => api.uploads, values => values.some(value => value.token === "token-a" && value.path.endsWith("/history")) && values.some(value => value.token === "token-b" && value.path.endsWith("/history")), "separate Team synchronization")
+  for (const upload of api.uploads) assert.doesNotMatch(JSON.stringify(upload.body), upload.token === "token-a" ? /Only Team B/ : /Only Team A/)
+
+  api.sockets.find(socket => socket.token === "token-a")!.close(4403)
+  await until(async () => a.central.status(), value => value.revoked, "Team A revoked")
+  assert.equal(b.central.status().connected, true)
+  assert.equal(provider.closes, 0, "Revocation does not stop either Team's accepted Session")
+  const rePrepared = await runtime.prepareEnrollment(targetA)
+  assert.equal(rePrepared.revoked, true)
+  assert.deepEqual(rePrepared.identity, before)
+  api.registrations.set("token-a-new", api.registrations.get("token-a")!)
+  const renewed = { ...targetA, machineId: "machine", token: "token-a-new", originId: before.originId }
+  await runtime.enroll(renewed)
+  assert.equal(a.central.status().revoked, false)
+  assert.deepEqual(await runtime.enroll(renewed), a.central.status(), "Repeated credential delivery is idempotent")
+  assert.equal(provider.closes, 0)
+  const paths = [a.directory, b.directory]
+  await runtime.close()
+  runtime = new MachineRuntime(directory, { ...options, agentProvider: provider })
+  await runtime.init()
+  assert.deepEqual([runtime.forTeam(targetA).directory, runtime.forTeam(targetB).directory], paths)
+  assert.deepEqual(runtime.forTeam(targetA).agents.journal.identity, before)
+  assert.equal((await runtime.prepareEnrollment(targetB)).identityToken, preparedA.identityToken)
+  assert.match(JSON.stringify(await runtime.forTeam(targetA).agents.journal.read(idA)), /Only Team A/)
+  assert.match(JSON.stringify(await runtime.forTeam(targetB).agents.journal.read(idB)), /Only Team B/)
+  assert.equal(runtime.status().registrations.length, 2)
+})
+
+test("legacy registration keeps its identity, catalog, paths, and host token when another Team joins", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-team-migration-"))
+  const legacyDirectory = `machines/${randomUUID()}`
+  await seed(directory, legacyDirectory)
+  let runtime = new MachineRuntime(directory, options)
+  context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
+  await runtime.init()
+  const original = runtime.forTeam(targetA), identity = original.agents.journal.identity
+  const workspace = await original.catalog.native.createWorkspace("Retained workspace", [{ path: directory }])
+  const prepared = await runtime.prepareEnrollment(targetA)
+  assert.equal(prepared.identityToken, credentials.token)
+  assert.equal(prepared.revoked, true)
+  assert.deepEqual(prepared.identity, identity)
+  await runtime.prepareEnrollment(targetB)
+  assert.equal(runtime.forTeam(targetA), original)
+  assert.equal(original.directory, join(directory, legacyDirectory))
+  await runtime.close()
+  await writeFile(join(directory, "active-machine.json"), "obsolete pointer after migration")
+  runtime = new MachineRuntime(directory, options)
+  await runtime.init()
+  assert.deepEqual(runtime.forTeam(targetA).agents.journal.identity, identity)
+  assert.equal((await runtime.forTeam(targetA).catalog.native.snapshot()).workspaces[0]?.id, workspace.id)
+  assert.equal((await runtime.prepareEnrollment(targetB)).identityToken, credentials.token)
+})
+
+test("pending registrations survive restart and a failed additional registration leaves existing work available", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-team-pending-"))
+  let runtime = new MachineRuntime(directory, options)
+  context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
+  await runtime.init()
+  const prepared = await runtime.prepareEnrollment(targetA)
+  const a = runtime.forTeam(targetA)
+  const blocker = join(directory, "machine-registrations.json.tmp")
+  await mkdir(blocker)
+  await assert.rejects(runtime.prepareEnrollment(targetB))
+  assert.equal(runtime.forTeam(targetA), a)
+  assert.equal(runtime.status().registrations.length, 1)
+  await rm(blocker, { recursive: true })
+  await runtime.prepareEnrollment(targetB)
   await runtime.close()
   runtime = new MachineRuntime(directory, options)
   await runtime.init()
-  assert.deepEqual(runtime.current.central.status().identity, status.identity, "Host restart selects the newly prepared directory")
-  assert.deepEqual(await runtime.current.agents.journal.list(), [])
-  assert.deepEqual(runtime.current.providers.snapshot().providers, [])
+  assert.deepEqual(await runtime.prepareEnrollment(targetA), prepared)
+  assert.equal(runtime.status().registrations.length, 2)
 })
 
-test("registration preparation retains host IPC and resolves getters to the new context", async context => {
-  const directory = await mkdtemp(join(tmpdir(), "df-machine-ipc-reset-"))
-  let starting: ReturnType<typeof startDaemon> | undefined
-  const clients: DaemonClient[] = []
-  context.after(async () => {
-    clients.forEach(client => client.close())
-    try { await (await starting)?.close() }
-    finally { await rm(directory, { recursive: true, force: true }) }
+test("host IPC keeps both Team registrations available and exposes secrets only through prepare", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-team-ipc-"))
+  const daemon = await startDaemon(0, {
+    controlDirectory: directory, openCatalog: (_path, name) => openInMemoryCatalog(name),
+    permissionPlatform: "darwin", requestScreenCaptureAccess: async () => null,
+    requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null,
   })
-  const own = (client: DaemonClient): DaemonClient => {
-    clients.push(client)
-    if (context.signal.aborted) { client.close(); context.signal.throwIfAborted() }
-    return client
-  }
-  await seed(directory)
-  context.signal.throwIfAborted()
-  starting = startDaemon(0, {
-    controlDirectory: directory,
-    // This tests IPC continuity, not SQLite persistence. Each context gets its own catalog.
-    openCatalog: (_path, name) => openInMemoryCatalog(name),
-    permissionPlatform: "darwin" as const,
-    requestScreenCaptureAccess: async () => null,
-    requestAccessibilityAccess: async () => null,
-    requestFullDiskAccess: async () => null,
-  })
-  const daemon = await starting
-  context.signal.throwIfAborted()
-  const first = own(await DaemonClient.connect(() => {}, () => {}, directory))
-  const second = own(await DaemonClient.connect(() => {}, () => {}, directory))
-  const before = await first.call("centralStatus", {})
-  assert.equal(before.revoked, true)
+  const first = await DaemonClient.connect(() => {}, () => {}, directory)
+  const second = await DaemonClient.connect(() => {}, () => {}, directory)
+  context.after(async () => { first.close(); second.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
   const discovery = await readDaemonDiscovery(directory)
-  const previousTerminals = daemon.terminals
-  const statuses = await Promise.all([first.call("centralPrepareEnrollment", {}), second.call("centralPrepareEnrollment", {})])
-  assert.deepEqual(statuses[0], statuses[1])
-  assert.notEqual(statuses[0]!.identity.originId, before.identity.originId)
-  assert.deepEqual(await first.call("centralStatus", {}), statuses[0])
-  assert.deepEqual(daemon.central.status(), statuses[0])
-  assert.notEqual(daemon.terminals, previousTerminals)
-  assert.equal(first.closed, false)
+  assert.deepEqual((await first.call("centralStatus", {})).registrations, [])
+  const [a, aAgain, b] = await Promise.all([
+    first.call("centralPrepareEnrollment", targetA), second.call("centralPrepareEnrollment", targetA), second.call("centralPrepareEnrollment", targetB),
+  ])
+  assert.deepEqual(a, aAgain)
+  assert.equal(a.identityToken, b.identityToken)
+  assert.notEqual(a.identity.originId, b.identity.originId)
+  const status = await first.call("centralStatus", {})
+  assert.equal(status.registrations.length, 2)
+  assert.equal(status.registrations[0]!.teamId, targetA.teamId)
+  assert.doesNotMatch(JSON.stringify(status), /identityToken|token/)
   assert.deepEqual(await readDaemonDiscovery(directory), discovery)
-  assert.equal((await fetch(`${daemon.address}/healthz`)).status, 200)
-})
-
-test("an enrolled machine cannot prepare another registration just because it is offline", async context => {
-  const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-denied-"))
-  await seed(directory, false)
-  const runtime = new MachineRuntime(directory, { ...options, openCatalog: (_path, name) => openInMemoryCatalog(name) })
-  context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
-  await runtime.init()
-  const identity = runtime.current.central.status().identity
-  await assert.rejects(runtime.prepareEnrollment(), /already enrolled/u)
-  assert.deepEqual(runtime.current.central.status().identity, identity)
-  assert.equal(await activeMachineDirectory(directory), join(directory, "machine"))
-})
-
-test("failed registration preparation keeps the retired catalog usable and can be retried", async context => {
-  for (const failure of ["directory", "startup", "activation"] as const) await context.test(failure, async context => {
-    const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-retry-"))
-    await seed(directory)
-    const runtime = new MachineRuntime(directory, { ...options, openCatalog: (_path, name) => openInMemoryCatalog(name) })
-    context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
-    await runtime.init()
-    const previous = runtime.current
-    const original = previous.central.status()
-    const workspace = await previous.catalog.native.createWorkspace("Retained", [{ path: directory }])
-    let removeFailure = async () => {}
-    if (failure === "directory") {
-      const path = join(directory, "machines")
-      await writeFile(path, "not a directory")
-      removeFailure = () => rm(path)
-    } else if (failure === "startup") {
-      const init = context.mock.method(AgentProviders.prototype, "init", async () => { throw new Error("Provider settings unavailable") })
-      removeFailure = async () => { init.mock.restore() }
-    } else {
-      const path = join(directory, "active-machine.json.tmp")
-      await mkdir(path)
-      removeFailure = () => rm(path, { recursive: true })
-    }
-    await assert.rejects(runtime.prepareEnrollment())
-    assert.equal(runtime.current, previous)
-    assert.deepEqual(runtime.current.central.status(), original)
-    assert.equal((await runtime.current.catalog.native.snapshot()).workspaces[0]?.id, workspace.id)
-    assert.equal(await activeMachineDirectory(directory), previous.directory)
-    await removeFailure()
-    const prepared = await runtime.prepareEnrollment()
-    assert.equal(prepared.configured, false)
-    assert.notEqual(prepared.identity.originId, original.identity.originId)
-    assert.equal(await activeMachineDirectory(directory), runtime.current.directory)
-    assert.deepEqual((await runtime.current.catalog.native.snapshot()).workspaces, [])
-    await runtime.close()
-  })
-})
-
-test("a committed registration reset succeeds when retired machine cleanup fails", async context => {
-  const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-cleanup-"))
-  await seed(directory)
-  const runtime = new MachineRuntime(directory, { ...options, openCatalog: (_path, name) => openInMemoryCatalog(name) })
-  context.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }) })
-  await runtime.init()
-  const previous = runtime.current
-  const original = previous.central.status()
-  const failure = new Error("Retired central cleanup failed")
-  const close = previous.central.close.bind(previous.central)
-  context.mock.method(previous.central, "close", async () => { await close(); throw failure })
-  const report = context.mock.method(console, "error", () => {})
-
-  const prepared = await runtime.prepareEnrollment()
-  assert.equal(prepared.configured, false)
-  assert.notEqual(prepared.identity.originId, original.identity.originId)
-  assert.deepEqual(runtime.current.central.status(), prepared)
-  assert.equal(await activeMachineDirectory(directory), runtime.current.directory)
-  assert.deepEqual(await runtime.prepareEnrollment(), prepared)
-  assert.throws(() => previous.catalog.native, /not available/u)
-  assert.deepEqual(report.mock.calls.map(call => call.arguments), [["Retired machine cleanup failed", failure]])
-})
-
-test("host shutdown waits for an accepted reset and closes its replacement context", async context => {
-  const directory = await mkdtemp(join(tmpdir(), "df-machine-reset-shutdown-"))
-  await seed(directory)
-  const daemon = await startDaemon(0, { controlDirectory: directory, openCatalog: (_path, name) => openInMemoryCatalog(name), permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
-  const client = await DaemonClient.connect(() => {}, () => {}, directory)
-  let release = () => {}
-  context.after(async () => { release(); client.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
-  const originalIdentity = daemon.central.status().identity
-  const closeTerminals = daemon.terminals.close.bind(daemon.terminals)
-  let entered = false
-  const gate = new Promise<void>(resolve => { release = resolve })
-  daemon.terminals.close = async () => { entered = true; await gate; await closeTerminals() }
-  const preparing = client.call("centralPrepareEnrollment", {}).catch(error => error)
-  await until(() => entered, Boolean, "reset closes old terminals")
-  const closing = daemon.close()
-  await until(() => client.closed, Boolean, "host closes its IPC connection")
-  assert.equal(await activeMachineDirectory(directory), join(directory, "machine"))
-  release()
-  await closing
-  await preparing
-  assert.notEqual(daemon.central.status().identity.originId, originalIdentity.originId)
-  await assert.rejects(daemon.terminals.dial({ mode: "create", terminalId: "after-shutdown", cols: 80, rows: 24 }), /closed/u)
-  await assert.rejects(readDaemonDiscovery(directory), { code: "ENOENT" })
+  assert.equal(first.closed, false)
+  const identityFile = JSON.parse(await readFile(join(directory, "machine-identity.json"), "utf8"))
+  assert.equal(identityFile.identityToken, a.identityToken)
 })

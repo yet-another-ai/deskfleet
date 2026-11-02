@@ -1163,7 +1163,7 @@
     "signingIn": "Signing in…",
     "signOut": "Sign out",
     "signalingOffline": "Server connection interrupted. Existing peer sessions remain available until their authorization expires.",
-    "enrollmentRevoked": "This computer was removed from its team. Reconnecting gives it a new, empty identity; its previous local data stays on disk.",
+    "enrollmentRevoked": "This computer was removed from this Team. Reconnect to access its existing Sessions and history.",
     "reconnectThisComputer": "Reconnect this computer",
     "dismiss": "Dismiss",
     "addMachine": "Add machine",
@@ -1249,25 +1249,25 @@
     "machineNameFor": "New name for {name}",
     "removeMachineLabel": "Remove {name}",
     "removeMachineTitle": "Remove {name}?",
-    "removeMachineDescription": "Its credential is revoked and live connections close. Files and history stay on the machine; it can join again later with a new identity."
+    "removeMachineDescription": "Its credential for this Team is revoked and connections to this Team close. Files and history are kept for rejoining. Other Teams stay connected."
   },
   "addMachine": {
     "title": "Add a machine to {team}",
     "description": "Machines run agents, terminals, and remote desktops for the team.",
     "localDescription": "Run agents on the computer you are using now.",
-    "localRevoked": "Reconnect with a new, empty identity. Previous data stays on disk.",
+    "localRevoked": "Reconnect this Team and retain its previous Sessions.",
     "localConnected": "Already connected to {team}.",
     "connecting": "Connecting…",
     "other": "Another machine",
     "otherDescription": "A server or another computer running deskfleet-daemon.",
     "statusStep": "On that machine, start the daemon and run",
     "pasteStep": "Paste the command’s output",
-    "pasteHint": "The output identifies the daemon installation. It contains no secrets.",
+    "pasteHint": "Paste the enrollment bundle for this Team. It contains a private machine credential; share it only with this server.",
     "identityFound": "Machine identity found.",
     "status": {
-      "invalid": "This doesn’t look like the output of deskfleet-daemon status.",
-      "enrolled": "This machine already belongs to a team. An admin must remove it before it can be added again.",
-      "revoked": "This machine was removed from its team. Run deskfleet-daemon prepare-enrollment and paste that output instead."
+      "invalid": "Paste the prepare-enrollment output for this server and Team.",
+      "enrolled": "This machine is already registered in this Team.",
+      "revoked": "Prepare enrollment again for this Team."
     },
     "nameStep": "Name it for your team",
     "nameHint": "Defaults to the machine’s hostname. You can rename it later in Team settings.",

@@ -51,7 +51,7 @@ async function setup(initial: ScheduledTask[] = []) {
   platformClient.target = { id: "machine-1", local: false }
   const fake = fakeCentral({ machines: [machineFixture("machine-1", "team-1", "Build machine"), machineFixture("machine-2", "team-1", "Other machine")] })
   let schedules = clone(initial)
-  const rpc = vi.fn(async (_machineId: string, method: string, params: unknown): Promise<unknown> => {
+  const rpc = vi.fn(async (_teamId: string, _machineId: string, method: string, params: unknown): Promise<unknown> => {
     if (method === "scheduleList") return clone(schedules)
     if (method === "scheduleCreate") {
       const created = task({ ...(params as { schedule: ScheduleInput }).schedule, id: "schedule-new" })
@@ -140,7 +140,7 @@ test("creates a manual task on the selected machine with the chosen workspace, d
   await choose(wrapper, "schedule-target", "directory")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleCreate", { schedule: {
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleCreate", { schedule: {
     title: "Review on demand", prompt: "Review the changes", workspaceId: "10", enabled: true,
     target: { kind: "new", provider: "codex", context: "directory", configuration: { model: "draft-model", reasoningEffort: "medium" } },
     trigger: { kind: "manual" },
@@ -157,7 +157,7 @@ test("cancelling a new task returns to the list without saving", async () => {
   await flushPromises()
   expect(router.currentRoute.value.params.scheduleId).toBeFalsy()
   expect(wrapper.find('[data-schedule-id="schedule-1"]').exists()).toBe(true)
-  expect(rpc.mock.calls.filter(([, method]) => method === "scheduleCreate")).toHaveLength(0)
+  expect(rpc.mock.calls.filter(([, , method]) => method === "scheduleCreate")).toHaveLength(0)
 })
 
 test("opening and editing a scheduled task keeps composer defaults unchanged and saves local agent choices", async () => {
@@ -173,7 +173,7 @@ test("opening and editing a scheduled task keeps composer defaults unchanged and
   await flushPromises()
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", {
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", {
     scheduleId: "schedule-1", changes: { ...input, target: { kind: "new", provider: "codex", context: "worktree", configuration: { model: "schedule-model", reasoningEffort: "high", mode: "plan" } } },
   })
   expect(agents.draftConfiguration).toEqual(defaults)
@@ -190,10 +190,10 @@ test("editing an existing-session task keeps workspace ownership and never confi
   await wrapper.get('[name="schedule-prompt"]').setValue("Continue the current review")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", {
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", {
     scheduleId: "schedule-1", changes: { ...input, prompt: "Continue the current review", target: { kind: "existing", sessionId: "20" } },
   })
-  expect(rpc.mock.calls.every(([, method]) => method.startsWith("schedule"))).toBe(true)
+  expect(rpc.mock.calls.every(([, , method]) => method.startsWith("schedule"))).toBe(true)
 })
 
 test("pausing retains the editor draft, and a later save keeps the task paused", async () => {
@@ -202,13 +202,13 @@ test("pausing retains the editor draft, and a later save keeps the task paused",
   await wrapper.get('[name="schedule-title"]').setValue("Unsaved title")
   await wrapper.get("[data-schedule-toggle]").trigger("click")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", { scheduleId: "schedule-1", changes: { enabled: false } })
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", { scheduleId: "schedule-1", changes: { enabled: false } })
   expect((wrapper.get('[name="schedule-title"]').element as HTMLInputElement).value).toBe("Unsaved title")
   expect(wrapper.findAll("header").at(-1)!.text()).toContain("Paused")
   expect(wrapper.get("[data-schedule-toggle]").text()).toContain("Resume")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenLastCalledWith("machine-1", "scheduleUpdate", { scheduleId: "schedule-1", changes: expect.objectContaining({ title: "Unsaved title", enabled: false }) })
+  expect(rpc).toHaveBeenLastCalledWith("team-1", "machine-1", "scheduleUpdate", { scheduleId: "schedule-1", changes: expect.objectContaining({ title: "Unsaved title", enabled: false }) })
 })
 
 test("run errors remain visible and a later successful run links to its session", async () => {
@@ -237,7 +237,7 @@ test("runs a task from its list row and disables machine switching until the req
   response.resolve({ id: "run-1", state: "running", scheduledFor: "2026-10-26T01:00:00Z", startedAt: "2026-10-26T01:00:00Z" })
   await flushPromises()
   expect(tabs.every(tab => tab.attributes("disabled") === undefined)).toBe(true)
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleRun", { scheduleId: "schedule-1" })
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleRun", { scheduleId: "schedule-1" })
   expect(router.currentRoute.value.params.scheduleId).toBeFalsy()
 })
 
@@ -255,7 +255,7 @@ test("weekly timing starts on weekdays and saves the chosen days, time, and zone
   await setTime(wrapper, '[data-control-name="schedule-time"]', "14:30")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "weekly", time: "14:30", timeZone: "Europe/London", weekdays: [1, 5] } }) }))
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "weekly", time: "14:30", timeZone: "Europe/London", weekdays: [1, 5] } }) }))
 })
 
 test("a task in a regional time zone can be changed to UTC", async () => {
@@ -264,7 +264,7 @@ test("a task in a regional time zone can be changed to UTC", async () => {
   await selectOption(wrapper, '[data-control-name="schedule-timezone"]', "UTC")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "daily", time: "09:00", timeZone: "UTC" } }) }))
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "daily", time: "09:00", timeZone: "UTC" } }) }))
 })
 
 test("interval timing saves hours as minutes and keeps the typed number when the unit changes", async () => {
@@ -280,7 +280,7 @@ test("interval timing saves hours as minutes and keeps the typed number when the
   await selectOption(wrapper, '[data-control-name="schedule-interval-unit"]', "hours")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "interval", minutes: 180 } }) }))
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ trigger: { kind: "interval", minutes: 180 } }) }))
 })
 
 test.each(["daily", "weekly"] as const)("saves %s segmented time at minute precision", async kind => {
@@ -290,7 +290,7 @@ test.each(["daily", "weekly"] as const)("saves %s segmented time at minute preci
   await setTime(wrapper, '[data-control-name="schedule-time"]', "14:30")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({
     trigger: { kind, time: "14:30", timeZone: "Asia/Singapore", ...(kind === "weekly" ? { weekdays: [1, 2, 3, 4, 5] } : {}) },
   }) }))
 })
@@ -303,14 +303,14 @@ test("Chinese schedule dates and time segments use the supported Intl locale", a
   await setTime(wrapper, '[data-control-name="schedule-time"]', "09:05")
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({
     trigger: { kind: "weekly", time: "09:05", timeZone: "Asia/Singapore", weekdays: [1, 2, 3, 4, 5] },
   }) }))
 })
 
 test("deleting a task from its page returns to the list", async () => {
   const { wrapper, rpc, router } = await setup([task(), task({ id: "schedule-2", title: "Other task" })])
-  rpc.mockImplementation(async (_machineId, method, params) => {
+  rpc.mockImplementation(async (_teamId, _machineId, method, params) => {
     if (method === "scheduleList") return [task({ id: "schedule-2", title: "Other task" })]
     if (method === "scheduleDelete") return null
     throw new Error(`Unexpected method ${method} ${JSON.stringify(params)}`)
@@ -320,7 +320,7 @@ test("deleting a task from its page returns to the list", async () => {
   await flushPromises()
   await new DOMWrapper(document.querySelector('[role="dialog"] .ui-button-danger')!).trigger("click")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleDelete", { scheduleId: "schedule-1" })
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleDelete", { scheduleId: "schedule-1" })
   expect(router.currentRoute.value.params.scheduleId).toBeFalsy()
   expect(wrapper.find('[data-schedule-id="schedule-1"]').exists()).toBe(false)
   expect(wrapper.find('[data-schedule-id="schedule-2"]').exists()).toBe(true)
@@ -362,7 +362,7 @@ test("an offline schedule detail reads the synced snapshot and can retry a faile
   await flushPromises()
   await router.push("/schedules/schedule-1")
   await flushPromises()
-  expect(scheduleSnapshot).toHaveBeenCalledWith("machine-1")
+  expect(scheduleSnapshot).toHaveBeenCalledWith("team-1", "machine-1")
   expect(wrapper.text()).toContain("Last synced")
   expect(wrapper.get("[data-schedule-run]").attributes("disabled")).toBeDefined()
   expect(wrapper.get("[data-schedule-delete]").attributes("disabled")).toBeDefined()
@@ -388,10 +388,10 @@ test("a removed saved provider never silently falls back to the machine default"
   expect(wrapper.getComponent(ConfigurationStub).props("providerId")).toBe("removed-provider")
   expect(wrapper.get("[data-schedule-save]").attributes("disabled")).toBeDefined()
   await wrapper.get("form").trigger("submit")
-  expect(rpc.mock.calls.filter(([, method]) => method === "scheduleUpdate")).toHaveLength(0)
+  expect(rpc.mock.calls.filter(([, , method]) => method === "scheduleUpdate")).toHaveLength(0)
   wrapper.getComponent(ConfigurationStub).vm.$emit("update:providerId", "codex")
   await flushPromises()
   await wrapper.get("form").trigger("submit")
   await flushPromises()
-  expect(rpc).toHaveBeenCalledWith("machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ target: { kind: "new", provider: "codex", context: "worktree" } }) }))
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", expect.objectContaining({ changes: expect.objectContaining({ target: { kind: "new", provider: "codex", context: "worktree" } }) }))
 })

@@ -46,10 +46,10 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         emit({ ...event.event, sessionId: local[0] } as DesktopEvent)
       }
       else emit({ sessionId: local[0], kind: "error", error: event.reason })
-    } else if ((event.type === "catalogChanged" && event.machineId === machine.id) || (event.type === "connection" && event.connected)) {
+    } else if ((event.type === "catalogChanged" && event.teamId === machine.teamId && event.machineId === machine.id) || (event.type === "connection" && event.connected)) {
       // Reconnect can miss catalog updates even when the machine's roster metadata is unchanged.
       refreshCatalog(event.type === "catalogChanged" ? event.sessionId : undefined)
-    } else if (event.type === "presence" && event.machineId === machine.id) {
+    } else if (event.type === "presence" && event.teamId === machine.teamId && event.machineId === machine.id) {
       online = event.online
       for (const listener of catalogEvents) listener()
     }
@@ -99,13 +99,13 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     },
     onEvent(listener: (event: DesktopEvent) => void) { events.add(listener); return () => { events.delete(listener) } },
   })
-  const rpc = <T>(method: string, params: unknown = {}) => central.rpc<T>(machine.id, method, params)
+  const rpc = <T>(method: string, params: unknown = {}) => central.rpc<T>(machine.teamId, machine.id, method, params)
   const api: DeskfleetDesktopApi = {
     ...host,
     target: { id: machine.id, local, lastSeen: machine.lastSeenAt ?? undefined },
     catalog: {
       list: async () => {
-        const { snapshot } = await central.catalog(machine.id)
+        const { snapshot } = await central.catalog(machine.teamId, machine.id)
         name = snapshot.machineName
         return snapshot
       },
@@ -117,7 +117,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     filesystem: { listDirectories: path => rpc("directoryList", path === undefined ? {} : { path }) },
     system: { status: () => rpc("systemStatus") },
     providers: {
-      display: async () => (await central.catalog(machine.id)).providers ?? { providers: [] },
+      display: async () => (await central.catalog(machine.teamId, machine.id)).providers ?? { providers: [] },
       list: () => rpc("providerList"), create: provider => rpc("providerCreate", { provider }),
       update: (providerId, changes) => rpc("providerUpdate", { providerId, changes }),
       remove: providerId => rpc("providerRemove", { providerId }), test: provider => rpc("providerTest", { provider }),
@@ -130,11 +130,11 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       control: <M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]) => management.has(method) && !(local && method === "_deskfleet/git/branches") ? rpc<AgentMethods[M]["result"]>(method, params) : undefined,
       history: {
         available: () => online,
-        list: async () => (await central.sessions(machine.id)).map(snapshot => ({ ...snapshot.session,
+        list: async () => (await central.sessions(machine.teamId, machine.id)).map(snapshot => ({ ...snapshot.session,
           working: snapshot.turns.some(turn => ["starting", "running", "cancelling"].includes(turn.state)),
         })),
-        snapshot: async sessionId => (await central.session(machine.id, sessionId)).snapshot,
-        events: async (sessionId, after, limit) => (await central.events(machine.id, sessionId, after, limit)).events,
+        snapshot: async sessionId => (await central.session(machine.teamId, machine.id, sessionId)).snapshot,
+        events: async (sessionId, after, limit) => (await central.events(machine.teamId, machine.id, sessionId, after, limit)).events,
       },
     },
     terminal: {

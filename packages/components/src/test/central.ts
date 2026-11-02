@@ -125,13 +125,13 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     }),
     invite: vi.fn(async (_teamId: string, _email: string, _role: "admin" | "member") => ({ token: "invitation-token", expiresAt: "2026-11-20T12:00:00Z" })),
     machines: vi.fn(async (teamId: string) => state.machines.filter(machine => machine.teamId === teamId).map(machine => ({ ...machine }))),
-    renameMachine: vi.fn(async (machineId: string, name: string) => {
-      const machine = state.machines.find(value => value.id === machineId)!
+    renameMachine: vi.fn(async (teamId: string, machineId: string, name: string) => {
+      const machine = state.machines.find(value => value.id === machineId && value.teamId === teamId)!
       machine.name = name.trim()
       return { ...machine }
     }),
-    removeMachine: vi.fn(async (machineId: string) => {
-      state.machines = state.machines.filter(machine => machine.id !== machineId)
+    removeMachine: vi.fn(async (teamId: string, machineId: string) => {
+      state.machines = state.machines.filter(machine => machine.id !== machineId || machine.teamId !== teamId)
       if (state.enrollment?.machineId === machineId) state.enrollment = { ...state.enrollment, revoked: true }
     }),
     enrollHeadless: vi.fn(async (teamId: string, input: { name: string; originId: string; localMachineId: string }) => {
@@ -140,9 +140,9 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       return { machine: { ...machine }, token: "machine-token" }
     }),
     ...(state.enrollment ? {
-      localEnrollment: vi.fn(async () => ({ ...state.enrollment! })),
+      localEnrollment: vi.fn(async () => ({ machineName: state.enrollment!.machineName, registrations: state.enrollment!.configured ? [{ ...state.enrollment! }] : [] })),
       enrollLocal: vi.fn(async (teamId: string, name?: string) => {
-        const machine = machineFixture(`local-${state.machines.length + 1}`, teamId, name || state.enrollment!.machineName)
+        const machine = machineFixture(state.enrollment!.machineId ?? `local-${state.machines.length + 1}`, teamId, name || state.enrollment!.machineName)
         state.machines.push(machine)
         state.enrollment = { ...state.enrollment!, configured: true, revoked: false, serverUrl: "https://fleet.example", teamId, machineId: machine.id }
         return { ...state.enrollment }

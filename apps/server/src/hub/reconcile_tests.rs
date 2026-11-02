@@ -11,7 +11,7 @@ async fn daemon_requests_wait_for_the_reconciliation_gate() {
     let hub = Hub::default();
     let (send, mut messages) = mpsc::channel(1);
     let (shutdown, _stopped) = watch::channel(None);
-    hub.add_daemon("machine", "socket", send, shutdown)
+    hub.add_daemon("machine", "team", "machine", "socket", send, shutdown)
         .await
         .unwrap();
     let gate = hub.registration.lock().await;
@@ -51,6 +51,7 @@ async fn postgres_reconciliation_repairs_missed_revocation_and_precedes_new_offe
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -68,7 +69,7 @@ async fn postgres_reconciliation_repairs_missed_revocation_and_precedes_new_offe
             source_machine: None,
         },
         target_machine: PeerTarget {
-            id: machine.id.clone(),
+            id: machine.machine_id.clone(),
             origin_id: machine.origin_id.clone(),
             local_machine_id: machine.local_machine_id.clone(),
         },
@@ -89,9 +90,16 @@ async fn postgres_reconciliation_repairs_missed_revocation_and_precedes_new_offe
     let (hub, router) = Hub::connect(store.clone()).await.unwrap();
     let (send, mut messages) = mpsc::channel(16);
     let (shutdown, _stopped) = watch::channel(None);
-    hub.add_daemon(&machine.id, "socket", send, shutdown)
-        .await
-        .unwrap();
+    hub.add_daemon(
+        &machine.id,
+        &machine.team_id,
+        &machine.machine_id,
+        "socket",
+        send,
+        shutdown,
+    )
+    .await
+    .unwrap();
 
     hub.reconcile_daemon(&machine.id, "socket").await.unwrap();
     assert_eq!(
@@ -167,9 +175,16 @@ async fn postgres_reconciliation_repairs_missed_revocation_and_precedes_new_offe
 
     let (send, mut replacement) = mpsc::channel(16);
     let (shutdown, _stopped) = watch::channel(None);
-    hub.add_daemon(&machine.id, "replacement", send, shutdown)
-        .await
-        .unwrap();
+    hub.add_daemon(
+        &machine.id,
+        &machine.team_id,
+        &machine.machine_id,
+        "replacement",
+        send,
+        shutdown,
+    )
+    .await
+    .unwrap();
     assert!(hub.reconcile_daemon(&machine.id, "socket").await.is_err());
     assert!(replacement.try_recv().is_err());
     hub.reconcile_daemon(&machine.id, "replacement")

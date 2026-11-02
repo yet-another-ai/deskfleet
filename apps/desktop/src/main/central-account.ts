@@ -4,8 +4,9 @@ import { createServer } from "node:http"
 import { join } from "node:path"
 import { HttpCentralClient, serverAddress, type SavedAccount } from "@deskfleet/client/http-central"
 import { CENTRAL_METHODS, centralIpcFailure } from "@deskfleet/client/central-bridge"
-import type { CentralEvent, LocalEnrollment } from "@deskfleet/client/central"
+import type { CentralEvent } from "@deskfleet/client/central"
 import { setPeerTelemetrySink } from "@deskfleet/client/peer-telemetry"
+import type { ControlMethods } from "../../../daemon/src/control-protocol.ts"
 import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { enrollLocalMachine } from "./local-enrollment.ts"
@@ -74,9 +75,9 @@ async function authorize(client: HttpCentralClient, openAuthorization: (url: str
   } finally { clearTimeout(timeout); server.close(); server.closeAllConnections() }
 }
 
-async function daemonCall(method: "centralStatus" | "centralPrepareEnrollment" | "centralEnroll", params: unknown): Promise<LocalEnrollment> {
+async function daemonCall<M extends "centralStatus" | "centralPrepareEnrollment" | "centralEnroll">(method: M, params: ControlMethods[M]["params"]): Promise<ControlMethods[M]["result"]> {
   const client = await DaemonClient.connect(() => {}, () => {})
-  try { return await client.call(method, params as never) as LocalEnrollment }
+  try { return await client.call(method, params) }
   finally { client.close() }
 }
 
@@ -86,7 +87,7 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
   const localEnrollment = () => daemonCall("centralStatus", {})
   const enrollLocal = (teamId: string, name?: string) => enrollLocalMachine(client, {
     status: localEnrollment,
-    prepare: () => daemonCall("centralPrepareEnrollment", {}),
+    prepare: target => daemonCall("centralPrepareEnrollment", target),
     enroll: credentials => daemonCall("centralEnroll", credentials),
   }, teamId, name)
   const methods: Record<string, (...args: never[]) => unknown> = Object.fromEntries(CENTRAL_METHODS

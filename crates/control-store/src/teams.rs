@@ -132,7 +132,7 @@ impl ControlStore {
         }
         if tx
             .query_one_raw(sql(
-                "SELECT id FROM cp_machines WHERE team_id=$1 LIMIT 1",
+                "SELECT id FROM cp_machine_registrations WHERE team_id=$1 LIMIT 1",
                 vec![id.into()],
             ))
             .await?

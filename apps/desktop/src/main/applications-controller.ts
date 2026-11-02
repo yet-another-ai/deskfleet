@@ -1,4 +1,4 @@
-import type { CentralApi, LocalEnrollment } from "@deskfleet/client/central"
+import type { CentralApi, LocalMachineStatus } from "@deskfleet/client/central"
 import type { LocalApplicationsApi, OpenWorkspaceRequest } from "@deskfleet/client/applications"
 import type { CatalogSnapshot } from "@deskfleet/client/catalog"
 
@@ -10,12 +10,12 @@ export interface ApplicationLauncher {
 /** Resolve live daemon paths through authorized management, never renderer-supplied paths. */
 export class LocalApplicationsController implements LocalApplicationsApi {
   readonly #central: Pick<CentralApi, "status" | "rpc">
-  readonly #enrollment: () => Promise<LocalEnrollment>
+  readonly #enrollment: () => Promise<LocalMachineStatus>
   readonly #launcher: ApplicationLauncher
 
   constructor(
     central: Pick<CentralApi, "status" | "rpc">,
-    enrollment: () => Promise<LocalEnrollment>,
+    enrollment: () => Promise<LocalMachineStatus>,
     launcher: ApplicationLauncher,
   ) {
     this.#central = central
@@ -29,11 +29,12 @@ export class LocalApplicationsController implements LocalApplicationsApi {
     if ((request.workspaceId === undefined) === (request.worktreeId === undefined)) {
       throw new Error("Invalid application or Workspace identifier")
     }
-    const [account, local] = await Promise.all([this.#central.status(), this.#enrollment()])
-    if (!account.user || !local.configured || local.revoked || local.serverUrl !== account.serverUrl || local.machineId !== request.machineId) {
+    const [account, status] = await Promise.all([this.#central.status(), this.#enrollment()])
+    const local = status.registrations.find(value => value.serverUrl === account.serverUrl && value.teamId === request.teamId && value.machineId === request.machineId)
+    if (!account.user || !local?.configured || local.revoked || local.serverUrl !== account.serverUrl || local.machineId !== request.machineId) {
       throw new Error("Only Workspaces on this client's local machine can be opened")
     }
-    const catalog = await this.#central.rpc<CatalogSnapshot>(request.machineId, "catalogList", {})
+    const catalog = await this.#central.rpc<CatalogSnapshot>(request.teamId, request.machineId, "catalogList", {})
     if (catalog.machineId !== local.identity.machineId) throw new Error("Workspace machine does not match the local machine")
     const worktrees = request.worktreeId !== undefined
       ? [...catalog.sessions, ...catalog.workspaces.flatMap(workspace => workspace.worktrees)]
@@ -64,7 +65,7 @@ export async function invokeApplications(api: LocalApplicationsApi, method: unkn
     throw new Error("Invalid Workspace directory index")
   }
   return api.openWorkspace({
-    applicationId: identifier(input.applicationId), machineId: identifier(input.machineId),
+    applicationId: identifier(input.applicationId), teamId: identifier(input.teamId), machineId: identifier(input.machineId),
     ...(input.workspaceId === undefined ? {} : { workspaceId: identifier(input.workspaceId) }),
     ...(input.worktreeId === undefined ? {} : { worktreeId: identifier(input.worktreeId) }),
     ...(input.directoryIndex === undefined ? {} : { directoryIndex: input.directoryIndex as number }),

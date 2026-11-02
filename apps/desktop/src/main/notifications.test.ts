@@ -37,7 +37,7 @@ function fixture() {
 }
 
 function event(kind: TaskNotification["kind"] = "taskCompleted"): TaskNotification {
-  return { kind, machineId: "machine-1", sessionId: "session-1", title: "Update the desktop app" }
+  return { kind, teamId: "team", machineId: "machine-1", sessionId: "session-1", title: "Update the desktop app" }
 }
 
 function lastNotification(): Notification {

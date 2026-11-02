@@ -1,15 +1,15 @@
 WITH candidates AS (
- SELECT d.*,m.name AS machine_name,
+ SELECT d.*,m.machine_id,m.name AS machine_name,
   CASE WHEN d.kind='chat' THEN s.summary#>>'{session,title}' ELSE t.record->>'title' END AS title,
   CASE WHEN d.kind='chat' THEN s.summary#>>'{session,workspaceId}' ELSE t.record->>'workspaceId' END AS workspace_id,
   COALESCE(CASE WHEN d.kind='chat' THEN s.summary#>>'{session,updatedAt}' ELSE t.record->>'updatedAt' END,'') AS updated_at,
   c.snapshot->'workspaces' AS workspaces
  FROM cp_search_documents d
- JOIN cp_machines m ON m.id=d.machine_id
+ JOIN cp_machine_registrations m ON m.id=d.registration_id
  JOIN cp_members member ON member.team_id=m.team_id AND member.user_id=$2
- JOIN cp_catalogs c ON c.machine_id=m.id
- LEFT JOIN cp_sessions s ON d.kind='chat' AND s.machine_id=d.machine_id AND s.session_id=d.resource_id
- LEFT JOIN cp_schedules t ON d.kind='schedule' AND t.machine_id=d.machine_id AND t.schedule_id=d.resource_id
+ JOIN cp_catalogs c ON c.registration_id=m.id
+ LEFT JOIN cp_sessions s ON d.kind='chat' AND s.registration_id=d.registration_id AND s.session_id=d.resource_id
+ LEFT JOIN cp_schedules t ON d.kind='schedule' AND t.registration_id=d.registration_id AND t.schedule_id=d.resource_id
  WHERE m.team_id=$1 AND NOT m.revoked AND ($3='all' OR d.kind=$3)
   AND d.content ILIKE $4 ESCAPE '\'
   AND ((d.kind='chat' AND s.summary#>>'{session,archiveState}'='active'

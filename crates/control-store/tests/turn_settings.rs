@@ -219,6 +219,7 @@ async fn upgrade_keeps_existing_settings_and_peer_snapshots_survive_list_changes
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -239,7 +240,7 @@ async fn upgrade_keeps_existing_settings_and_peer_snapshots_survive_list_changes
             source_machine: None,
         },
         target_machine: PeerTarget {
-            id: machine.id,
+            id: machine.machine_id,
             origin_id: machine.origin_id,
             local_machine_id: machine.local_machine_id,
         },

@@ -81,8 +81,9 @@ async function fixture(context: TestContext, agentProvider?: AgentProvider) {
     await daemon.close()
     await rm(directory, { recursive: true, force: true })
   })
-  identity = daemon.central.status().identity
-  await daemon.central.enroll({ serverUrl: "http://localhost:8080", teamId: "team", machineId: "machine", token: "machine-secret" })
+  const prepared = await daemon.registrations.prepareEnrollment({ serverUrl: "http://localhost:8080", teamId: "team" })
+  identity = prepared.identity
+  await daemon.registrations.enroll({ serverUrl: "http://localhost:8080", teamId: "team", machineId: "machine", token: "machine-secret", originId: identity.originId })
   socket.receive({ type: "ready", serverId: "server", teamId: "team", machineId: "machine" })
   let requestId = 0
   const central = async (method: string, params: unknown) => {
@@ -159,7 +160,7 @@ test("local terminal opens during fast Agent previews and durable events replace
   const sessionId = snapshot.session.id
   const agent = await f.connect(), terminal = await f.connect()
   await f.prepare("streaming-agent", "agent")
-  await agent.client.call("localOpen", { peerId: "streaming-agent", token })
+  await agent.client.call("localOpen", { teamId: "team", machineId: "machine", peerId: "streaming-agent", token })
   const rpc = (id: number, method: string, params: unknown = {}) => agent.send("streaming-agent", { jsonrpc: "2.0", id, method, params })
   await rpc(1, "initialize", { protocolVersion: 1 })
   await rpc(2, "_deskfleet/session/subscribe", { sessionId })
@@ -183,7 +184,7 @@ test("local terminal opens during fast Agent previews and durable events replace
   const beforeTerminal = chunks.length
   await f.central("terminalDial", { terminalId: "during-stream", mode: "create", cols: 80, rows: 24 })
   await f.prepare("streaming-terminal", "terminal")
-  await terminal.client.call("localOpen", { peerId: "streaming-terminal", token })
+  await terminal.client.call("localOpen", { teamId: "team", machineId: "machine", peerId: "streaming-terminal", token })
   await terminal.send("streaming-terminal", { id: 1, method: "attach", params: { sessionId: "during-stream" } }, true)
   await until(() => terminal.packets("streaming-terminal").some(packet => packet.id === 1))
   const echo = "terminal remains interactive 中文\n"
@@ -236,10 +237,10 @@ test("authenticated IPC carries Agent and terminal messages with WebRTC disabled
   const f = await fixture(context)
   const a = await f.connect(), b = await f.connect()
   await assert.rejects(a.client.call("catalogList", {}), /backend API/)
-  await assert.rejects(a.client.call("localOpen", { peerId: "unknown", token }), /Unknown authorized peer/)
+  await assert.rejects(a.client.call("localOpen", { teamId: "team", machineId: "machine", peerId: "unknown", token }), /Unknown authorized peer/)
   await f.prepare("agent", "agent")
-  await a.client.call("localOpen", { peerId: "agent", token })
-  await assert.rejects(b.client.call("localOpen", { peerId: "agent", token }), /unavailable/)
+  await a.client.call("localOpen", { teamId: "team", machineId: "machine", peerId: "agent", token })
+  await assert.rejects(b.client.call("localOpen", { teamId: "team", machineId: "machine", peerId: "agent", token }), /unavailable/)
   await assert.rejects(b.send("agent", {}), /this connection/)
   await a.send("agent", { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1 } })
   await a.send("agent", { jsonrpc: "2.0", id: 2, method: "_deskfleet/session/list", params: {} })
@@ -251,7 +252,7 @@ test("authenticated IPC carries Agent and terminal messages with WebRTC disabled
 
   await f.central("terminalDial", { terminalId: "shell", mode: "create", cols: 80, rows: 24 })
   await f.prepare("terminal", "terminal")
-  await a.client.call("localOpen", { peerId: "terminal", token })
+  await a.client.call("localOpen", { teamId: "team", machineId: "machine", peerId: "terminal", token })
   await a.send("terminal", { id: 1, method: "attach", params: { sessionId: "shell" } }, true)
   await until(() => a.packets("terminal").some(packet => packet.id === 1))
   await a.send("terminal", { id: 2, method: "input", params: { sessionId: "shell", data: Buffer.from("local echo").toString("base64") } }, true)
@@ -265,7 +266,7 @@ test("authenticated IPC carries Agent and terminal messages with WebRTC disabled
   assert.equal(f.native.closed, false)
 
   await f.prepare("reconnected", "terminal")
-  await b.client.call("localOpen", { peerId: "reconnected", token })
+  await b.client.call("localOpen", { teamId: "team", machineId: "machine", peerId: "reconnected", token })
   await b.send("reconnected", { id: 1, method: "attach", params: { sessionId: "shell" } }, true)
   await until(() => output(b.packets("reconnected")).length > 0)
   assert.equal(Buffer.from(output(b.packets("reconnected"))[0]!.data!, "base64").toString(), "local echo")
@@ -280,7 +281,7 @@ test("local delivery waits for the owning socket's acknowledgement and revocatio
   const f = await fixture(context)
   const a = await f.connect(false), b = await f.connect()
   await f.prepare("agent", "agent")
-  await a.client.call("localOpen", { peerId: "agent", token })
+  await a.client.call("localOpen", { teamId: "team", machineId: "machine", peerId: "agent", token })
   await a.send("agent", { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1 } })
   await until(() => a.messages("agent").length === 1)
   await a.send("agent", { jsonrpc: "2.0", id: 2, method: "_deskfleet/session/list", params: {} })

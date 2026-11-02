@@ -38,7 +38,7 @@ function requestFailure(rpcMethod = "_deskfleet/agent/configuration", code = "EN
   return centralRequestFailure(new TypeError("fetch failed", {
     cause: Object.assign(new Error("getaddrinfo ENOTFOUND private-host"), { code }),
   }), {
-    method: "POST", path: "/api/machines/private-machine/rpc?token=private-query", elapsedMs: 123.4,
+    method: "POST", path: "/api/teams/private-team/machines/private-machine/rpc?token=private-query", elapsedMs: 123.4,
     body: { method: rpcMethod, params: { provider: "private-provider", workspaceId: "private-workspace" } },
   })
 }
@@ -78,9 +78,9 @@ test("reports handled central transport failures with bounded diagnostics and de
   expect(events()).toHaveLength(1)
   expect(events()[0]).toMatchObject({
     exception: { values: [{ type: "TypeError", value: "fetch failed" }] },
-    tags: { platform: "desktop", "central.method": "POST", "central.route": "/api/machines/:machineId/rpc", "central.rpc_method": "_deskfleet/agent/configuration", "central.cause_code": "ENOTFOUND" },
+    tags: { platform: "desktop", "central.method": "POST", "central.route": "/api/teams/:teamId/machines/:machineId/rpc", "central.rpc_method": "_deskfleet/agent/configuration", "central.cause_code": "ENOTFOUND" },
     contexts: { central_request: {
-      method: "POST", route: "/api/machines/:machineId/rpc", rpc_method: "_deskfleet/agent/configuration", elapsed_ms: 123,
+      method: "POST", route: "/api/teams/:teamId/machines/:machineId/rpc", rpc_method: "_deskfleet/agent/configuration", elapsed_ms: 123,
       causes: ["TypeError", "Error: ENOTFOUND"],
     } },
   })
@@ -113,7 +113,7 @@ test("retains consecutive failures with the same stack but distinct RPC methods 
   }
   expect(events()).toHaveLength(3)
   expect(events().map(event => event.fingerprint)).toEqual(requests.map(([method, code]) => [
-    "{{ default }}", "POST", "/api/machines/:machineId/rpc", method, code,
+    "{{ default }}", "POST", "/api/teams/:teamId/machines/:machineId/rpc", method, code,
   ]))
 })
 

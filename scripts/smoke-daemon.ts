@@ -89,16 +89,21 @@ try {
     assert.deepEqual(await response.json(), { status: "ok", native: expectedNative })
     const status = JSON.parse(execFileSync(command, ["status"], {
       cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
-    })) as { configured: boolean; connected: boolean; revoked: boolean; identity: { originId: string; machineId: string } }
-    assert.equal(status.configured, false)
-    assert.equal(status.connected, false)
-    assert.equal(status.revoked, false)
-    assert.ok(status.identity.originId)
-    assert.match(status.identity.machineId, /^\d+$/u)
-    const prepared = JSON.parse(execFileSync(command, ["prepare-enrollment"], {
+    })) as { machineName: string; registrations: unknown[] }
+    assert.deepEqual(status.registrations, [])
+    assert.ok(status.machineName)
+    const prepareArgs = ["prepare-enrollment", "--server-url", "http://127.0.0.1:8080", "--team-id", "smoke"]
+    const prepared = JSON.parse(execFileSync(command, prepareArgs, {
       cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
-    })) as typeof status
-    assert.deepEqual(prepared.identity, status.identity, "An unregistered machine needs no directory reset")
+    })) as { configured: boolean; identityToken: string; identity: { originId: string; machineId: string } }
+    assert.equal(prepared.configured, false)
+    assert.ok(prepared.identity.originId)
+    assert.match(prepared.identity.machineId, /^\d+$/u)
+    assert.equal(prepared.identityToken.length, 64)
+    const repeated = JSON.parse(execFileSync(command, prepareArgs, {
+      cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+    })) as typeof prepared
+    assert.deepEqual(repeated, prepared, "Repeated preparation must reuse the Team catalog and host identity")
     child.kill("SIGTERM")
     const [code, signal] = await Promise.race([closed, deadline])
     if (process.platform !== "win32") {

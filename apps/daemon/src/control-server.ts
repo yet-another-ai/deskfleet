@@ -26,7 +26,6 @@ import type { AgentProviders } from "./agent-providers.ts"
 import type { ProviderSetup } from "./provider-setup.ts"
 import type { CentralClient } from "./central-client.ts"
 import { MachineRuntime } from "./machine-runtime.ts"
-import type { CentralStatus } from "./central-protocol.ts"
 import { DesktopInputChannel, DESKTOP_INPUT_CHANNEL } from "./desktop-input.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
@@ -67,8 +66,7 @@ class ControlConnection {
   readonly #providers: AgentProviders
   readonly #setup: ProviderSetup
   readonly #onShutdownRequested: (() => void) | undefined
-  readonly #central: () => CentralClient
-  readonly #prepareEnrollment: () => Promise<CentralStatus>
+  readonly #machine: MachineRuntime
   readonly #allowLocalControlForTests: boolean
   readonly #sessions = new Map<string, OwnedPeer>()
   readonly #closingSessions = new Map<string, Promise<void>>()
@@ -81,7 +79,7 @@ class ControlConnection {
   #authenticated = false
   #closing: Promise<void> | undefined
 
-  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: DesktopPermissions, agents: () => AgentSessions, providers: AgentProviders, setup: ProviderSetup, central: () => CentralClient, prepareEnrollment: () => Promise<CentralStatus>, allowLocalControlForTests: boolean, onShutdownRequested?: () => void) {
+  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: DesktopPermissions, agents: () => AgentSessions, providers: AgentProviders, setup: ProviderSetup, machine: MachineRuntime, allowLocalControlForTests: boolean, onShutdownRequested?: () => void) {
     this.#socket = socket
     this.#token = token
     this.#peers = peers
@@ -93,8 +91,7 @@ class ControlConnection {
     this.#providers = providers
     this.#setup = setup
     this.#onShutdownRequested = onShutdownRequested
-    this.#central = central
-    this.#prepareEnrollment = prepareEnrollment
+    this.#machine = machine
     this.#allowLocalControlForTests = allowLocalControlForTests
     const unsubscribeTerminals = allowLocalControlForTests ? terminals.onChange(event => {
       if (event.kind === "terminalHungup") this.#dialed.delete(event.terminalId)
@@ -224,13 +221,13 @@ class ControlConnection {
     switch (request.method) {
       case "permissionsRefresh": return this.#permissions.refresh()
       case "permissionRequest": return this.#permissions.requestPermission(request.params.permission)
-      case "centralStatus": return this.#central().status()
-      case "centralPrepareEnrollment": return this.#prepareEnrollment()
-      case "centralEnroll": return this.#central().enroll(request.params)
+      case "centralStatus": return this.#machine.status()
+      case "centralPrepareEnrollment": return this.#machine.prepareEnrollment(request.params)
+      case "centralEnroll": return this.#machine.enroll(request.params)
       case "localOpen": {
-        const { peerId, token } = request.params
+        const { peerId, token, teamId, machineId } = request.params
         if (this.#localPeers.size >= 16) throw new Error("Too many local channels on this connection")
-        const central = this.#central()
+        const central = this.#machine.forLocalChannel(teamId, machineId)
         central.openLocal(peerId, token, this, {
           send: (data, isString) => this.#sendLocal(peerId, data, isString),
           close: error => {
@@ -518,7 +515,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
       if (stopping || socket.destroyed) { socket.destroy(); return }
       const current = machine.current
       connection = new ControlConnection(socket, discovery.token, peers, capabilities, current.terminals, current.catalog, permissions,
-        () => machine.current.agents, current.providers, current.setup, () => machine.current.central, () => machine.prepareEnrollment(),
+        () => machine.current.agents, current.providers, current.setup, machine,
         options.allowLocalControlForTests === true, onShutdownRequested)
       connections.add(connection)
       return connection.run()
@@ -563,7 +560,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
     // startup cannot open a retired directory or rewrite live terminal metadata.
     await machine.init()
     ready()
-    return { stop, close, get central() { return machine.current.central }, get terminals() { return machine.current.terminals } }
+    return { stop, close, registrations: machine, get central() { return machine.current.central }, get terminals() { return machine.current.terminals } }
   } catch (error) {
     failed(error)
     await close()
