@@ -109,8 +109,18 @@ export const router = createRouter({
         },
         {
           path: "developer",
-          name: "settings-developer",
-          component: () => import("../components/settings/DeveloperSettings.vue"),
+          children: [
+            {
+              path: "",
+              name: "settings-developer",
+              component: () => import("../components/settings/DeveloperSettings.vue"),
+            },
+            {
+              path: "nat",
+              name: "settings-developer-nat",
+              component: () => import("../components/settings/NatSettings.vue"),
+            },
+          ],
         },
         {
           path: "about",

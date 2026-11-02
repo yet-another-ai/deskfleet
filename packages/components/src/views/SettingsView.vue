@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Bell, Bot, Code, Info, Palette, Plug, ShieldCheck, SlidersHorizontal } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
-import { RouterView, useRouter } from "vue-router"
+import { RouterView, useRoute, useRouter } from "vue-router"
 import GithubIcon from "../components/common/GithubIcon.vue"
 import SettingsLayout from "../components/settings/SettingsLayout.vue"
 import SidebarLink from "../components/sidebar/SidebarLink.vue"
@@ -10,6 +10,7 @@ import { usePlatformClient } from "../composables/usePlatformClient.ts"
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const account = useAccountSession()
 const client = usePlatformClient()
 
@@ -31,7 +32,7 @@ function leave(): void {
       <SidebarLink v-if="client.platform !== 'web' && (client.onboarding || (client.platform === 'win32' && client.windowsDesktopService))" :to="{ name: 'settings-permissions' }" :icon="ShieldCheck" :label="t('permissionsSettings.title')" replace />
       <SidebarLink v-if="!account || account.machine.value" :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />
       <SidebarLink v-if="!account || account.machine.value" :to="{ name: 'settings-mcp-servers' }" :icon="Plug" :label="t('mcpServers.title')" replace />
-      <SidebarLink :to="{ name: 'settings-developer' }" :icon="Code" :label="t('developerSettings.title')" replace />
+      <SidebarLink :to="{ name: 'settings-developer' }" :icon="Code" :label="t('developerSettings.title')" :class="{ 'ui-nav-active': route.matched.some(record => record.path === '/settings/developer') }" replace />
       <SidebarLink :to="{ name: 'settings-about' }" :icon="Info" :label="t('aboutSettings.title')" replace />
     </template>
     <RouterView />

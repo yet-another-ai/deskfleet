@@ -1,10 +1,10 @@
 import type { NatTestResult, NetworkDiagnosticsApi } from "@deskfleet/client/network-diagnostics"
 import { getClient } from "@deskfleet/client/platform"
-import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { flushPromises, mount, RouterLinkStub, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
 import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
-import DeveloperSettings from "./DeveloperSettings.vue"
+import NatSettings from "./NatSettings.vue"
 
 const fullCone: NatTestResult = {
   server: "192.0.2.10:3478",
@@ -18,9 +18,10 @@ const fullCone: NatTestResult = {
 let view: VueWrapper | undefined
 
 function render(api?: NetworkDiagnosticsApi) {
-  view = mount(DeveloperSettings, {
+  view = mount(NatSettings, {
     global: {
       plugins: [i18n],
+      stubs: { RouterLink: RouterLinkStub },
       provide: { [platformClientKey as symbol]: { ...getClient(), networkDiagnostics: api } },
     },
   })
@@ -53,7 +54,7 @@ test("starts only on click, uses the configured service, and prevents duplicate 
   expect(testNat).toHaveBeenCalledTimes(1)
   complete(fullCone)
   await flushPromises()
-  expect(wrapper.get("h3").text()).toBe("Full-cone NAT")
+  expect(wrapper.get("h2").text()).toBe("Full-cone NAT")
   expect(wrapper.text()).toContain(fullCone.server)
   expect(wrapper.text()).toContain(fullCone.publicAddress)
   expect(wrapper.get("button").attributes("disabled")).toBeUndefined()
@@ -63,18 +64,18 @@ test("clears the previous result on retry and recovers after a failed probe", as
   const testNat = vi.fn<NetworkDiagnosticsApi["testNat"]>().mockResolvedValueOnce(fullCone)
   const wrapper = render({ testNat })
   await submit(wrapper)
-  expect(wrapper.find("h3").exists()).toBe(true)
+  expect(wrapper.find("h2").exists()).toBe(true)
   testNat.mockRejectedValueOnce(new Error("STUN hostname could not be resolved"))
   await wrapper.get("button").trigger("click")
   await flushPromises()
-  expect(wrapper.find("h3").exists()).toBe(false)
+  expect(wrapper.find("h2").exists()).toBe(false)
   expect(wrapper.get('[role="alert"]').text()).toBe("STUN hostname could not be resolved")
   expect(wrapper.get("button").attributes("disabled")).toBeUndefined()
   testNat.mockResolvedValueOnce(fullCone)
   await wrapper.get("button").trigger("click")
   await flushPromises()
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-  expect(wrapper.get("h3").text()).toBe("Full-cone NAT")
+  expect(wrapper.get("h2").text()).toBe("Full-cone NAT")
 })
 
 test.each([
@@ -89,7 +90,7 @@ test.each([
 ] as const)("summarizes %s mapping and %s filtering", async (mapping, filtering, label) => {
   const wrapper = render({ testNat: async () => ({ ...fullCone, mapping, filtering }) })
   await submit(wrapper)
-  expect(wrapper.get("h3").text()).toBe(label)
+  expect(wrapper.get("h2").text()).toBe(label)
 })
 
 test.each([
@@ -99,7 +100,7 @@ test.each([
 ] as const)("explains a %s result without inventing a NAT type", async (status, explanation) => {
   const wrapper = render({ testNat: async () => ({ ...fullCone, publicAddress: null, status, mapping: "unknown", filtering: "unknown" }) })
   await submit(wrapper)
-  expect(wrapper.get("h3").text()).toBe("Undetermined")
+  expect(wrapper.get("h2").text()).toBe("Undetermined")
   expect(wrapper.get('[role="status"]').text()).toContain(explanation)
   expect(wrapper.get('[role="status"]').text()).toContain("—")
 })
@@ -111,14 +112,14 @@ test("shows the desktop requirement when the host has no native diagnostics", ()
 })
 
 test.each([
-  ["en-US", "Developer settings", "Full-cone NAT"],
-  ["zh-cmn-Hans-CN", "开发者设置", "完全锥形 NAT"],
-  ["ja-JP", "開発者設定", "フルコーン NAT"],
-] as const)("localizes developer settings and results in %s", async (locale, title, resultLabel) => {
+  ["en-US", "NAT network type", "Full-cone NAT"],
+  ["zh-cmn-Hans-CN", "NAT 网络类型", "完全锥形 NAT"],
+  ["ja-JP", "NAT ネットワークタイプ", "フルコーン NAT"],
+] as const)("localizes NAT diagnostics and results in %s", async (locale, title, resultLabel) => {
   i18n.global.locale.value = locale
   const wrapper = render({ testNat: async () => fullCone })
   await submit(wrapper)
   expect(wrapper.get("h1").text()).toBe(title)
-  expect(wrapper.get("h3").text()).toBe(resultLabel)
+  expect(wrapper.get("h2").text()).toBe(resultLabel)
   expect(wrapper.text()).not.toContain("developerSettings.")
 })

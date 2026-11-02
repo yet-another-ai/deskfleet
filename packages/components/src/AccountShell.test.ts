@@ -29,6 +29,8 @@ beforeAll(async () => {
     import("./views/SettingsView.vue"),
     import("./components/settings/PreferencesSettings.vue"),
     import("./components/settings/AppearanceSettings.vue"),
+    import("./components/settings/DeveloperSettings.vue"),
+    import("./components/settings/NatSettings.vue"),
     import("./views/TeamSettingsView.vue"),
     import("./components/team/TeamSettings.vue"),
     import("./components/settings/PlansUsageSettings.vue"),
@@ -466,10 +468,32 @@ test.each([
   await navItem("Developer settings").trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Developer settings"))
   expect(router.currentRoute.value.path).toBe("/settings/developer")
+  expect(buttonText("Test NAT type")).toBeUndefined()
+  await page().get('a[href="#/settings/developer/nat"]').trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("NAT network type"))
+  expect(router.currentRoute.value.path).toBe("/settings/developer/nat")
+  expect(navItem("Developer settings").classes()).toContain("ui-nav-active")
+  const developerBack = page().findAll('a[href="#/settings/developer"]').find(link => !link.element.closest("nav"))!
+  await developerBack.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Developer settings"))
+  expect(router.currentRoute.value.path).toBe("/settings/developer")
   await navItem("Appearance").trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Appearance"))
   await buttonText("Back to app")!.trigger("click")
   await settled(() => expect(router.currentRoute.value.fullPath).toBe(source))
+})
+
+test.each(["web", "darwin"] as const)("%s opens the NAT route directly and returns to the developer index", async platform => {
+  const fake = fakeCentral()
+  await router.push("/settings/developer/nat")
+  mountShell(fake.central, platform)
+  await settled(() => expect(page().get("h1").text()).toBe("NAT network type"))
+  const developerNav = page().get('nav a[href="#/settings/developer"]')
+  expect(developerNav.classes()).toContain("ui-nav-active")
+  await developerNav.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Developer settings"))
+  expect(page().get('a[href="#/settings/developer/nat"]').text()).toContain("NAT network type")
+  expect(buttonText("Test NAT type")).toBeUndefined()
 })
 
 test.each([

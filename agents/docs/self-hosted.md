@@ -493,7 +493,9 @@ does not allocate them and does not have a port-range variable.
 ### NAT diagnostics
 
 Desktop **Settings → Developer settings → NAT network type** tests the network
-of the computer running the app. Click **Test NAT type**; the app automatically
+of the computer running the app. Open **NAT network type** from the developer
+settings list to reach its dedicated page (`/settings/developer/nat`), then click
+**Test NAT type**; the app automatically
 uses the current installation's `DESKFLEET_STUN_URLS`, the same deployment-owned
 STUN list advertised to peers. No address input or separate public-server default
 is offered. The authenticated `GET /api/network-configuration` endpoint returns

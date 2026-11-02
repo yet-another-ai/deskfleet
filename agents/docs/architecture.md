@@ -554,8 +554,12 @@ the palette and padding behavior.
 Malformed or invalid saved desktop appearance uses defaults without rewriting
 the file until a successful edit. Filesystem read errors remain visible errors.
 
-Settings → Developer settings exposes client-local network diagnostics. Its NAT
-test uses the current DeskFleet installation's configured STUN service from the computer running Electron,
+Settings → Developer settings (`/settings/developer`) is the entry list for
+developer tools and configuration. NAT diagnostics owns a separate child route,
+`/settings/developer/nat`, including its transient test state and results. Links
+within settings replace the history entry so **Back to app** retains the original
+application destination. The NAT test uses the current DeskFleet installation's
+configured STUN service from the computer running Electron,
 independently of the selected Machine and the hosted daemon. The sandboxed
 renderer invokes a parameterless, trusted-main-frame IPC capability. Electron
 reads deployment-owned STUN URLs from authenticated `GET /api/network-configuration`
