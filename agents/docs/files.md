@@ -45,6 +45,11 @@ The Web client owns its manager at page/account scope,
 outside the selected machine's Vue/Pinia scope. Leaving that browser page ends
 its transfers. The queue is not persisted or resumed across application restarts.
 
+The shared file panel snapshots source and destination locations, including their
+nested targets, into plain objects before enqueueing. Vue reactive proxies cannot
+cross Electron's context bridge or the browser transfer queue's structured clone;
+the snapshots retain each location's paths and local access grant or machine IDs.
+
 ## Electron local file access
 
 The local pane opens the OS user's home directory immediately. Desktop transfers

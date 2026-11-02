@@ -55,7 +55,12 @@ function transfer(side: "local" | "remote"): void {
   const entries = [...selection.value[side]]
   void operation(async () => {
     for (const entry of entries) {
-      await props.api.enqueue({ kind: entry.kind, source: { target: source.target, path: entry.path }, destination })
+      // Vue proxies, including nested targets, cannot cross the Electron bridge or queue clone.
+      await props.api.enqueue({
+        kind: entry.kind,
+        source: { target: { ...source.target }, path: entry.path },
+        destination: { target: { ...destination.target }, path: destination.path },
+      })
       selection.value[side] = selection.value[side].filter(selected => selected.path !== entry.path)
     }
   })
