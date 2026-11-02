@@ -34,14 +34,14 @@ importers:
   apps/daemon:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
-        specifier: 0.98.0
-        version: 0.98.0(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))
+        specifier: 0.99.1
+        version: 0.99.1(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))
       '@agentclientprotocol/codex-acp':
         specifier: 2.3.0
         version: 2.3.0(patch_hash=30d6ea4346e4bc997255a84a6dcec395905df04742bbb63a5e48355fe7307b43)
       '@agentclientprotocol/sdk':
-        specifier: 2.0.2
-        version: 2.0.2(zod@4.6.7)
+        specifier: 2.1.0
+        version: 2.1.0(zod@4.6.7)
       '@deskfleet/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
@@ -73,8 +73,8 @@ importers:
         specifier: 1.101.0
         version: 1.101.0
       '@lucide/vue':
-        specifier: 1.62.0
-        version: 1.62.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
+        specifier: 1.64.0
+        version: 1.64.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
@@ -139,8 +139,8 @@ importers:
         specifier: 5.4.0
         version: 5.4.0(@vue/compiler-sfc@3.6.0-rc.13)(esbuild@0.28.2)(pinia@4.1.0(@typescript/typescript6@6.0.2)(@vue/devtools-api@8.2.1)(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2)))(rolldown@1.2.16)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
       vue-tsc:
-        specifier: 3.3.13
-        version: 3.3.13(@typescript/typescript6@6.0.2)
+        specifier: 3.3.14
+        version: 3.3.14(@typescript/typescript6@6.0.2)
 
   apps/web:
     devDependencies:
@@ -175,8 +175,8 @@ importers:
         specifier: 3.6.0-rc.13
         version: 3.6.0-rc.13(@typescript/typescript6@6.0.2)
       vue-tsc:
-        specifier: 3.3.13
-        version: 3.3.13(@typescript/typescript6@6.0.2)
+        specifier: 3.3.14
+        version: 3.3.14(@typescript/typescript6@6.0.2)
 
   crates/node:
     devDependencies:
@@ -205,8 +205,8 @@ importers:
         specifier: 5.3.0
         version: 5.3.0
       '@lucide/vue':
-        specifier: 1.62.0
-        version: 1.62.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
+        specifier: 1.64.0
+        version: 1.64.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
       '@vueuse/core':
         specifier: 15.0.0
         version: 15.0.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
@@ -239,8 +239,8 @@ importers:
         specifier: 2.0.0-alpha.21
         version: 2.0.0-alpha.21(@types/node@24.19.2)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(postcss@8.5.32)(yaml@2.9.1)
       vue-tsc:
-        specifier: 3.3.13
-        version: 3.3.13(@typescript/typescript6@6.0.2)
+        specifier: 3.3.14
+        version: 3.3.14(@typescript/typescript6@6.0.2)
 
   packages/client:
     devDependencies:
@@ -263,8 +263,8 @@ importers:
         specifier: 1.101.0
         version: 1.101.0
       '@lucide/vue':
-        specifier: 1.62.0
-        version: 1.62.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
+        specifier: 1.64.0
+        version: 1.64.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
       '@proj-airi/chromatic':
         specifier: ^2.0.1
         version: 2.0.1
@@ -345,8 +345,8 @@ importers:
         version: 5.4.0(@vue/compiler-sfc@3.6.0-rc.13)(esbuild@0.28.2)(pinia@4.1.0(@typescript/typescript6@6.0.2)(@vue/devtools-api@8.2.1)(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2)))(rolldown@1.2.16)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: 2.0.2
-        version: 2.0.2(zod@4.6.7)
+        specifier: 2.1.0
+        version: 2.1.0(zod@4.6.7)
       '@intlify/unplugin-vue-i18n':
         specifier: 11.2.8
         version: 11.2.8(@typescript/typescript6@6.0.2)(supports-color@7.2.0)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(vue-i18n@11.4.16(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2)))(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
@@ -384,8 +384,8 @@ importers:
         specifier: 5.0.5
         version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(happy-dom@21.0.4)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       vue-tsc:
-        specifier: 3.3.13
-        version: 3.3.13(@typescript/typescript6@6.0.2)
+        specifier: 3.3.14
+        version: 3.3.14(@typescript/typescript6@6.0.2)
 
   packages/mcp:
     dependencies:
@@ -398,8 +398,8 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@agentclientprotocol/claude-agent-acp@0.98.0':
-    resolution: {integrity: sha512-6UGEODegNXXgS6wKX9T1v72oSLVtSmM1N/9H780ljqkaR7B+OdlfMYFdscNurfodt9l3xjGy0Bga/NtnLs/Vlw==}
+  '@agentclientprotocol/claude-agent-acp@0.99.1':
+    resolution: {integrity: sha512-tK5lNtoI85IS0K8PVKYK86t/ARgCS1AjEw+u6QSNmdu0tbhyeB6FTNzFnGNIgsL/3xYwrQUMFDC6osT1aIPReQ==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -417,56 +417,65 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.0.0
 
+  '@agentclientprotocol/sdk@2.1.0':
+    resolution: {integrity: sha512-IuKjJmHLPzbmbg26eK9Jopd8AVxgLuu8fX114YzYAU6tLYclCo2DUzLL4vbCpYGr9mzvs2T0kigE3ZCueL06tg==}
+    peerDependencies:
+      '@modelcontextprotocol/server': ^2.4.0
+      zod: ^3.25.76 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/server':
+        optional: true
+
   '@antfu/install-pkg@2.1.0':
     resolution: {integrity: sha512-sdg9NxU3zR4Mnawfbc/x6GB5Wf17WYud5qOuEuxXjaKpYpMkISSJEjItGebXJ2bQ4DIcly4NYH23mtkGJjvKUw==}
 
-  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.310':
-    resolution: {integrity: sha512-gpzMjDZdcdA2Webuqm9j76exG8yNK/755ZYWbS3MM4vVBlAsm+enEO+hhNt0Mx1VMil28RWetvTO4ZJ3YODVMA==}
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.312':
+    resolution: {integrity: sha512-AVmdMOuoeE3Y9f4wAIPcEAAS0OFaZw1L6l11YuyqfS0B/+DYxkWxS/ZYZ1NbUy57eaIW/vdEgz9Q5M99Pl6ZJw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.310':
-    resolution: {integrity: sha512-ZRQ4ZrzE2OOfR+Fx8h+CM4NKh0UiYqlh5TowP7HUhn5KUoYMjoSR/xIhix8ow42X2IDiBy0FjEVaA/Awhu2KAw==}
+  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.312':
+    resolution: {integrity: sha512-Dmxyil+GPzF1WENoFOi1Cx0roSdJA6HewGAfAFvsH5vYrzb6G0REGuoQQ0n3u8i8qFgtl1m/WSl4u5t+MdiHWA==}
     cpu: [x64]
     os: [darwin]
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.310':
-    resolution: {integrity: sha512-viXuvvtli3pfHzTEI+oeJzk3nldkfHvj757Xh/uAeximUT9ANZIq4SMZw2cSqbhASjni0qcO6B1x4BGx2LuQpw==}
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.312':
+    resolution: {integrity: sha512-9GT0JzbfhODwsCO3MCg79wPH47qARCuKECcryeAJnVczplAlXSIiBw1+6UcqL5+0wSYFu6D/tvw/AiVy+PkHsg==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.310':
-    resolution: {integrity: sha512-l6SPgUmJknjx+6/Pb7OR353fm3xBNAWqodFoC/Cflg0yMcLfz9iwNIc3Drgos2DqfHnid+ODqDzSO93AgQ7RmA==}
+  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.312':
+    resolution: {integrity: sha512-jebsXksKh7g7u1x+RxjYQXM50TCN0e7GthebXa+n5IebF3pPqtmyWGVIiEEjvpajn3P6Zh8BWUVuufUpXn8ccA==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.310':
-    resolution: {integrity: sha512-/qFgN5LcofB8PayxBXoa+xDxkYPPQeo/eCyN0DsyyeI67ifH/l49pz9J+sH0+ctDe9und0vMCJPzng70bx2K+Q==}
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.312':
+    resolution: {integrity: sha512-zM+PB6qVybdwtlqElXQ4+wCwk2v/jjT3Xau4foydzy/g5pGRTuGT3PTcfDLeG0j9zF8IxLaCQ/+Bl9MABPQD8g==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.310':
-    resolution: {integrity: sha512-jx7awHPoofXuE6cRRQSzLUFyW6aUXbYD9AtnNIDUHmmPPrgJ9nSnqjPaqcNhOdaZH7onUUujEAq26N2tx29fYg==}
+  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.312':
+    resolution: {integrity: sha512-UOsqza2uo5gqlX2OU72LhkQvIaNJKUQMJIi1poX2NtYqaWACqNo/TZPWfOBzxhyWmX8BLWaOlcuZGPLgcCJOTg==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.310':
-    resolution: {integrity: sha512-tRmDMhZpoWAIrZxFBTh6vyZB8W5gldU5/Rfo+cyq/OvBKTxxbim+/0tIa9QlJQncoVLXVN9eySYeeB9KMjio7w==}
+  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.312':
+    resolution: {integrity: sha512-Li9CyzsC2mzGmF1wtt/R59ChBLww6nc2dLn6tb+bgTDcd6kqvW44x5rIH+lRmBcpTNHR/8VO/k+GlmnkxqeaQQ==}
     cpu: [arm64]
     os: [win32]
 
-  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.310':
-    resolution: {integrity: sha512-zvrIApxPccTJc6gCOtw5hj27QjWhhTi3z5x5iMmf9f0LZAKR+9mrgENVeFL7PP7zRGdYVhhX2SahbzxN83L/eA==}
+  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.312':
+    resolution: {integrity: sha512-9GgGHHFEQnXx6EPhkPplOw1ndqmys8+Z+uOR68EIQlXGZm+wE+BmfypyHAoZhjs4151iWdQgNzjDT7wet3crdw==}
     cpu: [x64]
     os: [win32]
 
-  '@anthropic-ai/claude-agent-sdk@0.3.310':
-    resolution: {integrity: sha512-fo+sr+9Ks73P001f6XKRQlyzfIBAJMgXArLUkH5Tu98NikRDZeGtFQVj23d5/hj2ijpFgzffrr4fHywY9qUkoQ==}
-    engines: {node: '>=18.0.0'}
+  '@anthropic-ai/claude-agent-sdk@0.3.312':
+    resolution: {integrity: sha512-Ilj5Agx3ak/Z0UPZNLS7+CTnYMa+Ijf8+FKelh9MKGRwHVYyfvmJgL0fsmooI78SdkZwqjI5a4CwOAsJurdjJA==}
+    engines: {node: '>=18.14.0'}
     peerDependencies:
       '@anthropic-ai/sdk': '>=0.93.0'
       '@modelcontextprotocol/sdk': ^1.29.0
@@ -1364,8 +1373,8 @@ packages:
   '@lobehub/icons-static-svg@1.101.0':
     resolution: {integrity: sha512-Ob6WJOjXauLP/A1qZ9OlPlrncPNbwsIGH+ToFdxWt3APtaaMKtbIBGqJ0/LY2eBeUwTQuG7GpUw9LwPiv7OTdg==}
 
-  '@lucide/vue@1.62.0':
-    resolution: {integrity: sha512-uuVefuSb79HC/XBRIL4AFlIOx4nezJ/DmyeiHQTejQ9odF265SksOKjXbBW6kyDDIJimBh+3LYR4wz/da0aqRA==}
+  '@lucide/vue@1.64.0':
+    resolution: {integrity: sha512-9Ta6cbHDk49GgKkSQRRVm55Cb99lou++5p4RNzUkS2NvOqD0RlWTEvidWgKMURUkfyz+3J6eeQz7tzCj3PJ0zA==}
     peerDependencies:
       vue: '>=3.0.1'
 
@@ -2994,9 +3003,6 @@ packages:
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
 
-  '@volar/language-core@2.4.28':
-    resolution: {integrity: sha512-w4qhIJ8ZSitgLAkVay6AbcnC7gP3glYM3fYwKV3srj8m494E3xtrCv6E+bWviiK/8hs6e6t1ij1s2Endql7vzQ==}
-
   '@volar/language-core@2.4.30':
     resolution: {integrity: sha512-73fjwEV8wat6aOZ6U/y/hqtE30ocrIWECg67b0txGczOMNw+MffLmvJ5fnFfN9drVUEYZzLdaNo6VAy6G6avMw==}
 
@@ -3008,19 +3014,8 @@ packages:
       typescript:
         optional: true
 
-  '@volar/source-map@2.4.28':
-    resolution: {integrity: sha512-yX2BDBqJkRXfKw8my8VarTyjv48QwxdJtvRgUpNE5erCsgEUdI2DsLbpa+rOQVAJYshY99szEcRDmyHbF10ggQ==}
-
   '@volar/source-map@2.4.30':
     resolution: {integrity: sha512-zym1ob/KwDDyN+0jGVtxwbxJSRRnUvv5HspCtz3yEfVVdCG4/dzxJktMGPAgemqRuVs81O0o/y0q3qOUErR8kg==}
-
-  '@volar/typescript@2.4.28':
-    resolution: {integrity: sha512-Ja6yvWrbis2QtN4ClAKreeUZPVYMARDYZl9LMEv1iQ1QdepB6wn0jTRxA9MftYmYa4DQ4k/DaSZpFPUfxl8giw==}
-    peerDependencies:
-      typescript: '*'
-    peerDependenciesMeta:
-      typescript:
-        optional: true
 
   '@volar/typescript@2.4.30':
     resolution: {integrity: sha512-/DgA5tgYFPfrLFuSjIMXMGHk1LQv2+P8eny6+BhGNzFJELWIW7UZlc56ZLIRFhLsPpMfIFxM8/HvOPBggrjTZg==}
@@ -3077,9 +3072,6 @@ packages:
 
   '@vue/devtools-shared@8.2.1':
     resolution: {integrity: sha512-Fkac7lUdGReh6pVOi3AYPRGe82LQqRmAfThW7RRligOAP0ZA/Z1z9XLHDM9dv34pV2HRc79DK8uKPeG2fLnA/g==}
-
-  '@vue/language-core@3.3.13':
-    resolution: {integrity: sha512-axA0Xemn5LuUKuKWob0/kVq7xQ2mJJM6VqA9Exvt35nM9yRC31goWVve/G/Zb2ZCLsXC8FHYjjfXlnshknSCew==}
 
   '@vue/language-core@3.3.14':
     resolution: {integrity: sha512-kRB+3hHg0c+BdD1XLAvwjVMQd5pC05zijSlPDRI3ERvC/s04JlRs5upy2KjeMg/9m9oD5zuMVh9yVvkKfZqoJg==}
@@ -5889,8 +5881,8 @@ packages:
       vite:
         optional: true
 
-  vue-tsc@3.3.13:
-    resolution: {integrity: sha512-jE4/bXdOMSHVxEGgQCqNllJy+9N3Gx6tfSAsg0yhFK/MAN6eXqISihupnDEKSCt12VVnjN2gI3AqLYcqoh5x/A==}
+  vue-tsc@3.3.14:
+    resolution: {integrity: sha512-URAu2H9AuMZMg9GCgnqbaHHHd8pBZRAwNV2e2yYS8VDsoTVXHiOSo663OS6DkEvauQ2yixn5TPFJ9WV9QIspkA==}
     hasBin: true
     peerDependencies:
       typescript: '>=5.0.0'
@@ -6024,15 +6016,16 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@agentclientprotocol/claude-agent-acp@0.98.0(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))':
+  '@agentclientprotocol/claude-agent-acp@0.99.1(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))':
     dependencies:
-      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
-      '@anthropic-ai/claude-agent-sdk': 0.3.310(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))(zod@4.6.7)
+      '@agentclientprotocol/sdk': 2.1.0(zod@4.6.7)
+      '@anthropic-ai/claude-agent-sdk': 0.3.312(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))(zod@4.6.7)
       diff: 9.0.0
       zod: 4.6.7
     transitivePeerDependencies:
       - '@anthropic-ai/sdk'
       - '@modelcontextprotocol/sdk'
+      - '@modelcontextprotocol/server'
 
   '@agentclientprotocol/codex-acp@2.3.0(patch_hash=30d6ea4346e4bc997255a84a6dcec395905df04742bbb63a5e48355fe7307b43)':
     dependencies:
@@ -6052,49 +6045,53 @@ snapshots:
     dependencies:
       zod: 4.6.7
 
+  '@agentclientprotocol/sdk@2.1.0(zod@4.6.7)':
+    dependencies:
+      zod: 4.6.7
+
   '@antfu/install-pkg@2.1.0':
     dependencies:
       package-manager-detector: 1.9.0
       tinyexec: 1.3.1
 
-  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.310':
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.312':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.310':
+  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.312':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.310':
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.312':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.310':
+  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.312':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.310':
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.312':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.310':
+  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.312':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.310':
+  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.312':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.310':
+  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.312':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk@0.3.310(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))(zod@4.6.7)':
+  '@anthropic-ai/claude-agent-sdk@0.3.312(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))(zod@4.6.7)':
     dependencies:
       '@anthropic-ai/sdk': 1.3.0(zod@4.6.7)
       '@modelcontextprotocol/sdk': 1.32.2(supports-color@7.2.0)(zod@4.6.7)
       zod: 4.6.7
     optionalDependencies:
-      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.310
-      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.310
-      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.310
-      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.310
-      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.310
-      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.310
-      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.310
-      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.310
+      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.312
+      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.312
+      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.312
+      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.312
+      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.312
+      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.312
+      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.312
+      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.312
 
   '@anthropic-ai/sdk@1.3.0(zod@4.6.7)':
     dependencies:
@@ -6821,7 +6818,7 @@ snapshots:
 
   '@lobehub/icons-static-svg@1.101.0': {}
 
-  '@lucide/vue@1.62.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))':
+  '@lucide/vue@1.64.0(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))':
     dependencies:
       vue: 3.6.0-rc.13(@typescript/typescript6@6.0.2)
 
@@ -8228,10 +8225,6 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
-  '@volar/language-core@2.4.28':
-    dependencies:
-      '@volar/source-map': 2.4.28
-
   '@volar/language-core@2.4.30':
     dependencies:
       '@volar/source-map': 2.4.30
@@ -8245,17 +8238,7 @@ snapshots:
     optionalDependencies:
       typescript: '@typescript/typescript6@6.0.2'
 
-  '@volar/source-map@2.4.28': {}
-
   '@volar/source-map@2.4.30': {}
-
-  '@volar/typescript@2.4.28(@typescript/typescript6@6.0.2)':
-    dependencies:
-      '@volar/language-core': 2.4.28
-      path-browserify: 1.0.1
-      vscode-uri: 3.2.0
-    optionalDependencies:
-      typescript: '@typescript/typescript6@6.0.2'
 
   '@volar/typescript@2.4.30(@typescript/typescript6@6.0.2)':
     dependencies:
@@ -8359,16 +8342,6 @@ snapshots:
       perfect-debounce: 2.1.0
 
   '@vue/devtools-shared@8.2.1': {}
-
-  '@vue/language-core@3.3.13':
-    dependencies:
-      '@volar/language-core': 2.4.28
-      '@vue/compiler-dom': 3.5.44
-      '@vue/shared': 3.5.44
-      alien-signals: 3.2.1
-      muggle-string: 0.4.1
-      path-browserify: 1.0.1
-      picomatch: 4.0.7
 
   '@vue/language-core@3.3.14':
     dependencies:
@@ -11455,10 +11428,10 @@ snapshots:
       - unloader
       - webpack
 
-  vue-tsc@3.3.13(@typescript/typescript6@6.0.2):
+  vue-tsc@3.3.14(@typescript/typescript6@6.0.2):
     dependencies:
-      '@volar/typescript': 2.4.28(@typescript/typescript6@6.0.2)
-      '@vue/language-core': 3.3.13
+      '@volar/typescript': 2.4.30(@typescript/typescript6@6.0.2)
+      '@vue/language-core': 3.3.14
       typescript: '@typescript/typescript6@6.0.2'
 
   vue@3.6.0-rc.13(@typescript/typescript6@6.0.2):

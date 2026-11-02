@@ -24,7 +24,7 @@ futures-util = "0.3"
 socket2.workspace = true
 redis = { version = "1.8.0", default-features = false, features = ["tokio-rustls-comp"] }
 argon2 = "0.6"
-webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation", "conditional-ui"] }
+webauthn-rs = { version = "0.6", features = ["danger-allow-state-serialisation", "conditional-ui"] }
 # WebAuthn uses OpenSSL; build its crypto library without a host installation.
 openssl = { version = "0.10", features = ["vendored"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
@@ -42,7 +42,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-webauthn-authenticator-rs = { version = "0.5", default-features = false, features = ["softpasskey"] }
+webauthn-authenticator-rs = { version = "0.6", default-features = false, features = ["softpasskey"] }
 serde_json.workspace = true
 
 [lints]
