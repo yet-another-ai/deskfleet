@@ -6,6 +6,7 @@ mod catalog;
 mod desktop_access;
 mod local_applications;
 mod media;
+mod nat;
 mod permissions;
 mod rtc;
 mod system_status;
@@ -24,6 +25,7 @@ pub use local_applications::{
     LocalApplication, LocalApplicationKind, open_local_application, scan_local_applications,
 };
 pub use media::{DesktopConfig, DisplayInfo, capture_displays, supported_video_codecs};
+pub use nat::{NatFiltering, NatMapping, NatTestResult, NatTestStatus, test_nat};
 pub use permissions::{
     LocalNetworkAccessRequest, check_accessibility_access, check_full_disk_access,
     check_screen_capture_access, open_local_network_settings, request_accessibility_access,

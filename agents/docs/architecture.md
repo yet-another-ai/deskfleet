@@ -554,6 +554,19 @@ the palette and padding behavior.
 Malformed or invalid saved desktop appearance uses defaults without rewriting
 the file until a successful edit. Filesystem read errors remain visible errors.
 
+Settings → Developer settings exposes client-local network diagnostics. Its NAT
+test probes a user-selected IPv4 STUN server from the computer running Electron,
+independently of the selected Machine and the hosted daemon. The sandboxed
+renderer invokes a dedicated, trusted-main-frame IPC capability; reusable UDP
+probing lives in `deskfleet-native` behind a thin async napi-rs binding. Tests run
+only on request and have bounded lifetimes. Results are transient and are not
+sent to the backend. The Web client explains that this test requires the desktop
+app because browser ICE gathering cannot perform RFC 5780 behavior discovery.
+Mapping and filtering observations remain separate; conventional NAT labels are
+derived from them. Missing server support or failed probes remain explicit
+incomplete results. See [NAT diagnostics](self-hosted.md#nat-diagnostics) for the
+STUN server requirements.
+
 The daemon runs as the OS user whose files, credentials, and tools the agents
 use. Closing a window or losing a connection must leave ongoing work running.
 Local clients connect over authenticated IPC, such as a Unix-domain socket or

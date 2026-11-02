@@ -17,6 +17,7 @@ import type { UpdateApi } from "./updates.ts"
 import type { LocalChannelsApi } from "./local-channels.ts"
 import type { WindowsDesktopServiceApi } from "./windows-desktop-service.ts"
 import type { NativeDesktopApi } from "./native-desktop.ts"
+import type { NetworkDiagnosticsApi } from "./network-diagnostics.ts"
 
 /** The host platform adapter configured for the shared application. */
 export interface DeskfleetDesktopApi {
@@ -30,6 +31,7 @@ export interface DeskfleetDesktopApi {
   updates?: UpdateApi
   windowsDesktopService?: WindowsDesktopServiceApi
   nativeDesktop?: NativeDesktopApi
+  networkDiagnostics?: NetworkDiagnosticsApi
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
   localChannels?: LocalChannelsApi

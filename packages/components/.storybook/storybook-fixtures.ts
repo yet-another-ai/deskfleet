@@ -1077,6 +1077,7 @@ export function createStorybookRouter() {
       { path: "/settings/notifications", name: "settings-notifications", component: { template: "<div />" } },
       { path: "/settings/permissions", name: "settings-permissions", component: { template: "<div />" } },
       { path: "/settings/about", name: "settings-about", component: { template: "<div />" } },
+      { path: "/settings/developer", name: "settings-developer", component: { template: "<div />" } },
       { path: "/settings/agents", name: "settings-agents", component: { template: "<div />" } },
       { path: "/settings/mcp-servers", name: "settings-mcp-servers", component: { template: "<div />" } },
       { path: "/team/settings", name: "team-settings", component: { template: "<div />" } },

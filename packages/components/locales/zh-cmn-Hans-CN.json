@@ -69,6 +69,47 @@
     "openSourceDescription": "DeskFleet 基于开源软件构建，以下是其中的一些主要项目。",
     "thanks": "感谢所有开源贡献者，你们的付出让 DeskFleet 成为可能。"
   },
+  "developerSettings": {
+    "title": "开发者设置",
+    "natTitle": "NAT 网络类型",
+    "description": "检测本机使用的 IPv4 UDP 网络，帮助排查点对点直连问题。",
+    "desktopRequired": "请在桌面应用的开发者设置中检测本机 NAT 类型。浏览器无法执行所需的 UDP 探测。",
+    "server": "STUN 服务器",
+    "serverHelp": "输入主机名或 IPv4 地址及端口。完整检测 NAT 类型需要服务器支持 RFC 5780 行为发现。",
+    "test": "检测 NAT 类型",
+    "testing": "正在检测…",
+    "testingHelp": "正在检查网络行为，最多需要 30 秒。",
+    "result": "检测到的 NAT 类型",
+    "mapping": "映射行为",
+    "filtering": "过滤行为",
+    "localAddress": "本地地址和端口",
+    "publicAddress": "公网地址和端口",
+    "duration": "检测耗时",
+    "milliseconds": "{value} 毫秒",
+    "resultHelp": "结果描述本次观测到的 IPv4 UDP 路径。能否直连还取决于对端的网络。",
+    "types": {
+      "unknown": "无法确定",
+      "open": "开放网络（无 NAT）",
+      "firewall": "UDP 防火墙（无 NAT）",
+      "fullCone": "完全锥形 NAT",
+      "restrictedCone": "受限锥形 NAT",
+      "portRestrictedCone": "端口受限锥形 NAT",
+      "symmetric": "对称型 NAT"
+    },
+    "behavior": {
+      "unknown": "无法确定",
+      "direct": "无地址转换",
+      "endpoint-independent": "端点无关",
+      "address-dependent": "地址相关",
+      "address-and-port-dependent": "地址和端口相关"
+    },
+    "status": {
+      "complete": "网络行为检测已完成。NAT 类型由下方的映射和过滤行为归纳得出。",
+      "server-unsupported": "STUN 服务器已响应，但不支持所需的行为发现。请使用支持 RFC 5780 的服务器来确定 NAT 类型。",
+      "inconclusive": "部分探测未能确认。可以查看已有结果，或尝试其他支持 RFC 5780 的服务器。",
+      "udp-unreachable": "未收到 STUN 响应。请检查服务器地址和网络后重试；仅凭这一结果无法确定 UDP 被阻止。"
+    }
+  },
   "permissionsSettings": {
     "title": "权限配置",
     "description": "查看 DeskFleet 在本机所需的权限，随时调整配置并重新检查状态。",

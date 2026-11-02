@@ -490,6 +490,27 @@ TURN forwards DTLS. It does not decrypt sessions, and the API never sees the
 DTLS private keys. Relay ports are the TURN server's configuration; the API
 does not allocate them and does not have a port-range variable.
 
+### NAT diagnostics
+
+Desktop **Settings → Developer settings → NAT network type** tests the network
+of the computer running the app. Enter a STUN server as `hostname:port`, for
+example `stun.example.com:3478`, then start the test. There is no public-server
+default, and this diagnostic does not change the ICE servers advertised to peers.
+
+Full IPv4 UDP mapping and filtering discovery requires a server implementing
+[RFC 5780](https://www.rfc-editor.org/rfc/rfc5780), with two externally reachable
+IPv4 addresses and two ports, `OTHER-ADDRESS`, and `CHANGE-REQUEST` support. An
+ordinary STUN Binding server can still reveal the observed public endpoint but
+cannot classify all NAT behaviors. Missing support, partial results, and no UDP
+response are shown separately; no response alone does not prove UDP is blocked.
+
+The test reports the observed mapping and filtering behaviors, a conventional
+NAT classification when available, local/public endpoints, and elapsed time.
+Filtering runs before alternate-destination mapping probes so those probes do
+not open the filters being measured. Each test finishes within 30 seconds. The
+result describes one IPv4 UDP path at that time; it does not guarantee that a
+particular peer can connect directly. Web clients show a desktop-app requirement.
+
 ### Team TURN servers
 
 Team owners and administrators can configure their own TURN REST server in Team
