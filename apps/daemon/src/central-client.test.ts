@@ -460,3 +460,95 @@ test("real Node WebSocket closes malformed control traffic without unhandled fai
   assert.equal(central.status().revoked, false)
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), credentials)
 })
+
+/** A WebSocket whose peer is gone: close() never produces a close event. */
+function silentSockets(context: import("node:test").TestContext) {
+  const sockets: SilentSocket[] = []
+  class SilentSocket extends EventTarget {
+    static OPEN = 1
+    readyState = SilentSocket.OPEN
+    closeCalls = 0
+    readonly sent: unknown[] = []
+    constructor() { super(); sockets.push(this) }
+    send(value: string) { this.sent.push(JSON.parse(value)) }
+    // No close event: a dead peer never answers the closing handshake.
+    close() { this.closeCalls++; this.readyState = 3 }
+    receive(value: unknown) { this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) })) }
+    /** A real transport error, which does emit close. */
+    drop(code = 1012) {
+      this.readyState = 3
+      const event = new Event("close") as Event & { code: number }
+      Object.defineProperty(event, "code", { value: code })
+      this.dispatchEvent(event)
+    }
+  }
+  context.mock.property(globalThis, "WebSocket", SilentSocket as unknown as typeof WebSocket)
+  return { sockets }
+}
+
+function linkOperations(): MachineOperations {
+  const unsubscribe = () => () => {}
+  return {
+    agents: {
+      reconcileAdmissions: async () => {},
+      journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] },
+      onEvent: unsubscribe,
+    },
+    catalog: { snapshot: async () => ({}), onChange: unsubscribe },
+    providers: { metadata: () => ({ providers: [] }), onChanged: unsubscribe },
+    terminals: { onChange: unsubscribe },
+    handle: async () => [],
+  } as unknown as MachineOperations
+}
+
+async function linkClient(context: import("node:test").TestContext, directory: string) {
+  await writeFile(join(directory, "central.json"), JSON.stringify({
+    serverUrl: "http://127.0.0.1:8080", serverId: "server", teamId: "team", machineId: "machine", token: "secret",
+  }))
+  context.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] })
+  context.mock.method(globalThis, "fetch", async () => Response.json({ lastEventSeq: "1" }))
+  const { sockets } = silentSockets(context)
+  const central = new CentralClient(directory, linkOperations(), {} as ControlPeers)
+  context.after(() => central.close())
+  await central.init()
+  return { central, sockets }
+}
+
+test("a silent control link is abandoned after a bounded grace and replaced", { timeout: 10_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-stale-"))
+  context.after(() => rm(directory, { recursive: true, force: true }))
+  const { central, sockets } = await linkClient(context, directory)
+  sockets[0]!.receive({ type: "ready", serverId: "server", machineId: "machine", teamId: "team" })
+  assert.equal(central.status().connected, true)
+  // Heartbeats tick at 20/40/60/80 s; the link has been idle past the 60 s limit.
+  context.mock.timers.tick(80_000)
+  assert.equal(sockets[0]!.closeCalls, 1, "the daemon requests an orderly close once")
+  assert.equal(central.status().connected, false, "a dead link must not keep reporting connected")
+  assert.equal(sockets.length, 1, "the replacement waits out the close grace period")
+  context.mock.timers.tick(5_000)
+  assert.equal(sockets.length, 1, "abandoning the socket only schedules the retry")
+  context.mock.timers.tick(2_000)
+  assert.equal(sockets.length, 2, "a new control link replaces the abandoned one")
+})
+
+test("control link retries back off while reconnects fail and reset after ready", { timeout: 10_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-backoff-"))
+  context.after(() => rm(directory, { recursive: true, force: true }))
+  const { sockets } = await linkClient(context, directory)
+  sockets[0]!.drop()
+  context.mock.timers.tick(1_999)
+  assert.equal(sockets.length, 1)
+  context.mock.timers.tick(1)
+  assert.equal(sockets.length, 2, "a dropped link retries after the minimum delay")
+  sockets[1]!.drop()
+  context.mock.timers.tick(3_999)
+  assert.equal(sockets.length, 2, "the second failure waits longer than the first")
+  context.mock.timers.tick(1)
+  assert.equal(sockets.length, 3)
+  sockets[2]!.receive({ type: "ready", serverId: "server", machineId: "machine", teamId: "team" })
+  sockets[2]!.drop()
+  context.mock.timers.tick(1_999)
+  assert.equal(sockets.length, 3)
+  context.mock.timers.tick(1)
+  assert.equal(sockets.length, 4, "a ready link resets the retry delay")
+})

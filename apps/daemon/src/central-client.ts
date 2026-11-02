@@ -10,6 +10,17 @@ import { desktopErrorReason, type IceCandidate } from "./control-protocol.ts"
 import { validateRelayedDesktopStart } from "./control-request.ts"
 import type { MachineOperations } from "./machine-operations.ts"
 
+const HEARTBEAT_MS = 20_000
+const IDLE_TIMEOUT_MS = 60_000
+/**
+ * A WebSocket close is only a request. The peer never answers on a dead link, and
+ * the implementation has no closing-handshake timeout, so a stalled close must
+ * not be the only path back to a working connection.
+ */
+const CLOSE_GRACE_MS = 5_000
+const RETRY_MIN_MS = 2_000
+const RETRY_MAX_MS = 30_000
+
 /** Only the backend's explicit machine credential error can retire an identity. */
 async function machineCredentialRejected(response: Response): Promise<boolean> {
   if (response.status !== 401 || response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") return false
@@ -35,6 +46,8 @@ export class CentralClient {
   readonly #httpClosing = new AbortController()
   readonly #shutdownTimeoutMs: number
   #retry: ReturnType<typeof setTimeout> | undefined
+  #retryDelay = RETRY_MIN_MS
+  #closeDeadline: ReturnType<typeof setTimeout> | undefined
   #heartbeat: ReturnType<typeof setInterval> | undefined
   #lastReceived = 0
   #requests = new Set<Promise<void>>()
@@ -194,20 +207,46 @@ export class CentralClient {
     socket.addEventListener("error", () => { /* close schedules reconnection */ })
     socket.addEventListener("close", event => {
       if (this.#socket !== socket) return
+      clearTimeout(this.#closeDeadline); this.#closeDeadline = undefined
       this.#socket = undefined; this.#connected = false; this.#sync.disable(); clearInterval(this.#heartbeat)
       // 4401/4403 are durable credential rejection. Other codes (including 1012 for an
       // interrupted pre-auth hello) reconnect with the same machine identity.
       if (event.code === 4401 || event.code === 4403) {
         void this.#revoked().catch(error => console.error("Revoked machine cleanup failed", error))
-      } else if (!this.#stopping && !this.#closed) {
-        this.#retry = setTimeout(() => this.#connect(), 2_000); this.#retry.unref()
-      }
+      } else this.#reconnect()
     })
     this.#heartbeat = setInterval(() => {
-      if (Date.now() - this.#lastReceived > 60_000) socket.close(4000, "Control link heartbeat timed out")
+      if (Date.now() - this.#lastReceived > IDLE_TIMEOUT_MS) this.#stale(socket)
       else this.#send({ type: "ping" })
-    }, 20_000)
+    }, HEARTBEAT_MS)
     this.#heartbeat.unref()
+  }
+
+  /**
+   * Request an orderly close, then abandon the link. A dead peer never answers the
+   * closing handshake, so waiting for the close event alone leaves the daemon
+   * permanently offline with the socket still owning `#socket`.
+   */
+  #stale(socket: WebSocket): void {
+    if (this.#socket !== socket || this.#closeDeadline) return
+    this.#connected = false; this.#sync.disable()
+    socket.close(4000, "Control link heartbeat timed out")
+    this.#closeDeadline = setTimeout(() => {
+      this.#closeDeadline = undefined
+      if (this.#socket !== socket) return
+      this.#socket = undefined; this.#connected = false; this.#sync.disable(); clearInterval(this.#heartbeat)
+      this.#reconnect()
+    }, CLOSE_GRACE_MS)
+    this.#closeDeadline.unref()
+  }
+
+  /** Replace a lost link without waiting on its close event, backing off while attempts fail. */
+  #reconnect(): void {
+    if (this.#stopping || this.#closed) return
+    clearTimeout(this.#retry)
+    this.#retry = setTimeout(() => { this.#retry = undefined; this.#connect() }, this.#retryDelay)
+    this.#retry.unref()
+    this.#retryDelay = Math.min(this.#retryDelay * 2, RETRY_MAX_MS)
   }
 
   #send(message: unknown): void {
@@ -220,7 +259,7 @@ export class CentralClient {
     const message = JSON.parse(raw) as ServerMessage
     if (message.type === "ready") {
       if (message.machineId !== this.#credentials?.machineId || message.teamId !== this.#credentials?.teamId || message.serverId !== this.#credentials?.serverId) throw new Error("Control identity mismatch")
-      this.#connected = true; this.#sync.enable()
+      this.#connected = true; this.#sync.enable(); this.#retryDelay = RETRY_MIN_MS
       void this.#operations.agents.reconcileAdmissions().catch(error => console.error("Session admission reconciliation failed", error))
       return
     }
@@ -255,7 +294,8 @@ export class CentralClient {
   #revoked(): Promise<void> {
     if (this.#revocation) return this.#revocation
     this.#sync.disable(); this.#connected = false
-    clearTimeout(this.#retry); clearInterval(this.#heartbeat)
+    clearTimeout(this.#retry); clearTimeout(this.#closeDeadline); clearInterval(this.#heartbeat)
+    this.#closeDeadline = undefined
     const socket = this.#socket; this.#socket = undefined; socket?.close()
     const credentials = this.#credentials
     if (credentials) this.#credentials = { ...credentials, revoked: true }
@@ -271,7 +311,8 @@ export class CentralClient {
     if (this.#stop) return this.#stop
     this.#stopping = true; this.#connected = false
     this.#sync.disable()
-    clearTimeout(this.#retry); clearInterval(this.#heartbeat)
+    clearTimeout(this.#retry); clearTimeout(this.#closeDeadline); clearInterval(this.#heartbeat)
+    this.#closeDeadline = undefined
     const socket = this.#socket; this.#socket = undefined; socket?.close()
     return this.#stop = (async () => {
       await this.#peers.closeAll()

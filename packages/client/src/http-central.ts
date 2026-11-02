@@ -11,6 +11,15 @@ import { centralRequestFailure } from "./request-diagnostics.ts"
 import type { NetworkConfiguration } from "../../../crates/protocol/control.ts"
 import { isDesktopErrorReason, type DesktopErrorReason } from "./desktop-media.ts"
 
+const HEARTBEAT_MS = 20_000
+const IDLE_TIMEOUT_MS = 60_000
+/** WebSocket close only requests a handshake; a dead peer never answers and no deadline exists. */
+const CLOSE_GRACE_MS = 5_000
+const RETRY_MIN_MS = 2_000
+const RETRY_MAX_MS = 30_000
+
+type SocketMessage = CentralEvent | { type: "ready" } | { type: "ping" } | { type: "pong" }
+
 export interface SavedAccount { serverUrl: string; token?: string; user?: AccountUser }
 export interface HttpCentralOptions {
   account: SavedAccount
@@ -38,6 +47,11 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   readonly #listeners = new Set<(event: CentralEvent) => void>()
   #socket: WebSocket | undefined
   #retry: ReturnType<typeof setTimeout> | undefined
+  #retryDelay = RETRY_MIN_MS
+  #heartbeat: ReturnType<typeof setInterval> | undefined
+  #closeDeadline: ReturnType<typeof setTimeout> | undefined
+  #lastReceived = 0
+  #connected = false
   #disposed = false
   #csrf: string | undefined
   constructor(options: HttpCentralOptions) { this.#options = options; this.#account = { ...options.account, serverUrl: serverAddress(options.account.serverUrl) } }
@@ -229,31 +243,72 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   async closePeer(peerId: string) { await this.request("DELETE", `/api/peers/${encodeURIComponent(peerId)}`) }
   onEvent(listener: (event: CentralEvent) => void): () => void { this.#listeners.add(listener); this.#connect(); return () => this.#listeners.delete(listener) }
   #emit(event: CentralEvent): void { for (const listener of this.#listeners) listener(event) }
+  #setConnected(value: boolean): void {
+    if (this.#connected === value) return
+    this.#connected = value
+    this.#emit({ type: "connection", connected: value })
+  }
   #connect(): void {
     if (this.#disposed || !(this.#account.token || (this.#options.cookieAuth && this.#account.user)) || this.#socket || this.#retry) return
     const url = new URL(`${this.#account.serverUrl}/api/client/ws`); url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
     const socket = (this.#options.socket ?? (url => new WebSocket(url)))(url.toString())
     this.#socket = socket
+    this.#lastReceived = Date.now()
     socket.onopen = () => { if (!this.#options.cookieAuth) socket.send(JSON.stringify({ type: "authenticate", token: this.#account.token })) }
     socket.onmessage = ({ data }) => {
-      let event: CentralEvent | { type: "ready" }
-      try { event = JSON.parse(String(data)) as typeof event } catch { return }
-      if (event.type === "ready") this.#emit({ type: "connection", connected: true })
-      else this.#emit(event)
+      if (this.#socket !== socket) return
+      let event: SocketMessage
+      try { event = JSON.parse(String(data)) as SocketMessage } catch { return }
+      this.#lastReceived = Date.now()
+      if (event.type === "ready") { this.#retryDelay = RETRY_MIN_MS; this.#setConnected(true) }
+      else if (event.type === "ping") socket.send(JSON.stringify({ type: "pong" }))
+      else if (event.type !== "pong") this.#emit(event)
     }
     socket.onerror = () => socket.close()
     socket.onclose = (event) => {
       if (this.#socket !== socket) return
       this.#socket = undefined
+      clearInterval(this.#heartbeat); this.#heartbeat = undefined
+      clearTimeout(this.#closeDeadline); this.#closeDeadline = undefined
       // A signaling outage is not a peer revocation. Existing DataChannels keep running.
-      this.#emit({ type: "connection", connected: false })
+      this.#setConnected(false)
       if (event.code === 4401) {
         void this.#save({ serverUrl: this.#account.serverUrl }).then(() => this.#emit({ type: "accountChanged" }))
-      } else if (!this.#disposed && (this.#account.token || (this.#options.cookieAuth && this.#account.user))) this.#retry = setTimeout(() => { this.#retry = undefined; this.#connect() }, 2_000)
+      } else this.#schedule()
     }
+    this.#heartbeat = setInterval(() => {
+      if (this.#socket !== socket) return
+      if (Date.now() - this.#lastReceived > IDLE_TIMEOUT_MS) this.#stale(socket)
+      // Sending while CONNECTING or CLOSING throws; an unfinished upgrade only ages out.
+      else if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" }))
+    }, HEARTBEAT_MS)
+  }
+  /**
+   * A silent socket never reports close, and the WebSocket close handshake has no
+   * deadline. Declare the link dead, then replace it if the orderly close stalls.
+   */
+  #stale(socket: WebSocket): void {
+    if (this.#socket !== socket || this.#closeDeadline) return
+    this.#setConnected(false)
+    socket.close()
+    this.#closeDeadline = setTimeout(() => {
+      this.#closeDeadline = undefined
+      if (this.#socket !== socket) return
+      this.#socket = undefined
+      clearInterval(this.#heartbeat); this.#heartbeat = undefined
+      this.#schedule()
+    }, CLOSE_GRACE_MS)
+  }
+  #schedule(): void {
+    if (this.#disposed || this.#retry || !(this.#account.token || (this.#options.cookieAuth && this.#account.user))) return
+    this.#retry = setTimeout(() => { this.#retry = undefined; this.#connect() }, this.#retryDelay)
+    this.#retryDelay = Math.min(this.#retryDelay * 2, RETRY_MAX_MS)
   }
   #disconnect(): void {
     clearTimeout(this.#retry); this.#retry = undefined
+    clearInterval(this.#heartbeat); this.#heartbeat = undefined
+    clearTimeout(this.#closeDeadline); this.#closeDeadline = undefined
+    this.#connected = false
     const socket = this.#socket; this.#socket = undefined; socket?.close()
   }
   dispose(): void { this.#disposed = true; this.#disconnect(); this.#listeners.clear() }
