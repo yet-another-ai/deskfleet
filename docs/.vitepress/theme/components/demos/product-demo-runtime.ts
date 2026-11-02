@@ -31,6 +31,10 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   const { useAppearanceStore } = await import("@deskfleet/components/stores/appearance.ts")
   const pinia = createPinia()
   const app = createApp(App)
+  // Embedded apps share the website's Vue runtime. Without a handler, development builds
+  // rethrow component errors mid-render, which leaves Vue's effect stack corrupted and
+  // breaks VitePress navigation. A failing demo must stay inside its own window.
+  app.config.errorHandler = (error, _instance, info) => console.error(`[product demo: ${options.kind}] ${info}`, error)
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/", name: "new-session", component: () => import("@deskfleet/components/views/NewSessionView.vue") },
     { path: "/schedules", name: "schedules", component: () => import("@deskfleet/components/views/ScheduledTasksView.vue"), meta: { hideDetails: true } },
@@ -46,6 +50,12 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
       { path: "preferences", name: "settings-preferences", component: () => import("@deskfleet/components/components/settings/PreferencesSettings.vue") },
       { path: "appearance", name: "settings-appearance", component: () => import("@deskfleet/components/components/settings/AppearanceSettings.vue") },
       { path: "notifications", name: "settings-notifications", component: () => import("@deskfleet/components/components/settings/NotificationsSettings.vue") },
+      // SettingsView links these unconditionally; a missing name throws while its sidebar renders.
+      { path: "developer", children: [
+        { path: "", name: "settings-developer", component: () => import("@deskfleet/components/components/settings/DeveloperSettings.vue") },
+        { path: "nat", name: "settings-developer-nat", component: () => import("@deskfleet/components/components/settings/NatSettings.vue") },
+      ] },
+      { path: "about", name: "settings-about", component: () => import("@deskfleet/components/components/settings/AboutSettings.vue") },
       { path: "agents", name: "settings-agents", component: () => import("@deskfleet/components/components/settings/AgentsSettings.vue") },
       { path: "mcp-servers", name: "settings-mcp-servers", component: () => import("@deskfleet/components/components/settings/McpServersSettings.vue") },
       { path: "team", name: "settings-team", component: () => import("@deskfleet/components/components/team/TeamSettings.vue") },

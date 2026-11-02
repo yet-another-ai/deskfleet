@@ -433,7 +433,8 @@ onScopeDispose(() => {
 
 <style scoped>
 .deskfleet-windows :deep(.dockview-theme-light) {
-  color-scheme: normal;
+  /* Undo dockview's forced light scheme so light-dark() tokens follow Appearance. */
+  color-scheme: inherit;
   --dv-group-view-background-color: var(--ui-color-canvas);
   --dv-tabs-and-actions-container-background-color: var(--ui-color-canvas);
   --dv-activegroup-visiblepanel-tab-background-color: color-mix(in srgb, var(--ui-color-accent) 12%, transparent);
