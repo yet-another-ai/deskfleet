@@ -335,6 +335,17 @@ export class AgentRuntime {
   }
 
   async #update(params: acp.SessionNotification, generation: number): Promise<void> {
+    if ((params.update.sessionUpdate === "agent_message_chunk" || params.update.sessionUpdate === "agent_thought_chunk")
+      && params.update.content.type === "text") {
+      const connection = this.#connection
+      await this.journal.stream(this.journal.event(this.sessionId, "acp", params, {
+        runGeneration: generation, turnId: this.#active?.turn.id,
+      }), error => {
+        console.error("Could not persist Agent text", error)
+        if (this.#connection === connection) void connection?.close().catch(() => {})
+      })
+      return
+    }
     const configurationEpoch = this.#configurationEpoch
     if (params.update.sessionUpdate === "available_commands_update"
       && (this.#run?.generation !== generation || this.#stopping)) return

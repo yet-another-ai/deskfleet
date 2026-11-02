@@ -165,6 +165,15 @@ export interface AgentEvent {
 
 export type AgentEventDraft = Omit<AgentEvent, "seq">
 
+/** An uncommitted text tail. Its offsets never advance a durable history cursor. */
+export interface AgentPreview {
+  sessionId: string
+  streamId: string
+  baseSeq: string
+  offset: number
+  events: AgentEventDraft[]
+}
+
 /** One native transaction; omitted row collections remain unchanged. */
 export interface AgentCommit {
   sessionId?: string

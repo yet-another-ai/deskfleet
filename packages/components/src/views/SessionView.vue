@@ -37,8 +37,9 @@ import { useTerminalsStore } from "../stores/terminals.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useSessionRead } from "../composables/useSessionRead.ts"
-import { liveTurnStates, projectConversation } from "../services/agent-conversation.ts"
-import { latestAgentUsage } from "../services/agent-usage.ts"
+import { liveTurnStates } from "../services/agent-conversation.ts"
+import { useConversationProjection } from "../composables/useConversationProjection.ts"
+import { createAgentUsageSelector } from "../services/agent-usage.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
 
@@ -75,8 +76,9 @@ const location = computed(() => fleet.findSession(props.sessionId))
 const resourceTarget = useFileTarget(() => location.value?.machine.id)
 const view = computed(() => agents.views[props.sessionId])
 const snapshot = computed(() => view.value?.snapshot)
-const projection = computed(() => snapshot.value ? projectConversation(view.value?.events ?? [], snapshot.value) : [])
-const usage = computed(() => latestAgentUsage(view.value?.events ?? []))
+const projection = useConversationProjection(() => view.value?.events ?? [], snapshot)
+const selectUsage = createAgentUsageSelector()
+const usage = computed(() => selectUsage(view.value?.events ?? []))
 const run = computed(() => snapshot.value?.runs.at(-1))
 const activeTurn = computed(() => snapshot.value?.turns.find(turn => liveTurnStates.includes(turn.state)))
 const active = computed(() => !snapshot.value || snapshot.value.session.archiveState === "active")

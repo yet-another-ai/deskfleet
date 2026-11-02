@@ -3,7 +3,8 @@ import { fittedOklch } from "@proj-airi/chromatic"
 import { createSharedComposable, useEventListener, useRafFn, watchImmediate } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef, triggerRef, useTemplateRef, watch } from "vue"
 import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import { projectConversation, type ConversationEntry } from "../../services/agent-conversation.ts"
+import type { ConversationEntry } from "../../services/agent-conversation.ts"
+import { useConversationProjection } from "../../composables/useConversationProjection.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 
 interface OutlineItem {
@@ -296,19 +297,27 @@ watchImmediate(() => props.preview, (isPreview, _, onCleanup) => {
   if (isPreview) onCleanup(audio.startPreview())
 })
 
+// The incremental projection retains completed content arrays. Their labels do
+// not need to be flattened again when an unrelated thought token arrives.
+const labels = new WeakMap<AgentInput["content"], string>()
 function plainText(content: AgentInput["content"]): string {
+  const cached = labels.get(content)
+  if (cached !== undefined) return cached
   const parts: string[] = []
   for (const block of content) {
     if (block.type === "text") parts.push(block.text)
     else if (block.type === "resource" && "text" in block.resource) parts.push(block.resource.text)
   }
-  return parts.join(" ").replace(/\s+/gu, " ").trim()
+  const text = parts.join(" ").replace(/\s+/gu, " ").trim()
+  labels.set(content, text)
+  return text
 }
 
-const items = computed<OutlineItem[]>(() => {
+const projection = useConversationProjection(() => props.events ?? [], () => props.snapshot)
+const items = computed<OutlineItem[]>(previous => {
   if (!props.events || !props.snapshot) return PREVIEW_ITEMS
   const result: OutlineItem[] = []
-  for (const entry of props.projection ?? projectConversation(props.events, props.snapshot)) {
+  for (const entry of props.projection ?? projection.value) {
     if (entry.kind === "input") {
       result.push({ id: entry.id, label: plainText(entry.input.content) })
       continue
@@ -318,7 +327,10 @@ const items = computed<OutlineItem[]>(() => {
       if (reply) result.at(-1)!.reply = reply
     }
   }
-  return result
+  return previous?.length === result.length && result.every((item, index) => {
+    const before = previous[index]!
+    return before.id === item.id && before.label === item.label && before.reply === item.reply
+  }) ? previous : result
 })
 
 const currentActive = computed(() => props.active || (!props.events ? selectedPreview.value : undefined))

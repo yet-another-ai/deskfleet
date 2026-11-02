@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
-import { AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES, type AgentActor, type AgentElicitation, type AgentEvent, type AgentMethod, type AgentPermission, type AgentSnapshot } from "./agent-protocol.ts"
+import { AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES, type AgentActor, type AgentElicitation, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot } from "./agent-protocol.ts"
 
 type Message = { id?: string | number | null; method?: string; params?: any; result?: any; error?: { code: number; message: string } }
 const actor: AgentActor = { kind: "local_token", sourceMachine: { originId: "origin", id: "machine" }, deviceId: "first" }
@@ -31,6 +31,8 @@ function wire(message: Message & { jsonrpc?: string }): Buffer { return Buffer.f
 class Sessions implements AgentChannelSessions {
   readonly journal = { identity: { originId: "origin", machineId: "machine" } }
   readonly listeners = new Set<(event: AgentEvent) => void>()
+  readonly previewListeners = new Set<(preview: AgentPreview) => void>()
+  pendingPreview?: AgentPreview
   readonly calls: { method: AgentMethod; params: unknown; actor: AgentActor }[] = []
   handler: (method: AgentMethod, params: any, actor: AgentActor) => Promise<unknown> = async method => method === "_deskfleet/session/subscribe" ? snapshot : null
   async handle(method: AgentMethod, params: unknown, actor: AgentActor): Promise<unknown> {
@@ -38,8 +40,42 @@ class Sessions implements AgentChannelSessions {
     return this.handler(method, params, actor)
   }
   onEvent(listener: (event: AgentEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  onPreview(listener: (preview: AgentPreview) => void): () => void { this.previewListeners.add(listener); return () => this.previewListeners.delete(listener) }
+  preview(): AgentPreview | undefined { return this.pendingPreview }
   emit(value: AgentEvent): void { for (const listener of this.listeners) listener(value) }
 }
+
+test("previews replay after an authorized snapshot, stream only to subscribers, and detach independently", async t => {
+  const sessions = new Sessions()
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  const tail: AgentPreview = {
+    sessionId: "1", streamId: "stream", baseSeq: "0", offset: 0,
+    events: ["first", "second"].map(text => ({ sessionId: "1", kind: "acp", createdAt: now,
+      payload: { sessionId: "provider", update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text } } },
+    })),
+  }
+  sessions.pendingPreview = tail
+  for (const listener of sessions.previewListeners) listener(tail)
+  await h.initialize()
+  assert.ok(!h.messages.some(message => message.method === "_deskfleet/session/preview"))
+  const reading = deferred<AgentSnapshot>()
+  sessions.handler = async () => reading.promise
+  h.request("subscribe-preview", "_deskfleet/session/subscribe", { sessionId: "1" })
+  for (const listener of sessions.previewListeners) listener(tail)
+  reading.resolve(snapshot)
+  await h.waitFor(message => message.method === "_deskfleet/session/preview" && message.params.offset === 1)
+  const responseIndex = h.messages.findIndex(message => message.id === "subscribe-preview")
+  const previews = h.messages.filter(message => message.method === "_deskfleet/session/preview")
+  assert.ok(h.messages.findIndex(message => message === previews[0]) > responseIndex)
+  assert.deepEqual(previews.map(message => [message.params.offset, message.params.events.length]), [[0, 1], [1, 1]])
+  assert.ok(!h.messages.some(message => message.method === "_deskfleet/session/event"))
+  const delta = { ...tail, offset: 2, events: [tail.events[0]!] }
+  for (const listener of sessions.previewListeners) listener(delta)
+  await h.waitFor(message => message.method === "_deskfleet/session/preview" && message.params.offset === 2)
+  h.channel.close()
+  assert.equal(sessions.previewListeners.size, 0)
+})
 function attach(sessions = new Sessions(), identity = actor, send?: (chunk: Uint8Array) => Promise<void>) {
   const messages: Message[] = []
   const chunks: Buffer[] = []
@@ -116,6 +152,46 @@ test("AgentChannel reconstructs fragmented Unicode and sends ordered binary chun
   assert.ok(h.chunks.length > 3)
   assert.ok(h.chunks.every(chunk => chunk.length <= AGENT_CHUNK_BYTES))
   assert.deepEqual(h.failures, [])
+})
+
+test("AgentChannel coalesces a stream burst and its following RPC without changing journal bytes", async t => {
+  const h = attach(undefined, actor, () => delay(1))
+  t.after(() => h.channel.close())
+  await h.initialize()
+  await h.subscribe()
+  h.chunks.length = 0
+  h.messages.length = 0
+  const expected: Buffer[] = []
+  for (let seq = 1; seq <= 1_000; seq++) {
+    const value: AgentEvent = {
+      sessionId: "1", seq: String(seq), kind: "acp", createdAt: now,
+      payload: { sessionId: "provider", update: {
+        sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "思考🌍".repeat(seq === 25 ? 4_000 : 1) },
+      } },
+    }
+    expected.push(wire({ method: "_deskfleet/session/event", params: value }))
+    h.sessions.emit(value)
+  }
+  expected.push(wire({ id: "after-stream", result: null }))
+  h.request("after-stream", "_deskfleet/session/list")
+  await h.waitFor(message => message.id === "after-stream")
+  const bytes = Buffer.concat(expected)
+  assert.deepEqual(Buffer.concat(h.chunks), bytes)
+  assert.equal(h.messages.length, 1_001)
+  assert.equal(h.chunks.length, Math.ceil(bytes.length / AGENT_CHUNK_BYTES))
+  assert.ok(h.chunks.every(chunk => chunk.length <= AGENT_CHUNK_BYTES))
+  assert.deepEqual(h.failures, [])
+  t.diagnostic(`1,000 streamed events and a following RPC used ${h.chunks.length} acknowledged frames (${bytes.length} bytes)`)
+})
+
+test("AgentChannel closing before a scheduled flush discards its queued output", async () => {
+  const h = attach()
+  h.request("initialize", "initialize", { protocolVersion: 1 })
+  h.channel.close()
+  await new Promise<void>(resolve => setImmediate(resolve))
+  assert.deepEqual(h.chunks, [])
+  assert.deepEqual(h.failures, [])
+  assert.equal(h.sessions.listeners.size, 0)
 })
 
 test("AgentChannel forwards Git reads through the authenticated viewer without requiring a history subscription", async t => {
@@ -369,15 +445,24 @@ test("AgentChannel detaches without cancelling shared work or permissions and re
 })
 
 test("AgentChannel retries native backpressure without dropping or reordering chunks", async t => {
-  let attempts = 0
-  const h = attach(undefined, actor, async () => { if (++attempts <= 2) throw new Error("data channel send buffer is full") })
+  const attempts: Buffer[] = []
+  let stalls = 0
+  const h = attach(undefined, actor, async chunk => {
+    attempts.push(Buffer.from(chunk))
+    if (stalls-- > 0) throw new Error("data channel send buffer is full")
+  })
   t.after(() => h.channel.close())
   await h.initialize()
+  attempts.length = 0
+  stalls = 2
   h.request("first", "_deskfleet/session/list")
   h.request("second", "_deskfleet/session/list")
   await h.waitFor(message => message.id === "second")
   assert.deepEqual(h.messages.map(message => message.id), ["initialize", "first", "second"])
-  assert.equal(attempts, 5)
+  assert.equal(attempts.length, 3)
+  assert.deepEqual(attempts[0], attempts[1])
+  assert.deepEqual(attempts[1], attempts[2])
+  assert.deepEqual(attempts[2], Buffer.concat([wire({ id: "first", result: null }), wire({ id: "second", result: null })]))
   assert.deepEqual(h.failures, [])
 })
 

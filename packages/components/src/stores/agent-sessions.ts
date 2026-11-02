@@ -1,9 +1,10 @@
 import { snapshotIsWorking } from "../services/agent-conversation.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
-import { useLocalStorage } from "@vueuse/core"
+import { useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { onScopeDispose, ref, watch } from "vue"
-import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
+import { markRaw, onScopeDispose, ref, watch } from "vue"
+import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentPreview, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
+import { AgentPreviews } from "../services/agent-preview.ts"
 import type { ElicitationDraft } from "../services/agent-elicitation.ts"
 import type { ComposerAttachment } from "../services/composer-attachments.ts"
 import type { ComposerMention } from "../services/composer-mentions.ts"
@@ -21,6 +22,7 @@ export interface AgentSelection { provider: string; model?: string; reasoningEff
 
 export interface AgentSessionView {
   snapshot: AgentSnapshot | null
+  /** Display history includes an ephemeral preview tail; cursors below are durable. */
   events: AgentEvent[]
   loading: boolean
   error: string | null
@@ -77,6 +79,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const relayDeniedReason = ref<RelayDeniedReason>()
   const operations = ref<Record<string, PendingAgentOperation>>({})
   const journals = new Map<string, Map<string, AgentEvent>>()
+  const journalTails = new Map<string, string>()
+  const previews = new AgentPreviews()
+  const visiblePreviews = new Map<string, Set<string>>()
+  const pendingPreviews = new Set<string>()
+  let pendingEvents: AgentEvent[] = []
+  const displayTimer = useTimeoutFn(flushDisplay, 33, { immediate: false })
   // Central history and in-flight reads can arrive after a successful deletion.
   const deletedSessions = new Set<string>()
   const loads = new Map<string, Promise<void>>()
@@ -174,7 +182,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       case "command": commandReceived(event.payload as AgentCommand); break
     }
     snapshot.session.lastEventSeq = event.seq
-    if (sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) sessions.value[event.sessionId] = { ...snapshot.session }
   }
   function advance(id: string): void {
     const current = view(id)
@@ -187,6 +194,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       current.snapshotSeq = next.seq
       next = events.get((BigInt(current.snapshotSeq) + 1n).toString())
     }
+    if (sequenceCompare(current.snapshotSeq, sessions.value[id]?.lastEventSeq ?? "0") >= 0) sessions.value[id] = { ...current.snapshot.session }
     resolvePermissions()
     resolveElicitations(current.snapshot)
   }
@@ -195,7 +203,9 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     for (const event of events) {
       if (deletedSessions.has(event.sessionId)) continue
       if (journal(event.sessionId).has(event.seq)) continue
+      markRaw(event)
       journal(event.sessionId).set(event.seq, event)
+      if (sequenceCompare(event.seq, journalTails.get(event.sessionId) ?? "0") > 0) journalTails.set(event.sessionId, event.seq)
       if (event.kind === "session" && sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) sessions.value[event.sessionId] = event.payload as AgentSessionRecord
       if (event.kind === "command") commandReceived(event.payload as AgentCommand)
       if (event.kind === "run" && (event.payload as AgentRun).state === "starting"
@@ -225,16 +235,57 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
     for (const [id, additions] of changed) {
       const current = view(id)
+      // A committed preview has exactly the same draft and sequence. Promote it
+      // without replacing display history, even when a commit spans many frames.
+      const visible = visiblePreviews.get(id)
+      const appended = additions.filter(event => !visible?.delete(event.seq))
       let previous = current.events.at(-1)?.seq
-      const ordered = additions.every(event => {
+      const ordered = appended.every(event => {
         const follows = previous === undefined || sequenceCompare(event.seq, previous) > 0
         previous = event.seq
         return follows
       })
       // Live notifications normally extend the journal; only late history needs a full merge.
-      if (ordered) current.events.push(...additions)
-      else current.events = [...journal(id).values()].sort((left, right) => sequenceCompare(left.seq, right.seq))
+      if (ordered) current.events.push(...appended)
+      else {
+        current.events = [...journal(id).values()].sort((left, right) => sequenceCompare(left.seq, right.seq))
+        visiblePreviews.delete(id)
+      }
       advance(id)
+      previews.committed(id, current.historySeq)
+      appendPreview(id)
+    }
+  }
+  function appendPreview(id: string): void {
+    if (deletedSessions.has(id)) return
+    const current = view(id)
+    const events = previews.after(id, current.events.at(-1)?.seq ?? "0")
+    if (events.length) {
+      let visible = visiblePreviews.get(id)
+      if (!visible) { visible = new Set(); visiblePreviews.set(id, visible) }
+      for (const event of events) visible.add(event.seq)
+      current.events.push(...events.map(event => markRaw(event)))
+    }
+  }
+  function flushDisplay(recoverHistory = true): void {
+    displayTimer.stop()
+    const events = pendingEvents
+    pendingEvents = []
+    remember(events)
+    for (const id of pendingPreviews) appendPreview(id)
+    pendingPreviews.clear()
+    if (!recoverHistory || disposed) return
+    for (const id of new Set(events.map(event => event.sessionId))) {
+      const current = views.value[id]
+      if (current?.snapshot && sequenceCompare(current.historySeq, journalTails.get(id) ?? "0") < 0 && !current.loading) void readHistory(id).catch(() => {})
+    }
+  }
+  function clearPreviews(): void {
+    pendingPreviews.clear()
+    visiblePreviews.clear()
+    for (const id of previews.ids()) {
+      previews.delete(id)
+      if (views.value[id]) views.value[id]!.events = [...journal(id).values()].sort((left, right) => sequenceCompare(left.seq, right.seq))
     }
   }
   function snapshotReceived(snapshot: AgentSnapshot): void {
@@ -252,6 +303,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     error.value = detail ?? null
     relayDeniedReason.value = relayReason
     if (next === "error" || next === "idle") {
+      flushDisplay(false)
+      clearPreviews()
       initialized = null
       connectionGeneration++
       gitSubscriptions.clear()
@@ -261,9 +314,17 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }, (notification: AgentNotification) => {
     if (notification.method === "_deskfleet/session/event") {
       const event = notification.params as AgentEvent
-      remember([event])
-      const current = views.value[event.sessionId]
-      if (current?.snapshot && sequenceCompare(current.historySeq, event.seq) < 0 && !current.loading) void readHistory(event.sessionId).catch(() => {})
+      pendingEvents.push(event)
+      if (event.kind === "acp" && "update" in event.payload
+        && ["agent_message_chunk", "agent_thought_chunk"].includes(event.payload.update.sessionUpdate)) {
+        if (!displayTimer.isPending.value) displayTimer.start()
+      } else flushDisplay()
+    } else if (notification.method === "_deskfleet/session/preview") {
+      const preview = notification.params as AgentPreview
+      if (!deletedSessions.has(preview.sessionId) && previews.receive(preview)) {
+        pendingPreviews.add(preview.sessionId)
+        if (!displayTimer.isPending.value) displayTimer.start()
+      }
     } else if (notification.method === "_deskfleet/git/changed") {
       const change = notification.params as GitChangedNotification
       const subscription = gitSubscriptions.get(change.subscriptionId)
@@ -367,7 +428,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         if (disposed || deletedSessions.has(id)) return
         remember(events)
         const current = view(id)
-        const latest = current.events.at(-1)?.seq ?? "0"
+        const latest = journalTails.get(id) ?? "0"
         const target = sequenceCompare(latest, current.snapshotSeq) > 0 ? latest : current.snapshotSeq
         if (sequenceCompare(current.historySeq, target) >= 0) { current.error = null; current.relayDeniedReason = undefined; return }
         if (events.length === 0 || current.historySeq === afterSeq) throw new Error("Conversation history is incomplete; reconnect to load missing events")
@@ -615,6 +676,9 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     delete configurations.value[sessionId]
     configurationSequences.delete(sessionId)
     journals.delete(sessionId)
+    journalTails.delete(sessionId)
+    previews.delete(sessionId)
+    visiblePreviews.delete(sessionId)
   }
   const gitBranches = (workspaceId: string) => call("_deskfleet/git/branches", { workspaceId })
   const prepareGit = (workspaceId: string, context: AgentSessionContext, confirmationToken?: string) => call("_deskfleet/git/prepare", { workspaceId, context, ...(confirmationToken ? { confirmationToken } : {}) })
@@ -643,7 +707,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       throw reason
     }
   }
-  const closeTransport = () => client.close()
-  onScopeDispose(() => { disposed = true; gitSubscriptions.clear(); closeTransport() })
+  const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
+  onScopeDispose(() => { disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
   return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, relayDeniedReason, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

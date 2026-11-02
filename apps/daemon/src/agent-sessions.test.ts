@@ -17,7 +17,7 @@ import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import { CentralSync } from "./central-sync.ts"
 import type { AgentConfiguration, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
-import type { AgentActor, AgentCommand, AgentElicitation, AgentEvent, AgentReceipt, AgentSnapshot } from "./agent-protocol.ts"
+import type { AgentActor, AgentCommand, AgentElicitation, AgentEvent, AgentReceipt, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 import type { ComposerReferenceResult } from "./composer-reference-protocol.ts"
 import type { GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 
@@ -174,12 +174,15 @@ test("streamed updates, receipt persistence, and history pages use session metad
     await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: {
       sessionUpdate: "agent_message_chunk", content: { type: "text", text: "streamed" },
     } })
+    assert.equal((await f.service.journal.session(f.sessionId)).lastEventSeq, before.lastEventSeq)
+    assert.equal(f.service.preview(f.sessionId)?.events.length, 1)
     await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: {
       sessionUpdate: "session_info_update", title: "Metadata title",
     } })
     await f.service.journal.saveCommand(receipt)
     const current = await f.service.journal.session(f.sessionId)
     assert.equal(current.title, "Metadata title")
+    assert.equal(f.service.preview(f.sessionId), undefined)
     assert.equal(BigInt(current.lastEventSeq) - BigInt(before.lastEventSeq), 4n)
     const events = await f.service.handle("_deskfleet/session/history", {
       sessionId: f.sessionId, afterSeq: before.lastEventSeq, limit: 2,
@@ -193,6 +196,108 @@ test("streamed updates, receipt persistence, and history pages use session metad
       sessionId: "9223372036854775807", afterSeq: "0",
     }, f.actor), /not found/iu)
   } finally { f.catalog.native.agentSnapshot = snapshot }
+})
+
+test("runtime boundaries persist an unawaited text burst before the turn ends without waiting five seconds", async t => {
+  for (const boundary of ["finish", "cancel", "stop", "shutdown", "lost"] as const) await t.test(boundary, async t => {
+    const f = await setup(t)
+    await f.submit("hold").result
+    const running = await until(f.read, () => f.provider.prompts.length === 1)
+    const turnId = running.turns[0]!.id
+    await f.service.journal.serial(f.sessionId, async () => {})
+    const before = await f.service.journal.session(f.sessionId)
+    let complete!: (event: AgentEvent) => void
+    const completed = new Promise<AgentEvent>(resolve => { complete = resolve })
+    const unsubscribe = f.service.onEvent(event => {
+      if (event.kind === "turn" && (event.payload as AgentTurn).id === turnId
+        && ["completed", "cancelled", "interrupted", "failed"].includes((event.payload as AgentTurn).state)) complete(event)
+    })
+    t.after(async () => { unsubscribe() })
+    // Freeze the five-second timer. Only a lifecycle boundary can persist this tail.
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    const updates = Array.from({ length: 32 }, (_, index) => f.provider.client.onUpdate({
+      sessionId: "provider-conversation", update: {
+        sessionUpdate: "agent_thought_chunk", content: { type: "text", text: `${index} ` },
+      },
+    }))
+    // ACP does not await notification handlers before delivering a prompt response.
+    if (boundary === "finish") f.provider.finish()
+    if (boundary === "cancel") await f.service.handle("_deskfleet/turn/cancel", { sessionId: f.sessionId, operationId: randomUUID(), turnId }, f.actor)
+    if (boundary === "stop") await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+    if (boundary === "shutdown") await f.service.close()
+    if (boundary === "lost") { f.provider.client.onClose?.(new Error("connection lost")); f.provider.finish() }
+    await Promise.all(updates)
+    const ending = await completed
+    const events = await f.service.journal.history(f.sessionId, before.lastEventSeq, 200)
+    const chunks = events.filter(event => event.kind === "acp" && "update" in event.payload && event.payload.update.sessionUpdate === "agent_thought_chunk")
+    assert.equal(chunks.length, 32)
+    assert.ok(chunks.every(event => event.turnId === turnId && event.runGeneration === running.runs.at(-1)!.generation))
+    assert.ok(chunks.every(event => BigInt(event.seq) < BigInt(ending.seq)))
+    assert.equal(f.service.preview(f.sessionId), undefined)
+  })
+})
+
+test("a failed timed text commit closes the provider and completion retries the retained tail", async t => {
+  const f = await setup(t)
+  await f.submit("hold").result
+  const running = await until(f.read, () => f.provider.prompts.length === 1)
+  await f.service.journal.serial(f.sessionId, async () => {})
+  const before = await f.service.journal.session(f.sessionId)
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const errors = t.mock.method(console, "error", () => {})
+  let complete!: () => void
+  const completed = new Promise<void>(resolve => { complete = resolve })
+  const unsubscribe = f.service.onEvent(event => {
+    if (event.kind === "turn" && (event.payload as AgentTurn).id === running.turns[0]!.id
+      && (event.payload as AgentTurn).state === "cancelled") complete()
+  })
+  t.after(async () => { unsubscribe() })
+  await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: {
+    sessionUpdate: "agent_message_chunk", content: { type: "text", text: "recover this tail" },
+  } })
+  const native = f.catalog.native
+  const commit = native.agentCommit.bind(native)
+  let fail = true
+  native.agentCommit = async value => {
+    if (fail) { fail = false; throw new Error("temporary disk error") }
+    return commit(value)
+  }
+  t.after(async () => { native.agentCommit = commit })
+  t.mock.timers.tick(5_000)
+  await completed
+  assert.equal(f.provider.closeCount, 1)
+  assert.equal(errors.mock.callCount(), 1)
+  assert.equal(f.service.preview(f.sessionId), undefined)
+  const chunks = (await f.service.journal.history(f.sessionId, before.lastEventSeq, 200)).filter(event => event.kind === "acp")
+  assert.equal(chunks.length, 1)
+  assert.equal(chunks[0]!.turnId, running.turns[0]!.id)
+})
+
+test("a persistent text commit failure rejects shutdown without acknowledging the preview", async t => {
+  const f = await setup(t)
+  await f.submit("hold").result
+  await until(f.read, () => f.provider.prompts.length === 1)
+  await f.service.journal.serial(f.sessionId, async () => {})
+  const before = await f.service.journal.session(f.sessionId)
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  t.mock.method(console, "error", () => {})
+  await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: {
+    sessionUpdate: "agent_message_chunk", content: { type: "text", text: "uncommitted tail" },
+  } })
+  const native = f.catalog.native
+  const commit = native.agentCommit.bind(native)
+  let close!: () => void
+  const closed = new Promise<void>(resolve => { close = resolve })
+  const finish = f.provider.finish.bind(f.provider)
+  f.provider.finish = (...args) => { finish(...args); close() }
+  native.agentCommit = async () => { throw new Error("persistent disk error") }
+  try {
+    t.mock.timers.tick(5_000)
+    await closed
+    await assert.rejects(f.service.close(), /Could not stop Agent sessions/u)
+    assert.equal((await f.service.journal.session(f.sessionId)).lastEventSeq, before.lastEventSeq)
+    assert.equal(f.service.preview(f.sessionId)?.events.length, 1)
+  } finally { native.agentCommit = commit }
 })
 
 test("finished turns stay unread until a person acknowledges them, shared across viewers and restart", async t => {

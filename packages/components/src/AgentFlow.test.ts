@@ -394,13 +394,13 @@ test("returning to unchanged conversation history scrolls after loading, while l
   await flushPromises()
   expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/session/subscribe")).toHaveLength(subscribes + 1)
   emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "More context" } } })
+  await vi.waitFor(() => expect(useAgentSessionsStore(pinia).views["30"]!.events).toHaveLength(events.length))
   await flushPromises()
   expect(scrollTo).not.toHaveBeenCalled()
   scroller.element.scrollTop = 1200
   await scroller.trigger("scroll")
   emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Still working" } } })
-  await flushPromises()
-  expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 1600 })
+  await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 1600 }))
 })
 
 test("the new-session composer defaults to the working directory and remembers a changed choice", async () => {

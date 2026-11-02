@@ -20,7 +20,7 @@ import { prepareGitWorkspace } from "./git-preparation.ts"
 import type { GitPreparedRevision } from "./git-protocol.ts"
 import { ComposerReferences } from "./composer-references.ts"
 import type {
-  AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentReceipt, AgentSnapshot,
+  AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentPreview, AgentReceipt, AgentSnapshot,
 } from "./agent-protocol.ts"
 
 function object(value: unknown): Record<string, unknown> {
@@ -161,6 +161,8 @@ export class AgentSessions {
   }
 
   onEvent(listener: (event: AgentEvent) => void): () => void { return this.journal.onEvent(listener) }
+  onPreview(listener: (preview: AgentPreview) => void): () => void { return this.journal.onPreview(listener) }
+  preview(sessionId: string): AgentPreview | undefined { return this.journal.preview(sessionId) }
   reconcileAdmissions(): Promise<void> { return this.#admissions.reconcile() }
 
   async #gitDirectories(sessionId: string): Promise<string[]> {

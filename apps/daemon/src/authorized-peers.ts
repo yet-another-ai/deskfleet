@@ -173,6 +173,13 @@ export class AuthorizedPeers {
         onEvent: listener => this.#agents.onEvent(event => {
           try { this.#live(id, "agent:read"); listener(event) } catch { /* expiry closes subscriptions */ }
         }),
+        onPreview: listener => this.#agents.onPreview?.(preview => {
+          try { this.#live(id, "agent:read"); listener(preview) } catch { /* expiry closes subscriptions */ }
+        }) ?? (() => {}),
+        preview: sessionId => {
+          this.#live(id, "agent:read")
+          return this.#agents.preview?.(sessionId)
+        },
         watchGit: async (sessionId, _actor, listener) => {
           this.#live(id, "git:read")
           if (!this.#agents.watchGit) throw new Error("Git observation is unavailable")

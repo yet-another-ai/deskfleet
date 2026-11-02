@@ -502,7 +502,16 @@ turns without replaying events or interpreting context-window updates as spend.
   Inputs, turns, permissions, and event references must belong to that Session.
 - State changes and their events commit together with a compare-and-set journal
   watermark. Event sequences increase within the transaction. Publish only
-  committed events; use one Session queue for domain commits and ACP callbacks.
+  committed journal events; use one Session queue for domain commits and ACP callbacks.
+- Text-only Agent message and thought chunks appear immediately through a
+  separate preview feed. Preserve the original chunks in memory and commit them
+  together five seconds after the first chunk in a window; subsequent chunks do
+  not postpone that deadline. Domain operations and non-text ACP updates flush
+  the preceding tail before reading or changing Session state. Turn completion,
+  cancellation, provider disconnect, and orderly shutdown therefore flush it too.
+  Central synchronization reads committed state without flushing this window.
+  An abnormal exit may lose the uncommitted tail; previews are never durable
+  acknowledgements and do not advance history or read cursors.
 - Atomically claim an input before any provider call. A withdraw, backlog dispatch,
   and steer cannot each consume the same candidate. Delivery callbacks must match
   the recorded dispatch command before changing the input.
@@ -780,6 +789,11 @@ from a centrally authorized local grant; the renderer never receives the secret.
 Each binary frame waits for the preload delivery acknowledgement before the
 next frame, retaining the existing five-second send deadline.
 
+The Agent channel collects outgoing NDJSON bytes until the next event-loop turn
+and packs queued messages into frames of at most 16 KiB. A frame may contain
+several messages or a fragment of one; decoding preserves their byte order.
+Backpressure retries retain the same frame, and closing cancels pending delivery.
+
 | Operation | Contract |
 | --- | --- |
 | `initialize` | Negotiate protocol, facade capabilities, byte limit, and catalog identity |
@@ -804,6 +818,7 @@ next frame, retaining the existing five-second send deadline.
 | `_deskfleet/permission/respond` | Audit an offered permission decision |
 | `_deskfleet/elicitation/respond` | Validate and audit an answer or dismissal of a shared user question |
 | `_deskfleet/session/event` | Deliver committed domain and original ACP events |
+| `_deskfleet/session/preview` | Display uncommitted text with a transient stream ID, durable base sequence, and chunk offsets |
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
 | `_deskfleet/session/resume`, `/stop` | Explicit provider lifecycle operations; input submission also resumes |
 | `_deskfleet/session/archive`, `/restore` | Backend management operations; reclaim/recreate generated checkouts, preserve history, and require an online daemon |
@@ -960,6 +975,16 @@ Pending permissions are reissued on attachment with changes during the snapshot
 read accounted for. User questions are restored from the same snapshot and event
 stream. Buttons depend on the current persisted request state.
 
+After the authorized subscription response, the daemon also replays its current
+uncommitted text tail through `_deskfleet/session/preview`. Each notification
+contains `sessionId`, a transient `streamId`, the durable `baseSeq`, a zero-based
+`offset`, and original event drafts. Live deltas extend that tail; replay starts
+at offset zero. Viewers keep previews outside their durable event map and
+watermarks, remove the corresponding preview chunks as committed events arrive,
+and clear previews on disconnect. The next subscription supplies the current
+tail, so a daemon restart cannot turn a lost preview into a stale history cursor
+or a duplicate message. The protocol remains version 1.
+
 Conversation text, thoughts, tool cards, plans, and turn outcomes are journal
 projections rather than separate message tables. Use provider message IDs when
 available; otherwise group consecutive same-role chunks within a turn by their
@@ -967,6 +992,15 @@ committed sequence. Entry IDs derive from the first event sequence, so replay
 never depends on render timing. Apply tool patches by run/tool-call ID and their
 field-presence semantics. Display submitted user content once by input ID and
 ignore provider user-message echoes.
+
+The renderer publishes text and preview arrivals together on a 33 ms display
+timer; control events flush preceding arrivals immediately. Immutable journal
+payloads stay outside deep Vue reactivity. The conversation projection retains
+its event cursor and updates only affected entries, preserving completed entry
+and response identities. History replacement and snapshot overrides rebuild the
+projection. Committed previews are promoted in place, so a persistence batch
+split across several transport frames does not repeatedly replay history.
+
 The renderer groups the output after each user message into a response. A
 finished turn ending with an assistant message folds its tool calls, thoughts,
 and interim messages behind its duration and leaves that final message visible.

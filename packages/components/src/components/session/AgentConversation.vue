@@ -3,7 +3,8 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { computed, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentEvent, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import { groupTranscript, projectConversation, type ConversationEntry } from "../../services/agent-conversation.ts"
+import { groupTranscript, type ConversationEntry, type TranscriptEntry } from "../../services/agent-conversation.ts"
+import { useConversationProjection } from "../../composables/useConversationProjection.ts"
 import AgentResponse from "./AgentResponse.vue"
 import AgentUserMessage from "./AgentUserMessage.vue"
 import type { FileTarget } from "../../../../client/src/files.ts"
@@ -21,7 +22,8 @@ provide(agentResourceContextKey, computed(() => {
   return target ? { target, sessionId: props.snapshot.session.id } : undefined
 }))
 const { t } = useI18n()
-const transcript = computed(() => groupTranscript(props.projection ?? projectConversation(props.events, props.snapshot), props.snapshot))
+const projection = useConversationProjection(() => props.events, () => props.snapshot)
+const transcript = computed<TranscriptEntry[]>(previous => groupTranscript(props.projection ?? projection.value, props.snapshot, previous))
 const items = useTemplateRef<HTMLLIElement[]>("items")
 defineExpose({ items })
 </script>

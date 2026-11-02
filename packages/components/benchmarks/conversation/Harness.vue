@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
+import { nextTick, ref, useTemplateRef, watch } from "vue"
 import AgentConversation from "../../src/components/session/AgentConversation.vue"
 import AgentOutline from "../../src/components/session/AgentOutline.vue"
-import { projectConversation } from "../../src/services/agent-conversation.ts"
+import { useConversationProjection } from "../../src/composables/useConversationProjection.ts"
 import { CODE_MARKER, createFixture, FINAL_MARKER, type BenchmarkOptions } from "./fixture.ts"
 import { verifyConversationScrollback } from "./scrollback.ts"
 
@@ -11,7 +11,7 @@ const fixture = createFixture(props.options)
 const initialEventCount = fixture.events.length
 const events = ref(fixture.events)
 const snapshot = ref(fixture.snapshot)
-const projection = computed(() => projectConversation(events.value, snapshot.value))
+const projection = useConversationProjection(events, snapshot)
 const scroller = useTemplateRef<HTMLDivElement>("scroller")
 const conversation = useTemplateRef<HTMLDivElement>("conversation")
 const locateEntry = ref<string>()
