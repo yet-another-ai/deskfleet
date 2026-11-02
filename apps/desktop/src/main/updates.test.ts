@@ -57,7 +57,7 @@ function installIpc() {
 }
 
 function lifecycle(): BackgroundLifecycle {
-  return { quitting: false, quit: vi.fn(), setInstallingUpdate: vi.fn() }
+  return { quitting: false, quit: vi.fn(), restart: vi.fn(), setInstallingUpdate: vi.fn() }
 }
 
 test("development installs disabled IPC without importing or creating the updater", async () => {

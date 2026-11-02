@@ -3,6 +3,7 @@ import { expect, test, vi } from "vitest"
 import { keepRunningInBackground } from "./lifecycle.ts"
 
 class FakeApplication extends EventEmitter {
+  relaunch = vi.fn()
   quit = vi.fn(() => {
     const event = { defaultPrevented: false, preventDefault: () => (event.defaultPrevented = true) }
     this.emit("before-quit", event)
@@ -38,6 +39,20 @@ test("the lifecycle quit path exits", () => {
 
   expect(lifecycle.quitting).toBe(true)
   expect(application.quit).toHaveReturnedWith(false)
+  expect(hideWindows).not.toHaveBeenCalled()
+})
+
+test("the lifecycle restart path schedules one relaunch and exits gracefully", () => {
+  const application = new FakeApplication()
+  const hideWindows = vi.fn()
+  const lifecycle = keepRunningInBackground(application, hideWindows)
+
+  lifecycle.restart()
+  lifecycle.restart()
+
+  expect(application.relaunch).toHaveBeenCalledOnce()
+  expect(application.quit).toHaveBeenCalledOnce()
+  expect(lifecycle.quitting).toBe(true)
   expect(hideWindows).not.toHaveBeenCalled()
 })
 

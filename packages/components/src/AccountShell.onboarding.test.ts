@@ -29,6 +29,7 @@ function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false,
     ...(platform === "win32" ? { windowsDesktopService: { available: true, installed: false, running: false } } : {}),
   }
   const listeners = new Set<(state: LocalAgentState) => void>()
+  const application = { restart: vi.fn(async () => {}) }
   const order = state.permissionSteps
   const next = (step: OnboardingStep) => { state.step = step; return { ...state } }
   const onboarding = {
@@ -49,15 +50,36 @@ function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false,
     complete: vi.fn(async () => next("complete")),
   } satisfies OnboardingApi
   const host = {
-    ...getClient(), platform, central: fake.central, onboarding,
+    ...getClient(), platform, central: fake.central, onboarding, application,
     settings: { ...getClient().settings, onChanged: (listener: (state: LocalAgentState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } } },
   }
   return {
-    fake, state, permissions, onboarding, listeners,
+    fake, state, permissions, onboarding, application, listeners,
     mount() { view = mount(AccountShell, { props: { host }, global: { plugins: [pinia, i18n] }, attachTo: document.body }) },
     changed() { for (const listener of listeners) listener({ enabled: true, status: "running", ...permissions }) },
   }
 }
+
+test("macOS permission steps offer a complete application restart", async () => {
+  const app = setup("accessibility")
+  app.mount()
+  await flushPromises()
+  await click("Restart DeskFleet")
+  expect(app.application.restart).toHaveBeenCalledOnce()
+
+  view!.unmount()
+  const localNetwork = setup("localNetwork")
+  localNetwork.mount()
+  await flushPromises()
+  await click("Restart DeskFleet")
+  expect(localNetwork.application.restart).toHaveBeenCalledOnce()
+
+  view!.unmount()
+  const linux = setup("screenCapture", false, "linux")
+  linux.mount()
+  await flushPromises()
+  expect(view!.findAll("button").map(button => button.text())).not.toContain("Restart DeskFleet")
+})
 
 async function click(text: string): Promise<void> {
   const button = view!.findAll("button").find(value => value.text() === text)

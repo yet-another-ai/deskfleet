@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
-import { Check, ChevronRight, FolderOpen, KeyRound, Monitor, MousePointer2, Network, ShieldCheck } from "@lucide/vue"
+import { Check, ChevronRight, FolderOpen, KeyRound, Monitor, MousePointer2, Network, RotateCcw, ShieldCheck } from "@lucide/vue"
 import { useEventListener, whenever } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -42,6 +42,7 @@ const canRequest = computed(() => windowsService.value
   ? permissions.value.windowsDesktopService?.available === true && !permissions.value.windowsDesktopService.running
   : !granted.value && !requesting.value && (!wayland.value
     || !refreshing.value && currentPermission.value?.status !== "checking"))
+const canRestart = computed(() => props.host.platform === "darwin" && !!props.host.application)
 const permissionMessages = computed(() => `welcome.${wayland.value ? "wayland" : "permissions"}.${permission.value}`)
 const steps = computed<OnboardingStep[]>(() => [...(firstRun ? permissionSteps.value : []), "account"])
 const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, windowsDesktopService: ShieldCheck, account: KeyRound, complete: Check }
@@ -147,6 +148,10 @@ async function openLocalNetworkSettings(): Promise<void> {
   await act(async () => { await onboarding!.openLocalNetworkSettings() })
 }
 
+function restartApplication(): void {
+  void props.host.application?.restart().catch(reason => { error.value = message(reason) })
+}
+
 whenever(permission, () => { void refreshPermissions() }, { immediate: true })
 const unsubscribe = onboarding ? props.host.settings.onChanged(state => {
   if (!DESKTOP_ONBOARDING_PERMISSIONS.some(kind => state[`${kind}Permission`]) && state.linuxDesktopBackend === undefined) return
@@ -219,6 +224,7 @@ onBeforeUnmount(() => { unsubscribe?.() })
                 <UiButton variant="primary" v-if="!granted" type="button" :disabled="pending || refreshing || !canRequest" @click="requestPermission(permission)">{{ t(wayland ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
                 <UiButton type="button" :disabled="pending || refreshing" @click="refreshPermissions">{{ t(refreshing ? "welcome.checking" : "welcome.checkAgain") }}</UiButton>
               </template>
+              <UiButton v-if="canRestart" type="button" :disabled="pending || refreshing" @click="restartApplication"><RotateCcw :size="14" aria-hidden="true" />{{ t("common.restartDeskFleet") }}</UiButton>
               <UiButton variant="primary" v-if="localNetwork || granted" type="button" class="ml-auto" :disabled="pending || refreshing" @click="advancePermission(permission)">{{ t("welcome.continue") }}<ChevronRight :size="15" aria-hidden="true" /></UiButton>
             </div>
             <template v-if="!granted">

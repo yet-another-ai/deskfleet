@@ -336,6 +336,7 @@
     "copy": "Copy",
     "copied": "Copied",
     "copyLabel": "Copy {label}",
+    "restartDeskFleet": "Restart DeskFleet",
     "showPassword": "Show password",
     "hidePassword": "Hide password"
   },

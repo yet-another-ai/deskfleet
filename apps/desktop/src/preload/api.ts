@@ -18,6 +18,7 @@ import { updatesApi } from "./updates.ts"
 import { localChannelsApi } from "./local-channels.ts"
 import { windowsDesktopServiceApi } from "./windows-desktop-service.ts"
 import { NATIVE_DESKTOP_CHANNEL } from "@deskfleet/client/native-desktop"
+import { APPLICATION_RESTART_CHANNEL } from "@deskfleet/client/application"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -54,6 +55,7 @@ return {
   ...(central ? { centralBridge: central, onboarding: onboardingApi() } : {}),
   platform: process.platform as DeskfleetDesktopApi["platform"],
   locale: isAppLocale(locale) ? locale : DEFAULT_LOCALE,
+  application: { restart: () => ipcRenderer.invoke(APPLICATION_RESTART_CHANNEL) as Promise<void> },
   appearance: appearanceApi(),
   applications: applicationsApi(),
   updates: updatesApi(),
