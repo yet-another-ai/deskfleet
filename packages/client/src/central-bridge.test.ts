@@ -20,12 +20,12 @@ test.each([undefined, null, { user: { id: "user" } }])("central success preserve
 
 test("diagnostic errors cross serialization and are reported before reaching the caller", async () => {
   const original = centralRequestFailure(new TypeError("fetch failed", { cause: Object.assign(new Error("connection"), { code: "ECONNREFUSED" }) }), {
-    method: "POST", path: "/api/machines/private-machine/rpc", body: { method: "_deskfleet/session/configure", params: { model: "private-model" } }, elapsedMs: 12,
+    method: "POST", path: "/api/teams/team/machines/private-machine/rpc", body: { method: "_deskfleet/session/configure", params: { model: "private-model" } }, elapsedMs: 12,
   }, "Error\n    at request (app.js:12:3)")
   const result = structuredClone(centralIpcFailure(original))
   const report = vi.fn()
   const api = centralBridgeClient(bridge(result), report)
-  const failure = await api.rpc("private-machine", "_deskfleet/session/configure", {}).catch(error => error)
+  const failure = await api.rpc("team", "private-machine", "_deskfleet/session/configure", {}).catch(error => error)
   if (!(failure instanceof CentralRequestError)) throw new Error("Expected a central transport failure")
   expect(report).toHaveBeenCalledExactlyOnceWith(failure)
   expect(failure.diagnostics.causes).toEqual([{ name: "TypeError" }, { name: "Error", code: "ECONNREFUSED" }])

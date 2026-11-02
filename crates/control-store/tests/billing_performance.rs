@@ -47,6 +47,7 @@ async fn peer(store: &ControlStore, owner: &str) -> (String, String) {
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -66,7 +67,7 @@ async fn peer(store: &ControlStore, owner: &str) -> (String, String) {
             source_machine: None,
         },
         target_machine: PeerTarget {
-            id: machine.id,
+            id: machine.machine_id,
             origin_id: machine.origin_id,
             local_machine_id: "1".into(),
         },
@@ -157,6 +158,9 @@ async fn existing_turn_events_are_backfilled_before_future_inserts() {
     let (store, db, schema, owner) = fixture().await;
     let (team, peer) = peer(&store, &owner).await;
     let tx = store.database().begin().await.unwrap();
+    tx.execute_unprepared(include_str!("../src/machine_registrations_down.sql"))
+        .await
+        .unwrap();
     tx.execute_unprepared(include_str!("../src/billing_performance_down.sql"))
         .await
         .unwrap();
@@ -175,6 +179,9 @@ async fn existing_turn_events_are_backfilled_before_future_inserts() {
     store.record_turn_usage(&event).await.unwrap();
     let tx = store.database().begin().await.unwrap();
     tx.execute_unprepared(include_str!("../src/billing_performance.sql"))
+        .await
+        .unwrap();
+    tx.execute_unprepared(include_str!("../src/machine_registrations.sql"))
         .await
         .unwrap();
     tx.commit().await.unwrap();

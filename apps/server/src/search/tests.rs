@@ -52,6 +52,7 @@ async fn postgres_http_search_and_schedule_snapshots_are_authorized() {
             &suffix.to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -65,7 +66,10 @@ async fn postgres_http_search_and_schedule_snapshots_are_authorized() {
         .await
         .unwrap();
     let search_path = format!("/api/teams/{}/search?q=release", team.id);
-    let schedules_path = format!("/api/machines/{}/schedules", machine.id);
+    let schedules_path = format!(
+        "/api/teams/{}/machines/{}/schedules",
+        team.id, machine.machine_id
+    );
     let app = test::init_service(App::new().app_data(state.clone()).configure(configure)).await;
 
     for path in [&search_path, &schedules_path] {
@@ -132,7 +136,7 @@ async fn postgres_http_search_and_schedule_snapshots_are_authorized() {
     let results: Value = test::read_body_json(response).await;
     assert_eq!(results["results"].as_array().unwrap().len(), 1);
     assert_eq!(results["results"][0]["kind"], "schedule");
-    assert_eq!(results["results"][0]["machineId"], machine.id);
+    assert_eq!(results["results"][0]["machineId"], machine.machine_id);
     assert_eq!(results["results"][0]["resourceId"], "task-1");
 
     for query in [

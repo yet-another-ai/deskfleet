@@ -47,9 +47,10 @@ export class WindowLocalChannels {
       const client = await this.#connect(event => this.#event(connection, event), error => this.#retire(connection, error.message))
       connection.client = client
       if (!this.#current(connection)) { client.close(); throw new Error("Local channel was cancelled") }
-      const [account, local] = await Promise.all([this.#central.status(), client.call("centralStatus", {})])
+      const [account, status] = await Promise.all([this.#central.status(), client.call("centralStatus", {})])
       this.#requireCurrent(connection)
-      if (!account.user || !local.configured || local.revoked || local.serverUrl !== account.serverUrl
+      const local = status.registrations.find(value => value.serverUrl === account.serverUrl && value.teamId === request.teamId && value.machineId === request.machineId)
+      if (!account.user || !local?.configured || local.revoked || local.serverUrl !== account.serverUrl
         || local.machineId !== request.machineId || local.teamId !== request.teamId) {
         throw new Error("Direct channels require this client's registered local machine")
       }
@@ -64,7 +65,7 @@ export class WindowLocalChannels {
         || auth.targetMachine.id !== local.machineId || auth.targetMachine.originId !== local.identity.originId
         || auth.targetMachine.localMachineId !== local.identity.machineId || auth.actor.userId !== account.user.id
         || auth.purpose !== request.purpose) throw new Error("Local channel authorization does not match this machine and account")
-      await client.call("localOpen", { peerId: grant.peerId, token: grant.token })
+      await client.call("localOpen", { peerId: grant.peerId, token: grant.token, teamId: request.teamId, machineId: request.machineId })
       this.#requireCurrent(connection)
       connection.ready = true
     } catch (error) {

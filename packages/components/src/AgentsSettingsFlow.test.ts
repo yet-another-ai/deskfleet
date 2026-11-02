@@ -67,7 +67,7 @@ function fixture() {
     providers: [{ id: "shared-provider", template: "codex", name: `Codex ${id}`, env: {} }],
   }]))
   const list = vi.fn(async (machineId: string) => structuredClone(snapshots.get(machineId)!))
-  const rpc = vi.fn(async (machineId: string, method: string, params: Record<string, unknown>) => {
+  const rpc = vi.fn(async (_teamId: string, machineId: string, method: string, params: Record<string, unknown>) => {
     const snapshot = snapshots.get(machineId)!
     if (method === "providerList") return list(machineId)
     if (method === "providerProbe") return { status: "found", auth: "authenticated", installable: true, loginAvailable: true }
@@ -95,7 +95,7 @@ function fixture() {
   })
   Object.assign(fake.central, {
     rpc,
-    catalog: vi.fn(async (machineId: string) => ({
+    catalog: vi.fn(async (_teamId: string, machineId: string) => ({
       machineId, lastObservedAt: "2026-10-30T00:00:00Z",
       providers: { providers: snapshots.get(machineId)?.providers ?? [] },
       snapshot: { teamId: "team-1", machineId, machineName: fake.state.machines.find(machine => machine.id === machineId)!.name, workspaces: [], sessions: [] },
@@ -133,22 +133,22 @@ test("Agents tabs switch the owning runtime for provider operations and setup te
   f.rpc.mockClear()
   await page().get('[data-provider-id="shared-provider"] [data-provider-open]').trigger("click")
   await settled(() => expect(page().find('[data-provider-status="found"]').exists()).toBe(true))
-  expect(f.rpc).toHaveBeenCalledWith("m2", "providerProbe", expect.anything())
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerProbe", expect.anything())
   await page().get('[data-provider-test]').trigger("click")
   await settled(() => expect(page().get('[data-provider-test-result]').text()).toContain("Agent m2"))
-  expect(f.rpc).toHaveBeenCalledWith("m2", "providerTest", expect.anything())
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerTest", expect.anything())
 
   await page().get('[data-provider-install]').trigger("click")
   await settled(() => expect(page().get('[data-terminal-id="setup-terminal"]').attributes("data-terminal-machine")).toBe("m2"))
-  expect(f.rpc).toHaveBeenCalledWith("m2", "providerInstall", expect.anything())
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerInstall", expect.anything())
   await page().get('[data-provider-stop]').trigger("click")
   await flushPromises()
-  expect(f.rpc).toHaveBeenCalledWith("m2", "terminalHangup", { terminalId: "setup-terminal" })
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "terminalHangup", { terminalId: "setup-terminal" })
 
   await page().get('[name="provider-name"]').setValue("Renamed second provider")
   await page().get("form").trigger("submit")
   await settled(() => expect(page().find("[role=dialog]").exists()).toBe(false))
-  expect(f.rpc).toHaveBeenCalledWith("m2", "providerUpdate", { providerId: "shared-provider", changes: expect.objectContaining({ name: "Renamed second provider" }) })
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerUpdate", { providerId: "shared-provider", changes: expect.objectContaining({ name: "Renamed second provider" }) })
   expect(f.snapshots.get("m1")!.providers[0]!.name).toBe("Codex m1")
 
   await button("Add provider").trigger("click")
@@ -157,14 +157,14 @@ test("Agents tabs switch the owning runtime for provider operations and setup te
   await page().get('[name="provider-name"]').setValue("Second custom agent")
   await page().get("form").trigger("submit")
   await settled(() => expect(page().find("[role=dialog]").exists()).toBe(false))
-  expect(f.rpc).toHaveBeenCalledWith("m2", "providerCreate", { provider: expect.objectContaining({ name: "Second custom agent" }) })
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerCreate", { provider: expect.objectContaining({ name: "Second custom agent" }) })
   await page().get('[aria-label="Actions for Renamed second provider"]').trigger("click")
   await settled(() => expect(page().findAll('[role="menuitem"]')).toHaveLength(2))
   await page().findAll('[role="menuitem"]').find(item => item.text() === i18n.global.t("providers.remove"))!.trigger("click")
   await page().get('[role=dialog] .ui-button-danger').trigger("click")
   await settled(() => expect(page().find('[data-provider-id="shared-provider"]').exists()).toBe(false))
-  expect(f.rpc).toHaveBeenCalledWith("m2", "providerRemove", { providerId: "shared-provider" })
-  expect(f.rpc.mock.calls.filter(([, method]) => method.startsWith("provider") || method === "terminalHangup").every(([id]) => id === "m2")).toBe(true)
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerRemove", { providerId: "shared-provider" })
+  expect(f.rpc.mock.calls.filter(([, , method]) => method.startsWith("provider") || method === "terminalHangup").every(([, id]) => id === "m2")).toBe(true)
 
   await tab("First machine").trigger("click")
   await settled(() => expect(page().get('[data-provider-id="shared-provider"]').text()).toContain("Codex m1"))
@@ -192,6 +192,6 @@ test("a late provider read stays on its machine and offline tabs do not read pro
   await settled(() => expect(tabs().get('[aria-current="page"]').text()).toContain("Offline machine"))
   expect(button("Add provider").attributes("disabled")).toBeDefined()
   expect(page().find("[data-provider-id]").exists()).toBe(false)
-  expect(f.rpc.mock.calls.filter(([, method]) => method.startsWith("provider"))).toEqual([])
+  expect(f.rpc.mock.calls.filter(([, , method]) => method.startsWith("provider"))).toEqual([])
   expect(router.currentRoute.value.path).toBe("/settings/agents")
 })

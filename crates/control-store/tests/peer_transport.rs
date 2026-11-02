@@ -44,6 +44,7 @@ async fn peer_transport_upgrade_restores_reconciliation_and_preserves_existing_g
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -71,7 +72,7 @@ async fn peer_transport_upgrade_restores_reconciliation_and_preserves_existing_g
                 source_machine: None,
             },
             target_machine: PeerTarget {
-                id: machine.id.clone(),
+                id: machine.machine_id.clone(),
                 origin_id: machine.origin_id.clone(),
                 local_machine_id: machine.local_machine_id.clone(),
             },

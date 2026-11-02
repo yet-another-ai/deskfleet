@@ -25,7 +25,7 @@ async function fixture() {
     iceServers: [],
   }))
   const closePeer = vi.fn(async (_id: string) => {})
-  const catalog = vi.fn(async (machineId: string) => ({
+  const catalog = vi.fn(async (_teamId: string, machineId: string) => ({
     machineId,
     lastObservedAt: "2026-10-29T00:00:00Z",
     snapshot: {
@@ -104,11 +104,11 @@ test("a background catalog event refreshes its owning machine after another mach
   await second.fleet.refreshLocal()
   f.catalog.mockClear()
 
-  f.emit({ type: "catalogChanged", machineId: "m1" })
+  f.emit({ type: "catalogChanged", teamId: "team-1", machineId: "m1" })
   await flushPromises()
 
-  expect(f.catalog).toHaveBeenCalledWith("m1")
-  expect(f.catalog.mock.calls.every(([machineId]) => machineId === "m1")).toBe(true)
+  expect(f.catalog).toHaveBeenCalledWith("team-1", "m1")
+  expect(f.catalog.mock.calls.every(([, machineId]) => machineId === "m1")).toBe(true)
   expect(first.fleet.catalog?.machineName).toBe("m1")
   expect(second.fleet.catalog?.machineName).toBe("m2")
   expect(f.session.machineId.value).toBe("m2")
@@ -122,7 +122,7 @@ test("reconnect refreshes every retained catalog and conversation when roster me
     value.session.title = `Conversation ${machineId} revision ${revision}`
     return value
   }
-  f.catalog.mockImplementation(async machineId => ({
+  f.catalog.mockImplementation(async (_teamId, machineId) => ({
     machineId, lastObservedAt: "2026-10-29T00:00:00Z",
     snapshot: {
       teamId: "1", machineId: "1", machineName: machineId === "m1" ? f.first.name : f.second.name,
@@ -131,8 +131,8 @@ test("reconnect refreshes every retained catalog and conversation when roster me
     },
   }))
   Object.assign(f.central, {
-    sessions: vi.fn(async (machineId: string) => [snapshot(machineId)]),
-    session: vi.fn(async (machineId: string) => ({ snapshot: snapshot(machineId) })),
+    sessions: vi.fn(async (_teamId: string, machineId: string) => [snapshot(machineId)]),
+    session: vi.fn(async (_teamId: string, machineId: string) => ({ snapshot: snapshot(machineId) })),
     events: vi.fn(async () => ({ events: [] })),
   })
   const first = f.runtimes.open(f.first)
@@ -159,8 +159,8 @@ test("reconnect refreshes every retained catalog and conversation when roster me
   f.emit({ type: "connection", connected: true })
   await flushPromises()
 
-  expect(f.catalog).toHaveBeenCalledWith("m1")
-  expect(f.catalog).toHaveBeenCalledWith("m2")
+  expect(f.catalog).toHaveBeenCalledWith("team-1", "m1")
+  expect(f.catalog).toHaveBeenCalledWith("team-1", "m2")
   expect(firstView.fleet.findWorkspace("20")?.workspace.name).toBe("Workspace m1 revision 1")
   expect(secondView.fleet.findWorkspace("20")?.workspace.name).toBe("Workspace m2 revision 1")
   expect(firstAgents.sessions["30"]?.title).toBe("Conversation m1 revision 1")
@@ -201,7 +201,7 @@ test("a roster refresh reconciles an inactive machine after missed presence with
 
   // Both the direct event and the account's in-place roster update reach this
   // adapter, but the catalog needs only one refresh for the presence change.
-  f.emit({ type: "presence", machineId: "m1", online: false })
+  f.emit({ type: "presence", teamId: "team-1", machineId: "m1", online: false })
   await flushPromises()
   expect(first.api.agent.history!.available()).toBe(false)
   expect(changed).toHaveBeenCalledTimes(3)

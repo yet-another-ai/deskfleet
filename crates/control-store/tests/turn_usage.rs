@@ -19,6 +19,7 @@ async fn peer(store: &ControlStore, auth: &AuthSession, expires: i64) -> PeerAut
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -33,7 +34,7 @@ async fn peer(store: &ControlStore, auth: &AuthSession, expires: i64) -> PeerAut
             source_machine: None,
         },
         target_machine: PeerTarget {
-            id: machine.id,
+            id: machine.machine_id,
             origin_id: machine.origin_id,
             local_machine_id: "1".into(),
         },

@@ -50,14 +50,16 @@ pub(crate) async fn search(
 pub(crate) async fn schedules(
     req: HttpRequest,
     state: web::Data<AppState>,
-    path: web::Path<String>,
+    path: web::Path<(String, String)>,
 ) -> Result<web::Json<Value>> {
     let actor = auth::user(&req, &state).await?;
-    state
+    let registration = state
         .store
-        .authorized_machine(&actor.user.id, &path)
+        .authorized_registration(&actor.user.id, &path.0, &path.1)
         .await?;
-    Ok(web::Json(state.store.schedule_snapshot(&path).await?))
+    Ok(web::Json(
+        state.store.schedule_snapshot(&registration.id).await?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -80,7 +82,8 @@ pub(crate) async fn sync_schedules(
         .notify_team(
             &machine.machine.team_id,
             ControlMessage::CatalogChanged {
-                machine_id: machine.machine.id,
+                team_id: machine.machine.team_id.clone(),
+                machine_id: machine.machine.machine_id,
                 session_id: None,
             },
         )

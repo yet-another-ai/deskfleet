@@ -193,10 +193,10 @@ test("central IPC preserves network diagnostics for caught renderer failures wit
     context: vi.fn(),
   }
   const api = centralBridgeClient(bridge, report)
-  const failure = await api.rpc("private-machine", "_deskfleet/agent/configuration", { provider: "private-provider" }).catch(error => error)
+  const failure = await api.rpc("team", "private-machine", "_deskfleet/agent/configuration", { provider: "private-provider" }).catch(error => error)
   if (!(failure instanceof CentralRequestError)) throw new Error("Expected a central transport failure")
   expect(failure.message).toBe("Error invoking remote method 'deskfleet:central': TypeError: fetch failed")
-  expect(failure.diagnostics).toMatchObject({ method: "POST", route: "/api/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", causes: [{ name: "TypeError" }, { name: "Error", code: "ECONNRESET" }] })
+  expect(failure.diagnostics).toMatchObject({ method: "POST", route: "/api/teams/:teamId/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", causes: [{ name: "TypeError" }, { name: "Error", code: "ECONNRESET" }] })
   expect(failure.stack).toContain("HttpCentralClient.request")
   expect(report).toHaveBeenCalledExactlyOnceWith(failure)
   expect(f.fetch).toHaveBeenCalledTimes(1)

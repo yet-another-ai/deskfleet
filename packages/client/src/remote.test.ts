@@ -113,8 +113,8 @@ test("locality changes update existing signaling objects and keep management sub
   expect(terminal.connectChannel).toBeUndefined()
   expect(f.remote.api.target?.local).toBe(false)
   await agent.control!("_deskfleet/git/branches", { workspaceId: "1" })
-  expect(f.central.rpc).toHaveBeenCalledWith("central7", "_deskfleet/git/branches", { workspaceId: "1" })
-  f.emit({ type: "catalogChanged", machineId: "central7" })
+  expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "_deskfleet/git/branches", { workspaceId: "1" })
+  f.emit({ type: "catalogChanged", teamId: "team2", machineId: "central7" })
   expect(catalog).toHaveBeenCalledOnce()
 })
 test("passes TURN config to the browser, preserves peers during signaling loss, and closes authorization at 24 hours", async () => {
@@ -134,11 +134,11 @@ test("revokes only the matching peer and sends management over the central RPC",
   f.emit({ type: "peerRevoked", peerId: "peer1", reason: "membership_removed" })
   expect(events).toHaveBeenCalledWith({ sessionId: "local-peer", kind: "error", error: "membership_removed" })
   await f.remote.api.agent.control!("_deskfleet/session/archive", { sessionId: "1", operationId: "archive-op" })
-  expect(f.central.rpc).toHaveBeenCalledWith("central7", "_deskfleet/session/archive", { sessionId: "1", operationId: "archive-op" })
+  expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "_deskfleet/session/archive", { sessionId: "1", operationId: "archive-op" })
   await f.remote.api.agent.control!("_deskfleet/session/rename", { sessionId: "1", operationId: "rename-op", title: "Investigate payment errors" })
-  expect(f.central.rpc).toHaveBeenCalledWith("central7", "_deskfleet/session/rename", { sessionId: "1", operationId: "rename-op", title: "Investigate payment errors" })
+  expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "_deskfleet/session/rename", { sessionId: "1", operationId: "rename-op", title: "Investigate payment errors" })
   await f.remote.api.agent.control!("_deskfleet/session/read", { sessionId: "1", operationId: "read-op", throughSeq: "42" })
-  expect(f.central.rpc).toHaveBeenCalledWith("central7", "_deskfleet/session/read", { sessionId: "1", operationId: "read-op", throughSeq: "42" })
+  expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "_deskfleet/session/read", { sessionId: "1", operationId: "read-op", throughSeq: "42" })
   expect(f.remote.api.agent.control!("_deskfleet/input/submit", { sessionId: "1", operationId: "prompt", content: [], delivery: "backlog" })).toBeUndefined()
   expect(await f.remote.api.agent.history!.list()).toEqual([{ id: "1", working: false }])
 })
@@ -172,9 +172,9 @@ test("retains known terminal tabs during a daemon signaling outage", async () =>
   const f = fixture()
   const shells = [{ id: "shell1", status: "running" }]
   vi.mocked(f.central.rpc).mockResolvedValue(shells)
-  f.emit({ type: "presence", machineId: "central7", online: true })
+  f.emit({ type: "presence", teamId: "team2", machineId: "central7", online: true })
   expect(await f.remote.api.terminal.list()).toEqual(shells)
-  f.emit({ type: "presence", machineId: "central7", online: false })
+  f.emit({ type: "presence", teamId: "team2", machineId: "central7", online: false })
   expect(await f.remote.api.terminal.list()).toEqual(shells)
   expect(f.central.rpc).toHaveBeenCalledTimes(1)
 })
@@ -184,7 +184,7 @@ test("system status reads the selected remote machine without opening a peer", a
   const status = { sampledAt: 1_793_000_000_000, cpuUsagePercent: 37.5, daemonVersion: "2.3.4" }
   vi.mocked(f.central.rpc).mockResolvedValue(status)
   expect(await f.remote.api.system!.status()).toEqual(status)
-  expect(f.central.rpc).toHaveBeenCalledWith("central7", "systemStatus", {})
+  expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "systemStatus", {})
   expect(f.central.createPeer).not.toHaveBeenCalled()
   vi.mocked(f.central.rpc).mockRejectedValueOnce(new Error("Machine is offline"))
   await expect(f.remote.api.system!.status()).rejects.toThrow("Machine is offline")
@@ -203,14 +203,14 @@ test("desktop discovery reads capabilities published after enrollment and later 
   const f = fixture()
   const current: Machine = { id: "central7", teamId: "team2", name: "Remote", originId: "origin", localMachineId: "1", capabilities: {}, online: true }
   f.central.machines = vi.fn(async () => [structuredClone(current)])
-  f.emit({ type: "presence", machineId: "central7", online: true })
+  f.emit({ type: "presence", teamId: "team2", machineId: "central7", online: true })
   expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Remote", online: true, desktop: false })
   current.capabilities = { desktop: true }
   expect(await f.remote.api.desktop.target()).toEqual({ id: "central7", name: "Remote", online: true, desktop: true })
   current.capabilities.platform = "win32"
   expect((await f.remote.api.desktop.target()).platform).toBe("win32")
   expect(f.remote.api.platform).toBe("web")
-  f.emit({ type: "presence", machineId: "central7", online: false })
+  f.emit({ type: "presence", teamId: "team2", machineId: "central7", online: false })
   expect((await f.remote.api.desktop.target()).online).toBe(false)
   current.capabilities = { desktop: false }
   expect((await f.remote.api.desktop.target()).desktop).toBe(false)

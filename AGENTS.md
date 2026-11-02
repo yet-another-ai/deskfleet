@@ -8,9 +8,14 @@ product website and user manual.
 - deskfleet manages a team's AI agents and working environments across machines.
   Read [the architecture](agents/docs/architecture.md) before changing component
   boundaries or resource ownership.
-- The hierarchy is Team → Machine → Workspace → Worktree. Workspace creation
-  requires ordered directory paths, with the first as default and no directory
-  aliases. Its main Worktree uses those actual directories; other Worktree records
+- The hierarchy is Team → Machine registration → Workspace → Worktree. One
+  physical daemon has the same public Machine ID across Teams on each backend;
+  each `(Machine, Team)` has exactly one registration. Registrations own separate
+  catalogs, Sessions, terminals, providers, and credentials. Qualify API and IPC
+  resource access by Team and Machine; a public Machine ID alone is not a scope.
+  This is API isolation within one OS user, not filesystem or process isolation.
+  Workspace creation requires ordered directory paths, with the first as default
+  and no directory aliases. Its main Worktree uses those actual directories; other Worktree records
   are created and destroyed with their owning Session, never maintained separately.
   A new Session either generates its own Git worktree or works directly in the
   Workspace's directories. Archive removes generated checkouts, including
@@ -25,7 +30,9 @@ product website and user manual.
 - The machine daemon is a TypeScript/Node.js library. Headless machines run it as
   a standalone SEA process. The Electron app hosts it in the app's main process:
   it outlives the app's windows, which close to the tray, and stops when the app
-  quits. Do not spawn a separate daemon process from the app.
+  quits. One daemon hosts all registered Team runtimes concurrently; selecting a
+  Team changes the client view, not the running registration. Do not spawn a
+  separate daemon process from the app.
 - ACP connects agent implementations. WebRTC carries peer data and media, with
   server-assisted signaling and TURN fallback.
 - `PROTOCOL_VERSION` remains `1` until maintainers explicitly declare the first

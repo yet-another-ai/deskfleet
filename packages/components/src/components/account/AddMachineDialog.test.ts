@@ -10,7 +10,7 @@ import { parseDaemonStatus } from "./daemon-status.ts"
 let view: VueWrapper | undefined
 let session: AccountSession | undefined
 afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined })
-const status = (value: Record<string, unknown> = {}) => JSON.stringify({ configured: false, connected: false, revoked: false, identity: { originId: "server-origin", machineId: "1" }, machineName: "ssh-box", ...value }, null, 2)
+const status = (value: Record<string, unknown> = {}) => JSON.stringify({ configured: false, connected: false, revoked: false, identity: { originId: "server-origin", machineId: "1" }, machineName: "ssh-box", serverUrl: "https://fleet.example", teamId: "team-1", identityToken: "host-secret", ...value }, null, 2)
 const local = (value: Partial<LocalEnrollment> = {}): LocalEnrollment => ({ configured: false, connected: false, revoked: false, identity: { originId: "o", machineId: "1" }, machineName: "This Mac", ...value })
 async function setup(enrollment?: LocalEnrollment) {
   const fake = fakeCentral({ enrollment, machines: enrollment?.machineId ? [machineFixture(enrollment.machineId, enrollment.teamId!, "This Mac")] : [] })
@@ -22,11 +22,11 @@ async function setup(enrollment?: LocalEnrollment) {
 }
 
 test("daemon status output is accepted only for an unregistered installation", () => {
-  expect(parseDaemonStatus(status())).toEqual({ ok: true, name: "ssh-box", originId: "server-origin", localMachineId: "1" })
+  expect(parseDaemonStatus(status())).toEqual({ ok: true, name: "ssh-box", serverUrl: "https://fleet.example", teamId: "team-1", identityToken: "host-secret", originId: "server-origin", localMachineId: "1" })
   expect(parseDaemonStatus("deskfleet-daemon status")).toEqual({ ok: false, reason: "invalid" })
   expect(parseDaemonStatus(status({ identity: { originId: "x", machineId: "one" } }))).toEqual({ ok: false, reason: "invalid" })
   expect(parseDaemonStatus(status({ configured: true }))).toEqual({ ok: false, reason: "enrolled" })
-  expect(parseDaemonStatus(status({ configured: true, revoked: true }))).toEqual({ ok: false, reason: "revoked" })
+  expect(parseDaemonStatus(status({ configured: true, revoked: true }))).toMatchObject({ ok: true, originId: "server-origin" })
 })
 
 test("the Web client adds another machine from pasted status output and shows its credential once", async () => {
@@ -35,18 +35,18 @@ test("the Web client adds another machine from pasted status output and shows it
   const input = view!.get<HTMLTextAreaElement>('[name="daemon-status"]')
   expect(document.activeElement).toBe(input.element)
   await input.setValue(status({ configured: true }))
-  expect(view!.text()).toContain("already belongs to a team")
+  expect(view!.text()).toContain("already registered in this Team")
   expect(view!.get('button[type="submit"]').attributes("disabled")).toBeDefined()
   await input.setValue(status())
   expect((view!.get('[name="machine-name"]').element as HTMLInputElement).value).toBe("ssh-box")
   await view!.get('[name="machine-name"]').setValue("SSH server")
   await view!.get("form").trigger("submit")
   await flushPromises()
-  expect(fake.central.enrollHeadless).toHaveBeenCalledExactlyOnceWith("team-1", { name: "SSH server", originId: "server-origin", localMachineId: "1" })
+  expect(fake.central.enrollHeadless).toHaveBeenCalledExactlyOnceWith("team-1", { name: "SSH server", originId: "server-origin", localMachineId: "1", identityToken: "host-secret" })
   expect(view!.get("h2").text()).toBe("Finish on the machine")
   const fields = view!.findAll<HTMLInputElement | HTMLTextAreaElement>("[readonly]")
   expect(fields[0]!.element.value).toBe("deskfleet-daemon enroll --server-url https://fleet.example")
-  expect(JSON.parse(fields[1]!.element.value)).toEqual({ machineId: "machine-1", teamId: "team-1", token: "machine-token" })
+  expect(JSON.parse(fields[1]!.element.value)).toEqual({ machineId: "machine-1", teamId: "team-1", token: "machine-token", originId: "server-origin" })
   expect(document.activeElement).toBe(fields[1]!.element)
   expect(session!.machines.value.map(machine => machine.name)).toEqual(["SSH server"])
 })
@@ -64,7 +64,7 @@ test("a failed registration keeps the pasted identity for retry", async () => {
 test.each([false, true])("the desktop connects this computer under its hostname by default (previously removed=%s)", async revoked => {
   const fake = await setup(local(revoked ? { configured: true, revoked: true, serverUrl: "https://fleet.example", teamId: "team-1", machineId: "old" } : {}))
   const option = view!.get('[data-add-machine="local"]')
-  expect(option.text()).toContain(revoked ? "new, empty identity" : "computer you are using now")
+  expect(option.text()).toContain(revoked ? "retain its previous Sessions" : "computer you are using now")
   await option.trigger("click")
   await flushPromises()
   const input = view!.get<HTMLInputElement>('[name="machine-name"]')

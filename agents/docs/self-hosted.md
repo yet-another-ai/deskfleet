@@ -54,9 +54,9 @@ the listener opens.
 | Durable central records | Machine-owned execution data |
 | --- | --- |
 | Verified user profiles, password hashes, and Passkey public credentials | Agent CLI credential files |
-| Login-session, machine, invitation, and exchange-token hashes | Plaintext machine credential (`central.json`) |
+| Login-session, host-identity, Team-registration, invitation, and exchange-token hashes | Host identity proof (`machine-identity.json`) and each Team's execution credential (`central.json`) |
 | Teams, roles, and invitations | Workspace files, Git worktrees, and terminal transcripts |
-| Machine enrollment, catalog snapshot, and display metadata for providers | Provider executable paths and environment configuration |
+| Shared Machine identities, unique Team registrations, catalog snapshots, and provider display metadata | Registration directory registry, provider executable paths, and environment configuration |
 | Agent session snapshots, event pages, and command audit | Desktop media |
 
 Synchronized provider rows keep id, template, name, and icon. Template rows keep
@@ -94,9 +94,9 @@ listening; a later database outage leaves `/healthz` green while API calls fail.
   `postgresql://`.
 - Retargeting enrolled machines after `DESKFLEET_PUBLIC_URL` changes. The
   repository has no migration for that.
-- Importing an old unauthenticated daemon directory into a team. Enrollment
-  starts a new machine identity; `prepare-enrollment` keeps the old files in
-  place and does not copy them.
+- Importing an old unauthenticated daemon directory into a Team. Automatic
+  upgrade adoption applies to an enrolled catalog at its existing directory;
+  enrollment does not copy unrelated development resources.
 
 ## Prerequisites
 
@@ -618,6 +618,20 @@ revocation operations also read them. Without this migration, an active old
 authorization can fail decoding during daemon reconnection and leave its
 machine repeatedly reconnecting and appearing offline.
 
+Version 22 separates the public Machine identity from its Team registrations.
+It preserves existing Machine IDs, catalog origins, history, and quota records,
+uses the former execution-token hash as the initial host identity proof, and
+qualifies resource storage and routing by internal registration ID. The database
+enforces exactly one registration for each Machine/Team pair, including revoked
+associations. Each Team's public machine list still uses the same Machine ID for
+the same host on this backend.
+
+The daemon upgrade adopts `machine/` or the prior `active-machine.json` target
+without moving its catalog or checkouts. It writes `machine-registrations.json`
+and `machine-identity.json` beside the registered directories. Keep the host
+identity file with these directories when backing up the daemon; the central
+database contains only its hash.
+
 Application logs distinguish control-plane database errors from stored JSON
 decoding failures. Database diagnostics include the error phase and SQLSTATE
 when the driver provides one; JSON diagnostics include the category, position,
@@ -651,10 +665,13 @@ secrets, terminal transcripts, or worktree files.
 Restoring an older dump brings back the hashes, revocations, and history as
 they were at the dump. A daemon whose current machine token was issued after
 the dump can no longer authenticate, and a removal performed after the dump is
-undone. The supported recovery for a machine that cannot authenticate is
-administrator removal, then `deskfleet-daemon prepare-enrollment`, then a new
-enrollment. That keeps the old machine directory and does not import it.
-Application sessions missing from the restored database simply sign in again.
+undone. For a registration retained in the restored database, an administrator
+can remove its Team association, then the host can run
+`deskfleet-daemon prepare-enrollment --server-url https://api.example.com --team-id 123`
+and enroll it again. This rotates the Team execution token while retaining its
+Machine ID, catalog origin, directory, and history. Retained Session admissions
+must fit the Team's current capacity where its plan imposes a limit. Application
+sessions missing from the restored database simply sign in again.
 
 To upgrade the API:
 
@@ -677,23 +694,31 @@ Build Electron and the headless daemon for each computer that will execute
 agents. Supported targets are Linux x64, Linux arm64, macOS arm64, and Windows
 x64. The daemon's SQLite catalog, provider configuration, and terminal history
 stay in its data directory: `<userData>/daemon` for Electron, or `~/.deskfleet`
-for the headless daemon. `DESKFLEET_DAEMON_DIRECTORY` overrides only the headless
-directory.
+for the headless daemon. A single daemon hosts all registrations concurrently.
+`machine-registrations.json` maps backend URL and Team ID to `machine/` or
+`machines/<uuid>/`; each directory owns its catalog, Sessions, provider and MCP
+settings, schedules, and terminals. `machine-identity.json` keeps the private
+host proof, while each registration's `central.json` keeps its execution token.
+`DESKFLEET_DAEMON_DIRECTORY` overrides only the headless directory.
 
 Build the clients for the API origin (`https://api.example.com` or the shared
 hostname) as described above. On the welcome screen, sign in with a verified DeskFleet
 account, create a team, and enroll the local daemon from the desktop app when
 the app and the daemon are on the same computer.
 
-For a headless machine, start `deskfleet-daemon`, then on that machine:
+For a headless machine, start `deskfleet-daemon`, select the target Team in the
+client, then prepare its registration on the machine:
 
 ```sh
-deskfleet-daemon status
+deskfleet-daemon prepare-enrollment --server-url https://api.example.com --team-id 123
 ```
 
-Paste the printed identity into the client's Add machine dialog. The dialog
-shows a credential once. On the headless machine, with its daemon already
-running:
+Replace `123` with the selected Team's ID. Paste the complete prepared bundle into
+the client's Add machine dialog. It contains the private host `identityToken` and
+the Team catalog's origin and local machine ID; keep it private. The server
+checks Team membership and uses this proof to retain the host's public Machine
+ID across Teams. The dialog shows that Team's execution credential once. On the
+headless machine, with its daemon already running:
 
 ```sh
 deskfleet-daemon enroll --server-url https://api.example.com < machine-credentials.json
@@ -705,9 +730,17 @@ Enrollment checks the credential against `/api/daemon/me` and stores the
 returned `serverId`. Later control connections must present that same
 `serverId`.
 
-After an administrator removes a machine, `status` reports `revoked`. Register
-it again only after `deskfleet-daemon prepare-enrollment`, which prints a new
-identity. An active registration cannot be overwritten.
+`deskfleet-daemon status` lists all registrations and their connection or
+revocation state without credentials. Prepare and enroll another Team to run it
+alongside existing registrations with the same public Machine ID on this backend;
+its catalog and Sessions start separately.
+
+After administrator removal, prepare the same backend and Team again with the
+command above, then enroll the returned credential. This reactivates its existing
+association and retains Workspaces, Sessions, history, and checkout paths.
+Where the Team plan limits Sessions, rejoining can fail with `active_session_limit`
+if retained admissions plus current Team work exceed that limit. Self-hosted
+Teams have unlimited capacity. Other Teams remain connected. An active registration cannot be overwritten.
 
 The Web client is bundled in the official image, or can be deployed from
 `apps/web/dist` to an independent static host. Browsers

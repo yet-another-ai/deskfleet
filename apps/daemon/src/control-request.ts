@@ -73,12 +73,19 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
       if (typeof params.token !== "string") throw new Error("Missing authentication token")
       break
     case "centralEnroll":
-      for (const key of ["serverUrl", "machineId", "teamId", "token"]) {
+      for (const key of ["serverUrl", "machineId", "teamId", "token", "originId"]) {
+        if (typeof params[key] !== "string" || !params[key] || (params[key] as string).length > 8192) throw new Error(`Invalid enrollment ${key}`)
+      }
+      break
+    case "centralPrepareEnrollment":
+      for (const key of ["serverUrl", "teamId"]) {
         if (typeof params[key] !== "string" || !params[key] || (params[key] as string).length > 8192) throw new Error(`Invalid enrollment ${key}`)
       }
       break
     case "localOpen":
       sessionId(params.peerId)
+      sessionId(params.teamId)
+      sessionId(params.machineId)
       if (typeof params.token !== "string" || params.token.length < 32 || params.token.length > 256) throw new Error("Invalid local channel claim token")
       break
     case "localSend":
@@ -98,7 +105,6 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
       if (!Number.isSafeInteger(params.sequence) || (params.sequence as number) < 1) throw new Error("Invalid local channel acknowledgement")
       break
     case "centralStatus":
-    case "centralPrepareEnrollment":
     case "capabilities":
     case "systemStatus":
     case "terminalList":

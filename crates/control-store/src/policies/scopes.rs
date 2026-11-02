@@ -1,5 +1,6 @@
+use crate::MachineRegistration;
 use crate::{ControlStore, Result, machines::machine, resource_id, sql};
-use deskfleet_protocol::control::{Machine, Team};
+use deskfleet_protocol::control::Team;
 use sea_orm::ConnectionTrait;
 
 use super::TeamAction;
@@ -55,14 +56,14 @@ impl<'a> MachineScope<'a> {
     ///
     /// # Errors
     /// Returns an error for nonmembers, invalid IDs, or database failures.
-    pub async fn resolve(&self, store: &ControlStore) -> Result<Vec<Machine>> {
+    pub async fn resolve(&self, store: &ControlStore) -> Result<Vec<MachineRegistration>> {
         store
             .authorize_team(self.user_id, self.team_id, TeamAction::ReadMachines)
             .await?;
         store
             .db
             .query_all_raw(sql(
-                "SELECT machine.* FROM cp_machines machine JOIN cp_members member ON member.team_id=machine.team_id WHERE machine.team_id=$1 AND member.user_id=$2 AND NOT machine.revoked ORDER BY machine.id",
+                "SELECT machine.* FROM cp_machine_registrations machine JOIN cp_members member ON member.team_id=machine.team_id WHERE machine.team_id=$1 AND member.user_id=$2 AND NOT machine.revoked ORDER BY machine.id",
                 vec![resource_id(self.team_id)?.into(), self.user_id.into()],
             ))
             .await?

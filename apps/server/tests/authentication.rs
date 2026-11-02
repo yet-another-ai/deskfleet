@@ -548,6 +548,7 @@ async fn mailbox_proof_cookies_csrf_recovery_desktop_and_disable() {
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();

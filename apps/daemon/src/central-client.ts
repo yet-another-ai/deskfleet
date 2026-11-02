@@ -112,7 +112,7 @@ export class CentralClient {
       signal: AbortSignal.any([AbortSignal.timeout(15_000), this.#httpClosing.signal]),
     })
     // User denials and gateway errors do not revoke an otherwise valid machine.
-    if (await machineCredentialRejected(response)) await this.#revoked()
+    if (await machineCredentialRejected(response)) await this.#revoked(credentials)
     if (!response.ok) throw new Error(`User delegation is no longer authorized (${response.status})`)
     const result = await response.json() as { authorized?: boolean }
     if (result.authorized !== true) throw new Error("Backend did not authorize this user delegation")
@@ -128,7 +128,7 @@ export class CentralClient {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.any([AbortSignal.timeout(15_000), this.#httpClosing.signal]),
     })
-    if (await machineCredentialRejected(response)) await this.#revoked()
+    if (await machineCredentialRejected(response)) await this.#revoked(credentials)
     if (!response.ok) {
       const error = await response.json().catch(() => null) as { message?: string; error?: { message?: string } | string } | null
       const message = error?.message ?? (typeof error?.error === "string" ? error.error : error?.error?.message)
@@ -139,9 +139,18 @@ export class CentralClient {
 
   async enroll(value: MachineEnrollment): Promise<CentralStatus> {
     if (this.#stopping || this.#closed || this.#enrolling) throw new Error("Machine enrollment is unavailable")
-    if (this.#credentials) throw new Error("This daemon already belongs to a team")
+    const previous = this.#credentials
+    if (value.originId !== this.#operations.agents.journal.identity.originId) throw new Error("Machine credentials do not match this catalog origin")
+    if (previous && !previous.revoked) {
+      if (previous.serverUrl === centralUrl(value.serverUrl) && previous.machineId === value.machineId && previous.teamId === value.teamId && previous.token === value.token) return this.status()
+      throw new Error("This Team registration is already enrolled")
+    }
+    if (previous && (previous.serverUrl !== centralUrl(value.serverUrl) || previous.machineId !== value.machineId || previous.teamId !== value.teamId)) {
+      throw new Error("Re-enrollment must retain this Team's machine identity")
+    }
     this.#enrolling = true
     try {
+      await this.#revocation
       const serverUrl = centralUrl(value.serverUrl)
       const response = await fetch(`${serverUrl}/api/daemon/me`, { headers: { authorization: `Bearer ${value.token}` }, signal: AbortSignal.timeout(15_000) })
       if (!response.ok) throw new Error(`Machine enrollment verification failed (${response.status})`)
@@ -153,9 +162,10 @@ export class CentralClient {
         verified.machine.originId !== identity.originId || verified.machine.localMachineId !== identity.machineId) {
         throw new Error("Machine credentials do not match this daemon and selected team")
       }
-      const credentials: MachineCredentials = { ...value, serverUrl, serverId: verified.serverId }
+      const credentials: MachineCredentials = { serverUrl, serverId: verified.serverId, machineId: value.machineId, teamId: value.teamId, token: value.token }
       await this.#save(credentials)
       this.#credentials = credentials
+      this.#revocation = undefined
       this.#peers.bind(credentials)
       this.#connect()
       return this.status()
@@ -179,7 +189,7 @@ export class CentralClient {
       body: JSON.stringify(body), signal: AbortSignal.any([AbortSignal.timeout(30_000), this.#httpClosing.signal]),
     })
     if (!response.ok) {
-      if (await machineCredentialRejected(response)) await this.#revoked()
+      if (await machineCredentialRejected(response)) await this.#revoked(credentials)
       throw new Error(`Central sync failed (${response.status})`)
     }
     return response.json()
@@ -291,7 +301,8 @@ export class CentralClient {
     }
   }
 
-  #revoked(): Promise<void> {
+  #revoked(expected?: MachineCredentials): Promise<void> {
+    if (expected && this.#credentials !== expected) return Promise.resolve()
     if (this.#revocation) return this.#revocation
     this.#sync.disable(); this.#connected = false
     clearTimeout(this.#retry); clearTimeout(this.#closeDeadline); clearInterval(this.#heartbeat)
@@ -299,8 +310,8 @@ export class CentralClient {
     const socket = this.#socket; this.#socket = undefined; socket?.close()
     const credentials = this.#credentials
     if (credentials) this.#credentials = { ...credentials, revoked: true }
-    // Keep the retired identity and its data in place. A new registration must
-    // explicitly prepare a different, empty machine directory.
+    // Retain this Team's execution and history. Re-enrollment replaces its token
+    // without changing the catalog or stopping accepted work.
     return this.#revocation = Promise.all([
       this.#peers.closeAll(),
       this.#credentials ? this.#save(this.#credentials) : undefined,

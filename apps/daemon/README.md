@@ -22,41 +22,35 @@ its address; `GET /healthz` reports the loaded native version and platform.
 exits. Configure PostgreSQL and owned account authentication through the [server guide](../server/README.md).
 Both Electron and Web require login and Team selection before resource creation.
 
-Electron can enroll the daemon it hosts. For a headless machine, first start its
-daemon, then inspect its installation identity:
+Electron can enroll the daemon it hosts into multiple Teams. For a headless
+machine, start its daemon and prepare enrollment for the target backend and Team:
 
 ```sh
-mise exec -- node apps/daemon/src/main.ts status
+mise exec -- node apps/daemon/src/main.ts prepare-enrollment --server-url https://backend.example --team-id 123
 ```
 
 In either client, choose Add machine → Another machine and paste that output.
-The client reads the installation `originId` and local `machineId` from it and
-displays the new machine credential once. Save that JSON privately or paste it
-on stdin:
+The preparation contains a private `identityToken` for the physical host and the
+Team catalog's `originId` and local `machineId`. Keep this bundle private. The
+client registers that Team association and displays its execution credential
+once. Save the returned JSON privately or paste it on stdin:
 
 ```sh
 mise exec -- node apps/daemon/src/main.ts enroll --server-url https://backend.example < machine-credentials.json
 ```
 
-The JSON contains `machineId` (the central machine ID), `teamId`, and `token`.
-Enrollment verifies the credential and its installation identity with the
-backend before persisting it. The credential never appears in command-line
-arguments or status output. HTTPS is required except for loopback development.
+The returned JSON contains `machineId` (the shared central machine ID), `teamId`,
+`originId`, and the Team's `token`. Enrollment verifies the credential and its
+catalog identity with the backend before persisting it. These credentials never
+appear in process arguments. HTTPS is required except for loopback development.
 
-Administrator removal logs the machine out and makes `status.revoked` true.
-Existing execution continues until shutdown or an explicit new registration.
-To register it again, first prepare a new empty machine directory:
-
-```sh
-deskfleet-daemon prepare-enrollment
-```
-
-This stops the old Agent and terminal processes, retains their data at its
-original paths, and prints a fresh identity. Paste that output into the Add
-machine dialog, then import the new credential. It can join the original Team or another
-Team. Electron performs this preparation when enrolling a removed local machine.
-An active registration cannot be overwritten. Old history, Provider settings,
-and Workspaces are not imported into the new registration.
+`deskfleet-daemon status` lists all Team registrations without secrets. Preparing
+the same backend and Team again reuses its catalog and identity, including when a
+registration is revoked. Administrator removal revokes only that Team's access;
+accepted Agent and terminal execution continues. Preparing and importing a fresh
+credential reconnects the same Team's retained Workspaces and Sessions. Adding a
+different Team creates a separate catalog and runs it alongside existing Teams.
+An active credential cannot be replaced by another token through enrollment.
 
 The daemon publishes a private Unix socket or Windows named pipe through
 `<daemon directory>/daemon.json`.
@@ -75,9 +69,12 @@ selection and `--user-data-dir` override. Electron ignores
 reuse a standalone daemon only when that daemon is explicitly configured to use
 the same `<userData>/daemon` directory.
 
-The first production machine uses `<daemon directory>/machine/`. A subsequent
-registration uses a fresh `machines/<uuid>/` directory, selected by the host's
-`active-machine.json`. Every machine directory contains:
+The first production Team catalog uses `<daemon directory>/machine/`; additional
+Teams use `machines/<uuid>/`. The host's `machine-registrations.json` maps backend
+and Team to each directory. `machine-identity.json` stores the host's private
+`identityToken`, which binds all registrations to the same central Machine.
+Older active registrations are adopted at their existing paths and retain their
+Machine ID, catalog origin, and history. Every Team directory contains:
 
 - `central.json`: private machine registration and credential.
 - `catalog.db`: SQLite Workspace/Session ownership, conversation, and audit.
@@ -88,10 +85,12 @@ registration uses a fresh `machines/<uuid>/` directory, selected by the host's
 - `terminals/`: terminal metadata and full output transcripts.
 
 Earlier unauthenticated development data outside this namespace is not imported.
-Retired directories stay in place because Git worktrees and saved working
-directories contain absolute paths. A reset never renames or deletes them.
-Local integer IDs remain decimal strings and are qualified by the catalog origin
-and central machine identity. Equal IDs on different machines stay distinct.
+Directories stay in place because Git worktrees and saved working directories
+contain absolute paths. Local integer IDs remain decimal strings; API resources
+are qualified by Team and central Machine, and each Team catalog has its own
+origin. Equal Session IDs in different Team catalogs stay distinct. This isolates
+API resources and history; Agents and shells still use the same OS user, files,
+and installed CLI credentials.
 
 Scheduled Tasks run in the daemon and remain active while the Desktop app is in
 the tray. The built-in `@deskfleet/mcp` stdio server is injected into every
@@ -115,7 +114,7 @@ affect Sessions using Workspace directories directly. Ownership manifests stay
 in the machine directory and record each custom checkout location so rollback
 and internal destruction keep working after a settings change or restart.
 
-The daemon connects outbound to the central control WebSocket. Workspace,
+Each Team registration connects outbound to its own central control WebSocket. Workspace,
 Provider, Session archive/restore, directory browsing, and terminal lifecycle
 requests carry a server-verified actor. Peer authorization has an independent
 lifetime: a working peer survives signaling loss until closure, revocation, or

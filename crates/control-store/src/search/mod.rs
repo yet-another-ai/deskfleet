@@ -131,9 +131,9 @@ pub(super) async fn write_document(
     content: &str,
 ) -> Result<()> {
     db.execute_raw(sql(
-        "INSERT INTO cp_search_documents(machine_id,kind,resource_id,entry_id,block_no,priority,content)
+        "INSERT INTO cp_search_documents(registration_id,kind,resource_id,entry_id,block_no,priority,content)
          VALUES($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT(machine_id,kind,resource_id,entry_id,block_no) DO UPDATE
+         ON CONFLICT(registration_id,kind,resource_id,entry_id,block_no) DO UPDATE
          SET content=excluded.content WHERE cp_search_documents.content IS DISTINCT FROM excluded.content",
         vec![machine.into(),kind.into(),resource.into(),entry.into(),block.into(),priority.into(),content.into()],
     )).await?;

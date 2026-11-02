@@ -1,6 +1,8 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
 import type { LocalApplication } from "../../../../client/src/applications.ts"
+import { accountSessionKey, createAccountSession } from "../../composables/useAccountSession.ts"
+import { fakeCentral } from "../../test/central.ts"
 import { i18n } from "../../i18n/index.ts"
 import { workspaceId } from "../../test/catalog.ts"
 import OpenWithMenu from "./OpenWithMenu.vue"
@@ -21,9 +23,12 @@ async function setup(props: { directoryIndex?: number; directoryPath?: string; d
     scan: vi.fn(async (): Promise<LocalApplication[]> => installed),
     openWorkspace: vi.fn(async () => {}),
   }
+  const account = createAccountSession(fakeCentral().central)
+  await flushPromises()
+  cleanup.push(() => account.dispose())
   const wrapper = mount(OpenWithMenu, {
     props: { api: applications, machineId: "machine-1", workspaceId, ...props }, attachTo: document.body,
-    global: { plugins: [i18n] },
+    global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: account } },
   })
   cleanup.push(() => wrapper.unmount())
   return { wrapper, applications }
@@ -51,7 +56,7 @@ test("Open with scans on demand and opens the default directory without sending 
   expect(applications.scan).toHaveBeenCalledOnce()
   expect(menuItems().map(item => item.text())).toEqual(["VS Code", "Cursor", "VSCodium", "Zed", "Terminal", "File manager", "Rescan"])
   await choose("VS Code")
-  expect(applications.openWorkspace).toHaveBeenCalledExactlyOnceWith({ applicationId: "vscode", machineId: "machine-1", workspaceId })
+  expect(applications.openWorkspace).toHaveBeenCalledExactlyOnceWith({ applicationId: "vscode", teamId: "team-1", machineId: "machine-1", workspaceId })
   expect(page().find('[role="menu"]').exists()).toBe(false)
 })
 
@@ -79,7 +84,7 @@ test.each([
   const { wrapper, applications } = await setup({ directoryIndex: 1, directoryPath: "/code/api" })
   await openMenu(wrapper, "Open /code/api with")
   await choose(name)
-  expect(applications.openWorkspace).toHaveBeenCalledExactlyOnceWith({ applicationId: id, machineId: "machine-1", workspaceId, directoryIndex: 1 })
+  expect(applications.openWorkspace).toHaveBeenCalledExactlyOnceWith({ applicationId: id, teamId: "team-1", machineId: "machine-1", workspaceId, directoryIndex: 1 })
 })
 
 test("scan failures stay visible in the menu and can be retried with Rescan", async () => {

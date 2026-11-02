@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
+import { hostname } from "node:os"
 import { AgentProviders } from "./agent-providers.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import { CentralAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
@@ -10,10 +11,10 @@ import { McpServers } from "./mcp-servers.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { CentralClient } from "./central-client.ts"
-import type { CentralStatus } from "./central-protocol.ts"
+import { centralUrl, type CentralStatus, type EnrollmentTarget, type HostCentralStatus, type MachineEnrollment, type PreparedEnrollment } from "./central-protocol.ts"
 import type { DesktopCapabilities } from "./control-protocol.ts"
 import type { ControlPeers } from "./control-server.ts"
-import { activeMachineDirectory, newMachineDirectory } from "./machine-directory.ts"
+import { loadMachineRegistrations, newMachineDirectory, registrationKey, saveMachineRegistrations, type MachineRegistration } from "./machine-directory.ts"
 import { MachineOperations } from "./machine-operations.ts"
 import { ProviderSetup } from "./provider-setup.ts"
 import { TerminalSessions } from "./terminals.ts"
@@ -96,62 +97,141 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
 
 type Machine = Awaited<ReturnType<typeof openMachine>>
 
-/** Host IPC survives replacing a revoked registration's entire execution context. */
+/** One host owns independent Team execution contexts and one stable enrollment identity. */
 export class MachineRuntime {
   readonly #directory: string
   readonly #options: MachineOptions
-  #machine: Machine | undefined
-  #preparing: Promise<CentralStatus> | undefined
+  readonly #machines = new Map<string, { registration: MachineRegistration; machine: Machine }>()
+  readonly #preparing = new Map<string, Promise<PreparedEnrollment>>()
+  #initial: { directory: string; machine: Machine } | undefined
+  #identityToken: string | undefined
+  #changes: Promise<unknown> = Promise.resolve()
   #stopping: Promise<void> | undefined
   #closing: Promise<void> | undefined
 
   constructor(directory: string, options: MachineOptions) { this.#directory = directory; this.#options = options }
 
+  /** Direct resource access for in-process fixtures; authenticated routing always names a Team. */
   get current(): Machine {
-    if (!this.#machine) throw new Error("Machine service is not ready")
-    return this.#machine
+    const machine = this.#initial?.machine ?? this.#machines.values().next().value?.machine
+    if (!machine) throw new Error("Machine service is not ready")
+    return machine
   }
 
-  /** The caller owns discovery before selecting and opening the active directory. */
+  /** The caller owns discovery before opening catalogs or migrating the registration index. */
   async init(): Promise<void> {
-    const directory = this.#options.allowLocalControlForTests ? this.#directory : await activeMachineDirectory(this.#directory)
-    this.#machine = await openMachine(directory, this.#directory, this.#options)
+    const saved = await loadMachineRegistrations(this.#directory, this.#options.allowLocalControlForTests === true)
+    this.#identityToken = saved.identityToken
+    try {
+      for (const registration of saved.registrations) {
+        const machine = await openMachine(join(this.#directory, registration.directory), this.#directory, {
+          ...this.#options, terminals: this.#machines.size ? undefined : this.#options.terminals,
+        })
+        const status = machine.central.status()
+        if (status.configured && (status.serverUrl !== registration.serverUrl || status.teamId !== registration.teamId)) {
+          await machine.close()
+          throw new Error("Machine registration does not match its catalog credential")
+        }
+        this.#machines.set(registrationKey(registration), { registration, machine })
+      }
+      if (!this.#machines.size) this.#initial = {
+        directory: saved.initialDirectory,
+        machine: await openMachine(join(this.#directory, saved.initialDirectory), this.#directory, this.#options),
+      }
+    } catch (error) { await this.close(); throw error }
   }
 
-  prepareEnrollment(): Promise<CentralStatus> {
+  status(): HostCentralStatus {
+    return { machineName: hostname(), registrations: [...this.#machines.values()].map(({ registration, machine }) => this.#status(registration, machine)) }
+  }
+
+  #status(registration: MachineRegistration, machine: Machine): CentralStatus {
+    return { ...machine.central.status(), serverUrl: registration.serverUrl, teamId: registration.teamId }
+  }
+
+  forTeam(target: EnrollmentTarget): Machine {
+    const entry = this.#machines.get(registrationKey(target))
+    if (!entry) throw new Error("Prepare this Team's machine registration first")
+    return entry.machine
+  }
+
+  forLocalChannel(teamId: string, machineId: string): CentralClient {
+    const matches = [...this.#machines.values()].filter(({ registration, machine }) => registration.teamId === teamId && machine.central.status().machineId === machineId)
+    if (matches.length !== 1) throw new Error("Local channel machine registration was not found")
+    return matches[0]!.machine.central
+  }
+
+  prepareEnrollment(value: EnrollmentTarget): Promise<PreparedEnrollment> {
     if (this.#stopping) return Promise.reject(new Error("Machine service is stopping"))
-    if (this.#preparing) return this.#preparing
-    const status = this.current.central.status()
-    if (!status.configured) return Promise.resolve(status)
-    if (!status.revoked) return Promise.reject(new Error("This machine is already enrolled"))
-    this.#preparing = (async () => {
-      const previous = this.current
-      const directory = await newMachineDirectory(this.#directory)
-      const next = await openMachine(directory.path, this.#directory, { ...this.#options, terminals: undefined })
+    if (!this.#identityToken) return Promise.reject(new Error("Machine service is not ready"))
+    const target = { serverUrl: centralUrl(value.serverUrl), teamId: value.teamId }
+    if (!target.teamId) return Promise.reject(new Error("A Team is required for enrollment"))
+    const key = registrationKey(target), pending = this.#preparing.get(key)
+    if (pending) return pending
+    const preparing = this.#changes.then(async () => {
+      const existing = this.#machines.get(key)
+      if (existing) return { ...this.#status(existing.registration, existing.machine), identityToken: this.#identityToken! }
+      const directory = this.#initial?.directory ?? await newMachineDirectory(this.#directory)
+      const machine = this.#initial?.machine ?? await openMachine(join(this.#directory, directory), this.#directory, { ...this.#options, terminals: undefined })
+      const registration = { ...target, directory }
       try {
-        await previous.stop()
-        await directory.activate()
+        await saveMachineRegistrations(this.#directory, [...this.#machines.values()].map(entry => entry.registration).concat(registration))
+      } catch (error) {
+        if (machine !== this.#initial?.machine) await machine.close()
+        throw error
       }
-      catch (error) { await next.close(); throw error }
-      this.#machine = next
-      await previous.close().catch(error => console.error("Retired machine cleanup failed", error))
-      return next.central.status()
-    })().finally(() => { this.#preparing = undefined })
-    return this.#preparing
+      this.#machines.set(key, { registration, machine })
+      this.#initial = undefined
+      return { ...this.#status(registration, machine), identityToken: this.#identityToken! }
+    }).finally(() => { this.#preparing.delete(key) })
+    this.#changes = preparing.catch(() => {})
+    this.#preparing.set(key, preparing)
+    return preparing
+  }
+
+  enroll(value: MachineEnrollment): Promise<CentralStatus> {
+    if (this.#stopping) return Promise.reject(new Error("Machine service is stopping"))
+    const enrolling = this.#changes.then(async () => {
+      const machine = this.forTeam(value)
+      if (machine.central.status().identity.originId !== value.originId) throw new Error("Enrollment targets another catalog origin")
+      const serverUrl = centralUrl(value.serverUrl)
+      for (const { registration, machine: other } of this.#machines.values()) {
+        const status = other.central.status()
+        if (registration.serverUrl === serverUrl && status.machineId && status.machineId !== value.machineId) {
+          throw new Error("Team registration must retain this host's machine identity")
+        }
+      }
+      return machine.central.enroll({ ...value, serverUrl })
+    })
+    this.#changes = enrolling.catch(() => {})
+    return enrolling
+  }
+
+  desktopCapabilitiesChanged(): void {
+    for (const machine of this.#all()) machine.central.desktopCapabilitiesChanged()
+  }
+
+  #all(): Machine[] {
+    return [...this.#machines.values()].map(entry => entry.machine).concat(this.#initial ? [this.#initial.machine] : [])
+  }
+
+  async #finish(action: "stop" | "close"): Promise<void> {
+    const results = await Promise.allSettled(this.#all().map(machine => machine[action]()))
+    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    if (failures.length) throw new AggregateError(failures, `Failed to ${action} machine registrations`)
   }
 
   stop(): Promise<void> {
     return this.#stopping ??= (async () => {
-      // An accepted reset finishes before host shutdown closes the new context.
-      await this.#preparing?.catch(() => {})
-      await this.#machine?.stop()
+      await this.#changes
+      await this.#finish("stop")
     })()
   }
 
   close(): Promise<void> {
     return this.#closing ??= (async () => {
       try { await this.stop() }
-      finally { await this.#machine?.close() }
+      finally { await this.#finish("close") }
     })()
   }
 }

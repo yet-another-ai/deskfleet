@@ -28,6 +28,8 @@ const closePeers: (() => Promise<void>)[] = []
 const machines: string[] = []
 let admin: BackendRequest | undefined
 let teamId: string | undefined
+const additionalTeams: string[] = []
+const registration = (daemon: Awaited<ReturnType<typeof startDaemon>>) => daemon.registrations.forTeam({ serverUrl: backend, teamId: teamId! })
 
 function client(login: FixtureLogin): BackendRequest {
   return async <T>(path: string, body?: unknown, method = body === undefined ? "GET" : "POST"): Promise<T> => {
@@ -62,7 +64,7 @@ try {
   const providers: BackendAgent[] = []
   const workspaces: CatalogWorkspace[] = []
   const sessions: AgentSnapshot[] = []
-  const rpc = <T>(machineId: string, method: string, params: unknown, request: BackendRequest = admin!): Promise<T> => request<T>(`/machines/${machineId}/rpc`, { method, params })
+  const rpc = <T>(machineId: string, method: string, params: unknown, request: BackendRequest = admin!): Promise<T> => request<T>(`/teams/${teamId}/machines/${machineId}/rpc`, { method, params })
   for (let index = 0; index < 2; index++) {
     const repository = join(directory, `repository-${index}`)
     const controlDirectory = join(directory, `daemon-${index}`)
@@ -75,13 +77,14 @@ try {
     providers.push(provider)
     const daemon = await startDaemon(0, { controlDirectory, agentProvider: provider, requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
     daemons.push(daemon)
-    const { identity } = daemon.central.status()
+    const prepared = await daemon.registrations.prepareEnrollment({ serverUrl: backend, teamId })
+    const { identity, identityToken } = prepared
     const enrollment: { machine: { id: string }; token: string } = await admin(`/teams/${teamId}/machines`, {
-      name: `Fixture machine ${index}`, originId: identity.originId, localMachineId: identity.machineId,
+      name: `Fixture machine ${index}`, identityToken, originId: identity.originId, localMachineId: identity.machineId,
     })
     machines.push(enrollment.machine.id)
-    await daemon.central.enroll({ serverUrl: backend, machineId: enrollment.machine.id, teamId, token: enrollment.token })
-    await until(() => daemon.central.status(), status => status.connected, "authenticated daemon control WebSocket")
+    await daemon.registrations.enroll({ serverUrl: backend, machineId: enrollment.machine.id, teamId, token: enrollment.token, originId: identity.originId })
+    await until(() => registration(daemon).central.status(), status => status.connected, "authenticated daemon control WebSocket")
     const workspace = await rpc<CatalogWorkspace>(enrollment.machine.id, "workspaceCreate", { name: `Machine ${index}`, directories: [{ path: repository }] })
     workspaces.push(workspace)
     const created = await rpc<AgentProviderConfig>(enrollment.machine.id, "providerCreate", {
@@ -98,25 +101,25 @@ try {
   }
   assert.equal(workspaces[0]!.id, workspaces[1]!.id)
   assert.equal(sessions[0]!.session.id, sessions[1]!.session.id, "Independent daemons intentionally allocate equal local IDs")
-  assert.notEqual(daemons[0]!.central.status().identity.originId, daemons[1]!.central.status().identity.originId)
+  assert.notEqual(registration(daemons[0]!).central.status().identity.originId, registration(daemons[1]!).central.status().identity.originId)
   for (const machine of machines) {
-    await until(() => admin!<{ sessions: AgentSnapshot[] }>(`/machines/${machine}/sessions`), page => page.sessions.length === 1, "initial Agent history synchronization")
-    const replica = await admin!<{ providers: unknown }>(`/machines/${machine}/catalog`)
+    await until(() => admin!<{ sessions: AgentSnapshot[] }>(`/teams/${teamId}/machines/${machine}/sessions`), page => page.sessions.length === 1, "initial Agent history synchronization")
+    const replica = await admin!<{ providers: unknown }>(`/teams/${teamId}/machines/${machine}/catalog`)
     assert.ok(!JSON.stringify(replica.providers).includes("DESKFLEET_SMOKE_PROFILE"), "Provider environment values stay on the owning machine")
   }
-  await assert.rejects(member(`/machines/${machines[0]}/catalog`), /403/u)
+  await assert.rejects(member(`/teams/${teamId}/machines/${machines[0]}/catalog`), /403/u)
   const invite = await admin<{ token: string }>(`/teams/${teamId}/invites`, { email: bob.user.email, role: "member" })
   await member("/invites/accept", { token: invite.token })
   await rpc(machines[0]!, "catalogList", {}, member)
-  await assert.rejects(member(`/machines/${machines[0]}`, undefined, "DELETE"), /403/u)
+  await assert.rejects(member(`/teams/${teamId}/machines/${machines[0]}`, undefined, "DELETE"), /403/u)
   console.log("Two API processes: daemon registrations, cross-process control RPC, Provider settings, team authorization, and equal local IDs passed")
 
   await smokePortForwarding(backend, bob, teamId, machines[0]!)
 
   const sessionId = sessions[0]!.session.id
-  const sessionPath = `/machines/${machines[0]}/sessions/${sessionId}`
+  const sessionPath = `/teams/${teamId}/machines/${machines[0]}/sessions/${sessionId}`
   const readCentral = () => member<{ snapshot: AgentSnapshot; lastEventSeq: string }>(sessionPath)
-  await until(() => member<{ sessions: AgentSnapshot[] }>(`/machines/${machines[0]}/sessions`), page => page.sessions.some(row => row.session.id === sessionId), "initial Agent history synchronization")
+  await until(() => member<{ sessions: AgentSnapshot[] }>(`/teams/${teamId}/machines/${machines[0]}/sessions`), page => page.sessions.some(row => row.session.id === sessionId), "initial Agent history synchronization")
   const agent = await connectBackendPeer({ backend, token: bob.token, teamId, machineId: machines[0]!, purpose: "agent", request: member })
   closePeers.push(agent.close)
   await agent.rpc("_deskfleet/session/subscribe", { sessionId })
@@ -136,7 +139,7 @@ try {
   assert.ok(commands.some(command => command.method === "dispatch"))
   const events = await member<{ events: AgentEvent[] }>(`${sessionPath}/events?after=0&limit=200`)
   assert.ok(events.events.some(event => event.kind === "acp" && "update" in event.payload && event.payload.update.sessionUpdate === "tool_call"))
-  assert.equal((await member<{ snapshot: AgentSnapshot }>(`/machines/${machines[1]}/sessions/${sessionId}`)).snapshot.inputs.length, 0)
+  assert.equal((await member<{ snapshot: AgentSnapshot }>(`/teams/${teamId}/machines/${machines[1]}/sessions/${sessionId}`)).snapshot.inputs.length, 0)
   console.log("Authenticated WebRTC signaling, trusted browser actor, ACP/tool events, audit receipts, and history isolation passed")
 
   const catalog = await rpc<CatalogSnapshot>(machines[0]!, "catalogList", {})
@@ -195,7 +198,7 @@ try {
   await reconnectAgent.rpc("_deskfleet/session/subscribe", { sessionId: reconnectSessionId })
   await reconnectTerminal.rpc("attach", { sessionId: reconnectShell.id })
   await fixture.stopServer()
-  await until(() => daemons.map(daemon => daemon.central.status()), values => values.every(value => !value.connected), "daemon detects central server interruption")
+  await until(() => daemons.map(daemon => registration(daemon).central.status()), values => values.every(value => !value.connected), "daemon detects central server interruption")
   assert.equal((await readCentral()).snapshot.session.id, sessionId, "The second API process keeps synchronized history readable")
   await reconnectAgent.rpc("_deskfleet/input/submit", { sessionId: reconnectSessionId, operationId: randomUUID(), delivery: "backlog", content: [{ type: "text", text: "Accepted while signaling is unavailable" }] })
   await reconnectTerminal.rpc("input", { sessionId: reconnectShell.id, data: Buffer.from("echo deskfleet-offline-peer\r").toString("base64") })
@@ -206,8 +209,8 @@ try {
     "offline input waits for current Team entitlement authority")
   assert.equal(providers[1]!.prompts.length, 0, "new provider turns require current central authority")
   await fixture.restartServer()
-  await until(() => daemons.map(daemon => daemon.central.status()), values => values.every(value => value.connected), "daemon reconnects to restarted server")
-  const secondCentral = () => member<{ snapshot: AgentSnapshot; lastEventSeq: string }>(`/machines/${machines[1]}/sessions/${reconnectSessionId}`)
+  await until(() => daemons.map(daemon => registration(daemon).central.status()), values => values.every(value => value.connected), "daemon reconnects to restarted server")
+  const secondCentral = () => member<{ snapshot: AgentSnapshot; lastEventSeq: string }>(`/teams/${teamId}/machines/${machines[1]}/sessions/${reconnectSessionId}`)
   const paused = await until(secondCentral, value => value.snapshot.inputs.length === 1
     && value.snapshot.inputs[0]!.state === "pending" && !!value.snapshot.session.turnLimitReason, "paused offline journal catches up after reconnect")
   assert.equal(providers[1]!.prompts.length, 0, "reconnection does not automatically resume paused input")
@@ -221,7 +224,7 @@ try {
   await until(() => [reconnectAgent.disconnected(), reconnectTerminal.disconnected()], values => values.every(Boolean), "logout revokes established peer access")
   await assert.rejects(reconnectAgent.rpc("_deskfleet/session/list", {}), /closed/u)
   assert.equal(providers[1]!.closes, 0, "Revoking access must preserve the accepted Agent task")
-  assert.equal(daemons[1]!.terminals.list().find(value => value.id === reconnectShell.id)?.status, "running", "Revoking access must preserve the shell")
+  assert.equal(registration(daemons[1]!).terminals.list().find(value => value.id === reconnectShell.id)?.status, "running", "Revoking access must preserve the shell")
   assert.ok((await secondCentral()).snapshot.permissions.some(permission => permission.state === "pending"))
   console.log("Established Agent/Terminal peers survive server interruption and restart; logout revokes access without terminating accepted work")
 
@@ -250,36 +253,62 @@ try {
   const offlineEvents = await member<{ events: AgentEvent[] }>(`${sessionPath}/events?after=0&limit=200`)
   assert.ok(offlineEvents.events.length)
   assert.ok(!JSON.stringify({ offline, offlineEvents }).includes("deskfleet-retained-terminal"), "Terminal bytes never enter central Agent history")
-  assert.equal((await member<{ snapshot: AgentSnapshot }>(`/machines/${machines[1]}/sessions/${sessionId}`)).snapshot.inputs.length, 1)
+  assert.equal((await member<{ snapshot: AgentSnapshot }>(`/teams/${teamId}/machines/${machines[1]}/sessions/${sessionId}`)).snapshot.inputs.length, 1)
   await assert.rejects(rpc(machines[0]!, "_deskfleet/session/archive", { sessionId, operationId: randomUUID() }), /503/u)
   assert.equal((await readCentral()).snapshot.session.archiveState, "active")
   console.log("Offline Agent history remains readable, terminal output stays local, and offline archive is rejected")
 
   const hostDirectory = join(directory, "daemon-0")
   daemons[0] = await startDaemon(0, { controlDirectory: hostDirectory, agentProvider: providers[0], requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
-  const oldOrigin = daemons[0]!.central.status().identity.originId
-  await until(() => daemons[0]!.central.status(), value => value.connected, "machine restarts before removal")
-  await admin(`/machines/${machines[0]}`, undefined, "DELETE")
-  await until(() => daemons[0]!.central.status(), value => value.revoked, "machine is logged out after removal")
+  const oldOrigin = registration(daemons[0]!).central.status().identity.originId
+  await until(() => registration(daemons[0]!).central.status(), value => value.connected, "machine restarts before removal")
+  const secondTeam = await admin<{ id: string }>("/teams", { name: `Shared host ${randomUUID()}` })
+  additionalTeams.push(secondTeam.id)
+  const secondScope = { serverUrl: backend, teamId: secondTeam.id }
+  const otherPrepared = await daemons[0]!.registrations.prepareEnrollment(secondScope)
+  const otherEnrollment = await admin<{ machine: { id: string }; token: string }>(`/teams/${secondTeam.id}/machines`, {
+    name: "Same host in another Team", identityToken: otherPrepared.identityToken,
+    originId: otherPrepared.identity.originId, localMachineId: otherPrepared.identity.machineId,
+  })
+  assert.equal(otherEnrollment.machine.id, machines[0], "One public Machine ID is shared across Teams")
+  await daemons[0]!.registrations.enroll({ ...secondScope, machineId: otherEnrollment.machine.id, token: otherEnrollment.token, originId: otherPrepared.identity.originId })
+  const secondRegistration = () => daemons[0]!.registrations.forTeam(secondScope)
+  await until(() => secondRegistration().central.status(), value => value.connected, "second Team connects without replacing first Team")
+  assert.equal(registration(daemons[0]!).central.status().connected, true)
+  const secondRpc = <T>(method: string, params: unknown) => admin!<T>(`/teams/${secondTeam.id}/machines/${machines[0]}/rpc`, { method, params })
+  const secondProvider = await secondRpc<AgentProviderConfig>("providerCreate", { provider: { template: "codex", name: "Second Team", env: {} } })
+  const secondSession = await secondRpc<AgentSnapshot>("_deskfleet/session/create", { provider: secondProvider.id, operationId: randomUUID(), context: "directory", title: "Second Team only" })
+  assert.equal(secondSession.session.id, sessionId, "Two Team catalogs may allocate the same local Session ID")
+  const secondSessionsPath = `/teams/${secondTeam.id}/machines/${machines[0]}/sessions`
+  await until(() => admin!<{ sessions: AgentSnapshot[] }>(secondSessionsPath), page => page.sessions.some(value => value.session.id === sessionId && value.session.title === "Second Team only"), "second Team history synchronization")
+  const secondHistoryPath = `${secondSessionsPath}/${sessionId}`
+  assert.equal((await admin!<{ snapshot: AgentSnapshot }>(secondHistoryPath)).snapshot.session.title, "Second Team only")
+  await assert.rejects(member(secondHistoryPath), /403/u)
+  assert.equal((await readCentral()).snapshot.inputs.length, 3)
+  await admin(`/teams/${teamId}/machines/${machines[0]}`, undefined, "DELETE")
+  await until(() => registration(daemons[0]!).central.status(), value => value.revoked, "only the removed Team registration is revoked")
+  assert.equal(secondRegistration().central.status().connected, true)
+  assert.equal((await secondRpc<CatalogSnapshot>("catalogList", {})).sessions.some(value => value.sessionId === sessionId), true)
   const host = await DaemonClient.connect(() => {}, () => {}, hostDirectory)
-  let freshOrigin: string
   try {
-    const prepared = await host.call("centralPrepareEnrollment", {})
-    freshOrigin = prepared.identity.originId
-    assert.notEqual(freshOrigin, oldOrigin)
-    assert.equal(prepared.configured, false)
-    assert.equal(prepared.revoked, false)
-    assert.equal((await host.call("centralPrepareEnrollment", {})).identity.originId, freshOrigin)
+    const scope = { serverUrl: backend, teamId }
+    const prepared = await host.call("centralPrepareEnrollment", scope)
+    assert.equal(prepared.identity.originId, oldOrigin)
+    assert.equal(prepared.configured, true)
+    assert.equal(prepared.revoked, true)
+    assert.equal((await host.call("centralPrepareEnrollment", scope)).identity.originId, oldOrigin)
     const enrollment = await admin<{ machine: { id: string }; token: string }>(`/teams/${teamId}/machines`, {
-      name: "Re-enrolled machine", originId: freshOrigin, localMachineId: prepared.identity.machineId,
+      name: "Re-enrolled machine", identityToken: prepared.identityToken,
+      originId: oldOrigin, localMachineId: prepared.identity.machineId,
     })
-    machines.push(enrollment.machine.id)
-    await host.call("centralEnroll", { serverUrl: backend, machineId: enrollment.machine.id, teamId, token: enrollment.token })
-    await until(() => daemons[0]!.central.status(), value => value.connected, "fresh machine joins the original team")
+    assert.equal(enrollment.machine.id, machines[0])
+    await host.call("centralEnroll", { ...scope, machineId: enrollment.machine.id, token: enrollment.token, originId: oldOrigin })
+    await until(() => registration(daemons[0]!).central.status(), value => value.connected, "same registration rejoins its Team")
     const catalog = await rpc<CatalogSnapshot>(enrollment.machine.id, "catalogList", {})
-    assert.equal(catalog.workspaces.length, 0)
-    assert.equal((await admin<{ sessions: unknown[] }>(`/machines/${enrollment.machine.id}/sessions`)).sessions.length, 0)
-    await assert.rejects(host.call("centralPrepareEnrollment", {}), /already enrolled/u)
+    assert.equal(catalog.workspaces.length, 1)
+    assert.equal((await readCentral()).snapshot.inputs.length, 3)
+    assert.equal((await host.call("centralPrepareEnrollment", scope)).identity.originId, oldOrigin)
+    await assert.rejects(admin(`/teams/${teamId}/machines`, { name: "Duplicate", identityToken: prepared.identityToken, originId: oldOrigin, localMachineId: prepared.identity.machineId }), /409/u)
   } finally { host.close() }
   assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "retained untracked smoke file\n")
   const retainedGit = await execute("git", ["-C", cwd, "status", "--porcelain"])
@@ -287,8 +316,9 @@ try {
   assert.match(retainedGit.stdout, /untracked\.txt/u)
   await daemons[0]!.close()
   daemons[0] = await startDaemon(0, { controlDirectory: hostDirectory, agentProvider: providers[0], requestScreenCaptureAccess: async () => false, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
-  assert.equal(daemons[0]!.central.status().identity.originId, freshOrigin)
-  console.log("A removed machine re-enrolls into its original team with empty data; retired worktree paths and history stay intact")
+  assert.equal(registration(daemons[0]!).central.status().identity.originId, oldOrigin)
+  await until(() => daemons[0]!.registrations.status().registrations, values => values.length === 2 && values.every(value => value.connected), "all Team registrations reconnect after one daemon restart")
+  console.log("One daemon shares a stable Machine ID across Teams, isolates same-ID Sessions, rejects duplicate registration, and restores retained history after Team removal and restart")
 } catch (error) {
   if (fixture.diagnostics()) console.error(fixture.diagnostics())
   if (httpFixture?.diagnostics()) console.error(httpFixture.diagnostics())
@@ -297,7 +327,11 @@ try {
   await Promise.allSettled(closePeers.map(close => close()))
   await Promise.allSettled(daemons.map(daemon => daemon.close()))
   if (admin) {
-    for (const machine of machines) await admin(`/machines/${machine}`, undefined, "DELETE").catch(() => {})
+    for (const machine of machines) await admin(`/teams/${teamId}/machines/${machine}`, undefined, "DELETE").catch(() => {})
+    for (const otherTeam of additionalTeams) {
+      await admin(`/teams/${otherTeam}/machines/${machines[0]}`, undefined, "DELETE").catch(() => {})
+      await admin(`/teams/${otherTeam}`, undefined, "DELETE").catch(() => {})
+    }
     if (teamId) await admin(`/teams/${teamId}`, undefined, "DELETE").catch(() => {})
   }
   await Promise.all([fixture.close(), httpFixture?.close()])

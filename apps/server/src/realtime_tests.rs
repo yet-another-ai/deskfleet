@@ -1,9 +1,7 @@
 //! Routing between independent API instances backed by one PostgreSQL database.
 use crate::{AppState, config::ServerConfig, error::ApiError};
 use actix_web::http::StatusCode;
-use deskfleet_protocol::control::{
-    ControlMessage, Machine, PeerActor, PeerAuthorization, PeerTarget,
-};
+use deskfleet_protocol::control::{ControlMessage, PeerActor, PeerAuthorization, PeerTarget};
 use serde_json::json;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
@@ -13,7 +11,7 @@ const WAIT: Duration = Duration::from_secs(5);
 struct Fixture {
     source: AppState,
     target: AppState,
-    machine: Machine,
+    machine: deskfleet_control_store::MachineRegistration,
     actor: PeerActor,
     login_id: String,
 }
@@ -58,6 +56,7 @@ impl Fixture {
                 &uuid::Uuid::new_v4().to_string(),
                 "1",
                 json!({}),
+                &deskfleet_control_store::secret(),
             )
             .await
             .unwrap();
@@ -85,7 +84,7 @@ impl Fixture {
             team_id: self.machine.team_id.clone(),
             actor: self.actor.clone(),
             target_machine: PeerTarget {
-                id: self.machine.id.clone(),
+                id: self.machine.machine_id.clone(),
                 origin_id: self.machine.origin_id.clone(),
                 local_machine_id: self.machine.local_machine_id.clone(),
             },
@@ -117,9 +116,17 @@ impl Socket {
     async fn daemon(state: &AppState, machine_id: &str, connection_id: &str) -> Self {
         let (sender, messages) = mpsc::channel(16);
         let (shutdown, stopped) = watch::channel(None);
+        let registration = state.store.machine(machine_id).await.unwrap();
         state
             .hub
-            .add_daemon(machine_id, connection_id, sender, shutdown)
+            .add_daemon(
+                machine_id,
+                &registration.team_id,
+                &registration.machine_id,
+                connection_id,
+                sender,
+                shutdown,
+            )
             .await
             .unwrap();
         Self {
@@ -457,7 +464,7 @@ async fn postgres_enrollment_returns_credential_when_routing_notification_fails(
                 format!("Bearer {}", login["token"].as_str().unwrap()),
             ))
             .set_json(json!({
-                "name": "New machine", "originId": uuid::Uuid::new_v4().to_string(),
+                "name": "New machine", "identityToken":deskfleet_control_store::secret(),"originId": uuid::Uuid::new_v4().to_string(),
                 "localMachineId": "1",
             }))
             .to_request(),
@@ -470,7 +477,7 @@ async fn postgres_enrollment_returns_credential_when_routing_notification_fails(
         .await
         .unwrap();
     assert_eq!(
-        machine.machine.id,
+        machine.machine.machine_id,
         enrollment["machine"]["id"].as_str().unwrap()
     );
     assert_eq!(machine.machine.team_id, fixture.machine.team_id);

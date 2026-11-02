@@ -2,6 +2,7 @@ import type { AgentSessionSummary, CentralApi, CentralEvent } from "./central.ts
 
 export interface TaskNotification {
   kind: "taskCompleted" | "taskNeedsInput"
+  teamId: string
   machineId: string
   sessionId: string
   title: string
@@ -14,6 +15,8 @@ interface SeenSession {
   requests: Set<string>
 }
 interface SeenMachine {
+  teamId: string
+  machineId: string
   watchStartedAt: number
   initialized: boolean
   /** The first read failed or was discarded, so the next snapshot is not a silent baseline. */
@@ -75,7 +78,8 @@ export class TaskNotificationMonitor {
       this.#epoch++
       this.#rosterPending = true
     } else if (event.type === "catalogChanged") {
-      if (this.#machines.has(event.machineId)) this.#queueMachine(event.machineId, event.sessionId)
+      const key = JSON.stringify([event.teamId, event.machineId])
+      if (this.#machines.has(key)) this.#queueMachine(key, event.sessionId)
       else this.#rosterPending = true
     } else return
     void this.#schedule()
@@ -137,10 +141,10 @@ export class TaskNotificationMonitor {
     if (!this.#current(epoch)) return
     const machines = (await Promise.all(teams.map(team => this.#source.machines(team.id)))).flat()
     if (!this.#current(epoch)) return
-    const authorized = new Set(machines.map(machine => machine.id))
+    const authorized = new Map(machines.map(machine => [JSON.stringify([machine.teamId, machine.id]), machine]))
     for (const id of this.#machines.keys()) if (!authorized.has(id)) this.#machines.delete(id)
-    for (const id of authorized) {
-      if (!this.#machines.has(id)) this.#machines.set(id, { watchStartedAt: Date.now(), initialized: false, missedBaseline: false, refreshAll: false, sessions: new Map() })
+    for (const [id, machine] of authorized) {
+      if (!this.#machines.has(id)) this.#machines.set(id, { teamId: machine.teamId, machineId: machine.id, watchStartedAt: Date.now(), initialized: false, missedBaseline: false, refreshAll: false, sessions: new Map() })
       this.#queueMachine(id)
     }
   }
@@ -151,8 +155,8 @@ export class TaskNotificationMonitor {
     const full = sessions === null || !seen.initialized || seen.refreshAll
     let snapshots: AgentSessionSummary[]
     try {
-      snapshots = full ? await this.#source.sessions(machineId)
-        : (await Promise.all([...sessions!].map(id => this.#source.sessions(machineId, id)))).flat()
+      snapshots = full ? await this.#source.sessions(seen.teamId, seen.machineId)
+        : (await Promise.all([...sessions!].map(id => this.#source.sessions(seen.teamId, seen.machineId, id)))).flat()
     } catch (error) {
       const current = this.#machines.get(machineId)
       if (this.#current(epoch) && current) {
@@ -170,12 +174,12 @@ export class TaskNotificationMonitor {
     // after the watch. A failed, discarded, or slow read must still surface work
     // that happened after observation began.
     const silentBaseline = !machine.initialized && !machine.missedBaseline && Date.now() <= machine.watchStartedAt
-    for (const snapshot of snapshots) this.#observe(machineId, machine, snapshot, silentBaseline)
+    for (const snapshot of snapshots) this.#observe(machine, snapshot, silentBaseline)
     machine.initialized = true
     if (full) machine.refreshAll = false
   }
 
-  #observe(machineId: string, machine: SeenMachine, snapshot: AgentSessionSummary, silentBaseline: boolean): void {
+  #observe(machine: SeenMachine, snapshot: AgentSessionSummary, silentBaseline: boolean): void {
     const { session } = snapshot
     const previous = machine.sessions.get(session.id)
     const sequence = BigInt(session.lastEventSeq)
@@ -203,7 +207,7 @@ export class TaskNotificationMonitor {
     machine.sessions.set(session.id, seen)
     if (silentBaseline || session.archiveState !== "active" || session.lifecycle !== "ready") return
     for (const kind of notices) {
-      this.#notify({ kind, machineId, sessionId: session.id, title: session.title })
+      this.#notify({ kind, teamId: machine.teamId, machineId: machine.machineId, sessionId: session.id, title: session.title })
     }
   }
 }

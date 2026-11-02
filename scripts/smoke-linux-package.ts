@@ -141,12 +141,12 @@ async function gui(): Promise<void> {
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.updates.get()")).status, "disabled")
   await stat(join(profile, "daemon", "daemon.json"))
-  const enrollment = await evaluate<{ ok: boolean; value: { configured: boolean; identity: { machineId: string } } }>(
+  const enrollment = await evaluate<{ ok: boolean; value: { machineName: string; registrations: unknown[] } }>(
     "window.deskfleet.centralBridge.invoke('localEnrollment', [])",
   )
   assert.equal(enrollment.ok, true)
-  assert.equal(enrollment.value.configured, false)
-  assert.ok(enrollment.value.identity.machineId)
+  assert.ok(enrollment.value.machineName)
+  assert.deepEqual(enrollment.value.registrations, [])
   assert.deepEqual(await evaluate("window.deskfleet.settings.setLaunchAtStartup(true)"), { available: true, enabled: true })
   const startup = join(configHome, "autostart", "io.github.yet_another_ai.deskfleet.desktop")
   assert.ok((await readFile(startup, "utf8")).includes(`Exec="${executable}"`), "Autostart must use the installed wrapper")

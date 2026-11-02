@@ -154,6 +154,7 @@ async fn database_scopes_and_actions_follow_current_target_membership() {
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -165,6 +166,7 @@ async fn database_scopes_and_actions_follow_current_target_membership() {
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();

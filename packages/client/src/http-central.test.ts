@@ -115,8 +115,8 @@ test("authenticates the WebSocket in its first message and reports signaling los
 test("collects Session summary pages without merging equal IDs from another machine", async () => {
   const f = setup()
   f.responses.push({ sessions: [{ session: { id: "1" } }], nextCursor: "1" }, { sessions: [{ session: { id: "3" } }] })
-  expect(await f.client.sessions("remote7")).toEqual([{ session: { id: "1" } }, { session: { id: "3" } }])
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/machines/remote7/sessions?after=1&limit=200", expect.anything())
+  expect(await f.client.sessions("team", "remote7")).toEqual([{ session: { id: "1" } }, { session: { id: "3" } }])
+  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team/machines/remote7/sessions?after=1&limit=200", expect.anything())
 })
 
 test("loads team AI usage and day details with explicit timezone and encoded team identity", async () => {
@@ -134,9 +134,9 @@ test("loads a targeted Session summary using the indexed collection filter", asy
   const f = setup()
   const summary = { session: { id: "7", title: "Task" }, turns: [], permissions: [], elicitations: [] }
   f.responses.push({ sessions: [summary] })
-  expect(await f.client.sessions("remote/7", "7")).toEqual([summary])
+  expect(await f.client.sessions("team", "remote/7", "7")).toEqual([summary])
   expect(f.fetch).toHaveBeenCalledExactlyOnceWith(
-    "https://fleet.example/api/machines/remote%2F7/sessions?after=0&limit=200&sessionId=7", expect.anything(),
+    "https://fleet.example/api/teams/team/machines/remote%2F7/sessions?after=0&limit=200&sessionId=7", expect.anything(),
   )
 })
 
@@ -145,11 +145,11 @@ test("searches a Team with encoded literal text and retains paging and Machine s
   const page = { results: [{ kind: "chat", machineId: "2", resourceId: "1", entryId: "message-3" }], nextCursor: "next/+" }
   f.responses.push(page, { tasks: [], lastObservedAt: null })
   expect(await f.client.search("team/1", { q: "中文 foo_%", kind: "chat", cursor: "next/+", limit: 20 })).toEqual(page)
-  expect(await f.client.scheduleSnapshot("machine/2")).toEqual({ tasks: [], lastObservedAt: null })
+  expect(await f.client.scheduleSnapshot("team", "machine/2")).toEqual({ tasks: [], lastObservedAt: null })
   expect(f.fetch).toHaveBeenNthCalledWith(1,
     "https://fleet.example/api/teams/team%2F1/search?q=%E4%B8%AD%E6%96%87+foo_%25&kind=chat&cursor=next%2F%2B&limit=20",
     expect.objectContaining({ method: "GET" }))
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/machines/machine%2F2/schedules", expect.objectContaining({ method: "GET" }))
+  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team/machines/machine%2F2/schedules", expect.objectContaining({ method: "GET" }))
 })
 
 test("search failure diagnostics omit query text and resource identities", async () => {
@@ -175,9 +175,9 @@ test("collects paginated billing Teams while retaining the administration array 
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {
   const f = setup()
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))
-  await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 503, message: "target machine is unavailable" })
+  await expect(f.client.catalog("team", "remote7")).rejects.toMatchObject({ status: 503, message: "target machine is unavailable" })
   f.fetch.mockResolvedValueOnce(new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }))
-  await expect(f.client.catalog("remote7")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" })
+  await expect(f.client.catalog("team", "remote7")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" })
 })
 
 test("fetch failures retain request context and a caller stack before Electron serialization", async () => {
@@ -185,14 +185,14 @@ test("fetch failures retain request context and a caller stack before Electron s
   const cause = new TypeError("fetch failed", { cause: Object.assign(new Error("private backend refused"), { code: "ECONNREFUSED" }) })
   cause.stack = "TypeError: fetch failed"
   f.fetch.mockRejectedValueOnce(cause)
-  const failure = await f.client.rpc("private-machine", "_deskfleet/agent/configuration", { provider: "private-provider", model: "private-model" }).catch(error => error)
+  const failure = await f.client.rpc("team", "private-machine", "_deskfleet/agent/configuration", { provider: "private-provider", model: "private-model" }).catch(error => error)
   expect(failure).toBeInstanceOf(CentralRequestError)
   if (!(failure instanceof CentralRequestError)) throw failure
   expect(failure).toMatchObject({ name: "TypeError", message: "fetch failed", cause })
   expect(failure.stack).toContain("http-central.ts")
   expect(failure.stack).toContain("rpc")
   expect(failure.diagnostics).toEqual({
-    method: "POST", route: "/api/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", elapsedMs: expect.any(Number),
+    method: "POST", route: "/api/teams/:teamId/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", elapsedMs: expect.any(Number),
     causes: [{ name: "TypeError" }, { name: "Error", code: "ECONNREFUSED" }],
   })
   const serialized = JSON.stringify(serializeCentralRequestError(failure))
@@ -203,7 +203,7 @@ test("fetch failures retain request context and a caller stack before Electron s
 test("HTTP errors keep their status and code instead of becoming fetch failures", async () => {
   const f = setup()
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "operation_failed", message: "fetch failed" } }), { status: 502 }))
-  const failure = await f.client.rpc("machine", "_deskfleet/agent/configuration", {}).catch(error => error)
+  const failure = await f.client.rpc("team", "machine", "_deskfleet/agent/configuration", {}).catch(error => error)
   expect(failure).toBeInstanceOf(HttpError)
   expect(failure).toMatchObject({ name: "Error", message: "fetch failed", status: 502, code: "operation_failed" })
   expect(serializeCentralRequestError(failure)).toBeUndefined()
@@ -212,7 +212,7 @@ test("HTTP errors keep their status and code instead of becoming fetch failures"
 test("HTTP errors preserve supported desktop recovery reasons", async () => {
   const f = setup()
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "daemon_error", message: "desktop control needs Accessibility permission on the remote Mac", reason: "accessibility" } }), { status: 502 }))
-  await expect(f.client.rpc("machine", "desktop.start", {})).rejects.toMatchObject({ status: 502, reason: "accessibility" })
+  await expect(f.client.rpc("team", "machine", "desktop.start", {})).rejects.toMatchObject({ status: 502, reason: "accessibility" })
 })
 
 test("transfers Team ownership with the encoded Team ID and selected member", async () => {

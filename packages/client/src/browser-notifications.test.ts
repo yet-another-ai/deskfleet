@@ -38,7 +38,7 @@ function fixture() {
 }
 
 function event(kind: TaskNotification["kind"] = "taskCompleted"): TaskNotification {
-  return { kind, machineId: "machine", sessionId: "session", title: "Update the browser client" }
+  return { kind, teamId: "team", machineId: "machine", sessionId: "session", title: "Update the browser client" }
 }
 
 function expectReleased(notification: BrowserNotification): void {

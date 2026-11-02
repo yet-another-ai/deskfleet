@@ -197,7 +197,7 @@ impl ControlStore {
         let now = now_ms();
         let (start, end) = period_at(p.period_anchor, now);
         let row = one(&self.db,
-            "SELECT (SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machines m ON m.id=a.machine_id WHERE a.team_id=$1 AND a.status<>'released' AND NOT m.revoked) AS sessions, (SELECT COUNT(*) FROM cp_members WHERE team_id=$1) AS members, cp_turn_sent_bytes($1,$2,$3)::text AS bytes",
+            "SELECT (SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machine_registrations m ON m.id=a.registration_id WHERE a.team_id=$1 AND a.status<>'released' AND NOT m.revoked) AS sessions, (SELECT COUNT(*) FROM cp_members WHERE team_id=$1) AS members, cp_turn_sent_bytes($1,$2,$3)::text AS bytes",
             vec![resource_id(team_id)?.into(), start.into(), end.into()]).await?;
         let meter = one(
             &self.db,

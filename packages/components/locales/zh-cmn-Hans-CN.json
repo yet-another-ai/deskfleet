@@ -1163,7 +1163,7 @@
     "signingIn": "正在登录…",
     "signOut": "退出登录",
     "signalingOffline": "服务器连接中断。现有对等连接可继续使用，直到授权到期。",
-    "enrollmentRevoked": "此电脑已被团队移除。重新连接后将使用新的空白身份，原有本地数据会保留在磁盘上。",
+    "enrollmentRevoked": "此电脑已被当前团队移除。重新连接后可继续访问原有会话和历史记录。",
     "reconnectThisComputer": "重新连接此电脑",
     "dismiss": "关闭",
     "addMachine": "添加机器",
@@ -1249,25 +1249,25 @@
     "machineNameFor": "{name} 的新名称",
     "removeMachineLabel": "移除 {name}",
     "removeMachineTitle": "移除 {name}？",
-    "removeMachineDescription": "其凭据将被吊销，现有连接会关闭。文件和历史记录保留在该机器上，之后可使用新身份重新加入。"
+    "removeMachineDescription": "该机器在当前团队的凭据将被吊销，与此团队的连接会关闭。文件和历史记录会保留，重新加入后可继续访问。其他团队的连接不受影响。"
   },
   "addMachine": {
     "title": "向 {team} 添加机器",
     "description": "机器为团队运行智能体、终端和远程桌面。",
     "localDescription": "在你正在使用的这台电脑上运行智能体。",
-    "localRevoked": "使用新的空白身份重新连接，原有数据保留在磁盘上。",
+    "localRevoked": "重新连接此团队，并保留原有会话。",
     "localConnected": "已连接到 {team}。",
     "connecting": "正在连接…",
     "other": "其他机器",
     "otherDescription": "运行 deskfleet-daemon 的服务器或其他电脑。",
     "statusStep": "在该机器上启动 daemon 并运行",
     "pasteStep": "粘贴命令输出",
-    "pasteHint": "输出内容用于识别 daemon 安装，不包含机密信息。",
+    "pasteHint": "粘贴此团队的注册信息。其中包含机器私有凭据，请仅提供给此服务器。",
     "identityFound": "已识别机器身份。",
     "status": {
-      "invalid": "这不像是 deskfleet-daemon status 的输出。",
-      "enrolled": "此机器已属于某个团队。需由管理员移除后才能再次添加。",
-      "revoked": "此机器已被团队移除。请运行 deskfleet-daemon prepare-enrollment 并粘贴其输出。"
+      "invalid": "请粘贴为此服务器和团队生成的 prepare-enrollment 输出。",
+      "enrolled": "此机器已注册到当前团队。",
+      "revoked": "请重新为此团队准备注册。"
     },
     "nameStep": "为团队命名此机器",
     "nameHint": "默认使用机器的主机名，之后可在团队设置中重命名。",

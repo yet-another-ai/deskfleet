@@ -31,13 +31,13 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         one(
             &tx,
-            "SELECT id FROM cp_machines WHERE id=$1 FOR UPDATE",
+            "SELECT id FROM cp_machine_registrations WHERE id=$1 FOR UPDATE",
             vec![machine.into()],
         )
         .await?;
         let rows = tx
             .query_all_raw(sql(
-                "SELECT schedule_id,record FROM cp_schedules WHERE machine_id=$1",
+                "SELECT schedule_id,record FROM cp_schedules WHERE registration_id=$1",
                 vec![machine.into()],
             ))
             .await?;
@@ -49,7 +49,7 @@ impl ControlStore {
             if let Some(task) = incoming.get(&id) {
                 if task != &old {
                     tx.execute_raw(sql(
-                        "UPDATE cp_schedules SET record=$3 WHERE machine_id=$1 AND schedule_id=$2",
+                        "UPDATE cp_schedules SET record=$3 WHERE registration_id=$1 AND schedule_id=$2",
                         vec![machine.into(), id.as_str().into(), task.clone().into()],
                     ))
                     .await?;
@@ -59,7 +59,7 @@ impl ControlStore {
                 }
             } else {
                 tx.execute_raw(sql(
-                    "DELETE FROM cp_schedules WHERE machine_id=$1 AND schedule_id=$2",
+                    "DELETE FROM cp_schedules WHERE registration_id=$1 AND schedule_id=$2",
                     vec![machine.into(), id.as_str().into()],
                 ))
                 .await?;
@@ -71,14 +71,14 @@ impl ControlStore {
                 continue;
             }
             tx.execute_raw(sql(
-                "INSERT INTO cp_schedules(machine_id,schedule_id,record) VALUES($1,$2,$3)",
+                "INSERT INTO cp_schedules(registration_id,schedule_id,record) VALUES($1,$2,$3)",
                 vec![machine.into(), id.as_str().into(), task.clone().into()],
             ))
             .await?;
             index_task(&tx, machine, &id, Some(&task)).await?;
         }
         tx.execute_raw(sql(
-            "INSERT INTO cp_schedule_snapshots(machine_id,observed_at) VALUES($1,$2) ON CONFLICT(machine_id) DO UPDATE SET observed_at=excluded.observed_at",
+            "INSERT INTO cp_schedule_snapshots(registration_id,observed_at) VALUES($1,$2) ON CONFLICT(registration_id) DO UPDATE SET observed_at=excluded.observed_at",
             vec![machine.into(),now_ms().into()],
         )).await?;
         tx.commit().await?;
@@ -92,8 +92,8 @@ impl ControlStore {
     pub async fn schedule_snapshot(&self, machine_id: &str) -> Result<Value> {
         let machine = resource_id(machine_id)?;
         let row = one(&self.db,
-            "SELECT (SELECT observed_at FROM cp_schedule_snapshots WHERE machine_id=$1) AS observed_at,
-             COALESCE((SELECT jsonb_agg(record ORDER BY schedule_id) FROM cp_schedules WHERE machine_id=$1),'[]'::jsonb) AS tasks",
+            "SELECT (SELECT observed_at FROM cp_schedule_snapshots WHERE registration_id=$1) AS observed_at,
+             COALESCE((SELECT jsonb_agg(record ORDER BY schedule_id) FROM cp_schedules WHERE registration_id=$1),'[]'::jsonb) AS tasks",
             vec![machine.into()],
         ).await?;
         let observed: Option<i64> = row.try_get("", "observed_at")?;
@@ -109,7 +109,7 @@ async fn index_task(
     id: &str,
     task: Option<&Value>,
 ) -> Result<()> {
-    db.execute_raw(sql("DELETE FROM cp_search_documents WHERE machine_id=$1 AND kind='schedule' AND resource_id=$2",vec![machine.into(),id.into()])).await?;
+    db.execute_raw(sql("DELETE FROM cp_search_documents WHERE registration_id=$1 AND kind='schedule' AND resource_id=$2",vec![machine.into(),id.into()])).await?;
     if let Some(task) = task {
         write_document(
             db,

@@ -104,7 +104,7 @@ async fn local_grants_wait_for_trusted_delivery_without_ice_and_reject_signaling
             fixture
                 .a
                 .store
-                .valid_machine_peers(&fixture.machine)
+                .valid_machine_peers(&fixture.registration)
                 .await
                 .unwrap()
                 .iter()
@@ -137,7 +137,7 @@ async fn local_grants_revoke_when_daemon_rejects_or_login_is_revoked_during_deli
         .b
         .hub
         .response(
-            &fixture.machine,
+            &fixture.registration,
             "daemon-b",
             &id,
             Err(ApiError::bad("local channel unavailable")),
@@ -181,7 +181,7 @@ async fn local_grants_revoke_when_daemon_rejects_or_login_is_revoked_during_deli
         fixture
             .a
             .store
-            .valid_machine_peers(&fixture.machine)
+            .valid_machine_peers(&fixture.registration)
             .await
             .unwrap()
             .is_empty()
@@ -227,7 +227,7 @@ async fn local_endpoint_rejects_unauthorized_or_non_message_purposes() {
         fixture
             .a
             .store
-            .valid_machine_peers(&fixture.machine)
+            .valid_machine_peers(&fixture.registration)
             .await
             .unwrap()
             .is_empty()

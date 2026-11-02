@@ -88,6 +88,7 @@ async fn postgres_ai_usage_counts_snapshots_scopes_teams_and_preserves_coverage(
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -99,6 +100,7 @@ async fn postgres_ai_usage_counts_snapshots_scopes_teams_and_preserves_coverage(
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -349,6 +351,7 @@ async fn postgres_ai_usage_local_days_follow_dst_and_session_results_are_bounded
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();

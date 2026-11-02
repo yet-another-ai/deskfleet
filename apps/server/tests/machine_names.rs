@@ -87,9 +87,10 @@ async fn team_members_rename_machines_and_catalogs_use_the_team_name() {
         post,
         &format!("/api/teams/{}/machines", team.id),
         admin_token,
-        &json!({"name":"build-01","originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"})
+        &json!({"name":"build-01","identityToken":deskfleet_control_store::secret(),"originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"})
     ))
     .await;
+    let team_id = &team.id;
     let machine_id = enrolled["machine"]["id"].as_str().unwrap();
     let machine_token = enrolled["token"].as_str().unwrap();
     assert_eq!(
@@ -102,12 +103,12 @@ async fn team_members_rename_machines_and_catalogs_use_the_team_name() {
         .status(),
         StatusCode::OK
     );
-    let catalog_path = format!("/api/machines/{machine_id}/catalog");
+    let catalog_path = format!("/api/teams/{team_id}/machines/{machine_id}/catalog");
     let catalog: Value =
         test::read_body_json(call!(get, &catalog_path, member_token, &json!({}))).await;
     assert_eq!(catalog["snapshot"]["machineName"], "build-01");
 
-    let path = format!("/api/machines/{machine_id}");
+    let path = format!("/api/teams/{team_id}/machines/{machine_id}");
     let renamed: Value = test::read_body_json(call!(
         patch,
         &path,

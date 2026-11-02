@@ -257,7 +257,6 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
     {
         tx.execute_unprepared(include_str!("search/schema.sql"))
             .await?;
-        crate::search::backfill(&tx).await?;
         tx.execute_unprepared("INSERT INTO cp_migrations(version) VALUES(19)")
             .await?;
     }
@@ -286,6 +285,20 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
         tx.execute_unprepared("INSERT INTO cp_migrations(version) VALUES(21)")
             .await?;
     }
+    if tx
+        .query_one_raw(sql(
+            "SELECT version FROM cp_migrations WHERE version=22",
+            vec![],
+        ))
+        .await?
+        .is_none()
+    {
+        tx.execute_unprepared(include_str!("machine_registrations.sql"))
+            .await?;
+        crate::search::backfill(&tx).await?;
+        tx.execute_unprepared("INSERT INTO cp_migrations(version) VALUES(22)")
+            .await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -295,6 +308,19 @@ pub async fn down(db: &DatabaseConnection) -> Result<()> {
     let tx = db.begin().await?;
     tx.execute_unprepared("SELECT pg_advisory_xact_lock(761946021)")
         .await?;
+    if tx
+        .query_one_raw(sql(
+            "SELECT version FROM cp_migrations WHERE version=22",
+            vec![],
+        ))
+        .await?
+        .is_some()
+    {
+        tx.execute_unprepared(include_str!("machine_registrations_down.sql"))
+            .await?;
+        tx.execute_unprepared("DELETE FROM cp_migrations WHERE version=22")
+            .await?;
+    }
     if tx
         .query_one_raw(sql(
             "SELECT version FROM cp_migrations WHERE version=21",

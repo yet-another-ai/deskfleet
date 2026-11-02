@@ -8,6 +8,7 @@ export interface LocalApplication {
 export interface OpenWorkspaceRequest {
   applicationId: string
   /** The client's active central registration, not the daemon's catalog ID. */
+  teamId: string
   machineId: string
   workspaceId?: string
   worktreeId?: string

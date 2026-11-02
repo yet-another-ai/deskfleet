@@ -14,14 +14,14 @@ pub(super) enum Audience {
 pub(super) enum Envelope {
     Request {
         source: String,
-        machine_id: String,
+        registration_id: String,
         connection_id: String,
         expires_at: i64,
         message: ControlMessage,
     },
     Response {
         id: String,
-        machine_id: String,
+        registration_id: String,
         connection_id: String,
         result: WireResult,
     },
@@ -37,7 +37,7 @@ pub(super) enum Envelope {
         audience: Audience,
     },
     Replace {
-        machine_id: String,
+        registration_id: String,
         connection_id: String,
     },
 }

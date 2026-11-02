@@ -159,8 +159,8 @@ function statusStory(): Story {
         const bus = useEventBus(githubSettingsChanged)
         central.githubSettings = async () => ({ configured: true, authorized: true, actAsYou: true, login: "octocat", manageUrl: null })
         central.githubPullRequest = async query => ({ pullRequest: pullRequests.find(pr => pr.state === query.branch) ?? null })
-        central.catalog = async machineId => {
-          const result = await originalCatalog(machineId)
+        central.catalog = async (teamId, machineId) => {
+          const result = await originalCatalog(teamId, machineId)
           return { ...result, snapshot: { ...result.snapshot, githubBranches } }
         }
         const store = usePullRequestsStore()

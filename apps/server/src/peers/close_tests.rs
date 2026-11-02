@@ -47,6 +47,7 @@ async fn inactive_desktop_close_keeps_owner_checks_and_waits_for_daemon_cleanup(
             &uuid::Uuid::new_v4().to_string(),
             "1",
             json!({}),
+            &deskfleet_control_store::secret(),
         )
         .await
         .unwrap();
@@ -59,7 +60,14 @@ async fn inactive_desktop_close_keeps_owner_checks_and_waits_for_daemon_cleanup(
     let (shutdown, _shutdown) = watch::channel(None);
     state
         .hub
-        .add_daemon(&machine.id, "fixture", send, shutdown)
+        .add_daemon(
+            &machine.id,
+            &machine.team_id,
+            &machine.machine_id,
+            "fixture",
+            send,
+            shutdown,
+        )
         .await
         .unwrap();
     let app = test::init_service(
@@ -78,7 +86,7 @@ async fn inactive_desktop_close_keeps_owner_checks_and_waits_for_daemon_cleanup(
             team_id: team.id.clone(),
             actor: api::actor(&actor),
             target_machine: PeerTarget {
-                id: machine.id.clone(),
+                id: machine.machine_id.clone(),
                 origin_id: machine.origin_id.clone(),
                 local_machine_id: "1".into(),
             },

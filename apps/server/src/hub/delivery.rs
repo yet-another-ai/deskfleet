@@ -11,7 +11,7 @@ impl Hub {
         self.send_current(machine, connection, message).await
     }
 
-    #[tracing::instrument(skip_all, fields(machine_id = machine))]
+    #[tracing::instrument(skip_all, fields(registration_id = machine))]
     pub(crate) async fn reconcile_daemon(&self, machine: &str, connection: &str) -> Result<()> {
         // A peer offer must not overtake a snapshot that predates its grant.
         // The same gate also fences local connection replacement and lease reset.
@@ -52,7 +52,7 @@ impl Hub {
         match envelope {
             Envelope::Request {
                 source,
-                machine_id,
+                registration_id,
                 connection_id,
                 expires_at,
                 message,
@@ -68,13 +68,13 @@ impl Hub {
                     id.clone(),
                     Forwarded {
                         source: source.clone(),
-                        machine_id: machine_id.clone(),
+                        registration_id: registration_id.clone(),
                         connection_id: connection_id.clone(),
                         expires_at,
                     },
                 );
                 if let Err(error) = self
-                    .send_request(&machine_id, &connection_id, message)
+                    .send_request(&registration_id, &connection_id, message)
                     .await
                 {
                     self.inner.lock().await.forwarded.remove(&id);
@@ -82,7 +82,7 @@ impl Hub {
                         &source,
                         &Envelope::Response {
                             id,
-                            machine_id,
+                            registration_id,
                             connection_id,
                             result: WireResult::from(Err(error)),
                         },
@@ -92,20 +92,18 @@ impl Hub {
             }
             Envelope::Response {
                 id,
-                machine_id,
+                registration_id,
                 connection_id,
                 result,
             } => {
                 let current = self
-                    .route(&machine_id)
+                    .route(&registration_id)
                     .await?
                     .is_some_and(|r| r.connection_id == connection_id);
                 let mut routes = self.inner.lock().await;
-                if routes
-                    .pending
-                    .get(&id)
-                    .is_some_and(|p| p.machine_id == machine_id && p.connection_id == connection_id)
-                    && let Some(pending) = routes.pending.remove(&id)
+                if routes.pending.get(&id).is_some_and(|p| {
+                    p.registration_id == registration_id && p.connection_id == connection_id
+                }) && let Some(pending) = routes.pending.remove(&id)
                 {
                     let _ = pending.response.send(if current {
                         result.into_result()
@@ -133,8 +131,10 @@ impl Hub {
                         peer_id: peer.peer_id,
                         reason: reason.clone(),
                     };
-                    if let Some(daemon) = routes.daemons.get(&peer.target_machine.id)
-                        && daemon.sender.try_send(message.clone()).is_err()
+                    if let Some(daemon) = routes.daemons.values().find(|daemon| {
+                        daemon.team_id == peer.team_id
+                            && daemon.public_machine_id == peer.target_machine.id
+                    }) && daemon.sender.try_send(message.clone()).is_err()
                     {
                         let _ = daemon.shutdown.send(Some(1012));
                     }
@@ -166,10 +166,11 @@ impl Hub {
                 }
             }
             Envelope::Replace {
-                machine_id,
+                registration_id,
                 connection_id,
             } => {
-                self.remove_local_daemon(&machine_id, &connection_id).await;
+                self.remove_local_daemon(&registration_id, &connection_id)
+                    .await;
             }
         }
         Ok(())
@@ -190,7 +191,7 @@ impl Hub {
             let ids: Vec<_> = routes
                 .pending
                 .iter()
-                .filter(|(_, p)| p.machine_id == machine && p.connection_id == connection)
+                .filter(|(_, p)| p.registration_id == machine && p.connection_id == connection)
                 .map(|(id, _)| id.clone())
                 .collect();
             for id in ids {
@@ -201,7 +202,7 @@ impl Hub {
             let ids: Vec<_> = routes
                 .forwarded
                 .iter()
-                .filter(|(_, p)| p.machine_id == machine && p.connection_id == connection)
+                .filter(|(_, p)| p.registration_id == machine && p.connection_id == connection)
                 .map(|(id, _)| id.clone())
                 .collect();
             ids.into_iter()
@@ -211,7 +212,7 @@ impl Hub {
         for (id, pending) in forwarded {
             let reply = Envelope::Response {
                 id,
-                machine_id: machine.into(),
+                registration_id: machine.into(),
                 connection_id: connection.into(),
                 result: WireResult::from(Err(ApiError::unavailable())),
             };

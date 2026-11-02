@@ -31,9 +31,7 @@ test("local discovery grants only host setup and never imports development resou
     await rm(directory, { recursive: true, force: true })
   })
   const status = await client.call("centralStatus", {})
-  assert.equal(status.configured, false)
-  assert.equal(status.connected, false)
-  assert.equal(status.revoked, false)
+  assert.deepEqual(status.registrations, [])
   for (const method of ["catalogList", "providerList", "terminalList", "systemStatus"] as const) await assert.rejects(client.call(method, {}), /Sign in and select a team/)
   await assert.rejects(client.call("workspaceCreate", { name: "Unauthorized", directories: [{ path: directory }] }), /backend API/)
 })
@@ -55,7 +53,7 @@ test("enrollment verifies local machine identity and saves only a private daemon
     await server[Symbol.asyncDispose]()
     await rm(directory, { recursive: true, force: true })
   })
-  const credentials = { serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, machineId: "machine", teamId: "team", token: "machine-secret" }
+  const credentials = { serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, machineId: "machine", teamId: "team", token: "machine-secret", originId: identity.originId }
   await assert.rejects(daemon.central.enroll(credentials), /do not match/)
   originId = identity.originId
   const status = await daemon.central.enroll(credentials)
@@ -64,7 +62,8 @@ test("enrollment verifies local machine identity and saves only a private daemon
   const path = join(directory, "machine", "central.json")
   assert.equal(JSON.parse(await readFile(path, "utf8")).token, "machine-secret")
   if (process.platform !== "win32") assert.equal((await stat(path)).mode & 0o777, 0o600)
-  await assert.rejects(daemon.central.enroll(credentials), /already belongs/)
+  assert.deepEqual(await daemon.central.enroll(credentials), status)
+  await assert.rejects(daemon.central.enroll({ ...credentials, token: "replacement-secret" }), /already enrolled/)
 })
 
 test("remote enrollment requires TLS and accepts HTTP only on loopback", () => {
@@ -100,7 +99,7 @@ test("delegation rechecks membership without treating a removed user as a revoke
   context.after(async () => { await daemon.close(); await server[Symbol.asyncDispose](); await rm(directory, { recursive: true, force: true }) })
   const actor = { kind: "user" as const, userId: "creator", deviceId: "original-login" }
   await assert.rejects(daemon.central.authorizeDelegation(actor), /unavailable/)
-  await daemon.central.enroll({ serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, machineId: "machine", teamId: "team", token: "machine-secret" })
+  await daemon.central.enroll({ serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, machineId: "machine", teamId: "team", token: "machine-secret", originId: identity.originId })
   await assert.rejects(daemon.central.authorizeDelegation({ kind: "local_token" }), /verified/)
   assert.deepEqual(await daemon.central.authorizeDelegation(actor), actor)
   status = 403
@@ -551,4 +550,30 @@ test("control link retries back off while reconnects fail and reset after ready"
   assert.equal(sockets.length, 3)
   context.mock.timers.tick(1)
   assert.equal(sockets.length, 4, "a ready link resets the retry delay")
+})
+
+test("a late rejection of a retired token cannot revoke a re-enrolled Team", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-token-reenroll-"))
+  const { sockets } = silentSockets(context)
+  let rejectOld!: (response: Response) => void
+  const delayed = new Promise<Response>(resolve => { rejectOld = resolve })
+  const credentials = { serverUrl: "http://127.0.0.1:8080", serverId: "server", teamId: "team", machineId: "machine", token: "old-token" }
+  await writeFile(join(directory, "central.json"), JSON.stringify(credentials))
+  context.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    if (String(input).endsWith("/api/daemon/entitlements")) return delayed
+    if (String(input).endsWith("/api/daemon/me")) return Response.json({ serverId: "server", machine: { id: "machine", teamId: "team", originId: "origin", localMachineId: "local" } })
+    return Response.json({ lastEventSeq: "0" })
+  })
+  const central = new CentralClient(directory, linkOperations(), {} as ControlPeers)
+  context.after(async () => { rejectOld(Response.json({})); await central.close(); await rm(directory, { recursive: true, force: true }) })
+  await central.init()
+  const pending = central.quotaRequest("GET", "/api/daemon/entitlements")
+  sockets[0]!.drop(4403)
+  assert.equal(central.status().revoked, true)
+  await central.enroll({ ...credentials, token: "new-token", originId: "origin" })
+  const rejection = assert.rejects(pending, /Team allowance request failed/)
+  rejectOld(Response.json({ error: { code: "machine_credential_rejected" } }, { status: 401 }))
+  await rejection
+  assert.equal(central.status().revoked, false)
+  assert.equal(JSON.parse(await readFile(join(directory, "central.json"), "utf8")).token, "new-token")
 })

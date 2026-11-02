@@ -17,7 +17,10 @@ export interface MachineCredentials {
   revoked?: boolean
 }
 
-export type MachineEnrollment = Omit<MachineCredentials, "serverId" | "revoked">
+export type MachineEnrollment = Omit<MachineCredentials, "serverId" | "revoked"> & { originId: string }
+export interface EnrollmentTarget { serverUrl: string; teamId: string }
+export interface HostCentralStatus { machineName: string; registrations: CentralStatus[] }
+export interface PreparedEnrollment extends CentralStatus { identityToken: string }
 export interface CentralStatus {
   configured: boolean
   connected: boolean

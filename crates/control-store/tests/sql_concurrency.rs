@@ -59,6 +59,7 @@ impl Fixture {
                 &uuid::Uuid::new_v4().to_string(),
                 "1",
                 json!({}),
+                &deskfleet_control_store::secret(),
             )
             .await
             .unwrap()
@@ -141,7 +142,7 @@ async fn mutations_recheck_membership_after_concurrent_removal_or_demotion() {
         let tx = fixture.block_team().await;
         // Old Machine mutations wait here after their unprotected authorization.
         tx.execute_raw(sql(
-            "SELECT id FROM cp_machines WHERE id=$1 FOR UPDATE",
+            "SELECT id FROM cp_machine_registrations WHERE id=$1 FOR UPDATE",
             vec![fixture.machine.parse::<i64>().unwrap().into()],
         ))
         .await
@@ -160,6 +161,7 @@ async fn mutations_recheck_membership_after_concurrent_removal_or_demotion() {
                         &uuid::Uuid::new_v4().to_string(),
                         "2",
                         json!({}),
+                        &deskfleet_control_store::secret(),
                     )
                     .await
                     .map(|_| ()),
@@ -281,7 +283,7 @@ async fn admission_waits_for_team_before_machine_and_observes_revocation() {
         .await
         .unwrap();
     tx.execute_raw(sql(
-        "UPDATE cp_machines SET revoked=TRUE WHERE id=$1",
+        "UPDATE cp_machine_registrations SET revoked=TRUE WHERE id=$1",
         vec![fixture.machine.parse::<i64>().unwrap().into()],
     ))
     .await
@@ -295,19 +297,6 @@ async fn admission_waits_for_team_before_machine_and_observes_revocation() {
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn usage_projection_backfills_reconciles_and_rolls_back_with_snapshots() {
     let fixture = Fixture::new().await;
-    // Start from the previous schema with real history to exercise the backfill.
-    fixture
-        .store
-        .database()
-        .execute_unprepared(include_str!("../src/ai_usage/projection_down.sql"))
-        .await
-        .unwrap();
-    fixture
-        .store
-        .database()
-        .execute_unprepared("DELETE FROM cp_migrations WHERE version=18")
-        .await
-        .unwrap();
     let mut snapshot = json!({
         "session":{"id":"1","title":"Task","lastEventSeq":"0"},
         "inputs":[{"id":"input","author":{"userId":fixture.actor}}, {"id":"input","author":{"userId":fixture.owner}}],
@@ -322,6 +311,25 @@ async fn usage_projection_backfills_reconciles_and_rolls_back_with_snapshots() {
     fixture
         .store
         .sync_history(&fixture.machine, "1", snapshot.clone(), vec![], vec![])
+        .await
+        .unwrap();
+    // Restore the old registration layout before exercising the historical migration.
+    fixture
+        .store
+        .database()
+        .execute_unprepared(include_str!("../src/machine_registrations_down.sql"))
+        .await
+        .unwrap();
+    fixture
+        .store
+        .database()
+        .execute_unprepared(include_str!("../src/ai_usage/projection_down.sql"))
+        .await
+        .unwrap();
+    fixture
+        .store
+        .database()
+        .execute_unprepared("DELETE FROM cp_migrations WHERE version IN (18,22)")
         .await
         .unwrap();
     deskfleet_control_store::schema::migrate(fixture.store.database())
@@ -459,7 +467,9 @@ async fn usage_date_query_uses_time_index_without_expanding_history() {
     fixture
         .store
         .database()
-        .execute_unprepared("ANALYZE cp_ai_turns; ANALYZE cp_machines; ANALYZE cp_sessions")
+        .execute_unprepared(
+            "ANALYZE cp_ai_turns; ANALYZE cp_machine_registrations; ANALYZE cp_sessions",
+        )
         .await
         .unwrap();
     let statement = format!(

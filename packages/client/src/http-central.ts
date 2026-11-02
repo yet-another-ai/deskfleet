@@ -199,7 +199,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   updateTurnSettings(settings: TurnSettings) { return this.request<TurnSettings>("PATCH", "/api/admin/turn-settings", settings) }
   teams() { return this.request<Team[]>("GET", "/api/teams") }
   createTeam(name: string) { return this.request<Team>("POST", "/api/teams", { name }) }
-  enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string }) { return this.request<{ machine: Machine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine) }
+  enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string; identityToken: string }) { return this.request<{ machine: Machine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine) }
   members(teamId: string) { return this.request<TeamMember[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/members`) }
   teamUsage(teamId: string) { return this.request<TeamUsage>("GET", `/api/teams/${encodeURIComponent(teamId)}/usage`) }
   teamTurnSettings(teamId: string) { return this.request<TeamTurnSettings>("GET", `/api/teams/${encodeURIComponent(teamId)}/turn-settings`) }
@@ -216,8 +216,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     if (query.limit !== undefined) params.set("limit", String(query.limit))
     return this.request<SearchPage>("GET", `/api/teams/${encodeURIComponent(teamId)}/search?${params}`)
   }
-  scheduleSnapshot(machineId: string) {
-    return this.request<ScheduleSnapshot>("GET", `/api/machines/${encodeURIComponent(machineId)}/schedules`)
+  scheduleSnapshot(teamId: string, machineId: string) {
+    return this.request<ScheduleSnapshot>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/schedules`)
   }
   renameTeam(teamId: string, name: string) { return this.request<Team>("PATCH", `/api/teams/${encodeURIComponent(teamId)}`, { name }) }
   invite(teamId: string, email: string, role: "admin" | "member") { return this.request<{ token: string; expiresAt: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/invites`, { email, role }) }
@@ -226,23 +226,23 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   async removeMember(teamId: string, userId: string) { await this.request("DELETE", `/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`) }
   async transferOwnership(teamId: string, userId: string) { await this.request("POST", `/api/teams/${encodeURIComponent(teamId)}/ownership`, { userId }) }
   machines(teamId: string) { return this.request<Machine[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines`) }
-  renameMachine(machineId: string, name: string) { return this.request<Machine>("PATCH", `/api/machines/${encodeURIComponent(machineId)}`, { name }) }
-  async removeMachine(machineId: string) { await this.request("DELETE", `/api/machines/${encodeURIComponent(machineId)}`) }
-  catalog(machineId: string) { return this.request<{ machineId: string; snapshot: CatalogSnapshot; lastObservedAt: string; providers?: ProviderDisplaySnapshot }>("GET", `/api/machines/${encodeURIComponent(machineId)}/catalog`) }
-  async sessions(machineId: string, sessionId?: string): Promise<AgentSessionSummary[]> {
+  renameMachine(teamId: string, machineId: string, name: string) { return this.request<Machine>("PATCH", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}`, { name }) }
+  async removeMachine(teamId: string, machineId: string) { await this.request("DELETE", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}`) }
+  catalog(teamId: string, machineId: string) { return this.request<{ machineId: string; snapshot: CatalogSnapshot; lastObservedAt: string; providers?: ProviderDisplaySnapshot }>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/catalog`) }
+  async sessions(teamId: string, machineId: string, sessionId?: string): Promise<AgentSessionSummary[]> {
     const sessions: AgentSessionSummary[] = []
     const filter = sessionId === undefined ? "" : `&sessionId=${encodeURIComponent(sessionId)}`
     let after = "0"
     for (;;) {
-      const page = await this.request<{ sessions: AgentSessionSummary[]; nextCursor?: string }>("GET", `/api/machines/${encodeURIComponent(machineId)}/sessions?after=${encodeURIComponent(after)}&limit=200${filter}`)
+      const page = await this.request<{ sessions: AgentSessionSummary[]; nextCursor?: string }>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/sessions?after=${encodeURIComponent(after)}&limit=200${filter}`)
       sessions.push(...page.sessions)
       if (!page.nextCursor) return sessions
       after = page.nextCursor
     }
   }
-  session(machineId: string, sessionId: string) { return this.request<{ snapshot: AgentSnapshot; lastEventSeq: string; lastObservedAt: string }>("GET", `/api/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId)}`) }
-  events(machineId: string, sessionId: string, after: string, limit: number) { return this.request<{ events: AgentEvent[]; lastEventSeq: string }>("GET", `/api/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId)}/events?after=${encodeURIComponent(after)}&limit=${limit}`) }
-  rpc<T>(machineId: string, method: string, params: unknown) { return this.request<T>("POST", `/api/machines/${encodeURIComponent(machineId)}/rpc`, { method, params }) }
+  session(teamId: string, machineId: string, sessionId: string) { return this.request<{ snapshot: AgentSnapshot; lastEventSeq: string; lastObservedAt: string }>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId)}`) }
+  events(teamId: string, machineId: string, sessionId: string, after: string, limit: number) { return this.request<{ events: AgentEvent[]; lastEventSeq: string }>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId)}/events?after=${encodeURIComponent(after)}&limit=${limit}`) }
+  rpc<T>(teamId: string, machineId: string, method: string, params: unknown) { return this.request<T>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/rpc`, { method, params }) }
   createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files" | "ports") { return this.request<PeerGrant>("POST", "/api/peers", { teamId, machineId, purpose }) }
   createLocalPeer(teamId: string, machineId: string, purpose: "agent" | "terminal") { return this.request<LocalPeerGrant>("POST", "/api/peers/local", { teamId, machineId, purpose }) }
   offerPeer(peerId: string, sdp: string, options?: unknown) { return this.request<{ sdp: string }>("POST", `/api/peers/${encodeURIComponent(peerId)}/offer`, { sdp, options }) }

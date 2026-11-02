@@ -61,7 +61,7 @@ test("pins distinguish equal Session IDs on different machines, persist across m
     ["m1", "Laptop investigation", true, true, "active", "directory"],
     ["m2", "Remote investigation", false, false, "active", "worktree"],
   ])
-  expect(session).toHaveBeenCalledExactlyOnceWith("m2", "30")
+  expect(session).toHaveBeenCalledExactlyOnceWith("team-1", "m2", "30")
   disposePinia(first.pinia)
   const second = fixture(account, "m2")
   expect(second.store.isPinned("m1", "30")).toBe(true)
@@ -148,13 +148,13 @@ test("remote archive notifications unpin only that machine's Session and prevent
   await flushPromises()
   expect(store.pins).toHaveLength(2)
   snapshot.session.archiveState = "archived"
-  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  fake.emit({ type: "catalogChanged", teamId: "team-1", machineId: "m2", sessionId: "30" })
   await flushPromises()
   expect(store.pins.map(pin => [pin.machineId, pin.sessionId])).toEqual([["m1", "30"]])
   store.pin("m2", "30", "Cannot pin archived")
   expect(store.isPinned("m2", "30")).toBe(false)
   snapshot.session.archiveState = "active"
-  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  fake.emit({ type: "catalogChanged", teamId: "team-1", machineId: "m2", sessionId: "30" })
   await flushPromises()
   expect(store.isPinned("m1", "30")).toBe(true)
   expect(store.isPinned("m2", "30")).toBe(false)
@@ -166,7 +166,7 @@ test("retained machine scopes preserve an explicit pin after the Session is rest
   first.store.pin("m2", "30", "Remote investigation")
   await flushPromises()
   snapshot.session.archiveState = "archived"
-  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  fake.emit({ type: "catalogChanged", teamId: "team-1", machineId: "m2", sessionId: "30" })
   await flushPromises()
   expect(first.store.isPinned("m2", "30")).toBe(false)
 
@@ -175,7 +175,7 @@ test("retained machine scopes preserve an explicit pin after the Session is rest
   second.agents.sessions["30"] = { ...snapshot.session, workspaceId: undefined }
   snapshot.session.archiveState = "active"
   second.agents.sessions["30"]!.archiveState = "active"
-  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  fake.emit({ type: "catalogChanged", teamId: "team-1", machineId: "m2", sessionId: "30" })
   await flushPromises()
   expect(first.store.isPinned("m2", "30")).toBe(false)
   expect(second.store.isPinned("m2", "30")).toBe(false)
@@ -219,11 +219,11 @@ test("catalog notifications refresh pinned remote history and removed machines l
   await flushPromises()
   snapshot.session.title = "Renamed remotely"
   snapshot.session.archiveState = "active"
-  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  fake.emit({ type: "catalogChanged", teamId: "team-1", machineId: "m2", sessionId: "30" })
   await flushPromises()
   expect(store.items[0]).toMatchObject({ title: "Renamed remotely", archiveState: "active" })
   expect(store.pins[0]?.title).toBe("Renamed remotely")
-  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "99" })
+  fake.emit({ type: "catalogChanged", teamId: "team-1", machineId: "m2", sessionId: "99" })
   await flushPromises()
   expect(session).toHaveBeenCalledTimes(2)
   account.machines.value = account.machines.value.filter(machine => machine.id !== "m2")
@@ -244,7 +244,7 @@ test("shared unread markers refresh across machines and are not saved as device 
   ])
   agents.sessions["30"]!.lastReadSeq = "7"
   snapshot.session.lastReadSeq = "11"
-  fake.emit({ type: "catalogChanged", machineId: "m2", sessionId: "30" })
+  fake.emit({ type: "catalogChanged", teamId: "team-1", machineId: "m2", sessionId: "30" })
   await flushPromises()
   expect(store.items.map(item => [item.lastCompletedSeq, item.lastReadSeq])).toEqual([["7", "7"], ["11", "11"]])
   expect(localStorage.getItem("deskfleet.pinned-sessions")).not.toContain("lastCompletedSeq")

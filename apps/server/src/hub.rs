@@ -20,6 +20,8 @@ use wire::{Audience, Envelope, WireResult};
 type Sender = mpsc::Sender<ControlMessage>;
 #[derive(Clone)]
 struct Daemon {
+    team_id: String,
+    public_machine_id: String,
     connection_id: String,
     sender: Sender,
     shutdown: watch::Sender<Option<u16>>,
@@ -30,13 +32,13 @@ struct Client {
     shutdown: watch::Sender<Option<u16>>,
 }
 struct Pending {
-    machine_id: String,
+    registration_id: String,
     connection_id: String,
     response: oneshot::Sender<Result<Value>>,
 }
 struct Forwarded {
     source: String,
-    machine_id: String,
+    registration_id: String,
     connection_id: String,
     expires_at: i64,
 }
@@ -57,13 +59,13 @@ impl Hub {
     pub(crate) async fn connect(store: ControlStore) -> Result<(Self, Router)> {
         cluster::connect(store).await
     }
-    pub(crate) async fn is_current(&self, machine_id: &str, connection_id: &str) -> bool {
+    pub(crate) async fn is_current(&self, registration_id: &str, connection_id: &str) -> bool {
         let local = self
             .inner
             .lock()
             .await
             .daemons
-            .get(machine_id)
+            .get(registration_id)
             .is_some_and(|d| d.connection_id == connection_id);
         if !local {
             return false;
@@ -73,15 +75,15 @@ impl Hub {
                 cluster.ready()
                     && cluster
                         .store
-                        .route_is_current(machine_id, &cluster.id, connection_id)
+                        .route_is_current(registration_id, &cluster.id, connection_id)
                         .await
                         .unwrap_or(false)
             }
             None => true,
         }
     }
-    pub async fn online(&self, machine_id: &str) -> bool {
-        self.route(machine_id).await.ok().flatten().is_some()
+    pub async fn online(&self, registration_id: &str) -> bool {
+        self.route(registration_id).await.ok().flatten().is_some()
     }
     pub(crate) async fn online_machines(
         &self,
@@ -104,17 +106,17 @@ impl Hub {
             .cloned()
             .collect()
     }
-    async fn route(&self, machine_id: &str) -> Result<Option<RealtimeRoute>> {
+    async fn route(&self, registration_id: &str) -> Result<Option<RealtimeRoute>> {
         if let Some(cluster) = &self.cluster {
             cluster.ensure_ready()?;
-            return Ok(cluster.store.machine_route(machine_id).await?);
+            return Ok(cluster.store.machine_route(registration_id).await?);
         }
         Ok(self
             .inner
             .lock()
             .await
             .daemons
-            .get(machine_id)
+            .get(registration_id)
             .map(|d| RealtimeRoute {
                 node_id: String::new(),
                 connection_id: d.connection_id.clone(),
@@ -122,7 +124,9 @@ impl Hub {
     }
     pub(crate) async fn add_daemon(
         &self,
-        machine_id: &str,
+        registration_id: &str,
+        team_id: &str,
+        public_machine_id: &str,
         connection_id: &str,
         sender: Sender,
         shutdown: watch::Sender<Option<u16>>,
@@ -136,8 +140,10 @@ impl Hub {
             cluster.ensure_ready()?;
         }
         let previous = self.inner.lock().await.daemons.insert(
-            machine_id.into(),
+            registration_id.into(),
             Daemon {
+                team_id: team_id.into(),
+                public_machine_id: public_machine_id.into(),
                 connection_id: connection_id.into(),
                 sender,
                 shutdown,
@@ -149,12 +155,13 @@ impl Hub {
         if let Some(cluster) = &self.cluster {
             let claimed = cluster
                 .store
-                .claim_machine_route(machine_id, &cluster.id, connection_id)
+                .claim_machine_route(registration_id, &cluster.id, connection_id)
                 .await;
             let previous = match claimed {
                 Ok(previous) => previous,
                 Err(error) => {
-                    self.remove_local_daemon(machine_id, connection_id).await;
+                    self.remove_local_daemon(registration_id, connection_id)
+                        .await;
                     return Err(error.into());
                 }
             };
@@ -162,32 +169,35 @@ impl Hub {
                 self.publish(
                     &previous.node_id,
                     &Envelope::Replace {
-                        machine_id: machine_id.into(),
+                        registration_id: registration_id.into(),
                         connection_id: previous.connection_id,
                     },
                 )
                 .await?;
             }
             // A concurrent reconnect may have won while this registration awaited SQL.
-            if !self.is_current(machine_id, connection_id).await {
-                self.remove_local_daemon(machine_id, connection_id).await;
+            if !self.is_current(registration_id, connection_id).await {
+                self.remove_local_daemon(registration_id, connection_id)
+                    .await;
                 cluster
                     .store
-                    .release_machine_route(machine_id, &cluster.id, connection_id)
+                    .release_machine_route(registration_id, &cluster.id, connection_id)
                     .await?;
                 return Err(ApiError::unavailable());
             }
         }
         Ok(())
     }
-    pub(crate) async fn remove_daemon(&self, machine_id: &str, connection_id: &str) -> bool {
-        let removed = self.remove_local_daemon(machine_id, connection_id).await;
+    pub(crate) async fn remove_daemon(&self, registration_id: &str, connection_id: &str) -> bool {
+        let removed = self
+            .remove_local_daemon(registration_id, connection_id)
+            .await;
         let Some(cluster) = &self.cluster else {
             return removed;
         };
         match cluster
             .store
-            .release_machine_route(machine_id, &cluster.id, connection_id)
+            .release_machine_route(registration_id, &cluster.id, connection_id)
             .await
         {
             Ok(released) => released,
@@ -196,7 +206,7 @@ impl Hub {
                 // advertised while this process keeps renewing its node lease.
                 tracing::warn!(
                     error = %error,
-                    machine_id,
+                    registration_id,
                     "failed to release machine route; marking realtime routing unhealthy"
                 );
                 cluster.mark_unhealthy();
@@ -245,13 +255,13 @@ impl Hub {
     }
     pub async fn request(
         &self,
-        machine_id: &str,
+        registration_id: &str,
         method: &str,
         params: Value,
         actor: Option<PeerActor>,
     ) -> Result<Value> {
         let route = self
-            .route(machine_id)
+            .route(registration_id)
             .await?
             .ok_or_else(ApiError::unavailable)?;
         let id = uuid::Uuid::new_v4().to_string();
@@ -259,7 +269,7 @@ impl Hub {
         self.inner.lock().await.pending.insert(
             id.clone(),
             Pending {
-                machine_id: machine_id.into(),
+                registration_id: registration_id.into(),
                 connection_id: route.connection_id.clone(),
                 response: send,
             },
@@ -277,7 +287,7 @@ impl Hub {
                 &route.node_id,
                 &Envelope::Request {
                     source: cluster.id.clone(),
-                    machine_id: machine_id.into(),
+                    registration_id: registration_id.into(),
                     connection_id: route.connection_id,
                     expires_at: deskfleet_control_store::now_ms() + 60_000,
                     message,
@@ -292,7 +302,7 @@ impl Hub {
                 }
             })
         } else {
-            self.send_request(machine_id, &route.connection_id, message)
+            self.send_request(registration_id, &route.connection_id, message)
                 .await
         };
         if let Err(error) = sent {
@@ -309,31 +319,27 @@ impl Hub {
     }
     pub(crate) async fn response(
         &self,
-        machine_id: &str,
+        registration_id: &str,
         connection_id: &str,
         id: &str,
         result: Result<Value>,
     ) {
-        if !self.is_current(machine_id, connection_id).await {
+        if !self.is_current(registration_id, connection_id).await {
             return;
         }
         let forwarded = {
             let mut routes = self.inner.lock().await;
-            if routes
-                .pending
-                .get(id)
-                .is_some_and(|p| p.machine_id == machine_id && p.connection_id == connection_id)
-            {
+            if routes.pending.get(id).is_some_and(|p| {
+                p.registration_id == registration_id && p.connection_id == connection_id
+            }) {
                 if let Some(pending) = routes.pending.remove(id) {
                     let _ = pending.response.send(result);
                 }
                 return;
             }
-            if routes
-                .forwarded
-                .get(id)
-                .is_some_and(|p| p.machine_id == machine_id && p.connection_id == connection_id)
-            {
+            if routes.forwarded.get(id).is_some_and(|p| {
+                p.registration_id == registration_id && p.connection_id == connection_id
+            }) {
                 routes.forwarded.remove(id)
             } else {
                 None
@@ -342,7 +348,7 @@ impl Hub {
         if let Some(forwarded) = forwarded {
             let reply = Envelope::Response {
                 id: id.into(),
-                machine_id: machine_id.into(),
+                registration_id: registration_id.into(),
                 connection_id: connection_id.into(),
                 result: WireResult::from(result),
             };
@@ -375,9 +381,9 @@ impl Hub {
         })
         .await
     }
-    pub async fn disconnect_machine(&self, machine_id: &str) -> Result<()> {
+    pub async fn disconnect_machine(&self, registration_id: &str) -> Result<()> {
         self.broadcast(Envelope::Disconnect {
-            audience: Audience::Machine(machine_id.into()),
+            audience: Audience::Machine(registration_id.into()),
         })
         .await
     }
@@ -411,14 +417,18 @@ mod tests {
         let (send, _receive) = mpsc::channel(1);
         let (shutdown, mut stopped) = watch::channel(None);
         send.try_send(ControlMessage::Ping).unwrap();
-        hub.add_daemon("1", "old", send, shutdown).await.unwrap();
+        hub.add_daemon("1", "team", "1", "old", send, shutdown)
+            .await
+            .unwrap();
         let peer: PeerAuthorization = serde_json::from_value(serde_json::json!({"peerId":"peer","serverId":"server","teamId":"team","actor":{"kind":"user","userId":"u","deviceId":"d"},"targetMachine":{"id":"1","originId":"origin","localMachineId":"1"},"transport":"webrtc","purpose":"agent","actions":[],"issuedAt":"now","expiresAt":"later"})).unwrap();
         hub.revoke(vec![peer], "logout").await.unwrap();
         stopped.changed().await.unwrap();
         assert_eq!(*stopped.borrow(), Some(1012));
         let (send, _receive) = mpsc::channel(1);
         let (shutdown, stopped) = watch::channel(None);
-        hub.add_daemon("1", "new", send, shutdown).await.unwrap();
+        hub.add_daemon("1", "team", "1", "new", send, shutdown)
+            .await
+            .unwrap();
         assert!(!hub.is_current("1", "old").await);
         assert!(!hub.remove_daemon("1", "old").await);
         assert!(hub.online("1").await);

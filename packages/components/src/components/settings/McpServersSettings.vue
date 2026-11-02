@@ -13,7 +13,7 @@ import McpServerDialog from "./McpServerDialog.vue"
 const { t } = useI18n()
 const account = useAccountSession()
 const fleet = useFleetStore()
-const api = account && mcpServersClient(account.central, fleet.targetId)
+const api = account && mcpServersClient(account.central, account.teamId.value!, fleet.targetId)
 const online = computed(() => !!api && (account?.machine.value?.online ?? fleet.localDesktopTarget.online))
 const servers = ref<McpServerConfig[]>([])
 const loaded = ref(false)

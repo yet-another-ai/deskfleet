@@ -1,6 +1,6 @@
 //! Central grants for an authenticated local IPC claim, without ICE or relay allocation.
 
-use super::{Create, PeerTransport, authorize, create_grant};
+use super::{Create, PeerTransport, authorize, create_grant, registration};
 use crate::{
     AppState,
     error::{ApiError, Result},
@@ -32,7 +32,7 @@ pub async fn create(
     let result = async {
         s.hub
             .request(
-                &authorization.target_machine.id,
+                &registration(&s, &authorization).await?,
                 "peer.local",
                 payload.clone(),
                 Some(authorization.actor.clone()),

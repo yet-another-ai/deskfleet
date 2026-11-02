@@ -88,7 +88,7 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
     if (!account || !selected) return
     await Promise.all(items.value.filter(item => !item.loaded).map(async item => {
       try {
-        const { snapshot } = await account.central.session(item.machineId, item.sessionId)
+        const { snapshot } = await account.central.session(account.teamId.value!, item.machineId, item.sessionId)
         if (disposed || selected !== scope.value || current !== revision || !isPinned(item.machineId, item.sessionId)) return
         metadata.value[key(item.machineId, item.sessionId)] = {
           working: snapshotIsWorking(snapshot), title: snapshot.session.title, archiveState: snapshot.session.archiveState, context: snapshot.session.context,
@@ -119,7 +119,7 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
   }, { immediate: true })
   const unsubscribe = account?.central.onEvent(event => {
     if (event.type === "connection" && event.connected
-      || event.type === "catalogChanged" && pins.value.some(pin => pin.machineId === event.machineId && (!event.sessionId || pin.sessionId === event.sessionId))) {
+      || event.type === "catalogChanged" && event.teamId === account.teamId.value && pins.value.some(pin => pin.machineId === event.machineId && (!event.sessionId || pin.sessionId === event.sessionId))) {
       void refresh()
     }
   })

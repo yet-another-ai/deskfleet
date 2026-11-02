@@ -155,6 +155,7 @@ pub struct Enrollment {
     name: String,
     origin_id: String,
     local_machine_id: String,
+    identity_token: String,
     #[serde(default)]
     capabilities: Value,
 }
@@ -175,6 +176,7 @@ pub async fn enroll(
             &b.origin_id,
             &b.local_machine_id,
             b.capabilities,
+            &b.identity_token,
         )
         .await?;
     if s.notify_team(
@@ -189,7 +191,7 @@ pub async fn enroll(
         // Enrollment committed; its plaintext credential is only returned here.
         tracing::warn!("machine enrolled but roster notification failed");
     }
-    Ok(web::Json(json!({"machine":m,"token":t})))
+    Ok(web::Json(json!({"machine":m.public(),"token":t})))
 }
 pub async fn machines(
     req: HttpRequest,
@@ -205,22 +207,35 @@ pub async fn machines(
     for m in &mut machines {
         m.online = online.contains(&m.id);
     }
-    Ok(web::Json(json!(machines)))
+    Ok(web::Json(json!(
+        machines
+            .into_iter()
+            .map(|m| m.into_public())
+            .collect::<Vec<_>>()
+    )))
 }
 pub async fn rename_machine(
     req: HttpRequest,
     s: web::Data<AppState>,
-    p: web::Path<String>,
+    p: web::Path<(String, String)>,
     b: web::Json<Name>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    let mut m = s.store.rename_machine(&a.user.id, &p, &b.name).await?;
+    let registration = s
+        .store
+        .authorized_registration(&a.user.id, &p.0, &p.1)
+        .await?;
+    let mut m = s
+        .store
+        .rename_machine(&a.user.id, &registration.id, &b.name)
+        .await?;
     m.online = s.hub.online(&m.id).await;
     // Open clients refetch the catalog, which carries the new name.
     s.notify_team(
         &m.team_id,
         ControlMessage::CatalogChanged {
-            machine_id: m.id.clone(),
+            team_id: m.team_id.clone(),
+            machine_id: m.machine_id.clone(),
             session_id: None,
         },
     )
@@ -232,19 +247,22 @@ pub async fn rename_machine(
         },
     )
     .await?;
-    Ok(web::Json(json!(m)))
+    Ok(web::Json(json!(m.public())))
 }
 pub async fn remove_machine(
     req: HttpRequest,
     s: web::Data<AppState>,
-    p: web::Path<String>,
+    p: web::Path<(String, String)>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    let machine = s.store.machine(&p).await?;
-    s.store.revoke_machine(&a.user.id, &p).await?;
-    let peers = s.store.revoke_machine_peers(&p).await?;
+    let machine = s
+        .store
+        .authorized_registration(&a.user.id, &p.0, &p.1)
+        .await?;
+    s.store.revoke_machine(&a.user.id, &machine.id).await?;
+    let peers = s.store.revoke_machine_peers(&machine.id).await?;
     s.hub.revoke(peers, "machine_removed").await?;
-    s.hub.disconnect_machine(&p).await?;
+    s.hub.disconnect_machine(&machine.id).await?;
     s.notify_team(
         &machine.team_id,
         ControlMessage::MachinesChanged {
@@ -304,12 +322,13 @@ const MANAGEMENT: &[&str] = &[
 pub async fn rpc(
     req: HttpRequest,
     s: web::Data<AppState>,
-    p: web::Path<String>,
+    p: web::Path<(String, String)>,
     b: web::Json<Rpc>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    s.store
-        .authorize_machine(&a.user.id, &p, MachineAction::Manage)
+    let registration = s
+        .store
+        .authorize_registration(&a.user.id, &p.0, &p.1, MachineAction::Manage)
         .await?;
     if !MANAGEMENT.contains(&b.method.as_str()) || !b.params.is_object() {
         return Err(ApiError::bad("unsupported management method"));
@@ -317,18 +336,21 @@ pub async fn rpc(
     let b = b.into_inner();
     Ok(web::Json(
         s.hub
-            .request(&p, &b.method, b.params, Some(actor(&a)))
+            .request(&registration.id, &b.method, b.params, Some(actor(&a)))
             .await?,
     ))
 }
 pub async fn catalog(
     req: HttpRequest,
     s: web::Data<AppState>,
-    p: web::Path<String>,
+    p: web::Path<(String, String)>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    let m = s.store.authorized_machine(&a.user.id, &p).await?;
-    let mut catalog = s.store.catalog(&p).await?;
+    let m = s
+        .store
+        .authorized_registration(&a.user.id, &p.0, &p.1)
+        .await?;
+    let mut catalog = s.store.catalog(&m.id).await?;
     // The Team's name for the machine replaces the hostname its daemon reports.
     if let Some(snapshot) = catalog["snapshot"].as_object_mut() {
         snapshot.insert("machineName".into(), m.name.into());
@@ -352,28 +374,38 @@ fn all_archive_states() -> String {
 pub async fn sessions(
     req: HttpRequest,
     s: web::Data<AppState>,
-    p: web::Path<String>,
+    p: web::Path<(String, String)>,
     q: web::Query<SessionPage>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    s.store.authorized_machine(&a.user.id, &p).await?;
+    let registration = s
+        .store
+        .authorized_registration(&a.user.id, &p.0, &p.1)
+        .await?;
     if let Some(id) = &q.session_id {
-        return Ok(web::Json(s.store.session_summary(&p, id).await?));
+        return Ok(web::Json(
+            s.store.session_summary(&registration.id, id).await?,
+        ));
     }
     Ok(web::Json(
         s.store
-            .sessions(&p, q.after, q.limit, &q.archive_state)
+            .sessions(&registration.id, q.after, q.limit, &q.archive_state)
             .await?,
     ))
 }
 pub async fn snapshot(
     req: HttpRequest,
     s: web::Data<AppState>,
-    p: web::Path<(String, String)>,
+    p: web::Path<(String, String, String)>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    s.store.authorized_machine(&a.user.id, &p.0).await?;
-    Ok(web::Json(s.store.session_snapshot(&p.0, &p.1).await?))
+    let registration = s
+        .store
+        .authorized_registration(&a.user.id, &p.0, &p.1)
+        .await?;
+    Ok(web::Json(
+        s.store.session_snapshot(&registration.id, &p.2).await?,
+    ))
 }
 #[derive(Deserialize)]
 pub struct Page {
@@ -388,40 +420,55 @@ fn page_size() -> u32 {
 pub async fn events(
     req: HttpRequest,
     s: web::Data<AppState>,
-    p: web::Path<(String, String)>,
+    p: web::Path<(String, String, String)>,
     q: web::Query<Page>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    s.store.authorized_machine(&a.user.id, &p.0).await?;
+    let registration = s
+        .store
+        .authorized_registration(&a.user.id, &p.0, &p.1)
+        .await?;
     Ok(web::Json(
-        s.store.events(&p.0, &p.1, q.after, q.limit).await?,
+        s.store
+            .events(&registration.id, &p.2, q.after, q.limit)
+            .await?,
     ))
 }
 pub async fn commands(
     req: HttpRequest,
     s: web::Data<AppState>,
-    p: web::Path<(String, String)>,
+    p: web::Path<(String, String, String)>,
     q: web::Query<Page>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    s.store.authorized_machine(&a.user.id, &p.0).await?;
+    let registration = s
+        .store
+        .authorized_registration(&a.user.id, &p.0, &p.1)
+        .await?;
     Ok(web::Json(
-        s.store.commands(&p.0, &p.1, q.after, q.limit).await?,
+        s.store
+            .commands(&registration.id, &p.2, q.after, q.limit)
+            .await?,
     ))
 }
 pub async fn command(
     req: HttpRequest,
     s: web::Data<AppState>,
-    p: web::Path<(String, String)>,
+    p: web::Path<(String, String, String)>,
 ) -> Result<web::Json<Value>> {
     let a = auth::user(&req, &s).await?;
-    s.store.authorized_machine(&a.user.id, &p.0).await?;
-    Ok(web::Json(s.store.command_by_operation(&p.0, &p.1).await?))
+    let registration = s
+        .store
+        .authorized_registration(&a.user.id, &p.0, &p.1)
+        .await?;
+    Ok(web::Json(
+        s.store.command_by_operation(&registration.id, &p.2).await?,
+    ))
 }
 pub async fn daemon_me(req: HttpRequest, s: web::Data<AppState>) -> Result<web::Json<Value>> {
     let m = auth::machine(&req, &s).await?;
     Ok(web::Json(
-        json!({"machine":m.machine,"serverId":s.config.public_url}),
+        json!({"machine":m.machine.public(),"serverId":s.config.public_url}),
     ))
 }
 
@@ -474,7 +521,8 @@ pub async fn sync_catalog(
     s.notify_team(
         &m.machine.team_id,
         ControlMessage::CatalogChanged {
-            machine_id: m.machine.id,
+            team_id: m.machine.team_id.clone(),
+            machine_id: m.machine.machine_id,
             session_id: None,
         },
     )
@@ -512,7 +560,8 @@ pub async fn sync_history(
     s.notify_team(
         &m.machine.team_id,
         ControlMessage::CatalogChanged {
-            machine_id: m.machine.id,
+            team_id: m.machine.team_id.clone(),
+            machine_id: m.machine.machine_id,
             session_id: Some(b.session_id),
         },
     )

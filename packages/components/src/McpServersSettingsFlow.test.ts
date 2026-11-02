@@ -51,7 +51,7 @@ function fixture() {
     command: `/tools/${id}/mcp`, args: [], env: {},
   }]]))
   const list = vi.fn(async (machineId: string): Promise<McpServerSnapshot> => ({ revision: machineId, servers: clone(servers.get(machineId)!) }))
-  const rpc = vi.fn(async (machineId: string, method: string, params: Record<string, unknown>) => {
+  const rpc = vi.fn(async (_teamId: string, machineId: string, method: string, params: Record<string, unknown>) => {
     const values = servers.get(machineId)!
     if (method === "mcpServerList") return list(machineId)
     if (method === "mcpServerCreate") {
@@ -73,7 +73,7 @@ function fixture() {
   })
   Object.assign(fake.central, {
     rpc,
-    catalog: vi.fn(async (machineId: string) => ({
+    catalog: vi.fn(async (_teamId: string, machineId: string) => ({
       machineId, lastObservedAt: "2026-11-01T00:00:00Z", providers: { providers: [] },
       snapshot: { teamId: "team-1", machineId, machineName: fake.state.machines.find(machine => machine.id === machineId)!.name, workspaces: [], sessions: [] },
     })),
@@ -111,7 +111,7 @@ test("MCP tabs isolate drafts and target server operations at the selected machi
   await page().get('[name="mcp-name"]').setValue("Second machine tools")
   await page().get("[role=dialog] form").trigger("submit")
   await settled(() => expect(page().find("[role=dialog]").exists()).toBe(false))
-  expect(f.rpc).toHaveBeenCalledWith("m2", "mcpServerUpdate", { serverId: "shared-server", changes: expect.objectContaining({ name: "Second machine tools", command: "/tools/m2/mcp" }) })
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "mcpServerUpdate", { serverId: "shared-server", changes: expect.objectContaining({ name: "Second machine tools", command: "/tools/m2/mcp" }) })
 
   const rpc = f.rpc.getMockImplementation()!
   let finishToggle!: () => void
@@ -123,7 +123,7 @@ test("MCP tabs isolate drafts and target server operations at the selected machi
   await settled(() => expect(page().get("[data-mcp-toggle]").attributes("disabled")).toBeUndefined())
   await page().get("[data-mcp-toggle]").trigger("click")
   await flushPromises()
-  expect(f.rpc).toHaveBeenCalledWith("m2", "mcpServerUpdate", { serverId: "shared-server", changes: expect.objectContaining({ enabled: false }) })
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "mcpServerUpdate", { serverId: "shared-server", changes: expect.objectContaining({ enabled: false }) })
   expect(tabs().findAll("button").every(button => button.attributes("disabled") !== undefined)).toBe(true)
   finishToggle()
   await settled(() => expect(page().get("[data-mcp-toggle]").text()).toBe("Disabled"))
@@ -134,13 +134,13 @@ test("MCP tabs isolate drafts and target server operations at the selected machi
   await page().get('[name="mcp-command"]').setValue("/tools/m2/extra")
   await page().get("[role=dialog] form").trigger("submit")
   await settled(() => expect(page().find("[role=dialog]").exists()).toBe(false))
-  expect(f.rpc).toHaveBeenCalledWith("m2", "mcpServerCreate", { server: expect.objectContaining({ name: "Extra second machine tools" }) })
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "mcpServerCreate", { server: expect.objectContaining({ name: "Extra second machine tools" }) })
 
   await page().get('[data-mcp-server="shared-server"] [data-mcp-remove]').trigger("click")
   await page().get("[role=dialog] .ui-button-danger").trigger("click")
   await settled(() => expect(page().find('[data-mcp-server="shared-server"]').exists()).toBe(false))
-  expect(f.rpc).toHaveBeenCalledWith("m2", "mcpServerRemove", { serverId: "shared-server" })
-  expect(f.rpc.mock.calls.filter(([, method]) => method.startsWith("mcpServer")).every(([id]) => id === "m2")).toBe(true)
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "mcpServerRemove", { serverId: "shared-server" })
+  expect(f.rpc.mock.calls.filter(([, , method]) => method.startsWith("mcpServer")).every(([, id]) => id === "m2")).toBe(true)
 
   await tab("First machine").trigger("click")
   await settled(() => expect(page().get('[data-mcp-server="shared-server"]').text()).toContain("Tools m1"))
@@ -169,11 +169,11 @@ test("late MCP reads stay on their machine and offline tabs load only after reco
   await settled(() => expect(tabs().get('[aria-current="page"]').text()).toContain("Offline machine"))
   expect(page().get("[data-mcp-add]").attributes("disabled")).toBeDefined()
   expect(page().find("[data-mcp-server]").exists()).toBe(false)
-  expect(f.rpc.mock.calls.filter(([, method]) => method.startsWith("mcpServer"))).toEqual([])
+  expect(f.rpc.mock.calls.filter(([, , method]) => method.startsWith("mcpServer"))).toEqual([])
   expect(router.currentRoute.value.path).toBe("/settings/mcp-servers")
 
-  f.emit({ type: "presence", machineId: "m3", online: true })
+  f.emit({ type: "presence", teamId: "team-1", machineId: "m3", online: true })
   await settled(() => expect(page().get('[data-mcp-server="shared-server"]').text()).toContain("Tools m3"))
   expect(page().get("[data-mcp-add]").attributes("disabled")).toBeUndefined()
-  expect(f.rpc).toHaveBeenCalledWith("m3", "mcpServerList", {})
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m3", "mcpServerList", {})
 })

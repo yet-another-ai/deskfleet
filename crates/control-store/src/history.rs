@@ -11,18 +11,18 @@ impl ControlStore {
         snapshot: Value,
         providers: Value,
     ) -> Result<()> {
-        self.db.execute_raw(sql("INSERT INTO cp_catalogs(machine_id,snapshot,providers,observed_at) VALUES($1,$2,$3,$4) ON CONFLICT(machine_id) DO UPDATE SET snapshot=excluded.snapshot,providers=excluded.providers,observed_at=excluded.observed_at",vec![resource_id(machine_id)?.into(),snapshot.into(),providers.into(),now_ms().into()])).await?;
+        self.db.execute_raw(sql("INSERT INTO cp_catalogs(registration_id,snapshot,providers,observed_at) VALUES($1,$2,$3,$4) ON CONFLICT(registration_id) DO UPDATE SET snapshot=excluded.snapshot,providers=excluded.providers,observed_at=excluded.observed_at",vec![resource_id(machine_id)?.into(),snapshot.into(),providers.into(),now_ms().into()])).await?;
         Ok(())
     }
     pub async fn catalog(&self, machine_id: &str) -> Result<Value> {
         let row = one(
             &self.db,
-            "SELECT snapshot,providers,observed_at FROM cp_catalogs WHERE machine_id=$1",
+            "SELECT c.snapshot,c.providers,c.observed_at,r.machine_id FROM cp_catalogs c JOIN cp_machine_registrations r ON r.id=c.registration_id WHERE c.registration_id=$1",
             vec![resource_id(machine_id)?.into()],
         )
         .await?;
         Ok(
-            json!({"machineId":machine_id,"snapshot":row.try_get::<Value>("","snapshot")?,"providers":row.try_get::<Value>("","providers")?,"lastObservedAt":timestamp(row.try_get("","observed_at")?)}),
+            json!({"machineId":row.try_get::<i64>("", "machine_id")?.to_string(),"snapshot":row.try_get::<Value>("","snapshot")?,"providers":row.try_get::<Value>("","providers")?,"lastObservedAt":timestamp(row.try_get("","observed_at")?)}),
         )
     }
     pub async fn sessions(
@@ -40,23 +40,23 @@ impl ControlStore {
         // Retained history can outlive its daemon Session. Apply the journal's
         // catalog inventory before pagination; replayed history cannot restore it.
         let rows = if archive == "all" {
-            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE machine_id=$1 AND session_id::bigint>$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $3", vec![machine.into(), after.into(), i64::from(limit+1).into()]).await?
+            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE registration_id=$1 AND session_id::bigint>$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE registration_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $3", vec![machine.into(), after.into(), i64::from(limit+1).into()]).await?
         } else {
-            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE machine_id=$1 AND summary#>>'{session,archiveState}'=$2 AND session_id::bigint>$3 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $4", vec![machine.into(), archive.into(), after.into(), i64::from(limit+1).into()]).await?
+            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE registration_id=$1 AND summary#>>'{session,archiveState}'=$2 AND session_id::bigint>$3 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE registration_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $4", vec![machine.into(), archive.into(), after.into(), i64::from(limit+1).into()]).await?
         };
         Ok(page(rows, limit, "sessions", "/session/id"))
     }
     pub async fn session_summary(&self, machine_id: &str, session_id: &str) -> Result<Value> {
         let rows = json_rows(
             &self.db,
-            "SELECT summary AS record FROM cp_sessions WHERE machine_id=$1 AND session_id=$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE machine_id=$1) ? session_id",
+            "SELECT summary AS record FROM cp_sessions WHERE registration_id=$1 AND session_id=$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE registration_id=$1) ? session_id",
             vec![resource_id(machine_id)?.into(), session_id.into()],
         )
         .await?;
         Ok(json!({"sessions": rows}))
     }
     pub async fn session_snapshot(&self, machine_id: &str, session_id: &str) -> Result<Value> {
-        let row=one(&self.db,"SELECT snapshot,event_seq,observed_at FROM cp_sessions WHERE machine_id=$1 AND session_id=$2",vec![resource_id(machine_id)?.into(),session_id.into()]).await?;
+        let row=one(&self.db,"SELECT snapshot,event_seq,observed_at FROM cp_sessions WHERE registration_id=$1 AND session_id=$2",vec![resource_id(machine_id)?.into(),session_id.into()]).await?;
         Ok(
             json!({"snapshot":row.try_get::<Value>("","snapshot")?,"lastEventSeq":row.try_get::<i64>("","event_seq")?.to_string(),"lastObservedAt":timestamp(row.try_get("","observed_at")?)}),
         )
@@ -78,11 +78,11 @@ impl ControlStore {
             "SELECT event_seq, COALESCE((
                 SELECT jsonb_agg(page.record ORDER BY page.seq) FROM (
                     SELECT seq,record FROM cp_events
-                    WHERE machine_id=$1 AND session_id=$2 AND seq>$3
+                    WHERE registration_id=$1 AND session_id=$2 AND seq>$3
                     ORDER BY seq LIMIT $4
                 ) page
              ), '[]'::jsonb) AS events
-             FROM cp_sessions WHERE machine_id=$1 AND session_id=$2",
+             FROM cp_sessions WHERE registration_id=$1 AND session_id=$2",
             vec![
                 resource_id(machine_id)?.into(),
                 session_id.into(),
@@ -103,13 +103,13 @@ impl ControlStore {
         limit: u32,
     ) -> Result<Value> {
         validate_page(after, limit)?;
-        let rows=json_rows(&self.db,"SELECT record FROM cp_commands WHERE machine_id=$1 AND record->>'sessionId'=$2 AND command_id::bigint>$3 ORDER BY command_id::bigint LIMIT $4",vec![resource_id(machine_id)?.into(),session_id.into(),after.into(),i64::from(limit+1).into()]).await?;
+        let rows=json_rows(&self.db,"SELECT record FROM cp_commands WHERE registration_id=$1 AND record->>'sessionId'=$2 AND command_id::bigint>$3 ORDER BY command_id::bigint LIMIT $4",vec![resource_id(machine_id)?.into(),session_id.into(),after.into(),i64::from(limit+1).into()]).await?;
         Ok(page(rows, limit, "commands", "/id"))
     }
 }
 impl ControlStore {
     pub async fn command_by_operation(&self, machine_id: &str, operation: &str) -> Result<Value> {
-        let row=one(&self.db,"SELECT record FROM cp_commands WHERE machine_id=$1 AND record->>'operationId'=$2 AND record->>'isCanonical'='true' LIMIT 1",vec![resource_id(machine_id)?.into(),operation.into()]).await?;
+        let row=one(&self.db,"SELECT record FROM cp_commands WHERE registration_id=$1 AND record->>'operationId'=$2 AND record->>'isCanonical'='true' LIMIT 1",vec![resource_id(machine_id)?.into(),operation.into()]).await?;
         Ok(row.try_get("", "record")?)
     }
 }

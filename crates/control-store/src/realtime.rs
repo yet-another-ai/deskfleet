@@ -34,9 +34,9 @@ impl ControlStore {
             return Ok(Default::default());
         }
         self.db.query_all_raw(sql(
-            "SELECT r.machine_id FROM jsonb_array_elements_text($1::jsonb) target(id) JOIN cp_realtime_routes r ON r.machine_id=target.id::bigint JOIN cp_realtime_nodes n ON n.id=r.node_id JOIN cp_machines m ON m.id=r.machine_id WHERE n.lease_until>statement_timestamp() AND NOT m.revoked",
+            "SELECT r.registration_id FROM jsonb_array_elements_text($1::jsonb) target(id) JOIN cp_realtime_routes r ON r.registration_id=target.id::bigint JOIN cp_realtime_nodes n ON n.id=r.node_id JOIN cp_machine_registrations m ON m.id=r.registration_id WHERE n.lease_until>statement_timestamp() AND NOT m.revoked",
             vec![serde_json::json!(ids).into()],
-        )).await?.into_iter().map(|row| Ok(row.try_get::<i64>("", "machine_id")?.to_string())).collect()
+        )).await?.into_iter().map(|row| Ok(row.try_get::<i64>("", "registration_id")?.to_string())).collect()
     }
     /// Register an API process using its newly generated UUID.
     pub async fn register_node(&self, node: &str) -> Result<()> {
@@ -85,7 +85,7 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         one(
             &tx,
-            "SELECT id FROM cp_machines WHERE id=$1 AND NOT revoked FOR UPDATE",
+            "SELECT id FROM cp_machine_registrations WHERE id=$1 AND NOT revoked FOR UPDATE",
             vec![machine.into()],
         )
         .await?;
@@ -94,14 +94,14 @@ impl ControlStore {
         }
         let previous = tx
             .query_one_raw(sql(
-                "SELECT node_id,connection_id FROM cp_realtime_routes WHERE machine_id=$1",
+                "SELECT node_id,connection_id FROM cp_realtime_routes WHERE registration_id=$1",
                 vec![machine.into()],
             ))
             .await?
             .map(RealtimeRoute::from_row)
             .transpose()?;
         tx.execute_raw(sql(
-            "INSERT INTO cp_realtime_routes(machine_id,node_id,connection_id) VALUES($1,$2,$3) ON CONFLICT(machine_id) DO UPDATE SET node_id=EXCLUDED.node_id,connection_id=EXCLUDED.connection_id",
+            "INSERT INTO cp_realtime_routes(registration_id,node_id,connection_id) VALUES($1,$2,$3) ON CONFLICT(registration_id) DO UPDATE SET node_id=EXCLUDED.node_id,connection_id=EXCLUDED.connection_id",
             vec![machine.into(), node.into(), connection.into()],
         )).await?;
         tx.commit().await?;
@@ -116,7 +116,7 @@ impl ControlStore {
         connection: &str,
     ) -> Result<bool> {
         Ok(self.db.execute_raw(sql(
-            "DELETE FROM cp_realtime_routes WHERE machine_id=$1 AND node_id=$2 AND connection_id=$3",
+            "DELETE FROM cp_realtime_routes WHERE registration_id=$1 AND node_id=$2 AND connection_id=$3",
             vec![resource_id(machine)?.into(), node.into(), connection.into()],
         )).await?.rows_affected() == 1)
     }
@@ -124,7 +124,7 @@ impl ControlStore {
     /// Expired nodes and revoked machines are never advertised as online.
     pub async fn machine_route(&self, machine: &str) -> Result<Option<RealtimeRoute>> {
         self.db.query_one_raw(sql(
-            "SELECT r.node_id,r.connection_id FROM cp_realtime_routes r JOIN cp_realtime_nodes n ON n.id=r.node_id JOIN cp_machines m ON m.id=r.machine_id WHERE r.machine_id=$1 AND n.lease_until>clock_timestamp() AND NOT m.revoked",
+            "SELECT r.node_id,r.connection_id FROM cp_realtime_routes r JOIN cp_realtime_nodes n ON n.id=r.node_id JOIN cp_machine_registrations m ON m.id=r.registration_id WHERE r.registration_id=$1 AND n.lease_until>clock_timestamp() AND NOT m.revoked",
             vec![resource_id(machine)?.into()],
         )).await?.map(RealtimeRoute::from_row).transpose()
     }

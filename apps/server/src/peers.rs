@@ -62,11 +62,13 @@ async fn create_grant(
     let a = auth::user(req, s).await?;
     let machine = s
         .store
-        .authorize_machine(&a.user.id, &b.machine_id, MachineAction::Connect)
+        .authorize_registration(
+            &a.user.id,
+            &b.team_id,
+            &b.machine_id,
+            MachineAction::Connect,
+        )
         .await?;
-    if machine.team_id != b.team_id {
-        return Err(ApiError::forbidden());
-    }
     if !s.hub.online(&machine.id).await {
         return Err(ApiError::unavailable());
     }
@@ -87,7 +89,7 @@ async fn create_grant(
         team_id: b.team_id.clone(),
         actor: api::actor(&a),
         target_machine: PeerTarget {
-            id: machine.id,
+            id: machine.machine_id,
             origin_id: machine.origin_id,
             local_machine_id: machine.local_machine_id,
         },
@@ -185,9 +187,25 @@ async fn authorize(req: &HttpRequest, s: &AppState, id: &str) -> Result<PeerAuth
     let a = auth::user(req, s).await?;
     let p = s.store.peer(id, &a.id).await?;
     s.store
-        .authorize_machine(&a.user.id, &p.target_machine.id, MachineAction::Connect)
+        .authorize_registration(
+            &a.user.id,
+            &p.team_id,
+            &p.target_machine.id,
+            MachineAction::Connect,
+        )
         .await?;
     Ok(p)
+}
+async fn registration(s: &AppState, grant: &PeerAuthorization) -> Result<String> {
+    Ok(s.store
+        .authorize_registration(
+            &grant.actor.user_id,
+            &grant.team_id,
+            &grant.target_machine.id,
+            MachineAction::Connect,
+        )
+        .await?
+        .id)
 }
 async fn authorize_webrtc(req: &HttpRequest, s: &AppState, id: &str) -> Result<PeerAuthorization> {
     let grant = authorize(req, s, id).await?;
@@ -225,7 +243,7 @@ pub async fn start(
     {
         return Err(ApiError::forbidden());
     }
-    Ok(web::Json(s.hub.request(&authorization.target_machine.id,"peer.start",json!({"peerId":p.as_str(),"displayId":b.display_id,"fps":b.fps,"bitrateBps":b.bitrate_bps,"control":b.control}),None).await?))
+    Ok(web::Json(s.hub.request(&registration(&s, &authorization).await?,"peer.start",json!({"peerId":p.as_str(),"displayId":b.display_id,"fps":b.fps,"bitrateBps":b.bitrate_bps,"control":b.control}),None).await?))
 }
 pub async fn close(
     req: HttpRequest,
@@ -237,8 +255,9 @@ pub async fn close(
     // This lookup remains bound to the original login and current machine access.
     let authorization = s.store.peer_for_close(&p, &actor.id).await?;
     s.store
-        .authorize_machine(
+        .authorize_registration(
             &actor.user.id,
+            &authorization.team_id,
             &authorization.target_machine.id,
             MachineAction::Connect,
         )
@@ -250,7 +269,7 @@ pub async fn close(
     if authorization.purpose == "desktop" {
         s.hub
             .request(
-                &authorization.target_machine.id,
+                &registration(&s, &authorization).await?,
                 "peer.close",
                 json!({"peerId": p.as_str()}),
                 None,

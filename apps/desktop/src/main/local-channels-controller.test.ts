@@ -24,7 +24,7 @@ function fixture() {
     configured: true, connected: true, revoked: false, serverUrl: "https://deskfleet.test", machineId: "machine", teamId: "team",
     identity: { originId: "origin", machineId: "local" }, machineName: "This computer",
   }
-  const call = vi.fn(async (method: string, _params: unknown): Promise<unknown> => method === "centralStatus" ? local : null)
+  const call = vi.fn(async (method: string, _params: unknown): Promise<unknown> => method === "centralStatus" ? { machineName: local.machineName, registrations: [local] } : null)
   const daemon = { closed: false, call, close: vi.fn(() => { daemon.closed = true; disconnected(new Error("disconnected")) }) }
   const connect: ConnectLocalDaemon = async (event, gone) => { receive = event; disconnected = gone; return daemon as LocalChannelDaemon }
   const central = {
@@ -40,7 +40,7 @@ test("main verifies locality, keeps claim tokens private, and delivers both wire
   const f = fixture()
   await f.channels.open(request)
   expect(f.central.createLocalPeer).toHaveBeenCalledExactlyOnceWith("team", "machine", "agent")
-  expect(f.call).toHaveBeenCalledWith("localOpen", { peerId: "peer", token: "one-use-secret" })
+  expect(f.call).toHaveBeenCalledWith("localOpen", { peerId: "peer", token: "one-use-secret", teamId: "team", machineId: "machine" })
   await f.channels.send("view", new Uint8Array([0, 255]))
   await f.channels.send("view", "terminal text")
   expect(f.call).toHaveBeenCalledWith("localSend", { peerId: "peer", data: "AP8=", isString: false })

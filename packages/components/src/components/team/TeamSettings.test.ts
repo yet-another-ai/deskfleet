@@ -137,7 +137,7 @@ test("administrators remove machines after confirmation", async () => {
   await view!.get('[aria-label="Remove Laptop"]').trigger("click")
   await view!.get("[role=dialog][data-state=open]").findAll("button").find(value => value.text() === "Remove")!.trigger("click")
   await flushPromises()
-  expect(fake.central.removeMachine).toHaveBeenCalledExactlyOnceWith("m2")
+  expect(fake.central.removeMachine).toHaveBeenCalledExactlyOnceWith("team-1", "m2")
   expect(view!.find('[data-team-machine-id="m2"]').exists()).toBe(false)
 })
 
@@ -168,7 +168,7 @@ test("machines are renamed inline, and Escape cancels without leaving Settings",
   expect(view!.find('input[name="machine-name"]').exists()).toBe(true)
   await view!.get('[data-team-machine-id="m1"] form').trigger("submit")
   await flushPromises()
-  expect(fake.central.renameMachine).toHaveBeenLastCalledWith("m1", "GPU runner")
+  expect(fake.central.renameMachine).toHaveBeenLastCalledWith("team-1", "m1", "GPU runner")
   expect(view!.get('[data-team-machine-id="m1"]').text()).toContain("GPU runner")
   expect(session!.machines.value.find(machine => machine.id === "m1")?.name).toBe("GPU runner")
   expect(view!.find('[role="alert"]').exists()).toBe(false)

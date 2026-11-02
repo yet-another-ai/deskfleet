@@ -29,8 +29,10 @@ ownership and explicit Site Admin boundary.
 - Use the same account system with unlimited allowances and no payments for
   self-hosting. Existing databases are development-only and can be rebuilt;
   no legacy OIDC identity/data migration is required.
-- Require login and Team selection before resource creation. Enroll each machine
-  into its Team; the automatically created local Team is development scaffolding.
+- Require login and Team selection before resource creation. A physical Machine
+  can join several Teams concurrently with the same public Machine ID on each
+  backend. Each `(Machine, Team)` has exactly one registration, including after
+  revocation. The automatically created local Team is development scaffolding.
 - Each Team has exactly one owner, initially its creator. The owner alone manages
   billing, deletes the Team, and transfers ownership. Owners and administrators
   manage members and roles and remove machines. Ownership transfers to an existing
@@ -40,7 +42,10 @@ ownership and explicit Site Admin boundary.
   rename Team machines (the name defaults to the hostname), configure
   Providers, create or delete Workspaces, and create, archive, restore, or delete
   Sessions.
-- Use PostgreSQL for the central server and SQLite for each daemon.
+- Use PostgreSQL for the central server and an independent SQLite catalog for
+  each Team registration hosted by the single daemon. Session history, provider
+  and MCP settings, schedules, terminals, and execution credentials are scoped
+  to that registration. Agents still share the host's OS user and filesystem.
 - Keep site administration separate from Team roles. Explicit operator commands
   grant or revoke the role for existing users. Site administrators manage
   runtime site settings through the Web-only administration UI without gaining
@@ -87,10 +92,16 @@ ownership and explicit Site Admin boundary.
   erasure and metadata-only audit are separate work.
 - Treat existing unauthenticated local data as development data. The first
   release does not need a legacy resource/history import flow.
-- Re-enrollment after administrator removal uses a new empty machine directory
-  and installation identity. Retain the old directory in place without importing
-  its data. The user remains a Team member and can enroll the new identity into
-  the original Team after logging in again.
+- Re-enrollment after administrator removal reactivates the same Team association,
+  catalog origin, and directory while rotating its execution token. It retains
+  Workspaces, Sessions, and history. Reactivation checks retained Session
+  admissions against the Team's current capacity and can fail with
+  `active_session_limit`. Another Team receives a separate catalog and runtime
+  under the same public Machine ID; its existing work remains running.
+- Upgrade existing enrolled data in place: migrate central Machine rows into
+  shared identities and Team registrations, and adopt the daemon's existing
+  catalog directory into its registration registry. This does not import
+  unauthenticated development resources.
 
 ## Backend capabilities
 
@@ -100,8 +111,8 @@ ownership and explicit Site Admin boundary.
 | Subscriptions and quotas | Team billing, verified paid coverage, monthly TURN periods, Enterprise grants/audit, and atomic member/Session capacity admission | Daemon checks effective per-Session turn limits and persists fork-inherited consumption; clients display limits and billing state |
 | Teams | Team creation and selection, membership/invitations, owner/administrator/member roles, atomic ownership transfer, member removal, and authorization | Clients display the selected Team and available actions |
 | Site administration | Explicit site grants, site name/announcement/Team-creation settings, per-operation policies, and transactional site audit | Deployment operators bootstrap and recover grants through the server CLI; Web exposes a Team-independent administration page; Web and Electron display public site settings and apply the Team-creation setting |
-| Machine enrollment | Bind an installation identity and catalog origin to a Team, issue machine credentials, and support administrator removal/revocation | Daemon stores its credentials and proves its identity on outbound connections |
-| Presence | Authenticated daemon connections, online status, last observed time, and machine capabilities | Daemon reports actual runtime/capture/provider capabilities; a peer connection has its own state |
+| Machine enrollment | Verify the host identity proof and Team membership, enforce one registration per Machine/Team, and issue or revoke that registration's execution credential | One daemon keeps a host identity secret and separate catalog origins, credentials, and runtimes per backend/Team |
+| Presence | Independent authenticated connections, online status, and capabilities for each Team registration; events carry Team and public Machine IDs | One daemon connects all registrations concurrently; each peer has its own state |
 | Resource catalog | Team-scoped Machine/Workspace/Session/Worktree queries, source identity mapping, synchronized directory metadata, and active/archived Session filtering | Daemon owns Workspace configuration and captured Session directories |
 | Machine management | Authorize and route Workspace/Provider/machine-settings requests, correlate results, and report unavailable targets | Daemon validates paths, persists machine configuration, and performs filesystem/process changes |
 | Signaling | Bind verified identities, target, SDP fingerprints, and expiry to each peer; route SDP/ICE and terminal lifecycle messages; issue ICE configuration and relay credentials; deliver revocation | Endpoints perform DTLS key exchange; daemon enforces peer authorization and the 24-hour ceiling independently of the signaling socket |
@@ -114,8 +125,13 @@ ownership and explicit Site Admin boundary.
 Authorization is enforced at both server and daemon boundaries. The initial Team
 policy can grant members the same execution actions without implementing
 per-resource ACLs. A discovery token or a successful SDP exchange does not
-establish Team membership. Machine authentication also must not let a daemon
-upload another machine's history or choose another Team's resource identity.
+establish Team membership. Resource APIs include both Team and public Machine IDs;
+the server resolves them to the internal registration before routing. Local IPC
+and WebRTC grants bind that same Team, Machine, server, and catalog origin.
+Registration credentials select the synchronization partition; request bodies
+cannot choose another Team's resource identity. Enrollment proof identifies
+the host; Team membership and the target registration's execution credential
+remain separate authorization requirements.
 
 Session creation, prompts, backlog dispatch, steering, approvals, cancellation,
 and resume retain the existing daemon execution service; archive and restore
@@ -214,8 +230,8 @@ shown as unknown. Steering inputs do not redistribute a turn among members.
 PostgreSQL maintains a content-free `cp_ai_turns` projection in the same transaction
 as each changed Session snapshot. It resolves input authors once per snapshot,
 upserts changed terminal turns, and removes facts absent from the new snapshot.
-Usage reads use the `(machine_id, ended_at)` index and the stored Session summary
-for titles; they do not expand conversation JSON. Migration 18 backfills existing
+Usage reads use the `(registration_id, ended_at)` index and the stored Session
+summary for titles; they do not expand conversation JSON. Migration 18 backfills existing
 snapshots while holding the Session table against concurrent writes. Machine
 revocation retains these facts, and Session deletion cascades to them.
 

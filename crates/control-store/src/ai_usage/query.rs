@@ -63,7 +63,7 @@ impl ControlStore {
         Ok(one(
             &self.db,
             "SELECT MAX(s.observed_at) AS observed_at FROM cp_sessions s
-             JOIN cp_machines m ON m.id=s.machine_id WHERE m.team_id=$1",
+             JOIN cp_machine_registrations m ON m.id=s.registration_id WHERE m.team_id=$1",
             vec![resource_id(team_id)?.into()],
         )
         .await?

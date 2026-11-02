@@ -215,6 +215,8 @@ pub enum ControlMessage {
         peers: Vec<PeerAuthorization>,
     },
     CatalogChanged {
+        #[serde(rename = "teamId")]
+        team_id: String,
         #[serde(rename = "machineId")]
         machine_id: String,
         #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
@@ -226,6 +228,8 @@ pub enum ControlMessage {
         team_id: String,
     },
     Presence {
+        #[serde(rename = "teamId")]
+        team_id: String,
         #[serde(rename = "machineId")]
         machine_id: String,
         online: bool,

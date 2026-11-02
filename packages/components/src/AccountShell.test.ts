@@ -74,14 +74,14 @@ test("browses synchronized history with the machine offline and isolates equal l
     members: vi.fn(async () => [{ userId: "u1", name: "Ada", role: "member" }]),
     machines: vi.fn(async () => machines),
     onEvent: (listener: (event: CentralEvent) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
-    catalog: vi.fn(async (machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", providers: { providers: [{ id: "codex", name: "Codex", template: "codex" }] }, snapshot: {
+    catalog: vi.fn(async (_teamId: string, machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", providers: { providers: [{ id: "codex", name: "Codex", template: "codex" }] }, snapshot: {
       teamId: "1", machineId: "1", machineName: machines.find(machine => machine.id === machineId)!.name,
       workspaces: [{ id: "20", name: `Workspace ${machineId}`, worktrees: [{ id: "21", workspaceId: "20", directories: [{ path: "/code" }] }, { id: "31", workspaceId: "20", sessionId: "30", directories: [{ path: "/worktree" }] }] }],
       sessions: [],
     } })),
-    sessions: vi.fn(async (machineId: string) => [snapshot(machineId)]),
-    session: vi.fn(async (machineId: string) => ({ snapshot: snapshot(machineId), lastEventSeq: "1", lastObservedAt: "2026-10-25T00:00:00Z" })),
-    events: vi.fn(async (machineId: string) => ({ events: [agentEvent(1, "input", snapshot(machineId).inputs[0]!)], lastEventSeq: "1" })),
+    sessions: vi.fn(async (_teamId: string, machineId: string) => [snapshot(machineId)]),
+    session: vi.fn(async (_teamId: string, machineId: string) => ({ snapshot: snapshot(machineId), lastEventSeq: "1", lastObservedAt: "2026-10-25T00:00:00Z" })),
+    events: vi.fn(async (_teamId: string, machineId: string) => ({ events: [agentEvent(1, "input", snapshot(machineId).inputs[0]!)], lastEventSeq: "1" })),
     rpc: vi.fn(async () => { throw new Error("Offline") }), createPeer: vi.fn(),
   } as unknown as CentralApi
   view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
@@ -112,9 +112,9 @@ test("browses synchronized history with the machine offline and isolates equal l
   expect(page().get('aside section[data-machine-id="102"] a[href="#/sessions/30"]').attributes("aria-current")).toBeUndefined()
   // A catalog update for an inactive machine stays bound to its own client.
   vi.mocked(central.catalog).mockClear()
-  for (const listener of listeners) listener({ type: "catalogChanged", machineId: "102" } as CentralEvent)
-  await settled(() => expect(central.catalog).toHaveBeenCalledWith("102"))
-  expect(central.catalog).not.toHaveBeenCalledWith("101")
+  for (const listener of listeners) listener({ type: "catalogChanged", teamId: "7", machineId: "102" } as CentralEvent)
+  await settled(() => expect(central.catalog).toHaveBeenCalledWith("7", "102"))
+  expect(central.catalog).not.toHaveBeenCalledWith("7", "101")
   account.openSession("102", "30")
   await settled(() => expect(page().get("main").text()).toContain("Message from 102"))
   await page().get('button[aria-label="Ada"]').trigger("click")
@@ -144,7 +144,7 @@ test("Refresh reloads every opened machine's resources with unchanged roster met
     value.session.title = `Conversation ${machineId} revision ${revision}`
     return value
   }
-  const catalog = vi.fn(async (machineId: string) => ({
+  const catalog = vi.fn(async (_teamId: string, machineId: string) => ({
     machineId, lastObservedAt: "2026-10-29T00:00:00Z",
     providers: { providers: [{ id: "codex", name: `Provider ${machineId} revision ${revision}`, template: "codex" }] },
     snapshot: {
@@ -157,7 +157,7 @@ test("Refresh reloads every opened machine's resources with unchanged roster met
     peerId: `peer-${machineId}`, authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [],
   }))
   const closePeer = vi.fn(async () => {})
-  Object.assign(fake.central, { catalog, createPeer, closePeer, sessions: vi.fn(async (machineId: string) => [snapshot(machineId)]) })
+  Object.assign(fake.central, { catalog, createPeer, closePeer, sessions: vi.fn(async (_teamId: string, machineId: string) => [snapshot(machineId)]) })
   const createRuntimes = vi.spyOn(machineRuntimes, "createMachineRuntimes")
   mountShell(fake.central, "web")
   await settled(() => expect(page().get("aside").text()).toContain("Workspace m1 revision 0"))
@@ -191,7 +191,7 @@ test("Refresh reloads every opened machine's resources with unchanged roster met
     expect(useProvidersStore(second.state).providers[0]?.name).toBe("Provider m2 revision 1")
   })
   expect(fake.central.machines).toHaveBeenCalledWith("team-1")
-  expect(catalog).not.toHaveBeenCalledWith("m3")
+  expect(catalog).not.toHaveBeenCalledWith("team-1", "m3")
   expect(runtimes.opened.size).toBe(2)
   expect(runtimes.opened.get("m1")).toBe(first)
   expect(runtimes.opened.get("m2")).toBe(second)
@@ -208,7 +208,7 @@ test("Refresh reloads every opened machine's resources with unchanged roster met
  */
 function withEmptyCatalogs({ central, state }: ReturnType<typeof fakeCentral>): void {
   Object.assign(central, {
-    catalog: vi.fn(async (machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", snapshot: { teamId: "team-1", machineId, machineName: state.machines.find(machine => machine.id === machineId)?.name ?? "hostname", workspaces: [], sessions: [] } })),
+    catalog: vi.fn(async (_teamId: string, machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", snapshot: { teamId: "team-1", machineId, machineName: state.machines.find(machine => machine.id === machineId)?.name ?? "hostname", workspaces: [], sessions: [] } })),
     sessions: vi.fn(async () => []),
     rpc: vi.fn(async () => { throw new Error("Offline") }),
   })
@@ -231,7 +231,7 @@ test("refreshing to another account remounts the same Team machine in its new id
   await settled(() => {
     expect(page().find('button[aria-label="Grace"]').exists()).toBe(true)
     expect(page().get("aside").text()).toContain("Shared machine")
-    expect(fake.central.catalog).toHaveBeenCalledWith("m1")
+    expect(fake.central.catalog).toHaveBeenCalledWith("team-1", "m1")
   })
   expect(account.teamId.value).toBe("team-1")
   expect(account.machineId.value).toBe("m1")
@@ -291,8 +291,8 @@ test("keeps archived lists and their Conversations return path scoped to the sel
     return archived
   }
   Object.assign(fake.central, {
-    sessions: vi.fn(async (machineId: string) => [snapshot(machineId)]),
-    session: vi.fn(async (machineId: string) => ({ snapshot: snapshot(machineId), lastEventSeq: "0", lastObservedAt: "2026-10-25T00:00:00Z" })),
+    sessions: vi.fn(async (_teamId: string, machineId: string) => [snapshot(machineId)]),
+    session: vi.fn(async (_teamId: string, machineId: string) => ({ snapshot: snapshot(machineId), lastEventSeq: "0", lastObservedAt: "2026-10-25T00:00:00Z" })),
     events: vi.fn(async () => ({ events: [], lastEventSeq: "0" })),
   })
   await router.push("/sessions/archived")
@@ -305,7 +305,7 @@ test("keeps archived lists and their Conversations return path scoped to the sel
   // Returning from the archive on the same machine retains its selected Session.
   const conversations = () => page().get('a[aria-label="Conversations"]')
   await router.push("/sessions/30")
-  await settled(() => expect(fake.central.session).toHaveBeenCalledWith("m1", "30"))
+  await settled(() => expect(fake.central.session).toHaveBeenCalledWith("team-1", "m1", "30"))
   await router.push("/sessions/archived")
   await flushPromises()
   expect(conversations().attributes("href")).toBe("#/sessions/30")
@@ -325,7 +325,7 @@ test("keeps archived lists and their Conversations return path scoped to the sel
   expect(conversations().attributes("href")).toBe("#/")
   await conversations().trigger("click"); await flushPromises()
   expect(router.currentRoute.value.path).toBe("/")
-  expect(fake.central.session).not.toHaveBeenCalledWith("m2", "30")
+  expect(fake.central.session).not.toHaveBeenCalledWith("team-1", "m2", "30")
 })
 
 test("a user without a Team creates one from onboarding and is asked to add a machine", async () => {
@@ -556,7 +556,7 @@ test.each(["darwin", "web"] as const)("notification settings are available witho
   }
 })
 
-test("a removed computer offers reconnection, which opens the new machine", async () => {
+test("a removed computer offers reconnection, which reopens the same machine", async () => {
   const fake = fakeCentral({
     signedIn: false,
     teams: [{ id: "other", name: "Another team", role: "member" }, { id: "home", name: "Original team", role: "member" }],
@@ -569,7 +569,7 @@ test("a removed computer offers reconnection, which opens the new machine", asyn
   await flushPromises()
   // Signing back in returns to the Team this computer belonged to.
   expect(page().get('button[aria-label="Team"]').text()).toContain("Original team")
-  expect(view!.text()).toContain("This computer was removed from its team")
+  expect(view!.text()).toContain("This computer was removed from this Team")
   await buttonText("Reconnect this computer")!.trigger("click")
   await flushPromises()
   await page().get('[role=dialog] [data-add-machine="local"]').trigger("click")
@@ -578,8 +578,8 @@ test("a removed computer offers reconnection, which opens the new machine", asyn
   await flushPromises()
   expect(fake.central.enrollLocal).toHaveBeenCalledExactlyOnceWith("home", "This computer")
   const machineId = fake.state.enrollment!.machineId!
-  await vi.waitFor(() => expect(fake.central.catalog).toHaveBeenCalledWith(machineId))
-  expect(view!.text()).not.toContain("This computer was removed from its team")
+  await vi.waitFor(() => expect(fake.central.catalog).toHaveBeenCalledWith("home", machineId))
+  expect(view!.text()).not.toContain("This computer was removed from this Team")
 })
 
 test("machines are listed and added from the workspace sidebar", async () => {
@@ -602,7 +602,7 @@ test("the open machine's heading follows a rename from any client", async () => 
   await vi.waitFor(() => expect(page().get("aside").text()).toContain("build-01"))
   // Another client renamed the machine; the server announces a catalog change.
   fake.state.machines[0]!.name = "GPU runner"
-  fake.emit({ type: "catalogChanged", machineId: "m1" } as never)
+  fake.emit({ type: "catalogChanged", teamId: "team-1", machineId: "m1" } as never)
   await vi.waitFor(() => expect(page().get("aside").text()).toContain("GPU runner"))
   await flushPromises()
   expect(page().get("aside").text()).not.toContain("build-01")
@@ -613,9 +613,9 @@ test("the selected machine shows when central presence reports it offline", asyn
   withEmptyCatalogs(fake)
   mountShell(fake.central, "web")
   await flushPromises()
-  await vi.waitFor(() => expect(fake.central.catalog).toHaveBeenCalledWith("m1"))
+  await vi.waitFor(() => expect(fake.central.catalog).toHaveBeenCalledWith("team-1", "m1"))
   await flushPromises()
   expect(page().get("aside").text()).not.toContain("Offline")
-  fake.emit({ type: "presence", machineId: "m1", online: false } as never)
+  fake.emit({ type: "presence", teamId: "team-1", machineId: "m1", online: false } as never)
   await vi.waitFor(() => expect(page().get("aside").text()).toContain("Offline"))
 })

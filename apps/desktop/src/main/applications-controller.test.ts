@@ -3,7 +3,7 @@ import type { AccountState, CentralApi, LocalEnrollment } from "@deskfleet/clien
 import type { CatalogSnapshot } from "@deskfleet/client/catalog"
 import { invokeApplications, LocalApplicationsController } from "./applications-controller.ts"
 
-const request = { applicationId: "vscode", machineId: "registered-local", workspaceId: "12" }
+const request = { applicationId: "vscode", teamId: "registered-team", machineId: "registered-local", workspaceId: "12" }
 
 function setup() {
   const account: AccountState = { serverUrl: "https://fleet.example", user: { id: "user", name: "User" }, siteAdmin: false }
@@ -23,11 +23,11 @@ function setup() {
   const central = {
     status: vi.fn(async () => account),
     catalog: vi.fn(async () => ({ machineId: "registered-local", snapshot: replica, lastObservedAt: "2026-10-28T00:00:00Z" })),
-    rpc: async <T>(_machineId: string, _method: string, _params: unknown): Promise<T> => snapshot as T,
+    rpc: async <T>(_teamId: string, _machineId: string, _method: string, _params: unknown): Promise<T> => snapshot as T,
   } satisfies Pick<CentralApi, "status" | "catalog" | "rpc">
   const rpc = vi.spyOn(central, "rpc")
   const launcher = { scan: vi.fn(async () => [{ id: "vscode", name: "VS Code", kind: "editor" as const }]), open: vi.fn(async () => {}) }
-  const enrollment = vi.fn(async () => local)
+  const enrollment = vi.fn(async () => ({ machineName: local.machineName, registrations: [local] }))
   const api = new LocalApplicationsController(central, enrollment, launcher)
   return { api, account, local, snapshot, replica, central, rpc, launcher, enrollment }
 }
@@ -35,7 +35,7 @@ function setup() {
 test("opens the Workspace's ordered main directories, independently of Session worktrees", async () => {
   const f = setup()
   await f.api.openWorkspace(request)
-  expect(f.rpc).toHaveBeenCalledExactlyOnceWith("registered-local", "catalogList", {})
+  expect(f.rpc).toHaveBeenCalledExactlyOnceWith("registered-team", "registered-local", "catalogList", {})
   expect(f.launcher.open).toHaveBeenLastCalledWith("vscode", "/code/project with spaces")
   await f.api.openWorkspace({ ...request, applicationId: "terminal", directoryIndex: 1 })
   expect(f.launcher.open).toHaveBeenLastCalledWith("terminal", "/code/second")
