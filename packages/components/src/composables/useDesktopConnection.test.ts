@@ -251,6 +251,21 @@ test("a transient disconnected state does not tear down a recoverable desktop pe
   expect(peer.close).not.toHaveBeenCalled()
 })
 
+test("late input readiness cannot cancel the desktop disconnect grace", async () => {
+  vi.useFakeTimers()
+  const { connection } = setup()
+  await connection.connect({ ...options, control: true })
+  const peer = TestPeer.instances[0]!
+  peer.changeState("connected")
+  peer.input.ready()
+  await flushPromises()
+  peer.changeState("disconnected")
+  peer.input.ready()
+  await vi.advanceTimersByTimeAsync(10_000)
+  expect(connection.failure.value).toEqual({ kind: "connection", detail: "Desktop connection lost" })
+  expect(peer.close).toHaveBeenCalled()
+})
+
 test("view-only sessions never create an input channel; control waits for native readiness", async () => {
   const { connection, api } = setup()
   await connection.connect(options)

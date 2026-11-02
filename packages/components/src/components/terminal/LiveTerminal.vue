@@ -175,7 +175,9 @@ function input(data: string): void {
 // Mobile PWAs freeze this component while the shell keeps running. A failed
 // attachment is safe to re-establish; the daemon replays history on attach.
 useConnectionResume(() => {
-  if (!disposed && error.value && !connecting.value) void connect()
+  const relayDenied = failureRelayDeniedReason.value
+    ?? (independentClient ? independentRelayDeniedReason.value : terminals.relayDeniedReason)
+  if (!disposed && error.value && !connecting.value && !relayDenied) void connect()
 })
 
 onBeforeUnmount(() => {

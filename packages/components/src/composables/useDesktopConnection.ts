@@ -297,10 +297,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
             if (message.type === "ready") {
               active.inputReady = true
               inputReady.value = state.value === "connected"
-              if (inputReady.value) {
-                clearTimeout(active.timeout)
-                active.disconnects.clear()
-              }
+              if (inputReady.value) clearTimeout(active.timeout)
             } else if (message.type === "error" && typeof message.error === "string") {
               operationFailed(active, message.error)
             } else {

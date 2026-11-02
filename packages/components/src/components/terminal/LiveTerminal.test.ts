@@ -114,6 +114,10 @@ test("a displayed relay failure keeps its cause when another terminal refresh cl
   fixture.terminals.relayDeniedReason = undefined
   await flushPromises()
   expect(fixture.wrapper.get('[role="alert"]').text()).toContain(i18n.global.t("errors.turn_quota_exhausted.title"))
+  const calls = vi.mocked(fixture.terminals.attach).mock.calls.length
+  window.dispatchEvent(new Event("online"))
+  await flushPromises()
+  expect(fixture.terminals.attach).toHaveBeenCalledTimes(calls)
   fixture.wrapper.unmount()
 })
 
