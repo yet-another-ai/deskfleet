@@ -99,11 +99,13 @@ async function probe(installed = false): Promise<void> {
 }
 
 watchImmediate(() => [props.provider?.template, props.provider?.binaryPath, JSON.stringify(props.provider?.env), props.disabled, props.provider != null] as const, (value, previous) => {
+  if (previous && value.every((item, index) => item === previous[index])) return
   if (finishing.value && operation.value?.kind === "install" && value[1] === result.value?.binaryPath) return
   // An invalid environment row drops the provider until its name is valid. Keep the last probe and rediscover when it returns.
   if (previous && !value[4] && previous[4]) {
     revision++
     cancelProbe()
+    probing.value = false
     resumeProbe = true
     return
   }
