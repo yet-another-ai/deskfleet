@@ -57,8 +57,8 @@ impl ResponseError for ApiError {
     }
     fn error_response(&self) -> HttpResponse {
         let mut body = json!({"error": {"code": self.code, "message": self.message}});
-        if self.reason.as_deref() == Some("encoder") {
-            body["error"]["reason"] = json!("encoder");
+        if matches!(self.reason.as_deref(), Some("encoder" | "accessibility")) {
+            body["error"]["reason"] = json!(self.reason);
         }
         HttpResponse::build(self.status).json(body)
     }

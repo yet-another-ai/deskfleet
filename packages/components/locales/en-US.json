@@ -117,7 +117,7 @@
     "noPermissions": "No additional system permissions are needed for the current configuration.",
     "refresh": "Check permissions",
     "refreshing": "Checking permissions…",
-    "restart": "Enable DeskFleet in System Settings. If macOS asks you to quit and reopen the app, restart it to apply the change.",
+    "restart": "After changing this permission, fully quit and reopen DeskFleet so its local Agent uses the new access.",
     "waylandShared": "Screen sharing and mouse and keyboard control use the same desktop authorization."
   },
   "updatesSettings": {
@@ -377,6 +377,7 @@
     "copy": "Copy",
     "copied": "Copied",
     "copyLabel": "Copy {label}",
+    "restartDeskFleet": "Restart DeskFleet",
     "showPassword": "Show password",
     "hidePassword": "Hide password"
   },
@@ -529,7 +530,7 @@
     "retryStop": "Retry stop",
     "retryLoad": "Reload settings",
     "screenCaptureRequesting": "Requesting access to record the screen and system audio…",
-    "screenCaptureDenied": "Allow access in macOS System Settings → Privacy & Security → Screen & System Audio Recording, then turn the local Agent off and on.",
+    "screenCaptureDenied": "Allow access in macOS System Settings → Privacy & Security → Screen & System Audio Recording, then fully quit and reopen DeskFleet.",
     "linuxScreenCaptureUnavailable": "Screen capture is unavailable. Start the local Agent in your signed-in graphical session.",
     "linuxControlUnavailable": "Mouse and keyboard control is unavailable. Start the local Agent in your signed-in graphical session.",
     "waylandScreenCaptureRequesting": "Waiting for permission to share the desktop…",
@@ -538,14 +539,14 @@
     "waylandControlRequesting": "Waiting for permission to control the mouse and keyboard…",
     "waylandControlDenied": "Mouse and keyboard control is not authorized. Unlock your desktop, turn the local Agent off and on, and approve remote control in the desktop sharing dialog.",
     "waylandControlError": "Mouse and keyboard authorization failed.",
-    "screenCaptureError": "Could not request screen and system audio access. Turn the local Agent off and on to retry.",
+    "screenCaptureError": "Could not request screen and system audio access. Fully quit and reopen DeskFleet to retry.",
     "desktopPermissions": "Desktop permissions",
     "fullDiskAccessRequesting": "Requesting Full Disk Access for the local Agent…",
     "fullDiskAccessDenied": "Grant Full Disk Access to the app or executable running the local Agent in macOS System Settings → Privacy & Security → Full Disk Access, then restart that app or executable.",
     "fullDiskAccessError": "Could not request Full Disk Access. Restart the app or executable running the local Agent to retry.",
     "accessibilityRequesting": "Requesting Accessibility access for mouse and keyboard control…",
-    "accessibilityDenied": "Allow mouse and keyboard control in macOS System Settings → Privacy & Security → Accessibility, then turn the local Agent off and on.",
-    "accessibilityError": "Could not request Accessibility access for mouse and keyboard control. Turn the local Agent off and on to retry.",
+    "accessibilityDenied": "Allow mouse and keyboard control in macOS System Settings → Privacy & Security → Accessibility, then fully quit and reopen DeskFleet.",
+    "accessibilityError": "Could not request Accessibility access for mouse and keyboard control. Fully quit and reopen DeskFleet to retry.",
     "agents": "Agents"
   },
   "notification": {
@@ -779,6 +780,10 @@
     "discoveryFailed": "Could not load the available displays.",
     "noCodec": "No compatible video codec is available in Electron.",
     "connectionFailed": "The desktop connection failed.",
+    "accessibilityFailed": "Mouse and keyboard control could not start.",
+    "accessibilityRecovery": "On {machine}, allow DeskFleet in System Settings → Privacy & Security → Accessibility, then fully quit and reopen DeskFleet. Screen sharing can still work without control.",
+    "retryControl": "Retry control",
+    "connectWithoutControl": "Connect without control",
     "timeout": "The desktop connection timed out. Check the daemon and try again.",
     "fullscreen": "Full screen",
     "exitFullscreen": "Exit full screen",
@@ -1314,7 +1319,7 @@
       "localNetwork": "Local network",
       "fullDiskAccess": "Full Disk Access",
       "screenCapture": "Screen recording",
-      "accessibility": "Accessibility",
+      "accessibility": "Mouse and keyboard control",
       "windowsDesktopService": "Remote control while locked",
       "account": "Your account"
     },
@@ -1322,7 +1327,7 @@
     "continue": "Continue",
     "continueAs": "Continue as {name}",
     "systemSettings": "macOS System Settings",
-    "permissionRestart": "Enable DeskFleet in the list. If macOS asks you to quit and reopen the app, your setup will resume here.",
+    "permissionRestart": "Enable DeskFleet in the list, then fully quit and reopen DeskFleet so its local Agent uses the new access. Setup resumes here.",
     "openSettings": "Enable access",
     "checking": "Checking…",
     "checkAgain": "Check again",
@@ -1397,9 +1402,9 @@
         "skip": "Remote screen sharing will be unavailable until you enable this permission in System Settings."
       },
       "accessibility": {
-        "description": "Allow remote desktop sessions to control the mouse and keyboard on this computer.",
+        "description": "Allow remote desktop sessions to control the mouse and keyboard on this computer. macOS calls this Accessibility. Screen sharing can still work without control.",
         "path": "Privacy & Security → Accessibility",
-        "skip": "Remote mouse and keyboard control will be unavailable until you enable this permission in System Settings."
+        "skip": "Remote mouse and keyboard control will be unavailable until you enable this permission in System Settings. Screen sharing can still work without control."
       }
     }
   },

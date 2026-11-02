@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { DESKTOP_ONBOARDING_PERMISSIONS, onboardingPermissions, type OnboardingPermission, type OnboardingPermissionsState } from "@deskfleet/client/onboarding"
 import type { DesktopPermissionsState } from "@deskfleet/client/local-agent"
-import { FolderOpen, Monitor, MousePointer2, Network, RefreshCw } from "@lucide/vue"
+import { FolderOpen, Monitor, MousePointer2, Network, RefreshCw, RotateCcw } from "@lucide/vue"
 import { useEventListener } from "@vueuse/core"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -35,6 +35,7 @@ const granted = (kind: SystemPermission) => ["granted", "not-required"].includes
 const requesting = (kind: SystemPermission) => sharedRequest.value || desktopPermission(kind)?.status === "requesting"
 const canRequest = (kind: SystemPermission) => !busy.value && !granted(kind) && !requesting(kind)
   && (!wayland.value || desktopPermission(kind)?.status !== "checking")
+const canRestart = client.platform === "darwin" && !!client.application
 
 function accept(value: OnboardingPermissionsState, requestedRevision: number): void {
   // Local network attempts belong to the host and never arrive in daemon events.
@@ -87,6 +88,10 @@ async function openLocalNetworkSettings(): Promise<void> {
   finally { pending.value = false }
 }
 
+function restartApplication(): void {
+  void client.application?.restart().catch(reason => { error.value = message(reason) })
+}
+
 const unsubscribe = onboarding ? client.settings.onChanged(state => {
   if (state.linuxDesktopBackend !== undefined) backend.value = state.linuxDesktopBackend
   const nextSteps = systemPermissions(onboardingPermissions(client.platform, backend.value, state.enabled || state.status === "running"))
@@ -107,10 +112,15 @@ onBeforeUnmount(() => { unsubscribe?.() })
 <template>
   <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
     <h1 class="ui-page-title m-0">{{ t("permissionsSettings.title") }}</h1>
-    <UiButton v-if="onboarding || hasWindowsService" type="button" :disabled="busy" @click="refreshAll">
-      <RefreshCw :size="14" :class="refreshing && 'animate-spin'" aria-hidden="true" />
-      {{ t(refreshing ? "permissionsSettings.refreshing" : "permissionsSettings.refresh") }}
-    </UiButton>
+    <div class="flex flex-wrap gap-2">
+      <UiButton v-if="canRestart" type="button" :disabled="busy" @click="restartApplication">
+        <RotateCcw :size="14" aria-hidden="true" />{{ t("common.restartDeskFleet") }}
+      </UiButton>
+      <UiButton v-if="onboarding || hasWindowsService" type="button" :disabled="busy" @click="refreshAll">
+        <RefreshCw :size="14" :class="refreshing && 'animate-spin'" aria-hidden="true" />
+        {{ t(refreshing ? "permissionsSettings.refreshing" : "permissionsSettings.refresh") }}
+      </UiButton>
+    </div>
   </div>
   <p class="m-0 mb-6 text-sm leading-relaxed text-ui-text-muted">{{ t("permissionsSettings.description") }}</p>
   <p v-if="!onboarding && !hasWindowsService" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("permissionsSettings.unavailable") }}</p>

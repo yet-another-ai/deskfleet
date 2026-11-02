@@ -1,6 +1,6 @@
 import type { CentralBridge } from "@deskfleet/client/central-bridge"
 import { ipcRenderer } from "electron"
-import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT, type DesktopEvent, type DesktopMediaResult, type IceCandidate } from "../../../../packages/client/src/desktop-media.ts"
+import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT, isDesktopErrorReason, type DesktopEvent, type DesktopMediaResult, type IceCandidate } from "../../../../packages/client/src/desktop-media.ts"
 import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
 import type { DesktopPreloadApi } from "../shared/preload-api.ts"
 import { DEFAULT_LOCALE, isAppLocale, LOCALE_ARGUMENT_PREFIX } from "../../../../packages/client/src/i18n.ts"
@@ -19,6 +19,7 @@ import { updatesApi } from "./updates.ts"
 import { localChannelsApi } from "./local-channels.ts"
 import { windowsDesktopServiceApi } from "./windows-desktop-service.ts"
 import { NATIVE_DESKTOP_CHANNEL } from "@deskfleet/client/native-desktop"
+import { APPLICATION_RESTART_CHANNEL } from "@deskfleet/client/application"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -28,7 +29,7 @@ async function invokeDesktop<T>(method: string, params?: unknown): Promise<T> {
   const result = await ipcRenderer.invoke(DESKTOP_MEDIA_CHANNEL, method, params) as DesktopMediaResult<T>
   if (!result.ok) {
     const error = new Error(result.error)
-    if (result.reason === "encoder") (error as Error & { reason?: "encoder" }).reason = "encoder"
+    if (isDesktopErrorReason(result.reason)) Object.assign(error, { reason: result.reason })
     throw error
   }
   return result.value
@@ -55,6 +56,7 @@ return {
   ...(central ? { centralBridge: central, onboarding: onboardingApi() } : {}),
   platform: process.platform as DeskfleetDesktopApi["platform"],
   locale: isAppLocale(locale) ? locale : DEFAULT_LOCALE,
+  application: { restart: () => ipcRenderer.invoke(APPLICATION_RESTART_CHANNEL) as Promise<void> },
   appearance: appearanceApi(),
   applications: applicationsApi(),
   networkDiagnostics: networkDiagnosticsApi(),

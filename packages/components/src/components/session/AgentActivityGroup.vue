@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronRight, CircleX, Layers, LoaderCircle } from "@lucide/vue"
+import { ChevronRight, Layers, LoaderCircle } from "@lucide/vue"
 import { computed } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
@@ -21,7 +21,6 @@ const summary = computed(() => {
 })
 const running = computed(() => props.live && tools.value.some(step => step.tool.status === "pending" || step.tool.status === "in_progress"))
 const awaitingApproval = computed(() => tools.value.some(step => step.permission?.state === "pending"))
-const failed = computed(() => tools.value.some(step => step.tool.status === "failed"))
 </script>
 
 <template>
@@ -31,7 +30,6 @@ const failed = computed(() => tools.value.some(step => step.tool.status === "fai
       <span>{{ summary }}</span>
       <LoaderCircle v-if="running" :size="14" :stroke-width="2" class="shrink-0 animate-spin" :aria-label="t('agent.toolStatus.in_progress')" />
       <span v-if="awaitingApproval" class="ui-badge text-ui-warning">{{ t('agent.awaitingApproval') }}</span>
-      <span v-if="failed" class="inline-flex items-center gap-1 text-xs text-ui-danger"><CircleX :size="14" :stroke-width="2" aria-hidden="true" />{{ t('agent.toolStatus.failed') }}</span>
       <ChevronRight :size="14" :stroke-width="2" class="shrink-0 transition-transform" :class="open && 'rotate-90'" aria-hidden="true" />
     </CollapsibleTrigger>
     <CollapsibleContent class="mt-2 ml-1.5 flex flex-col gap-2 border-l border-ui-border pl-4">

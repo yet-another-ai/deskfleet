@@ -5,14 +5,17 @@ interface QuitEvent {
 interface BackgroundApplication {
   on(event: "before-quit", listener: (event: QuitEvent) => void): unknown
   on(event: "window-all-closed", listener: () => void): unknown
+  relaunch(): void
   quit(): void
 }
 
 export interface BackgroundLifecycle {
   /** Whether a real quit is in progress, so windows may close instead of hiding. */
   readonly quitting: boolean
-  /** Ends the client process. Only the tray menu, the OS session, and signals call it. */
+  /** Ends the client process. Only explicit application commands, the OS session, and signals call it. */
   quit(): void
+  /** Schedules a fresh client process, then exits through the same graceful shutdown path. */
+  restart(): void
   /** Let the updater close windows and quit after hosted services have stopped. */
   setInstallingUpdate(installing: boolean): void
 }
@@ -42,6 +45,12 @@ export function keepRunningInBackground(
       return quitting || installingUpdate
     },
     quit() {
+      quitting = true
+      application.quit()
+    },
+    restart() {
+      if (quitting || installingUpdate) return
+      application.relaunch()
       quitting = true
       application.quit()
     },

@@ -34,10 +34,12 @@ import { createTray } from "./tray.ts"
 import { installUpdates } from "./updates.ts"
 import { installWindowsDesktopService } from "./windows-desktop-service.ts"
 import { hideMainWindow, showMainWindow } from "./windows.ts"
+import { installApplication } from "./application.ts"
 
 function start(): void {
   registerRendererScheme()
   const lifecycle = keepRunningInBackground(app, hideMainWindow)
+  installApplication(lifecycle)
   const show = () => void showMainWindow(lifecycle)
 
   app.on("second-instance", show)

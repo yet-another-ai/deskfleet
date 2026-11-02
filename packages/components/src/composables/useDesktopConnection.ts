@@ -3,10 +3,12 @@ import type { RelayDeniedReason } from "../../../client/src/relay.ts"
 import { DESKTOP_INPUT_CHANNEL, type DesktopInputMessage } from "../../../client/src/desktop-input.ts"
 import type {
   DesktopMediaApi,
+  DesktopErrorReason,
   DesktopStart,
   IceCandidate,
   VideoCodec,
 } from "../../../client/src/desktop-media.ts"
+import { desktopErrorReason } from "../../../client/src/desktop-media.ts"
 
 export type DesktopConnectionState = "idle" | "connecting" | "starting" | "connected" | "error"
 export interface DesktopFailure {
@@ -14,6 +16,7 @@ export interface DesktopFailure {
   detail?: string
   error?: unknown
   relayDeniedReason?: RelayDeniedReason
+  reason?: DesktopErrorReason
 }
 
 function parameters(codec: RTCRtpCodec): Map<string, string> {
@@ -52,6 +55,7 @@ interface Session {
   offered: boolean
   remoteReady: boolean
   startRequested: boolean
+  startSettled: boolean
   localCandidates: IceCandidate[]
   remoteCandidates: IceCandidate[]
   localSending: Promise<void>
@@ -61,16 +65,13 @@ interface Session {
   replaced: boolean
   input: RTCDataChannel | null
   inputReady: boolean
+  inputFailure: DesktopFailure | null
 }
 
 export function desktopCodecLabel(codec: VideoCodec): string {
   if (codec === "h264") return "H.264"
   if (codec === "h265") return "HEVC"
   return "AV1"
-}
-
-function isEncoderReason(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { reason?: unknown }).reason === "encoder"
 }
 
 export interface DesktopConnectOptions {
@@ -176,11 +177,21 @@ export function useDesktopConnection(api: DesktopMediaApi) {
   }
 
   function operationFailed(session: Session, error: unknown): void {
-    if (isEncoderReason(error)) {
+    const reason = desktopErrorReason(error)
+    if (reason === "encoder") {
       continueWithNext(session, error instanceof Error ? error.message : String(error), error)
       return
     }
-    fail(session, { kind: "operation", detail: error instanceof Error ? error.message : String(error), error })
+    fail(session, { kind: "operation", detail: error instanceof Error ? error.message : String(error), error, ...(reason ? { reason } : {}) })
+  }
+
+  function inputChannelFailed(session: Session, detail: string): void {
+    const failure: DesktopFailure = { kind: "operation", detail }
+    if (!session.startSettled) {
+      session.inputFailure ??= failure
+      return
+    }
+    fail(session, failure)
   }
 
   function sendCandidates(session: Session): void {
@@ -217,14 +228,20 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     state.value = "starting"
     try {
       await api.start(session.start)
+      session.startSettled = true
       if (current !== session) {
         await closePeer(session.id)
+        return
+      }
+      if (session.inputFailure) {
+        fail(session, session.inputFailure)
         return
       }
       if (!session.options.control || session.inputReady) clearTimeout(session.timeout)
       state.value = "connected"
       inputReady.value = session.inputReady
     } catch (error) {
+      session.startSettled = true
       operationFailed(session, error)
     }
   }
@@ -249,11 +266,11 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       session = {
         id, peer, stream: new MediaStream(), unsubscribe: () => {},
         timeout: setTimeout(() => { if (session) fail(session, { kind: "timeout" }) }, 20_000),
-        offered: false, remoteReady: false, startRequested: false,
+        offered: false, remoteReady: false, startRequested: false, startSettled: false,
         localCandidates: [], remoteCandidates: [], localSending: Promise.resolve(), remoteAdding: Promise.resolve(),
         start: { sessionId: id, displayId: options.displayId, ...(options.control ? { control: true } : {}) },
         options, replaced: false,
-        input: null, inputReady: false,
+        input: null, inputReady: false, inputFailure: null,
       }
       current = session
       stream.value = session.stream
@@ -272,14 +289,14 @@ export function useDesktopConnection(api: DesktopMediaApi) {
               inputReady.value = state.value === "connected"
               if (inputReady.value) clearTimeout(active.timeout)
             } else if (message.type === "error" && typeof message.error === "string") {
-              fail(active, { kind: "operation", detail: message.error })
+              operationFailed(active, message.error)
             } else {
               throw new Error("Invalid desktop input response")
             }
           } catch (error) { operationFailed(active, error) }
         }
-        channel.onclose = () => fail(active, { kind: "operation", detail: "Desktop input channel closed." })
-        channel.onerror = () => fail(active, { kind: "operation", detail: "Desktop input channel failed." })
+        channel.onclose = () => inputChannelFailed(active, "Desktop input channel closed.")
+        channel.onerror = () => inputChannelFailed(active, "Desktop input channel failed.")
       }
       active.unsubscribe = api.onEvent((event) => {
         if (event.sessionId !== active.id || current !== active) return
@@ -288,7 +305,10 @@ export function useDesktopConnection(api: DesktopMediaApi) {
           addCandidates(active)
         } else if (event.kind === "error") {
           if (event.reason === "encoder") continueWithNext(active, event.error)
-          else fail(active, { kind: "operation", detail: event.error })
+          else {
+            const reason = event.reason ?? desktopErrorReason(event.error)
+            fail(active, { kind: "operation", detail: event.error, ...(reason ? { reason } : {}) })
+          }
         } else if (["failed", "closed", "disconnected"].includes(event.state.toLowerCase())) {
           fail(active, { kind: "connection" })
         }

@@ -9,6 +9,7 @@ import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
 import { centralRequestFailure } from "./request-diagnostics.ts"
 import type { NetworkConfiguration } from "../../../crates/protocol/control.ts"
+import { isDesktopErrorReason, type DesktopErrorReason } from "./desktop-media.ts"
 
 export interface SavedAccount { serverUrl: string; token?: string; user?: AccountUser }
 export interface HttpCentralOptions {
@@ -96,7 +97,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     catch (cause) { throw centralRequestFailure(cause, { method, path, body, elapsedMs: performance.now() - started }, requestStack.stack) }
     if (!response.ok) {
       const error = await response.json().catch(() => ({})) as { error?: { code: string; message: string; reason?: string } }
-      throw new HttpError(response.status, error.error?.message ?? response.statusText, error.error?.reason === "encoder" ? "encoder" : undefined, error.error?.code)
+      throw new HttpError(response.status, error.error?.message ?? response.statusText, isDesktopErrorReason(error.error?.reason) ? error.error.reason : undefined, error.error?.code)
     }
     const result = response.status === 204 ? undefined : await response.json() as { csrfToken?: string }
     if (result?.csrfToken) this.#csrf = result.csrfToken
@@ -259,7 +260,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
 }
 export class HttpError extends Error {
   readonly status: number
-  readonly reason?: "encoder"
+  readonly reason?: DesktopErrorReason
   readonly code?: string
-  constructor(status: number, message: string, reason?: "encoder", code?: string) { super(message); this.status = status; this.reason = reason; this.code = code }
+  constructor(status: number, message: string, reason?: DesktopErrorReason, code?: string) { super(message); this.status = status; this.reason = reason; this.code = code }
 }
