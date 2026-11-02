@@ -1,4 +1,4 @@
-import { useEventListener, usePointerSwipe } from "@vueuse/core"
+import { useEventListener, usePointerSwipe, useRafFn } from "@vueuse/core"
 import { ref, watch, type Ref } from "vue"
 
 /** Only the content's edge strips own navigation; its body keeps native scrolling. */
@@ -9,64 +9,122 @@ export function useMobileViewportSwipe(options: {
   index: () => number
   count: () => number
   enabled: () => boolean
+  reducedMotion: () => boolean
   select: (index: number) => void
   reveal: (index: number) => void
 }) {
   const offset = ref(0)
   const dragging = ref(false)
+  const settling = ref(false)
   let canceled = false
+  let selecting = false
   let axis: "x" | "y" | undefined
-  let startedAt = 0
+  let startOffset = 0
+  let lastOffset = 0
+  let lastTime = 0
+  let velocity = 0
+  let springPosition = 0
+  let springVelocity = 0
+  let springStarted = 0
+
+  // A critically damped spring preserves release velocity without oscillating.
+  // Animate one shared stage, rather than updating every live view each frame.
+  const { pause, resume } = useRafFn(({ timestamp }) => {
+    const elapsed = (timestamp - springStarted) / 1000
+    const frequency = 18
+    const decay = Math.exp(-frequency * elapsed)
+    const coefficient = springVelocity + frequency * springPosition
+    offset.value = (springPosition + coefficient * elapsed) * decay
+    const speed = (springVelocity - frequency * coefficient * elapsed) * decay
+    if (Math.abs(offset.value) < 0.3 && Math.abs(speed) < 4) reset()
+  }, { immediate: false })
 
   function reset(): void {
+    pause()
     canceled = true
     dragging.value = false
+    settling.value = false
     offset.value = 0
+  }
+  function settle(speed: number): void {
+    dragging.value = false
+    if (options.reducedMotion() || Math.abs(offset.value) < 0.3) { reset(); return }
+    springPosition = offset.value
+    springVelocity = speed * 1000
+    springStarted = performance.now()
+    settling.value = true
+    resume()
+  }
+  function cancelGesture(): void {
+    canceled = true
+    if (dragging.value) settle(0)
   }
 
   for (const [target, step] of [[options.left, -1], [options.right, 1]] as const) {
     const swipe = usePointerSwipe(target, {
-      threshold: 10,
+      threshold: 6,
       pointerTypes: ["touch"],
       onSwipeStart(event) {
         canceled = !options.enabled() || !event.isPrimary
+        if (canceled) return
+        pause()
+        settling.value = false
+        dragging.value = true
         axis = undefined
-        startedAt = event.timeStamp
+        startOffset = lastOffset = offset.value
+        lastTime = event.timeStamp
+        velocity = 0
       },
-      onSwipe() {
+      onSwipe(event) {
         if (canceled) return
         const dx = -swipe.distanceX.value
         const dy = swipe.distanceY.value
         axis ??= Math.abs(dx) > Math.abs(dy) * 1.3 ? "x" : "y"
         if (axis !== "x") return
-        dragging.value = true
         const width = options.viewport.value?.clientWidth ?? 0
+        if (!width) return
         const next = options.index() + step
-        const inward = dx * step < 0
-        const available = next >= 0 && next < options.count()
-        if (inward && available) options.reveal(next)
-        offset.value = Math.max(-width, Math.min(width, dx)) * (inward && available ? 1 : 0.18)
+        const available = dx * step < 0 && next >= 0 && next < options.count()
+        if (available) options.reveal(next)
+        // Boundary resistance grows with distance instead of a fixed drag ratio.
+        const distance = available ? Math.max(-width, Math.min(width, dx))
+          : dx * 0.5 / (1 + Math.abs(dx) / (width * 0.3))
+        offset.value = startOffset + distance
+        const elapsed = event.timeStamp - lastTime
+        if (elapsed > 0) velocity = 0.7 * (offset.value - lastOffset) / elapsed + 0.3 * velocity
+        lastOffset = offset.value
+        lastTime = event.timeStamp
       },
       onSwipeEnd(event) {
+        if (canceled) return
         const width = options.viewport.value?.clientWidth ?? 0
-        const distance = Math.abs(offset.value)
-        const velocity = distance / Math.max(1, event.timeStamp - startedAt)
+        const distance = Math.abs(offset.value - startOffset)
+        const releaseVelocity = event.timeStamp - lastTime > 80 ? 0 : Math.max(-3, Math.min(3, velocity))
         const next = options.index() + step
-        const commit = !canceled && event.type !== "pointercancel" && axis === "x"
-          && offset.value * step < 0 && next >= 0 && next < options.count()
-          && (distance >= Math.min(96, width * 0.25) || (distance >= 24 && velocity >= 0.5))
-        reset()
-        if (commit) options.select(next)
+        const commit = event.type !== "pointercancel" && axis === "x"
+          && (offset.value - startOffset) * step < 0 && next >= 0 && next < options.count()
+          && (distance >= Math.min(96, width * 0.25) || (distance >= 24 && releaseVelocity * step < -0.5))
+        canceled = true
+        if (commit) {
+          // Rebase onto the selected view without changing its screen position.
+          selecting = true
+          options.select(next)
+          selecting = false
+          offset.value += step * width
+        }
+        settle(event.type === "pointercancel" ? 0 : releaseVelocity)
       },
     })
-    useEventListener(target, "lostpointercapture", reset)
+    // pointerup also releases capture; it must not erase the settling animation.
+    useEventListener(target, "lostpointercapture", cancelGesture)
   }
 
-  // A second finger or interrupted capture cancels navigation, never commits it.
   useEventListener(document, "pointerdown", event => {
-    if (event.pointerType === "touch" && !event.isPrimary) reset()
+    if (event.pointerType === "touch" && !event.isPrimary) cancelGesture()
   }, { capture: true })
   useEventListener(window, "resize", reset)
-  watch([options.index, options.enabled], reset)
-  return { offset, dragging }
+  watch([options.index, options.enabled, options.reducedMotion], () => {
+    if (!selecting) reset()
+  }, { flush: "sync" })
+  return { offset, dragging, settling }
 }
