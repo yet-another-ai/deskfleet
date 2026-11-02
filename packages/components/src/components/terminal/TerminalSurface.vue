@@ -63,12 +63,29 @@ const terminal = new Terminal({
   overviewRuler: { width: props.tools ? 8 : 0 },
   theme: theme.value,
 })
+const CURSOR_SEQUENCES: Record<string, { alt: string; meta: string } | undefined> = {
+  ArrowLeft: { alt: "\x1bb", meta: "\x01" },
+  ArrowRight: { alt: "\x1bf", meta: "\x05" },
+}
+
 terminal.loadAddon(fit)
 terminal.attachCustomKeyEventHandler(event => {
-  if (!props.tools || !(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "f") return true
+  if (props.tools && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") {
+    if (event.type === "keydown") {
+      event.preventDefault()
+      void toolbar.value?.openSearch()
+    }
+    return false
+  }
+
+  const cursor = !event.ctrlKey && !event.shiftKey && event.altKey !== event.metaKey
+    ? CURSOR_SEQUENCES[event.key]
+    : undefined
+  if (!cursor) return true
+
   if (event.type === "keydown") {
     event.preventDefault()
-    void toolbar.value?.openSearch()
+    terminal.input(event.metaKey ? cursor.meta : cursor.alt)
   }
   return false
 })
