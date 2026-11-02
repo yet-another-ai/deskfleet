@@ -14,11 +14,13 @@ const props = defineProps<{
   provider: AgentProviderInput | null
   machineName: string
   disabled?: boolean
+  /** A running operation lets the setup card and its terminal fill the host window. */
+  fill?: boolean
   probe(provider: AgentProviderInput): Promise<ProviderProbeResult>
   install(provider: AgentProviderInput): Promise<TerminalSummary>
   login(provider: AgentProviderInput): Promise<TerminalSummary>
 }>()
-const emit = defineEmits<{ busy: [value: boolean]; resolved: [path: string | undefined]; binaryPath: [path: string]; editPath: [] }>()
+const emit = defineEmits<{ active: [value: boolean]; busy: [value: boolean]; resolved: [path: string | undefined]; binaryPath: [path: string]; editPath: [] }>()
 const { t } = useI18n()
 const terminals = useTerminalsStore()
 const result = ref<ProviderProbeResult | null>(null)
@@ -30,6 +32,9 @@ const finishing = ref(false)
 const stopping = ref(false)
 const terminalConnection = ref<string | null>(null)
 const operation = ref<{ kind: "install" | "login"; terminal: TerminalSummary; completed: boolean } | null>(null)
+/** True only while the setup terminal is still running; a completed failure returns the form. */
+const active = computed(() => operation.value !== null && !operation.value.completed)
+watch(active, value => emit("active", value), { immediate: true })
 const busy = computed(() => starting.value || finishing.value || stopping.value || !!(operation.value && !operation.value.completed))
 const running = computed(() => starting.value || !!(operation.value && !operation.value.completed))
 const terminal = computed(() => {
@@ -186,8 +191,8 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
 </script>
 
 <template>
-  <section class="rounded-xl border border-ui-border text-sm" :aria-label="t('providers.setup.title', { machine: machineName })" data-provider-setup>
-    <div class="flex min-h-14 flex-wrap items-center gap-3 px-3.5 py-2.5 sm:flex-nowrap">
+  <section class="flex flex-col rounded-xl border border-ui-border text-sm" :class="fill && 'min-h-0 flex-1'" :aria-label="t('providers.setup.title', { machine: machineName })" data-provider-setup>
+    <div v-if="!fill" class="flex min-h-14 shrink-0 flex-wrap items-center gap-3 px-3.5 py-2.5 sm:flex-nowrap">
       <template v-if="probing">
         <LoaderCircle :size="14" :stroke-width="2" class="shrink-0 animate-spin text-ui-text-muted" aria-hidden="true" />
         <p role="status" class="m-0 min-w-0 flex-1 text-ui-text-muted">{{ t("providers.setup.probing", { machine: machineName }) }}</p>
@@ -209,7 +214,7 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
       </div>
     </div>
     <p v-if="error" role="alert" class="m-0 border-t border-ui-border px-3.5 py-2.5 whitespace-pre-wrap break-words text-[13px] text-ui-danger">{{ error }}</p>
-    <div v-if="running || operation" class="flex flex-col gap-2.5 border-t border-ui-border px-3.5 py-3" data-provider-operation>
+    <div v-if="running || operation" class="flex flex-col gap-2.5 px-3.5 py-3" :class="fill ? 'min-h-0 flex-1' : 'border-t border-ui-border'" data-provider-operation>
       <div class="flex min-h-7 items-center gap-2">
         <LoaderCircle v-if="running" :size="14" :stroke-width="2" class="shrink-0 animate-spin text-ui-text-muted" aria-hidden="true" />
         <p role="status" class="m-0 min-w-0 flex-1 text-[13px] text-ui-text-muted">
@@ -219,7 +224,7 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
       </div>
       <p v-if="(provider?.template === 'pi' || provider?.template === 'omp') && operation?.kind === 'login' && !operation.completed" class="m-0 text-xs text-ui-text-muted" data-provider-login-hint>{{ t("providers.setup.interactiveLoginHint") }}</p>
       <p v-if="terminalConnection" role="alert" class="m-0 text-xs text-ui-danger">{{ terminalConnection }}</p>
-      <div v-if="operation" class="flex h-56 min-h-0 overflow-hidden rounded-lg border border-ui-border" data-provider-terminal>
+      <div v-if="operation" class="flex flex-1 overflow-hidden rounded-lg border border-ui-border" :class="fill ? 'min-h-0' : 'min-h-56'" data-provider-terminal>
         <LiveTerminal :key="operation.terminal.id" :terminal-id="operation.terminal.id" @connection="connection" />
       </div>
     </div>
