@@ -93,6 +93,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const permissionRequests = new Map<string, { sessionId: string; permissionId: string; resolve(value: unknown): void }>()
   const gitSubscriptions = new Map<string, { sessionId: string; listener(error?: string): void }>()
   let connectionGeneration = 0
+  let attendanceAttempt = 0
   let initialized: Promise<void> | null = null
   let refreshPending = false
   let refreshing: Promise<void> | null = null
@@ -481,19 +482,39 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   async function attend(sessionId: string): Promise<boolean> {
+    if (state.value !== "connected") return false
     const generation = connectionGeneration
+    const attempt = ++attendanceAttempt
     try {
-      if (state.value !== "connected") return false
-      await call("_deskfleet/session/attend", { sessionId })
-      // A reconnect gets a new channel. Do not let this call's follow-up leave that channel.
-      return generation === connectionGeneration && state.value === "connected"
+      const controlled = api.control?.("_deskfleet/session/attend", { sessionId })
+      if (controlled) await controlled
+      else {
+        await initialize()
+        // call() would reconnect and send this attempt on the replacement channel.
+        if (attempt !== attendanceAttempt || generation !== connectionGeneration || state.value !== "connected") return false
+        await client.call("_deskfleet/session/attend", { sessionId })
+      }
+      const current = attempt === attendanceAttempt && generation === connectionGeneration && state.value === "connected"
+      if (current) return true
+      // This attempt registered on a channel the view no longer owns, and nothing newer replaced it.
+      if (attempt === attendanceAttempt && state.value === "connected") {
+        try { await client.call("_deskfleet/session/leave", { sessionId }) } catch { /* The replacement channel already dropped this viewer. */ }
+      }
+      return false
     } catch {
       return false
     }
   }
   async function leave(sessionId: string): Promise<void> {
+    const generation = connectionGeneration
     if (state.value !== "connected") return
-    try { await call("_deskfleet/session/leave", { sessionId }) } catch { /* A closed channel already removed this viewer. */ }
+    try {
+      const controlled = api.control?.("_deskfleet/session/leave", { sessionId })
+      if (controlled) { await controlled; return }
+      await initialize()
+      if (generation !== connectionGeneration || state.value !== "connected") return
+      await client.call("_deskfleet/session/leave", { sessionId })
+    } catch { /* A closed channel already removed this viewer. */ }
   }
   async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/branches" | "_deskfleet/git/prepare" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe" | "_deskfleet/session/attend" | "_deskfleet/session/leave" | "_deskfleet/composer/references" | "_deskfleet/composer/resolve">>(
     method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string, submittedDraft?: SubmittedAgentDraft,

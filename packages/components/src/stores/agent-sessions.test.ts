@@ -35,6 +35,29 @@ afterEach(() => { disposePinia(pinia); vi.mocked(platformClient.catalog.list).mo
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
 const tracked = (event: string) => vi.mocked(trackEvent).mock.calls.filter(([name]) => name === event).map(([, metadata]) => metadata)
 
+test("an attend interrupted by a dropped connection does not register on the replacement channel", async () => {
+  const store = useAgentSessionsStore()
+  mock.state("connected")
+  const initialize = deferred<{ _meta: { deskfleet: { identity: typeof actor } } }>()
+  mock.call.mockImplementation(async (method: string) => method === "initialize" ? initialize.promise : null)
+  const attending = store.attend("30")
+  await flushPromises()
+  mock.state("error", "Agent connection closed")
+  mock.state("connected")
+  initialize.resolve({ _meta: { deskfleet: { identity: actor } } })
+  await expect(attending).resolves.toBe(false)
+  expect(mock.call.mock.calls.map(([method]) => method)).toEqual(["initialize"])
+  await expect(store.attend("30")).resolves.toBe(true)
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/attend")).toHaveLength(1)
+})
+
+test("leave does not open a connection after the channel has already closed", async () => {
+  const store = useAgentSessionsStore()
+  mock.state("error", "Agent connection closed")
+  await store.leave("30")
+  expect(mock.call.mock.calls.some(([method]) => method === "_deskfleet/session/leave")).toBe(false)
+})
+
 test("exposes relay recovery metadata only while the failed agent connection needs it", () => {
   const store = useAgentSessionsStore()
   mock.state("error", "Relay unavailable", "turn_quota_exhausted")
