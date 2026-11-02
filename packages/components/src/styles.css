@@ -262,3 +262,8 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   .ui-reading-spotlight { transition: none !important; }
 }
+
+/* Mobile navigation owns gestures; the browser may scroll but must not zoom the page. */
+@media (width < 1024px) {
+  :where(html, body, body *) { touch-action: pan-x pan-y; }
+}

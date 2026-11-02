@@ -167,10 +167,29 @@ Site Admin override. Existing development databases must be rebuilt for this
 schema; legacy identity/data migration is not supported.
 
 The Vue Web client and the Electron client share a common UI component package.
-Below 1024 CSS pixels, the workspace keeps its main pane at full width and opens
-navigation or Changes in a modal side panel, one at a time. These temporary panels
-close on navigation and do not overwrite the saved desktop panel widths or open
-states. Settings moves section navigation above its content below 768 CSS pixels;
+Below 1024 CSS pixels, a Session shows one full-width view at a time.
+Chat, Changes, each terminal, and each preview form one ordered list without
+nested tabs or a two-dimensional window layout. The title bar zooms the content
+out into a three-column overview. Existing view instances keep their DOM parents
+and original layout dimensions while their live surfaces scale and move into
+cards. Selecting a card animates it back to full size. Preview content is inert;
+the overview scrolls vertically and closes with its title-bar button or Escape.
+Unopened terminals show placeholders. Only selecting a terminal view, including
+committing an edge swipe to it, mounts its renderer and attaches to the shell.
+Opening the overview or canceling a swipe does not attach unopened terminals.
+The sidebar uses a Reka UI Drawer bottom sheet with opening and closing
+animations and swipe-to-dismiss. It closes on navigation and does not overwrite
+saved desktop panel widths or open states.
+
+Horizontal swipes from the content edges select adjacent views. Swipes in the
+content body retain their content-specific behavior. The viewport returns to its
+current view at either end of the list or after a canceled gesture.
+Opened views stay mounted during view changes, which preserve drafts, scroll
+positions, and terminal connections. Explicit terminal closure still ends its
+shell. Mobile touch surfaces disable browser pinch and double-tap zoom while
+retaining native scrolling.
+
+Settings moves section navigation above its content below 768 CSS pixels;
 the same narrow layout puts account controls above the no-machine or no-team
 onboarding content.
 The official server image bundles the same-version Web build, served by the

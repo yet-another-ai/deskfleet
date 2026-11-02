@@ -13,7 +13,7 @@ import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon
 import SessionHeader from "../components/session/SessionHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import WindowToolbar from "../components/chrome/WindowToolbar.vue"
-import { newTerminalWindowKey } from "../components/chrome/windowHeaderActions.ts"
+import { newTerminalWindowKey, windowHeaderActionsTargetKey } from "../components/chrome/windowHeaderActions.ts"
 import OpenWithMenu from "../components/catalog/OpenWithMenu.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import SessionAllowance from "../components/session/SessionAllowance.vue"
@@ -52,6 +52,7 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const newTerminalWindow = inject(newTerminalWindowKey, undefined)
+const windowedMainWindow = !!inject(windowHeaderActionsTargetKey)
 let disposed = false
 onScopeDispose(() => { disposed = true })
 const sessionLabel = useSessionLabel()
@@ -249,8 +250,8 @@ async function checkOperation(operationId: string): Promise<void> {
     <template #actions>
       <div v-if="snapshot" data-session-window-actions class="app-no-drag flex items-center gap-1">
         <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
-        <IconButton v-if="newTerminalWindow" :icon="SquareTerminal" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow" />
-        <IconButton v-if="compact && terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" />
+        <IconButton v-if="newTerminalWindow && !compact" :icon="SquareTerminal" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow" />
+        <IconButton v-if="compact && !windowedMainWindow && terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" />
         <AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
       </div>
     </template>
@@ -315,7 +316,7 @@ async function checkOperation(operationId: string): Promise<void> {
       </div>
     </div>
   </div>
-  <SessionTerminalPanel v-if="compact && terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
+  <SessionTerminalPanel v-if="compact && !windowedMainWindow && terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
   <RenameSessionDialog v-if="renameOpen && snapshot" :key="sessionId" :title="snapshot.session.title" :disabled="!location?.machine.online" :confirm="title => agents.rename(sessionId, title)" @close="renameOpen = false" />
   <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
   <div v-if="focusedMermaid" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">

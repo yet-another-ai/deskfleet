@@ -1,4 +1,10 @@
 {
+  "mobileViews": {
+    "openTerminal": "打开后连接",
+    "overview": "视图总览",
+    "open": "打开视图",
+    "close": "关闭{title}"
+  },
   "errors": {
     "details": "技术详情",
     "viewBilling": "查看账单",
@@ -369,6 +375,7 @@
     "lastObserved": "上次同步于 {time}"
   },
   "common": {
+    "close": "关闭",
     "increase": "增加",
     "decrease": "减少",
     "noResults": "未找到匹配的结果。",

@@ -82,6 +82,7 @@ function refresh(): void {
     />
     <!-- On macOS the traffic lights sit at the start of this row. -->
     <div
+      v-if="!compact"
       class="app-drag flex h-12 shrink-0 items-center justify-end pr-2"
       :class="platform === 'darwin' ? 'pl-20' : 'pl-2'"
     >
