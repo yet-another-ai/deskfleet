@@ -40,6 +40,8 @@ const saving = ref(false)
 const error = ref<string | null>(null)
 const testing = ref(false)
 const setupBusy = ref(false)
+/** A running install or login owns the window so its terminal can use the full height. */
+const setupExpanded = ref(false)
 const resolvedBinaryPath = ref<string>()
 const formDisabled = computed(() => saving.value || setupBusy.value || props.disabled)
 const setupProvider = computed((): AgentProviderInput | null => {
@@ -160,8 +162,15 @@ onBeforeUnmount(() => { finished = true })
 </script>
 
 <template>
-  <UiDialog class="w-[32rem]" described :prevent-close="saving || setupBusy" @close="cancel">
-    <div class="mb-5 flex items-start gap-2">
+  <UiDialog
+    class="flex w-[min(72rem,calc(100vw-2rem))] flex-col"
+    :class="setupExpanded ? 'h-[min(48rem,calc(100dvh-2rem))] overflow-hidden!' : 'h-[min(44rem,calc(100dvh-2rem))]'"
+    :data-provider-expanded="setupExpanded ? 'true' : undefined"
+    described
+    :prevent-close="saving || setupBusy"
+    @close="cancel"
+  >
+    <div class="mb-5 flex shrink-0 items-start gap-2">
       <IconButton v-if="step === 'details' && !initial" :icon="ChevronLeft" :label="t('providers.back')" :disabled="formDisabled" class="-ml-1.5 mt-[-2px]" data-provider-back @click="back" />
       <div class="min-w-0">
         <DialogTitle class="ui-dialog-title">{{ t(initial ? "providers.edit" : "providers.add") }}</DialogTitle>
@@ -171,8 +180,8 @@ onBeforeUnmount(() => { finished = true })
       </div>
     </div>
 
-    <div v-if="step === 'template'" class="flex flex-col">
-      <div role="group" :aria-label="t('providers.template')" class="max-h-[min(27rem,calc(100dvh-14rem))] overflow-y-auto rounded-xl border border-ui-border">
+    <div v-if="step === 'template'" class="flex min-h-0 flex-1 flex-col">
+      <div role="group" :aria-label="t('providers.template')" class="min-h-0 flex-1 overflow-y-auto rounded-xl border border-ui-border">
         <button v-for="item in templates" :key="item.id" type="button" class="group flex min-h-11 w-full cursor-pointer items-center gap-2.5 border-b border-ui-border px-3 py-2 text-left transition-colors last:border-b-0 enabled:hover:bg-ui-control-hover disabled:cursor-default" :disabled="disabled" :data-provider-template-choice="item.id" @click="choose(item.id)">
           <ProviderIcon :template="item.id" :size="18" class="shrink-0" />
           <span class="min-w-0 flex-1 sm:flex sm:items-baseline sm:gap-2">
@@ -187,8 +196,8 @@ onBeforeUnmount(() => { finished = true })
       </div>
     </div>
 
-    <form v-else class="flex flex-col gap-5" @submit.prevent="submit">
-      <div class="flex flex-col gap-1.5 text-sm">
+    <form v-else class="flex flex-1 flex-col gap-5" :class="setupExpanded && 'min-h-0'" @submit.prevent="submit">
+      <div v-if="!setupExpanded" class="flex flex-col gap-1.5 text-sm">
         <label for="provider-name">{{ t("providers.name") }}</label>
         <div class="flex items-stretch gap-2">
           <ProviderIconPicker v-model="icon" :template="template" :disabled="formDisabled" />
@@ -197,12 +206,12 @@ onBeforeUnmount(() => { finished = true })
       </div>
 
       <ProviderSetup
-        :provider="setupProvider" :machine-name="machineName" :disabled="saving || testing || disabled"
+        :provider="setupProvider" :machine-name="machineName" :disabled="saving || testing || disabled" :fill="setupExpanded"
         :probe="probe" :install="install" :login="login"
-        @busy="setupBusy = $event" @resolved="resolvedBinaryPath = $event" @binary-path="binaryPath = $event" @edit-path="editPath"
+        @active="setupExpanded = $event" @busy="setupBusy = $event" @resolved="resolvedBinaryPath = $event" @binary-path="binaryPath = $event" @edit-path="editPath"
       />
 
-      <CollapsibleRoot v-model:open="advanced" :unmount-on-hide="false" class="text-sm" data-provider-advanced>
+      <CollapsibleRoot v-if="!setupExpanded" v-model:open="advanced" :unmount-on-hide="false" class="text-sm" data-provider-advanced>
         <CollapsibleTrigger class="flex w-fit cursor-pointer items-center gap-1.5 rounded-md text-[13px] text-ui-text-muted hover:text-ui-text">
           <ChevronRight :size="14" :stroke-width="1.75" class="transition-transform" :class="advanced && 'rotate-90'" aria-hidden="true" />
           {{ t("providers.advanced") }}
@@ -232,22 +241,24 @@ onBeforeUnmount(() => { finished = true })
       </CollapsibleRoot>
 
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
-      <p v-if="testing" role="status" class="ui-notice m-0 border-ui-border text-ui-text-muted" data-provider-test-result>
-        <LoaderCircle :size="15" :stroke-width="2" class="shrink-0 animate-spin" aria-hidden="true" />{{ t("providers.testing") }}
-      </p>
-      <p v-else-if="testResult?.ok" role="status" class="ui-notice m-0 border-ui-success/30 bg-ui-success/8" data-provider-test-result>
-        <CircleCheck :size="15" :stroke-width="2" class="shrink-0 text-ui-success" aria-hidden="true" />{{ t("providers.testSucceeded", { agent: testResult.agentName }) }}
-      </p>
-      <div v-else-if="testResult" role="alert" class="flex flex-col gap-2 rounded-xl border border-ui-danger/30 bg-ui-danger/8 px-3 py-2 text-[13px]" data-provider-test-result>
-        <div class="flex min-h-6 items-center gap-2">
-          <CircleX :size="15" :stroke-width="2" class="shrink-0 text-ui-danger" aria-hidden="true" />
-          <span class="min-w-0 flex-1 break-words" data-provider-test-summary>{{ t("providers.testFailed", { error: testSummary }) }}</span>
-          <UiButton variant="ghost" size="sm" v-if="testHasDetails" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover" :aria-expanded="testDetails" data-provider-test-details-toggle @click="testDetails = !testDetails">{{ t(testDetails ? "providers.hideDetails" : "providers.showDetails") }}</UiButton>
+      <template v-if="!setupExpanded">
+        <p v-if="testing" role="status" class="ui-notice m-0 border-ui-border text-ui-text-muted" data-provider-test-result>
+          <LoaderCircle :size="15" :stroke-width="2" class="shrink-0 animate-spin" aria-hidden="true" />{{ t("providers.testing") }}
+        </p>
+        <p v-else-if="testResult?.ok" role="status" class="ui-notice m-0 border-ui-success/30 bg-ui-success/8" data-provider-test-result>
+          <CircleCheck :size="15" :stroke-width="2" class="shrink-0 text-ui-success" aria-hidden="true" />{{ t("providers.testSucceeded", { agent: testResult.agentName }) }}
+        </p>
+        <div v-else-if="testResult" role="alert" class="flex flex-col gap-2 rounded-xl border border-ui-danger/30 bg-ui-danger/8 px-3 py-2 text-[13px]" data-provider-test-result>
+          <div class="flex min-h-6 items-center gap-2">
+            <CircleX :size="15" :stroke-width="2" class="shrink-0 text-ui-danger" aria-hidden="true" />
+            <span class="min-w-0 flex-1 break-words" data-provider-test-summary>{{ t("providers.testFailed", { error: testSummary }) }}</span>
+            <UiButton variant="ghost" size="sm" v-if="testHasDetails" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover" :aria-expanded="testDetails" data-provider-test-details-toggle @click="testDetails = !testDetails">{{ t(testDetails ? "providers.hideDetails" : "providers.showDetails") }}</UiButton>
+          </div>
+          <pre v-if="testDetails" class="m-0 max-h-48 overflow-auto rounded-lg bg-ui-canvas/60 p-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words text-ui-text-muted select-text" data-provider-test-details>{{ testResult.error.trim() }}</pre>
         </div>
-        <pre v-if="testDetails" class="m-0 max-h-48 overflow-auto rounded-lg bg-ui-canvas/60 p-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words text-ui-text-muted select-text" data-provider-test-details>{{ testResult.error.trim() }}</pre>
-      </div>
+      </template>
 
-      <div class="flex flex-wrap justify-end gap-2">
+      <div v-if="!setupExpanded" class="mt-auto flex shrink-0 flex-wrap justify-end gap-2">
         <UiButton type="button" class="mr-auto" :title="t('providers.testDescription')" :disabled="testing || formDisabled" data-provider-test @click="runTest">{{ testing ? t("providers.testing") : t("providers.test") }}</UiButton>
         <UiButton type="button" :disabled="saving || setupBusy" @click="cancel">{{ t("catalog.cancel") }}</UiButton>
         <UiButton variant="primary" type="submit" :loading="saving" :disabled="formDisabled">{{ saving ? t("catalog.saving") : t(initial ? "catalog.save" : "providers.add") }}</UiButton>

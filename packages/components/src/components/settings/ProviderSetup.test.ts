@@ -140,9 +140,11 @@ test.each(([
   await view.get("[data-provider-login]").trigger("click")
   await flushPromises()
   expect(view.get("[data-provider-login-hint]").text()).toBe(hint)
+  expect(view.emitted("active")?.at(-1)).toEqual([true])
   terminals.sessions.push({ ...terminal, status: "exited", exitCode: 0 })
   await flushPromises()
   expect(view.find("[data-provider-login-hint]").exists()).toBe(false)
+  expect(view.emitted("active")?.at(-1)).toEqual([false])
 })
 
 test("a failed installer retains its output and reports its exit without adopting a path", async () => {
