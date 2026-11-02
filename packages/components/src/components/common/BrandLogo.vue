@@ -4,7 +4,7 @@ withDefaults(defineProps<{ size?: number; decorative?: boolean }>(), {
   decorative: false,
 })
 
-const source = new URL("../../assets/deskfleet.png", import.meta.url).href
+const source = new URL("../../assets/deskfleet.svg", import.meta.url).href
 </script>
 
 <template>
@@ -14,7 +14,7 @@ const source = new URL("../../assets/deskfleet.png", import.meta.url).href
     :aria-hidden="decorative || undefined"
     :width="size"
     :height="size"
-    class="shrink-0 rounded-[22%] object-contain"
+    class="shrink-0 object-contain"
     draggable="false"
   />
 </template>

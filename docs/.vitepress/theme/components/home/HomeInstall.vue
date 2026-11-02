@@ -114,7 +114,7 @@ onMounted(() => {
 <template>
   <section id="get-deskfleet" ref="root" class="install reveal" :class="{ 'is-shown': shown }">
     <div class="install__inner">
-      <img class="install__mark reveal-line" style="--line: 0" :src="withBase('/logo.png')" alt="" width="64" height="64" />
+      <img class="install__mark reveal-line" style="--line: 0" :src="withBase('/logo.svg')" alt="" width="64" height="64" />
       <p class="home-kicker reveal-line" style="--line: 1">{{ t.kicker }}</p>
       <h2 class="home-heading reveal-line" style="--line: 2">{{ t.title }}</h2>
       <p class="install__lead reveal-line" style="--line: 3">{{ t.lead }}</p>

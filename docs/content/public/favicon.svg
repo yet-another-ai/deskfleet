@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254" fill="none" role="img" aria-labelledby="deskfleet-title">
+  <title id="deskfleet-title">DeskFleet Arctic fox</title>
+  <defs>
+    <linearGradient id="background" x1="160" y1="0" x2="1094" y2="1254" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#060C25"/>
+      <stop offset="1" stop-color="#050A20"/>
+    </linearGradient>
+    <linearGradient id="ice" x1="122" y1="520" x2="442" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9AD9FF"/>
+      <stop offset="1" stop-color="#94D4FC"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="330" y1="820" x2="1060" y2="1168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4DB5FF"/>
+      <stop offset="1" stop-color="#4FB2FA"/>
+    </linearGradient>
+    <linearGradient id="fur" x1="315" y1="300" x2="710" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FDFDFE"/>
+    </linearGradient>
+    <linearGradient id="ear-pink" x1="420" y1="210" x2="460" y2="405" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF3258"/>
+      <stop offset="1" stop-color="#FE3A5B"/>
+    </linearGradient>
+    <linearGradient id="rear-ear" x1="674" y1="306" x2="652" y2="348" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FEFEFE"/>
+      <stop offset="0.55" stop-color="#F8FCFF"/>
+      <stop offset="1" stop-color="#A0DCFF"/>
+    </linearGradient>
+  </defs>
+
+  <rect id="backdrop" width="1254" height="1254" rx="190" fill="url(#background)"/>
+
+  <g id="fox">
+    <path id="body" fill="url(#ice)" d="
+      M 350 218
+      C 289 280 237 367 202 449
+      C 186 483 170 516 154 549
+      C 128 602 110 648 98 700
+      C 84 764 88 830 111 899
+      C 145 1001 209 1097 333 1128
+      C 287 1084 263 1040 279 981
+      C 295 917 335 867 410 828
+      L 459 811
+      C 434 773 420 726 380 684
+      C 355 658 324 643 287 638
+      C 358 616 431 639 514 680
+      L 568 310
+      C 546 245 521 172 485 147
+      C 452 124 406 164 350 218 Z"/>
+
+    <path id="body-shade" fill="url(#blue)" d="
+      M 111 899
+      C 144 948 207 991 276 1018
+      C 276 1061 298 1096 333 1128
+      C 209 1097 145 1001 111 899 Z"/>
+
+    <path id="far-ear" fill="url(#rear-ear)" d="
+      M 576 310
+      C 624 265 705 238 783 219
+      C 802 214 815 218 818 237
+      C 825 283 798 371 750 444
+      L 665 376
+      C 631 347 607 325 576 310 Z"/>
+
+    <path id="far-ear-inner" fill="url(#ear-pink)" d="
+      M 665 345
+      C 696 322 735 300 756 298
+      C 773 296 779 304 775 322
+      C 769 351 753 386 735 414
+      C 713 386 691 363 665 345 Z"/>
+
+    <path id="near-ear" fill="url(#fur)" d="
+      M 308 406
+      C 282 393 289 350 307 304
+      C 319 271 336 239 350 218
+      C 405 165 447 133 475 144
+      C 512 158 544 235 568 310
+      L 461 347
+      L 322 410 Z"/>
+
+    <path id="near-ear-inner" fill="url(#ear-pink)" d="
+      M 322 396
+      C 340 338 387 264 427 226
+      C 446 208 457 204 464 216
+      C 475 236 469 292 461 324
+      C 417 338 366 365 322 396 Z"/>
+
+    <path id="head-and-chest" fill="url(#fur)" d="
+      M 154 549
+      C 202 495 264 440 322 396
+      C 368 362 417 339 461 324
+      C 494 313 534 303 568 310
+      C 638 318 692 354 731 406
+      C 758 443 771 488 767 535
+      C 765 571 752 599 746 620
+      C 739 641 745 657 751 674
+      C 763 702 750 722 728 731
+      C 699 748 661 744 627 734
+      C 589 722 552 698 514 680
+      C 433 640 358 616 287 638
+      C 324 643 355 658 380 684
+      C 420 726 434 773 459 811
+      C 440 815 424 821 410 828
+      C 375 783 324 754 274 726
+      C 207 689 167 651 154 549 Z"/>
+
+    <g id="face" fill="#04091D">
+      <path id="left-eye" d="
+        M 478 511
+        C 488 491 508 499 524 514
+        C 545 534 563 565 563 587
+        C 564 609 549 611 533 602
+        C 511 590 491 563 480 539
+        C 475 528 473 518 478 511 Z"/>
+      <path id="right-eye" d="
+        M 713 512
+        C 725 510 733 532 733 554
+        C 734 577 728 596 719 597
+        C 707 598 699 579 698 556
+        C 697 534 703 515 713 512 Z"/>
+      <path id="nose" d="
+        M 686 694
+        C 696 684 720 677 735 678
+        C 748 678 751 683 748 695
+        C 745 706 737 718 728 724
+        C 711 721 695 713 688 705
+        C 684 701 683 698 686 694 Z"/>
+    </g>
+
+    <path id="tail" fill="url(#blue)" d="
+      M 800 634
+      C 827 610 871 600 915 599
+      C 992 597 1058 620 1103 669
+      C 1143 713 1163 775 1162 841
+      C 1162 941 1114 1025 1035 1081
+      C 953 1139 849 1168 673 1168
+      C 552 1168 439 1161 391 1147
+      C 349 1135 329 1097 325 1055
+      C 318 1013 335 964 365 926
+      C 409 872 475 837 555 811
+      C 625 789 714 778 778 749
+      C 815 732 836 713 832 691
+      C 830 675 816 662 798 653
+      C 788 649 793 641 800 634 Z"/>
+
+    <path id="tail-tip" fill="url(#fur)" d="
+      M 800 634
+      C 827 610 871 600 915 599
+      C 992 597 1058 620 1103 669
+      C 1124 692 1137 722 1146 752
+      C 1117 816 1054 878 975 916
+      C 868 968 720 982 555 968
+      C 472 961 426 959 383 983
+      C 352 1000 331 1025 325 1055
+      C 318 1013 335 964 365 926
+      C 409 872 475 837 555 811
+      C 625 789 714 778 778 749
+      C 815 732 836 713 832 691
+      C 830 675 816 662 798 653
+      C 788 649 793 641 800 634 Z"/>
+  </g>
+</svg>

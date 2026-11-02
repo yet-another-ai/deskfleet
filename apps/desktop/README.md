@@ -656,10 +656,12 @@ After that release is published, the website resolves the latest stable
 installers through GitHub's releases API.
 See [release workflow](../../agents/docs/ci.md) for tag validation and publishing.
 
-The original brand artwork lives in
-`packages/components/src/assets/deskfleet.png`. Run
+The static vector brand master lives in
+`packages/components/src/assets/deskfleet.svg`. Run
 `mise exec -- pnpm --filter @deskfleet/desktop icons` to regenerate the app, tray,
-Web, and website icons from it. `build/icon.png` is the source for the macOS
+Web, and website icons from it. The website and modern favicons use SVG. Native
+icons, touch icons, fallback favicons, and social previews use generated raster
+assets. `build/icon.png` is the source for the macOS
 `.icns` and Windows `.ico`. The tray uses `build/trayTemplate*.png` on macOS,
 with the artwork's luminance adapted to an alpha mask for system tinting, and
 full-color `build/tray*.png` elsewhere. Commit generated assets with the source.

@@ -1,11 +1,11 @@
-// Derives every product icon from the shared, unmodified brand artwork.
+// Derives every product icon from the shared static SVG brand artwork.
 // Run with `mise exec -- pnpm --filter @deskfleet/desktop icons` and commit the output.
 import { copyFile, mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import sharp from "sharp"
 
 const root = resolve(import.meta.dirname, "../../..")
-const artwork = resolve(root, "packages/components/src/assets/deskfleet.png")
+const artwork = resolve(root, "packages/components/src/assets/deskfleet.svg")
 const desktopBuild = resolve(root, "apps/desktop/build")
 const publicDirectories = [
   resolve(root, "apps/web/public"),
@@ -38,6 +38,7 @@ async function favicon(): Promise<Buffer> {
 async function template(destination: string, size: number): Promise<void> {
   const alpha = await sharp(artwork)
     .resize(size, size)
+    .flatten({ background: "black" })
     .greyscale()
     .linear(1.25, -40)
     .raw()
@@ -59,6 +60,7 @@ for (const [suffix, size] of [["", 16], ["@2x", 32]] as const) {
 
 const ico = await favicon()
 for (const directory of publicDirectories) {
+  await copyFile(artwork, resolve(directory, "favicon.svg"))
   await resize(resolve(directory, "favicon-32x32.png"), 32)
   await resize(resolve(directory, "apple-touch-icon.png"), 180)
   await writeFile(resolve(directory, "favicon.ico"), ico)
@@ -70,5 +72,7 @@ for (const size of [192, 512]) {
 }
 
 const websitePublic = publicDirectories[2]!
+await copyFile(artwork, resolve(websitePublic, "logo.svg"))
+// The AUR package installs this PNG in the 256x256 hicolor icon directory.
 await resize(resolve(websitePublic, "logo.png"), 256)
-await copyFile(artwork, resolve(websitePublic, "og.png"))
+await sharp(artwork).png().toFile(resolve(websitePublic, "og.png"))
