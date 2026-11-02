@@ -29,6 +29,7 @@ const panY = ref(0)
 const dragging = ref(false)
 const menuOpen = ref(false)
 const copied = ref(false)
+const sidePreviewLabel = computed(() => t(layout?.sessionWindowsAvailable ? "mermaid.showInRightTab" : "mermaid.showInSidebar"))
 let dragStartX = 0, dragStartY = 0, generation = 0, disposed = false
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -158,7 +159,7 @@ onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(copiedTimer)
                 <component :is="copied ? Check : Copy" :size="14" aria-hidden="true" />{{ t(copied ? 'common.copied' : 'common.copy') }}
               </DropdownMenuItem>
               <DropdownMenuItem v-if="mode !== 'sidebar' && mode !== 'window'" as="button" type="button" class="ui-menu-item" data-mermaid-action="show-in-sidebar" @select="showInSidebar">
-                <PanelRight :size="14" aria-hidden="true" />{{ t('mermaid.showInSidebar') }}
+                <PanelRight :size="14" aria-hidden="true" />{{ sidePreviewLabel }}
               </DropdownMenuItem>
               <DropdownMenuItem v-if="mode !== 'window'" as="button" type="button" class="ui-menu-item" data-mermaid-action="show-in-new-window" @select="showInNewWindow">
                 <ExternalLink :size="14" aria-hidden="true" />{{ t('mermaid.showInNewWindow') }}
