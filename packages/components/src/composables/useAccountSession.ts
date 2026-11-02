@@ -1,8 +1,10 @@
-import { computed, inject, ref, type ComputedRef, type InjectionKey, type Ref } from "vue"
+import { computed, ref, type ComputedRef, type Ref } from "vue"
 import type { RouteLocationRaw } from "vue-router"
 import type { AccountState, CentralApi, LocalEnrollment, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
 import { router } from "../router/index.ts"
 import { captureAnalyticsContext } from "../services/analytics.ts"
+
+export { accountSessionKey, useAccountSession } from "./account-session-context.ts"
 
 export type AccountDialog = "create-team" | "join-team" | "add-machine"
 export type AccountSettingsSection = "preferences" | "appearance" | "notifications" | "team" | "plans"
@@ -258,10 +260,4 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     enrollLocal, enrollHeadless, renameMachine, removeMachine, openSettings,
     dispose: unsubscribe,
   }
-}
-
-export const accountSessionKey: InjectionKey<AccountSession> = Symbol("deskfleet account")
-/** Undefined in the local-only desktop, which has no account. */
-export function useAccountSession(): AccountSession | undefined {
-  return inject(accountSessionKey, undefined)
 }
