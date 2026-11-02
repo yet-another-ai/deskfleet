@@ -179,7 +179,7 @@ export class AgentChannel {
         this.#initialized = true
         this.#queue({ jsonrpc: "2.0", id, result: {
           protocolVersion: 1,
-          agentInfo: { name: "deskfleet", title: "DeskFleet", version: "0.6.0" },
+          agentInfo: { name: "deskfleet", title: "DeskFleet", version: "0.6.1" },
           agentCapabilities: { _meta: { deskfleet: { sessions: true, maxMessageBytes: AGENT_MESSAGE_BYTES } } },
           _meta: { deskfleet: { identity: this.#sessions.journal.identity } },
         } })
