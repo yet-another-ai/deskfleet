@@ -122,6 +122,50 @@ test.each(["image/bmp", "image/vnd.microsoft.icon", "image/x-icon"])("renders re
   expect(view.find("[data-resource-retry]").exists()).toBe(false)
 })
 
+test.each([
+  ["/work/before.mp4", "video/mp4", "video"],
+  ["/work/after.webm", "video/webm", "video"],
+  ["./recording", "video/mp4", "video"],
+  ["./audio.mp3", "audio/mpeg", "audio"],
+])("embeds authorized Markdown media %s with the existing preview actions", async (uri, mimeType, tag) => {
+  const readResource = vi.fn().mockResolvedValue({ data: new Uint8Array([1, 2, 3]), name: "recording", mimeType })
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:recording")
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+  const view = render({ readResource }, `![Recording](<${uri}>)`)
+  await flushPromises()
+  expect(readResource).toHaveBeenCalledExactlyOnceWith({ ...context().value, uri })
+  expect(view.get(tag).attributes("src")).toBe("blob:recording")
+  expect(view.get(tag).attributes("controls")).toBeDefined()
+  expect((create.mock.calls[0]![0] as Blob).type).toBe(mimeType)
+  expect(view.find('[data-preview-action="focus"]').exists()).toBe(true)
+  await view.get('[data-preview-action="more"]').trigger("click")
+  await flushPromises()
+  expect(view.find('[data-preview-action="show-in-sidebar"]').exists()).toBe(true)
+  expect(view.find('[data-preview-action="show-in-new-window"]').exists()).toBe(true)
+  await view.setProps({ text: "Recording removed" })
+  expect(revoke).toHaveBeenCalledExactlyOnceWith("blob:recording")
+})
+
+test("local Markdown video retries denied reads and rejects non-media responses", async () => {
+  const readResource = vi.fn()
+    .mockRejectedValueOnce(new Error("Outside authorized roots"))
+    .mockResolvedValueOnce({ data: new Uint8Array([1]), name: "fake.mp4", mimeType: "text/html" })
+    .mockResolvedValueOnce({ data: new Uint8Array([1]), name: "clip.mp4", mimeType: "video/mp4" })
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:clip")
+  const view = render({ readResource }, "![Clip](/work/clip.mp4)")
+  await flushPromises()
+  expect(view.get("[data-resource-retry]").attributes("title")).toContain("Outside authorized roots")
+  expect(view.find("video").exists()).toBe(false)
+  await view.get("[data-resource-retry]").trigger("click")
+  await flushPromises()
+  expect(create).not.toHaveBeenCalled()
+  expect(view.find("video").exists()).toBe(false)
+  await view.get("[data-resource-retry]").trigger("click")
+  await flushPromises()
+  expect(view.get("video").attributes("src")).toBe("blob:clip")
+  expect(readResource).toHaveBeenCalledTimes(3)
+})
+
 test("discards image completion after changing machines and keeps file links on trusted context", async () => {
   let resolve!: (value: { data: Uint8Array; name: string; mimeType: string }) => void
   const readResource = vi.fn().mockImplementationOnce(() => new Promise(done => { resolve = done })).mockRejectedValue(new Error("Machine offline"))
