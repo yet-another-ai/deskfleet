@@ -150,7 +150,9 @@ async function connect(): Promise<void> {
     }
     await activate()
   } catch (reason) {
-    if (attachment === active) failed(reason)
+    if (attachment === active) {
+      failed(reason, independentClient ? independentRelayDeniedReason.value : terminals.relayDeniedReason)
+    }
   } finally {
     if (!disposed && attachment === active) connecting.value = false
   }
