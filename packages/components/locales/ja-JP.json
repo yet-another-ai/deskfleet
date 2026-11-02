@@ -1,4 +1,10 @@
 {
+  "mobileViews": {
+    "openTerminal": "開いて接続",
+    "overview": "ビュー一覧",
+    "open": "ビューを開く",
+    "close": "{title}を閉じる"
+  },
   "errors": {
     "details": "技術的な詳細",
     "viewBilling": "請求を確認",
@@ -283,6 +289,7 @@
     "lastObserved": "最終同期: {time}"
   },
   "common": {
+    "close": "閉じる",
     "increase": "増やす", "decrease": "減らす",
     "noResults": "該当する結果はありません。", "notAvailable": "まだ利用できません",
     "placeholderControl": "{label}（まだ利用できません）", "copy": "コピー",

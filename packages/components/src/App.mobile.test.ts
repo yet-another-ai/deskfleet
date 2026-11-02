@@ -1,19 +1,22 @@
 import { client as platformClient } from "@deskfleet/client/platform"
-import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import App from "./App.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import { useLayoutStore } from "./stores/layout.ts"
-import { catalogFixture, sessionId } from "./test/catalog.ts"
+import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
+import { useTerminalsStore } from "./stores/terminals.ts"
+import { agentSnapshot } from "./test/agent.ts"
+import { catalogFixture, sessionId, sessionWorktreeId, workspaceId } from "./test/catalog.ts"
 
 let wrapper: VueWrapper | undefined
 let pinia: ReturnType<typeof createPinia>
 let setWidth: (width: number) => void
 
 beforeAll(async () => {
-  await Promise.all([import("./views/NewSessionView.vue"), import("./views/SessionView.vue"), import("./views/ArchivedSessionsView.vue")])
+  await Promise.all([import("./views/NewSessionView.vue"), import("./views/SessionView.vue"), import("./views/ArchivedSessionsView.vue"), import("./components/terminal/TerminalShellWindow.vue")])
 })
 beforeEach(() => {
   window.localStorage.clear()
@@ -47,10 +50,10 @@ async function mountApp(path = "/") {
   await router.push(path)
   wrapper = mount(App, {
     attachTo: document.body,
-    global: { plugins: [pinia, router, i18n], stubs: { Teleport: { inheritAttrs: false, template: "<slot />" } } },
+    global: { plugins: [pinia, router, i18n], stubs: { LiveTerminal: { props: ["terminalId"], template: '<div data-terminal :data-id="terminalId" />' } } },
   })
   await flushPromises()
-  return wrapper
+  return new DOMWrapper(document.body)
 }
 
 test("compact drawers preserve desktop sidebar state across viewport changes", async () => {
@@ -64,11 +67,9 @@ test("compact drawers preserve desktop sidebar state across viewport changes", a
   expect(view.find('[role="separator"]').exists()).toBe(false)
   layout.toggleDetails()
   await flushPromises()
-  expect(view.findAll('[role="dialog"]')).toHaveLength(1)
-  expect(view.get('[role="dialog"] aside').attributes("aria-label")).toBe("Changes")
+  expect(view.find('[role="dialog"]').exists()).toBe(false)
+  expect(view.get('[data-mobile-view="changes"]').attributes("aria-hidden")).toBe("false")
   expect(view.find('[role="separator"]').exists()).toBe(false)
-  await view.get('[role="dialog"] [aria-label="Hide changes panel"]').trigger("click")
-  expect(view.find("aside").exists()).toBe(false)
   expect(window.localStorage.getItem("deskfleet.sidebar-open")).toBe("false")
   expect(window.localStorage.getItem("deskfleet.sidebar-width")).toBe("420")
 
@@ -116,9 +117,120 @@ test("compact navigation closes on both a new destination and the current destin
 test("unmounting a machine surface clears its compact drawer before the runtime is reused", async () => {
   const view = await mountApp()
   await view.get('main [aria-label="Show sidebar"]').trigger("click")
-  view.unmount()
+  wrapper!.unmount()
   wrapper = undefined
   const remounted = await mountApp()
   expect(remounted.find('[role="dialog"]').exists()).toBe(false)
   expect(remounted.find("aside").exists()).toBe(false)
+})
+
+test("the overview switches flat views without remounting the conversation or hanging up shells", async () => {
+  const agents = useAgentSessionsStore(pinia)
+  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, title: "Mobile conversation" }
+  agents.drafts[sessionId] = "Unsent draft"
+  vi.spyOn(agents, "refresh").mockResolvedValue()
+  vi.spyOn(platformClient.terminal, "list").mockResolvedValue([
+    { id: "shell-1", title: "Build shell", worktreeId: sessionWorktreeId, cwd: "/worktree", cols: 80, rows: 24, status: "running" },
+    { id: "shell-2", title: "Test shell", worktreeId: sessionWorktreeId, cwd: "/worktree", cols: 80, rows: 24, status: "running" },
+  ])
+  const hangup = vi.spyOn(platformClient.terminal, "hangup")
+  const submit = vi.spyOn(agents, "submit")
+  const view = await mountApp(`/sessions/${sessionId}`)
+  const conversation = view.get('[data-mobile-view="chat"] textarea').element
+  const originalParent = conversation.parentElement
+  expect(view.find("[data-terminal]").exists()).toBe(false)
+  const terminals = useTerminalsStore(pinia)
+  terminals.titles["shell-1"] = "Build shell"
+  terminals.titles["shell-2"] = "Test shell"
+  await view.get("[data-open-overview]").trigger("click")
+  await flushPromises()
+  expect(view.get('[data-view-overview] [data-mobile-view="chat"] textarea').element).toBe(conversation)
+  expect(conversation.parentElement).toBe(originalParent)
+  expect(view.find("[data-terminal]").exists()).toBe(false)
+  expect(view.findAll("[data-unopened-terminal]")).toHaveLength(2)
+  agents.drafts[sessionId] = "Updated while in overview"
+  await flushPromises()
+  expect(view.get<HTMLTextAreaElement>('[data-view-overview] textarea').element.value).toBe("Updated while in overview")
+  expect(view.find('[role="tablist"]').exists()).toBe(false)
+  expect(view.find('[role="dialog"]').exists()).toBe(false)
+  expect(view.get("[data-open-overview]").attributes("aria-expanded")).toBe("true")
+  await view.get('[data-view-overview] [aria-label="Build shell"]').trigger("click")
+  await flushPromises()
+  const terminal = view.get('[data-terminal][data-id="shell-1"]').element
+  expect(view.find('[data-terminal][data-id="shell-2"]').exists()).toBe(false)
+  expect(view.find('[role="dialog"]').exists()).toBe(false)
+  expect(view.get('[data-mobile-view="terminal:shell-1"]').attributes("aria-hidden")).toBe("false")
+  await view.get("[data-open-overview]").trigger("click")
+  expect(view.get('[data-terminal][data-id="shell-1"]').element).toBe(terminal)
+  expect(view.find('[data-terminal][data-id="shell-2"]').exists()).toBe(false)
+  await view.get('[data-view-overview] [aria-label="Test shell"]').trigger("click")
+  await flushPromises()
+  expect(view.get('[data-terminal][data-id="shell-1"]').element).toBe(terminal)
+  await view.get("[data-open-overview]").trigger("click")
+  await view.get('[data-view-overview] [aria-label="Mobile conversation"]').trigger("click")
+  await flushPromises()
+  expect(view.get('[data-mobile-view="chat"] textarea').element).toBe(conversation)
+  expect(agents.drafts[sessionId]).toBe("Updated while in overview")
+  expect(hangup).not.toHaveBeenCalled()
+  expect(submit).not.toHaveBeenCalled()
+})
+
+test("preview requests open a mobile view that can be closed from the overview", async () => {
+  const view = await mountApp(`/sessions/${sessionId}`)
+  expect(useLayoutStore(pinia).requestSessionWindow({ kind: "preview", item: { kind: "image", title: "Screenshot", content: "https://example.com/image.png", source: { sessionId } } })).toBe(true)
+  await flushPromises()
+  const preview = view.get('[data-mobile-view^="preview:"]')
+  expect(preview.attributes("aria-hidden")).toBe("false")
+  expect(view.find('[role="dialog"]').exists()).toBe(false)
+  await view.get("[data-open-overview]").trigger("click")
+  await view.get('[data-view-overview] [aria-label="Close Screenshot"]').trigger("click")
+  expect(view.find('[data-mobile-view^="preview:"]').exists()).toBe(false)
+  expect(view.find('[data-view-overview]').exists()).toBe(true)
+  await view.get('[data-mobile-windows]').trigger('keydown', { key: 'Escape' })
+  await flushPromises()
+  expect(view.find('[data-view-overview]').exists()).toBe(false)
+  expect(view.get('[data-mobile-view="chat"]').attributes("aria-hidden")).toBe("false")
+  expect(document.activeElement).toBe(view.get('[data-open-overview]').element)
+})
+
+test("edge swipes navigate horizontally, bounce at the boundary, and cancel interrupted gestures", async () => {
+  const view = await mountApp(`/sessions/${sessionId}`)
+  const viewport = view.get<HTMLElement>("[data-mobile-viewport]").element
+  Object.defineProperty(viewport, "clientWidth", { value: 390 })
+  const active = () => view.findAll("[data-mobile-view]").find(pane => pane.attributes("aria-hidden") === "false")!.attributes("data-mobile-view")
+  async function swipe(selector: string, dx: number, dy = 0, end = "pointerup") {
+    const edge = view.get<HTMLElement>(selector)
+    edge.element.setPointerCapture = vi.fn()
+    const event = { pointerType: "touch", pointerId: 1, isPrimary: true, clientX: 200, clientY: 200 }
+    await edge.trigger("pointerdown", event)
+    await edge.trigger("pointermove", { ...event, clientX: 200 + dx, clientY: 200 + dy })
+    await edge.trigger(end, { ...event, clientX: 200 + dx, clientY: 200 + dy })
+    await flushPromises()
+  }
+  await swipe('[data-viewport-edge="left"]', 120)
+  expect(active()).toBe("chat")
+  await swipe('[data-mobile-view="chat"]', -150)
+  expect(active()).toBe("chat")
+  await swipe('[data-viewport-edge="right"]', -10, 150)
+  expect(active()).toBe("chat")
+  await swipe('[data-viewport-edge="right"]', -150, 0, "pointercancel")
+  expect(active()).toBe("chat")
+  await swipe('[data-viewport-edge="right"]', -150)
+  expect(active()).toBe("changes")
+  await swipe('[data-viewport-edge="right"]', -150)
+  expect(active()).toBe("changes")
+  await swipe('[data-viewport-edge="left"]', 150)
+  expect(active()).toBe("chat")
+
+  const terminals = useTerminalsStore(pinia)
+  terminals.sessions = [{ id: "shell-1", title: "Build shell", worktreeId: sessionWorktreeId, cwd: "/worktree", cols: 80, rows: 24, status: "running" }]
+  await flushPromises()
+  await swipe('[data-viewport-edge="right"]', -150)
+  expect(active()).toBe("changes")
+  await swipe('[data-viewport-edge="right"]', -150, 0, "pointercancel")
+  expect(active()).toBe("changes")
+  expect(view.find("[data-terminal]").exists()).toBe(false)
+  await swipe('[data-viewport-edge="right"]', -150)
+  expect(active()).toBe("terminal:shell-1")
+  expect(view.find('[data-terminal][data-id="shell-1"]').exists()).toBe(true)
 })

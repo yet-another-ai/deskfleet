@@ -29,7 +29,7 @@ const panY = ref(0)
 const dragging = ref(false)
 const menuOpen = ref(false)
 const copied = ref(false)
-const sidePreviewLabel = computed(() => t(layout?.sessionWindowsAvailable ? "mermaid.showInRightTab" : "mermaid.showInSidebar"))
+const sidePreviewLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : layout?.sessionWindowsAvailable ? "mermaid.showInRightTab" : "mermaid.showInSidebar"))
 let dragStartX = 0, dragStartY = 0, generation = 0, disposed = false
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -94,8 +94,9 @@ function onWheel(event: WheelEvent): void {
   if (event.deltaY < 0) zoomIn(); else if (event.deltaY > 0) zoomOut()
 }
 async function focusDiagram(): Promise<void> {
-  if (getActivePinia()) useLayoutStore().sidebarOpen = true
   const source = resolvedSource(), current = router.currentRoute.value
+  if (layout?.compact && layout.requestSessionWindow({ kind: "mermaid", code: props.code, source })) return
+  if (layout) layout.sidebarOpen = true
   await router.push({ path: current.path, query: { ...current.query, mermaid: props.code, mermaidEntry: source.entryId, mermaidDiagram: source.diagramId } })
 }
 async function copyCode(): Promise<void> {

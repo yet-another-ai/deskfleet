@@ -22,7 +22,9 @@ let nextLocateRequestId = 1
 let locatedTimer: ReturnType<typeof setTimeout> | undefined
 
 export async function focusPreview(item: PreviewDescriptor): Promise<void> {
-  useLayoutStore().sidebarOpen = true
+  const layout = useLayoutStore()
+  if (layout.compact && layout.requestSessionWindow({ kind: "preview", item })) return
+  layout.sidebarOpen = true
   const current = router.currentRoute.value
   await router.push({
     path: current.path,
@@ -83,7 +85,7 @@ export function openPreviewInSidebar(item: PreviewDescriptor): string {
   return activeDetailsTab.value
 }
 
-/** Desktop Sessions use a Dockview tab; compact and non-Session surfaces retain the details drawer. */
+/** Session renderers open previews as desktop tabs or mobile views. */
 export function openPreviewFromAction(item: PreviewDescriptor): string | undefined {
   const layout = useLayoutStore()
   if (layout.requestSessionWindow({ kind: "preview", item })) return undefined

@@ -13,7 +13,7 @@ import PreviewViewer from "../session/PreviewViewer.vue"
 import GitChanges from "./GitChanges.vue"
 import IconButton from "../common/IconButton.vue"
 
-defineProps<{ windowed?: boolean }>()
+defineProps<{ windowed?: boolean; standalone?: boolean }>()
 const { t } = useI18n()
 const worktree = useRouteWorktree()
 const agents = useAgentSessionsStore()
@@ -45,7 +45,7 @@ function tabTitle(index: number): string {
     class="relative flex h-full w-full shrink-0 flex-col bg-ui-canvas"
     :class="!windowed && 'border-l border-ui-border'"
   >
-    <TabsRoot v-if="mermaidSidebarTabs.length || previewSidebarTabs.length" :model-value="currentTab" class="flex min-h-0 flex-1 flex-col" @update:model-value="activeDetailsTab = String($event)">
+    <TabsRoot v-if="!standalone && (mermaidSidebarTabs.length || previewSidebarTabs.length)" :model-value="currentTab" class="flex min-h-0 flex-1 flex-col" @update:model-value="activeDetailsTab = String($event)">
       <div class="titlebar-overlay-inset app-drag flex h-12 shrink-0 items-center border-b border-ui-border px-2">
         <TabsList :aria-label="t('panel.changes')" class="app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto" loop>
           <TabsTrigger value="changes" class="flex h-full shrink-0 cursor-pointer items-center border-b-2 px-2.5 text-[13px] font-medium" :class="currentTab === 'changes' ? 'border-ui-accent text-ui-accent' : 'border-transparent text-ui-text-muted hover:text-ui-text'">{{ t('panel.changes') }}</TabsTrigger>

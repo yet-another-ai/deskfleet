@@ -7,9 +7,9 @@ import { onBeforeUnmount, onMounted } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute } from "vue-router"
 import AppMainWindow from "./components/chrome/AppMainWindow.vue"
-import CompactPanel from "./components/chrome/CompactPanel.vue"
+import BottomSheet from "./components/common/BottomSheet.vue"
+import MobileWindowManager from "./components/chrome/MobileWindowManager.vue"
 import WindowManager from "./components/chrome/WindowManager.vue"
-import ChangesPanel from "./components/details/ChangesPanel.vue"
 import AppSidebar from "./components/sidebar/AppSidebar.vue"
 import { listenMermaidLocate, locateMermaidInMainView, useLayoutStore } from "./stores/layout.ts"
 import { listenPreviewWindowMessages, locatePreviewInMainView } from "./stores/previews.ts"
@@ -21,7 +21,7 @@ import { useProvidersStore } from "./stores/providers.ts"
 const platformClient = usePlatformClient()
 
 const layout = useLayoutStore()
-const { compact, sidebarOpen, detailsOpen } = storeToRefs(layout)
+const { compact, sidebarOpen } = storeToRefs(layout)
 const { t } = useI18n()
 const route = useRoute()
 const fleet = useFleetStore()
@@ -61,12 +61,10 @@ onBeforeUnmount(() => {
   <div class="flex h-full overflow-hidden">
     <AppSidebar v-if="sidebarOpen && !compact && !route.meta.fullWindow" />
     <WindowManager v-if="!compact && route.name === 'session'" :key="String(route.params.sessionId)" :session-id="String(route.params.sessionId)" />
+    <MobileWindowManager v-else-if="compact && route.name === 'session'" :key="`mobile:${route.params.sessionId}`" :session-id="String(route.params.sessionId)" />
     <AppMainWindow v-else />
-    <CompactPanel v-if="compact && sidebarOpen && !route.meta.fullWindow" side="left" :title="t('catalog.workspaces')" @close="layout.closeCompactPanel()">
+    <BottomSheet v-if="compact && !route.meta.fullWindow" :open="sidebarOpen" :title="t('catalog.workspaces')" background="sidebar" @close="layout.closeCompactPanel()">
       <AppSidebar class="h-full" />
-    </CompactPanel>
-    <CompactPanel v-if="compact && detailsOpen && route.name === 'session'" side="right" :title="t('panel.changes')" @close="layout.closeCompactPanel()">
-      <ChangesPanel class="h-full" />
-    </CompactPanel>
+    </BottomSheet>
   </div>
 </template>

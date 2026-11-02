@@ -1,4 +1,10 @@
 {
+  "mobileViews": {
+    "openTerminal": "Open to connect",
+    "overview": "Views",
+    "open": "Open view",
+    "close": "Close {title}"
+  },
   "errors": {
     "details": "Technical details",
     "viewBilling": "View billing",
@@ -369,6 +375,7 @@
     "lastObserved": "Last synced {time}"
   },
   "common": {
+    "close": "Close",
     "increase": "Increase",
     "decrease": "Decrease",
     "noResults": "No results found.",

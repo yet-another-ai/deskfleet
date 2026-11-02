@@ -111,7 +111,7 @@ export const useLayoutStore = defineStore("layout", () => {
   const compactPanel = ref<"sidebar" | "details" | null>(null)
   const detailsOpenRequest = ref(0)
   const sessionWindowRequest = shallowRef<SessionWindowRequest>()
-  const sessionWindowsAvailable = computed(() => !compact.value && router.currentRoute.value.name === "session")
+  const sessionWindowsAvailable = computed(() => router.currentRoute.value.name === "session")
   const sidebarOpen = computed({
     get: () => compact.value ? compactPanel.value === "sidebar" : desktopSidebarOpen.value,
     set: value => {

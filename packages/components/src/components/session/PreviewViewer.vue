@@ -73,7 +73,7 @@ const request = computed<FileResourceRequest | undefined>(() =>
 )
 const pannable = computed(() => kind.value === "image")
 const title = computed(() => props.title || (kind.value === "image" ? t("agent.image") : t("agent.contentType", { type: kind.value })))
-const sidePreviewLabel = computed(() => t(layout?.sessionWindowsAvailable ? "mermaid.showInRightTab" : "mermaid.showInSidebar"))
+const sidePreviewLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : layout?.sessionWindowsAvailable ? "mermaid.showInRightTab" : "mermaid.showInSidebar"))
 
 function clearLoadedUrl(): void {
   if (loadedUrl.value) URL.revokeObjectURL(loadedUrl.value)
