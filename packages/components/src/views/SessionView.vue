@@ -170,10 +170,12 @@ watchImmediate(() => props.sessionId, id => {
   followBottom.value = !focusedEntry.value && (!pendingLocate.value || (!!pendingLocate.value.sessionId && pendingLocate.value.sessionId !== id))
   void agents.open(id)
 })
-watchImmediate(() => props.sessionId, (id, _, onCleanup) => {
+watchImmediate([() => props.sessionId, () => agents.state], ([id, connection], _, onCleanup) => {
+  // A dropped channel already clears attendance. Attend again when this view is still mounted.
+  if (connection !== "connected") return
   let left = false
   onCleanup(() => { left = true; void agents.leave(id) })
-  void agents.attend(id).then(() => { if (left) void agents.leave(id) })
+  void agents.attend(id).then(present => { if (left && present) void agents.leave(id) })
 })
 useSessionRead(() => props.sessionId)
 watch(() => [view.value?.events.length, view.value?.loading], () => {
