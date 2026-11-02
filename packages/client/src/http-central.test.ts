@@ -9,7 +9,10 @@ class Socket {
   onmessage?: (event: { data: string }) => void
   onerror?: () => void
   onclose?: (event: { code: number }) => void
-  send = vi.fn()
+  readyState = 1
+  send = vi.fn(() => {
+    if (this.readyState !== 1) throw new DOMException("Sent before connected.", "InvalidStateError")
+  })
   close = vi.fn()
 }
 function setup() {
@@ -340,4 +343,15 @@ test("replaces a silent signaling socket instead of waiting for a close event", 
   expect(f.sockets).toHaveLength(1)
   await vi.advanceTimersByTimeAsync(2_000)
   expect(f.sockets).toHaveLength(2)
+})
+
+test("heartbeat never sends while the upgrade is still connecting", async () => {
+  vi.useFakeTimers()
+  const f = setup()
+  f.client.onEvent(vi.fn())
+  // A hung upgrade: send() would throw InvalidStateError on every heartbeat tick.
+  f.sockets[0]!.readyState = 0
+  await vi.advanceTimersByTimeAsync(80_000)
+  expect(f.sockets[0]!.send).not.toHaveBeenCalled()
+  expect(f.sockets[0]!.close).toHaveBeenCalledTimes(1)
 })

@@ -279,7 +279,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     this.#heartbeat = setInterval(() => {
       if (this.#socket !== socket) return
       if (Date.now() - this.#lastReceived > IDLE_TIMEOUT_MS) this.#stale(socket)
-      else socket.send(JSON.stringify({ type: "ping" }))
+      // Sending while CONNECTING or CLOSING throws; an unfinished upgrade only ages out.
+      else if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" }))
     }, HEARTBEAT_MS)
   }
   /**
