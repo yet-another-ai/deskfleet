@@ -29,6 +29,7 @@ function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false,
     ...(platform === "win32" ? { windowsDesktopService: { available: true, installed: false, running: false } } : {}),
   }
   const listeners = new Set<(state: LocalAgentState) => void>()
+  const application = { restart: vi.fn(async () => {}) }
   const order = state.permissionSteps
   const next = (step: OnboardingStep) => { state.step = step; return { ...state } }
   const onboarding = {
@@ -49,15 +50,36 @@ function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false,
     complete: vi.fn(async () => next("complete")),
   } satisfies OnboardingApi
   const host = {
-    ...getClient(), platform, central: fake.central, onboarding,
+    ...getClient(), platform, central: fake.central, onboarding, application,
     settings: { ...getClient().settings, onChanged: (listener: (state: LocalAgentState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } } },
   }
   return {
-    fake, state, permissions, onboarding, listeners,
+    fake, state, permissions, onboarding, application, listeners,
     mount() { view = mount(AccountShell, { props: { host }, global: { plugins: [pinia, i18n] }, attachTo: document.body }) },
     changed() { for (const listener of listeners) listener({ enabled: true, status: "running", ...permissions }) },
   }
 }
+
+test("macOS permission steps offer a complete application restart", async () => {
+  const app = setup("accessibility")
+  app.mount()
+  await flushPromises()
+  await click("Restart DeskFleet")
+  expect(app.application.restart).toHaveBeenCalledOnce()
+
+  view!.unmount()
+  const localNetwork = setup("localNetwork")
+  localNetwork.mount()
+  await flushPromises()
+  await click("Restart DeskFleet")
+  expect(localNetwork.application.restart).toHaveBeenCalledOnce()
+
+  view!.unmount()
+  const linux = setup("screenCapture", false, "linux")
+  linux.mount()
+  await flushPromises()
+  expect(view!.findAll("button").map(button => button.text())).not.toContain("Restart DeskFleet")
+})
 
 async function click(text: string): Promise<void> {
   const button = view!.findAll("button").find(value => value.text() === text)
@@ -266,7 +288,7 @@ test("welcome guides each permission and finishes only after successful sign-in 
   await flushPromises()
   expect(view!.get("h1").text()).toBe("Full Disk Access")
   expect(view!.find('[name="server-url"]').exists()).toBe(false)
-  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Local network", "Full Disk Access", "Screen recording", "Accessibility", "Your account"])
+  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Local network", "Full Disk Access", "Screen recording", "Mouse and keyboard control", "Your account"])
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
   await click("Enable access")
   expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("fullDiskAccess")
@@ -277,7 +299,7 @@ test("welcome guides each permission and finishes only after successful sign-in 
   await click("Continue")
   expect(view!.get("h1").text()).toBe("Screen recording")
   await click("Skip for now")
-  expect(view!.get("h1").text()).toBe("Accessibility")
+  expect(view!.get("h1").text()).toBe("Mouse and keyboard control")
   await click("Skip for now")
   expect(app.onboarding.advancePermission.mock.calls).toEqual([["fullDiskAccess"], ["screenCapture"], ["accessibility"]])
   expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
@@ -309,7 +331,7 @@ test("signed-in users resume the saved permission, refresh on focus, and can ret
   view!.unmount()
   app.mount()
   await flushPromises()
-  expect(view!.get("h1").text()).toBe("Accessibility")
+  expect(view!.get("h1").text()).toBe("Mouse and keyboard control")
   await click("Skip for now")
   app.onboarding.complete.mockRejectedValueOnce(new Error("Cannot save setup"))
   await submit()

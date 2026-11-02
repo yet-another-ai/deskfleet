@@ -141,6 +141,11 @@ function connect(): void {
   void connection.connect({ displayId: displayId.value, codecs: codecs.value, audio: audio.value, control: control.value })
 }
 
+function connectWithoutControl(): void {
+  control.value = false
+  connect()
+}
+
 async function openNative(): Promise<void> {
   if (!canOpenNative.value || displayId.value === null || !platformClient.desktop.openNative) return
   nativeOpening.value = true
@@ -195,6 +200,7 @@ const status = computed(() => {
   if (nativeOpening.value) return t("desktop.nativeOpening")
   if (nativeError.value) return t("desktop.nativeFailed")
   if (failure.value?.kind === "timeout") return t("desktop.timeout")
+  if (failure.value?.reason === "accessibility") return t("desktop.accessibilityFailed")
   if (failure.value) return t("desktop.connectionFailed")
   if (loading.value) return t("desktop.checking")
   if (!fleet.localDesktopTarget.online) return t("desktop.daemonUnavailable")
@@ -207,7 +213,12 @@ const status = computed(() => {
 const detail = computed(() => local.value ? nativeError.value ?? failure.value?.error ?? failure.value?.detail ?? discoveryError.value
   ?? (!fleet.localDesktopTarget.online ? fleet.localDesktopTarget.error : undefined) : undefined)
 const hasError = computed(() => local.value && !!(failure.value || detail.value))
-const errorDescription = computed(() => errorPresentation(detail.value, failure.value?.relayDeniedReason).kind === "generic" ? t("errors.desktopUnlockHint") : undefined)
+const accessibilityFailure = computed(() => failure.value?.reason === "accessibility")
+const errorDescription = computed(() => {
+  if (accessibilityFailure.value) return t("desktop.accessibilityRecovery", { machine: machine.value?.name ?? fleet.localDesktopTarget.name })
+  if (failure.value?.kind !== "connection" && failure.value?.kind !== "timeout") return undefined
+  return errorPresentation(detail.value, failure.value?.relayDeniedReason).kind === "generic" ? t("errors.desktopUnlockHint") : undefined
+})
 </script>
 
 <template>
@@ -237,7 +248,8 @@ const errorDescription = computed(() => errorPresentation(detail.value, failure.
         <p v-else class="m-0 text-sm font-medium" role="status">{{ status }}</p>
         <div v-if="local" class="mt-2 flex flex-wrap items-center justify-center gap-2">
           <UiButton v-if="active" type="button" @click="connection.disconnect()">{{ t("desktop.disconnect") }}</UiButton>
-          <UiButton variant="primary" v-else type="button" :disabled="!canConnect" @click="connect">{{ t("desktop.connect") }}</UiButton>
+          <UiButton variant="primary" v-else type="button" :disabled="!canConnect" @click="connect">{{ t(accessibilityFailure ? "desktop.retryControl" : "desktop.connect") }}</UiButton>
+          <UiButton v-if="accessibilityFailure" type="button" :disabled="!canConnect" @click="connectWithoutControl">{{ t("desktop.connectWithoutControl") }}</UiButton>
           <UiButton v-if="showNative" type="button" data-native-desktop :disabled="!canOpenNative" :title="t('desktop.nativeHint')" @click="openNative">{{ t("desktop.openNative") }}</UiButton>
           <UiButton variant="ghost" size="sm" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:op-40" :disabled="loading || active || nativeOpening" @click="refresh">
             <RefreshCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("desktop.retry") }}

@@ -21,6 +21,7 @@ function setup(platform: DeskfleetDesktopApi["platform"] = "darwin", localAgent 
     accessibilityPermission: { status: "granted" },
   }
   const listeners = new Set<(state: LocalAgentState) => void>()
+  const application = { restart: vi.fn(async () => {}) }
   const onboarding = {
     get: vi.fn(async () => ({ ...state })),
     permissions: vi.fn(async () => ({ ...permissions })),
@@ -30,11 +31,11 @@ function setup(platform: DeskfleetDesktopApi["platform"] = "darwin", localAgent 
     complete: vi.fn(async () => state),
   } satisfies OnboardingApi
   const host: DeskfleetDesktopApi = {
-    ...getClient(), platform, onboarding,
+    ...getClient(), platform, onboarding, application,
     settings: { ...getClient().settings, onChanged(listener) { listeners.add(listener); return () => { listeners.delete(listener) } } },
   }
   return {
-    host, state, permissions, onboarding, listeners,
+    host, state, permissions, onboarding, application, listeners,
     mount() {
       view = mount(PermissionsSettings, { global: { plugins: [i18n], provide: { [platformClientKey as symbol]: host } } })
       return view
@@ -123,7 +124,11 @@ test("reviews all macOS permissions after welcome and requests them without adva
   const app = setup()
   app.mount()
   await flushPromises()
-  expect(view!.findAll("h2").map(title => title.text())).toEqual(["Local network", "Full Disk Access", "Screen recording", "Accessibility"])
+  expect(view!.findAll("h2").map(title => title.text())).toEqual(["Local network", "Full Disk Access", "Screen recording", "Mouse and keyboard control"])
+  expect(card("accessibility").text()).toContain("macOS calls this Accessibility")
+  expect(card("accessibility").text()).toContain("fully quit and reopen DeskFleet")
+  await click("Restart DeskFleet")
+  expect(app.application.restart).toHaveBeenCalledOnce()
   expect(card("accessibility").get('[role="status"]').text()).toBe("Access enabled")
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
   await card("screenCapture").get("button").trigger("click")

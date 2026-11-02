@@ -11,6 +11,7 @@ import { attachWindowsDesktopService } from "./windows-desktop-service.ts"
 import type { BackgroundLifecycle } from "./lifecycle.ts"
 import { buildResourcePath } from "./paths.ts"
 import { followSystemTheme, windowChromeOptions } from "./window-chrome.ts"
+import { attachApplication } from "./application.ts"
 
 let mainWindow: BrowserWindow | null = null
 
@@ -53,6 +54,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
     webPreferences: secureWebPreferences(),
   })
   mainWindow = window
+  attachApplication(window)
   attachDesktopMedia(window)
   attachSettings(window)
   attachAppearance(window)

@@ -179,7 +179,7 @@ async fn connect(
                                 let result=match error{
                                     Some(e)=>{
                                         let mut failure=ApiError::new(actix_web::http::StatusCode::BAD_GATEWAY,"daemon_error",e.message);
-                                        if e.reason.as_deref()==Some("encoder"){failure.reason=Some("encoder".to_owned());}
+                                        if matches!(e.reason.as_deref(), Some("encoder" | "accessibility")) { failure.reason = e.reason; }
                                         Err(failure)
                                     }
                                     None=>Ok(result.unwrap_or(Value::Null)),

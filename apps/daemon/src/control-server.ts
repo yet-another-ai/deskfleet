@@ -9,7 +9,7 @@ import type { NativePeer, PeerConfig } from "@deskfleet/native"
 import { readSystemStatus } from "./system-status.ts"
 import { desktopCapabilities, supportsDesktop } from "./desktop-capabilities.ts"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
-import { MAX_CONTROL_MESSAGE_BYTES, desktopErrorEvent, desktopStartupCleanupFailure, encoderFailure, isEncoderFailure, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
+import { MAX_CONTROL_MESSAGE_BYTES, desktopErrorEvent, desktopErrorReason, desktopStartupCleanupFailure, encoderFailure, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
 import { parseControlRequest, readControlRequestId } from "./control-request.ts"
 import { endControlSocket } from "./control-socket.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
@@ -185,7 +185,8 @@ class ControlConnection {
             }
             this.#send({ id: request.id, result })
           } catch (error) {
-            this.#send({ id, error: message(error), ...(isEncoderFailure(error) ? { reason: "encoder" as const } : {}) })
+            const reason = desktopErrorReason(error)
+            this.#send({ id, error: message(error), ...(reason ? { reason } : {}) })
             if (!this.#authenticated) {
               await endControlSocket(this.#socket)
               return

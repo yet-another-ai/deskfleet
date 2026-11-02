@@ -9,7 +9,7 @@ import { join } from "node:path"
 import test from "node:test"
 import { createPeer, openInMemoryCatalog, type NativePeer, type NativeTerminal, type PeerEvent } from "@deskfleet/native"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
-import { encoderFailure, type ControlMessage, type ControlMethod, type ControlMethods, type DaemonEvent } from "./control-protocol.ts"
+import { encoderFailure, isDesktopErrorReason, type ControlMessage, type ControlMethod, type ControlMethods, type DaemonEvent } from "./control-protocol.ts"
 import { validateControlParams, validateRelayedDesktopStart } from "./control-request.ts"
 import { startControlServer as createControlServer, type ControlPeers } from "./control-server.ts"
 import { startDaemon } from "./daemon.ts"
@@ -53,7 +53,7 @@ class Client {
           this.#pending.delete(message.id)
           if (message.error) {
             const error = new Error(message.error)
-            if (message.reason === "encoder") (error as Error & { reason?: "encoder" }).reason = "encoder"
+            if (isDesktopErrorReason(message.reason)) Object.assign(error, { reason: message.reason })
             waiting?.reject(error)
           } else waiting?.resolve(message.result)
         }
@@ -502,6 +502,25 @@ for (const primaryEncoder of [true, false]) {
     assert.equal(fake.closeCalls(), 1)
   })
 }
+
+test("local startup classifies a native macOS Accessibility denial", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-accessibility-error-"))
+  const error = new Error("desktop control needs Accessibility permission on the remote Mac")
+  const fake = desktopPeers({ start: async () => { throw error }, close: async () => {} })
+  const starting = startControlServer(fake.service, directory, capabilities)
+  context.after(async () => { await (await starting).close(); await rm(directory, { recursive: true, force: true }) })
+  await starting
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint, context.signal)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  await client.call("offer", offer)
+  await assert.rejects(client.call("start", { sessionId: offer.sessionId, displayId: 4, control: true }), (failure: Error & { reason?: string }) => {
+    assert.equal(failure.message, error.message)
+    assert.equal(failure.reason, "accessibility")
+    return true
+  })
+})
 
 for (const failure of ["ready send", "channel closes during capture start"] as const) {
   test(`local desktop startup rolls back when ${failure} and awaits native cleanup`, { timeout: 15_000 }, async context => {

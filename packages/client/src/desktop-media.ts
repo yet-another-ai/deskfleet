@@ -1,16 +1,19 @@
 import type {
   DesktopCapabilities,
+  DesktopErrorReason,
   DesktopEvent,
   DesktopOffer,
   DesktopStart,
   IceCandidate,
 } from "../../../apps/daemon/src/control-protocol.ts"
+export { desktopErrorReason, isDesktopErrorReason } from "../../../apps/daemon/src/control-protocol.ts"
 import type { RelayDeniedReason } from "./relay.ts"
 import type { NativeDesktopOptions } from "./native-desktop.ts"
 
 export type {
   DesktopCapabilities,
   DesktopDisplay,
+  DesktopErrorReason,
   DesktopEvent,
   DesktopOffer,
   DesktopStart,
@@ -46,7 +49,7 @@ export interface DesktopMediaApi {
   onEvent(listener: (event: DesktopEvent) => void): () => void
 }
 
-export type DesktopMediaResult<T> = { ok: true; value: T } | { ok: false; error: string; reason?: "encoder" }
+export type DesktopMediaResult<T> = { ok: true; value: T } | { ok: false; error: string; reason?: DesktopErrorReason }
 
 export const DESKTOP_MEDIA_CHANNEL = "deskfleet:desktop-media"
 export const DESKTOP_MEDIA_EVENT = "deskfleet:desktop-event"

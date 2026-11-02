@@ -259,6 +259,24 @@ test("view-only sessions never create an input channel; control waits for native
   expect(connection.inputReady.value).toBe(false)
 })
 
+test("a startup channel error does not mask the remote Accessibility failure", async () => {
+  const { connection, api } = setup()
+  const starting = deferred<void>()
+  api.start.mockReturnValue(starting.promise)
+  await connection.connect({ ...options, control: true })
+  const peer = TestPeer.instances[0]!
+  peer.changeState("connected")
+  peer.input.onerror?.()
+  expect(connection.state.value).toBe("starting")
+  expect(connection.failure.value).toBeNull()
+
+  const error = Object.assign(new Error("desktop control needs Accessibility permission on the remote Mac"), { reason: "accessibility" as const })
+  starting.reject(error)
+  await flushPromises()
+  expect(connection.failure.value).toEqual({ kind: "operation", detail: error.message, error, reason: "accessibility" })
+  expect(connection.failure.value?.detail).not.toContain("input channel")
+})
+
 test("input errors and send backpressure close the peer so held input cannot remain active", async () => {
   const { connection } = setup()
   await connection.connect({ ...options, control: true })

@@ -7,6 +7,7 @@ import {
   type ControlMethods,
   type DaemonDiscovery,
   type DaemonEvent,
+  isDesktopErrorReason,
   type LocalDaemonInfo,
 } from "./control-protocol.ts"
 
@@ -127,7 +128,7 @@ export class DaemonClient {
           clearTimeout(pending.timeout)
           if (typeof message.error === "string") {
             const error = new Error(message.error)
-            if (message.reason === "encoder") (error as Error & { reason?: "encoder" }).reason = "encoder"
+            if (isDesktopErrorReason(message.reason)) Object.assign(error, { reason: message.reason })
             pending.reject(error)
           } else pending.resolve(message.result)
         }
