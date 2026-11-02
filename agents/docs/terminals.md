@@ -59,6 +59,9 @@ The terminal toolbar exposes search, copy selection, and both export formats in
 machine, Session, and read-only Agent terminals. Ctrl/Cmd+F opens search within
 the focused terminal; Enter/Shift+Enter or F3/Shift+F3 navigate matches while
 search has focus, and Escape closes it and returns focus to the terminal.
+In interactive terminals, Cmd+Left and Cmd+Right move the cursor to the line
+start (`\x01`) and end (`\x05`). Alt+Left and Alt+Right move it by word (`\x1bb`
+and `\x1bf`).
 
 Search 0.16.0 caches highlights across option changes; the UI clears that cache
 when case, whole-word, or regex mode changes. The pinned
