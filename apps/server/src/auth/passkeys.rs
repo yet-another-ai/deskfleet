@@ -1,6 +1,7 @@
 //! WebAuthn ceremonies remain server-side, purpose- and session-bound.
 use super::passwords::{Email, field};
 use super::*;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -126,12 +127,14 @@ pub(super) async fn register(
         .webauthn
         .finish_passkey_registration(&body.credential, &ceremony)
         .map_err(|_| ApiError::unauthorized())?;
-    let credential = encoded(key.cred_id())?;
+    // webauthn-rs 0.6 stores CredentialID as Vec<u8>; keep the DB key as the
+    // same URL-safe unpadded Base64 form the Passkey JSON record uses.
+    let credential = URL_SAFE_NO_PAD.encode(key.cred_id());
     state
         .store
         .save_passkey(
             &auth.user.id,
-            credential.as_str().ok_or_else(ApiError::internal)?,
+            &credential,
             encoded(&key)?,
             &body.name,
             &auth.id,
@@ -230,7 +233,7 @@ async fn finish(
     }
     let user_id = field(&saved, "userId")?;
     let result = if purpose == "passkey_login" {
-        let (credential_user, _) = state
+        let (credential_user, credential_id) = state
             .auth
             .webauthn
             .identify_discoverable_authentication(&body.credential)
@@ -239,15 +242,15 @@ async fn finish(
             return Err(ApiError::unauthorized());
         }
         let ceremony: DiscoverableAuthentication = decoded(saved["record"]["state"].clone())?;
-        let credentials: Vec<DiscoverableKey> = keys(state, user_id)
+        let credential = keys(state, user_id)
             .await?
             .into_iter()
-            .map(Into::into)
-            .collect();
-        state.auth.webauthn.finish_discoverable_authentication(
+            .find(|key| key.cred_id().as_slice() == credential_id)
+            .ok_or_else(ApiError::unauthorized)?;
+        state.auth.webauthn.finish_discoverable_authentication_v2(
             &body.credential,
             ceremony,
-            &credentials,
+            &credential,
         )
     } else {
         let ceremony: PasskeyAuthentication = decoded(saved["record"]["state"].clone())?;
