@@ -46,19 +46,54 @@ test("loads deployment STUN configuration without creating a peer and preserves 
   }))
 })
 
-test("bounds network configuration fetch to five seconds and propagates cancellation", async () => {
+test("recovers from transient configuration route 404s and refreshes configuration on the next probe", async () => {
+  const f = setup()
+  const configuration = { stunUrls: ["stun:primary.example:3478"] }
+  const updated = { stunUrls: ["stun:updated.example:3479"] }
+  f.fetch
+    .mockResolvedValueOnce(new Response(null, { status: 404, statusText: "Not Found" }))
+    .mockResolvedValueOnce(new Response(null, { status: 404, statusText: "Not Found" }))
+  f.responses.push(configuration, updated)
+  expect(await f.client.networkConfiguration()).toEqual(configuration)
+  expect(f.fetch).toHaveBeenCalledTimes(3)
+  expect(await f.client.networkConfiguration()).toEqual(updated)
+  expect(f.fetch).toHaveBeenCalledTimes(4)
+  for (const call of f.fetch.mock.calls) {
+    expect(call).toEqual(["https://fleet.example/api/network-configuration", expect.objectContaining({
+      method: "GET", headers: { Authorization: "Bearer application-token" },
+    })])
+  }
+})
+
+test("stops after three configuration route 404s without inventing STUN configuration", async () => {
+  const f = setup()
+  f.fetch.mockImplementation(async () => new Response(null, { status: 404, statusText: "Not Found" }))
+  await expect(f.client.networkConfiguration()).rejects.toMatchObject({ status: 404, message: "Not Found" })
+  expect(f.fetch).toHaveBeenCalledTimes(3)
+})
+
+test.each([401, 403, 500])("does not retry configuration HTTP %s failures", async (status) => {
+  const f = setup()
+  f.fetch.mockImplementation(async () => new Response(JSON.stringify({ error: { code: "failure", message: "Configuration unavailable" } }), { status }))
+  await expect(f.client.networkConfiguration()).rejects.toMatchObject({ status, message: "Configuration unavailable" })
+  expect(f.fetch).toHaveBeenCalledOnce()
+})
+
+test.each([false, true])("bounds configuration reads to five seconds including retries (%s)", async (retry) => {
   const controller = new AbortController()
   const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal)
   const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => new Promise((_resolve, reject) => {
     init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true })
   }))
+  if (retry) fetch.mockResolvedValueOnce(new Response(null, { status: 404, statusText: "Not Found" }))
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "application-token" }, persist: async () => {}, authorize: async () => {}, fetch })
   clients.push(client)
   try {
     const result = client.networkConfiguration()
     const rejected = expect(result).rejects.toBeInstanceOf(CentralRequestError)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(retry ? 2 : 1))
     expect(timeout).toHaveBeenCalledExactlyOnceWith(5_000)
-    expect(fetch).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({ signal: controller.signal }))
+    for (const [, init] of fetch.mock.calls) expect(init?.signal).toBe(controller.signal)
     controller.abort(new DOMException("Configuration request timed out", "TimeoutError"))
     await rejected
   } finally { timeout.mockRestore() }
