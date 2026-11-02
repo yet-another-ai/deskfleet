@@ -104,7 +104,7 @@ function addChangesPanel(group?: DockviewGroupPanel): void {
   changesOpen.value = true
 }
 
-function addTerminalPanel(terminalId: string, title: string, group: DockviewGroupPanel, activate = false): void {
+function addTerminalPanel(terminalId: string, title: string, group: DockviewGroupPanel, activate = false, direction: "within" | "below" = "within"): void {
   const current = api.value
   const panelId = `terminal:${terminalId}`
   if (!current || current.getPanel(panelId)) return
@@ -113,7 +113,7 @@ function addTerminalPanel(terminalId: string, title: string, group: DockviewGrou
     component: "terminal",
     title,
     params: { terminalId },
-    position: { referenceGroup: group, direction: "within" },
+    position: { referenceGroup: group, direction },
     inactive: !activate,
     minimumHeight: 120,
   })
@@ -311,14 +311,14 @@ function shellTitle(terminalId: string): string {
   return terminals.titles[terminalId]?.trim() || t("terminal.tab", { number })
 }
 
-async function openTerminalTab(group: DockviewGroupPanel): Promise<void> {
+async function openTerminalTab(group: DockviewGroupPanel, direction: "within" | "below" = "within"): Promise<void> {
   const worktreeId = sessionWorktreeId.value
   if (!worktreeId) return
   try {
     const terminal = await terminals.create({ worktreeId })
-    addTerminalPanel(terminal.id, shellTitle(terminal.id), group, true)
+    addTerminalPanel(terminal.id, shellTitle(terminal.id), group, true, direction)
     const panel = api.value?.getPanel(`terminal:${terminal.id}`)
-    if (panel && panel.api.group.id !== group.id) panel.api.moveTo({ group, index: group.panels.length })
+    if (direction === "within" && panel && panel.api.group.id !== group.id) panel.api.moveTo({ group, index: group.panels.length })
     panel?.api.setActive()
     saveLayout()
   } catch (reason) {
@@ -418,7 +418,16 @@ onScopeDispose(() => {
         </DropdownMenuRoot>
       </template>
       <template #rightHeaderActions="{ group }">
-        <div :id="windowHeaderActionsId(group.id)" class="app-no-drag mr-[6px] flex h-full items-center gap-[6px]" data-window-header-actions :data-window-header-actions-group="group.id" />
+        <div :id="windowHeaderActionsId(group.id)" class="app-no-drag mr-[6px] flex h-full items-center gap-[6px]" data-window-header-actions :data-window-header-actions-group="group.id">
+          <IconButton
+            v-if="group.id === topLeftGroupId"
+            :icon="SquareTerminal"
+            :label="t('terminal.new')"
+            :disabled="!sessionWorktreeId"
+            data-new-terminal-window
+            @click="openTerminalTab(group, 'below')"
+          />
+        </div>
       </template>
     </DockviewVue>
   </section>

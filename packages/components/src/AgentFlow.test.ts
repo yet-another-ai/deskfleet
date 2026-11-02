@@ -115,6 +115,8 @@ test("Session actions use the right side of the top-left window tab bar", async 
   const actionGroup = actions.element.parentElement?.dataset.windowHeaderActionsGroup
   const toolbarGroup = wrapper.get("[data-window-toolbar-group]").attributes("data-window-toolbar-group")
   expect(actionGroup).toBe(toolbarGroup)
+  expect(actions.element.parentElement?.firstElementChild).toBe(page().get("[data-new-terminal-window]").element)
+  expect(page().get("[data-new-terminal-window]").attributes("aria-label")).toBe(i18n.global.t("terminal.new"))
 })
 
 test("a disconnected Session ignores a relay reason without its error", async () => {
@@ -614,7 +616,7 @@ test("unsupported multiple directories show a warning while the Session can keep
   expect(warning()).toBeUndefined()
 })
 
-test("each Session shell opens as its own window tab, belongs to its Worktree, and stays out of the sidebar", async () => {
+test("the Session shortcut opens a new shell in a window below Chat", async () => {
   await wrapper.get("textarea").setValue("Implement the feature")
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
@@ -624,12 +626,12 @@ test("each Session shell opens as its own window tab, belongs to its Worktree, a
     ...(options.mode === "create" && options.worktreeId ? { worktreeId: options.worktreeId } : {}),
   }))
   const hangup = vi.spyOn(platformClient.terminal, "hangup").mockResolvedValue()
-  await wrapper.get('[aria-label="Add window"]').trigger("click")
-  await flushPromises()
-  await page().get('[data-window-type="terminal"]').trigger("click")
+  await wrapper.get("[data-new-terminal-window]").trigger("click")
   await vi.waitFor(() => expect(dial).toHaveBeenCalledOnce())
   expect(dial).toHaveBeenCalledWith(expect.objectContaining({ mode: "create", worktreeId: "31" }))
   await vi.waitFor(() => expect(wrapper.find('[aria-label="Shell 1"][role="tab"]').exists()).toBe(true))
+  expect(wrapper.get(`[data-window-tab-id="terminal:${dial.mock.calls[0]![0].terminalId}"]`).element.closest(".dv-groupview"))
+    .not.toBe(wrapper.get('[data-window-tab-id="chat"]').element.closest(".dv-groupview"))
   expect(wrapper.get("aside").find('a[href^="#/terminals/"]').exists()).toBe(false)
   await wrapper.get('[aria-label="Close Shell 1"]').trigger("click")
   await vi.waitFor(() => expect(hangup).toHaveBeenCalledOnce())
