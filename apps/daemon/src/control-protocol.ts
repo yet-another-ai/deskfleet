@@ -52,7 +52,24 @@ export interface DesktopStart {
 }
 
 /** Omitted by older daemons. Only `"encoder"` may open another peer. */
-export type DesktopErrorReason = "encoder"
+export type DesktopErrorReason = "encoder" | "accessibility"
+
+const ACCESSIBILITY_PERMISSION_FAILURE = "desktop control needs Accessibility permission on the remote Mac"
+
+export function isDesktopErrorReason(reason: unknown): reason is DesktopErrorReason {
+  return reason === "encoder" || reason === "accessibility"
+}
+
+/** Classify desktop failures at the native boundary and preserve a reason already carried by transport errors. */
+export function desktopErrorReason(error: unknown): DesktopErrorReason | undefined {
+  if (typeof error === "object" && error !== null) {
+    const reason = (error as { reason?: unknown }).reason
+    if (isDesktopErrorReason(reason)) return reason
+    if (error instanceof AggregateError && error.cause !== undefined) return desktopErrorReason(error.cause)
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  return message === ACCESSIBILITY_PERMISSION_FAILURE ? "accessibility" : undefined
+}
 
 export type DesktopEvent =
   | { sessionId: string; kind: "iceCandidate"; candidate: IceCandidate }
@@ -60,7 +77,7 @@ export type DesktopEvent =
   | { sessionId: string; kind: "error"; error: string; reason?: DesktopErrorReason }
 
 export function desktopErrorEvent(sessionId: string, error: string, reason?: string | null): Extract<DesktopEvent, { kind: "error" }> {
-  return { sessionId, kind: "error", error, ...(reason === "encoder" ? { reason: "encoder" } : {}) }
+  return { sessionId, kind: "error", error, ...(isDesktopErrorReason(reason) ? { reason } : {}) }
 }
 
 export function encoderFailure(message: string): Error & { reason: DesktopErrorReason } {
@@ -80,7 +97,8 @@ export function desktopStartupCleanupFailure(startupError: unknown, cleanup: unk
   const failure = new AggregateError([startupError, cleanup], `Desktop startup failed: ${failureMessage(startupError)}; peer cleanup failed: ${failureMessage(cleanup)}`, { cause: startupError })
   // Cleanup can report a terminated encoder after joining it. Retry policy still
   // belongs to the startup failure, never to a secondary cleanup diagnostic.
-  return Object.assign(failure, isEncoderFailure(startupError) ? { reason: "encoder" as const } : {})
+  const reason = desktopErrorReason(startupError)
+  return Object.assign(failure, reason ? { reason } : {})
 }
 
 export interface DesktopPermission {

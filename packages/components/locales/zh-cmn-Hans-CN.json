@@ -76,7 +76,7 @@
     "noPermissions": "当前配置无需额外的系统权限。",
     "refresh": "检查权限",
     "refreshing": "正在检查权限…",
-    "restart": "请在系统设置中为 DeskFleet 开启权限。如果 macOS 要求退出并重新打开应用，请重启以使更改生效。",
+    "restart": "更改此权限后，请完全退出并重新打开 DeskFleet，让本地 Agent 使用新权限。",
     "waylandShared": "屏幕共享与鼠标键盘控制使用同一次桌面授权。"
   },
   "updatesSettings": {
@@ -488,7 +488,7 @@
     "retryStop": "重试停止",
     "retryLoad": "重新加载设置",
     "screenCaptureRequesting": "正在请求屏幕与系统音频录制权限…",
-    "screenCaptureDenied": "请在 macOS 系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许访问，然后关闭并重新开启本地 Agent。",
+    "screenCaptureDenied": "请在 macOS 系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许访问，然后完全退出并重新打开 DeskFleet。",
     "linuxScreenCaptureUnavailable": "无法捕获屏幕。请在已登录的图形会话中启动本地 Agent。",
     "linuxControlUnavailable": "无法控制鼠标和键盘。请在已登录的图形会话中启动本地 Agent。",
     "waylandScreenCaptureRequesting": "正在等待桌面共享授权…",
@@ -497,14 +497,14 @@
     "waylandControlRequesting": "正在等待鼠标与键盘控制授权…",
     "waylandControlDenied": "鼠标与键盘控制尚未获准。请解锁桌面，关闭并重新开启本地 Agent，然后在桌面共享对话框中允许远程控制。",
     "waylandControlError": "鼠标与键盘控制授权失败。",
-    "screenCaptureError": "无法请求屏幕与系统音频录制权限。请关闭并重新开启本地 Agent 以重试。",
+    "screenCaptureError": "无法请求屏幕与系统音频录制权限。请完全退出并重新打开 DeskFleet 后重试。",
     "desktopPermissions": "桌面权限",
     "fullDiskAccessRequesting": "正在为本地 Agent 请求完全磁盘访问权限…",
     "fullDiskAccessDenied": "请在 macOS 系统设置 → 隐私与安全性 → 完全磁盘访问权限中，授权运行本地 Agent 的应用或可执行文件，然后重新启动该应用或可执行文件。",
     "fullDiskAccessError": "无法请求完全磁盘访问权限。请重新启动运行本地 Agent 的应用或可执行文件以重试。",
     "accessibilityRequesting": "正在请求用于鼠标和键盘控制的辅助功能权限…",
-    "accessibilityDenied": "请在 macOS 系统设置 → 隐私与安全性 → 辅助功能中允许鼠标和键盘控制，然后关闭并重新开启本地 Agent。",
-    "accessibilityError": "无法请求用于鼠标和键盘控制的辅助功能权限。请关闭并重新开启本地 Agent 以重试。",
+    "accessibilityDenied": "请在 macOS 系统设置 → 隐私与安全性 → 辅助功能中允许鼠标和键盘控制，然后完全退出并重新打开 DeskFleet。",
+    "accessibilityError": "无法请求用于鼠标和键盘控制的辅助功能权限。请完全退出并重新打开 DeskFleet 后重试。",
     "agents": "Agents"
   },
   "notification": {
@@ -738,6 +738,10 @@
     "discoveryFailed": "无法获取可用显示器。",
     "noCodec": "Electron 中没有兼容的视频编解码器。",
     "connectionFailed": "桌面连接失败。",
+    "accessibilityFailed": "无法启动鼠标和键盘控制。",
+    "accessibilityRecovery": "请在 {machine} 上打开系统设置 → 隐私与安全性 → 辅助功能，允许 DeskFleet，然后完全退出并重新打开 DeskFleet。即使不启用控制，仍可共享屏幕。",
+    "retryControl": "重试控制",
+    "connectWithoutControl": "仅连接屏幕",
     "timeout": "桌面连接超时。请检查守护进程后重试。",
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏",
@@ -1273,7 +1277,7 @@
       "localNetwork": "本地网络",
       "fullDiskAccess": "完全磁盘访问权限",
       "screenCapture": "屏幕录制",
-      "accessibility": "辅助功能",
+      "accessibility": "鼠标和键盘控制",
       "windowsDesktopService": "锁屏时允许远程控制",
       "account": "登录账户"
     },
@@ -1281,7 +1285,7 @@
     "continue": "继续",
     "continueAs": "以 {name} 的身份继续",
     "systemSettings": "macOS 系统设置",
-    "permissionRestart": "在列表中为 DeskFleet 开启权限。如果 macOS 要求退出并重新打开应用，设置流程会从这里继续。",
+    "permissionRestart": "在列表中为 DeskFleet 开启权限，然后完全退出并重新打开 DeskFleet，让本地 Agent 使用新权限。设置流程会从这里继续。",
     "openSettings": "开启权限",
     "checking": "正在检查…",
     "checkAgain": "重新检查",
@@ -1356,9 +1360,9 @@
         "skip": "开启此权限之前，无法使用远程屏幕共享。你可以稍后在系统设置中开启。"
       },
       "accessibility": {
-        "description": "允许远程桌面会话控制这台电脑的鼠标和键盘。",
+        "description": "允许远程桌面会话控制这台电脑的鼠标和键盘。macOS 将此权限称为“辅助功能”。即使不启用控制，仍可共享屏幕。",
         "path": "隐私与安全性 → 辅助功能",
-        "skip": "开启此权限之前，无法远程控制鼠标和键盘。你可以稍后在系统设置中开启。"
+        "skip": "开启此权限之前，无法远程控制鼠标和键盘。你可以稍后在系统设置中开启；未启用控制时仍可共享屏幕。"
       }
     }
   },

@@ -143,6 +143,12 @@ test("HTTP errors keep their status and code instead of becoming fetch failures"
   expect(serializeCentralRequestError(failure)).toBeUndefined()
 })
 
+test("HTTP errors preserve supported desktop recovery reasons", async () => {
+  const f = setup()
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "daemon_error", message: "desktop control needs Accessibility permission on the remote Mac", reason: "accessibility" } }), { status: 502 }))
+  await expect(f.client.rpc("machine", "desktop.start", {})).rejects.toMatchObject({ status: 502, reason: "accessibility" })
+})
+
 test("transfers Team ownership with the encoded Team ID and selected member", async () => {
   const f = setup()
   await f.client.transferOwnership("team/1", "member-2")

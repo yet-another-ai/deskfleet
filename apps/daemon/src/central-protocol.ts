@@ -1,6 +1,6 @@
 import type { ControlMessage, IceServer, PeerAuthorization as WirePeerAuthorization } from "../../../crates/protocol/control.ts"
 import type { AgentActor } from "./agent-protocol.ts"
-import type { IceCandidate } from "./control-protocol.ts"
+import type { DesktopErrorReason, IceCandidate } from "./control-protocol.ts"
 
 /** Wire names are owned by crates/protocol/src/control.rs (protocol version 1). */
 export interface PeerAuthorization extends Omit<WirePeerAuthorization, "actor" | "purpose"> {
@@ -46,7 +46,7 @@ export interface LocalPeerGrant {
 export type PeerSignal =
   | { kind: "iceCandidate"; candidate: IceCandidate }
   | { kind: "stateChanged"; state: string }
-  | { kind: "error"; error: string; reason?: "encoder" }
+  | { kind: "error"; error: string; reason?: DesktopErrorReason }
 
 export type ServerMessage = Extract<ControlMessage, { type: "ready" | "peerRevoked" | "ping" | "pong" }>
   | (Omit<Extract<ControlMessage, { type: "request" }>, "actor"> & { actor?: PeerAuthorization["actor"] })

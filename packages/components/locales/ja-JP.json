@@ -76,7 +76,7 @@
     "noPermissions": "現在の構成では、追加のシステム権限は必要ありません。",
     "refresh": "権限を確認",
     "refreshing": "権限を確認中…",
-    "restart": "システム設定で DeskFleet の権限を有効にしてください。macOS からアプリの再起動を求められた場合は、再起動して変更を適用してください。",
+    "restart": "この権限を変更した後は、DeskFleet を完全に終了して再起動し、ローカルエージェントに新しい権限を反映してください。",
     "waylandShared": "画面共有とマウス・キーボード操作は、同じデスクトップ認証を使用します。"
   },
   "updatesSettings": {
@@ -358,16 +358,16 @@
     "stopping": "停止処理中…", "error": "ローカルエージェントでエラーが発生しました",
     "runningSeparately": "別プロセスで実行中", "retryStart": "起動を再試行",
     "retryStop": "停止を再試行", "retryLoad": "設定を再読み込み",
-    "screenCaptureRequesting": "画面とシステムオーディオの収録権限を要求中…", "screenCaptureDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「画面収録とシステムオーディオ録音」でアクセスを許可してから、ローカルエージェントをオフにして再度オンにしてください。",
+    "screenCaptureRequesting": "画面とシステムオーディオの収録権限を要求中…", "screenCaptureDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「画面収録とシステムオーディオ録音」でアクセスを許可してから、DeskFleet を完全に終了して再起動してください。",
     "linuxScreenCaptureUnavailable": "画面をキャプチャできません。ログイン済みのグラフィカルセッションでローカルエージェントを起動してください。",
     "linuxControlUnavailable": "マウスとキーボードを操作できません。ログイン済みのグラフィカルセッションでローカルエージェントを起動してください。",
     "waylandScreenCaptureRequesting": "デスクトップ共有の許可を待っています…", "waylandScreenCaptureDenied": "画面共有が許可されていません。デスクトップのロックを解除し、ローカルエージェントをオフにして再度オンにしてから、デスクトップ共有のダイアログで許可してください。",
     "waylandScreenCaptureError": "デスクトップ共有の許可を取得できませんでした。", "waylandControlRequesting": "マウスとキーボードの操作許可を待っています…",
     "waylandControlDenied": "マウスとキーボードの操作が許可されていません。デスクトップのロックを解除し、ローカルエージェントをオフにして再度オンにしてから、デスクトップ共有のダイアログでリモート操作を許可してください。", "waylandControlError": "マウスとキーボードの操作許可を取得できませんでした。",
-    "screenCaptureError": "画面とシステムオーディオへのアクセスを要求できませんでした。ローカルエージェントをオフにして再度オンにし、もう一度お試しください。", "desktopPermissions": "デスクトップの権限",
+    "screenCaptureError": "画面とシステムオーディオへのアクセスを要求できませんでした。DeskFleet を完全に終了して再起動し、もう一度お試しください。", "desktopPermissions": "デスクトップの権限",
     "fullDiskAccessRequesting": "ローカルエージェントのフルディスクアクセス権限を要求中…", "fullDiskAccessDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「フルディスクアクセス」で、ローカルエージェントを実行しているアプリまたは実行ファイルにアクセスを許可し、そのアプリまたは実行ファイルを再起動してください。",
     "fullDiskAccessError": "フルディスクアクセスを要求できませんでした。ローカルエージェントを実行しているアプリまたは実行ファイルを再起動して、もう一度お試しください。", "accessibilityRequesting": "マウスとキーボードを操作するためのアクセシビリティ権限を要求中…",
-    "accessibilityDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」でマウスとキーボードの操作を許可してから、ローカルエージェントをオフにして再度オンにしてください。", "accessibilityError": "マウスとキーボードを操作するためのアクセシビリティ権限を要求できませんでした。ローカルエージェントをオフにして再度オンにし、もう一度お試しください。",
+    "accessibilityDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」でマウスとキーボードの操作を許可してから、DeskFleet を完全に終了して再起動してください。", "accessibilityError": "マウスとキーボードを操作するためのアクセシビリティ権限を要求できませんでした。DeskFleet を完全に終了して再起動し、もう一度お試しください。",
     "agents": "エージェント"
   },
   "notification": {
@@ -512,7 +512,11 @@
     "starting": "{codec} で画面キャプチャを開始中…", "connected": "接続済み · {codec}",
     "daemonUnavailable": "ローカルデーモンを利用できません。デーモンを起動してからディスプレイを更新してください。", "captureUnavailable": "このマシンでは画面キャプチャを利用できません。",
     "discoveryFailed": "利用可能なディスプレイを読み込めませんでした。", "noCodec": "Electron で利用できる互換性のある映像コーデックがありません。",
-    "connectionFailed": "デスクトップへの接続に失敗しました。", "timeout": "デスクトップへの接続がタイムアウトしました。デーモンを確認して、もう一度お試しください。",
+    "connectionFailed": "デスクトップへの接続に失敗しました。",
+    "accessibilityFailed": "マウスとキーボードの操作を開始できませんでした。",
+    "accessibilityRecovery": "{machine} で「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」を開き、DeskFleet を許可してから、DeskFleet を完全に終了して再起動してください。操作なしでも画面共有は利用できます。",
+    "retryControl": "操作を再試行", "connectWithoutControl": "操作なしで接続",
+    "timeout": "デスクトップへの接続がタイムアウトしました。デーモンを確認して、もう一度お試しください。",
     "fullscreen": "全画面表示", "exitFullscreen": "全画面表示を終了",
     "fullscreenFailed": "全画面表示を切り替えられませんでした。", "play": "デスクトップ映像を再生"
   },
@@ -833,11 +837,11 @@
     "steps": {
       "localNetwork": "ローカルネットワーク",
       "fullDiskAccess": "フルディスクアクセス", "screenCapture": "画面収録",
-      "accessibility": "アクセシビリティ", "windowsDesktopService": "ロック中のリモート操作", "account": "アカウント"
+      "accessibility": "マウスとキーボードの操作", "windowsDesktopService": "ロック中のリモート操作", "account": "アカウント"
     },
     "stepCount": "ステップ {current} / {total}", "continue": "続ける",
     "continueAs": "{name} として続ける", "systemSettings": "macOS システム設定",
-    "permissionRestart": "一覧で DeskFleet を有効にしてください。macOS からアプリの終了と再起動を求められた場合、セットアップはここから再開されます。", "openSettings": "アクセスを許可",
+    "permissionRestart": "一覧で DeskFleet を有効にしてから、DeskFleet を完全に終了して再起動し、ローカルエージェントに新しい権限を反映してください。セットアップはここから再開されます。", "openSettings": "アクセスを許可",
     "checking": "確認中…", "checkAgain": "再確認",
     "skip": "今はスキップ", "retry": "再試行",
     "loading": "DeskFleet を読み込み中…",
@@ -898,8 +902,8 @@
         "skip": "システム設定でこの権限を有効にするまで、リモート画面共有は利用できません。"
       },
       "accessibility": {
-        "description": "リモートデスクトップセッションから、このコンピューターのマウスとキーボードを操作することを許可します。", "path": "プライバシーとセキュリティ → アクセシビリティ",
-        "skip": "システム設定でこの権限を有効にするまで、リモートからのマウスとキーボードの操作は利用できません。"
+        "description": "リモートデスクトップセッションから、このコンピューターのマウスとキーボードを操作することを許可します。macOS ではこの権限を「アクセシビリティ」と呼びます。操作なしでも画面共有は利用できます。", "path": "プライバシーとセキュリティ → アクセシビリティ",
+        "skip": "システム設定でこの権限を有効にするまで、リモートからのマウスとキーボードの操作は利用できません。操作なしでも画面共有は利用できます。"
       }
     }
   },
