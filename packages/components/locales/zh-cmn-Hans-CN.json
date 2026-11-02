@@ -927,6 +927,9 @@
       "cost": "会话费用"
     },
     "localUser": "本地用户",
+    "presenceHere": "{name} 正在查看",
+    "presenceVisited": "{name} 看过这个会话",
+    "presenceMore": "还有 {count} 人",
     "system": "系统",
     "sourceMachine": "机器 {id}",
     "image": "Agent 图片",

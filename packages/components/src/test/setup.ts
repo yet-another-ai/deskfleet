@@ -1,5 +1,5 @@
 import { configureClient } from "@deskfleet/client/platform"
-import { afterEach } from "vitest"
+import { afterEach, vi } from "vitest"
 import type { DeskfleetDesktopApi } from "../../../client/src/desktop-api.ts"
 import { loadProviderIcons } from "../services/provider-icons.ts"
 
@@ -90,6 +90,8 @@ const api: DeskfleetDesktopApi = {
 }
 
 configureClient(api)
+// Avatars probe Gravatar before painting. Keep that lookup local so a missing image stays initials.
+vi.stubGlobal("fetch", vi.fn(async () => new Response("404 Not Found", { status: 404, headers: { "content-type": "text/html" } })))
 // Icon chunks are hundreds of SVG modules. Finish that import before a worker exits.
 await loadProviderIcons()
 

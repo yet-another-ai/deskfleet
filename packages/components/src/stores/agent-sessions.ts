@@ -78,6 +78,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const error = ref<string | null>(null)
   const relayDeniedReason = ref<RelayDeniedReason>()
   const operations = ref<Record<string, PendingAgentOperation>>({})
+  const sessionPresence = ref<Record<string, string[]>>({})
   const journals = new Map<string, Map<string, AgentEvent>>()
   const journalTails = new Map<string, string>()
   const previews = new AgentPreviews()
@@ -308,6 +309,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       initialized = null
       connectionGeneration++
       gitSubscriptions.clear()
+      sessionPresence.value = {}
       for (const pending of permissionRequests.values()) pending.resolve({ outcome: { outcome: "cancelled" } })
       permissionRequests.clear()
     }
@@ -324,6 +326,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (!deletedSessions.has(preview.sessionId) && previews.receive(preview)) {
         pendingPreviews.add(preview.sessionId)
         if (!displayTimer.isPending.value) displayTimer.start()
+      }
+    } else if (notification.method === "_deskfleet/session/presence") {
+      const update = notification.params as { sessionId: string; userIds: string[] }
+      if (update.userIds.length) sessionPresence.value = { ...sessionPresence.value, [update.sessionId]: update.userIds }
+      else {
+        const next = { ...sessionPresence.value }
+        delete next[update.sessionId]
+        sessionPresence.value = next
       }
     } else if (notification.method === "_deskfleet/git/changed") {
       const change = notification.params as GitChangedNotification
@@ -470,7 +480,13 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (command) commandReceived(command)
     }
   }
-  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/branches" | "_deskfleet/git/prepare" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe" | "_deskfleet/composer/references" | "_deskfleet/composer/resolve">>(
+  async function attend(sessionId: string): Promise<void> {
+    try { await call("_deskfleet/session/attend", { sessionId }) } catch { /* An offline machine has no live attendance. */ }
+  }
+  async function leave(sessionId: string): Promise<void> {
+    try { await call("_deskfleet/session/leave", { sessionId }) } catch { /* Leaving a closed connection is already finished. */ }
+  }
+  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/branches" | "_deskfleet/git/prepare" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe" | "_deskfleet/session/attend" | "_deskfleet/session/leave" | "_deskfleet/composer/references" | "_deskfleet/composer/resolve">>(
     method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string, submittedDraft?: SubmittedAgentDraft,
   ): Promise<AgentMethods[M]["result"]> {
     const operationId = crypto.randomUUID()
@@ -709,5 +725,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, relayDeniedReason, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

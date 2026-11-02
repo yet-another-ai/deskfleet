@@ -31,6 +31,7 @@ import { sessionIsUnread } from "../../services/agent-conversation.ts"
 import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
+import SessionPresenceIcon from "./SessionPresenceIcon.vue"
 import TreeLink from "./TreeLink.vue"
 
 const props = defineProps<{ machine: MachineSummary }>()
@@ -138,8 +139,10 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
             :depth="0"
           >
             <template #icon>
-              <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
-              <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
+              <SessionPresenceIcon :session-id="session.id" :machine-id="machine.id">
+                <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+                <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
+              </SessionPresenceIcon>
             </template>
             <template #trailing>
               <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
@@ -190,8 +193,10 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
                 :depth="1"
               >
                 <template #icon>
-                  <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
-                  <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
+                  <SessionPresenceIcon :session-id="session.id" :machine-id="machine.id">
+                    <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+                    <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
+                  </SessionPresenceIcon>
                 </template>
                 <template #trailing>
                   <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />

@@ -927,6 +927,9 @@
       "cost": "Session cost"
     },
     "localUser": "Local user",
+    "presenceHere": "{name} is viewing",
+    "presenceVisited": "{name} viewed this session",
+    "presenceMore": "{count} more",
     "system": "System",
     "sourceMachine": "Machine {id}",
     "image": "Agent image",

@@ -147,6 +147,14 @@ pub struct AgentCapabilities {
     pub additional_directories: Option<bool>,
 }
 
+/// One person who has opened a Session. Repeat visits keep the first record.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionViewer {
+    pub user_id: String,
+    pub seen_at: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionRecord {
@@ -183,6 +191,9 @@ pub struct AgentSessionRecord {
     /// Shared history watermark acknowledged by a person opening this Session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_read_seq: Option<AgentSequence>,
+    /// People who have opened this Session. Absent until the first authenticated visit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub viewers: Vec<SessionViewer>,
     pub created_at: String,
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
