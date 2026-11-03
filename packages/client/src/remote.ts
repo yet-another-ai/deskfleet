@@ -111,7 +111,8 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     async offer(options: TerminalOffer | DesktopOffer): Promise<{ sdp: string }> {
       const peer = peers.get(options.sessionId)
       if (!peer) throw new Error("Peer authorization is missing")
-      try { return await central.offerPeer(peer.id, options.sdp, options) }
+      const media = "codec" in options ? { codec: options.codec, audio: options.audio } : undefined
+      try { return await central.offerPeer(peer.id, options.sdp, media) }
       catch (error) { peer.telemetry.failed(); throw error }
     },
     async candidate(sessionId: string, candidate: IceCandidate): Promise<void> {
