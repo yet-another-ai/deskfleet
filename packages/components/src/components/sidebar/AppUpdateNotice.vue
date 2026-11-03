@@ -35,9 +35,16 @@ const { isLoading, executeImmediate } = useAsyncState(() => api!.install(), unde
 })
 const visible = computed(() => Boolean(api && state.value.version && state.value.status !== "disabled" && state.value.status !== "idle"))
 const busy = computed(() => isLoading.value || ["checking", "downloading", "installing"].includes(state.value.status))
+const downloading = computed(() => state.value.status === "downloading")
+// The button's own background fills left to right while the update downloads.
+const percent = computed(() => Math.min(100, Math.max(0, Math.floor(state.value.percent ?? 0))))
+const fillStyle = computed(() => downloading.value
+  ? { backgroundImage: `linear-gradient(to right, var(--ui-color-action-hover) ${percent.value}%, transparent ${percent.value}%)` }
+  : undefined)
+// Keep the accent background and its contrast while the button is temporarily disabled.
 const label = computed(() => {
   if (state.value.status === "checking") return t("updates.checking")
-  if (state.value.status === "downloading") return t("updates.downloading", { percent: Math.floor(state.value.percent ?? 0) })
+  if (state.value.status === "downloading") return t("updates.downloading", { percent: percent.value })
   if (state.value.status === "installing") return t("updates.installing")
   if (state.value.status === "error") return t("updates.retry")
   return t("updates.install")
@@ -65,7 +72,14 @@ function install(): void {
   <div v-else-if="visible" data-app-update class="app-no-drag shrink-0 px-2 pb-2">
     <div class="rounded-lg border border-ui-accent/25 bg-ui-accent/8 p-2">
       <p class="m-0 mb-2 px-0.5 text-xs text-ui-text-muted">{{ t("updates.available", { version: state.version }) }}</p>
-      <UiButton variant="primary" class="w-full" :loading="busy" @click="install">
+      <UiButton
+        variant="primary"
+        class="w-full"
+        :class="downloading && 'disabled:!bg-ui-action disabled:!text-ui-action-text'"
+        :style="fillStyle"
+        :loading="busy"
+        @click="install"
+      >
         <Download v-if="!busy" :size="14" class="shrink-0" aria-hidden="true" />
         <span class="min-w-0 truncate">{{ label }}</span>
       </UiButton>
