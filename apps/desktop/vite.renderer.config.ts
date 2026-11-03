@@ -3,7 +3,7 @@ import VueI18nPlugin from "@intlify/unplugin-vue-i18n/vite"
 import vue from "@vitejs/plugin-vue"
 import UnoCSS from "unocss/vite"
 import { defineConfig } from "vite"
-import { clientCodeSplitting } from "../../packages/components/src/chunking.ts"
+import { clientCodeSplitting, tresTemplateCompilerOptions } from "../../packages/components/src/chunking.ts"
 import { injectRendererContentSecurityPolicy } from "./src/shared/renderer-csp.ts"
 
 export default defineConfig(({ command }) => {
@@ -26,7 +26,7 @@ export default defineConfig(({ command }) => {
         },
       },
       UnoCSS({ configFile: resolve(import.meta.dirname, "uno.config.ts") }),
-      vue({ features: { vapor: true } }),
+      vue({ features: { vapor: true }, ...tresTemplateCompilerOptions }),
       VueI18nPlugin({
         // Locale JSON stays plain so the main process can import the same catalogs.
         strictMessage: false,

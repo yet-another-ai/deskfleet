@@ -1,31 +1,41 @@
 <script setup lang="ts">
-import { Download, Ellipsis, ExternalLink, LocateFixed, Maximize2, PanelRight, ZoomIn, ZoomOut } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { getActivePinia } from "pinia"
-import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
-import { computed, inject, onBeforeUnmount, ref, useTemplateRef } from "vue"
+import { computed, defineAsyncComponent, inject, onBeforeUnmount, provide, ref, shallowRef, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { FileResourceRequest } from "../../../../client/src/files.ts"
 import { useFileTarget } from "../../composables/useFileTarget.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { router } from "../../router/index.ts"
 import { agentResourceContextKey, isFileResource, type AgentResourceContext } from "../../services/agent-resources.ts"
-import { previewKindFromMime, resolvePreviewKind, type PreviewKind, type PreviewMode, type PreviewSource } from "../../services/preview.ts"
+import {
+  previewKindFromMime,
+  registerPreviewActionsKey,
+  resolvePreviewKind,
+  type PreviewKind,
+  type PreviewMode,
+  type PreviewSource,
+  type PreviewToolbarAction,
+} from "../../services/preview.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import {
   broadcastPreviewLocate,
-  broadcastPreviewSidebar,
+  broadcastPreviewTab,
   focusPreview,
   locatePreviewInMainView,
   openPreviewFromAction,
 } from "../../stores/previews.ts"
-import IconButton from "../common/IconButton.vue"
+import ImagePreview from "./ImagePreview.vue"
 import MermaidViewer from "./MermaidViewer.vue"
+import PreviewToolbar from "./PreviewToolbar.vue"
+
+const ModelPreview = defineAsyncComponent(() => import("./ModelPreview.vue"))
 
 const props = withDefaults(defineProps<{
   kind?: PreviewKind
   content: string
+  data?: Uint8Array
   title?: string
   alt?: string
   mimeType?: string
@@ -59,10 +69,16 @@ const resourceContext = computed<AgentResourceContext | undefined>(() =>
 const isDirectUrl = computed(() => /^(?:data:|blob:|https?:\/\/)/iu.test(props.content))
 const isLocalResource = computed(() => !isDirectUrl.value && isFileResource(props.content))
 const loadedUrl = ref<string>()
+const loadedBytes = shallowRef<Uint8Array>()
 const loadedMime = ref<string>()
 const loadError = ref<string>()
+const registeredActions = shallowRef<PreviewToolbarAction[]>([])
 let loadGeneration = 0
 let disposed = false
+
+provide(registerPreviewActionsKey, actions => {
+  registeredActions.value = actions
+})
 
 const kind = computed<PreviewKind>(() =>
   resolvePreviewKind(props.content, props.kind, loadedMime.value ?? props.mimeType),
@@ -71,13 +87,13 @@ const url = computed(() => isLocalResource.value ? loadedUrl.value : props.conte
 const request = computed<FileResourceRequest | undefined>(() =>
   isLocalResource.value && resourceContext.value ? { ...resourceContext.value, uri: props.content } : undefined,
 )
-const pannable = computed(() => kind.value === "image")
 const title = computed(() => props.title || (kind.value === "image" ? t("agent.image") : t("agent.contentType", { type: kind.value })))
-const sidePreviewLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : layout?.sessionWindowsAvailable ? "mermaid.showInRightTab" : "mermaid.showInSidebar"))
+const rightTabLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : "mermaid.showInRightTab"))
 
 function clearLoadedUrl(): void {
   if (loadedUrl.value) URL.revokeObjectURL(loadedUrl.value)
   loadedUrl.value = undefined
+  loadedBytes.value = undefined
   loadedMime.value = undefined
 }
 
@@ -95,6 +111,7 @@ function loadResource(): void {
     const resultKind = previewKindFromMime(result.mimeType)
     if (!resultKind) throw new Error(t("files.previewUnavailable"))
     loadedMime.value = result.mimeType
+    loadedBytes.value = result.data
     loadedUrl.value = URL.createObjectURL(new Blob([new Uint8Array(result.data)], { type: result.mimeType }))
   }).catch(reason => {
     if (!disposed && version === loadGeneration) loadError.value = reason instanceof Error ? reason.message : String(reason)
@@ -115,9 +132,11 @@ function previewSource(): PreviewSource {
 }
 
 function descriptor() {
+  const hostUri = root.value?.closest<HTMLElement>("[data-preview]")?.dataset.preview
+  const modelSourceContent = isLocalResource.value ? props.content : (hostUri && isFileResource(hostUri) ? hostUri : undefined)
   return {
     kind: kind.value,
-    content: url.value ?? props.content,
+    content: (kind.value === "model" && modelSourceContent) ? modelSourceContent : (url.value ?? props.content),
     ...(props.title ? { title: props.title } : {}),
     ...(loadedMime.value || props.mimeType ? { mimeType: loadedMime.value ?? props.mimeType } : {}),
     source: previewSource(),
@@ -128,11 +147,10 @@ function showFocused(): void {
   void focusPreview(descriptor())
 }
 
-function showInSidebar(): void {
-  menuOpen.value = false
+function showInRightTab(): void {
   const item = descriptor()
   if (props.mode === "window") {
-    broadcastPreviewSidebar(item)
+    broadcastPreviewTab(item)
     window.opener?.focus?.()
     return
   }
@@ -140,7 +158,6 @@ function showInSidebar(): void {
 }
 
 function showInNewWindow(): void {
-  menuOpen.value = false
   const item = descriptor()
   const params = new URLSearchParams({ content: item.content, kind: item.kind })
   if (item.title) params.set("title", item.title)
@@ -152,9 +169,8 @@ function showInNewWindow(): void {
 }
 
 function locateOriginal(): void {
-  menuOpen.value = false
   const resolvedSource = previewSource()
-  if (props.mode === "sidebar") layout?.closeCompactPanel()
+  if (props.mode === "tab") layout?.closeCompactPanel()
   if (props.mode === "window") {
     broadcastPreviewLocate(props.content, resolvedSource)
     window.opener?.focus?.()
@@ -164,55 +180,7 @@ function locateOriginal(): void {
 }
 
 function download(): void {
-  menuOpen.value = false
   if (client.files && request.value) void client.files.saveResource(request.value)
-}
-
-const scale = ref(1)
-const panX = ref(0)
-const panY = ref(0)
-const dragging = ref(false)
-const moved = ref(false)
-const menuOpen = ref(false)
-let dragStartX = 0
-let dragStartY = 0
-
-const zoomIn = () => { scale.value = Math.min(4, scale.value + 0.25) }
-const zoomOut = () => { scale.value = Math.max(0.25, scale.value - 0.25) }
-
-function startDrag(event: PointerEvent): void {
-  if (!pannable.value || event.button !== 0) return
-  dragging.value = true
-  moved.value = false
-  dragStartX = event.clientX - panX.value
-  dragStartY = event.clientY - panY.value
-  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-}
-
-function moveDrag(event: PointerEvent): void {
-  if (!dragging.value) return
-  const nextX = event.clientX - dragStartX
-  const nextY = event.clientY - dragStartY
-  if (Math.hypot(nextX - panX.value, nextY - panY.value) > 3) moved.value = true
-  panX.value = nextX
-  panY.value = nextY
-}
-
-function endDrag(event: PointerEvent): void {
-  if (!dragging.value) return
-  dragging.value = false
-  ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
-}
-
-function onWheel(event: WheelEvent): void {
-  if (!pannable.value || (!event.ctrlKey && !event.metaKey && props.mode === "inline")) return
-  event.preventDefault()
-  if (event.deltaY < 0) zoomIn()
-  else if (event.deltaY > 0) zoomOut()
-}
-
-function focusImage(): void {
-  if (props.mode === "inline" && !moved.value) showFocused()
 }
 
 onBeforeUnmount(() => {
@@ -238,50 +206,40 @@ onBeforeUnmount(() => {
       <h1 class="m-0 truncate text-sm font-medium">{{ title }}</h1>
     </header>
     <div v-if="url" class="relative flex min-h-0 flex-1 flex-col">
-      <div data-preview-toolbar class="app-no-drag absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg border border-ui-border bg-ui-canvas/90 p-0.5 shadow-ui-card backdrop-blur-xs">
-        <template v-if="pannable">
-          <IconButton :icon="ZoomIn" :label="t('mermaid.zoomIn')" data-preview-action="zoom-in" @click="zoomIn" />
-          <IconButton :icon="ZoomOut" :label="t('mermaid.zoomOut')" data-preview-action="zoom-out" @click="zoomOut" />
-        </template>
-        <IconButton v-if="mode === 'inline'" :icon="Maximize2" :label="t('mermaid.focus')" data-preview-action="focus" @click="showFocused" />
-        <DropdownMenuRoot v-model:open="menuOpen" :modal="false">
-          <DropdownMenuTrigger :as="IconButton" :icon="Ellipsis" :label="t('mermaid.more')" data-preview-action="more" />
-          <DropdownMenuPortal>
-            <DropdownMenuContent align="end" :side-offset="4" :collision-padding="8" :aria-label="t('mermaid.more')" class="ui-menu z-50 flex w-44 flex-col" loop>
-              <DropdownMenuItem v-if="request && client.files" as="button" type="button" class="ui-menu-item" data-preview-action="download" @select="download">
-                <Download :size="14" aria-hidden="true" />{{ t('files.downloadResource') }}
-              </DropdownMenuItem>
-              <DropdownMenuItem v-if="mode !== 'sidebar'" as="button" type="button" class="ui-menu-item" data-preview-action="show-in-sidebar" @select="showInSidebar">
-                <PanelRight :size="14" aria-hidden="true" />{{ sidePreviewLabel }}
-              </DropdownMenuItem>
-              <DropdownMenuItem v-if="mode !== 'window'" as="button" type="button" class="ui-menu-item" data-preview-action="show-in-new-window" @select="showInNewWindow">
-                <ExternalLink :size="14" aria-hidden="true" />{{ t('mermaid.showInNewWindow') }}
-              </DropdownMenuItem>
-              <DropdownMenuItem v-if="mode !== 'inline'" as="button" type="button" class="ui-menu-item" data-preview-action="locate-message" @select="locateOriginal">
-                <LocateFixed :size="14" aria-hidden="true" />{{ t('mermaid.locateMessage') }}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenuPortal>
-        </DropdownMenuRoot>
-      </div>
+      <PreviewToolbar
+        :mode="mode"
+        :actions="registeredActions"
+        :can-download="Boolean(request && client.files)"
+        :right-tab-label="rightTabLabel"
+        @focus="showFocused"
+        @download="download"
+        @show-in-right-tab="showInRightTab"
+        @show-in-new-window="showInNewWindow"
+        @locate-message="locateOriginal"
+      />
+      <ImagePreview
+        v-if="kind === 'image'"
+        :src="url"
+        :alt="alt || title"
+        :mode="mode"
+        @focus="showFocused"
+      />
+      <ModelPreview
+        v-else-if="kind === 'model'"
+        :src="url"
+        :data="loadedBytes ?? props.data"
+        :mime-type="loadedMime ?? props.mimeType"
+        :filename="props.title || props.content"
+        :mode="mode"
+      />
       <div
+        v-else
         data-preview-canvas
         class="flex flex-1 items-center justify-center overflow-hidden p-4 pt-11"
-        :class="pannable ? ['min-h-44 select-none', dragging ? 'cursor-grabbing' : 'cursor-grab'] : mode === 'inline' ? 'min-h-24' : 'min-h-44'"
-        @pointerdown="startDrag"
-        @pointermove="moveDrag"
-        @pointerup="endDrag"
-        @pointercancel="endDrag"
-        @wheel="onWheel"
+        :class="mode === 'inline' ? 'min-h-24' : 'min-h-44'"
       >
-        <div
-          data-preview-stage
-          class="flex h-full w-full items-center justify-center transition-transform duration-75 ease-out"
-          :class="dragging && 'transition-none!'"
-          :style="pannable ? { transform: `translate(${panX}px, ${panY}px) scale(${scale})` } : undefined"
-        >
-          <img v-if="kind === 'image'" :src="url" :alt="alt || title" draggable="false" class="max-h-full max-w-full rounded object-contain select-none" :class="mode === 'inline' && 'max-h-96 cursor-zoom-in'" @click="focusImage">
-          <audio v-else-if="kind === 'audio'" :src="url" controls preload="metadata" class="w-full max-w-md" />
+        <div data-preview-stage class="flex h-full w-full items-center justify-center">
+          <audio v-if="kind === 'audio'" :src="url" controls preload="metadata" class="w-full max-w-md" />
           <video v-else :src="url" controls preload="metadata" playsinline class="max-h-full max-w-full rounded object-contain" :class="mode === 'inline' && 'max-h-96'" />
         </div>
       </div>

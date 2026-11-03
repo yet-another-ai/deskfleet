@@ -7,7 +7,6 @@ import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { usePinnedSessionsStore } from "./stores/pinned-sessions.ts"
-import { openPreviewInSidebar } from "./stores/previews.ts"
 import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
 import type { LocalAgentState } from "../../client/src/local-agent.ts"
 import { agentEvent, agentSnapshot } from "./test/agent.ts"
@@ -488,11 +487,6 @@ test("fixed sidebar and tiled window controls retain their layout behavior", asy
   await flushPromises()
   expect(sidebar().element.style.width).toBe("416px")
   expect(wrapper.find('[aria-label="Close Chat"]').exists()).toBe(false)
-  await wrapper.get('[aria-label="Close Changes"]').trigger("click")
-  await flushPromises()
-  openPreviewInSidebar({ kind: "image", content: "data:image/png;base64,AA==", source: { sessionId } })
-  await flushPromises()
-  expect(panel(wrapper).attributes("aria-label")).toBe("Changes")
   await wrapper.get('[aria-label="Close Changes"]').trigger("click")
   await flushPromises()
   await wrapper.get('[aria-label="Add window"]').trigger("click")

@@ -9,13 +9,14 @@ import { useI18n } from "vue-i18n"
 import { router } from "../../router/index.ts"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
 import { renderMermaidDiagram } from "../../services/mermaid.ts"
+import type { PreviewMode } from "../../services/preview.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
-import { broadcastMermaidLocate, locateMermaidInMainView, openMermaidSidebarTab, useLayoutStore, type MermaidSource } from "../../stores/layout.ts"
+import { broadcastMermaidLocate, locateMermaidInMainView, useLayoutStore, type MermaidSource } from "../../stores/layout.ts"
 import IconButton from "../common/IconButton.vue"
 
 const platformClient = usePlatformClient()
 
-const props = withDefaults(defineProps<{ code: string; mode?: "inline" | "focus" | "sidebar" | "window"; source?: MermaidSource; loading?: boolean }>(), { mode: "inline", loading: false })
+const props = withDefaults(defineProps<{ code: string; mode?: PreviewMode; source?: MermaidSource; loading?: boolean }>(), { mode: "inline", loading: false })
 const { t } = useI18n()
 const platform = platformClient.platform
 const layout = getActivePinia() ? useLayoutStore() : undefined
@@ -29,7 +30,7 @@ const panY = ref(0)
 const dragging = ref(false)
 const menuOpen = ref(false)
 const copied = ref(false)
-const sidePreviewLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : layout?.sessionWindowsAvailable ? "mermaid.showInRightTab" : "mermaid.showInSidebar"))
+const rightTabLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : "mermaid.showInRightTab"))
 let dragStartX = 0, dragStartY = 0, generation = 0, disposed = false
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -106,11 +107,9 @@ async function copyCode(): Promise<void> {
   copied.value = true
   copiedTimer = setTimeout(() => { if (!disposed) copied.value = false }, 1500)
 }
-function showInSidebar(): void {
+function showInRightTab(): void {
   menuOpen.value = false
-  const source = resolvedSource()
-  if (getActivePinia()) useLayoutStore().openMermaidInSidebar(props.code, source)
-  else openMermaidSidebarTab(props.code, source)
+  layout?.requestSessionWindow({ kind: "mermaid", code: props.code, source: resolvedSource() })
 }
 function showInNewWindow(): void {
   menuOpen.value = false
@@ -122,7 +121,7 @@ function showInNewWindow(): void {
 }
 async function locateOriginalMessage(): Promise<void> {
   const source = resolvedSource()
-  if (props.mode === "sidebar") layout?.closeCompactPanel()
+  if (props.mode === "tab") layout?.closeCompactPanel()
   if (props.mode === "window") {
     broadcastMermaidLocate(props.code, source)
     window.opener?.focus?.()
@@ -150,7 +149,7 @@ onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(copiedTimer)
         <IconButton :icon="ZoomIn" :label="t('mermaid.zoomIn')" data-mermaid-action="zoom-in" @click="zoomIn" />
         <IconButton :icon="ZoomOut" :label="t('mermaid.zoomOut')" data-mermaid-action="zoom-out" @click="zoomOut" />
         <IconButton :icon="RotateCcw" :label="t('mermaid.resetView')" data-mermaid-action="reset" @click="resetView" />
-        <IconButton v-if="mode === 'sidebar' || mode === 'window'" :icon="LocateFixed" :label="t('mermaid.locateMessage')" data-mermaid-action="locate-message" @click="locateOriginalMessage" />
+        <IconButton v-if="mode === 'tab' || mode === 'window'" :icon="LocateFixed" :label="t('mermaid.locateMessage')" data-mermaid-action="locate-message" @click="locateOriginalMessage" />
         <IconButton v-if="mode !== 'focus' && mode !== 'window'" :icon="Maximize2" :label="t('mermaid.focus')" data-mermaid-action="focus" @click="focusDiagram" />
         <DropdownMenuRoot :open="menuOpen" :modal="false" @update:open="menuOpen = $event">
           <DropdownMenuTrigger :as="IconButton" :icon="Ellipsis" :label="t('mermaid.more')" data-mermaid-action="more" />
@@ -159,8 +158,8 @@ onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(copiedTimer)
               <DropdownMenuItem as="button" type="button" class="ui-menu-item" data-mermaid-action="copy" @select="copyCode">
                 <component :is="copied ? Check : Copy" :size="14" aria-hidden="true" />{{ t(copied ? 'common.copied' : 'common.copy') }}
               </DropdownMenuItem>
-              <DropdownMenuItem v-if="mode !== 'sidebar' && mode !== 'window'" as="button" type="button" class="ui-menu-item" data-mermaid-action="show-in-sidebar" @select="showInSidebar">
-                <PanelRight :size="14" aria-hidden="true" />{{ sidePreviewLabel }}
+              <DropdownMenuItem v-if="mode !== 'tab' && mode !== 'window'" as="button" type="button" class="ui-menu-item" data-mermaid-action="show-in-right-tab" @select="showInRightTab">
+                <PanelRight :size="14" aria-hidden="true" />{{ rightTabLabel }}
               </DropdownMenuItem>
               <DropdownMenuItem v-if="mode !== 'window'" as="button" type="button" class="ui-menu-item" data-mermaid-action="show-in-new-window" @select="showInNewWindow">
                 <ExternalLink :size="14" aria-hidden="true" />{{ t('mermaid.showInNewWindow') }}

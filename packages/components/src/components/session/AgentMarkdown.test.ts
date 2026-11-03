@@ -9,7 +9,7 @@ import { router } from "../../router/index.ts"
 import { agentResourceContextKey, type AgentResourceContext } from "../../services/agent-resources.ts"
 import * as mermaidService from "../../services/mermaid.ts"
 import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appearance.ts"
-import { mermaidSidebarTabs, resetMermaidSidebarTabs, useLayoutStore } from "../../stores/layout.ts"
+import { useLayoutStore } from "../../stores/layout.ts"
 import AgentMarkdown from "./AgentMarkdown.vue"
 import MermaidViewer from "./MermaidViewer.vue"
 
@@ -39,7 +39,6 @@ afterEach(async () => {
   disposePinia(pinia)
   localStorage.removeItem(APPEARANCE_STORAGE_KEY)
   client.files = originalFiles
-  resetMermaidSidebarTabs()
   await router.replace("/")
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -140,7 +139,7 @@ test.each([
   expect(view.find('[data-preview-action="focus"]').exists()).toBe(true)
   await view.get('[data-preview-action="more"]').trigger("click")
   await flushPromises()
-  expect(view.find('[data-preview-action="show-in-sidebar"]').exists()).toBe(true)
+  expect(view.find('[data-preview-action="show-in-right-tab"]').exists()).toBe(true)
   expect(view.find('[data-preview-action="show-in-new-window"]').exists()).toBe(true)
   await view.setProps({ text: "Recording removed" })
   expect(revoke).toHaveBeenCalledExactlyOnceWith("blob:recording")
@@ -232,9 +231,8 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
 
   await view.get('[data-mermaid-action="more"]').trigger("click")
   await flushPromises()
-  expect(view.get('[data-mermaid-action="show-in-sidebar"]').text()).toBe("Show in new tab on the right")
-  await view.get('[data-mermaid-action="show-in-sidebar"]').trigger("click")
-  expect(mermaidSidebarTabs.value).toEqual([])
+  expect(view.get('[data-mermaid-action="show-in-right-tab"]').text()).toBe("Show in new tab on the right")
+  await view.get('[data-mermaid-action="show-in-right-tab"]').trigger("click")
   expect(useLayoutStore().sessionWindowRequest).toMatchObject({
     kind: "mermaid",
     code: "graph TD\n  A --> B",

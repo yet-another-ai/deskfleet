@@ -2,11 +2,12 @@ import { resolve } from "node:path"
 import VueI18nPlugin from "@intlify/unplugin-vue-i18n/vite"
 import vue from "@vitejs/plugin-vue"
 import { defineConfig } from "vitest/config"
+import { tresTemplateCompilerOptions } from "../../packages/components/src/chunking.ts"
 
 export default defineConfig({
   plugins: [
     // Vue Test Utils requires VDOM instances; production renderer builds use Vapor.
-    vue(),
+    vue(tresTemplateCompilerOptions),
     VueI18nPlugin({ strictMessage: false, runtimeOnly: true }),
   ],
   resolve: {

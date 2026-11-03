@@ -68,11 +68,12 @@ function load(uri: string, refCount = 1): void {
   }
   void files.readResource({ ...current, uri }).then(result => {
     if (disposed || images.get(uri) !== value) return
-    // Markdown embeds share PreviewViewer's image, audio, and video support.
+    // Markdown embeds share PreviewViewer's image, audio, video, and 3D model support.
     if (!previewKindFromMime(result.mimeType)) {
       throw new Error(t("files.previewUnavailable"))
     }
     value.mimeType = result.mimeType
+    value.data = result.data
     value.url = URL.createObjectURL(new Blob([new Uint8Array(result.data)], { type: result.mimeType }))
   }).catch(reason => {
     if (images.get(uri) === value) value.error = reason instanceof Error ? reason.message : String(reason)

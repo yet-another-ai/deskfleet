@@ -973,7 +973,7 @@
     "title": "Mermaid 図", "zoomIn": "拡大",
     "zoomOut": "縮小", "resetView": "ズームと位置をリセット",
     "locateMessage": "元のメッセージへ移動", "focus": "フォーカス",
-    "more": "その他", "showInSidebar": "サイドバーに表示", "showInRightTab": "右側の新しいタブに表示",
+    "more": "その他", "showInRightTab": "右側の新しいタブに表示",
     "showInNewWindow": "新しいウィンドウに表示", "closeTab": "{title} を閉じる"
   },
   "auth": {
