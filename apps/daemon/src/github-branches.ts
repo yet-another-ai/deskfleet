@@ -1,16 +1,12 @@
-import { execFile } from "node:child_process"
+import { executeGit } from "./git-execution.ts"
 import { watch, type FSWatcher } from "node:fs"
 import { realpath } from "node:fs/promises"
 import { resolve } from "node:path"
-import { promisify } from "node:util"
 import type { CatalogSnapshot, GitHubBranch, SessionGitHubBranches } from "./catalog-protocol.ts"
 
-const execute = promisify(execFile)
 
 async function git(root: string, args: string[]): Promise<string> {
-  const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" }
-  for (const name of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"]) delete (env as NodeJS.ProcessEnv)[name]
-  return (await execute("git", ["-C", root, ...args], { env, encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 15_000, windowsHide: true })).stdout.replace(/\r?\n$/u, "")
+  return (await executeGit(["-C", root, ...args], { optionalLocks: false, maxBuffer: 1024 * 1024, timeout: 15_000 })).stdout.replace(/\r?\n$/u, "")
 }
 
 /** Parse public GitHub remote syntax without retaining embedded credentials. */

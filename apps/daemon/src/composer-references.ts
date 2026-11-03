@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process"
+import { executeGit } from "./git-execution.ts"
 import { opendir, realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -61,17 +61,10 @@ function validateReference(value: unknown): asserts value is ComposerReference {
   filePath(value.relativePath)
 }
 
-function git(root: string, args: string[], input?: string): Promise<string> {
-  const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_LITERAL_PATHSPECS: "0", LC_ALL: "C" }
-  for (const name of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"]) delete (env as NodeJS.ProcessEnv)[name]
-  return new Promise((accept, reject) => {
-    const child = execFile("git", ["-C", root, ...args], { env, encoding: "utf8", maxBuffer: 2 * 1024 * 1024, timeout: SEARCH_TIME_MS, windowsHide: true }, (error, stdout, stderr) => {
-      if (error && !(args[0] === "check-ignore" && error.code === 1)) reject(new Error(stderr.trim() || error.message))
-      else accept(stdout)
-    })
-    child.stdin?.on("error", () => {})
-    child.stdin?.end(input)
-  })
+async function git(root: string, args: string[], input?: string): Promise<string> {
+  return (await executeGit(["-C", root, ...args], { optionalLocks: false, input,
+    maxBuffer: 2 * 1024 * 1024, timeout: SEARCH_TIME_MS, acceptExit: args[0] === "check-ignore" ? [1] : [],
+  })).stdout
 }
 async function repository(root: string): Promise<string | undefined> {
   try { return (await git(root, ["rev-parse", "--show-toplevel"])).trimEnd() }

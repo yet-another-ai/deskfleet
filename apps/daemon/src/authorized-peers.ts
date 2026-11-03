@@ -93,7 +93,21 @@ export class AuthorizedPeers {
   }) {
     this.#native = options.peers; this.#agents = options.agents; this.#terminals = options.terminals
     this.#admission = PeerAdmission.for(options.peers)
-    this.#identity = options.identity; this.#signal = options.signal; this.#now = options.now ?? Date.now
+    this.#identity = options.identity
+    this.#signal = (id, event) => {
+      if (event.kind === "error") {
+        // Native/encoder diagnostics can be arbitrarily long. Keep valid UTF-8
+        // within the server's error budget at this common emission boundary.
+        const bytes = Buffer.from(event.error)
+        if (bytes.length > 2048) {
+          let end = 2048
+          while ((bytes[end]! & 0xc0) === 0x80) end--
+          event = { ...event, error: bytes.subarray(0, end).toString("utf8") }
+        }
+      }
+      options.signal(id, event)
+    }
+    this.#now = options.now ?? Date.now
   }
 
   bind(credentials: MachineCredentials): void { this.#credentials = credentials }

@@ -6,6 +6,23 @@ use std::time::{Duration, Instant};
 
 pub const MAX_BYTES: usize = 24 * 1024;
 
+pub enum Admission {
+    Accept,
+    Drop,
+    Close,
+}
+
+pub fn admit(rate: &mut Rate, wire_bytes: usize, event: &Value) -> Admission {
+    // Charge invalid events as well, so dropping them cannot bypass flood limits.
+    if !rate.admit() {
+        Admission::Close
+    } else if wire_bytes > 32 * 1024 || validate(event).is_err() {
+        Admission::Drop
+    } else {
+        Admission::Accept
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum Event {
@@ -74,6 +91,28 @@ impl Rate {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn an_oversized_error_drops_only_that_event_and_still_charges_admission() {
+        let mut rate = Rate::new();
+        let error = json!({"kind":"error","error":"native diagnostic".repeat(1024)});
+        assert!(matches!(admit(&mut rate, 32_769, &error), Admission::Drop));
+        assert!(matches!(
+            admit(
+                &mut rate,
+                4096,
+                &json!({"kind":"error","error":"x".repeat(2049)})
+            ),
+            Admission::Drop
+        ));
+        let closed = json!({"kind":"stateChanged","state":"closed"});
+        assert!(matches!(admit(&mut rate, 64, &closed), Admission::Accept));
+        let unknown = json!({"kind":"unknown"});
+        for _ in 3..64 {
+            assert!(matches!(admit(&mut rate, 64, &unknown), Admission::Drop));
+        }
+        assert!(matches!(admit(&mut rate, 64, &closed), Admission::Close));
+    }
+
     #[test]
     fn accepts_only_bounded_known_events() {
         assert!(validate(&json!({"kind":"stateChanged","state":"closed"})).is_ok());

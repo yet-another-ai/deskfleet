@@ -208,8 +208,12 @@ async fn connect(
                                 state.hub.response(&id,&connection_id,&request_id,result).await;
                             },
                             ControlMessage::PeerEvent{peer_id,event} if is_daemon=>{
-                                if text.len() > 32 * 1024 || crate::peers::events::validate(&event).is_err() || !peer_rate.admit() {
-                                    close_code=1008; break;
+                                // A native error can contain large diagnostics. Reject
+                                // that event without taking the whole Machine offline.
+                                match crate::peers::events::admit(&mut peer_rate,text.len(),&event) {
+                                    crate::peers::events::Admission::Accept=>{},
+                                    crate::peers::events::Admission::Drop=>continue,
+                                    crate::peers::events::Admission::Close=>{close_code=1008;break;},
                                 }
                                 let Ok(local_permit)=peer_tasks.clone().try_acquire_owned() else {close_code=1008;break};
                                 let Ok(global_permit)=PEER_EVENT_TASKS.try_acquire() else {close_code=1013;break};

@@ -38,6 +38,7 @@ uses directory context in the machine user's home directory. A `worktree`
 Session owns generated checkouts; a `directory` Session uses the Workspace's own
 directories in place, or the home directory when no Workspace is selected. Its
 captured ordered directories are the execution context; the first supplies `cwd`.
+
 Agents that advertise `sessionCapabilities.additionalDirectories` receive the
 remaining paths when a Session starts, resumes, or forks. Agents without that
 capability still run in the default directory; the daemon omits the additional
@@ -52,6 +53,39 @@ ownership manifest, and `<machine directory>/session-attachments/<sessionId>/`
 before deleting the catalog resource. A directory Session's workspace or home
 files are never removed. The new-session composer offers both contexts when a
 Workspace is selected and remembers the last choice on that device.
+
+### Git automation policy
+
+Daemon Git preparation, inspection, watchers, file-reference discovery, branch
+discovery, and generated-checkout lifecycle share `git-execution.ts`. Inherited
+`GIT_*` overrides are removed. Every invocation disables repository hooks and
+fsmonitor; diffs disable external commands and text conversion, and checkouts
+disable all discovered filter drivers. Only HTTPS, SSH, and local-file transports
+are allowed. Private remotes use trusted host system/global credentials and SSH
+configuration, never repository-selected credential or SSH helpers.
+Policy preflight, submodule inspection, and the final command share the caller's
+timeout budget. Local `~` and `~user` remote paths use Git's own home expansion
+before inspecting their metadata.
+
+Repository-local and enabled worktree config accept only the wrapper's explicit
+data-key allowlist: repository layout and file settings, branch/remote locators,
+identity, rename settings, and submodule locators. Includes, executable helpers,
+filters, and unknown keys fail before the operation. Initialized submodules and
+local fetch targets are checked too. `core.worktree` is accepted only when its
+target points back to the same Git directory and, for checkout operations,
+matches the checkout discovered independently from its `.git` metadata. Common
+or worktree-local configuration cannot redirect an operation to another directory.
+Unsupported local policy must be removed or
+configured by the host owner at the trusted global/system scope; DeskFleet does
+not rewrite source configuration. Repositories relying on checkout filters (for
+example Git LFS materialization) need those steps run explicitly outside this
+automation. Rejection during archive/delete preserves ownership manifests for
+retry instead of falling back to deleting source files.
+
+This is an application Git policy, not an OS sandbox. Repository content remains
+untrusted display data, and an Agent started in it retains the daemon OS user's
+intentional execution authority. A same-user process can change Git metadata
+between checks and execution; registrations do not provide filesystem isolation.
 
 ### Session titles
 

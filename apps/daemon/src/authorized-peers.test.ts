@@ -84,6 +84,23 @@ test("unclaimed local peers are capped and a closed claim retains replay protect
   assert.deepEqual(f.negotiation, [])
 })
 
+for (const source of ["native", "reader"] as const) {
+  test(`oversized ${source} errors fit the signaling byte budget and preserve UTF-8`, async context => {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    const diagnostic = "native failure: " + "🙂".repeat(2048)
+    if (source === "reader") f.native.nextEvent = async () => { throw new Error(diagnostic) }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })
+    if (source === "native") f.push({ kind: "error", error: diagnostic, reason: "encoder" })
+    await f.closeStarted
+    const event = f.signals[0] as { kind: string; error: string; reason?: string }
+    assert.equal(event.kind, "error")
+    assert.ok(Buffer.byteLength(event.error) <= 2048)
+    assert.ok(diagnostic.startsWith(event.error))
+    assert.ok(!event.error.includes("\uFFFD"))
+    if (source === "native") assert.equal(event.reason, "encoder")
+  })
+}
+
 test("ports require their own action and enable native forwarding before negotiation", async context => {
   const f = fixture(); context.after(() => f.peers.closeAll())
   const authorization: PeerAuthorization = { ...grant(), purpose: "ports", actions: ["ports:forward"] }

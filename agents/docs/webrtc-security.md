@@ -28,6 +28,9 @@ the connection without blocking its reader on a negotiation or queued permit.
 The registration budget survives reconnects. Error text is limited to 2 KiB;
 events to 24 KiB and their complete wire messages to 32 KiB. Other control
 messages retain their existing limits.
+The daemon truncates outgoing peer errors at a UTF-8 boundary. An invalid or
+oversized peer event is dropped without disconnecting the Machine; it still
+consumes the socket rate budget, so sustained invalid traffic closes the socket.
 
 ## Peer allocation budgets
 
