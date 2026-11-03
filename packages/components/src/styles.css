@@ -211,10 +211,16 @@ textarea {
   animation: ui-meter-in var(--ui-duration-slow) var(--ui-ease-out);
 }
 @keyframes ui-meter-in { from { scale: 0 1; } }
-/* Progress without a known value: a segment sweeps across the track. */
+/*
+ * Progress without a known value: a segment sweeps across the track. The
+ * grow-in stays first in the list so it is not restarted when the sweep is
+ * added or removed; a changed animation list replays only new names.
+ */
 .ui-meter-fill.ui-meter-indeterminate {
   width: 40%;
-  animation: ui-meter-sweep 1.3s var(--ui-ease-in-out) infinite;
+  animation:
+    ui-meter-in var(--ui-duration-slow) var(--ui-ease-out),
+    ui-meter-sweep 1.3s var(--ui-ease-in-out) infinite;
 }
 @keyframes ui-meter-sweep {
   from { translate: -100% 0; }
@@ -359,7 +365,7 @@ textarea {
   .ui-attention { box-shadow: var(--ui-shadow-card); }
   .ui-status-live::after { display: none; }
   /* Without the sweep, indeterminate progress reads as a dimmed full track. */
-  .ui-meter-fill.ui-meter-indeterminate { width: 100%; opacity: 0.6; animation: none !important; }
+  .ui-meter-fill.ui-meter-indeterminate { width: 100%; opacity: 0.6; animation: ui-meter-in var(--ui-duration-slow) var(--ui-ease-out) !important; }
 }
 
 /* Agent-authored Markdown in the conversation. */
