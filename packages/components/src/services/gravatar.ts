@@ -8,14 +8,27 @@ export async function gravatarUrl(email: string, size: number): Promise<string> 
   return `https://gravatar.com/avatar/${hash}?s=${size}&d=404`
 }
 
-/** The image URL when this address has a Gravatar. A missing or unreachable image is absent. */
+/** Resolve when `url` loads as an image. Reject when the image is missing or unreachable. */
+function probeImage(url: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.referrerPolicy = "no-referrer"
+    image.onload = () => resolve()
+    image.onerror = () => reject(new Error("gravatar image missing"))
+    image.src = url
+  })
+}
+
+/**
+ * The image URL when this address has a Gravatar. A missing or unreachable image is absent.
+ *
+ * Probes with an image element so the request uses `img-src`, which already allows Gravatar.
+ * A `fetch` probe would need `connect-src` and trip the Electron renderer's closed network policy.
+ */
 export async function loadGravatar(email: string, size: number): Promise<string | undefined> {
   try {
     const url = await gravatarUrl(email, size)
-    const response = await fetch(url)
-    const type = response.headers.get("content-type") ?? ""
-    // A 404 page is not an avatar. Never hand it to an image element.
-    if (!response.ok || !type.startsWith("image/")) return undefined
+    await probeImage(url)
     return url
   } catch {
     return undefined
