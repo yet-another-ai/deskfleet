@@ -17,7 +17,7 @@ export function rendererContentSecurityPolicy(production: boolean, statsigEnable
     "style-src 'self' 'unsafe-inline'",
     // User avatars come from Gravatar.
     "img-src 'self' data: blob: https://gravatar.com",
-    "font-src 'self'",
+    "font-src 'self' data:",
     "media-src 'self' blob:",
     // API traffic stays in main; configured telemetry runs in the renderer.
     `connect-src ${connectSources.length ? connectSources.join(" ") : "'none'"}`,
