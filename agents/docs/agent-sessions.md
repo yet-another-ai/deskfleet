@@ -63,16 +63,19 @@ fsmonitor; diffs disable external commands and text conversion, and checkouts
 disable all discovered filter drivers. Only HTTPS, SSH, and local-file transports
 are allowed. Private remotes use trusted host system/global credentials and SSH
 configuration, never repository-selected credential or SSH helpers.
-Policy preflight, submodule inspection, and the final command share the caller's
-timeout budget. Local `~` and `~user` remote paths use Git's own home expansion
-before inspecting their metadata.
+Fetch does not recurse into submodules, whose remote targets have not been
+inspected. Policy preflight, submodule inspection, and the final command share
+the caller's timeout budget. Local `~` and `~user` remote paths use Git's own
+home expansion before inspecting their metadata.
 
-Repository-local and enabled worktree config accept only the wrapper's explicit
-data-key allowlist: repository layout and file settings, branch/remote locators,
-identity, rename settings, and submodule locators. Includes, executable helpers,
-filters, and unknown keys fail before the operation. Initialized submodules and
-local fetch targets are checked too. `core.worktree` is accepted only when its
-target points back to the same Git directory and, for checkout operations,
+Repository-local and enabled worktree config allow unrelated tool metadata and
+other unknown keys. The wrapper rejects known executable helpers, includes,
+filters, and transport settings that could override its policy; automatic Git
+maintenance is disabled. This targeted list must be reviewed when Git operations
+or supported Git configuration features change. Git still reads permitted
+settings, so unknown future Git settings are not guaranteed to be harmless.
+Initialized submodules and local fetch targets are checked too. `core.worktree`
+is accepted only when its target points back to the same Git directory and, for checkout operations,
 matches the checkout discovered independently from its `.git` metadata. Common
 or worktree-local configuration cannot redirect an operation to another directory.
 Unsupported local policy must be removed or

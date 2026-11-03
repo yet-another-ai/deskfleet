@@ -33,6 +33,20 @@ test("safe Git supports linked worktrees and shared metadata operations", async 
   assert.match((await executeGit(["--git-dir", common, "worktree", "list"])).stdout, /linked/)
 })
 
+test("Git status accepts unrelated repository and branch configuration", async t => {
+  const { root } = await fixture(t)
+  await git(root, "config", "branch.feat/mark-session-unread.vscode-merge-base", "origin/main")
+  await git(root, "config", "branch.feat/mark-session-unread.unknown", "value")
+  await git(root, "config", "some-tool.custom-setting", "value")
+  await git(root, "config", "filter.example.description", "metadata")
+  await git(root, "config", "http.custom-setting", "value")
+  await writeFile(join(root, "file.txt"), "changed\n")
+  assert.match((await executeGit(["-C", root, "status", "--porcelain"])).stdout, / M file\.txt/)
+  await git(root, "config", "extensions.worktreeConfig", "true")
+  await git(root, "config", "--worktree", "some-tool.worktree-setting", "value")
+  assert.match((await executeGit(["-C", root, "status", "--porcelain"])).stdout, / M file\.txt/)
+})
+
 test("Git rejects common-config worktree redirection before touching a victim directory", async t => {
   const { root, directory } = await fixture(t)
   const victim = join(directory, "victim")
@@ -76,8 +90,8 @@ test("Git validates worktree-local redirection while retaining valid layout meta
   assert.equal(await readFile(join(root, "file.txt"), "utf8"), "source\n")
 })
 
-for (const key of ["core.fsmonitor", "core.sshCommand", "credential.helper", "filter.attack.smudge", "filter.attack.process", "remote.origin.uploadpack"]) {
-  test(`Git rejects executable repository configuration: ${key}`, async t => {
+for (const key of ["core.fsmonitor", "core.sshCommand", "credential.helper", "credential.https://example.com.helper", "filter.attack.smudge", "filter.attack.process", "remote.origin.uploadpack", "hook.attack.command", "hook.attack.event", "merge.attack.driver", "gc.recentObjectsHook", "branch.main.mergeOptions", "url.file:///tmp.insteadOf", "http.sslVerify"]) {
+  test(`Git rejects restricted repository configuration: ${key}`, async t => {
     const { root, marker } = await fixture(t)
     await git(root, "config", key, `!echo executed > '${marker.replaceAll("\\", "/")}'`)
     await assert.rejects(executeGit(["-C", root, "status", "--porcelain"]), /Repository-local Git configuration/)
@@ -92,6 +106,41 @@ test("Git rejects includes before following executable policy", async t => {
   await git(root, "config", "include.path", included)
   await assert.rejects(executeGit(["-C", root, "status", "--porcelain"]), /include.path/)
   await assert.rejects(readFile(marker), { code: "ENOENT" })
+})
+
+for (const key of ["gpg.program", "gpg.openpgp.program", "gpg.x509.program", "gpg.ssh.program", "gpg.ssh.defaultKeyCommand"]) {
+  test(`Git rejects repository signing programs before merge: ${key}`, async t => {
+    const { root, marker } = await fixture(t)
+    await git(root, "config", "merge.verifySignatures", "true")
+    await git(root, "config", key, `echo executed > '${marker.replaceAll("\\", "/")}'`)
+    await assert.rejects(executeGit(["-C", root, "merge", "--ff-only", "HEAD"]), /Repository-local Git configuration/)
+    await assert.rejects(readFile(marker), { code: "ENOENT" })
+  })
+}
+
+test("Git fetch does not recurse into submodules despite repository settings", async t => {
+  const { root, directory } = await fixture(t)
+  const source = join(directory, "module-source")
+  await git(directory, "clone", root, source)
+  await git(root, "-c", "protocol.file.allow=always", "submodule", "add", source, "module")
+  await git(root, "-c", "user.name=Test", "-c", "user.email=test@fixture.invalid", "commit", "--no-gpg-sign", "-m", "add module")
+  const remote = join(directory, "remote.git")
+  await git(directory, "clone", "--bare", root, remote)
+  await git(root, "remote", "add", "origin", remote)
+  const module = join(root, "module")
+  const before = await git(module, "rev-parse", "refs/remotes/origin/main")
+  await writeFile(join(source, "file.txt"), "new revision\n")
+  await git(source, "add", "file.txt")
+  await git(source, "-c", "user.name=Test", "-c", "user.email=test@fixture.invalid", "commit", "--no-gpg-sign", "-m", "update module")
+  const after = await git(source, "rev-parse", "HEAD")
+  assert.notEqual(before, after)
+  await git(root, "config", "fetch.recurseSubmodules", "true")
+  await git(root, "config", "submodule.module.fetchRecurseSubmodules", "true")
+  await executeGit(["-C", root, "fetch", "--no-tags", "--", "origin", "+refs/heads/main:refs/remotes/origin/main"])
+  assert.equal(await git(module, "rev-parse", "refs/remotes/origin/main"), before)
+  // Prove that the configured recursive fetch would have updated the submodule.
+  await git(root, "-c", "protocol.file.allow=always", "fetch", "--no-tags", "origin")
+  assert.equal(await git(module, "rev-parse", "refs/remotes/origin/main"), after)
 })
 
 test("Git never runs ordinary repository hooks during generated worktree checkout", async t => {
