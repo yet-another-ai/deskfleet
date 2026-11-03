@@ -1,9 +1,21 @@
+import type { DesktopErrorReason } from "./desktop-media.ts"
+
+export type RequestFailureKind = "network" | "timeout" | "cancelled" | "http" | "decode"
+export type RequestTransport = "node_fetch" | "browser_fetch"
+export type RequestTrigger = "user" | "background" | "unknown"
 export interface CentralRequestDiagnostics {
   method: string
   route: string
   rpcMethod?: string
   elapsedMs: number
-  causes: Array<{ name: string; code?: string }>
+  causes: Array<{ name: string; code?: string; syscall?: string }>
+  kind: RequestFailureKind
+  transport: RequestTransport
+  phase: "fetch" | "response_body"
+  status?: number
+  trigger?: RequestTrigger
+  online?: boolean
+  visibility?: "visible" | "hidden"
 }
 
 export interface SerializedCentralRequestError {
@@ -47,7 +59,7 @@ const rpcMethods = new Set([
   "mcpServerList", "mcpServerCreate", "mcpServerUpdate", "mcpServerRemove",
 ])
 const errorNames = new Set([
-  "Error", "TypeError", "AggregateError", "AbortError", "TimeoutError", "SocketError",
+  "Error", "TypeError", "SyntaxError", "AggregateError", "AbortError", "TimeoutError", "SocketError",
   "ConnectTimeoutError", "HeadersTimeoutError", "BodyTimeoutError", "RequestAbortedError",
 ])
 const errorCodes = new Set([
@@ -58,6 +70,7 @@ const errorCodes = new Set([
   "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_SOCKET", "UND_ERR_CONNECT",
   "UND_ERR_DESTROYED", "UND_ERR_ABORTED",
 ])
+const syscalls = new Set(["connect", "read", "write", "getaddrinfo", "getnameinfo", "shutdown"])
 
 function errorName(value: unknown): string {
   return typeof value === "string" && errorNames.has(value) ? value : "Error"
@@ -71,16 +84,17 @@ function causesOf(error: unknown): CentralRequestDiagnostics["causes"] {
     const next = pending.shift()
     if (!next || typeof next !== "object" || seen.has(next)) continue
     seen.add(next)
-    const value = next as { name?: unknown; code?: unknown; cause?: unknown }
+    const value = next as { name?: unknown; code?: unknown; syscall?: unknown; cause?: unknown }
     const code = typeof value.code === "string" && errorCodes.has(value.code) ? value.code : undefined
-    causes.push({ name: errorName(value.name), ...(code && { code }) })
+    const syscall = typeof value.syscall === "string" && syscalls.has(value.syscall) ? value.syscall : undefined
+    causes.push({ name: errorName(value.name), ...(code && { code }), ...(syscall && { syscall }) })
     if (value.cause) pending.push(value.cause)
     if (next instanceof AggregateError) pending.push(...next.errors.slice(0, 8))
   }
   return causes
 }
 
-/** A failed central fetch retains its local cause and an IPC-safe diagnostic summary. */
+/** A failed central request retains its local cause and an IPC-safe diagnostic summary. */
 export class CentralRequestError extends Error {
   readonly diagnostics: CentralRequestDiagnostics
   constructor(message: string, diagnostics: CentralRequestDiagnostics, options?: ErrorOptions) {
@@ -90,22 +104,49 @@ export class CentralRequestError extends Error {
   }
 }
 
-export function centralRequestFailure(
-  cause: unknown,
-  request: { method: string; path: string; body?: unknown; elapsedMs: number },
-  requestStack?: string,
-): CentralRequestError {
+export class HttpError extends CentralRequestError {
+  readonly status: number
+  readonly reason?: DesktopErrorReason
+  readonly code?: string
+  constructor(status: number, message: string, reason?: DesktopErrorReason, code?: string, diagnostics?: CentralRequestDiagnostics, options?: ErrorOptions) {
+    super(message, diagnostics ?? requestDiagnostics(undefined, { method: "unknown", path: "", elapsedMs: 0, kind: "http", status }), options)
+    this.name = "Error"
+    this.status = status
+    this.reason = reason
+    this.code = code
+  }
+}
+
+interface RequestDetails {
+  method: string; path: string; body?: unknown; elapsedMs: number
+  transport?: RequestTransport; phase?: CentralRequestDiagnostics["phase"]; status?: number
+  kind?: RequestFailureKind; signal?: AbortSignal
+}
+
+export function requestDiagnostics(cause: unknown, request: RequestDetails): CentralRequestDiagnostics {
   const path = request.path.split(/[?#]/u, 1)[0]!
   const route = routes.find(candidate => candidate.pattern.test(path))?.route ?? "unknown"
   const body = request.body && typeof request.body === "object" ? request.body as { method?: unknown } : undefined
   const rpcMethod = route === "/api/teams/:teamId/machines/:machineId/rpc" && typeof body?.method === "string" && rpcMethods.has(body.method) ? body.method : undefined
-  const error = new CentralRequestError(cause instanceof Error ? cause.message : "fetch failed", {
+  const causes = causesOf(cause)
+  const timeout = request.signal?.reason?.name === "TimeoutError" || causes.some(value => value.name === "TimeoutError" || value.code === "ETIMEDOUT" || value.code?.endsWith("_TIMEOUT"))
+  const kind = request.kind ?? (timeout ? "timeout" : request.signal?.aborted ? "cancelled" : request.phase === "response_body" && cause instanceof SyntaxError ? "decode" : "network")
+  return {
     method: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].includes(request.method) ? request.method : "unknown",
-    route, ...(rpcMethod && { rpcMethod }), elapsedMs: Math.max(0, Math.round(request.elapsedMs)), causes: causesOf(cause),
-  }, { cause })
+    route, ...(rpcMethod && { rpcMethod }), elapsedMs: Math.max(0, Math.round(request.elapsedMs)), causes,
+    kind, transport: request.transport ?? (typeof window === "undefined" ? "node_fetch" : "browser_fetch"),
+    phase: request.phase ?? "fetch", ...(request.status !== undefined ? { status: request.status } : {}),
+  }
+}
+
+export function attachRequestStack<T extends Error>(error: T, requestStack?: string): T {
   // Undici can omit its stack entirely; retain the caller captured before await.
   if (requestStack) error.stack = `${error.name}: ${error.message}\n${requestStack.split("\n").slice(1).join("\n")}`
   return error
+}
+
+export function centralRequestFailure(cause: unknown, request: RequestDetails, requestStack?: string): CentralRequestError {
+  return attachRequestStack(new CentralRequestError(cause instanceof Error ? cause.message : "fetch failed", requestDiagnostics(cause, request), { cause }), requestStack)
 }
 
 export function serializeCentralRequestError(error: unknown): SerializedCentralRequestError | undefined {

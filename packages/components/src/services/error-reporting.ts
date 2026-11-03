@@ -1,13 +1,19 @@
 import { attachErrorHandler, browserApiErrorsIntegration, captureException, dedupeIntegration, eventFiltersIntegration, globalHandlersIntegration, init, setUser, type ErrorEvent } from "@sentry/vue"
 import type { App } from "vue"
+import { useEventListener } from "@vueuse/core"
 import type { AccountUser, CentralApi } from "@deskfleet/client/central"
 import type { DesktopErrorReportingContext } from "@deskfleet/client/error-reporting-context"
 import { CentralRequestError } from "@deskfleet/client/request-diagnostics"
 import { parseSentryDsn } from "@deskfleet/client/sentry-config"
+import { prepareCentralRequest } from "./central-request-event.ts"
+import { CentralRequestReports } from "./central-request-reports.ts"
 
 // One SDK per document, including the independently mounted MachineSurface apps.
 let client: ReturnType<typeof init>
 const installed = new WeakSet<App>()
+let requestReports: CentralRequestReports | undefined
+let stopPagehide: (() => void) | undefined
+let reportingUserKey: string | undefined
 
 function prepareError(event: ErrorEvent): ErrorEvent {
   // Authentication URLs and application state are not error-reporting context.
@@ -31,10 +37,12 @@ function prepareError(event: ErrorEvent): ErrorEvent {
 export function initializeErrorReporting(platform: "web" | "desktop", context?: DesktopErrorReportingContext): void {
   const configuration = parseSentryDsn(import.meta.env.VITE_SENTRY_DSN)
   if (client || !configuration) return
+  const dedupe = dedupeIntegration()
   client = init({
     dsn: configuration.dsn,
     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT?.trim() || import.meta.env.MODE,
     release: import.meta.env.VITE_SENTRY_RELEASE?.trim() || undefined,
+    dist: import.meta.env.VITE_SENTRY_DIST?.trim() || undefined,
     initialScope: {
       tags: { platform },
       ...(context ? { contexts: {
@@ -48,40 +56,41 @@ export function initializeErrorReporting(platform: "web" | "desktop", context?: 
     },
     // Explicit error-only integrations omit URL, DOM, console and session collection.
     defaultIntegrations: false,
-    integrations: [eventFiltersIntegration(), browserApiErrorsIntegration(), globalHandlersIntegration(), dedupeIntegration()],
+    integrations: [eventFiltersIntegration(), browserApiErrorsIntegration(), globalHandlersIntegration(),
+      { name: "CentralRequests", processEvent: prepareCentralRequest },
+      // Consecutive distinct requests must not disappear in SDK deduplication.
+      // CentralRequestReports owns repetition; the SDK still guards Error identity.
+      { ...dedupe, processEvent: (event, hint, sdk) => hint.originalException instanceof CentralRequestError
+        ? event : dedupe.processEvent!(event, hint, sdk) }],
     dataCollection: { userInfo: false, cookies: false, httpHeaders: false, httpBodies: [], urlQueryParams: false },
     maxBreadcrumbs: 0,
     sendClientReports: false,
     beforeSend: prepareError,
   })
+  requestReports = new CentralRequestReports((error, repetition) => captureException(error, {
+    tags: { "central.report_type": repetition.summary ? "summary" : "occurrence" },
+    contexts: { request_repetition: { ...repetition } },
+  }))
+  if (typeof window !== "undefined") stopPagehide = useEventListener(window, "pagehide", () => requestReports?.flush())
 }
 
 /** Bind the authenticated account without collecting other profile fields. */
 export function setErrorReportingUser(user?: Pick<AccountUser, "id" | "email">): void {
   if (!client) return
+  const key = user ? JSON.stringify([user.id, user.email ?? ""]) : undefined
+  // Summaries belong to the identity active when their failures occurred.
+  if (key !== reportingUserKey) requestReports?.flush()
+  reportingUserKey = key
   setUser(user ? { id: user.id, ...(user.email ? { email: user.email } : {}) } : null)
 }
 
 /** Report handled transport failures while the original, bounded diagnostics still exist. */
 export function captureCentralRequestError(error: unknown): void {
   if (!client || !(error instanceof CentralRequestError)) return
-  const { method, route, rpcMethod, elapsedMs, causes } = error.diagnostics
-  const code = causes.find(cause => cause.code)?.code
-  const codes = [...new Set(causes.flatMap(cause => cause.code ? [cause.code] : []))].sort()
-  captureException(error, {
-    fingerprint: ["{{ default }}", method, route, rpcMethod ?? "", codes.join(",") || "unknown"],
-    tags: {
-      "central.method": method,
-      "central.route": route,
-      ...(rpcMethod ? { "central.rpc_method": rpcMethod } : {}),
-      ...(code ? { "central.cause_code": code } : {}),
-    },
-    // Keep causes within the SDK's normalization depth so their codes remain visible.
-    contexts: { central_request: {
-      method, route, rpc_method: rpcMethod, elapsed_ms: elapsedMs,
-      causes: causes.map(cause => cause.code ? `${cause.name}: ${cause.code}` : cause.name),
-    } },
-  })
+  // Expected HTTP rejections belong to their UI handlers. Unhandled ones still
+  // reach the global integration with the same diagnostics.
+  if (error.diagnostics.kind === "cancelled" || error.diagnostics.kind === "http" && error.diagnostics.status! < 500 && error.diagnostics.status !== 429) return
+  requestReports?.capture(error)
 }
 
 /** Attach each Vue app without starting another SDK or collecting component props. */
@@ -113,6 +122,10 @@ export function installErrorReportingAccount(app: App, central: Pick<CentralApi,
 }
 
 export async function shutdownErrorReporting(): Promise<void> {
+  stopPagehide?.()
+  stopPagehide = undefined
+  requestReports?.flush()
+  requestReports = undefined
   const previous = client
   setErrorReportingUser()
   client = undefined

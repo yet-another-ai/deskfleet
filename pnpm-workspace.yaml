@@ -9,6 +9,8 @@ packages:
   - docs
 
 allowBuilds:
+  # Platform packages supply the binary; do not run the CLI's download fallback.
+  '@sentry/cli': false
   # Squirrel.Windows support; electron-builder's NSIS target does not use it.
   electron-winstaller: false
   esbuild: true

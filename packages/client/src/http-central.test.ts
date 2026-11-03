@@ -201,6 +201,7 @@ test("fetch failures retain request context and a caller stack before Electron s
   expect(failure.diagnostics).toEqual({
     method: "POST", route: "/api/teams/:teamId/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", elapsedMs: expect.any(Number),
     causes: [{ name: "TypeError" }, { name: "Error", code: "ECONNREFUSED" }],
+    kind: "network", transport: "node_fetch", phase: "fetch",
   })
   const serialized = JSON.stringify(serializeCentralRequestError(failure))
   for (const secret of ["private-machine", "private-provider", "private-model", "application-token", "fleet.example", "private backend"]) expect(serialized).not.toContain(secret)
@@ -213,7 +214,32 @@ test("HTTP errors keep their status and code instead of becoming fetch failures"
   const failure = await f.client.rpc("team", "machine", "_deskfleet/agent/configuration", {}).catch(error => error)
   expect(failure).toBeInstanceOf(HttpError)
   expect(failure).toMatchObject({ name: "Error", message: "fetch failed", status: 502, code: "operation_failed" })
-  expect(serializeCentralRequestError(failure)).toBeUndefined()
+  expect(serializeCentralRequestError(failure)).toMatchObject({ diagnostics: {
+    kind: "http", phase: "response_body", status: 502, route: "/api/teams/:teamId/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration",
+  } })
+})
+
+test("response decoding and interrupted bodies retain the request and response status", async () => {
+  const f = setup()
+  f.fetch.mockResolvedValueOnce(new Response("<html>private upstream error</html>"))
+  const decoded = await f.client.teams().catch(error => error)
+  expect(decoded.diagnostics).toMatchObject({ kind: "decode", phase: "response_body", status: 200, route: "/api/teams", causes: [{ name: "SyntaxError" }] })
+  const cause = Object.assign(new Error("private connection closed"), { code: "UND_ERR_SOCKET" })
+  f.fetch.mockResolvedValueOnce(new Response(new ReadableStream({ start(controller) { controller.error(cause) } })))
+  const interrupted = await f.client.teams().catch(error => error)
+  expect(interrupted.diagnostics).toMatchObject({ kind: "network", phase: "response_body", status: 200, causes: [{ code: "UND_ERR_SOCKET" }] })
+  expect(interrupted.cause).toBe(cause)
+  expect(f.fetch).toHaveBeenCalledTimes(2)
+})
+
+test.each([['AbortError', 'cancelled'], ['TimeoutError', 'timeout']] as const)("distinguishes caller %s from transport failures", async (name, kind) => {
+  const f = setup()
+  const stop = new AbortController()
+  stop.abort(new DOMException("private cancellation reason", name))
+  f.fetch.mockRejectedValueOnce(stop.signal.reason)
+  const error = await f.client.request("GET", "/api/me", undefined, stop.signal).catch(error => error)
+  if (!(error instanceof CentralRequestError)) throw error
+  expect(error.diagnostics).toMatchObject({ kind, phase: "fetch", route: "/api/me" })
 })
 
 test("HTTP errors preserve supported desktop recovery reasons", async () => {

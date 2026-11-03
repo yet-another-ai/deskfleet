@@ -15,6 +15,8 @@ on:
         required: false
         default: false
     secrets:
+      SENTRY_AUTH_TOKEN:
+        required: false
       MAC_CSC_LINK:
         required: false
       MAC_CSC_KEY_PASSWORD:
@@ -96,6 +98,8 @@ jobs:
       - name: Build production server, daemon, and Web bundles
         if: ${{ inputs.production_release }}
         env:
+          DESKFLEET_SOURCEMAPS: "1"
+          VITE_SENTRY_DIST: web
           VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
           VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
@@ -106,6 +110,8 @@ jobs:
       - name: Build production Electron bundles
         if: ${{ inputs.production_release }}
         env:
+          DESKFLEET_SOURCEMAPS: "1"
+          VITE_SENTRY_DIST: ${{ matrix.platform }}
           VITE_DESKFLEET_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
           VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
           VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
@@ -114,6 +120,17 @@ jobs:
           VITE_SENTRY_RELEASE: deskfleet@${{ github.ref_name }}
         # Keep Web same-origin; reuse the release addon for Electron's API-specific build.
         run: mise exec -- pnpm --filter @deskfleet/desktop build
+
+      - name: Upload release source maps and remove public maps
+        if: ${{ inputs.production_release }}
+        env:
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_SENTRY_RELEASE: deskfleet@${{ github.ref_name }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_URL: ${{ vars.SENTRY_URL }}
+        run: mise exec -- node scripts/sentry-sourcemaps.ts ${{ matrix.platform }}
 
       - name: Package unsigned desktop installers
         if: ${{ runner.os != 'macOS' || !inputs.production_release }}

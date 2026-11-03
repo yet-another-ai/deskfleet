@@ -13,6 +13,7 @@ export default defineConfig({
   ],
   server: { host: "localhost", port: 5174, strictPort: true },
   build: {
+    sourcemap: process.env.DESKFLEET_SOURCEMAPS === "1" ? "hidden" : false,
     target: "es2023",
     rolldownOptions: { output: { codeSplitting: clientCodeSplitting, strictExecutionOrder: true } },
   },

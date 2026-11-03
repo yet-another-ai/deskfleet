@@ -34,6 +34,7 @@ export default defineConfig(({ command }) => {
       }),
     ],
     build: {
+      sourcemap: process.env.DESKFLEET_SOURCEMAPS === "1" ? "hidden" : false,
       emptyOutDir: true,
       outDir: resolve(import.meta.dirname, "out/renderer"),
       rolldownOptions: { output: { codeSplitting: clientCodeSplitting, strictExecutionOrder: true } },

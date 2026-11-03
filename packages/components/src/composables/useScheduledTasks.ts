@@ -2,6 +2,7 @@ import { useIntervalFn } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { schedulesClient, type ScheduleInput, type ScheduleRun, type ScheduledTask } from "@deskfleet/client/schedules"
+import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useAccountSession } from "./useAccountSession.ts"
 
@@ -15,7 +16,9 @@ export function useScheduledTasks() {
   const { t } = useI18n()
   const account = useAccountSession()
   const fleet = useFleetStore()
-  const api = account && schedulesClient(account.central, account.teamId.value!, fleet.targetId)
+  const automatic = account && withCentralRequestTrigger(account.central, "background")
+  const backgroundApi = account && schedulesClient(automatic!, account.teamId.value!, fleet.targetId)
+  const api = account && schedulesClient(withCentralRequestTrigger(account.central, "user"), account.teamId.value!, fleet.targetId)
   const online = computed(() => !!api && (account?.machine.value?.online ?? fleet.localDesktopTarget.online))
   const tasks = ref<ScheduledTask[]>([])
   const loaded = ref(false)
@@ -26,12 +29,12 @@ export function useScheduledTasks() {
   let revision = 0
   let disposed = false
 
-  async function refresh(): Promise<void> {
+  async function refresh(background = false): Promise<void> {
     const request = ++revision
     if (!api || !account) { loading.value = false; return }
     loading.value = true
     try {
-      const result = online.value ? { tasks: await api.list(), lastObservedAt: null } : await account.central.scheduleSnapshot(account.teamId.value!, fleet.targetId)
+      const result = online.value ? { tasks: await (background ? backgroundApi! : api).list(), lastObservedAt: null } : await (background ? automatic! : withCentralRequestTrigger(account.central, "user")).scheduleSnapshot(account.teamId.value!, fleet.targetId)
       if (disposed || request !== revision) return
       tasks.value = result.tasks
       lastObservedAt.value = result.lastObservedAt
@@ -89,13 +92,13 @@ export function useScheduledTasks() {
     })
   }
 
-  watch(online, () => { void refresh() }, { immediate: true })
+  watch(online, () => { void refresh(true) }, { immediate: true })
   const unsubscribe = account?.central.onEvent(event => {
-    if (event.type === "catalogChanged" && event.teamId === account.teamId.value && event.machineId === fleet.targetId && !pending.value) void refresh()
+    if (event.type === "catalogChanged" && event.teamId === account.teamId.value && event.machineId === fleet.targetId && !pending.value) void refresh(true)
   })
   // The visible page follows execution status; switching routes or hiding the window stops reads.
-  useIntervalFn(() => { if (online.value && !document.hidden && !loading.value && !pending.value) void refresh() }, 15_000)
+  useIntervalFn(() => { if (online.value && !document.hidden && !loading.value && !pending.value) void refresh(true) }, 15_000)
   onBeforeUnmount(() => { disposed = true; revision++; unsubscribe?.() })
 
-  return { account, available: !!api, online, tasks, loaded, loading, pending, error, lastObservedAt, refresh, save, toggle, run, remove }
+  return { account, available: !!api, online, tasks, loaded, loading, pending, error, lastObservedAt, refresh: () => refresh(), save, toggle, run, remove }
 }

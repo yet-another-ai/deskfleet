@@ -1,6 +1,8 @@
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { LocalEnrollment } from "@deskfleet/client/central"
+import { centralRequestFailure } from "@deskfleet/client/request-diagnostics"
+import { reportingCentral } from "@deskfleet/client/reporting-central"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import { router } from "../router/index.ts"
 import { createAccountSession, type AccountSession } from "./useAccountSession.ts"
@@ -13,6 +15,20 @@ beforeEach(() => vi.mocked(trackEvent).mockClear())
 afterEach(() => { session?.dispose(); session = undefined; vi.restoreAllMocks() })
 const enrollment = (value: Partial<LocalEnrollment> = {}): LocalEnrollment => ({
   configured: false, connected: false, revoked: false, identity: { originId: "local-origin", machineId: "1" }, machineName: "This Mac", ...value,
+})
+
+test("automatic reload failures and explicit sign-in failures retain different triggers", async () => {
+  const fake = fakeCentral()
+  const report = vi.fn()
+  const failure = () => centralRequestFailure(new TypeError("fetch failed"), { method: "GET", path: "/api/me", elapsedMs: 10 })
+  vi.mocked(fake.central.status).mockRejectedValueOnce(failure())
+  session = createAccountSession(reportingCentral(fake.central, report))
+  await flushPromises()
+  expect(session.notice.value).toBe("fetch failed")
+  expect(report.mock.calls[0]![0].diagnostics.trigger).toBe("background")
+  vi.mocked(fake.central.login).mockRejectedValueOnce(failure())
+  await expect(session.signIn()).rejects.toThrow("fetch failed")
+  expect(report.mock.calls[1]![0].diagnostics.trigger).toBe("user")
 })
 
 test("opens this computer's Team and machine before any other", async () => {

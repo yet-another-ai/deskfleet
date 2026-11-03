@@ -155,6 +155,8 @@ Configure these environment variables:
 | `VITE_STATSIG_ENVIRONMENT` | Optional Statsig environment for both clients; defaults to the Vite mode, `production`. |
 | `VITE_SENTRY_DSN` | Optional public Sentry DSN for Web and Electron renderers. Missing, blank, or invalid disables error reporting. |
 | `VITE_SENTRY_ENVIRONMENT` | Optional Sentry environment for both clients; defaults to the Vite mode, `production`. |
+| `SENTRY_ORG`, `SENTRY_PROJECT` | Sentry organization and project slugs; required for source-map upload when a valid DSN is configured. |
+| `SENTRY_URL` | Optional self-hosted Sentry URL; defaults to `https://sentry.io/`. |
 
 The reusable Build workflow binds its packaging job to `production` only when
 Publish requests a production release. The caller passes the signing secret
@@ -164,7 +166,11 @@ same-origin.
 
 Both clients receive the same Sentry release identifier automatically from the
 Git tag, such as `deskfleet@v0.2.1`; no release variable needs configuring.
-Source-map upload is not configured.
+Tagged builds generate hidden source maps and upload them after compilation,
+before packaging. The Web distribution is `web`; desktop uses the matrix platform.
+Upload validates all three bundle groups, waits for processing, and fails the
+release if reporting is configured but credentials/maps are missing or delivery
+fails. Maps are removed from the public Web output. See [error reporting](error-reporting.md#source-maps).
 
 Keep production compilation in separate steps using each runner's native shell
 (PowerShell on Windows). Running it through Git Bash selects Git's bundled Perl
@@ -175,6 +181,7 @@ Configure these secrets in the same environment:
 
 | Secret | Value |
 | --- | --- |
+| `SENTRY_AUTH_TOKEN` | Token with source-map upload access, required when Sentry reporting is configured. Available only in the upload step. |
 | `MAC_CSC_LINK` | Base64 Developer ID Application certificate and private key in a PKCS#12 archive. |
 | `MAC_CSC_KEY_PASSWORD` | Password for that archive. |
 | `APPLE_API_KEY_P8` | Base64 App Store Connect API private key (`.p8`). |

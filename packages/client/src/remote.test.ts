@@ -3,6 +3,7 @@ import type { CentralApi, CentralEvent, Machine } from "./central.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { remoteMachineClient } from "./remote.ts"
 import { HttpCentralClient } from "./http-central.ts"
+import { centralRequestFailure } from "./request-diagnostics.ts"
 import { setPeerTelemetrySink } from "./peer-telemetry.ts"
 import type { LocalChannelsApi } from "./local-channels.ts"
 const disposers: (() => void)[] = []
@@ -31,6 +32,17 @@ function offerHttpFixture() {
   f.central.offerPeer = client.offerPeer.bind(client)
   return { ...f, fetch }
 }
+
+test("automatic read acknowledgements and explicit mutations retain their triggers", async () => {
+  const f = fixture()
+  const failure = () => centralRequestFailure(new TypeError("fetch failed"), { method: "POST", path: "/api/teams/team2/machines/central7/rpc", elapsedMs: 10 })
+  const read = failure(), mutation = failure()
+  vi.mocked(f.central.rpc).mockRejectedValueOnce(read).mockRejectedValueOnce(mutation)
+  await expect(f.remote.api.agent.control!("_deskfleet/session/read", { sessionId: "1", operationId: "read-op", throughSeq: "42" })).rejects.toBe(read)
+  await expect(f.remote.api.catalog.createWorkspace("Workspace", [{ path: "/tmp/project" }])).rejects.toBe(mutation)
+  expect(read.diagnostics.trigger).toBe("background")
+  expect(mutation.diagnostics.trigger).toBe("user")
+})
 
 test.each(["terminal", "agent"] as const)("legacy %s offers omit media options from the HTTP request", async purpose => {
   const f = offerHttpFixture(), signaling = f.remote.api[purpose]

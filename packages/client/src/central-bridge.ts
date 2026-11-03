@@ -1,6 +1,7 @@
 import type { CentralApi, CentralEvent } from "./central.ts"
 import type { DesktopErrorReportingContext } from "./error-reporting-context.ts"
 import { deserializeCentralRequestError, serializeCentralRequestError, type CentralRequestError, type SerializedCentralRequestError } from "./request-diagnostics.ts"
+import { reportingCentral } from "./reporting-central.ts"
 
 export const CENTRAL_METHODS = [
   "search", "scheduleSnapshot",
@@ -35,11 +36,7 @@ export function centralBridgeClient(bridge: CentralBridge, report: (error: Centr
     if (result.ok) return result.value
     const error = result.error.request ? deserializeCentralRequestError(result.error.request) : new Error(result.error.message)
     error.message = result.error.message
-    if (result.error.request) {
-      // Observability must not replace the original request failure.
-      try { report(error as CentralRequestError) } catch { /* retain the request error */ }
-    }
     throw error
   }]))
-  return { ...methods, onEvent: (listener: (event: CentralEvent) => void) => bridge.onEvent(listener) } as unknown as CentralApi
+  return reportingCentral({ ...methods, onEvent: (listener: (event: CentralEvent) => void) => bridge.onEvent(listener) } as unknown as CentralApi, report)
 }
