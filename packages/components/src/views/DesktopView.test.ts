@@ -194,13 +194,21 @@ test("discovers displays without capturing, then connects with the automatic cod
   expect(display.attributes("disabled")).toBeDefined()
 
   const peer = TestPeer.instances[0]!
+  const element = wrapper.get("video").element as HTMLVideoElement
+  expect(element.getAttribute("playsinline")).not.toBeNull()
+  expect(element.getAttribute("webkit-playsinline")).not.toBeNull()
+  const emptyStream = element.srcObject
+  expect(emptyStream).toBeTruthy()
   const track = { stop: vi.fn() } as unknown as MediaStreamTrack
   peer.ontrack?.({ track })
   peer.changeState("connected")
   await flushPromises()
   expect(mock.api.start).toHaveBeenCalledWith(expect.objectContaining({ displayId: 2 }))
   expect(wrapper.get('[role="status"]').text()).toBe("Connected · AV1")
-  expect((wrapper.get("video").element as HTMLVideoElement).srcObject).toBeTruthy()
+  // Safari needs a fresh srcObject bind after tracks arrive on the same MediaStream.
+  expect(element.srcObject).toBe(emptyStream)
+  expect((element.srcObject as MediaStream).getTracks()).toEqual([track])
+  expect(element.muted).toBe(false)
   expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true)
   await button(wrapper, "Disconnect").trigger("click")
   await flushPromises()
@@ -409,7 +417,7 @@ test("switching displays selects a codec supported by that display's GPU", async
   await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 3 · 1280 × 720")
   expect(wrapper.find("[data-desktop-codec]").exists()).toBe(false)
   expect(button(wrapper, "Connect").attributes("disabled")).toBeDefined()
-  expect(wrapper.get('[role="status"]').text()).toBe("No compatible video codec is available in Electron.")
+  expect(wrapper.get('[role="status"]').text()).toBe("No compatible video codec is available in this browser.")
 
   await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
   await button(wrapper, "Connect").trigger("click")
@@ -447,7 +455,7 @@ test("reports unsupported capture, missing displays, and incompatible codecs", a
 
   vi.spyOn(RTCRtpReceiver, "getCapabilities").mockReturnValue({ codecs: [], headerExtensions: [] })
   const incompatible = await mountDesktop()
-  expect(incompatible.get('[role="status"]').text()).toBe("No compatible video codec is available in Electron.")
+  expect(incompatible.get('[role="status"]').text()).toBe("No compatible video codec is available in this browser.")
   expect(button(incompatible, "Connect").attributes("disabled")).toBeDefined()
 })
 

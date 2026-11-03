@@ -571,7 +571,7 @@
     "ready": "ディスプレイを選択して接続すると、共有を開始します。", "connecting": "{codec} で接続中…",
     "starting": "{codec} で画面キャプチャを開始中…", "connected": "接続済み · {codec}",
     "daemonUnavailable": "ローカルデーモンを利用できません。デーモンを起動してからディスプレイを更新してください。", "captureUnavailable": "このマシンでは画面キャプチャを利用できません。",
-    "discoveryFailed": "利用可能なディスプレイを読み込めませんでした。", "noCodec": "Electron で利用できる互換性のある映像コーデックがありません。",
+    "discoveryFailed": "利用可能なディスプレイを読み込めませんでした。", "noCodec": "このブラウザで利用できる互換性のある映像コーデックがありません。",
     "connectionFailed": "デスクトップへの接続に失敗しました。",
     "accessibilityFailed": "マウスとキーボードの操作を開始できませんでした。",
     "accessibilityRecovery": "{machine} で「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」を開き、DeskFleet を許可してから、DeskFleet を完全に終了して再起動してください。操作なしでも画面共有は利用できます。",

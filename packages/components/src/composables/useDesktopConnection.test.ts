@@ -1,10 +1,16 @@
 import { flushPromises } from "@vue/test-utils"
-import { effectScope } from "vue"
+import { effectScope, watch } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { HttpError } from "../../../client/src/http-central.ts"
 import { PEER_SETUP_TIMEOUT_MS } from "../../../client/src/peer-lifecycle.ts"
 import { browserCodecs, deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
-import { browserCodecPreferences, commonDesktopCodecs, useDesktopConnection } from "./useDesktopConnection.ts"
+import {
+  browserCodecPreferences,
+  commonDesktopCodecs,
+  desktopCodecPreferenceOrder,
+  isWebKitDesktopViewer,
+  useDesktopConnection,
+} from "./useDesktopConnection.ts"
 
 const scopes: ReturnType<typeof effectScope>[] = []
 function setup() {
@@ -23,14 +29,45 @@ afterEach(() => {
 })
 
 test("matches native profiles in AV1, HEVC, H264 preference order", () => {
-  expect(commonDesktopCodecs(["h264", "h265", "av1"], browserCodecs)).toEqual(["av1", "h265", "h264"])
-  expect(commonDesktopCodecs(["h264", "h265"], browserCodecs)).toEqual(["h265", "h264"])
+  expect(desktopCodecPreferenceOrder("Mozilla/5.0 Chrome/120.0.0.0")).toEqual(["av1", "h265", "h264"])
+  expect(commonDesktopCodecs(["h264", "h265", "av1"], browserCodecs, "Mozilla/5.0 Chrome/120.0.0.0")).toEqual(["av1", "h265", "h264"])
+  expect(commonDesktopCodecs(["h264", "h265"], browserCodecs, "Mozilla/5.0 Chrome/120.0.0.0")).toEqual(["h265", "h264"])
   expect(commonDesktopCodecs(["h264", "h265", "av1"], browserCodecs.filter(codec => codec.mimeType === "video/H264"))).toEqual(["h264"])
   expect(browserCodecPreferences("h264", browserCodecs)).toEqual([browserCodecs[0]])
   expect(commonDesktopCodecs(["h265", "av1"], [
     { mimeType: "video/H265", clockRate: 90000, sdpFmtpLine: "profile-id=2" },
     { mimeType: "video/AV1", clockRate: 90000, sdpFmtpLine: "profile=1" },
   ])).toEqual([])
+})
+
+test("prefers H.264 first on Safari and iOS WebKit viewers", () => {
+  expect(isWebKitDesktopViewer("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")).toBe(true)
+  expect(isWebKitDesktopViewer("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15")).toBe(true)
+  expect(isWebKitDesktopViewer("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.0.0 Mobile/15E148 Safari/604.1")).toBe(true)
+  expect(isWebKitDesktopViewer("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")).toBe(false)
+  expect(desktopCodecPreferenceOrder("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")).toEqual(["h264", "h265", "av1"])
+  expect(commonDesktopCodecs(
+    ["h264", "h265", "av1"],
+    browserCodecs,
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15",
+  )).toEqual(["h264", "h265", "av1"])
+})
+
+test("republishes the media stream when remote tracks arrive for Safari srcObject rebinding", async () => {
+  const { connection } = setup()
+  await connection.connect(options)
+  const peer = TestPeer.instances[0]!
+  const initial = connection.stream.value
+  expect(initial).toBeTruthy()
+  const video = { stop: vi.fn() } as unknown as MediaStreamTrack
+  let notifications = 0
+  const stop = watch(connection.stream, () => { notifications += 1 })
+  peer.ontrack?.({ track: video })
+  await flushPromises()
+  stop()
+  expect(connection.stream.value).toBe(initial)
+  expect(connection.stream.value?.getTracks()).toEqual([video])
+  expect(notifications).toBeGreaterThanOrEqual(1)
 })
 
 test("negotiates receive-only media and starts capture only after the answer and connection", async () => {

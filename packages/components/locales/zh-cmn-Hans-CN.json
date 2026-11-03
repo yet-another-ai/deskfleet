@@ -797,7 +797,7 @@
     "daemonUnavailable": "本机守护进程不可用。启动守护进程后刷新显示器。",
     "captureUnavailable": "此机器暂不支持屏幕捕获。",
     "discoveryFailed": "无法获取可用显示器。",
-    "noCodec": "Electron 中没有兼容的视频编解码器。",
+    "noCodec": "当前浏览器没有兼容的视频编解码器。",
     "connectionFailed": "桌面连接失败。",
     "accessibilityFailed": "无法启动鼠标和键盘控制。",
     "accessibilityRecovery": "请在 {machine} 上打开系统设置 → 隐私与安全性 → 辅助功能，允许 DeskFleet，然后完全退出并重新打开 DeskFleet。即使不启用控制，仍可共享屏幕。",
