@@ -13,6 +13,12 @@ test("terminal image decoders may compile WebAssembly without allowing JavaScrip
     .toBe("script-src 'self' 'wasm-unsafe-eval'")
 })
 
+test.each([true, false])("renderers allow bundled and embedded fonts (production: %s)", (production) => {
+  const policy = injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, production)
+  expect(policy.split("; ").find(directive => directive.startsWith("font-src ")))
+    .toBe("font-src 'self' data:")
+})
+
 test("development renderers may reach only the Vite HMR socket", () => {
   const html = injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, false)
   expect(html).toContain("connect-src 'self' ws://127.0.0.1:5173")
