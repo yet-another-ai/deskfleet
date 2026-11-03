@@ -61,6 +61,12 @@ export function useMobileViewportSwipe(options: {
   }
 
   for (const [target, step] of [[options.left, -1], [options.right, 1]] as const) {
+    // Safari's history swipe must be canceled at touchstart; touch-action alone
+    // does not reserve these edge strips for the application's navigation.
+    useEventListener(target, "touchstart", event => {
+      if (options.enabled() && event.touches.length === 1 && event.cancelable) event.preventDefault()
+    }, { passive: false })
+
     const swipe = usePointerSwipe(target, {
       threshold: 6,
       pointerTypes: ["touch"],
