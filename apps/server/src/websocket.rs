@@ -8,7 +8,11 @@ use actix_ws::{CloseCode, CloseReason};
 use deskfleet_protocol::control::ControlMessage;
 use futures_util::StreamExt;
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
+
+static PEER_EVENT_TASKS: Semaphore = Semaphore::const_new(256);
 
 pub async fn daemon(
     req: HttpRequest,
@@ -177,6 +181,8 @@ async fn connect(
         let mut close_code = if setup.is_ok() { 1000 } else { 1012 };
         let mut heartbeat = tokio::time::interval(Duration::from_secs(20));
         let mut last_pong = std::time::Instant::now();
+        let peer_tasks = Arc::new(Semaphore::new(16));
+        let mut peer_rate = crate::peers::events::Rate::new();
         while setup.is_ok() {
             tokio::select! {
                 _=shutdown_rx.changed()=>{close_code=(*shutdown_rx.borrow()).unwrap_or(1012);break;},
@@ -202,9 +208,17 @@ async fn connect(
                                 state.hub.response(&id,&connection_id,&request_id,result).await;
                             },
                             ControlMessage::PeerEvent{peer_id,event} if is_daemon=>{
+                                if text.len() > 32 * 1024 || crate::peers::events::validate(&event).is_err() || !peer_rate.admit() {
+                                    close_code=1008; break;
+                                }
+                                let Ok(local_permit)=peer_tasks.clone().try_acquire_owned() else {close_code=1008;break};
+                                let Ok(global_permit)=PEER_EVENT_TASKS.try_acquire() else {close_code=1013;break};
                                 if state.hub.is_current(&id,&connection_id).await {
                                     let state=state.clone(); let machine_id=id.clone(); let connection_id=connection_id.clone();
-                                    actix_web::rt::spawn(async move { let _=crate::peers::daemon_event(&state,&machine_id,&connection_id,peer_id,event).await; });
+                                    actix_web::rt::spawn(async move {
+                                        let (_local,_global)=(local_permit,global_permit);
+                                        let _=crate::peers::daemon_event(&state,&machine_id,&connection_id,peer_id,event).await;
+                                    });
                                 }
                             },
                             _=>break,

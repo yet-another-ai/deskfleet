@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use sha1::Sha1;
 use std::io::Cursor;
 
+pub(crate) mod events;
 mod local;
 mod mux;
 mod signaling;

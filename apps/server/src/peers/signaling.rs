@@ -30,6 +30,7 @@ pub async fn offer(
 ) -> Result<web::Json<Value>> {
     let authorization = authorize_webrtc(&req, &s, &p).await?;
     binding(&b.sdp)?;
+    deskfleet_control_store::signaling_limits::options(&b.options)?;
     let state = s.store.prepare_peer_offer(&p, &b.sdp, &b.options).await?;
     let answer = match state {
         PeerOfferState::Answered(answer) => answer,
@@ -133,6 +134,7 @@ pub async fn candidate(
     b: web::Json<Candidate>,
 ) -> Result<web::Json<Value>> {
     let authorization = authorize_webrtc(&req, &s, &p).await?;
+    deskfleet_control_store::signaling_limits::candidate(&b.candidate)?;
     let text = b
         .candidate
         .get("candidate")
@@ -176,6 +178,14 @@ pub(crate) async fn daemon_event(
     peer_id: String,
     mut event: Value,
 ) -> Result<()> {
+    super::events::validate(&event)?;
+    if !s
+        .store
+        .auth_rate_limit(&format!("peer-events:{machine}"), 128, 1000)
+        .await?
+    {
+        return Err(ApiError::bad("peer event rate exceeded"));
+    }
     s.store.peer_login(&peer_id, machine).await?;
     if !s.hub.is_current(machine, connection).await {
         return Err(ApiError::unavailable());

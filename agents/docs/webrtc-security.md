@@ -9,6 +9,26 @@ The native transport performs DTLS. Central identity binding is implemented in
 the server's peer routes, with independent grant enforcement in the daemon's
 `AuthorizedPeers` service and both client adapters.
 
+## Signaling resource admission
+
+Peer offers accept at most 2 MiB of JSON and candidates at most 32 KiB. SDP
+strings retain their 1 MiB limit. Options accept only `codec` (`h264`, `h265`,
+`av1`) and `audio`; ICE objects accept only their standard candidate, media ID,
+media index, and username-fragment fields. Candidate text is at most 16 KiB;
+media IDs and username fragments are at most 256 bytes. Pending candidates have
+both a 256-item limit and a 256 KiB serialized JSONB limit, checked atomically.
+Database constraints also bound options, SDP, and pending bytes. Migration 24
+revokes and discards oversized existing negotiations; those clients reconnect.
+
+Daemon peer events accept only ICE candidates, known connection states, and
+bounded errors. Admission precedes asynchronous work and cross-instance fan-out:
+64 events per socket per second, 128 per registration per second across replicas,
+16 concurrent tasks per socket, and 256 per API process. Socket overload closes
+the connection without blocking its reader on a negotiation or queued permit.
+The registration budget survives reconnects. Error text is limited to 2 KiB;
+events to 24 KiB and their complete wire messages to 32 KiB. Other control
+messages retain their existing limits.
+
 ## Trust model
 
 The central service is trusted to authenticate users and enrolled machines,

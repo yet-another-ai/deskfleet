@@ -216,10 +216,15 @@ pub fn configure(config: &mut ServiceConfig) {
             .route("/peers", web::post().to(peers::create))
             .route("/peers/local", web::post().to(peers::create_local))
             .route("/peers/{peerId}", web::delete().to(peers::close))
-            .route("/peers/{peerId}/offer", web::post().to(peers::offer))
-            .route(
-                "/peers/{peerId}/candidate",
-                web::post().to(peers::candidate),
+            .service(
+                web::resource("/peers/{peerId}/offer")
+                    .app_data(web::JsonConfig::default().limit(2 * 1024 * 1024))
+                    .route(web::post().to(peers::offer)),
+            )
+            .service(
+                web::resource("/peers/{peerId}/candidate")
+                    .app_data(web::JsonConfig::default().limit(32 * 1024))
+                    .route(web::post().to(peers::candidate)),
             )
             .route("/peers/{peerId}/start", web::post().to(peers::start)),
     );

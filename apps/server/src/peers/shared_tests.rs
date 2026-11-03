@@ -224,6 +224,171 @@ fn candidate_value(port: u16) -> Value {
     json!({"candidate":format!("candidate:1 1 UDP 1 127.0.0.1 {port} typ host"),"sdpMlineIndex":0})
 }
 
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn signaling_http_limits_reject_bodies_before_authorization_and_persistence() {
+    let fixture = Fixture::new().await;
+    let app = test::init_service(
+        actix_web::App::new()
+            .app_data(fixture.a.clone())
+            .configure(crate::configure),
+    )
+    .await;
+    for (route, body) in [
+        ("offer", json!({"sdp":"x".repeat(2 * 1024 * 1024)})),
+        (
+            "candidate",
+            json!({"candidate":{"candidate":"x".repeat(32 * 1024)}}),
+        ),
+    ] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/api/peers/unused/{route}"))
+                .set_json(body)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    drop(app);
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn signaling_budget_upgrade_revokes_only_oversized_negotiations() {
+    let fixture = Fixture::new().await;
+    let oversized = fixture.peer().await;
+    let valid = fixture.peer().await;
+    fixture
+        .a
+        .store
+        .prepare_peer_offer(&oversized, &peers::tests::sdp(), &Value::Null)
+        .await
+        .unwrap();
+    fixture
+        .a
+        .store
+        .prepare_peer_offer(&valid, &peers::tests::sdp(), &Value::Null)
+        .await
+        .unwrap();
+    let db = fixture.a.store.database();
+    db.execute_unprepared(
+        "ALTER TABLE cp_peer_negotiations DROP CONSTRAINT cp_negotiation_options_bytes,
+        DROP CONSTRAINT cp_negotiation_pending_bytes, DROP CONSTRAINT cp_negotiation_offer_bytes,
+        DROP CONSTRAINT cp_negotiation_answer_bytes; DELETE FROM cp_migrations WHERE version=24",
+    )
+    .await
+    .unwrap();
+    db.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,
+        "UPDATE cp_peer_negotiations SET options=jsonb_build_object('extra',repeat('x',1025)) WHERE peer_id=$1", [oversized.clone().into()]
+    )).await.unwrap();
+    deskfleet_control_store::schema::migrate(db).await.unwrap();
+    assert!(
+        fixture
+            .a
+            .store
+            .peer(&oversized, &fixture.login)
+            .await
+            .is_err()
+    );
+    assert!(fixture.a.store.peer(&valid, &fixture.login).await.is_ok());
+    assert!(
+        fixture
+            .a
+            .store
+            .peer_for_close(&oversized, &fixture.login)
+            .await
+            .is_ok()
+    );
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn signaling_byte_budgets_hold_across_concurrent_writers() {
+    let fixture = Fixture::new().await;
+    let peer = fixture.peer().await;
+    let oversized = json!({"candidate":"a", "extra":"x".repeat(32_768)});
+    assert!(
+        fixture
+            .a
+            .store
+            .queue_peer_candidate(&peer, &oversized)
+            .await
+            .is_err()
+    );
+    assert!(
+        fixture
+            .a
+            .store
+            .prepare_peer_offer(&peer, &peers::tests::sdp(), &json!({"extra":true}))
+            .await
+            .is_err()
+    );
+    let candidate = json!({"candidate":"x".repeat(16_384),"sdpMlineIndex":0});
+    let mut writes = Vec::new();
+    for index in 0..32 {
+        let store = if index % 2 == 0 {
+            fixture.a.store.clone()
+        } else {
+            fixture.b.store.clone()
+        };
+        let (peer, candidate) = (peer.clone(), candidate.clone());
+        writes.push(actix_web::rt::spawn(async move {
+            store.queue_peer_candidate(&peer, &candidate).await
+        }));
+    }
+    let mut accepted = 0;
+    for write in writes {
+        if write.await.unwrap().is_ok() {
+            accepted += 1;
+        }
+    }
+    assert!(accepted > 0 && accepted < 32);
+    let row = fixture.a.store.database().query_one_raw(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DbBackend::Postgres,
+        "SELECT octet_length(pending::text) AS bytes FROM cp_peer_negotiations WHERE peer_id=$1", [peer.into()],
+    )).await.unwrap().unwrap();
+    assert!(row.try_get::<i32>("", "bytes").unwrap() <= 262_144);
+    assert!(fixture.a.store.database().execute_unprepared(
+        "UPDATE cp_peer_negotiations SET options=jsonb_build_object('extra',repeat('x',1025))"
+    ).await.is_err());
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn opaque_daemon_events_never_reach_client_fanout() {
+    let fixture = Fixture::new().await;
+    let peer = fixture.peer().await;
+    assert!(
+        daemon_event(
+            &fixture.b,
+            &fixture.registration,
+            "daemon-b",
+            peer,
+            json!({"kind":"stateChanged","state":"connected","extra":"x".repeat(32_768)})
+        )
+        .await
+        .is_err()
+    );
+    let row = fixture
+        .a
+        .store
+        .database()
+        .query_one_raw(sea_orm::Statement::from_string(
+            sea_orm::DbBackend::Postgres,
+            "SELECT count(*) AS count FROM cp_realtime_messages WHERE payload::text LIKE '%extra%'",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<i64>("", "count").unwrap(), 0);
+    fixture.close().await;
+}
+
 fn start_offer(
     state: web::Data<AppState>,
     token: String,
