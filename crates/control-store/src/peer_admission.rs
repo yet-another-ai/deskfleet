@@ -3,6 +3,18 @@ use crate::{Error, Result, now_ms, one, sql};
 use deskfleet_protocol::control::PeerAuthorization;
 use sea_orm::{ConnectionTrait, DatabaseTransaction};
 
+pub(crate) async fn lock(tx: &DatabaseTransaction, user: &str, team: i64) -> Result<()> {
+    // Always user then Team. The Team lock also serializes registration quotas.
+    for key in [format!("peer-user:{user}"), format!("peer-team:{team}")] {
+        tx.execute_raw(sql(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,761946022))",
+            vec![key.into()],
+        ))
+        .await?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn reserve(
     tx: &DatabaseTransaction,
     auth: &PeerAuthorization,
@@ -10,17 +22,7 @@ pub(crate) async fn reserve(
     team: i64,
     registration: i64,
 ) -> Result<()> {
-    // Always user then Team. The Team lock also serializes registration quotas.
-    for key in [
-        format!("peer-user:{}", auth.actor.user_id),
-        format!("peer-team:{team}"),
-    ] {
-        tx.execute_raw(sql(
-            "SELECT pg_advisory_xact_lock(hashtextextended($1,761946022))",
-            vec![key.into()],
-        ))
-        .await?;
-    }
+    lock(tx, &auth.actor.user_id, team).await?;
     let row = one(
         tx,
         "SELECT count(*) FILTER (WHERE user_id=$1) AS per_user,

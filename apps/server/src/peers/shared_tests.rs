@@ -226,6 +226,158 @@ fn candidate_value(port: u16) -> Value {
 
 #[actix_web::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn cancelled_creation_holds_only_a_short_reservation_and_cannot_activate_after_expiry() {
+    let mut fixture = Fixture::new().await;
+    let state = fixture.a.clone();
+    let (token, team, machine) = (
+        fixture.token.clone(),
+        fixture.team.clone(),
+        fixture.machine.clone(),
+    );
+    let creating = actix_web::rt::spawn(async move {
+        peers::create_local(
+            request(&token),
+            state,
+            web::Json(peers::Create {
+                team_id: team,
+                machine_id: machine,
+                purpose: "agent".into(),
+            }),
+        )
+        .await
+    });
+    // Abort after the grant commits but while daemon delivery is still waiting.
+    let (_, params) = fixture.next_request("peer.local").await;
+    let grant: PeerAuthorization = serde_json::from_value(params["authorization"].clone()).unwrap();
+    creating.abort();
+    assert!(creating.await.unwrap_err().is_cancelled());
+    let expires = chrono::DateTime::parse_from_rfc3339(&grant.expires_at)
+        .unwrap()
+        .timestamp_millis();
+    let db = fixture.a.store.database();
+    let row = db
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            "SELECT expires_at FROM cp_peers WHERE id=$1",
+            [grant.peer_id.clone().into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let reserved: i64 = row.try_get("", "expires_at").unwrap();
+    assert!(reserved > now_ms() + 60_000 && reserved <= now_ms() + 120_000);
+    assert!(reserved < expires);
+    for _ in 0..15 {
+        let mut another = grant.clone();
+        another.peer_id = uuid::Uuid::new_v4().to_string();
+        fixture
+            .b
+            .store
+            .reserve_peer(&another, &fixture.login, expires)
+            .await
+            .unwrap();
+    }
+    let mut replacement = grant.clone();
+    replacement.peer_id = uuid::Uuid::new_v4().to_string();
+    assert!(matches!(
+        fixture
+            .b
+            .store
+            .reserve_peer(&replacement, &fixture.login, expires)
+            .await,
+        Err(deskfleet_control_store::Error::Limited(_))
+    ));
+    // Advance this reservation past its lease without a minute-long wall-clock test.
+    db.execute_raw(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DbBackend::Postgres,
+        "UPDATE cp_peers SET expires_at=0 WHERE id=$1",
+        [grant.peer_id.clone().into()],
+    ))
+    .await
+    .unwrap();
+    assert!(fixture.a.store.activate_peer(&grant.peer_id).await.is_err());
+    fixture
+        .b
+        .store
+        .reserve_peer(&replacement, &fixture.login, expires)
+        .await
+        .unwrap();
+    fixture
+        .a
+        .store
+        .activate_peer(&replacement.peer_id)
+        .await
+        .unwrap();
+    let row = db
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            "SELECT expires_at,grant_json FROM cp_peers WHERE id=$1",
+            [replacement.peer_id.clone().into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<i64>("", "expires_at").unwrap(), expires);
+    assert_eq!(
+        row.try_get::<Value>("", "grant_json").unwrap(),
+        serde_json::to_value(replacement).unwrap()
+    );
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn reservation_survives_the_full_daemon_rpc_window() {
+    let fixture = Fixture::new().await;
+    let original = fixture.peer().await;
+    let mut grant = fixture
+        .a
+        .store
+        .peer(&original, &fixture.login)
+        .await
+        .unwrap();
+    grant.peer_id = uuid::Uuid::new_v4().to_string();
+    let expires = chrono::DateTime::parse_from_rfc3339(&grant.expires_at)
+        .unwrap()
+        .timestamp_millis();
+    fixture
+        .a
+        .store
+        .reserve_peer(&grant, &fixture.login, expires)
+        .await
+        .unwrap();
+    // Simulate consuming the entire 60-second RPC window. With the old lease,
+    // the successful reply would now race expiry and could not be activated.
+    fixture
+        .a
+        .store
+        .database()
+        .execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            "UPDATE cp_peers SET expires_at=expires_at-60000 WHERE id=$1",
+            [grant.peer_id.clone().into()],
+        ))
+        .await
+        .unwrap();
+    fixture.b.store.activate_peer(&grant.peer_id).await.unwrap();
+    let row = fixture
+        .a
+        .store
+        .database()
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            "SELECT expires_at FROM cp_peers WHERE id=$1",
+            [grant.peer_id.clone().into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<i64>("", "expires_at").unwrap(), expires);
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn signaling_http_limits_reject_bodies_before_authorization_and_persistence() {
     let fixture = Fixture::new().await;
     let app = test::init_service(

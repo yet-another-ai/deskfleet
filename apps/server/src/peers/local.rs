@@ -19,7 +19,7 @@ pub async fn create(
     let (authorization, actor, expires) = create_grant(&req, &s, &b, PeerTransport::Local).await?;
     let id = &authorization.peer_id;
     s.store
-        .save_peer(&authorization, &actor.id, expires)
+        .reserve_peer(&authorization, &actor.id, expires)
         .await?;
     // The daemon receives this secret over its trusted control connection and
     // consumes it once when the local main process claims the IPC attachment.
@@ -41,6 +41,7 @@ pub async fn create(
         // Logout, removal, and expiry can happen while another API instance
         // delivers the request to the daemon. Never return a newly revoked claim.
         authorize(&req, &s, id).await?;
+        s.store.activate_peer(id).await?;
         Ok(())
     }
     .await;

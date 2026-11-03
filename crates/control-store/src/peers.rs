@@ -3,12 +3,69 @@ use crate::{ControlStore, Error, Result, json_rows, now_ms, one, resource_id, sq
 use deskfleet_protocol::control::PeerAuthorization;
 use sea_orm::{ConnectionTrait, TransactionTrait};
 
+// The daemon RPC may take 60 seconds. Leave another minute for routing and
+// final authorization/activation, without retaining abandoned grants all day.
+const PROVISIONING_LEASE_MS: i64 = 120_000;
+
 impl ControlStore {
+    /// Reserve capacity while external provisioning is in flight. Cancellation
+    /// and process loss leave at most two minutes of quota occupancy, without
+    /// relying on an async cleanup task running after the request is dropped.
+    pub async fn reserve_peer(
+        &self,
+        auth: &PeerAuthorization,
+        login_id: &str,
+        expires: i64,
+    ) -> Result<()> {
+        self.insert_peer(auth, login_id, expires, true).await
+    }
+
+    /// Activate only a still-live reservation, using its immutable grant expiry.
+    /// Call after provisioning and final authorization, immediately before reply.
+    pub async fn activate_peer(&self, id: &str) -> Result<()> {
+        let tx = self.db.begin().await?;
+        let row = one(
+            &tx,
+            "SELECT grant_json FROM cp_peers WHERE id=$1",
+            vec![id.into()],
+        )
+        .await?;
+        let grant: PeerAuthorization = serde_json::from_value(row.try_get("", "grant_json")?)?;
+        // Serialize lease activation with new admission so a lease expiring
+        // during this transaction cannot be counted free and then resurrected.
+        crate::peer_admission::lock(&tx, &grant.actor.user_id, resource_id(&grant.team_id)?)
+            .await?;
+        let expires = chrono::DateTime::parse_from_rfc3339(&grant.expires_at)
+            .map_err(|_| Error::Invalid("invalid peer expiry"))?
+            .timestamp_millis();
+        let updated = tx
+            .execute_raw(sql(
+                "UPDATE cp_peers SET expires_at=$2 WHERE id=$1 AND NOT revoked AND expires_at>$3",
+                vec![id.into(), expires.into(), now_ms().into()],
+            ))
+            .await?;
+        if updated.rows_affected() == 0 {
+            return Err(Error::NotFound);
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn save_peer(
         &self,
         auth: &PeerAuthorization,
         login_id: &str,
         expires: i64,
+    ) -> Result<()> {
+        self.insert_peer(auth, login_id, expires, false).await
+    }
+
+    async fn insert_peer(
+        &self,
+        auth: &PeerAuthorization,
+        login_id: &str,
+        expires: i64,
+        provisioning: bool,
     ) -> Result<()> {
         let machine_id = resource_id(&auth.target_machine.id)?;
         let team_id = resource_id(&auth.team_id)?;
@@ -52,6 +109,13 @@ impl ControlStore {
         let role = membership.try_get::<String>("", "role")?.parse()?;
         authorize(&MachinePolicy::new(Some(role)), MachineAction::Connect)?;
         crate::peer_admission::reserve(&tx, auth, login_id, team_id, registration_id).await?;
+        // Start the lease after waiting for admission, rather than consuming it
+        // while authentication or another grant transaction holds the locks.
+        let expires = if provisioning {
+            expires.min(now_ms() + PROVISIONING_LEASE_MS)
+        } else {
+            expires
+        };
         tx.execute_raw(sql("INSERT INTO cp_peers(id,registration_id,team_id,user_id,login_session_id,grant_json,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7)",vec![auth.peer_id.clone().into(),registration_id.into(),team_id.into(),auth.actor.user_id.clone().into(),login_id.into(),serde_json::to_value(auth)?.into(),expires.into()])).await?;
         tx.commit().await?;
         Ok(())
