@@ -367,6 +367,27 @@ test("restart recovery marks an interrupted active turn unread without starting 
     sessionId: f.sessionId, operationId: randomUUID(), throughSeq: active.session.lastEventSeq,
   }, f.bob)
   const connections = f.provider.clients.length
+  await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: {
+    sessionUpdate: "agent_message_chunk", content: { type: "text", text: "pending at restart" },
+  } })
+  assert.ok(f.service.preview(f.sessionId))
+  const interrupted = await f.read()
+  // Stop the old owner before restoring the recorded crash state. Two live
+  // journals cannot share a catalog while one still has buffered provider text.
+  await f.service.close()
+  const stopped = await f.read()
+  await f.service.journal.commit(stopped, {
+    session: { ...stopped.session, lastReadSeq: stopped.session.lastEventSeq },
+    runs: interrupted.runs, turns: interrupted.turns, inputs: interrupted.inputs,
+    events: [
+      ...interrupted.runs.map(run => f.service.journal.event(f.sessionId, "run", run)),
+      ...interrupted.turns.map(turn => f.service.journal.event(f.sessionId, "turn", turn)),
+      ...interrupted.inputs.map(input => f.service.journal.event(f.sessionId, "input", input)),
+    ],
+  })
+  const beforeRecovery = await f.read()
+  assert.equal(beforeRecovery.turns[0]?.state, "running")
+  assert.ok(BigInt(beforeRecovery.session.lastCompletedSeq!) <= BigInt(beforeRecovery.session.lastReadSeq!))
   const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   await restored.init()
   try {

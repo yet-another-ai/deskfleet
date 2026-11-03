@@ -31,7 +31,9 @@ a stable `Gate` result for branch protection.
   before launching the clients.
   The Linux test matrix also runs native X11 capture/input tests serially under
   a disposable Xvfb server with `-noreset`, avoiding server resets when the last
-  client disconnects between test cases.
+  client disconnects between test cases. Before restoring Cargo outputs, that
+  job removes the hosted image's unused Android SDK to leave disk space for
+  Rust compilation and logs free space before and after cleanup.
 - `.github/workflows/build.yml` builds artifacts, then packages Electron
   installers and Linux desktop archives. Ordinary CI runs use
   `mise run ci:build`; tagged releases build Web and Electron separately to give

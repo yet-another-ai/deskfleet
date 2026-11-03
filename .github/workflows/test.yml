@@ -80,6 +80,15 @@ jobs:
             os: macos-latest
             test-task: ci:test:platform
     steps:
+      # Rust tests can exhaust the hosted image's free disk space. DeskFleet
+      # does not build Android; reclaim its SDK before restoring Cargo outputs.
+      - name: Free unused Android SDK space
+        if: runner.os == 'Linux'
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android
+          df -h /
+
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
