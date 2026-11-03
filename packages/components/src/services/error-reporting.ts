@@ -1,5 +1,6 @@
-import { attachErrorHandler, browserApiErrorsIntegration, captureException, dedupeIntegration, eventFiltersIntegration, globalHandlersIntegration, init, type ErrorEvent } from "@sentry/vue"
+import { attachErrorHandler, browserApiErrorsIntegration, captureException, dedupeIntegration, eventFiltersIntegration, globalHandlersIntegration, init, setUser, type ErrorEvent } from "@sentry/vue"
 import type { App } from "vue"
+import type { AccountUser, CentralApi } from "@deskfleet/client/central"
 import type { DesktopErrorReportingContext } from "@deskfleet/client/error-reporting-context"
 import { CentralRequestError } from "@deskfleet/client/request-diagnostics"
 import { parseSentryDsn } from "@deskfleet/client/sentry-config"
@@ -11,7 +12,11 @@ const installed = new WeakSet<App>()
 function prepareError(event: ErrorEvent): ErrorEvent {
   // Authentication URLs and application state are not error-reporting context.
   delete event.request
-  delete event.user
+  // Keep the account identity captured with the error, limited to ID and email.
+  if (event.user?.id) {
+    const { id, email } = event.user
+    event.user = { id, ...(email ? { email } : {}) }
+  } else delete event.user
   delete event.breadcrumbs
   delete event.extra
   for (const exception of event.exception?.values ?? []) {
@@ -51,6 +56,12 @@ export function initializeErrorReporting(platform: "web" | "desktop", context?: 
   })
 }
 
+/** Bind the authenticated account without collecting other profile fields. */
+export function setErrorReportingUser(user?: Pick<AccountUser, "id" | "email">): void {
+  if (!client) return
+  setUser(user ? { id: user.id, ...(user.email ? { email: user.email } : {}) } : null)
+}
+
 /** Report handled transport failures while the original, bounded diagnostics still exist. */
 export function captureCentralRequestError(error: unknown): void {
   if (!client || !(error instanceof CentralRequestError)) return
@@ -80,8 +91,30 @@ export function installErrorReporting(app: App): void {
   attachErrorHandler(app, { attachProps: false })
 }
 
+/** Standalone preview documents have no account owner to supply reactive identity. */
+export function installErrorReportingAccount(app: App, central: Pick<CentralApi, "status" | "onEvent">): void {
+  if (!client) return
+  let revision = 0
+  async function refresh(): Promise<void> {
+    const current = ++revision
+    try {
+      const { user } = await central.status()
+      if (current === revision) setErrorReportingUser(user)
+    } catch { /* Reporting identity must not prevent the preview from opening. */ }
+  }
+  const stop = central.onEvent(event => {
+    if (event.type === "accountChanged") {
+      setErrorReportingUser()
+      void refresh()
+    } else if (event.type === "connection" && event.connected) void refresh()
+  })
+  void refresh()
+  app.onUnmount(() => { ++revision; stop(); setErrorReportingUser() })
+}
+
 export async function shutdownErrorReporting(): Promise<void> {
   const previous = client
+  setErrorReportingUser()
   client = undefined
   await previous?.close(2000)
 }

@@ -22,6 +22,7 @@ import { router } from "./router/index.ts"
 import { accountSessionKey, createAccountSession } from "./composables/useAccountSession.ts"
 import { useBrowserNotifications } from "./composables/useBrowserNotifications.ts"
 import { useAccountAnalytics } from "./composables/useAccountAnalytics.ts"
+import { useErrorReportingUser } from "./composables/useErrorReportingUser.ts"
 import { trackEvent } from "./services/analytics.ts"
 import { billingReturn } from "./services/billing-events.ts"
 import { createMachineRuntimes, machineRuntimesKey } from "./composables/useMachineRuntimes.ts"
@@ -41,6 +42,7 @@ const browserNotificationOnboardingComplete = props.host.platform === "web"
 const browserNotificationPermission = ref(props.host.platform === "web" ? getBrowserNotificationPermission() : undefined)
 const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
+useErrorReportingUser(() => session.account.value.user)
 provide(platformClientKey, props.host)
 provide(machineRuntimesKey, createMachineRuntimes(props.host, session, useAppearanceStore()))
 useAccountAnalytics(session)

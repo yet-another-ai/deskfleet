@@ -50,6 +50,16 @@ Reporting is independent of Statsig. A missing or invalid DSN leaves the Sentry
 client uninitialized. With a configured DSN, delivery is best effort; the app
 does not wait for a Sentry server before becoming usable.
 
+Once the account is loaded, reports include its DeskFleet user ID and email
+address, when available. The root application and authentication pages update
+this identity when the account or email changes and clear it on sign-out and
+teardown. Machine-surface applications share their root's identity. Reports
+captured before the account loads or while signed out have no user identity.
+Standalone preview and Mermaid windows load identity from account status and
+refresh it on account-change and reconnection notifications.
+Only the ID and email are retained; automatic user information collection stays
+disabled.
+
 The explicit integration list retains Sentry's standard `EventFilters` noise
 filters. These drop opaque `Script error.` reports, the browser's
 `ResizeObserver loop completed with undelivered notifications.` message, and
@@ -85,7 +95,7 @@ HTTP error responses retain their existing behavior;
 this reporting path does not retry requests or change proxy/network selection.
 
 The integration does not enable tracing, profiling, session replay, or log
-capture. It does not attach component props, breadcrumbs, user identity, or
+capture. It does not attach component props, breadcrumbs, other profile fields, or
 request/page data. Exception messages and stack traces remain useful diagnostic
 data and can themselves contain application data; avoid putting credentials or
 user content in thrown errors.
@@ -98,6 +108,7 @@ build. Release identifiers label events; they do not upload source maps.
 
 For a delivery check, build with a test project's DSN and trigger a test error
 in the Web or Electron renderer. Confirm its platform, environment, and release
-in that Sentry project.
+in that Sentry project. While signed in, confirm `user.id` and `user.email`;
+after sign-out, confirm that new reports have no user identity.
 
 SDK reference: [Sentry for Vue](https://docs.sentry.io/platforms/javascript/guides/vue/).
