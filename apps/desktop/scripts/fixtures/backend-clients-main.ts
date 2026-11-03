@@ -80,7 +80,20 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   async function session(index: number): Promise<void> {
     const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean } }).__deskfleetRtcGuard
     guard.blocked = context.mode === "electron" && index === 0
-    await until(() => !!machineTree(index) || !!machineRow(index), "team machines")
+    // Remote smoke intermittently times out here before any machine row/tree
+    // appears. Keep the 30s deadline; dump selector state so the next failure
+    // distinguishes a blank page from a late catalog.
+    {
+      const deadline = Date.now() + 30_000
+      while (!machineTree(index) && !machineRow(index)) {
+        if (Date.now() > deadline) {
+          const rows = [...document.querySelectorAll("aside button[data-machine-id]")].map(node => node.getAttribute("data-machine-id"))
+          const trees = [...document.querySelectorAll("aside section[data-machine-id]")].map(node => node.getAttribute("data-machine-id"))
+          throw new Error(`team machines timed out (want=${context.machines[index]}; rows=${rows.join(",") || "none"}; trees=${trees.join(",") || "none"}): ${document.body.innerText.slice(-4_000)}`)
+        }
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+    }
     machineRow(index)?.click()
     const link = () => machineTree(index)?.querySelector<HTMLAnchorElement>(`a[href="#/sessions/${context.sessionId}"]`)
     await until(() => !!link(), "machine session link")
