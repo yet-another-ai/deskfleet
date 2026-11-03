@@ -1,5 +1,5 @@
 use super::{period_at, profile, summary_value};
-use crate::{ControlStore, Error, Result, now_ms, one, resource_id, sql};
+use crate::{ControlStore, Error, Result, now_ms, resource_id, sql};
 use sea_orm::ConnectionTrait;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -60,16 +60,19 @@ impl ControlStore {
                 json!({"team_id":p.team_id,"start_at":start,"end_at":end})
             })
             .collect();
-        let usage = self.db.query_all_raw(sql(
-            "SELECT p.team_id,t.name,jsonb_build_object('id',u.id,'name',u.name,'email',u.email) AS owner,(SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machine_registrations m ON m.id=a.registration_id WHERE a.team_id=p.team_id AND a.status<>'released' AND NOT m.revoked) AS sessions,(SELECT COUNT(*) FROM cp_members WHERE team_id=p.team_id) AS members,cp_turn_sent_bytes(p.team_id,p.start_at,p.end_at)::text AS bytes FROM jsonb_to_recordset($1) AS p(team_id bigint,start_at bigint,end_at bigint) JOIN cp_teams t ON t.id=p.team_id JOIN cp_members o ON o.team_id=t.id AND o.role='owner' JOIN cp_users u ON u.id=o.user_id ORDER BY p.team_id",
-            vec![json!(periods).into()],
-        )).await?;
-        let meter = one(
-            &self.db,
-            "SELECT last_seen_at,gap_since FROM cp_turn_collector WHERE singleton",
-            vec![],
-        )
-        .await?;
+        // Reuse the Team summary's metering query, binding its Team and period
+        // arguments to each page row rather than issuing one query per Team.
+        let meter = include_str!("../cloudflare_turn/metering.sql")
+            .replace("$1", "p.team_id")
+            .replace("$3", "p.start_at")
+            .replace("$4", "p.end_at");
+        let query = format!(
+            "SELECT p.team_id,t.name,jsonb_build_object('id',u.id,'name',u.name,'email',u.email) AS owner,(SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machine_registrations m ON m.id=a.registration_id WHERE a.team_id=p.team_id AND a.status<>'released' AND NOT m.revoked) AS sessions,(SELECT COUNT(*) FROM cp_members WHERE team_id=p.team_id) AS members,cp_turn_sent_bytes(p.team_id,p.start_at,p.end_at)::text AS bytes,meter.last_seen_at,meter.gap_since,meter.fresh FROM jsonb_to_recordset($1) AS p(team_id bigint,start_at bigint,end_at bigint) JOIN cp_teams t ON t.id=p.team_id JOIN cp_members o ON o.team_id=t.id AND o.role='owner' JOIN cp_users u ON u.id=o.user_id CROSS JOIN LATERAL ({meter}) AS meter ORDER BY p.team_id"
+        );
+        let usage = self
+            .db
+            .query_all_raw(sql(&query, vec![json!(periods).into(), now.into()]))
+            .await?;
         let mut by_id = profiles
             .into_iter()
             .map(|p| (p.team_id.clone(), p))
@@ -78,7 +81,7 @@ impl ControlStore {
         for row in usage {
             let id = row.try_get::<i64>("", "team_id")?.to_string();
             if let Some(p) = by_id.remove(&id) {
-                teams.push(json!({"id":id,"name":row.try_get::<String>("", "name")?,"owner":row.try_get::<Value>("", "owner")?,"billing":summary_value(p,&row,&meter,self.hosted,now)?}));
+                teams.push(json!({"id":id,"name":row.try_get::<String>("", "name")?,"owner":row.try_get::<Value>("", "owner")?,"billing":summary_value(p,&row,&row,self.hosted,now)?}));
             }
         }
         Ok(AdminBillingPage { teams, next_cursor })

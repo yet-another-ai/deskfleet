@@ -44,7 +44,15 @@ pub async fn create(
         None => s.store.relay_denied_reason(&b.team_id).await?,
     };
     let relay_allowed = relay_denied_reason.is_none();
-    let ice_servers = grant_ice_servers(&s, id, expires, relay_allowed, team_turn.as_ref()).await?;
+    let mut ice_servers =
+        grant_ice_servers(&s, id, expires, relay_allowed, team_turn.as_ref()).await?;
+    if relay_allowed && team_turn.is_none() {
+        ice_servers.extend(
+            s.cloudflare_turn
+                .ice_servers(&s.store, &b.team_id, expires)
+                .await?,
+        );
+    }
     s.store.save_peer(&authorization, &a.id, expires).await?;
     s.store.save_peer_relay_decision(id, relay_allowed).await?;
     let ice_servers = s.store.save_peer_ice_servers(id, &ice_servers).await?;

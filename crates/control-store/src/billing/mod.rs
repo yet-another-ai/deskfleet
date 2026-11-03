@@ -66,10 +66,6 @@ pub enum RelayDeniedReason {
     MeteringUnavailable,
 }
 
-fn metering_fresh(last_seen: Option<i64>, now: i64) -> bool {
-    last_seen.is_some_and(|seen| now - seen < 60_000)
-}
-
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Limits {
@@ -141,7 +137,7 @@ fn summary_value(
         "plan":plan,"limits":plan.limits(),"enterpriseOverride":p.enterprise,
         "usage":{"activeSessionCount":usage.try_get::<i64>("","sessions")?,"memberCount":usage.try_get::<i64>("","members")?,"relayedBytes":usage.try_get::<String>("","bytes")?},
         "period":{"start":timestamp(start),"end":timestamp(end)},"nextResetAt":timestamp(end),
-        "metering":{"lastSeenAt":last_seen.map(timestamp),"gapSince":meter.try_get::<Option<i64>>("","gap_since")?.map(timestamp),"fresh":metering_fresh(last_seen,now)},
+        "metering":{"lastSeenAt":last_seen.map(timestamp),"gapSince":meter.try_get::<Option<i64>>("","gap_since")?.map(timestamp),"fresh":meter.try_get::<bool>("","fresh")?},
         "subscription":p.subscription_id.map(|_|json!({"plan":p.plan,"status":p.subscription_status,"paidThrough":p.paid_through.map(timestamp),"cancelAtPeriodEnd":p.cancel_at_period_end}))
     }))
 }
@@ -199,12 +195,8 @@ impl ControlStore {
         let row = one(&self.db,
             "SELECT (SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machine_registrations m ON m.id=a.registration_id WHERE a.team_id=$1 AND a.status<>'released' AND NOT m.revoked) AS sessions, (SELECT COUNT(*) FROM cp_members WHERE team_id=$1) AS members, cp_turn_sent_bytes($1,$2,$3)::text AS bytes",
             vec![resource_id(team_id)?.into(), start.into(), end.into()]).await?;
-        let meter = one(
-            &self.db,
-            "SELECT last_seen_at,gap_since FROM cp_turn_collector WHERE singleton",
-            vec![],
-        )
-        .await?;
+        let meter =
+            crate::cloudflare_turn::metering(&self.db, Some(resource_id(team_id)?), now).await?;
         summary_value(p, &row, &meter, self.hosted, now)
     }
 
@@ -222,11 +214,23 @@ impl ControlStore {
             return Ok(Some(RelayDeniedReason::FreePlan));
         }
         let (start, end) = period_at(profile.period_anchor, now);
-        let meter = one(&self.db,"SELECT last_seen_at,cp_turn_sent_bytes($1,$2,$3)<$4::bigint AS allowed FROM cp_turn_collector WHERE singleton",vec![resource_id(team_id)?.into(),start.into(),end.into(),limit.into()]).await?;
-        if !metering_fresh(meter.try_get("", "last_seen_at")?, now) {
+        let meter =
+            crate::cloudflare_turn::metering(&self.db, Some(resource_id(team_id)?), now).await?;
+        if !meter.try_get::<bool>("", "fresh")? {
             return Ok(Some(RelayDeniedReason::MeteringUnavailable));
         }
-        let allowed: bool = meter.try_get("", "allowed")?;
+        let allowed: bool = one(
+            &self.db,
+            "SELECT cp_turn_sent_bytes($1,$2,$3)<$4::bigint AS allowed",
+            vec![
+                resource_id(team_id)?.into(),
+                start.into(),
+                end.into(),
+                limit.into(),
+            ],
+        )
+        .await?
+        .try_get("", "allowed")?;
         Ok((!allowed).then_some(RelayDeniedReason::TurnQuotaExhausted))
     }
 

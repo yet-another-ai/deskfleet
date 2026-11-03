@@ -151,8 +151,11 @@ durable history remain available to their existing consumers. Machine lists
 resolve presence in one query against current node leases and revocation state.
 
 Instances use the existing database configuration; process identities are
-generated at startup. Redis remains specific to coturn statistics. The existing
-PostgreSQL collector lease selects one TURN subscriber, and billing work uses
+generated at startup. Redis remains specific to coturn statistics. A separate
+PostgreSQL lease selects the Cloudflare TURN analytics collector. Its replaceable
+Team/key/period snapshots add to coturn usage for Team allowances; private
+provider settings and issued ICE snapshots remain backend-owned. The existing
+PostgreSQL collector lease selects one coturn subscriber, and billing work uses
 its existing database claims. See [deployment operations](self-hosted.md) for
 replica configuration and failure behavior.
 

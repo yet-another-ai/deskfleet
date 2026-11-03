@@ -477,7 +477,7 @@ the list through `PATCH /api/admin/turn-settings` with
 `{ "urls": [...], "allowTeamServers": true }`.
 `GET /api/admin/turn-settings` reads that private list. Both endpoints require a
 current site administrator grant. Updates take effect for new peer grants across
-API instances without restart. Saving an empty list disables new TURN grants and
+API instances without restart. Saving an empty list disables new self-hosted TURN grants and
 remains empty after restart, even if the initial environment list is still set.
 The shared `DESKFLEET_TURN_SECRET` remains deployment configuration and must be
 configured before adding URLs.
@@ -519,6 +519,58 @@ not open the filters being measured. Configuration retrieval has a 5-second
 timeout, and the native probes finish within 30 seconds. The
 result describes one IPv4 UDP path at that time; it does not guarantee that a
 particular peer can connect directly. Web clients show a desktop-app requirement.
+
+### Cloudflare TURN
+
+Site administrators can enable **Cloudflare TURN** in Site administration. Set
+the Cloudflare account ID, TURN key ID, the key's credential-generation API token,
+and an API token with **Account Analytics** permission for that account. This
+configuration is private installation state in PostgreSQL, shared by API replicas.
+It takes effect for new grants without a restart. The Cloudflare key and tokens
+are never included in public site settings, returned by the settings API, or
+written into audit payloads.
+
+`GET /api/admin/cloudflare-turn-settings` returns `enabled`, `accountId`, `keyId`,
+`apiTokenConfigured`, and `analyticsTokenConfigured`. `PATCH` accepts `enabled`,
+`accountId`, `keyId`, and optional `apiToken` and `analyticsToken` fields. Omit a
+token to retain it; send an empty string to clear it while disabled. Enabling
+requires both IDs and both tokens. The UI leaves existing tokens unchanged when
+their input is blank.
+
+New site relay grants include the configured self-hosted TURN servers and a
+separate Cloudflare ICE entry with provider-issued credentials. Cloudflare does
+not require `DESKFLEET_TURN_SECRET` or Redis; those remain specific to the
+self-hosted relay. Eligible Team-owned TURN servers replace both site providers.
+Cloudflare credentials share a private, random identifier per Team and
+account/key, and the issued ICE list remains stored on each peer. Disabling the
+provider stops new credentials, while issued grants retain their original list.
+
+A separate PostgreSQL-leased worker queries Cloudflare GraphQL Analytics for
+one Team/key and billing period at a time. It replaces each stored `egressBytes`
+snapshot, including downward corrections, instead of adding each query response.
+Repeated polling and replica failover therefore do not multiply usage. Polling
+targets roughly one minute per active source, subject to the default Cloudflare
+GraphQL rate limit; a sustained backlog makes affected Team metering stale.
+Expired credentials and closed periods receive a final refresh after five
+minutes. Disabling or changing the provider retains analytics access for issued
+credentials. Source analytics tokens are retained for up to 32 days after the
+last credential expires so subscription replacement can reconcile a changed
+monthly usage window; the generation token is not copied into usage records.
+Changing the analytics token for the same account/key also repairs outstanding
+collection.
+
+The Team's `relayedBytes` and allowance checks add **coturn sent bytes + Cloudflare
+egress bytes**. The provider conventions remain distinct: coturn includes both
+client- and peer-socket sends, while Cloudflare measures TURN-to-client egress.
+Cloudflare Analytics can be delayed and adaptively sampled; these are reported
+usage estimates, not packet-level accounting. Its collection status is separate
+from Redis. Both sources must be fresh when applicable; a Cloudflare-only
+installation does not require a Redis heartbeat. Existing connections are not
+disconnected when the allowance is exhausted.
+
+See Cloudflare's [credential API](https://developers.cloudflare.com/realtime/turn/generate-credentials/),
+[Analytics API](https://developers.cloudflare.com/realtime/turn/analytics/), and
+[end-user billing guidance](https://developers.cloudflare.com/realtime/turn/replacing-existing/).
 
 ### Team TURN servers
 

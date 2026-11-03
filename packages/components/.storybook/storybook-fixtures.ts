@@ -599,6 +599,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
   }
   let registrationEnabled = true
   let turn: TurnSettings = { urls: ["turn:turn.example.com:3478?transport=udp"], allowTeamServers: true }
+  let cloudflareTurn = { enabled: false, accountId: "", keyId: "", apiTokenConfigured: false, analyticsTokenConfigured: false }
   let teamTurn: TeamTurnSettings = { availability: "available", urls: [], secretConfigured: false }
   let enrollment: LocalEnrollment = {
     configured: true,
@@ -645,6 +646,15 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     updateTurnSettings: async next => {
       turn = { ...next, urls: [...next.urls] }
       return { ...turn, urls: [...turn.urls] }
+    },
+    cloudflareTurnSettings: async () => ({ ...cloudflareTurn }),
+    updateCloudflareTurnSettings: async next => {
+      cloudflareTurn = {
+        enabled: next.enabled, accountId: next.accountId, keyId: next.keyId,
+        apiTokenConfigured: next.apiToken === undefined ? cloudflareTurn.apiTokenConfigured : next.apiToken.length > 0,
+        analyticsTokenConfigured: next.analyticsToken === undefined ? cloudflareTurn.analyticsTokenConfigured : next.analyticsToken.length > 0,
+      }
+      return { ...cloudflareTurn }
     },
     billingTeams: async () => [
       { id: "team-1", name: "Core Engineering", owner: { id: "user-1", name: "Ada Lovelace", email: "ada@deskfleet.dev" }, billing: structuredClone(storybookBilling) },

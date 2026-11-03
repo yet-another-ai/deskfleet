@@ -151,6 +151,16 @@ monthly allowance. See
 A replacement subscription adopts its own anchor. Enterprise traffic remains
 counted and consumes a restored paid allowance after revocation. Enterprise
 assignment does not cancel Stripe billing.
+
+When site Cloudflare TURN is enabled, Team usage and allowance checks add its
+reported `egressBytes` to Redis-collected coturn sent bytes. Cloudflare totals
+are replaceable snapshots per Team/key and usage period; repeated collection
+does not add the same total again. A replacement subscription triggers collection
+for its new usage window. Analytics can be delayed and adaptively sampled, and
+its egress convention differs from coturn's client- and peer-socket sends.
+See [Cloudflare TURN operations](self-hosted.md#cloudflare-turn) for credentials,
+collection freshness, and retained analytics access.
+
 Only Site Admin can change the override, after recent authentication, with an audit
 record. Only the Team owner manages payments; administrators and other members
 can inspect usage. Transferring ownership leaves the same customer, subscription,

@@ -1,7 +1,7 @@
 import { vi } from "vitest"
 import type { AdminTeamBilling, TeamBilling } from "../../../client/src/billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
-import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
+import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
 
 export function billingFixture(usage = { relayedBytes: "0", activeSessionCount: 0, memberCount: 1 }): TeamBilling {
   return { plan: "selfHosted", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: null }, usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false, enterpriseContactEmail: null }
@@ -20,6 +20,7 @@ export interface FakeCentralOptions {
   siteAdmin?: boolean
   site?: Partial<SiteSettings>
   turn?: Partial<TurnSettings>
+  cloudflareTurn?: Partial<CloudflareTurnSettings>
   /** The Team relay; its secret is kept in state but never returned. */
   teamTurn?: { availability?: TeamTurnAvailability; urls?: string[]; secret?: string }
   teams?: Team[]
@@ -41,6 +42,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     siteAdmin: options.siteAdmin ?? false,
     site: { siteName: "DeskFleet", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "", ...options.site },
     turn: { urls: [...(options.turn?.urls ?? [])], allowTeamServers: options.turn?.allowTeamServers ?? true },
+    cloudflareTurn: { enabled: false, accountId: "", keyId: "", apiTokenConfigured: false, analyticsTokenConfigured: false, ...options.cloudflareTurn },
     teamTurn: { availability: options.teamTurn?.availability ?? "available" as TeamTurnAvailability, urls: [...(options.teamTurn?.urls ?? [])], secret: options.teamTurn?.secret },
     teams: options.teams ?? [{ id: "team-1", name: "Design team", role: "admin" as const }],
     machines: options.machines ?? [],
@@ -61,6 +63,15 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     updateSiteSettings: vi.fn(async (settings: SiteSettings) => { state.site = { ...settings }; return { ...state.site } }),
     turnSettings: vi.fn(async () => ({ ...state.turn, urls: [...state.turn.urls] })),
     updateTurnSettings: vi.fn(async (settings: TurnSettings) => { state.turn = { ...settings, urls: [...settings.urls] }; return { ...state.turn, urls: [...state.turn.urls] } }),
+    cloudflareTurnSettings: vi.fn(async () => ({ ...state.cloudflareTurn })),
+    updateCloudflareTurnSettings: vi.fn(async (settings: CloudflareTurnSettingsUpdate) => {
+      state.cloudflareTurn = {
+        enabled: settings.enabled, accountId: settings.accountId, keyId: settings.keyId,
+        apiTokenConfigured: settings.apiToken === undefined ? state.cloudflareTurn.apiTokenConfigured : settings.apiToken.length > 0,
+        analyticsTokenConfigured: settings.analyticsToken === undefined ? state.cloudflareTurn.analyticsTokenConfigured : settings.analyticsToken.length > 0,
+      }
+      return { ...state.cloudflareTurn }
+    }),
     openAccountSettings: vi.fn(async () => {}),
     githubSettings: vi.fn<CentralApi["githubSettings"]>(async () => ({ configured: false, manageUrl: null, authorized: false, login: null, actAsYou: false })),
     githubPullRequest: vi.fn<CentralApi["githubPullRequest"]>(async () => ({ pullRequest: null })),

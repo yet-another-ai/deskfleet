@@ -11,6 +11,7 @@ import SiteIdentitySettings from "../components/settings/SiteIdentitySettings.vu
 import EnterpriseTeams from "../components/settings/EnterpriseTeams.vue"
 import SiteSettings from "../components/settings/SiteSettings.vue"
 import TurnSettings from "../components/settings/TurnSettings.vue"
+import CloudflareTurnSettings from "../components/settings/CloudflareTurnSettings.vue"
 
 const client = usePlatformClient()
 
@@ -30,6 +31,7 @@ const reauthenticate = (password?: string) => api!.reauthenticate(password)
     <template v-if="session?.account.value.siteAdmin && api">
       <SiteSettings :api="api" />
       <TurnSettings :api="api" />
+      <CloudflareTurnSettings :api="api" />
       <SiteIdentitySettings :api="api" :confirmed="recent.confirmed" />
       <EnterpriseTeams :api="api" :confirmed="recent.confirmed" />
       <ReauthDialog v-if="recent.prompting.value" :reauthenticate="reauthenticate" :send-email-code="() => api!.sendEmailCode()" :verify-email-code="(challenge, code) => api!.verifyEmailCode(challenge, code)" :authentication-methods="() => api!.authenticationMethods()" @settle="recent.settle" />
