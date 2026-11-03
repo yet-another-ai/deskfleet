@@ -421,8 +421,9 @@ async fn snapshots_replace_replays_revisions_and_remain_collectable_after_disabl
         .await
         .unwrap();
     let restarted = ControlStore::connect(&f.url).await.unwrap();
+    // Saves use wall-clock timestamps; allow the retry interval after those writes.
     let due = restarted
-        .cloudflare_turn_usage_queries(now + 61_000, 10)
+        .cloudflare_turn_usage_queries(now_ms() + 61_000, 10)
         .await
         .unwrap();
     let retained = due.iter().find(|q| q.identifier == identifier).unwrap();
