@@ -235,7 +235,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   try {
     const initialization = await connection.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.6.1" },
+      clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.7.0" },
       clientCapabilities: {
         ...options.clientCapabilities,
         fs: { readTextFile: true, writeTextFile: true },
