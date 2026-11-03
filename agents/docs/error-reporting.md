@@ -39,6 +39,11 @@ release for Web and Electron from the Git tag, such as `deskfleet@v0.2.1`;
 no release variable needs configuring. Local or custom builds may optionally
 set `VITE_SENTRY_RELEASE` to label their events.
 
+Tagged builds also set `VITE_SENTRY_DIST` to `web` or the packaging platform
+(`linux-x64`, `linux-arm64`, `macos-arm64`, `windows-x64`). It separates main
+bundles with identical filenames across platforms. Custom builds that upload
+maps must use the same release and distribution in the SDK and upload command.
+
 PR, main, and manual Build runs do not bind the production environment and leave
 Sentry disabled. Keep production values out of repository and organization
 variables. See [release configuration](ci.md#tagged-releases) for the
@@ -107,8 +112,27 @@ user content in thrown errors.
 Electron adds only the configured DSN's origin to its renderer `connect-src`
 policy. Without Sentry or Statsig, production retains `connect-src 'none'`.
 Independent Web hosts must allow the DSN origin in their own `connect-src`
-policy. No Sentry authentication token or source-map upload is part of the
-build. Release identifiers label events; they do not upload source maps.
+policy.
+
+## Source maps
+
+Tagged release builds generate hidden JavaScript source maps with
+`DESKFLEET_SOURCEMAPS=1`. After both builds, `scripts/sentry-sourcemaps.ts`
+uploads Web, Electron main, and Electron renderer maps with the pinned Sentry CLI.
+It uses release/distribution matching because main-process stacks cross IPC and
+cannot use debug IDs registered only in the renderer's JavaScript realm.
+The upload prefixes are `~/` for Web, `app:///` for the sanitized main-process
+basenames, and `deskfleet-app://bundle/` for renderer assets. The CLI associates
+hidden maps using artifact source-map headers; deployed JavaScript is unchanged.
+
+Configure `SENTRY_ORG`, `SENTRY_PROJECT`, and the `SENTRY_AUTH_TOKEN` secret in
+GitHub's `production` environment when a DSN is enabled. The token needs source-map
+upload access; it is exposed only to the upload step, never to Vite. Optional
+`SENTRY_URL` selects a self-hosted instance. Uploads validate maps and wait for
+processing; missing credentials, missing maps, or a failed upload fail the release.
+An absent/invalid DSN skips upload. The script removes maps before the Web image
+and artifacts are packaged, including when reporting is disabled. Electron's
+packaging rules also exclude `.map` files. PR and main builds do not upload maps.
 
 For a delivery check, build with a test project's DSN and trigger a test error
 in the Web or Electron renderer. Confirm its platform, environment, and release

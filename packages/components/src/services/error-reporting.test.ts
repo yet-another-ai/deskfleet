@@ -22,6 +22,7 @@ beforeEach(() => {
   vi.stubEnv("VITE_SENTRY_DSN", "https://public@sentry.example.com/42")
   vi.stubEnv("VITE_SENTRY_ENVIRONMENT", " staging ")
   vi.stubEnv("VITE_SENTRY_RELEASE", " deskfleet@0.2.1 ")
+  vi.stubEnv("VITE_SENTRY_DIST", " macos-arm64 ")
 })
 afterEach(async () => {
   for (const app of apps.splice(0)) app.unmount()
@@ -143,6 +144,7 @@ test("reports desktop OS and runtime versions for errors without a machine ident
     runtime: { name: "Electron", version: "45.0.0" }, node: { name: "Node.js", version: "24.0.0" },
     browser: { name: "Chrome", version: "152.0.0.0" },
   })
+  expect(events()[0]?.dist).toBe("macos-arm64")
 })
 
 test("reports handled central transport failures with bounded diagnostics and deduplicates the same rejection", async () => {

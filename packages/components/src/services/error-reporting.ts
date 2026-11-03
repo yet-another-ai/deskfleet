@@ -63,6 +63,7 @@ export function initializeErrorReporting(platform: "web" | "desktop", context?: 
     dsn: configuration.dsn,
     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT?.trim() || import.meta.env.MODE,
     release: import.meta.env.VITE_SENTRY_RELEASE?.trim() || undefined,
+    dist: import.meta.env.VITE_SENTRY_DIST?.trim() || undefined,
     initialScope: {
       tags: { platform },
       ...(context ? { contexts: {

@@ -28,7 +28,7 @@ export default defineConfig({
       platform: "node",
       external: ["electron", ...nodeBuiltins],
     },
-    sourcemap: true,
+    sourcemap: process.env.DESKFLEET_SOURCEMAPS === "1" ? "hidden" : true,
     target: "node22",
   },
 })
