@@ -21,7 +21,7 @@ let notifications: NotificationSettings = { enabled: true, taskCompleted: true, 
 
 /** Only sample data lives here. The website mounts the unmodified application UI. */
 const host: DeskfleetDesktopApi = {
-  platform: "web",
+  platform: "linux",
   locale: "en-US",
   target: { id: "demo-machine", local: true },
   // Each embedded store owns its settings; this adapter never reads or writes browser storage.

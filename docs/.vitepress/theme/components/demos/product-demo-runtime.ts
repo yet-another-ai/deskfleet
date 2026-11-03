@@ -9,6 +9,7 @@ import { useLayoutStore } from "@deskfleet/components/stores/layout.ts"
 import { useProvidersStore } from "@deskfleet/components/stores/providers.ts"
 import { useTerminalsStore } from "@deskfleet/components/stores/terminals.ts"
 import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { TerminalListener } from "../../../../../packages/components/src/services/terminal-client.ts"
 import en from "../../../../../packages/components/locales/en-US.json"
 import ja from "../../../../../packages/components/locales/ja-JP.json"
 import zh from "../../../../../packages/components/locales/zh-cmn-Hans-CN.json"
@@ -97,6 +98,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   const agents = useAgentSessionsStore(pinia)
   Reflect.set(agents, "draftConfiguration", ref({ provider: "claude-code" }))
   agents.state = "connected"
+  agents.sessionPresence = { "303": ["Maya", "Alex"] }
   const fleet = useFleetStore(pinia)
   const terminals = useTerminalsStore(pinia)
   const data = fixtures(locale)
@@ -126,6 +128,33 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   fleet.refreshLocal = fleet.refreshLocalCatalog = async () => {}
   fleet.refreshLocalDesktop = async () => fleet.localDesktopTarget
   terminals.refresh = async () => {}
+  const terminalListeners = new Map<string, Set<TerminalListener>>()
+  terminals.create = async ({ cwd = "/workspace/website", worktreeId, cols = 80, rows = 24 } = {}) => {
+    const summary = { id: `terminal-${serial++}`, title: "zsh", cwd, cols, rows, status: "running" as const, ...(worktreeId ? { worktreeId } : {}) }
+    terminals.sessions.push(summary)
+    if (worktreeId) terminals.selected[worktreeId] = summary.id
+    return summary
+  }
+  terminals.ensureWorktreeTerminal = async worktreeId => terminals.sessions.find(item => item.worktreeId === worktreeId && item.kind !== "acp") ?? terminals.create({ worktreeId, cwd: `/workspace/.worktrees/${worktreeId}` })
+  terminals.attach = (sessionId, listener) => {
+    const summary = terminals.sessions.find(item => item.id === sessionId) ?? { id: sessionId, title: "zsh", cwd: "/workspace/website", cols: 80, rows: 24, status: "running" as const }
+    const set = terminalListeners.get(sessionId) ?? new Set<TerminalListener>()
+    set.add(listener)
+    terminalListeners.set(sessionId, set)
+    queueMicrotask(() => {
+      if (!set.has(listener)) return
+      listener({ kind: "output", sessionId, data: btoa("studio-mac:website$ "), offset: 20 }, () => {})
+      listener({ kind: "ready", sessionId }, () => {})
+    })
+    return { ready: Promise.resolve(summary), detach: () => { set.delete(listener) } }
+  }
+  terminals.input = async (sessionId, data) => {
+    const out = data === "\r" ? "\r\nstudio-mac:website$ " : data
+    const encoded = btoa(String.fromCharCode(...new TextEncoder().encode(out)))
+    for (const listener of terminalListeners.get(sessionId) ?? []) listener({ kind: "output", sessionId, data: encoded, offset: encoded.length }, () => {})
+  }
+  terminals.resize = async () => null
+  terminals.hangup = async sessionId => { terminals.sessions = terminals.sessions.filter(item => item.id !== sessionId); delete terminals.titles[sessionId]; terminalListeners.delete(sessionId) }
   for (const [id, snapshot] of Object.entries(data.snapshots)) {
     agents.sessions[id] = snapshot.session
     agents.views[id] = { snapshot, events: data.events[id]!, loading: false, error: null, historySeq: snapshot.session.lastEventSeq, snapshotSeq: snapshot.session.lastEventSeq }
@@ -146,7 +175,15 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   const actor = { kind: "user" as const, userId: say("You", "你", "あなた") }
   agents.refresh = async () => {}
   agents.open = async () => {}
+  agents.attend = async () => true
+  agents.leave = async () => {}
+  agents.markRead = async (id, throughSeq) => {
+    if (agents.sessions[id]) agents.sessions[id].lastReadSeq = throughSeq
+    if (agents.views[id]?.snapshot) agents.views[id].snapshot.session.lastReadSeq = throughSeq
+  }
+  agents.checkOperation = async () => undefined
   agents.agentConfiguration = async params => configuration(locale, params.provider, params.model, params.reasoningEffort)
+  agents.releaseAgentConfiguration = async () => {}
   agents.sessionConfiguration = async id => agents.configurations[id] ?? configuration(locale, agents.sessions[id]!.provider)
   agents.configureSession = async (id, choices) => {
     const result = configuration(locale, agents.sessions[id]!.provider, choices.model, choices.reasoningEffort)
@@ -169,6 +206,10 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     agents.sessions[id] = snapshot.session
     return snapshot
   }
+  agents.fork = async (sourceId, context) => {
+    const source = snapshotFor(sourceId).session
+    return agents.create(source.workspaceId, source.title, context, source.provider)
+  }
   agents.submit = async (id, text, delivery) => {
     const snapshot = snapshotFor(id)
     const queued = delivery === "backlog" && !!activeTurn(snapshot)
@@ -181,6 +222,8 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
       append(id, "acp", { sessionId: id, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: say("Your request is now part of this sample session. Try the conversation controls, or inspect the changes in the side panel.", "你的要求已加入这个示例会话。可以继续体验对话操作，或在侧栏查看代码变更。", "リクエストをこのサンプルセッションに追加しました。会話の操作を試したり、サイドパネルで変更内容を確認したりできます。") } } })
     }
     agents.drafts[id] = ""
+    agents.draftAttachments[id] = []
+    agents.draftMentions[id] = []
     return receipt(id, message.id)
   }
   function updateInput(id: string, inputId: string, state: AgentInput["state"]) {
@@ -198,6 +241,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     Object.assign(permission, { state: "resolved", optionId, actor })
     append(id, "permission", permission)
   }
+  agents.respondToElicitation = async () => {}
   agents.stop = async id => { const snapshot = snapshotFor(id); snapshot.runs.forEach(run => { run.state = "stopped" }); snapshot.turns.forEach(turn => { if (turn.state === "running") turn.state = "cancelled" }) }
   function archiveState(id: string, state: "active" | "archived"): void {
     snapshotFor(id).session.archiveState = state
@@ -209,6 +253,32 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   }
   agents.archive = async id => { archiveState(id, "archived") }
   agents.restore = async id => { archiveState(id, "active") }
+  agents.remove = async id => {
+    delete agents.sessions[id]
+    delete agents.views[id]
+    delete agents.configurations[id]
+    for (const machine of fleet.machines) {
+      machine.sessions = machine.sessions.filter(item => item.id !== id)
+      for (const workspace of machine.workspaces) workspace.sessions = workspace.sessions.filter(item => item.id !== id)
+    }
+  }
+  agents.composerReferences = async ({ kind, query, workspaceId = "201", sessionId }) => {
+    const needle = query.toLocaleLowerCase()
+    const items = kind === "file"
+      ? ["src/WorkspacePicker.vue", "src/App.vue"].filter(name => name.toLocaleLowerCase().includes(needle)).map(name => ({
+        name, description: "/workspace/website", reference: { kind: "file" as const, originId: "demo-machine", workspaceId, ...(sessionId ? { sessionId } : {}), directoryIndex: 0, sourceDirectory: "/workspace/website", relativePath: name },
+      }))
+      : Object.values(agents.sessions).filter(item => item.id !== sessionId && (item.title ?? "").toLocaleLowerCase().includes(needle)).map(item => ({
+        name: item.title ?? item.id, description: "website", reference: { kind: "session" as const, originId: "demo-machine", workspaceId: item.workspaceId ?? workspaceId, sessionId: item.id },
+      }))
+    return { items, truncated: false }
+  }
+  agents.resolveComposerReferences = async () => []
+  agents.gitBranches = async workspaceId => ({ workspaceId, currentBranch: "main", branches: ["main", "deskfleet/301", "deskfleet/303"] })
+  agents.prepareGit = async (workspaceId, context) => ({
+    workspaceId, context, status: "ready", repositories: [{ root: "/workspace/website", branch: "main", changes: [] }],
+    ...(context === "worktree" ? { baseRevisions: [{ path: "/workspace/website", revision: "84b7f21" }] } : {}),
+  })
   agents.gitStatus = async id => ({ sessionId: id, repositories: [{ id: `repository-${id}`, root: `/workspace/.worktrees/${id}`, branch: `deskfleet/${id}`, head: "84b7f21", changes: [{ path: "src/WorkspacePicker.vue", kind: "unstaged", status: "modified", additions: 7, deletions: 2 }] }], directories: [{ path: `/workspace/.worktrees/${id}`, repositoryId: `repository-${id}` }] })
   agents.gitDiff = async request => ({ ...request, patch: demoPatch, binary: false, truncated: false })
   // Fixture changes are static; observing them must not connect to a real daemon.

@@ -31,6 +31,9 @@ export const desktopPreview: DesktopMediaApi = {
     const peer = new RTCPeerConnection({ iceServers: [] })
     const preview = { peer, stream, timer: setInterval(draw, 200) }
     peers.set(sessionId, preview)
+    peer.ondatachannel = ({ channel }) => {
+      channel.onopen = () => channel.send(JSON.stringify({ type: "ready" }))
+    }
     peer.onicecandidate = ({ candidate }) => {
       if (!candidate) return
       const event: DesktopEvent = { sessionId, kind: "iceCandidate", candidate: {
@@ -65,6 +68,7 @@ export const desktopPreview: DesktopMediaApi = {
     const preview = peers.get(sessionId)
     if (!preview) return
     clearInterval(preview.timer)
+    preview.peer.ondatachannel = null
     preview.peer.onicecandidate = null
     preview.peer.close()
     preview.stream.getTracks().forEach(track => track.stop())
