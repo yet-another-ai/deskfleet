@@ -1,7 +1,11 @@
 use crate::MachineRegistration;
-use crate::{ControlStore, Result, machines::machine, resource_id, sql};
+use crate::entities::{
+    cp_machine_registrations as registrations, cp_members as members, cp_teams as teams,
+};
+use crate::{ControlStore, Result, machines::machine, resource_id};
 use deskfleet_protocol::control::Team;
-use sea_orm::ConnectionTrait;
+use sea_orm::sea_query::{Asterisk, Expr, ExprTrait, JoinType, Order, Query};
+use sea_orm::{ColumnTrait, ConnectionTrait};
 
 use super::TeamAction;
 
@@ -23,10 +27,23 @@ impl<'a> TeamScope<'a> {
     pub async fn resolve(&self, store: &ControlStore) -> Result<Vec<Team>> {
         store
             .db
-            .query_all_raw(sql(
-                "SELECT t.id,t.name,m.role FROM cp_teams t JOIN cp_members m ON m.team_id=t.id WHERE m.user_id=$1 ORDER BY t.id",
-                vec![self.user_id.into()],
-            ))
+            .query_all(
+                Query::select()
+                    .columns([
+                        (teams::Entity, teams::Column::Id),
+                        (teams::Entity, teams::Column::Name),
+                    ])
+                    .column((members::Entity, members::Column::Role))
+                    .from(teams::Entity)
+                    .join(
+                        JoinType::InnerJoin,
+                        members::Entity,
+                        Expr::col((members::Entity, members::Column::TeamId))
+                            .eq(Expr::col((teams::Entity, teams::Column::Id))),
+                    )
+                    .and_where(members::Column::UserId.eq(self.user_id))
+                    .order_by((teams::Entity, teams::Column::Id), Order::Asc),
+            )
             .await?
             .into_iter()
             .map(|row| {
@@ -62,10 +79,26 @@ impl<'a> MachineScope<'a> {
             .await?;
         store
             .db
-            .query_all_raw(sql(
-                "SELECT machine.* FROM cp_machine_registrations machine JOIN cp_members member ON member.team_id=machine.team_id WHERE machine.team_id=$1 AND member.user_id=$2 AND NOT machine.revoked ORDER BY machine.id",
-                vec![resource_id(self.team_id)?.into(), self.user_id.into()],
-            ))
+            .query_all(
+                Query::select()
+                    .column((registrations::Entity, Asterisk))
+                    .from(registrations::Entity)
+                    .join(
+                        JoinType::InnerJoin,
+                        members::Entity,
+                        Expr::col((members::Entity, members::Column::TeamId)).eq(Expr::col((
+                            registrations::Entity,
+                            registrations::Column::TeamId,
+                        ))),
+                    )
+                    .and_where(registrations::Column::TeamId.eq(resource_id(self.team_id)?))
+                    .and_where(members::Column::UserId.eq(self.user_id))
+                    .and_where(registrations::Column::Revoked.eq(false))
+                    .order_by(
+                        (registrations::Entity, registrations::Column::Id),
+                        Order::Asc,
+                    ),
+            )
             .await?
             .into_iter()
             .map(machine)

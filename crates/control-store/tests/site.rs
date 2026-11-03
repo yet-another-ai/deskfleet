@@ -5,13 +5,13 @@ use sea_orm::{ConnectionTrait, Database, DbBackend, Statement, TransactionTrait}
 use serde_json::{Value, json};
 use std::time::Duration;
 
-async fn wait_for_lock(store: &ControlStore, application: &str, query: &str) {
+async fn wait_for_lock(store: &ControlStore, application: &str, table: &str) {
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let waiting = store.database().query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
-                "SELECT pid FROM pg_stat_activity WHERE application_name=$1 AND query=$2 AND wait_event_type='Lock'",
-                vec![application.into(), query.into()],
+                "SELECT pid FROM pg_stat_activity WHERE application_name=$1 AND strpos(query,$2)>0 AND wait_event_type='Lock'",
+                vec![application.into(), table.into()],
             )).await.unwrap().is_some();
             if waiting {
                 return;
@@ -267,23 +267,13 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         let defaults = defaults.clone();
         tokio::spawn(async move { store.update_site_settings(&user, &defaults).await })
     };
-    wait_for_lock(
-        &store,
-        &schema,
-        "SELECT * FROM cp_site_settings WHERE singleton FOR UPDATE",
-    )
-    .await;
+    wait_for_lock(&store, &schema, "cp_site_settings").await;
     let revoke = {
         let store = store.clone();
         let user = admin.id.clone();
         tokio::spawn(async move { store.revoke_site_admin(&user).await })
     };
-    wait_for_lock(
-        &store,
-        &schema,
-        "DELETE FROM cp_site_admins WHERE user_id=$1",
-    )
-    .await;
+    wait_for_lock(&store, &schema, "cp_site_admins").await;
     blocker.commit().await.unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
         assert_eq!(update.await.unwrap().unwrap(), defaults);

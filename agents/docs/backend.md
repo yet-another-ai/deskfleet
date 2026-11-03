@@ -157,7 +157,7 @@ distinct.
 | [Session deletion](../../apps/daemon/src/agent-sessions.ts) removes resource rows and their journal | Keep deletion separate from archive/restore: archive reclaims generated checkouts while retaining history; deletion also removes local records and retained worktree refs |
 | [Terminal hangup](../../apps/daemon/src/terminals.ts) removes the transcript and metadata | Add a stop-and-retain path for archive; close only Session-owned PTYs and preserve all terminal records |
 | [Provider snapshots](../../apps/daemon/src/agent-providers.ts) include launch settings and environment values | Separate display metadata from configuration; keep secrets out of central replicas, command audit payloads, and logs |
-| [Agent SQL](../../crates/store/src/agent/sql.rs) selects SQLite explicitly; database connections currently use one SQLite-oriented pool configuration | Implement PostgreSQL server persistence |
+| [Agent queries](../../crates/store/src/agent/queries.rs) use the daemon's typed SQLite entities and SeaQuery builders | Keep PostgreSQL server persistence independent of the local journal |
 | [Renderer CSP](../../apps/desktop/src/shared/renderer-csp.ts) forbids network access and UI code calls `window.deskfleet` | Extract shared UI behind application adapters; Electron supplies a main-process/preload adapter and Web supplies a browser API/signaling adapter |
 
 Reuse the catalog, ACP execution, durable history, managed worktrees, terminals,

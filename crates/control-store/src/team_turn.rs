@@ -1,16 +1,18 @@
 //! A Team's own TURN REST API server, which replaces the site relay for the
 //! Team's new peer grants when its plan and the site setting allow it.
+use crate::entities::{cp_team_turn_servers as servers, cp_turn_settings as turn};
 use crate::{
     ControlStore, Error, Result,
     billing::effective_plan,
-    now_ms, one,
+    now_ms,
     policies::{TeamAction, authorize},
-    resource_id, sql,
+    resource_id,
     teams::lock_team_policy,
     turn_settings::turn_urls,
 };
 use deskfleet_protocol::control::{TeamTurnAvailability, TeamTurnSettings, TeamTurnSettingsUpdate};
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use sea_orm::sea_query::{Expr, OnConflict};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde_json::json;
 
 /// Signing material for a Team relay. It is deliberately not `Debug` or
@@ -41,13 +43,10 @@ async fn availability(
     team: i64,
     hosted: bool,
 ) -> Result<TeamTurnAvailability> {
-    let allowed: bool = one(
-        db,
-        "SELECT COALESCE((SELECT allow_team_servers FROM cp_turn_settings WHERE singleton), TRUE) AS allowed",
-        vec![],
-    )
-    .await?
-    .try_get("", "allowed")?;
+    let allowed = turn::Entity::find_by_id(true)
+        .one(db)
+        .await?
+        .is_none_or(|row| row.allow_team_servers);
     if !allowed {
         return Ok(TeamTurnAvailability::DisabledBySite);
     }
@@ -60,17 +59,13 @@ async fn availability(
     }
     Ok(TeamTurnAvailability::Available)
 }
-
 async fn stored_urls(db: &impl ConnectionTrait, team: i64) -> Result<Option<Vec<String>>> {
-    db.query_one_raw(sql(
-        "SELECT urls FROM cp_team_turn_servers WHERE team_id=$1",
-        vec![team.into()],
-    ))
-    .await?
-    .map(|row| Ok(serde_json::from_value(row.try_get("", "urls")?)?))
-    .transpose()
+    servers::Entity::find_by_id(team)
+        .one(db)
+        .await?
+        .map(|row| serde_json::from_value(row.urls).map_err(Error::from))
+        .transpose()
 }
-
 fn settings(availability: TeamTurnAvailability, urls: Option<Vec<String>>) -> TeamTurnSettings {
     TeamTurnSettings {
         availability,
@@ -78,7 +73,6 @@ fn settings(availability: TeamTurnAvailability, urls: Option<Vec<String>>) -> Te
         urls: urls.unwrap_or_default(),
     }
 }
-
 impl ControlStore {
     /// Team owners and administrators read the URLs and whether a secret is stored.
     pub async fn team_turn_settings(
@@ -94,7 +88,6 @@ impl ControlStore {
             stored_urls(&self.db, team).await?,
         ))
     }
-
     /// Replace or remove the Team server. Removal is always permitted so a Team
     /// can delete its secret after a downgrade or a site-wide disable.
     pub async fn update_team_turn_settings(
@@ -118,11 +111,7 @@ impl ControlStore {
                     "Add a TURN URL before saving a shared secret",
                 ));
             }
-            tx.execute_raw(sql(
-                "DELETE FROM cp_team_turn_servers WHERE team_id=$1",
-                vec![team.into()],
-            ))
-            .await?;
+            servers::Entity::delete_by_id(team).exec(&tx).await?;
         } else {
             match availability {
                 TeamTurnAvailability::Available => {}
@@ -139,19 +128,27 @@ impl ControlStore {
             }
             let urls = json!(urls);
             let changed = if let Some(secret) = secret {
-                tx.execute_raw(sql(
-                    "INSERT INTO cp_team_turn_servers(team_id, urls, secret) VALUES($1, $2, $3) ON CONFLICT(team_id) DO UPDATE SET urls=excluded.urls, secret=excluded.secret",
-                    vec![team.into(), urls.into(), secret.into()],
-                ))
+                servers::Entity::insert(servers::ActiveModel {
+                    team_id: Set(team),
+                    urls: Set(urls),
+                    secret: Set(secret.into()),
+                })
+                .on_conflict(
+                    OnConflict::column(servers::Column::TeamId)
+                        .update_columns([servers::Column::Urls, servers::Column::Secret])
+                        .to_owned(),
+                )
+                .exec_without_returning(&tx)
                 .await?
             } else {
-                tx.execute_raw(sql(
-                    "UPDATE cp_team_turn_servers SET urls=$2 WHERE team_id=$1",
-                    vec![team.into(), urls.into()],
-                ))
-                .await?
+                servers::Entity::update_many()
+                    .col_expr(servers::Column::Urls, Expr::val(urls))
+                    .filter(servers::Column::TeamId.eq(team))
+                    .exec(&tx)
+                    .await?
+                    .rows_affected
             };
-            if changed.rows_affected() == 0 {
+            if changed == 0 {
                 return Err(Error::Invalid("Enter the TURN shared secret"));
             }
         }
@@ -159,27 +156,19 @@ impl ControlStore {
         tx.commit().await?;
         Ok(result)
     }
-
     /// The server used for a new grant, or `None` to apply site relay rules.
     /// A configured server that is no longer available stays stored but unused.
     pub async fn team_turn_server(&self, team_id: &str) -> Result<Option<TeamTurnServer>> {
         let team = resource_id(team_id)?;
-        let Some(row) = self
-            .db
-            .query_one_raw(sql(
-                "SELECT urls, secret FROM cp_team_turn_servers WHERE team_id=$1",
-                vec![team.into()],
-            ))
-            .await?
-        else {
+        let Some(row) = servers::Entity::find_by_id(team).one(&self.db).await? else {
             return Ok(None);
         };
         if availability(&self.db, team, self.hosted).await? != TeamTurnAvailability::Available {
             return Ok(None);
         }
         Ok(Some(TeamTurnServer {
-            urls: serde_json::from_value(row.try_get("", "urls")?)?,
-            secret: row.try_get("", "secret")?,
+            urls: serde_json::from_value(row.urls)?,
+            secret: row.secret,
         }))
     }
 }

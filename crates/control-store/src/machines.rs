@@ -1,9 +1,11 @@
+use crate::entities::{cp_machine_registrations as registrations, cp_machines as identities};
 use crate::policies::{MachineAction, MachinePolicy, MachineScope, TeamAction, authorize};
 use crate::{
-    ControlStore, Error, MachineAuth, Result, name, now_ms, one, resource_id, secret, secret_hash,
-    sql, timestamp,
+    ControlStore, Error, MachineAuth, Result, name, now_ms, one_query, resource_id, secret,
+    secret_hash, timestamp,
 };
 use deskfleet_protocol::control::Machine;
+use sea_orm::sea_query::{Expr, ExprTrait, LockType, OnConflict, Query};
 use sea_orm::{ConnectionTrait, QueryResult, TransactionTrait};
 use serde_json::Value;
 
@@ -77,14 +79,31 @@ impl ControlStore {
             &crate::teams::lock_team_policy(&tx, user_id, team_id).await?,
             TeamAction::EnrollMachine,
         )?;
-        let identity = one(&tx,
-            "INSERT INTO cp_machines(identity_token_hash) VALUES($1) ON CONFLICT(identity_token_hash) DO UPDATE SET identity_token_hash=EXCLUDED.identity_token_hash RETURNING id",
-            vec![secret_hash(identity_token).into()],
-        ).await?.try_get::<i64>("", "id")?;
-        let existing = tx.query_one_raw(sql(
-            "SELECT * FROM cp_machine_registrations WHERE machine_id=$1 AND team_id=$2 FOR UPDATE",
-            vec![identity.into(), resource_id(team_id)?.into()],
-        )).await?;
+        let identity = one_query(
+            &tx,
+            Query::insert()
+                .into_table(identities::Entity)
+                .columns([identities::Column::IdentityTokenHash])
+                .values_panic([secret_hash(identity_token).into()])
+                .on_conflict(
+                    OnConflict::column(identities::Column::IdentityTokenHash)
+                        .update_column(identities::Column::IdentityTokenHash)
+                        .to_owned(),
+                )
+                .returning_col(identities::Column::Id),
+        )
+        .await?
+        .try_get::<i64>("", "id")?;
+        let existing = tx
+            .query_one(
+                Query::select()
+                    .from(registrations::Entity)
+                    .column(sea_orm::sea_query::Asterisk)
+                    .and_where(Expr::col(registrations::Column::MachineId).eq(identity))
+                    .and_where(Expr::col(registrations::Column::TeamId).eq(resource_id(team_id)?))
+                    .lock(LockType::Update),
+            )
+            .await?;
         let row = if let Some(existing) = existing {
             if !existing.try_get::<bool>("", "revoked")? {
                 return Err(Error::Conflict(
@@ -104,15 +123,54 @@ impl ControlStore {
                 existing.try_get("", "id")?,
             )
             .await?;
-            one(&tx,
-                "UPDATE cp_machine_registrations SET revoked=FALSE,token_hash=$2,owner_id=$3,name=$4,capabilities=$5 WHERE id=$1 RETURNING *",
-                vec![existing.try_get::<i64>("", "id")?.into(),secret_hash(&token).into(),user_id.into(),name(machine_name)?.into(),capabilities.into()],
-            ).await?
+            one_query(
+                &tx,
+                Query::update()
+                    .table(registrations::Entity)
+                    .value(registrations::Column::Revoked, false)
+                    .value(registrations::Column::TokenHash, secret_hash(&token))
+                    .value(registrations::Column::OwnerId, user_id)
+                    .value(registrations::Column::Name, name(machine_name)?)
+                    .value(registrations::Column::Capabilities, capabilities)
+                    .and_where(
+                        Expr::col(registrations::Column::Id).eq(existing.try_get::<i64>("", "id")?),
+                    )
+                    .returning_all(),
+            )
+            .await?
         } else {
-            tx.query_one_raw(sql(
-                "INSERT INTO cp_machine_registrations(machine_id,team_id,owner_id,name,origin_id,local_machine_id,token_hash,capabilities) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(origin_id) DO NOTHING RETURNING *",
-                vec![identity.into(),resource_id(team_id)?.into(),user_id.into(),name(machine_name)?.into(),origin.into(),local_id.into(),secret_hash(&token).into(),capabilities.into()],
-            )).await?.ok_or(Error::Conflict("machine origin is already registered"))?
+            tx.query_one(
+                Query::insert()
+                    .into_table(registrations::Entity)
+                    .columns([
+                        registrations::Column::MachineId,
+                        registrations::Column::TeamId,
+                        registrations::Column::OwnerId,
+                        registrations::Column::Name,
+                        registrations::Column::OriginId,
+                        registrations::Column::LocalMachineId,
+                        registrations::Column::TokenHash,
+                        registrations::Column::Capabilities,
+                    ])
+                    .values_panic([
+                        identity.into(),
+                        resource_id(team_id)?.into(),
+                        user_id.into(),
+                        name(machine_name)?.into(),
+                        origin.into(),
+                        local_id.into(),
+                        secret_hash(&token).into(),
+                        capabilities.into(),
+                    ])
+                    .on_conflict(
+                        OnConflict::column(registrations::Column::OriginId)
+                            .do_nothing()
+                            .to_owned(),
+                    )
+                    .returning_all(),
+            )
+            .await?
+            .ok_or(Error::Conflict("machine origin is already registered"))?
         };
         tx.commit().await?;
         Ok((machine(row)?, token))
@@ -120,10 +178,13 @@ impl ControlStore {
     pub async fn authenticate_machine(&self, token: &str) -> Result<MachineAuth> {
         let row = self
             .db
-            .query_one_raw(sql(
-                "SELECT * FROM cp_machine_registrations WHERE token_hash=$1 AND NOT revoked",
-                vec![secret_hash(token).into()],
-            ))
+            .query_one(
+                Query::select()
+                    .from(registrations::Entity)
+                    .column(sea_orm::sea_query::Asterisk)
+                    .and_where(Expr::col(registrations::Column::TokenHash).eq(secret_hash(token)))
+                    .and_where(Expr::col(registrations::Column::Revoked).not()),
+            )
             .await?
             .ok_or(Error::Unauthorized)?;
         Ok(MachineAuth {
@@ -132,10 +193,13 @@ impl ControlStore {
     }
     pub async fn machine(&self, id: &str) -> Result<MachineRegistration> {
         machine(
-            one(
+            one_query(
                 &self.db,
-                "SELECT * FROM cp_machine_registrations WHERE id=$1 AND NOT revoked",
-                vec![resource_id(id)?.into()],
+                Query::select()
+                    .from(registrations::Entity)
+                    .column(sea_orm::sea_query::Asterisk)
+                    .and_where(Expr::col(registrations::Column::Id).eq(resource_id(id)?))
+                    .and_where(Expr::col(registrations::Column::Revoked).not()),
             )
             .await?,
         )
@@ -160,10 +224,20 @@ impl ControlStore {
     ) -> Result<MachineRegistration> {
         let membership = self.team_policy(user_id, team_id).await?;
         authorize(&MachinePolicy::new(membership.role()), action)?;
-        machine(one(&self.db,
-            "SELECT * FROM cp_machine_registrations WHERE machine_id=$1 AND team_id=$2 AND NOT revoked",
-            vec![resource_id(machine_id)?.into(),resource_id(team_id)?.into()],
-        ).await?)
+        machine(
+            one_query(
+                &self.db,
+                Query::select()
+                    .from(registrations::Entity)
+                    .column(sea_orm::sea_query::Asterisk)
+                    .and_where(
+                        Expr::col(registrations::Column::MachineId).eq(resource_id(machine_id)?),
+                    )
+                    .and_where(Expr::col(registrations::Column::TeamId).eq(resource_id(team_id)?))
+                    .and_where(Expr::col(registrations::Column::Revoked).not()),
+            )
+            .await?,
+        )
     }
 
     pub async fn authorized_machine(&self, user_id: &str, id: &str) -> Result<MachineRegistration> {
@@ -204,10 +278,13 @@ impl ControlStore {
             MachineAction::Rename,
         )?;
         let changed = tx
-            .execute_raw(sql(
-                "UPDATE cp_machine_registrations SET name=$1 WHERE id=$2 AND NOT revoked",
-                vec![value.into(), resource_id(id)?.into()],
-            ))
+            .execute(
+                Query::update()
+                    .table(registrations::Entity)
+                    .value(registrations::Column::Name, value)
+                    .and_where(Expr::col(registrations::Column::Id).eq(resource_id(id)?))
+                    .and_where(Expr::col(registrations::Column::Revoked).not()),
+            )
             .await?;
         if changed.rows_affected() != 1 {
             return Err(Error::NotFound);
@@ -221,19 +298,25 @@ impl ControlStore {
             return Err(Error::Invalid("invalid machine capabilities"));
         }
         self.db
-            .execute_raw(sql(
-                "UPDATE cp_machine_registrations SET capabilities=$1 WHERE id=$2 AND NOT revoked",
-                vec![capabilities.into(), resource_id(id)?.into()],
-            ))
+            .execute(
+                Query::update()
+                    .table(registrations::Entity)
+                    .value(registrations::Column::Capabilities, capabilities)
+                    .and_where(Expr::col(registrations::Column::Id).eq(resource_id(id)?))
+                    .and_where(Expr::col(registrations::Column::Revoked).not()),
+            )
             .await?;
         Ok(())
     }
     pub async fn machine_seen(&self, id: &str) -> Result<()> {
         self.db
-            .execute_raw(sql(
-                "UPDATE cp_machine_registrations SET last_seen_at=$1 WHERE id=$2 AND NOT revoked",
-                vec![now_ms().into(), resource_id(id)?.into()],
-            ))
+            .execute(
+                Query::update()
+                    .table(registrations::Entity)
+                    .value(registrations::Column::LastSeenAt, now_ms())
+                    .and_where(Expr::col(registrations::Column::Id).eq(resource_id(id)?))
+                    .and_where(Expr::col(registrations::Column::Revoked).not()),
+            )
             .await?;
         Ok(())
     }
@@ -246,10 +329,12 @@ impl ControlStore {
             MachineAction::Remove,
         )?;
         // Lock the registration after its Team, matching admission order.
-        tx.execute_raw(sql(
-            "UPDATE cp_machine_registrations SET revoked=TRUE WHERE id=$1",
-            vec![resource_id(id)?.into()],
-        ))
+        tx.execute(
+            Query::update()
+                .table(registrations::Entity)
+                .value(registrations::Column::Revoked, true)
+                .and_where(Expr::col(registrations::Column::Id).eq(resource_id(id)?)),
+        )
         .await?;
         // Preserve durable admission outcomes for reactivation. Revoked registrations
         // are excluded from Team capacity until they are admitted again.

@@ -1,10 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use crate::entities::{
+    cp_machine_registrations as registrations, cp_schedule_snapshots as snapshots,
+    cp_schedules as schedules, cp_search_documents as documents,
+};
+use sea_orm::{
+    ConnectionTrait, EntityTrait, Set, TransactionTrait,
+    sea_query::{Alias, Expr, ExprTrait, Func, OnConflict, Query},
+};
 use serde_json::{Map, Value, json};
 
 use super::{blocks, write_document};
-use crate::{ControlStore, Error, Result, now_ms, one, resource_id, sql, timestamp};
+use crate::{ControlStore, Error, Result, now_ms, one_query, resource_id, timestamp};
 
 impl ControlStore {
     /// Publish the daemon's complete public schedule inventory for offline reads.
@@ -29,17 +36,22 @@ impl ControlStore {
             }
         }
         let tx = self.db.begin().await?;
-        one(
+        one_query(
             &tx,
-            "SELECT id FROM cp_machine_registrations WHERE id=$1 FOR UPDATE",
-            vec![machine.into()],
+            Query::select()
+                .column(registrations::Column::Id)
+                .from(registrations::Entity)
+                .and_where(Expr::col(registrations::Column::Id).eq(machine))
+                .lock_exclusive(),
         )
         .await?;
         let rows = tx
-            .query_all_raw(sql(
-                "SELECT schedule_id,record FROM cp_schedules WHERE registration_id=$1",
-                vec![machine.into()],
-            ))
+            .query_all(
+                Query::select()
+                    .columns([schedules::Column::ScheduleId, schedules::Column::Record])
+                    .from(schedules::Entity)
+                    .and_where(Expr::col(schedules::Column::RegistrationId).eq(machine)),
+            )
             .await?;
         let mut existing = HashSet::with_capacity(rows.len());
         for row in rows {
@@ -48,20 +60,25 @@ impl ControlStore {
             existing.insert(id.clone());
             if let Some(task) = incoming.get(&id) {
                 if task != &old {
-                    tx.execute_raw(sql(
-                        "UPDATE cp_schedules SET record=$3 WHERE registration_id=$1 AND schedule_id=$2",
-                        vec![machine.into(), id.as_str().into(), task.clone().into()],
-                    ))
+                    tx.execute(
+                        Query::update()
+                            .table(schedules::Entity)
+                            .value(schedules::Column::Record, task.clone())
+                            .and_where(Expr::col(schedules::Column::RegistrationId).eq(machine))
+                            .and_where(Expr::col(schedules::Column::ScheduleId).eq(id.as_str())),
+                    )
                     .await?;
                     if task["title"] != old["title"] || task["prompt"] != old["prompt"] {
                         index_task(&tx, machine, &id, Some(task)).await?;
                     }
                 }
             } else {
-                tx.execute_raw(sql(
-                    "DELETE FROM cp_schedules WHERE registration_id=$1 AND schedule_id=$2",
-                    vec![machine.into(), id.as_str().into()],
-                ))
+                tx.execute(
+                    Query::delete()
+                        .from_table(schedules::Entity)
+                        .and_where(Expr::col(schedules::Column::RegistrationId).eq(machine))
+                        .and_where(Expr::col(schedules::Column::ScheduleId).eq(id.as_str())),
+                )
                 .await?;
                 index_task(&tx, machine, &id, None).await?;
             }
@@ -70,17 +87,26 @@ impl ControlStore {
             if existing.contains(&id) {
                 continue;
             }
-            tx.execute_raw(sql(
-                "INSERT INTO cp_schedules(registration_id,schedule_id,record) VALUES($1,$2,$3)",
-                vec![machine.into(), id.as_str().into(), task.clone().into()],
-            ))
+            schedules::Entity::insert(schedules::ActiveModel {
+                registration_id: Set(machine),
+                schedule_id: Set(id.clone()),
+                record: Set(task.clone()),
+            })
+            .exec_without_returning(&tx)
             .await?;
             index_task(&tx, machine, &id, Some(&task)).await?;
         }
-        tx.execute_raw(sql(
-            "INSERT INTO cp_schedule_snapshots(registration_id,observed_at) VALUES($1,$2) ON CONFLICT(registration_id) DO UPDATE SET observed_at=excluded.observed_at",
-            vec![machine.into(),now_ms().into()],
-        )).await?;
+        snapshots::Entity::insert(snapshots::ActiveModel {
+            registration_id: Set(machine),
+            observed_at: Set(now_ms()),
+        })
+        .on_conflict(
+            OnConflict::column(snapshots::Column::RegistrationId)
+                .update_column(snapshots::Column::ObservedAt)
+                .to_owned(),
+        )
+        .exec_without_returning(&tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -91,11 +117,33 @@ impl ControlStore {
     /// Returns an error for invalid machine IDs or database failures.
     pub async fn schedule_snapshot(&self, machine_id: &str) -> Result<Value> {
         let machine = resource_id(machine_id)?;
-        let row = one(&self.db,
-            "SELECT (SELECT observed_at FROM cp_schedule_snapshots WHERE registration_id=$1) AS observed_at,
-             COALESCE((SELECT jsonb_agg(record ORDER BY schedule_id) FROM cp_schedules WHERE registration_id=$1),'[]'::jsonb) AS tasks",
-            vec![machine.into()],
-        ).await?;
+        let observed = Query::select()
+            .column(snapshots::Column::ObservedAt)
+            .from(snapshots::Entity)
+            .and_where(Expr::col(snapshots::Column::RegistrationId).eq(machine))
+            .to_owned();
+        // SeaQuery does not expose ORDER BY inside an aggregate argument.
+        let tasks = Query::select()
+            .expr(Expr::cust_with_exprs(
+                "jsonb_agg($1 ORDER BY $2)",
+                [
+                    Expr::col(schedules::Column::Record),
+                    Expr::col(schedules::Column::ScheduleId),
+                ],
+            ))
+            .from(schedules::Entity)
+            .and_where(Expr::col(schedules::Column::RegistrationId).eq(machine))
+            .to_owned();
+        let row = one_query(
+            &self.db,
+            Query::select()
+                .expr_as(Expr::from(observed), Alias::new("observed_at"))
+                .expr_as(
+                    Func::coalesce([Expr::from(tasks), Expr::val("[]").cast_as("jsonb")]),
+                    Alias::new("tasks"),
+                ),
+        )
+        .await?;
         let observed: Option<i64> = row.try_get("", "observed_at")?;
         Ok(
             json!({"tasks":row.try_get::<Value>("","tasks")?,"lastObservedAt":observed.map(timestamp)}),
@@ -109,7 +157,14 @@ async fn index_task(
     id: &str,
     task: Option<&Value>,
 ) -> Result<()> {
-    db.execute_raw(sql("DELETE FROM cp_search_documents WHERE registration_id=$1 AND kind='schedule' AND resource_id=$2",vec![machine.into(),id.into()])).await?;
+    db.execute(
+        Query::delete()
+            .from_table(documents::Entity)
+            .and_where(Expr::col(documents::Column::RegistrationId).eq(machine))
+            .and_where(Expr::col(documents::Column::Kind).eq("schedule"))
+            .and_where(Expr::col(documents::Column::ResourceId).eq(id)),
+    )
+    .await?;
     if let Some(task) = task {
         write_document(
             db,

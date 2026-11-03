@@ -1,5 +1,7 @@
-use crate::{ControlStore, Error, Result, name, now_ms, one, secret, secret_hash, sql};
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use crate::entities::{cp_identity_challenges as challenges, cp_users as users};
+use crate::{ControlStore, Error, Result, name, now_ms, secret, secret_hash};
+use sea_orm::sea_query::OnConflict;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde_json::{Value, json};
 
 impl ControlStore {
@@ -12,14 +14,29 @@ impl ControlStore {
         lifetime_ms: i64,
     ) -> Result<String> {
         let token = secret();
-        self.db.execute_raw(sql("INSERT INTO cp_identity_challenges(token_hash,purpose,user_id,email,record,expires_at) VALUES($1,$2,$3,$4,$5,$6)",vec![secret_hash(&token).into(),purpose.into(),user_id.map(str::to_owned).into(),email.into(),record.into(),(now_ms()+lifetime_ms).into()])).await?;
+        challenges::Entity::insert(challenges::ActiveModel {
+            token_hash: Set(secret_hash(&token)),
+            purpose: Set(purpose.into()),
+            user_id: Set(user_id.map(str::to_owned)),
+            email: Set(email.into()),
+            record: Set(record),
+            expires_at: Set(now_ms() + lifetime_ms),
+        })
+        .exec_without_returning(&self.db)
+        .await?;
         Ok(token)
     }
     pub async fn consume_identity_challenge(&self, token: &str, purpose: &str) -> Result<Value> {
-        let row=one(&self.db,"DELETE FROM cp_identity_challenges WHERE token_hash=$1 AND purpose=$2 AND expires_at>$3 RETURNING user_id,email,record",vec![secret_hash(token).into(),purpose.into(),now_ms().into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
-        Ok(
-            json!({"userId":row.try_get::<Option<String>>("","user_id")?,"email":row.try_get::<String>("","email")?,"record":row.try_get::<Value>("","record")?}),
-        )
+        let row = challenges::Entity::delete_many()
+            .filter(challenges::Column::TokenHash.eq(secret_hash(token)))
+            .filter(challenges::Column::Purpose.eq(purpose))
+            .filter(challenges::Column::ExpiresAt.gt(now_ms()))
+            .exec_with_returning(&self.db)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or(Error::Unauthorized)?;
+        Ok(json!({"userId":row.user_id,"email":row.email,"record":row.record}))
     }
     /// No password is accepted before this mailbox proof: a planted pending
     /// registration cannot attach the attacker's credentials to the mailbox owner.
@@ -33,18 +50,52 @@ impl ControlStore {
         // Serialize registrations on the unique mailbox before locking proofs.
         // Otherwise two proofs for one mailbox can deadlock while one INSERT
         // waits for the other and the winner clears the loser's locked proof.
-        let challenge=one(&tx,"SELECT email FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='registration' AND expires_at>$2",vec![secret_hash(token).into(),now_ms().into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
-        let email: String = challenge.try_get("", "email")?;
-        let row=tx.query_one_raw(sql("INSERT INTO cp_users(id,name,email,email_verified,password_hash) VALUES($1,$2,$3,TRUE,$4) ON CONFLICT(email) DO NOTHING RETURNING id,name,email",vec![uuid::Uuid::now_v7().to_string().into(),name(display_name)?.into(),email.clone().into(),password_hash.into()])).await?.ok_or(Error::Conflict("account already exists; sign in or recover your password"))?;
+        let email = challenges::Entity::find_by_id(secret_hash(token))
+            .filter(challenges::Column::Purpose.eq("registration"))
+            .filter(challenges::Column::ExpiresAt.gt(now_ms()))
+            .one(&tx)
+            .await?
+            .ok_or(Error::Unauthorized)?
+            .email;
+        let inserted = users::Entity::insert(users::ActiveModel {
+            id: Set(uuid::Uuid::now_v7().to_string()),
+            name: Set(name(display_name)?.into()),
+            email: Set(email.clone()),
+            email_verified: Set(true),
+            password_hash: Set(Some(password_hash.into())),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::column(users::Column::Email)
+                .do_nothing()
+                .to_owned(),
+        )
+        .exec_with_returning_many(&tx)
+        .await?
+        .into_iter()
+        .next();
+        let Some(row) = inserted else {
+            return Err(Error::Conflict(
+                "account already exists; sign in or recover your password",
+            ));
+        };
         // Recheck expiry and one-time use after any mailbox lock wait. A lost
         // proof rolls back the account insertion in this same transaction.
-        one(&tx,"DELETE FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='registration' AND expires_at>$2 RETURNING email",vec![secret_hash(token).into(),now_ms().into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
-        tx.execute_raw(sql(
-            "DELETE FROM cp_identity_challenges WHERE email=$1 AND purpose='registration'",
-            vec![email.into()],
-        ))
-        .await?;
-        let user = super::user(&row)?;
+        challenges::Entity::delete_many()
+            .filter(challenges::Column::TokenHash.eq(secret_hash(token)))
+            .filter(challenges::Column::Purpose.eq("registration"))
+            .filter(challenges::Column::ExpiresAt.gt(now_ms()))
+            .exec_with_returning(&tx)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or(Error::Unauthorized)?;
+        challenges::Entity::delete_many()
+            .filter(challenges::Column::Email.eq(email))
+            .filter(challenges::Column::Purpose.eq("registration"))
+            .exec(&tx)
+            .await?;
+        let user = super::user(&row);
         tx.commit().await?;
         Ok(user)
     }

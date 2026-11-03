@@ -1,6 +1,14 @@
-use crate::{ControlStore, Error, Result, json_rows, name, now_ms, one, secret_hash, sql};
+use crate::entities::{
+    cp_identity_challenges as challenges, cp_login_sessions as sessions, cp_passkeys as passkeys,
+    cp_peers as peers, cp_site_admins as admins, cp_site_audit as audit, cp_users as users,
+};
+use crate::{ControlStore, Error, Result, name, now_ms, secret_hash};
 use deskfleet_protocol::control::PeerAuthorization;
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use sea_orm::sea_query::{Expr, ExprTrait};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    TransactionTrait,
+};
 use serde_json::{Value, json};
 
 impl ControlStore {
@@ -15,18 +23,43 @@ impl ControlStore {
         super::lock_authentication_generation(&tx).await?;
         // Discover the owner without locking the challenge, then serialize with
         // credential changes and revocation before consuming any child record.
-        let user_id: String = one(&tx,"SELECT user_id FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='recovery' AND expires_at>$2",vec![secret_hash(token).into(),now_ms().into()]).await.map_err(unauthorized_if_missing)?.try_get("", "user_id")?;
-        one(
-            &tx,
-            "SELECT id FROM cp_users WHERE id=$1 FOR UPDATE",
-            vec![user_id.clone().into()],
-        )
-        .await?;
-        let challenge=one(&tx,"DELETE FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='recovery' AND expires_at>$2 RETURNING user_id,record",vec![secret_hash(token).into(),now_ms().into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
-        let record: Value = challenge.try_get("", "record")?;
-        let version = record["version"].as_i64().ok_or(Error::Unauthorized)?;
-        let updated=tx.execute_raw(sql("UPDATE cp_users SET password_hash=$1,credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$2 AND NOT disabled AND credential_version=$3",vec![password_hash.into(),user_id.clone().into(),version.into()])).await?;
-        if updated.rows_affected() != 1 {
+        let user_id = challenges::Entity::find_by_id(secret_hash(token))
+            .select_only()
+            .column(challenges::Column::UserId)
+            .filter(challenges::Column::Purpose.eq("recovery"))
+            .filter(challenges::Column::ExpiresAt.gt(now_ms()))
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::Unauthorized)?;
+        users::Entity::find_by_id(&user_id)
+            .lock_exclusive()
+            .select_only()
+            .column(users::Column::Id)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        let challenge = challenges::Entity::delete_many()
+            .filter(challenges::Column::TokenHash.eq(secret_hash(token)))
+            .filter(challenges::Column::Purpose.eq("recovery"))
+            .filter(challenges::Column::ExpiresAt.gt(now_ms()))
+            .exec_with_returning(&tx)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or(Error::Unauthorized)?;
+        let version = challenge.record["version"]
+            .as_i64()
+            .ok_or(Error::Unauthorized)?;
+        let updated = credential_mutation()
+            .col_expr(users::Column::PasswordHash, Expr::val(password_hash))
+            .filter(users::Column::Id.eq(&user_id))
+            .filter(users::Column::Disabled.eq(false))
+            .filter(users::Column::CredentialVersion.eq(version))
+            .exec(&tx)
+            .await?;
+        if updated.rows_affected != 1 {
             return Err(Error::Unauthorized);
         }
         let peers = revoke(&tx, &user_id).await?;
@@ -42,8 +75,13 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         super::lock_authentication_generation(&tx).await?;
         require_recent(&tx, user_id, session_id).await?;
-        let updated=tx.execute_raw(sql("UPDATE cp_users SET password_hash=$1,credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$2 AND NOT disabled",vec![password_hash.into(),user_id.into()])).await?;
-        if updated.rows_affected() != 1 {
+        let updated = credential_mutation()
+            .col_expr(users::Column::PasswordHash, Expr::val(password_hash))
+            .filter(users::Column::Id.eq(user_id))
+            .filter(users::Column::Disabled.eq(false))
+            .exec(&tx)
+            .await?;
+        if updated.rows_affected != 1 {
             return Err(Error::Unauthorized);
         }
         let peers = revoke(&tx, user_id).await?;
@@ -57,34 +95,40 @@ impl ControlStore {
     ) -> Result<(String, Vec<PeerAuthorization>)> {
         let tx = self.db.begin().await?;
         super::lock_authentication_generation(&tx).await?;
-        let row = one(
-            &tx,
-            "SELECT email,credential_version FROM cp_users WHERE id=$1 AND NOT disabled FOR UPDATE",
-            vec![user_id.into()],
-        )
-        .await?;
-        let challenge=one(&tx,"DELETE FROM cp_identity_challenges WHERE token_hash=$1 AND purpose='email' AND user_id=$2 AND expires_at>$3 RETURNING email,record",vec![secret_hash(token).into(),user_id.into(),now_ms().into()]).await.map_err(unauthorized_if_missing)?;
-        let email: String = challenge.try_get("", "email")?;
-        let record: Value = challenge.try_get("", "record")?;
-        if record["version"].as_i64() != Some(row.try_get("", "credential_version")?) {
+        let row = users::Entity::find_by_id(user_id)
+            .filter(users::Column::Disabled.eq(false))
+            .lock_exclusive()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        let challenge = challenges::Entity::delete_many()
+            .filter(challenges::Column::TokenHash.eq(secret_hash(token)))
+            .filter(challenges::Column::Purpose.eq("email"))
+            .filter(challenges::Column::UserId.eq(user_id))
+            .filter(challenges::Column::ExpiresAt.gt(now_ms()))
+            .exec_with_returning(&tx)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or(Error::Unauthorized)?;
+        if challenge.record["version"].as_i64() != Some(row.credential_version) {
             return Err(Error::Unauthorized);
         }
-        let previous: String = row.try_get("", "email")?;
-        if tx
-            .query_one_raw(sql(
-                "SELECT id FROM cp_users WHERE email=$1 AND id<>$2",
-                vec![email.clone().into(), user_id.into()],
-            ))
+        let previous = row.email;
+        if users::Entity::find()
+            .filter(users::Column::Email.eq(&challenge.email))
+            .filter(users::Column::Id.ne(user_id))
+            .one(&tx)
             .await?
             .is_some()
         {
             return Err(Error::Conflict("email address is unavailable"));
         }
-        tx.execute_raw(sql(
-            "UPDATE cp_users SET email=$1,credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$2",
-            vec![email.into(), user_id.into()],
-        ))
-        .await?;
+        credential_mutation()
+            .col_expr(users::Column::Email, Expr::val(challenge.email))
+            .filter(users::Column::Id.eq(user_id))
+            .exec(&tx)
+            .await?;
         let peers = revoke(&tx, user_id).await?;
         tx.commit().await?;
         Ok((previous, peers))
@@ -97,42 +141,51 @@ impl ControlStore {
     ) -> Result<Vec<PeerAuthorization>> {
         let tx = self.db.begin().await?;
         super::lock_authentication_generation(&tx).await?;
-        one(
-            &tx,
-            "SELECT user_id FROM cp_site_admins WHERE user_id=$1 FOR SHARE",
-            vec![actor.into()],
-        )
-        .await
-        .map_err(|e| {
-            if matches!(e, Error::NotFound) {
-                Error::Forbidden
-            } else {
-                e
-            }
-        })?;
+        admins::Entity::find_by_id(actor)
+            .lock_shared()
+            .select_only()
+            .column(admins::Column::UserId)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::Forbidden)?;
         if actor == user_id && disabled {
             return Err(Error::Invalid(
                 "cannot disable your own administrator account",
             ));
         }
-        let previous: bool = one(
-            &tx,
-            "SELECT disabled FROM cp_users WHERE id=$1 FOR UPDATE",
-            vec![user_id.into()],
-        )
-        .await?
-        .try_get("", "disabled")?;
-        let changed=tx.execute_raw(sql("UPDATE cp_users SET disabled=$1,credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$2",vec![disabled.into(),user_id.into()])).await?;
-        if changed.rows_affected() != 1 {
+        let previous = users::Entity::find_by_id(user_id)
+            .lock_exclusive()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?
+            .disabled;
+        let changed = credential_mutation()
+            .col_expr(users::Column::Disabled, Expr::val(disabled))
+            .filter(users::Column::Id.eq(user_id))
+            .exec(&tx)
+            .await?;
+        if changed.rows_affected != 1 {
             return Err(Error::NotFound);
         }
         let peers = revoke(&tx, user_id).await?;
-        tx.execute_raw(sql("INSERT INTO cp_site_audit(actor_user_id,source,action,before_value,after_value,occurred_at) VALUES($1,'user','account.disable',$2,$3,$4)",vec![actor.into(),json!({"userId":user_id,"disabled":previous}).into(),json!({"userId":user_id,"disabled":disabled}).into(),now_ms().into()])).await?;
+        audit::Entity::insert(audit::ActiveModel {
+            actor_user_id: Set(Some(actor.into())),
+            source: Set("user".into()),
+            action: Set("account.disable".into()),
+            before_value: Set(json!({"userId":user_id,"disabled":previous})),
+            after_value: Set(json!({"userId":user_id,"disabled":disabled})),
+            occurred_at: Set(now_ms()),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
+        .await?;
         tx.commit().await?;
         Ok(peers)
     }
     pub async fn passkeys(&self, user_id: &str) -> Result<Vec<Value>> {
-        json_rows(&self.db,"SELECT jsonb_build_object('id',id,'name',name,'credentialId',credential_id,'record',record,'createdAt',created_at) AS record FROM cp_passkeys WHERE user_id=$1 ORDER BY created_at",vec![user_id.into()]).await
+        Ok(passkeys::Entity::find().filter(passkeys::Column::UserId.eq(user_id)).order_by_asc(passkeys::Column::CreatedAt)
+            .all(&self.db).await?.into_iter().map(|row| json!({"id":row.id,"name":row.name,"credentialId":row.credential_id,"record":row.record,"createdAt":row.created_at})).collect())
     }
     pub async fn save_passkey(
         &self,
@@ -144,7 +197,16 @@ impl ControlStore {
     ) -> Result<()> {
         let tx = self.db.begin().await?;
         require_recent(&tx, user_id, session_id).await?;
-        tx.execute_raw(sql("INSERT INTO cp_passkeys(id,user_id,name,credential_id,record,created_at) VALUES($1,$2,$3,$4,$5,$6)",vec![uuid::Uuid::new_v4().to_string().into(),user_id.into(),name(display_name)?.into(),credential_id.into(),record.into(),now_ms().into()])).await?;
+        passkeys::Entity::insert(passkeys::ActiveModel {
+            id: Set(uuid::Uuid::new_v4().to_string()),
+            user_id: Set(user_id.into()),
+            name: Set(name(display_name)?.into()),
+            credential_id: Set(credential_id.into()),
+            record: Set(record),
+            created_at: Set(now_ms()),
+        })
+        .exec_without_returning(&tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -155,27 +217,26 @@ impl ControlStore {
         record: Value,
         expected: Value,
     ) -> Result<()> {
-        let changed = self
-            .db
-            .execute_raw(sql(
-                "UPDATE cp_passkeys SET record=$1 WHERE user_id=$2 AND id=$3 AND record=$4",
-                vec![record.into(), user_id.into(), id.into(), expected.into()],
-            ))
+        let changed = passkeys::Entity::update_many()
+            .col_expr(passkeys::Column::Record, Expr::val(record))
+            .filter(passkeys::Column::UserId.eq(user_id))
+            .filter(passkeys::Column::Id.eq(id))
+            .filter(passkeys::Column::Record.eq(expected))
+            .exec(&self.db)
             .await?;
-        if changed.rows_affected() != 1 {
+        if changed.rows_affected != 1 {
             return Err(Error::Unauthorized);
         }
         Ok(())
     }
     pub async fn rename_passkey(&self, user_id: &str, id: &str, display_name: &str) -> Result<()> {
-        let updated = self
-            .db
-            .execute_raw(sql(
-                "UPDATE cp_passkeys SET name=$1 WHERE user_id=$2 AND id=$3",
-                vec![name(display_name)?.into(), user_id.into(), id.into()],
-            ))
+        let updated = passkeys::Entity::update_many()
+            .col_expr(passkeys::Column::Name, Expr::val(name(display_name)?))
+            .filter(passkeys::Column::UserId.eq(user_id))
+            .filter(passkeys::Column::Id.eq(id))
+            .exec(&self.db)
             .await?;
-        if updated.rows_affected() != 1 {
+        if updated.rows_affected != 1 {
             return Err(Error::NotFound);
         }
         Ok(())
@@ -184,58 +245,87 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         super::lock_authentication_generation(&tx).await?;
         require_recent(&tx, user_id, session_id).await?;
-        one(
-            &tx,
-            "SELECT id FROM cp_users WHERE id=$1 AND NOT disabled FOR UPDATE",
-            vec![user_id.into()],
-        )
-        .await?;
-        let removed = tx
-            .execute_raw(sql(
-                "DELETE FROM cp_passkeys WHERE user_id=$1 AND id=$2",
-                vec![user_id.into(), id.into()],
-            ))
+        users::Entity::find_by_id(user_id)
+            .filter(users::Column::Disabled.eq(false))
+            .lock_exclusive()
+            .select_only()
+            .column(users::Column::Id)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        let removed = passkeys::Entity::delete_many()
+            .filter(passkeys::Column::UserId.eq(user_id))
+            .filter(passkeys::Column::Id.eq(id))
+            .exec(&tx)
             .await?;
-        if removed.rows_affected() != 1 {
+        if removed.rows_affected != 1 {
             return Err(Error::NotFound);
         }
-        tx.execute_raw(sql(
-            "UPDATE cp_users SET credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$1",
-            vec![user_id.into()],
-        ))
-        .await?;
+        credential_mutation()
+            .filter(users::Column::Id.eq(user_id))
+            .exec(&tx)
+            .await?;
         tx.commit().await?;
         Ok(())
     }
 }
-fn unauthorized_if_missing(error: Error) -> Error {
-    if matches!(error, Error::NotFound) {
-        Error::Unauthorized
-    } else {
-        error
-    }
+
+fn credential_mutation() -> sea_orm::UpdateMany<users::Entity> {
+    users::Entity::update_many()
+        .col_expr(
+            users::Column::CredentialVersion,
+            Expr::col(users::Column::CredentialVersion).add(1),
+        )
+        .col_expr(
+            users::Column::AuthenticationGeneration,
+            super::next_authentication_generation(),
+        )
 }
+
 async fn revoke(db: &impl ConnectionTrait, user_id: &str) -> Result<Vec<PeerAuthorization>> {
-    db.execute_raw(sql(
-        "UPDATE cp_login_sessions SET revoked=TRUE WHERE user_id=$1 AND NOT revoked",
-        vec![user_id.into()],
-    ))
-    .await?;
-    db.execute_raw(sql(
-        "DELETE FROM cp_identity_challenges WHERE user_id=$1",
-        vec![user_id.into()],
-    ))
-    .await?;
-    json_rows(db,"UPDATE cp_peers SET revoked=TRUE WHERE user_id=$1 AND NOT revoked RETURNING grant_json AS record",vec![user_id.into()]).await?.into_iter().map(|v|serde_json::from_value(v).map_err(Error::from)).collect()
+    sessions::Entity::update_many()
+        .col_expr(sessions::Column::Revoked, Expr::val(true))
+        .filter(sessions::Column::UserId.eq(user_id))
+        .filter(sessions::Column::Revoked.eq(false))
+        .exec(db)
+        .await?;
+    challenges::Entity::delete_many()
+        .filter(challenges::Column::UserId.eq(user_id))
+        .exec(db)
+        .await?;
+    peers::Entity::update_many()
+        .col_expr(peers::Column::Revoked, Expr::val(true))
+        .filter(peers::Column::UserId.eq(user_id))
+        .filter(peers::Column::Revoked.eq(false))
+        .exec_with_returning(db)
+        .await?
+        .into_iter()
+        .map(|row| serde_json::from_value(row.grant_json).map_err(Error::from))
+        .collect()
 }
 
 async fn require_recent(db: &impl ConnectionTrait, user_id: &str, session_id: &str) -> Result<()> {
-    one(
-        db,
-        "SELECT id FROM cp_users WHERE id=$1 AND NOT disabled FOR UPDATE",
-        vec![user_id.into()],
-    )
-    .await?;
-    one(db,"SELECT id FROM cp_login_sessions WHERE id=$1 AND user_id=$2 AND NOT revoked AND expires_at>$3 AND authenticated_at>$4 FOR SHARE",vec![session_id.into(),user_id.into(),now_ms().into(),(now_ms()-600_000).into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
+    users::Entity::find_by_id(user_id)
+        .filter(users::Column::Disabled.eq(false))
+        .lock_exclusive()
+        .select_only()
+        .column(users::Column::Id)
+        .into_tuple::<String>()
+        .one(db)
+        .await?
+        .ok_or(Error::NotFound)?;
+    sessions::Entity::find_by_id(session_id)
+        .filter(sessions::Column::UserId.eq(user_id))
+        .filter(sessions::Column::Revoked.eq(false))
+        .filter(sessions::Column::ExpiresAt.gt(now_ms()))
+        .filter(sessions::Column::AuthenticatedAt.gt(now_ms() - 600_000))
+        .lock_shared()
+        .select_only()
+        .column(sessions::Column::Id)
+        .into_tuple::<String>()
+        .one(db)
+        .await?
+        .ok_or(Error::Unauthorized)?;
     Ok(())
 }

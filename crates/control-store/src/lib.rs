@@ -2,6 +2,7 @@
 mod ai_usage;
 pub mod billing;
 mod cloudflare_turn;
+pub(crate) mod entities;
 mod github_app;
 mod history;
 mod identity;
@@ -32,9 +33,7 @@ pub use turn_usage::{TurnUsage, TurnUsageSide};
 
 use chrono::{SecondsFormat, Utc};
 use deskfleet_protocol::control::User;
-use sea_orm::{
-    ConnectionTrait, Database, DatabaseConnection, DbBackend, DbErr, QueryResult, Statement, Value,
-};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, QueryResult};
 use serde_json::Value as Json;
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
@@ -131,24 +130,18 @@ pub fn resource_id(id: &str) -> Result<i64> {
         .filter(|id| *id > 0)
         .ok_or(Error::Invalid("invalid resource identity"))
 }
-pub(crate) fn sql(text: &str, values: Vec<Value>) -> Statement {
-    Statement::from_sql_and_values(DbBackend::Postgres, text, values)
-}
-pub(crate) async fn one(
+pub(crate) async fn one_query(
     db: &impl ConnectionTrait,
-    text: &str,
-    values: Vec<Value>,
+    query: &impl sea_orm::StatementBuilder,
 ) -> Result<QueryResult> {
-    db.query_one_raw(sql(text, values))
-        .await?
-        .ok_or(Error::NotFound)
+    db.query_one(query).await?.ok_or(Error::NotFound)
 }
-pub(crate) async fn json_rows(
+
+pub(crate) async fn json_query(
     db: &impl ConnectionTrait,
-    text: &str,
-    values: Vec<Value>,
+    query: &impl sea_orm::StatementBuilder,
 ) -> Result<Vec<Json>> {
-    db.query_all_raw(sql(text, values))
+    db.query_all(query)
         .await?
         .into_iter()
         .map(|row| row.try_get("", "record").map_err(Error::from))

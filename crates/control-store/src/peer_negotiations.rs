@@ -1,6 +1,9 @@
 //! Short shared signaling transactions. Daemon RPC never holds a database lock.
 
-use crate::{ControlStore, Error, Result, now_ms, one, sql};
+use crate::entities::{cp_peer_negotiations as negotiations, cp_peers as peers};
+use crate::{ControlStore, Error, Result, now_ms, one_query};
+use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::sea_query::{Alias, Expr, ExprTrait, Func, JoinType, LockType, OnConflict, Query};
 use sea_orm::{ConnectionTrait, DatabaseTransaction, QueryResult, TransactionTrait};
 use serde_json::{Value, json};
 
@@ -46,10 +49,14 @@ impl ControlStore {
             row.try_get::<Option<String>>("", "answer")?
                 .map_or(PeerOfferState::Waiting, PeerOfferState::Answered)
         } else {
-            tx.execute_raw(sql(
-                "UPDATE cp_peer_negotiations SET offer=$2,options=$3,started_at=$4 WHERE peer_id=$1",
-                vec![peer_id.into(), offer.into(), options.clone().into(), now_ms().into()],
-            ))
+            tx.execute(
+                Query::update()
+                    .table(negotiations::Entity)
+                    .value(negotiations::Column::Offer, offer)
+                    .value(negotiations::Column::Options, options.clone())
+                    .value(negotiations::Column::StartedAt, now_ms())
+                    .and_where(Expr::col(negotiations::Column::PeerId).eq(peer_id)),
+            )
             .await?;
             PeerOfferState::Start
         };
@@ -59,10 +66,27 @@ impl ControlStore {
 
     /// Polling readers use no row lock and release their connection each time.
     pub async fn peer_answer(&self, peer_id: &str) -> Result<Option<String>> {
-        let row = one(
+        let row = one_query(
             &self.db,
-            "SELECT n.answer,n.started_at,n.failed FROM cp_peer_negotiations n JOIN cp_peers p ON p.id=n.peer_id WHERE p.id=$1 AND NOT p.revoked AND p.expires_at>$2",
-            vec![peer_id.into(), now_ms().into()],
+            Query::select()
+                .columns(
+                    [
+                        negotiations::Column::Answer,
+                        negotiations::Column::StartedAt,
+                        negotiations::Column::Failed,
+                    ]
+                    .map(|c| (negotiations::Entity, c)),
+                )
+                .from(negotiations::Entity)
+                .join(
+                    JoinType::InnerJoin,
+                    peers::Entity,
+                    Expr::col((peers::Entity, peers::Column::Id))
+                        .equals((negotiations::Entity, negotiations::Column::PeerId)),
+                )
+                .and_where(Expr::col((peers::Entity, peers::Column::Id)).eq(peer_id))
+                .and_where(Expr::col((peers::Entity, peers::Column::Revoked)).not())
+                .and_where(Expr::col((peers::Entity, peers::Column::ExpiresAt)).gt(now_ms())),
         )
         .await?;
         check_attempt(&row)?;
@@ -84,10 +108,13 @@ impl ControlStore {
             return Err(Error::Invalid("peer answer is already committed"));
         }
         let pending = serde_json::from_value(row.try_get("", "pending")?)?;
-        tx.execute_raw(sql(
-            "UPDATE cp_peer_negotiations SET answer=$2,pending='[]' WHERE peer_id=$1",
-            vec![peer_id.into(), answer.into()],
-        ))
+        tx.execute(
+            Query::update()
+                .table(negotiations::Entity)
+                .value(negotiations::Column::Answer, answer)
+                .value(negotiations::Column::Pending, json!([]))
+                .and_where(Expr::col(negotiations::Column::PeerId).eq(peer_id)),
+        )
         .await?;
         tx.commit().await?;
         Ok(pending)
@@ -117,11 +144,31 @@ impl ControlStore {
             {
                 return Err(Error::Invalid("too many pending candidates"));
             }
-            let updated = tx.execute_raw(sql(
-                "UPDATE cp_peer_negotiations SET pending=pending || $2::jsonb WHERE peer_id=$1 AND octet_length((pending || $2::jsonb)::text)<=$3",
-                vec![peer_id.into(), json!([candidate]).into(), (crate::signaling_limits::PENDING_BYTES as i64).into()],
-            ))
-            .await?;
+            let updated = tx
+                .execute(
+                    Query::update()
+                        .table(negotiations::Entity)
+                        .value(
+                            negotiations::Column::Pending,
+                            Expr::col(negotiations::Column::Pending)
+                                .concat(Expr::val(json!([candidate])).cast_as(Alias::new("jsonb"))),
+                        )
+                        .and_where(Expr::col(negotiations::Column::PeerId).eq(peer_id))
+                        .and_where(
+                            Expr::expr(
+                                Func::cust(Alias::new("octet_length")).arg(
+                                    Expr::col(negotiations::Column::Pending)
+                                        .concat(
+                                            Expr::val(json!([candidate]))
+                                                .cast_as(Alias::new("jsonb")),
+                                        )
+                                        .cast_as(Alias::new("text")),
+                                ),
+                            )
+                            .lte(crate::signaling_limits::PENDING_BYTES as i64),
+                        ),
+                )
+                .await?;
             if updated.rows_affected() == 0 {
                 return Err(Error::Invalid("pending ICE candidates exceed byte budget"));
             }
@@ -136,10 +183,14 @@ impl ControlStore {
     pub async fn fail_peer_offer(&self, peer_id: &str) -> Result<bool> {
         Ok(self
             .db
-            .execute_raw(sql(
-                "UPDATE cp_peer_negotiations SET failed=TRUE,pending='[]' WHERE peer_id=$1 AND answer IS NULL",
-                vec![peer_id.into()],
-            ))
+            .execute(
+                Query::update()
+                    .table(negotiations::Entity)
+                    .value(negotiations::Column::Failed, true)
+                    .value(negotiations::Column::Pending, json!([]))
+                    .and_where(Expr::col(negotiations::Column::PeerId).eq(peer_id))
+                    .and_where(Expr::col(negotiations::Column::Answer).is_null()),
+            )
             .await?
             .rows_affected()
             == 1)
@@ -149,21 +200,39 @@ impl ControlStore {
 /// Every writer locks the peer first, serializing with revocation as well as
 /// other negotiation writers. No external I/O occurs inside this transaction.
 async fn negotiation(tx: &DatabaseTransaction, peer_id: &str) -> Result<QueryResult> {
-    one(
+    one_query(
         tx,
-        "SELECT id FROM cp_peers WHERE id=$1 AND NOT revoked AND expires_at>$2 FOR UPDATE",
-        vec![peer_id.into(), now_ms().into()],
+        Query::select()
+            .column(peers::Column::Id)
+            .from(peers::Entity)
+            .and_where(Expr::col(peers::Column::Id).eq(peer_id))
+            .and_where(Expr::col(peers::Column::Revoked).not())
+            .and_where(Expr::col(peers::Column::ExpiresAt).gt(now_ms()))
+            .lock(LockType::Update),
     )
     .await?;
-    tx.execute_raw(sql(
-        "INSERT INTO cp_peer_negotiations(peer_id) VALUES($1) ON CONFLICT DO NOTHING",
-        vec![peer_id.into()],
-    ))
+    tx.execute(
+        Query::insert()
+            .into_table(negotiations::Entity)
+            .columns([negotiations::Column::PeerId])
+            .values_panic([peer_id.into()])
+            .on_conflict(OnConflict::new().do_nothing().to_owned()),
+    )
     .await?;
-    one(
+    one_query(
         tx,
-        "SELECT offer,options,answer,pending,started_at,failed FROM cp_peer_negotiations WHERE peer_id=$1 FOR UPDATE",
-        vec![peer_id.into()],
+        Query::select()
+            .columns([
+                negotiations::Column::Offer,
+                negotiations::Column::Options,
+                negotiations::Column::Answer,
+                negotiations::Column::Pending,
+                negotiations::Column::StartedAt,
+                negotiations::Column::Failed,
+            ])
+            .from(negotiations::Entity)
+            .and_where(Expr::col(negotiations::Column::PeerId).eq(peer_id))
+            .lock(LockType::Update),
     )
     .await
 }

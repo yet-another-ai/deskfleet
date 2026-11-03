@@ -1,45 +1,63 @@
 //! Durable Agent Session records and an atomically sequenced journal.
 
 mod commit;
-mod sql;
+mod queries;
 mod validation;
 
 #[cfg(test)]
 mod tests;
 
 use deskfleet_model::{AgentSequence, AgentSessionId, agent::*};
-use sea_orm::{ActiveModelTrait, ConnectionTrait, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, QueryTrait, Set, TransactionTrait,
+    sea_query::{Expr, ExprTrait, JoinType, OnConflict, Query, SelectStatement},
+};
 
-use crate::{LocalCatalog, StoreError, catalog::require_workspace, entities::workspace_session};
-use sql::{record, records, statement};
+use crate::{
+    LocalCatalog, StoreError,
+    catalog::require_workspace,
+    entities::{
+        agent_command, agent_event, agent_id_allocator, agent_run, agent_session, catalog_identity,
+        workspace_session,
+    },
+};
+use queries::{record, records};
 
 pub(crate) async fn initialize(db: &impl ConnectionTrait) -> Result<(), StoreError> {
-    db.execute_raw(statement(
-        "INSERT INTO catalog_identity (id, origin_id) VALUES (1, ?) ON CONFLICT (id) DO NOTHING",
-        vec![uuid::Uuid::new_v4().to_string().into()],
-    ))
+    catalog_identity::Entity::insert(catalog_identity::ActiveModel {
+        id: Set(1),
+        origin_id: Set(uuid::Uuid::new_v4().to_string()),
+    })
+    .on_conflict(
+        OnConflict::column(catalog_identity::Column::Id)
+            .do_nothing()
+            .to_owned(),
+    )
+    .exec_without_returning(db)
     .await?;
-    db.execute_raw(statement(
-        "INSERT INTO agent_id_allocator (id, last_id) VALUES (1, 0) ON CONFLICT (id) DO NOTHING",
-        vec![],
-    ))
+    agent_id_allocator::Entity::insert(agent_id_allocator::ActiveModel {
+        id: Set(1),
+        last_id: Set(0),
+    })
+    .on_conflict(
+        OnConflict::column(agent_id_allocator::Column::Id)
+            .do_nothing()
+            .to_owned(),
+    )
+    .exec_without_returning(db)
     .await?;
     Ok(())
 }
 
 impl LocalCatalog {
     pub async fn agent_identity(&self) -> Result<AgentIdentity, StoreError> {
-        let row = self
-            .catalog
-            .database()
-            .query_one_raw(statement(
-                "SELECT origin_id FROM catalog_identity WHERE id = 1",
-                vec![],
-            ))
+        let row = catalog_identity::Entity::find_by_id(1)
+            .one(self.catalog.database())
             .await?
             .ok_or(StoreError::InvalidAgent("catalog identity is missing"))?;
         Ok(AgentIdentity {
-            origin_id: row.try_get("", "origin_id")?,
+            origin_id: row.origin_id,
             machine_id: self.machine.id,
         })
     }
@@ -49,11 +67,18 @@ impl LocalCatalog {
         let row = self
             .catalog
             .database()
-            .query_one_raw(statement(
-                "UPDATE agent_id_allocator SET last_id = last_id + 1 \
-                 WHERE id = 1 AND last_id < 9223372036854775807 RETURNING last_id",
-                vec![],
-            ))
+            .query_one(
+                &Query::update()
+                    .table(agent_id_allocator::Entity)
+                    .value(
+                        agent_id_allocator::Column::LastId,
+                        Expr::col(agent_id_allocator::Column::LastId).add(1),
+                    )
+                    .and_where(Expr::col(agent_id_allocator::Column::Id).eq(1))
+                    .and_where(Expr::col(agent_id_allocator::Column::LastId).lt(i64::MAX))
+                    .returning_col(agent_id_allocator::Column::LastId)
+                    .to_owned(),
+            )
             .await?
             .ok_or(StoreError::InvalidAgent("agent ID allocator exhausted"))?;
         Ok(row.try_get("", "last_id")?)
@@ -62,10 +87,9 @@ impl LocalCatalog {
     pub async fn agent_list(&self) -> Result<Vec<AgentSessionRecord>, StoreError> {
         records(
             self.catalog.database(),
-            "SELECT a.record_json FROM agent_sessions a \
-             JOIN workspace_sessions s ON s.id = a.session_id \
-             WHERE s.machine_id = ? ORDER BY a.session_id",
-            vec![self.machine.id.as_i64().into()],
+            scoped_sessions(self.machine.id.as_i64())
+                .order_by(agent_session::Column::SessionId, sea_orm::Order::Asc)
+                .to_owned(),
         )
         .await
     }
@@ -90,14 +114,18 @@ impl LocalCatalog {
             session,
             runs: records(
                 &db,
-                "SELECT record_json FROM agent_runs WHERE session_id = ? ORDER BY generation",
-                vec![id.as_i64().into()],
+                agent_run::Entity::find()
+                    .select_only()
+                    .column(agent_run::Column::RecordJson)
+                    .filter(agent_run::Column::SessionId.eq(id.as_i64()))
+                    .order_by_asc(agent_run::Column::Generation)
+                    .into_query(),
             )
             .await?,
-            inputs: records(&db, sql::INPUTS, vec![id.as_i64().into()]).await?,
-            turns: records(&db, sql::TURNS, vec![id.as_i64().into()]).await?,
-            permissions: records(&db, sql::PERMISSIONS, vec![id.as_i64().into()]).await?,
-            elicitations: records(&db, sql::ELICITATIONS, vec![id.as_i64().into()]).await?,
+            inputs: records(&db, queries::inputs(id.as_i64())).await?,
+            turns: records(&db, queries::turns(id.as_i64())).await?,
+            permissions: records(&db, queries::permissions(id.as_i64())).await?,
+            elicitations: records(&db, queries::elicitations(id.as_i64())).await?,
         };
         db.commit().await?;
         Ok(Some(snapshot))
@@ -124,8 +152,14 @@ impl LocalCatalog {
         }
         let events = records(
             &db,
-            "SELECT record_json FROM agent_events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?",
-            vec![id.as_i64().into(), after.as_i64().into(), limit.into()],
+            agent_event::Entity::find()
+                .select_only()
+                .column(agent_event::Column::RecordJson)
+                .filter(agent_event::Column::SessionId.eq(id.as_i64()))
+                .filter(agent_event::Column::Seq.gt(after.as_i64()))
+                .order_by_asc(agent_event::Column::Seq)
+                .limit(u64::from(limit))
+                .into_query(),
         )
         .await?;
         db.commit().await?;
@@ -136,12 +170,7 @@ impl LocalCatalog {
         &self,
         operation_id: &str,
     ) -> Result<Option<AgentCommand>, StoreError> {
-        record(
-            self.catalog.database(),
-            sql::COMMAND,
-            vec![operation_id.into()],
-        )
-        .await
+        record(self.catalog.database(), queries::command(operation_id)).await
     }
 
     /// Prove a released local allocation from retained receipts, even after its row is gone.
@@ -161,18 +190,17 @@ impl LocalCatalog {
         let db = self.catalog.database().begin().await?;
         let existing: Option<AgentSessionRecord> = record(
             &db,
-            "SELECT record_json FROM agent_sessions WHERE session_id = ?",
-            vec![id.as_i64().into()],
+            agent_session::Entity::find_by_id(id.as_i64())
+                .select_only()
+                .column(agent_session::Column::RecordJson)
+                .into_query(),
         )
         .await?;
         if existing.is_some() {
             return Ok(false);
         }
         let deleted: bool = db
-            .query_one_raw(statement(
-                sql::DELETED_ADMISSION,
-                vec![id.to_string().into()],
-            ))
+            .query_one(&queries::deleted_admission(id.as_i64()))
             .await?
             .ok_or(StoreError::InvalidAgent(
                 "deletion receipt query returned no result",
@@ -197,7 +225,7 @@ impl LocalCatalog {
                 id: id.as_i64(),
             });
         }
-        let commands = records(&db, sql::COMMANDS, vec![id.as_i64().into()]).await?;
+        let commands = records(&db, queries::commands(id.as_i64())).await?;
         db.commit().await?;
         Ok(commands)
     }
@@ -222,21 +250,19 @@ impl LocalCatalog {
             });
         }
         let revision = db
-            .query_one_raw(statement(
-                "SELECT MAX(revision) AS revision FROM agent_commands WHERE session_id = ?",
-                vec![id.as_i64().into()],
-            ))
+            .query_one(
+                &agent_command::Entity::find()
+                    .select_only()
+                    .column_as(agent_command::Column::Revision.max(), "revision")
+                    .filter(agent_command::Column::SessionId.eq(id.as_i64()))
+                    .into_query(),
+            )
             .await?
             .and_then(|row| row.try_get::<Option<i64>>("", "revision").transpose())
             .transpose()?
-            .unwrap_or(after_revision)
-            .max(after_revision);
-        let commands = records(
-            &db,
-            sql::COMMAND_CHANGES,
-            vec![id.as_i64().into(), after_revision.into()],
-        )
-        .await?;
+            .unwrap_or(after_revision);
+        let revision = std::cmp::max(revision, after_revision);
+        let commands = records(&db, queries::command_changes(id.as_i64(), after_revision)).await?;
         db.commit().await?;
         Ok((commands, revision))
     }
@@ -261,8 +287,10 @@ impl LocalCatalog {
         }
         if record::<AgentCommand>(
             &db,
-            "SELECT record_json FROM agent_commands WHERE id = ?",
-            vec![request.command.id.as_i64().into()],
+            agent_command::Entity::find_by_id(request.command.id.as_i64())
+                .select_only()
+                .column(agent_command::Column::RecordJson)
+                .into_query(),
         )
         .await?
         .is_some()
@@ -318,10 +346,34 @@ async fn scoped_session(
 ) -> Result<Option<AgentSessionRecord>, StoreError> {
     record(
         db,
-        "SELECT a.record_json FROM agent_sessions a \
-         JOIN workspace_sessions s ON s.id = a.session_id \
-         WHERE a.session_id = ? AND s.machine_id = ?",
-        vec![id.as_i64().into(), machine_id.into()],
+        scoped_sessions(machine_id)
+            .and_where(
+                Expr::col((agent_session::Entity, agent_session::Column::SessionId))
+                    .eq(id.as_i64()),
+            )
+            .to_owned(),
     )
     .await
+}
+
+fn scoped_sessions(machine_id: i64) -> SelectStatement {
+    Query::select()
+        .column((agent_session::Entity, agent_session::Column::RecordJson))
+        .from(agent_session::Entity)
+        .join(
+            JoinType::InnerJoin,
+            workspace_session::Entity,
+            Expr::col((workspace_session::Entity, workspace_session::Column::Id)).eq(Expr::col((
+                agent_session::Entity,
+                agent_session::Column::SessionId,
+            ))),
+        )
+        .and_where(
+            Expr::col((
+                workspace_session::Entity,
+                workspace_session::Column::MachineId,
+            ))
+            .eq(machine_id),
+        )
+        .to_owned()
 }

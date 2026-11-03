@@ -10,7 +10,15 @@ pub use analytics::{BillingAnalyticsDelivery, BillingAnalyticsEvent};
 pub use payments::{CheckoutAttempt, PaymentEvent, SubscriptionProjection};
 pub use period::period_at;
 
-use crate::{ControlStore, Error, Result, now_ms, one, resource_id, sql, timestamp};
+use crate::entities::{
+    cp_billing_profiles as profiles, cp_machine_registrations as registrations,
+    cp_members as members, cp_peers as peers, cp_site_admins as admins, cp_site_audit as audit,
+    cp_teams as teams, cp_turn_collector as collector,
+};
+use crate::{ControlStore, Error, Result, now_ms, one_query, resource_id, timestamp};
+use sea_orm::sea_query::{
+    Asterisk, Cond, Expr, ExprTrait, Func, LockType, OnConflict, Query, SelectStatement,
+};
 use sea_orm::{ConnectionTrait, QueryResult, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -152,25 +160,75 @@ pub(crate) async fn effective_plan(
         return Ok(Plan::SelfHosted);
     }
     let row = db
-        .query_one_raw(sql(
-            "SELECT * FROM cp_billing_profiles WHERE team_id=$1",
-            vec![team.into()],
-        ))
+        .query_one(
+            Query::select()
+                .column(Asterisk)
+                .from(profiles::Entity)
+                .and_where(Expr::col(profiles::Column::TeamId).eq(team)),
+        )
         .await?;
     row.map(profile)
         .transpose()
         .map(|value| value.map_or(Plan::Free, |p| p.effective_plan(true, at)))
 }
 
+fn usage_query(team: Expr, start: Expr, end: Expr) -> SelectStatement {
+    Query::select()
+        .expr_as(
+            admissions::active_admissions(team.clone())
+                .expr(Expr::col(Asterisk).count())
+                .and_where(Expr::col((registrations::Entity, registrations::Column::Revoked)).not())
+                .to_owned(),
+            "sessions",
+        )
+        .expr_as(
+            Query::select()
+                .expr(Expr::col(Asterisk).count())
+                .from(members::Entity)
+                .and_where(Expr::col(members::Column::TeamId).eq(team.clone()))
+                .to_owned(),
+            "members",
+        )
+        .expr_as(
+            Func::cust("cp_turn_sent_bytes")
+                .args([team, start, end])
+                .cast_as("text"),
+            "bytes",
+        )
+        .to_owned()
+}
+
 impl ControlStore {
     pub async fn billing_profile(&self, team_id: &str) -> Result<BillingProfile> {
         let team = resource_id(team_id)?;
-        self.db.execute_raw(sql("INSERT INTO cp_billing_profiles(team_id,period_anchor) SELECT id,$2 FROM cp_teams WHERE id=$1 ON CONFLICT(team_id) DO NOTHING", vec![team.into(), now_ms().into()])).await?;
+        self.db
+            .execute(
+                Query::insert()
+                    .into_table(profiles::Entity)
+                    .columns([profiles::Column::TeamId, profiles::Column::PeriodAnchor])
+                    .select_from(
+                        Query::select()
+                            .column(teams::Column::Id)
+                            .expr(Expr::val(now_ms()))
+                            .from(teams::Entity)
+                            .and_where(Expr::col(teams::Column::Id).eq(team))
+                            .to_owned(),
+                    )
+                    .expect("two selected billing profile columns")
+                    .on_conflict(
+                        OnConflict::column(profiles::Column::TeamId)
+                            .do_nothing()
+                            .to_owned(),
+                    ),
+            )
+            .await?;
         profile(
-            one(
+            one_query(
                 &self.db,
-                "SELECT * FROM cp_billing_profiles WHERE team_id=$1",
-                vec![team.into()],
+                Query::select()
+                    .column(Asterisk)
+                    .from(profiles::Entity)
+                    .and_where(Expr::col(profiles::Column::TeamId).eq(team)),
             )
             .await?,
         )
@@ -192,9 +250,15 @@ impl ControlStore {
         let p = self.billing_profile(team_id).await?;
         let now = now_ms();
         let (start, end) = period_at(p.period_anchor, now);
-        let row = one(&self.db,
-            "SELECT (SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machine_registrations m ON m.id=a.registration_id WHERE a.team_id=$1 AND a.status<>'released' AND NOT m.revoked) AS sessions, (SELECT COUNT(*) FROM cp_members WHERE team_id=$1) AS members, cp_turn_sent_bytes($1,$2,$3)::text AS bytes",
-            vec![resource_id(team_id)?.into(), start.into(), end.into()]).await?;
+        let row = one_query(
+            &self.db,
+            &usage_query(
+                Expr::val(resource_id(team_id)?),
+                Expr::val(start),
+                Expr::val(end),
+            ),
+        )
+        .await?;
         let meter =
             crate::cloudflare_turn::metering(&self.db, Some(resource_id(team_id)?), now).await?;
         summary_value(p, &row, &meter, self.hosted, now)
@@ -219,15 +283,18 @@ impl ControlStore {
         if !meter.try_get::<bool>("", "fresh")? {
             return Ok(Some(RelayDeniedReason::MeteringUnavailable));
         }
-        let allowed: bool = one(
+        let allowed: bool = one_query(
             &self.db,
-            "SELECT cp_turn_sent_bytes($1,$2,$3)<$4::bigint AS allowed",
-            vec![
-                resource_id(team_id)?.into(),
-                start.into(),
-                end.into(),
-                limit.into(),
-            ],
+            Query::select().expr_as(
+                Func::cust("cp_turn_sent_bytes")
+                    .args([
+                        Expr::val(resource_id(team_id)?),
+                        Expr::val(start),
+                        Expr::val(end),
+                    ])
+                    .lt(limit),
+                "allowed",
+            ),
         )
         .await?
         .try_get("", "allowed")?;
@@ -236,18 +303,22 @@ impl ControlStore {
 
     pub async fn save_peer_relay_decision(&self, peer_id: &str, allowed: bool) -> Result<()> {
         self.db
-            .execute_raw(sql(
-                "UPDATE cp_peers SET relay_allowed=$2 WHERE id=$1",
-                vec![peer_id.into(), allowed.into()],
-            ))
+            .execute(
+                Query::update()
+                    .table(peers::Entity)
+                    .value(peers::Column::RelayAllowed, allowed)
+                    .and_where(Expr::col(peers::Column::Id).eq(peer_id)),
+            )
             .await?;
         Ok(())
     }
     pub async fn peer_relay_decision(&self, peer_id: &str) -> Result<bool> {
-        Ok(one(
+        Ok(one_query(
             &self.db,
-            "SELECT relay_allowed FROM cp_peers WHERE id=$1",
-            vec![peer_id.into()],
+            Query::select()
+                .column(peers::Column::RelayAllowed)
+                .from(peers::Entity)
+                .and_where(Expr::col(peers::Column::Id).eq(peer_id)),
         )
         .await?
         .try_get("", "relay_allowed")?)
@@ -261,37 +332,79 @@ impl ControlStore {
         }
         let tx = self.db.begin().await?;
         if tx
-            .query_one_raw(sql(
-                "SELECT user_id FROM cp_site_admins WHERE user_id=$1 FOR SHARE",
-                vec![actor.into()],
-            ))
+            .query_one(
+                Query::select()
+                    .column(admins::Column::UserId)
+                    .from(admins::Entity)
+                    .and_where(Expr::col(admins::Column::UserId).eq(actor))
+                    .lock(LockType::Share),
+            )
             .await?
             .is_none()
         {
             return Err(Error::Forbidden);
         }
         let team = resource_id(team_id)?;
-        one(
+        one_query(
             &tx,
-            "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
-            vec![team.into()],
+            Query::select()
+                .column(teams::Column::Id)
+                .from(teams::Entity)
+                .and_where(Expr::col(teams::Column::Id).eq(team))
+                .lock(LockType::Update),
         )
         .await?;
-        tx.execute_raw(sql("INSERT INTO cp_billing_profiles(team_id,period_anchor) VALUES($1,$2) ON CONFLICT(team_id) DO NOTHING",vec![team.into(),now_ms().into()])).await?;
-        let before: bool = one(
+        tx.execute(
+            Query::insert()
+                .into_table(profiles::Entity)
+                .columns([profiles::Column::TeamId, profiles::Column::PeriodAnchor])
+                .values_panic([team.into(), now_ms().into()])
+                .on_conflict(
+                    OnConflict::column(profiles::Column::TeamId)
+                        .do_nothing()
+                        .to_owned(),
+                ),
+        )
+        .await?;
+        let before: bool = one_query(
             &tx,
-            "SELECT enterprise FROM cp_billing_profiles WHERE team_id=$1 FOR UPDATE",
-            vec![team.into()],
+            Query::select()
+                .column(profiles::Column::Enterprise)
+                .from(profiles::Entity)
+                .and_where(Expr::col(profiles::Column::TeamId).eq(team))
+                .lock(LockType::Update),
         )
         .await?
         .try_get("", "enterprise")?;
         if before != enabled {
-            tx.execute_raw(sql(
-                "UPDATE cp_billing_profiles SET enterprise=$2 WHERE team_id=$1",
-                vec![team.into(), enabled.into()],
-            ))
+            tx.execute(
+                Query::update()
+                    .table(profiles::Entity)
+                    .value(profiles::Column::Enterprise, enabled)
+                    .and_where(Expr::col(profiles::Column::TeamId).eq(team)),
+            )
             .await?;
-            tx.execute_raw(sql("INSERT INTO cp_site_audit(actor_user_id,source,action,before_value,after_value,occurred_at) VALUES($1,'user','enterprise.update',$2,$3,$4)",vec![actor.into(),json!({"teamId":team_id,"enterprise":before}).into(),json!({"teamId":team_id,"enterprise":enabled}).into(),now_ms().into()])).await?;
+            tx.execute(
+                Query::insert()
+                    .into_table(audit::Entity)
+                    .columns([
+                        audit::Column::ActorUserId,
+                        audit::Column::Source,
+                        audit::Column::Action,
+                        audit::Column::BeforeValue,
+                        audit::Column::AfterValue,
+                        audit::Column::OccurredAt,
+                    ])
+                    .values_panic([
+                        actor.into(),
+                        "user".into(),
+                        "enterprise.update".into(),
+                        json!({"teamId":team_id,"enterprise":before}).into(),
+                        json!({"teamId":team_id,"enterprise":enabled}).into(),
+                        now_ms().into(),
+                    ]),
+            )
+            .await?;
         }
         tx.commit().await?;
         Ok(())
@@ -300,15 +413,76 @@ impl ControlStore {
     /// Claim ownership before connecting; a lease alone is not evidence of healthy collection.
     pub async fn claim_turn_collector(&self, owner: &str) -> Result<bool> {
         let now = now_ms();
-        Ok(self.db.execute_raw(sql("UPDATE cp_turn_collector SET gap_since=CASE WHEN owner IS NOT NULL AND (lease_until IS NULL OR lease_until<$2) THEN COALESCE(gap_since,last_seen_at,$2) ELSE gap_since END,owner=$1,lease_until=$2+45000 WHERE singleton AND (owner=$1 OR lease_until IS NULL OR lease_until<$2)",vec![owner.into(),now.into()])).await?.rows_affected()==1)
+        Ok(self
+            .db
+            .execute(
+                Query::update()
+                    .table(collector::Entity)
+                    .value(
+                        collector::Column::GapSince,
+                        Expr::case(
+                            Cond::all()
+                                .add(Expr::col(collector::Column::Owner).is_not_null())
+                                .add(
+                                    Cond::any()
+                                        .add(Expr::col(collector::Column::LeaseUntil).is_null())
+                                        .add(Expr::col(collector::Column::LeaseUntil).lt(now)),
+                                ),
+                            Func::coalesce([
+                                Expr::col(collector::Column::GapSince),
+                                Expr::col(collector::Column::LastSeenAt),
+                                Expr::val(now),
+                            ]),
+                        )
+                        .finally(Expr::col(collector::Column::GapSince)),
+                    )
+                    .value(collector::Column::Owner, owner)
+                    .value(collector::Column::LeaseUntil, now + 45_000)
+                    .and_where(Expr::col(collector::Column::Singleton))
+                    .cond_where(
+                        Cond::any()
+                            .add(Expr::col(collector::Column::Owner).eq(owner))
+                            .add(Expr::col(collector::Column::LeaseUntil).is_null())
+                            .add(Expr::col(collector::Column::LeaseUntil).lt(now)),
+                    ),
+            )
+            .await?
+            .rows_affected()
+            == 1)
     }
     /// Renew freshness only after a successful ping on the subscribed Redis connection.
     pub async fn heartbeat_turn_collector(&self, owner: &str) -> Result<bool> {
         let now = now_ms();
-        Ok(self.db.execute_raw(sql("UPDATE cp_turn_collector SET lease_until=$2+45000,last_seen_at=$2 WHERE singleton AND owner=$1 AND lease_until>$2",vec![owner.into(),now.into()])).await?.rows_affected()==1)
+        Ok(self
+            .db
+            .execute(
+                Query::update()
+                    .table(collector::Entity)
+                    .value(collector::Column::LeaseUntil, now + 45_000)
+                    .value(collector::Column::LastSeenAt, now)
+                    .and_where(Expr::col(collector::Column::Singleton))
+                    .and_where(Expr::col(collector::Column::Owner).eq(owner))
+                    .and_where(Expr::col(collector::Column::LeaseUntil).gt(now)),
+            )
+            .await?
+            .rows_affected()
+            == 1)
     }
     pub async fn turn_collector_gap(&self, owner: &str) -> Result<()> {
-        self.db.execute_raw(sql("UPDATE cp_turn_collector SET gap_since=COALESCE(gap_since,$2),lease_until=$2 WHERE singleton AND owner=$1",vec![owner.into(),now_ms().into()])).await?;
+        let now = now_ms();
+        self.db
+            .execute(
+                Query::update()
+                    .table(collector::Entity)
+                    .value(
+                        collector::Column::GapSince,
+                        Func::coalesce([Expr::col(collector::Column::GapSince), Expr::val(now)]),
+                    )
+                    .value(collector::Column::LeaseUntil, now)
+                    .and_where(Expr::col(collector::Column::Singleton))
+                    .and_where(Expr::col(collector::Column::Owner).eq(owner)),
+            )
+            .await?;
         Ok(())
     }
 }

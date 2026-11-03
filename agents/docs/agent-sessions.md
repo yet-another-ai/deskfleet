@@ -445,7 +445,7 @@ already removed. Failed operations require a new operation ID to attempt again.
 
 The local SQLite catalog is the authoritative Agent database. PostgreSQL stores
 queryable replicas of its snapshots, events, and command audit. `deskfleet-store` owns
-SeaORM transactions, `deskfleet-model` owns typed records, and `deskfleet-node`
+SeaORM entities and transactions, `deskfleet-model` owns typed records, and `deskfleet-node`
 exposes thin JSON bindings. The daemon owns scheduling, Git orchestration, and
 ACP callbacks. Records preserve ACP payloads as JSON; indexed columns enforce
 ownership, lookup, and active-resource constraints.

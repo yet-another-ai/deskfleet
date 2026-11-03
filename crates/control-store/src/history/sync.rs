@@ -1,7 +1,14 @@
 use std::collections::BTreeMap;
 
-use crate::{ControlStore, Error, Result, now_ms, one, resource_id, sql};
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use crate::entities::{cp_commands as commands, cp_events as events, cp_sessions as sessions};
+use crate::{ControlStore, Error, Result, now_ms, one_query, resource_id};
+use sea_orm::{
+    ConnectionTrait, EntityTrait, Set, TransactionTrait,
+    sea_query::{
+        Alias, BinOper, Cond, Expr, ExprTrait, Func, IntoIden, JoinType, OnConflict, Query,
+        TableRef, extension::postgres::PgExpr,
+    },
+};
 use serde_json::{Value, json};
 
 use super::event_storage;
@@ -71,12 +78,35 @@ impl ControlStore {
         let machine = resource_id(machine_id)?;
         let tx = self.db.begin().await?;
         if let Some(snapshot) = &snapshot {
-            tx.execute_raw(sql(
-                "INSERT INTO cp_sessions(registration_id,session_id,snapshot,snapshot_seq,observed_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(registration_id,session_id) DO NOTHING",
-                vec![machine.into(),session_id.into(),snapshot.clone().into(),bound.into(),now_ms().into()],
-            )).await?;
+            sessions::Entity::insert(sessions::ActiveModel {
+                registration_id: Set(machine),
+                session_id: Set(session_id.to_owned()),
+                snapshot: Set(snapshot.clone()),
+                snapshot_seq: Set(bound),
+                observed_at: Set(now_ms()),
+                ..Default::default()
+            })
+            .on_conflict(
+                OnConflict::columns([
+                    sessions::Column::RegistrationId,
+                    sessions::Column::SessionId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec_without_returning(&tx)
+            .await?;
         }
-        let row = one(&tx, "SELECT event_seq,snapshot_seq FROM cp_sessions WHERE registration_id=$1 AND session_id=$2 FOR UPDATE", vec![machine.into(),session_id.into()]).await?;
+        let row = one_query(
+            &tx,
+            Query::select()
+                .columns([sessions::Column::EventSeq, sessions::Column::SnapshotSeq])
+                .from(sessions::Entity)
+                .and_where(Expr::col(sessions::Column::RegistrationId).eq(machine))
+                .and_where(Expr::col(sessions::Column::SessionId).eq(session_id))
+                .lock_exclusive(),
+        )
+        .await?;
         let mut watermark = row.try_get::<i64>("", "event_seq")?;
         let current_snapshot_seq = row.try_get::<i64>("", "snapshot_seq")?;
         if snapshot.is_none() && current_snapshot_seq < bound {
@@ -85,11 +115,41 @@ impl ControlStore {
         let mut previous = BTreeMap::new();
         if !events.is_empty() {
             // Look up by sequence so unencoded event strings never enter JSONB.
-            for row in tx.query_all_raw(sql(
-                "SELECT e.seq,COALESCE(e.record_original,e.record::text) AS record FROM cp_events e JOIN jsonb_array_elements_text($3::jsonb) AS incoming(seq) ON e.seq=incoming.seq::bigint WHERE e.registration_id=$1 AND e.session_id=$2",
-                vec![machine.into(),session_id.into(),json!(event_sequences).into()],
-            )).await? {
-                previous.insert(row.try_get::<i64>("", "seq")?, serde_json::from_str::<Value>(&row.try_get::<String>("", "record")?)?);
+            for row in tx
+                .query_all(
+                    Query::select()
+                        .column((events::Entity, events::Column::Seq))
+                        .expr_as(
+                            Func::coalesce([
+                                Expr::col((events::Entity, events::Column::RecordOriginal)),
+                                Expr::col((events::Entity, events::Column::Record)).cast_as("text"),
+                            ]),
+                            Alias::new("record"),
+                        )
+                        .from(events::Entity)
+                        .join(
+                            JoinType::InnerJoin,
+                            TableRef::FunctionCall(
+                                Func::cust("jsonb_array_elements_text")
+                                    .arg(Expr::val(json!(event_sequences)).cast_as("jsonb")),
+                                "incoming".into_iden(),
+                            ),
+                            Expr::col((events::Entity, events::Column::Seq))
+                                .eq(Expr::col(Alias::new("incoming")).cast_as("bigint")),
+                        )
+                        .and_where(
+                            Expr::col((events::Entity, events::Column::RegistrationId)).eq(machine),
+                        )
+                        .and_where(
+                            Expr::col((events::Entity, events::Column::SessionId)).eq(session_id),
+                        ),
+                )
+                .await?
+            {
+                previous.insert(
+                    row.try_get::<i64>("", "seq")?,
+                    serde_json::from_str::<Value>(&row.try_get::<String>("", "record")?)?,
+                );
             }
         }
         let mut insertions = Vec::new();
@@ -112,10 +172,43 @@ impl ControlStore {
         let terminal_seq = crate::search::terminal_sequence(&insertions);
         if !insertions.is_empty() {
             let stored: Vec<Value> = insertions.into_iter().map(event_storage::encode).collect();
-            tx.execute_raw(sql(
-                "INSERT INTO cp_events(registration_id,session_id,seq,record,record_original) SELECT $1,$2,(event->'record'->>'seq')::bigint,event->'record',event->>'original' FROM jsonb_array_elements($3::jsonb) event",
-                vec![machine.into(),session_id.into(),Value::Array(stored).into()],
-            )).await?;
+            let event = Expr::col(Alias::new("event"));
+            let records = Query::select()
+                .expr(Expr::val(machine))
+                .expr(Expr::val(session_id))
+                .expr(
+                    event
+                        .clone()
+                        .get_json_field(Expr::Constant("record".into()))
+                        .cast_json_field(Expr::Constant("seq".into()))
+                        .cast_as("bigint"),
+                )
+                .expr(
+                    event
+                        .clone()
+                        .get_json_field(Expr::Constant("record".into())),
+                )
+                .expr(event.cast_json_field(Expr::Constant("original".into())))
+                .from_function(
+                    Func::cust("jsonb_array_elements")
+                        .arg(Expr::val(Value::Array(stored)).cast_as("jsonb")),
+                    Alias::new("event"),
+                )
+                .to_owned();
+            tx.execute(
+                Query::insert()
+                    .into_table(events::Entity)
+                    .columns([
+                        events::Column::RegistrationId,
+                        events::Column::SessionId,
+                        events::Column::Seq,
+                        events::Column::Record,
+                        events::Column::RecordOriginal,
+                    ])
+                    .select_from(records)
+                    .expect("event projection matches insert columns"),
+            )
+            .await?;
         }
         if bound >= current_snapshot_seq && !commands.is_empty() {
             let mut unique = BTreeMap::new();
@@ -132,10 +225,44 @@ impl ControlStore {
                 }
                 unique.insert(id.to_owned(), command);
             }
-            tx.execute_raw(sql(
-                "INSERT INTO cp_commands(registration_id,command_id,record) SELECT $1,record->>'id',record FROM jsonb_array_elements($2::jsonb) record ON CONFLICT(registration_id,command_id) DO UPDATE SET record=excluded.record WHERE cp_commands.record IS DISTINCT FROM excluded.record",
-                vec![machine.into(),Value::Array(unique.into_values().collect()).into()],
-            )).await?;
+            let record = Expr::col(Alias::new("record"));
+            let records = Query::select()
+                .expr(Expr::val(machine))
+                .expr(record.clone().cast_json_field(Expr::Constant("id".into())))
+                .expr(record)
+                .from_function(
+                    Func::cust("jsonb_array_elements").arg(
+                        Expr::val(Value::Array(unique.into_values().collect())).cast_as("jsonb"),
+                    ),
+                    Alias::new("record"),
+                )
+                .to_owned();
+            tx.execute(
+                Query::insert()
+                    .into_table(commands::Entity)
+                    .columns([
+                        commands::Column::RegistrationId,
+                        commands::Column::CommandId,
+                        commands::Column::Record,
+                    ])
+                    .select_from(records)
+                    .expect("command projection matches insert columns")
+                    .on_conflict(
+                        OnConflict::columns([
+                            commands::Column::RegistrationId,
+                            commands::Column::CommandId,
+                        ])
+                        .update_column(commands::Column::Record)
+                        .action_and_where(
+                            Expr::col((commands::Entity, commands::Column::Record)).binary(
+                                BinOper::Custom("IS DISTINCT FROM"),
+                                Expr::col((Alias::new("excluded"), commands::Column::Record)),
+                            ),
+                        )
+                        .to_owned(),
+                    ),
+            )
+            .await?;
         }
         crate::search::project_history(
             &tx,
@@ -147,15 +274,38 @@ impl ControlStore {
         )
         .await?;
         if let Some(snapshot) = snapshot.filter(|_| bound >= current_snapshot_seq) {
-            tx.execute_raw(sql(
-                "UPDATE cp_sessions SET snapshot=$1,snapshot_seq=$2,event_seq=$3,observed_at=$4 WHERE registration_id=$5 AND session_id=$6 AND (snapshot IS DISTINCT FROM $1 OR event_seq<>$3)",
-                vec![snapshot.into(),bound.into(),watermark.into(),now_ms().into(),machine.into(),session_id.into()],
-            )).await?;
+            tx.execute(
+                Query::update()
+                    .table(sessions::Entity)
+                    .value(sessions::Column::Snapshot, snapshot.clone())
+                    .value(sessions::Column::SnapshotSeq, bound)
+                    .value(sessions::Column::EventSeq, watermark)
+                    .value(sessions::Column::ObservedAt, now_ms())
+                    .and_where(Expr::col(sessions::Column::RegistrationId).eq(machine))
+                    .and_where(Expr::col(sessions::Column::SessionId).eq(session_id))
+                    .cond_where(
+                        Cond::any()
+                            .add(
+                                Expr::col(sessions::Column::Snapshot).binary(
+                                    BinOper::Custom("IS DISTINCT FROM"),
+                                    Expr::val(snapshot),
+                                ),
+                            )
+                            .add(Expr::col(sessions::Column::EventSeq).ne(watermark)),
+                    ),
+            )
+            .await?;
         } else {
-            tx.execute_raw(sql(
-                "UPDATE cp_sessions SET event_seq=$1,observed_at=$2 WHERE registration_id=$3 AND session_id=$4 AND event_seq<>$1",
-                vec![watermark.into(),now_ms().into(),machine.into(),session_id.into()],
-            )).await?;
+            tx.execute(
+                Query::update()
+                    .table(sessions::Entity)
+                    .value(sessions::Column::EventSeq, watermark)
+                    .value(sessions::Column::ObservedAt, now_ms())
+                    .and_where(Expr::col(sessions::Column::RegistrationId).eq(machine))
+                    .and_where(Expr::col(sessions::Column::SessionId).eq(session_id))
+                    .and_where(Expr::col(sessions::Column::EventSeq).ne(watermark)),
+            )
+            .await?;
         }
         tx.commit().await?;
         Ok(watermark.to_string())

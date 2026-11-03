@@ -1,3 +1,6 @@
+// SQLite cannot alter these existing foreign-key/nullability constraints in place.
+// This fixed migration rebuilds the tables and copies their rows with foreign keys
+// temporarily disabled; its SQL is schema-transition code, not runtime persistence.
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

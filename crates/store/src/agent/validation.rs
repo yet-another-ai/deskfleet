@@ -1,8 +1,13 @@
 use deskfleet_model::{AgentSessionId, agent::*};
-use sea_orm::ConnectionTrait;
+use sea_orm::{ConnectionTrait, EntityTrait, QuerySelect, QueryTrait};
 
-use super::sql::{generation, positive, record};
-use crate::StoreError;
+use super::queries::{generation, positive, record};
+use crate::{
+    StoreError,
+    entities::{
+        agent_command, agent_elicitation, agent_input, agent_permission, agent_run, agent_turn,
+    },
+};
 
 pub(super) fn same_session(
     expected: AgentSessionId,
@@ -26,8 +31,10 @@ pub(super) async fn command(
     }
     if let Some(previous) = record::<AgentCommand>(
         db,
-        "SELECT record_json FROM agent_commands WHERE id = ?",
-        vec![value.id.as_i64().into()],
+        agent_command::Entity::find_by_id(value.id.as_i64())
+            .select_only()
+            .column(agent_command::Column::RecordJson)
+            .into_query(),
     )
     .await?
         && (previous.operation_id != value.operation_id
@@ -50,11 +57,10 @@ pub(super) async fn command(
 pub(super) async fn run(db: &impl ConnectionTrait, value: &AgentRun) -> Result<(), StoreError> {
     let previous: Option<AgentRun> = record(
         db,
-        "SELECT record_json FROM agent_runs WHERE session_id = ? AND generation = ?",
-        vec![
-            value.session_id.as_i64().into(),
-            generation(value.generation)?.into(),
-        ],
+        agent_run::Entity::find_by_id((value.session_id.as_i64(), generation(value.generation)?))
+            .select_only()
+            .column(agent_run::Column::RecordJson)
+            .into_query(),
     )
     .await?;
     if previous.is_some_and(|old| old.started_at != value.started_at) {
@@ -68,8 +74,10 @@ pub(super) async fn input(db: &impl ConnectionTrait, value: &AgentInput) -> Resu
     positive(value.accepted_seq.as_i64())?;
     if let Some(old) = record::<AgentInput>(
         db,
-        "SELECT record_json FROM agent_inputs WHERE id = ?",
-        vec![value.id.as_i64().into()],
+        agent_input::Entity::find_by_id(value.id.as_i64())
+            .select_only()
+            .column(agent_input::Column::RecordJson)
+            .into_query(),
     )
     .await?
         && (old.session_id != value.session_id
@@ -94,8 +102,10 @@ pub(super) async fn turn(db: &impl ConnectionTrait, value: &AgentTurn) -> Result
     positive(value.id.as_i64())?;
     if let Some(old) = record::<AgentTurn>(
         db,
-        "SELECT record_json FROM agent_turns WHERE id = ?",
-        vec![value.id.as_i64().into()],
+        agent_turn::Entity::find_by_id(value.id.as_i64())
+            .select_only()
+            .column(agent_turn::Column::RecordJson)
+            .into_query(),
     )
     .await?
         && (old.session_id != value.session_id
@@ -119,8 +129,10 @@ pub(super) async fn permission(
     positive(value.id.as_i64())?;
     if let Some(old) = record::<AgentPermission>(
         db,
-        "SELECT record_json FROM agent_permissions WHERE id = ?",
-        vec![value.id.as_i64().into()],
+        agent_permission::Entity::find_by_id(value.id.as_i64())
+            .select_only()
+            .column(agent_permission::Column::RecordJson)
+            .into_query(),
     )
     .await?
     {
@@ -163,8 +175,10 @@ pub(super) async fn elicitation(
     }
     if let Some(old) = record::<AgentElicitation>(
         db,
-        "SELECT record_json FROM agent_elicitations WHERE id = ?",
-        vec![value.id.as_i64().into()],
+        agent_elicitation::Entity::find_by_id(value.id.as_i64())
+            .select_only()
+            .column(agent_elicitation::Column::RecordJson)
+            .into_query(),
     )
     .await?
     {
@@ -211,8 +225,10 @@ pub(super) async fn command_session(
 ) -> Result<(), StoreError> {
     let command = record::<AgentCommand>(
         db,
-        "SELECT record_json FROM agent_commands WHERE id = ?",
-        vec![id.into()],
+        agent_command::Entity::find_by_id(id)
+            .select_only()
+            .column(agent_command::Column::RecordJson)
+            .into_query(),
     )
     .await?
     .ok_or(StoreError::InvalidAgent("linked command does not exist"))?;
@@ -234,8 +250,10 @@ pub(super) async fn input_turns(
     {
         let turn = record::<AgentTurn>(
             db,
-            "SELECT record_json FROM agent_turns WHERE id = ?",
-            vec![id.as_i64().into()],
+            agent_turn::Entity::find_by_id(id.as_i64())
+                .select_only()
+                .column(agent_turn::Column::RecordJson)
+                .into_query(),
         )
         .await?
         .ok_or(StoreError::InvalidAgent("input references a missing turn"))?;

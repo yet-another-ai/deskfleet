@@ -508,3 +508,23 @@ async fn migration_backfills_existing_stable_history_once_and_keeps_streaming_bo
     );
     f.close().await;
 }
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn search_treats_like_metacharacters_as_literal_text() {
+    let f = Fixture::new().await;
+    for (id, title) in [("1", r"literal 100%_a\b"), ("2", "literal 100XYZab")] {
+        let mut snapshot = snapshot(id, 0, false);
+        snapshot["session"]["title"] = title.into();
+        f.store
+            .sync_history(&f.machine, id, snapshot, vec![], vec![])
+            .await
+            .unwrap();
+    }
+    for query in ["%", "_", r"\b", r"100%_a\b"] {
+        let results = f.search(query).await;
+        assert_eq!(results["results"].as_array().unwrap().len(), 1, "{query}");
+        assert_eq!(results["results"][0]["resourceId"], "1", "{query}");
+    }
+    f.close().await;
+}

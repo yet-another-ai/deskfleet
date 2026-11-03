@@ -1,6 +1,12 @@
 //! Bounded expiration of credentials that have no post-expiry consumers.
-use crate::{ControlStore, Result, now_ms, sql};
-use sea_orm::ConnectionTrait;
+use crate::entities::{
+    cp_auth_limits, cp_identity_challenges, cp_invites, cp_login_attempts, cp_login_codes, cp_peers,
+};
+use crate::{ControlStore, Result, now_ms};
+use sea_orm::sea_query::{
+    Alias, CommonTableExpression, Expr, ExprTrait, LockBehavior, LockType, Order, Query,
+};
+use sea_orm::{ConnectionTrait, EntityTrait};
 
 impl ControlStore {
     /// Remove at most `limit` expired rows from each short-lived identity table.
@@ -11,27 +17,82 @@ impl ControlStore {
     /// # Errors
     /// Returns an error when an expiration query fails.
     pub async fn prune_auth_records(&self, limit: i64) -> Result<u64> {
-        let limit = limit.clamp(1, 1_000);
+        let limit =
+            u64::try_from(limit.clamp(1, 1_000)).expect("clamped expiration limit is positive");
         let now = now_ms();
         let mut removed = 0;
-        for (table, expiry, cutoff) in [
-            ("cp_auth_limits", "period", now - 3_600_000),
-            ("cp_login_attempts", "expires_at", now),
-            ("cp_login_codes", "expires_at", now),
-            ("cp_identity_challenges", "expires_at", now),
-            ("cp_invites", "expires_at", now),
-            ("cp_peers", "expires_at", now - 86_400_000),
-        ] {
-            // Identifiers are fixed above; ctid is only used within this statement.
-            let statement = format!(
-                "WITH expired AS (SELECT ctid FROM {table} WHERE {expiry}<$1 ORDER BY {expiry} LIMIT $2 FOR UPDATE SKIP LOCKED) DELETE FROM {table} USING expired WHERE {table}.ctid=expired.ctid"
-            );
-            removed += self
-                .db
-                .execute_raw(sql(&statement, vec![cutoff.into(), limit.into()]))
-                .await?
-                .rows_affected();
-        }
+        removed += prune::<cp_auth_limits::Entity>(
+            &self.db,
+            cp_auth_limits::Column::Period,
+            now - 3_600_000,
+            limit,
+        )
+        .await?;
+        removed += prune::<cp_login_attempts::Entity>(
+            &self.db,
+            cp_login_attempts::Column::ExpiresAt,
+            now,
+            limit,
+        )
+        .await?;
+        removed += prune::<cp_login_codes::Entity>(
+            &self.db,
+            cp_login_codes::Column::ExpiresAt,
+            now,
+            limit,
+        )
+        .await?;
+        removed += prune::<cp_identity_challenges::Entity>(
+            &self.db,
+            cp_identity_challenges::Column::ExpiresAt,
+            now,
+            limit,
+        )
+        .await?;
+        removed += prune::<cp_invites::Entity>(&self.db, cp_invites::Column::ExpiresAt, now, limit)
+            .await?;
+        removed += prune::<cp_peers::Entity>(
+            &self.db,
+            cp_peers::Column::ExpiresAt,
+            now - 86_400_000,
+            limit,
+        )
+        .await?;
         Ok(removed)
     }
+}
+
+async fn prune<E: EntityTrait>(
+    db: &impl ConnectionTrait,
+    expiry: E::Column,
+    cutoff: i64,
+    limit: u64,
+) -> Result<u64> {
+    // PostgreSQL's ctid identifies the selected versions only within this statement.
+    // Keep the locked CTE, and use a subquery because SeaQuery has no DELETE USING.
+    let expired = Query::select()
+        .column(Alias::new("ctid"))
+        .from(E::default())
+        .and_where(Expr::col(expiry).lt(cutoff))
+        .order_by(expiry, Order::Asc)
+        .limit(limit)
+        .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
+        .to_owned();
+    let cte = CommonTableExpression::new()
+        .table_name(Alias::new("expired"))
+        .query(expired)
+        .to_owned();
+    let selected = Query::select()
+        .column(Alias::new("ctid"))
+        .from(Alias::new("expired"))
+        .to_owned();
+    Ok(db
+        .execute(
+            Query::delete()
+                .from_table(E::default())
+                .with_cte(cte)
+                .and_where(Expr::col(Alias::new("ctid")).in_subquery(selected)),
+        )
+        .await?
+        .rows_affected())
 }

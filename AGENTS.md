@@ -65,6 +65,13 @@ locked Node runtime can execute them directly.
 Test deskfleet's behavior at the narrowest useful boundary. Avoid duplicating
 upstream library tests. Run checks appropriate to the change.
 
+Use SeaORM entities and SeaQuery builders for runtime database access, with typed
+table and column identifiers. Do not concatenate SQL or pass string predicates
+between helpers. Preserve transaction, lock, conflict, and pagination semantics
+when changing queries. Keep any unsupported database-specific expression narrow
+and explain the exception at its use; historical static schema migrations are
+separate from runtime queries.
+
 Update the document that owns a decision. Create or accept an ADR only when a
 maintainer requests it.
 

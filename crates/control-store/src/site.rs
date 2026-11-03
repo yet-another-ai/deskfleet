@@ -1,21 +1,26 @@
 //! Installation-wide settings and explicit operator-managed administrator grants.
+use crate::entities::{
+    cp_site_admins as admins, cp_site_audit as audit, cp_site_settings as site, cp_users as users,
+};
 use crate::{
-    ControlStore, Error, Result, json_rows, name, now_ms, one,
+    ControlStore, Error, Result, name, now_ms,
     policies::{SiteAction, SitePolicy, authorize},
-    sql,
 };
 use deskfleet_protocol::control::SiteSettings;
-use sea_orm::{ConnectionTrait, QueryResult, TransactionTrait};
+use sea_orm::sea_query::{Expr, ExprTrait, JoinType, LockType, OnConflict, Order, Query};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
+};
 use serde_json::{Value, json};
 
-fn settings(row: &QueryResult) -> Result<SiteSettings> {
-    Ok(SiteSettings {
-        site_name: row.try_get("", "site_name")?,
-        announcement: row.try_get("", "announcement")?,
-        allow_team_creation: row.try_get("", "allow_team_creation")?,
-        terms_of_service_url: row.try_get("", "terms_of_service_url")?,
-        privacy_terms_url: row.try_get("", "privacy_terms_url")?,
-    })
+fn settings(row: site::Model) -> SiteSettings {
+    SiteSettings {
+        site_name: row.site_name,
+        announcement: row.announcement,
+        allow_team_creation: row.allow_team_creation,
+        terms_of_service_url: row.terms_of_service_url,
+        privacy_terms_url: row.privacy_terms_url,
+    }
 }
 
 fn terms_url(value: &str) -> Result<&str> {
@@ -42,28 +47,20 @@ fn terms_url(value: &str) -> Result<&str> {
 impl ControlStore {
     /// Look up the current grant instead of caching it in login sessions.
     pub async fn is_site_admin(&self, user_id: &str) -> Result<bool> {
-        Ok(self
-            .db
-            .query_one_raw(sql(
-                "SELECT user_id FROM cp_site_admins WHERE user_id=$1",
-                vec![user_id.into()],
-            ))
+        Ok(admins::Entity::find_by_id(user_id)
+            .one(&self.db)
             .await?
             .is_some())
     }
-
     /// Safe public settings; no credentials or deployment configuration live here.
     pub async fn site_settings(&self) -> Result<SiteSettings> {
-        settings(
-            &one(
-                &self.db,
-                "SELECT * FROM cp_site_settings WHERE singleton",
-                vec![],
-            )
-            .await?,
-        )
+        Ok(settings(
+            site::Entity::find_by_id(true)
+                .one(&self.db)
+                .await?
+                .ok_or(Error::NotFound)?,
+        ))
     }
-
     pub async fn read_site_settings(&self, user_id: &str) -> Result<SiteSettings> {
         authorize(
             &SitePolicy::new(self.is_site_admin(user_id).await?),
@@ -71,7 +68,6 @@ impl ControlStore {
         )?;
         self.site_settings().await
     }
-
     /// Replace all runtime settings and record their previous and new values.
     pub async fn update_site_settings(
         &self,
@@ -81,11 +77,9 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         // A concurrent revocation waits for this write, or finishes first and
         // denies it. The grant remains valid until the settings commit.
-        let is_admin = tx
-            .query_one_raw(sql(
-                "SELECT user_id FROM cp_site_admins WHERE user_id=$1 FOR SHARE",
-                vec![user_id.into()],
-            ))
+        let is_admin = admins::Entity::find_by_id(user_id)
+            .lock_shared()
+            .one(&tx)
             .await?
             .is_some();
         authorize(&SitePolicy::new(is_admin), SiteAction::UpdateSettings)?;
@@ -98,13 +92,12 @@ impl ControlStore {
             ));
         }
         let before = settings(
-            &one(
-                &tx,
-                "SELECT * FROM cp_site_settings WHERE singleton FOR UPDATE",
-                vec![],
-            )
-            .await?,
-        )?;
+            site::Entity::find_by_id(true)
+                .lock_exclusive()
+                .one(&tx)
+                .await?
+                .ok_or(Error::NotFound)?,
+        );
         let after = SiteSettings {
             site_name: site_name.into(),
             announcement: input.announcement.clone(),
@@ -112,78 +105,101 @@ impl ControlStore {
             terms_of_service_url: terms_of_service_url.into(),
             privacy_terms_url: privacy_terms_url.into(),
         };
-        tx.execute_raw(sql(
-            "UPDATE cp_site_settings SET site_name=$1, announcement=$2, allow_team_creation=$3, terms_of_service_url=$4, privacy_terms_url=$5 WHERE singleton",
-            vec![site_name.into(), input.announcement.clone().into(), input.allow_team_creation.into(), terms_of_service_url.into(), privacy_terms_url.into()],
-        ))
-        .await?;
-        tx.execute_raw(sql(
-            "INSERT INTO cp_site_audit(actor_user_id, source, action, before_value, after_value, occurred_at) VALUES($1, 'user', 'settings.update', $2, $3, $4)",
-            vec![user_id.into(), json!(before).into(), json!(after).into(), now_ms().into()],
-        ))
+        site::Entity::update_many()
+            .col_expr(site::Column::SiteName, Expr::val(site_name))
+            .col_expr(
+                site::Column::Announcement,
+                Expr::val(input.announcement.clone()),
+            )
+            .col_expr(
+                site::Column::AllowTeamCreation,
+                Expr::val(input.allow_team_creation),
+            )
+            .col_expr(
+                site::Column::TermsOfServiceUrl,
+                Expr::val(terms_of_service_url),
+            )
+            .col_expr(site::Column::PrivacyTermsUrl, Expr::val(privacy_terms_url))
+            .filter(site::Column::Singleton.eq(true))
+            .exec(&tx)
+            .await?;
+        audit::Entity::insert(audit::ActiveModel {
+            actor_user_id: Set(Some(user_id.into())),
+            source: Set("user".into()),
+            action: Set("settings.update".into()),
+            before_value: Set(json!(before)),
+            after_value: Set(json!(after)),
+            occurred_at: Set(now_ms()),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
         .await?;
         tx.commit().await?;
         Ok(after)
     }
-
     /// Operator-only listing for the server CLI, not an authenticated API.
     pub async fn site_admins(&self) -> Result<Vec<Value>> {
-        json_rows(
-            &self.db,
-            "SELECT jsonb_build_object('userId', u.id, 'name', u.name, 'email', u.email, 'grantedAt', a.granted_at, 'source', a.source) AS record FROM cp_site_admins a JOIN cp_users u ON u.id=a.user_id ORDER BY a.granted_at, a.user_id",
-            vec![],
-        )
-        .await
+        self.db.query_all(Query::select().columns([(users::Entity, users::Column::Id), (users::Entity, users::Column::Name), (users::Entity, users::Column::Email)])
+            .columns([(admins::Entity, admins::Column::GrantedAt), (admins::Entity, admins::Column::Source)])
+            .from(admins::Entity).join(JoinType::InnerJoin, users::Entity,
+                Expr::col((users::Entity, users::Column::Id)).eq(Expr::col((admins::Entity, admins::Column::UserId))))
+            .order_by((admins::Entity, admins::Column::GrantedAt), Order::Asc).order_by((admins::Entity, admins::Column::UserId), Order::Asc))
+            .await?.into_iter().map(|row| Ok(json!({"userId":row.try_get::<String>("","id")?,"name":row.try_get::<String>("","name")?,
+                "email":row.try_get::<String>("","email")?,"grantedAt":row.try_get::<i64>("","granted_at")?,"source":row.try_get::<String>("","source")?}))).collect()
     }
-
     /// Grant a known identity through the local operations CLI.
     /// Returns whether the grant changed; repeated grants do not add audit events.
     pub async fn grant_site_admin(&self, user_id: &str) -> Result<bool> {
         self.set_site_admin(user_id, true).await
     }
-
     /// Revoke through the local operations CLI, including the final administrator.
     /// Operators can recover by granting another already authenticated identity.
     pub async fn revoke_site_admin(&self, user_id: &str) -> Result<bool> {
         self.set_site_admin(user_id, false).await
     }
-
     async fn set_site_admin(&self, user_id: &str, grant: bool) -> Result<bool> {
         let tx = self.db.begin().await?;
-        one(
-            &tx,
-            // Serialize operator changes while permitting audit foreign keys
-            // to acquire KEY SHARE during an in-flight settings update.
-            "SELECT id FROM cp_users WHERE id=$1 FOR NO KEY UPDATE",
-            vec![user_id.into()],
-        )
-        .await?;
+        // Serialize operator changes while permitting audit foreign keys
+        // to acquire KEY SHARE during an in-flight settings update.
+        users::Entity::find_by_id(user_id)
+            .lock(LockType::NoKeyUpdate)
+            .select_only()
+            .column(users::Column::Id)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
         let changed = if grant {
-            tx.execute_raw(sql(
-                "INSERT INTO cp_site_admins(user_id, granted_at, source) VALUES($1, $2, 'cli') ON CONFLICT(user_id) DO NOTHING",
-                vec![user_id.into(), now_ms().into()],
-            ))
+            admins::Entity::insert(admins::ActiveModel {
+                user_id: Set(user_id.into()),
+                granted_at: Set(now_ms()),
+                source: Set("cli".into()),
+                ..Default::default()
+            })
+            .on_conflict(
+                OnConflict::column(admins::Column::UserId)
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .exec_without_returning(&tx)
             .await?
         } else {
-            tx.execute_raw(sql(
-                "DELETE FROM cp_site_admins WHERE user_id=$1",
-                vec![user_id.into()],
-            ))
-            .await?
-        }
-        .rows_affected()
-            > 0;
+            admins::Entity::delete_by_id(user_id)
+                .exec(&tx)
+                .await?
+                .rows_affected
+        } > 0;
         if changed {
-            tx.execute_raw(sql(
-                "INSERT INTO cp_site_audit(source, action, target_user_id, before_value, after_value, occurred_at) VALUES('cli', $1, $2, $3, $4, $5)",
-                vec![
-                    (if grant { "admin.grant" } else { "admin.revoke" }).into(),
-                    user_id.into(),
-                    json!({"siteAdmin": !grant}).into(),
-                    json!({"siteAdmin": grant}).into(),
-                    now_ms().into(),
-                ],
-            ))
+            audit::Entity::insert(audit::ActiveModel {
+                source: Set("cli".into()),
+                action: Set(if grant { "admin.grant" } else { "admin.revoke" }.into()),
+                target_user_id: Set(Some(user_id.into())),
+                before_value: Set(json!({"siteAdmin":!grant})),
+                after_value: Set(json!({"siteAdmin":grant})),
+                occurred_at: Set(now_ms()),
+                ..Default::default()
+            })
+            .exec_without_returning(&tx)
             .await?;
         }
         tx.commit().await?;

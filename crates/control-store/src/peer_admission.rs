@@ -1,15 +1,22 @@
 //! Quota locks serialize admission across replicas, independently of authorization locks.
-use crate::{Error, Result, now_ms, one, sql};
+use crate::entities::cp_peers as peers;
+use crate::{Error, Result, now_ms, one_query};
 use deskfleet_protocol::control::PeerAuthorization;
+use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::sea_query::{Alias, Expr, ExprTrait, Func, Query};
 use sea_orm::{ConnectionTrait, DatabaseTransaction};
 
 pub(crate) async fn lock(tx: &DatabaseTransaction, user: &str, team: i64) -> Result<()> {
     // Always user then Team. The Team lock also serializes registration quotas.
     for key in [format!("peer-user:{user}"), format!("peer-team:{team}")] {
-        tx.execute_raw(sql(
-            "SELECT pg_advisory_xact_lock(hashtextextended($1,761946022))",
-            vec![key.into()],
-        ))
+        tx.execute(
+            Query::select().expr(
+                Func::cust(Alias::new("pg_advisory_xact_lock")).arg(
+                    Func::cust(Alias::new("hashtextextended"))
+                        .args([Expr::val(key), Expr::val(761946022_i64)]),
+                ),
+            ),
+        )
         .await?;
     }
     Ok(())
@@ -23,22 +30,49 @@ pub(crate) async fn reserve(
     registration: i64,
 ) -> Result<()> {
     lock(tx, &auth.actor.user_id, team).await?;
-    let row = one(
+    let row = one_query(
         tx,
-        "SELECT count(*) FILTER (WHERE user_id=$1) AS per_user,
-         count(*) FILTER (WHERE login_session_id=$2) AS per_login,
-         count(*) FILTER (WHERE team_id=$3) AS per_team,
-         count(*) FILTER (WHERE registration_id=$4) AS per_registration,
-         count(*) FILTER (WHERE registration_id=$4 AND grant_json->>'purpose'=$6) AS per_purpose
-         FROM cp_peers WHERE NOT revoked AND expires_at>$5 AND (user_id=$1 OR team_id=$3)",
-        vec![
-            auth.actor.user_id.clone().into(),
-            login.into(),
-            team.into(),
-            registration.into(),
-            now_ms().into(),
-            auth.purpose.clone().into(),
-        ],
+        Query::select()
+            .from(peers::Entity)
+            .expr_as(
+                Func::count(Expr::col(sea_orm::sea_query::Asterisk))
+                    .filter(Expr::col(peers::Column::UserId).eq(&auth.actor.user_id)),
+                Alias::new("per_user"),
+            )
+            .expr_as(
+                Func::count(Expr::col(sea_orm::sea_query::Asterisk))
+                    .filter(Expr::col(peers::Column::LoginSessionId).eq(login)),
+                Alias::new("per_login"),
+            )
+            .expr_as(
+                Func::count(Expr::col(sea_orm::sea_query::Asterisk))
+                    .filter(Expr::col(peers::Column::TeamId).eq(team)),
+                Alias::new("per_team"),
+            )
+            .expr_as(
+                Func::count(Expr::col(sea_orm::sea_query::Asterisk))
+                    .filter(Expr::col(peers::Column::RegistrationId).eq(registration)),
+                Alias::new("per_registration"),
+            )
+            .expr_as(
+                Func::count(Expr::col(sea_orm::sea_query::Asterisk)).filter(
+                    Expr::col(peers::Column::RegistrationId)
+                        .eq(registration)
+                        .and(
+                            Expr::col(peers::Column::GrantJson)
+                                .cast_json_field("purpose")
+                                .eq(&auth.purpose),
+                        ),
+                ),
+                Alias::new("per_purpose"),
+            )
+            .and_where(Expr::col(peers::Column::Revoked).not())
+            .and_where(Expr::col(peers::Column::ExpiresAt).gt(now_ms()))
+            .and_where(
+                Expr::col(peers::Column::UserId)
+                    .eq(&auth.actor.user_id)
+                    .or(Expr::col(peers::Column::TeamId).eq(team)),
+            ),
     )
     .await?;
     for (column, limit) in [
