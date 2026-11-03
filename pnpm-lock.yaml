@@ -2472,6 +2472,12 @@ packages:
     cpu: [x86, ia32]
     os: [win32]
 
+  '@sentry/cli-win32-x64@3.8.2':
+    resolution: {integrity: sha512-IBX5W2M3Zckpg3zOXfnNoayWTKhVlZN/b7ifO7dRArkOsNRzVa2lNB5M7L28O0/ZYu/8V+SnzCoHVGN9bxRdwg==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [win32]
+
   '@sentry/cli@3.8.2':
     resolution: {integrity: sha512-JbB/UTBPRQREkI6CaxD8Cs0ppNc3YT8CROgRV7WeaqPn7mZOAgTYqtcxiW/OF7OquOIHUd0u6gu2vL+g5ITdHQ==}
     engines: {node: '>= 18'}
@@ -7704,6 +7710,9 @@ snapshots:
   '@sentry/cli-win32-i686@3.8.2':
     optional: true
 
+  '@sentry/cli-win32-x64@3.8.2':
+    optional: true
+
   '@sentry/cli@3.8.2':
     dependencies:
       progress: 2.0.3
@@ -7718,6 +7727,7 @@ snapshots:
       '@sentry/cli-linux-x64': 3.8.2
       '@sentry/cli-win32-arm64': 3.8.2
       '@sentry/cli-win32-i686': 3.8.2
+      '@sentry/cli-win32-x64': 3.8.2
 
   '@sentry/conventions@0.29.0': {}
 
