@@ -33,6 +33,15 @@ test("safe Git supports linked worktrees and shared metadata operations", async 
   assert.match((await executeGit(["--git-dir", common, "worktree", "list"])).stdout, /linked/)
 })
 
+test("Git status accepts VS Code branch merge-base metadata", async t => {
+  const { root } = await fixture(t)
+  await git(root, "config", "branch.feat/mark-session-unread.vscode-merge-base", "origin/main")
+  await writeFile(join(root, "file.txt"), "changed\n")
+  assert.match((await executeGit(["-C", root, "status", "--porcelain"])).stdout, / M file\.txt/)
+  await git(root, "config", "branch.feat/mark-session-unread.unknown", "value")
+  await assert.rejects(executeGit(["-C", root, "status", "--porcelain"]), /branch\.feat\/mark-session-unread\.unknown/)
+})
+
 test("Git rejects common-config worktree redirection before touching a victim directory", async t => {
   const { root, directory } = await fixture(t)
   const victim = join(directory, "victim")

@@ -60,7 +60,7 @@ function allowed(key: string): boolean {
   return /^core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|autocrlf|eol|symlinks|ignorestat|trustctime|checkstat|protectntfs|protecthfs)$/u.test(key)
     || /^extensions\.(objectformat|worktreeconfig|refstorage)$/u.test(key)
     || /^remote\..+\.(url|pushurl|fetch|tagopt|mirror|prune|prunetags)$/u.test(key)
-    || /^branch\..+\.(remote|merge|pushremote|rebase|description)$/u.test(key)
+    || /^branch\..+\.(remote|merge|pushremote|rebase|description|vscode-merge-base)$/u.test(key)
     || /^(user\.(name|email)|commit\.gpgsign|push\.default|remote\.pushdefault)$/u.test(key)
     || /^(status\.renames|diff\.(renames|external)|diff\..+\.(command|textconv))$/u.test(key)
     || /^submodule\..+\.(url|active|branch|ignore|shallow|fetchrecursesubmodules)$/u.test(key)
