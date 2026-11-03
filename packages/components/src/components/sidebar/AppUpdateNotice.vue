@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
+import { desktopAppDownloadUrl } from "../../desktop-download.ts"
 import type { UpdateState } from "@deskfleet/client/updates"
 import { Download } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
@@ -51,7 +52,7 @@ function install(): void {
     <div class="rounded-lg border border-ui-accent/25 bg-ui-accent/8 p-2">
       <p class="m-0 mb-2 px-0.5 text-xs text-ui-text-muted">{{ t("desktopDownload.description") }}</p>
       <a
-        href="https://github.com/yet-another-ai/deskfleet/releases/latest"
+        :href="desktopAppDownloadUrl"
         target="_blank"
         rel="noopener noreferrer"
         class="ui-button-primary h-8 w-full px-3 no-underline hover:bg-ui-action-hover active:op-90"

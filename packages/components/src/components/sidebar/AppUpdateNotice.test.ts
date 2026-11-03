@@ -68,6 +68,16 @@ test("does not render an updater on the Web host", async () => {
   expect(get).not.toHaveBeenCalled()
 })
 
+test("points the web download CTA at the marketing get-deskfleet section", async () => {
+  configureClient({ ...host, platform: "web", updates: undefined })
+  const view = await render()
+  const link = view.get("[data-app-download] a")
+  expect(link.text()).toContain("Download desktop app")
+  expect(link.attributes("href")).toBe("https://www.deskfleet.org/#get-deskfleet")
+  expect(link.attributes("target")).toBe("_blank")
+  expect(link.attributes("rel")).toBe("noopener noreferrer")
+})
+
 test("shows download progress and restart state and prevents repeated clicks", async () => {
   let finish!: () => void
   install.mockImplementation(() => new Promise(resolve => { finish = resolve }))
