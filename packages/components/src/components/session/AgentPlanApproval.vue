@@ -33,7 +33,7 @@ async function respond(action: "accept" | "decline" | "cancel"): Promise<void> {
 </script>
 
 <template>
-  <section class="rounded-xl border border-ui-warning/40 bg-ui-surface p-4 text-sm shadow-ui-card" data-testid="agent-plan-approval" :data-elicitation-id="elicitation.id" :aria-label="t('agent.planApproval.title')">
+  <section class="ui-rise-in rounded-xl border border-ui-warning/40 bg-ui-surface p-4 text-sm shadow-ui-card" data-testid="agent-plan-approval" :data-elicitation-id="elicitation.id" :aria-label="t('agent.planApproval.title')">
     <p class="m-0 mb-2 flex flex-wrap items-center gap-2 font-medium">
       <ClipboardList :size="16" :stroke-width="1.75" class="shrink-0 text-ui-warning" aria-hidden="true" />
       <span>{{ t(pending ? 'agent.planApproval.title' : `agent.planApproval.${status}`) }}<template v-if="!pending && elicitation.actor"> · <AgentActor :actor="elicitation.actor" /></template></span>

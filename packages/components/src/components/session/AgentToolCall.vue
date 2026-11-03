@@ -32,7 +32,7 @@ const open = computed(() => hasDetails.value && (toggled.value ?? props.defaultO
       <span v-else-if="tool.status === 'failed'" class="inline-flex shrink-0 items-center gap-1 text-xs text-ui-danger"><CircleX :size="14" :stroke-width="2" aria-hidden="true" />{{ t('agent.toolStatus.failed') }}</span>
       <ChevronRight v-if="hasDetails" :size="14" :stroke-width="2" class="shrink-0 opacity-0 transition-transform group-hover/tool:opacity-100" :class="open && 'rotate-90 opacity-100'" aria-hidden="true" />
     </CollapsibleTrigger>
-    <CollapsibleContent class="mt-1 mb-2 ml-6 flex flex-col gap-2 overflow-hidden rounded-lg border border-ui-border bg-ui-surface p-3 text-xs">
+    <CollapsibleContent class="ui-collapsible mt-1 mb-2 ml-6 flex flex-col gap-2 rounded-lg border border-ui-border bg-ui-surface p-3 text-xs">
       <div v-if="tool.locations?.length" class="font-mono text-ui-text-muted select-text"><div v-for="location in tool.locations" :key="`${location.path}:${location.line}`" class="truncate">{{ location.path }}{{ location.line ? `:${location.line}` : '' }}</div></div>
       <pre v-if="tool.rawInput != null" class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono select-text">{{ readableValue(tool.rawInput) }}</pre>
       <template v-for="(block, index) in tool.content" :key="index">

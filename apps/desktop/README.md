@@ -523,14 +523,34 @@ catalogs share keys and parameters and that literal `t("…")` keys exist.
 
 ## Styling
 
-Colors are CSS custom properties in `packages/components/src/styles.css`, with light and
-dark values. UnoCSS exposes them as `*-ui-<name>` utilities. presetMini has no
-preflight and omits some Wind utilities such as `list-none`, so `styles.css` also
-holds a small base reset.
+Design tokens are CSS custom properties in `packages/components/src/theme-tokens.css`:
+colors with light and dark values, depth (shadows, a top-edge highlight that reads
+as elevation in dark mode, and the filled-action sheen), and motion (easings and
+`--ui-duration-*`). Entrances decelerate, exits accelerate and run shorter, and
+only toggles overshoot. Under `prefers-reduced-motion`, every duration collapses to
+1ms and decorative loops stop.
 
-UnoCSS uses `presetMini` from `uno.config.ts`. The renderer imports the generated
-utilities through `virtual:uno.css`, and production builds emit them as a static
-stylesheet.
+UnoCSS uses `presetWind4` from `packages/components/uno.config.ts`. It exposes colors
+as `*-ui-<name>` utilities and owns the component shortcuts (`ui-button`, `ui-card`,
+and so on). The `ui-motion` rule applies the shared transition to interactive
+controls. The renderer imports the generated utilities through `virtual:uno.css`,
+and production builds emit them as a static stylesheet.
+
+`packages/components/src/styles.css` holds the base reset and the effects that
+utilities can't express:
+- Overlay and dialog enter and exit keyframes. Reka keeps closing content mounted
+  until its exit animation ends.
+- The `ui-route-stage` page entrance.
+- `ui-rise-in` and `ui-pop-in`.
+- `ui-collapsible`.
+- `ui-shimmer-text` for live status.
+- `ui-attention` for pending decisions.
+- `ui-aurora` and `ui-gradient-text` for hero content.
+
+The renderer runs in Vue Vapor mode, so these are CSS animations that run on
+insertion or on a `data-state` change, not `<Transition>` wrappers. Animations use
+the individual `translate` and `scale` properties so they compose with an element's
+own `transform`.
 
 ## Renderer security
 

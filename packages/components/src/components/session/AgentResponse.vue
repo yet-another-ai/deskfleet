@@ -82,7 +82,7 @@ watchImmediate([pendingLocate, steps], ([target, currentSteps]) => {
     <template v-if="response.turn">
       <div v-if="response.live" class="flex items-center gap-2 text-ui-text-muted" role="status">
         <LoaderCircle :size="15" :stroke-width="2" class="animate-spin" aria-hidden="true" />
-        <span>{{ duration ? t('agent.workingFor', { duration }) : t('agent.working') }}</span>
+        <span class="ui-shimmer-text">{{ duration ? t('agent.workingFor', { duration }) : t('agent.working') }}</span>
       </div>
       <CollapsibleTrigger v-else-if="steps.length" type="button" data-turn-work class="group/worked inline-flex cursor-pointer items-center gap-1 self-start text-ui-text-muted hover:text-ui-text">
         <span>{{ duration ? t('agent.workedFor', { duration }) : t('agent.worked') }}</span>
