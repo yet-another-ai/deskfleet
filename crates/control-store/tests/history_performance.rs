@@ -82,6 +82,23 @@ fn event(seq: &str) -> Value {
     json!({"sessionId":"1","seq":seq,"kind":"acp","payload":{"text":format!("event {seq}")}})
 }
 
+fn terminal_event(seq: &str, data: &str) -> Value {
+    json!({
+        "sessionId":"1",
+        "seq":seq,
+        "kind":"acp",
+        "runGeneration":1,
+        "payload":{
+            "sessionId":"provider",
+            "update":{
+                "sessionUpdate":"tool_call_update",
+                "toolCallId":"terminal-1",
+                "_meta":{"terminal_output_delta":{"data":data}}
+            }
+        }
+    })
+}
+
 fn command(id: &str, status: &str) -> Value {
     json!({"id":id,"sessionId":"1","operationId":format!("op-{id}"),"isCanonical":true,"status":status})
 }
@@ -322,6 +339,197 @@ async fn history_pages_require_the_snapshot_and_commit_ordered_events_atomically
     assert_eq!(
         store.session_snapshot(machine, "1").await.unwrap()["snapshot"],
         snapshot("1", "8", "active")
+    );
+    fixture.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn nul_terminal_events_round_trip_and_retry_without_stalling_history() {
+    let fixture = Fixture::new().await;
+    let (store, machine) = (&fixture.store, &fixture.machine);
+    let initial = event("1");
+    let output = "U\0tf\0\r\n中文 😀 \u{1b}[31m \\u0000 \u{fffd}";
+    let terminal = terminal_event("2", output);
+    let later = terminal_event("3", "next\0output");
+    let literal = terminal_event("4", "literal \\u0000 and 中文 😀");
+    let safe_snapshot = snapshot("1", "5", "active");
+    assert_eq!(
+        store
+            .sync_history(
+                machine,
+                "1",
+                safe_snapshot.clone(),
+                vec![initial.clone()],
+                vec![]
+            )
+            .await
+            .unwrap(),
+        "1"
+    );
+    assert_eq!(
+        store
+            .sync_history_batch(
+                machine,
+                "1",
+                None,
+                Some("5".into()),
+                vec![terminal.clone()],
+                vec![]
+            )
+            .await
+            .unwrap(),
+        "2"
+    );
+    assert_eq!(
+        store.events(machine, "1", 0, 1).await.unwrap(),
+        json!({"events":[initial],"lastEventSeq":"2"})
+    );
+    assert_eq!(
+        store.events(machine, "1", 1, 1).await.unwrap(),
+        json!({"events":[terminal],"lastEventSeq":"2"})
+    );
+
+    // A retried page compares the original values, including repeated events.
+    assert_eq!(
+        store
+            .sync_history_batch(
+                machine,
+                "1",
+                None,
+                Some("5".into()),
+                vec![initial.clone(), terminal.clone(), terminal.clone()],
+                vec![]
+            )
+            .await
+            .unwrap(),
+        "2"
+    );
+    let changed = terminal_event("2", &output.replace('\0', "\u{fffd}"));
+    assert!(matches!(
+        store
+            .sync_history_batch(
+                machine,
+                "1",
+                None,
+                Some("5".into()),
+                vec![later.clone(), changed],
+                vec![]
+            )
+            .await,
+        Err(Error::Conflict(_))
+    ));
+    assert!(matches!(
+        store
+            .sync_history_batch(
+                machine,
+                "1",
+                None,
+                Some("5".into()),
+                vec![later.clone(), event("5")],
+                vec![]
+            )
+            .await,
+        Err(Error::Conflict(_))
+    ));
+    // Invalid command IDs are rejected after the NUL event's insert, so this
+    // also checks that the original record rolls back with its event watermark.
+    assert!(
+        store
+            .sync_history_batch(
+                machine,
+                "1",
+                None,
+                Some("5".into()),
+                vec![later.clone()],
+                vec![command("invalid", "accepted")]
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        store.events(machine, "1", 2, 10).await.unwrap(),
+        json!({"events":[],"lastEventSeq":"2"})
+    );
+    assert_eq!(
+        store
+            .sync_history_batch(
+                machine,
+                "1",
+                None,
+                Some("5".into()),
+                vec![later.clone(), literal.clone(), event("5")],
+                vec![]
+            )
+            .await
+            .unwrap(),
+        "5"
+    );
+    assert_eq!(
+        store.events(machine, "1", 0, 10).await.unwrap(),
+        json!({"events":[initial,terminal,later,literal,event("5")],"lastEventSeq":"5"})
+    );
+    assert_eq!(
+        store.events(machine, "1", 2, 2).await.unwrap(),
+        json!({"events":[later,literal],"lastEventSeq":"5"})
+    );
+    assert_eq!(
+        store.session_snapshot(machine, "1").await.unwrap()["snapshot"],
+        safe_snapshot
+    );
+    fixture.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn original_event_migration_preserves_existing_history() {
+    let fixture = Fixture::new().await;
+    let (store, machine) = (&fixture.store, &fixture.machine);
+    store
+        .sync_history(
+            machine,
+            "1",
+            snapshot("1", "2", "active"),
+            vec![event("1")],
+            vec![],
+        )
+        .await
+        .unwrap();
+    store
+        .database()
+        .execute_unprepared(
+            "ALTER TABLE cp_events DROP COLUMN record_original; DELETE FROM cp_migrations WHERE version=26",
+        )
+        .await
+        .unwrap();
+    deskfleet_control_store::schema::migrate(store.database())
+        .await
+        .unwrap();
+    deskfleet_control_store::schema::migrate(store.database())
+        .await
+        .unwrap();
+    assert_eq!(
+        store.events(machine, "1", 0, 10).await.unwrap(),
+        json!({"events":[event("1")],"lastEventSeq":"1"})
+    );
+    let terminal = terminal_event("2", "after upgrade\0");
+    assert_eq!(
+        store
+            .sync_history_batch(
+                machine,
+                "1",
+                None,
+                Some("2".into()),
+                vec![event("1"), terminal.clone()],
+                vec![]
+            )
+            .await
+            .unwrap(),
+        "2"
+    );
+    assert_eq!(
+        store.events(machine, "1", 0, 10).await.unwrap(),
+        json!({"events":[event("1"),terminal],"lastEventSeq":"2"})
     );
     fixture.close().await;
 }

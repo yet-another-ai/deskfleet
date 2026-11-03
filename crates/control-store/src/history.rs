@@ -1,6 +1,7 @@
 use crate::{ControlStore, Error, Result, json_rows, now_ms, one, resource_id, sql, timestamp};
 use sea_orm::ConnectionTrait;
 
+mod event_storage;
 mod sync;
 use serde_json::{Value, json};
 
@@ -73,15 +74,16 @@ impl ControlStore {
         }
         // One statement keeps the page and completeness watermark on the same
         // MVCC snapshot even when another connection commits a sync meanwhile.
+        // Aggregate as JSON, not JSONB: originals can contain escaped NUL.
         let row = one(
             &self.db,
             "SELECT event_seq, COALESCE((
-                SELECT jsonb_agg(page.record ORDER BY page.seq) FROM (
-                    SELECT seq,record FROM cp_events
+                SELECT json_agg(COALESCE(page.record_original, page.record::text)::json ORDER BY page.seq) FROM (
+                    SELECT seq,record,record_original FROM cp_events
                     WHERE registration_id=$1 AND session_id=$2 AND seq>$3
                     ORDER BY seq LIMIT $4
                 ) page
-             ), '[]'::jsonb) AS events
+             ), '[]'::json) AS events
              FROM cp_sessions WHERE registration_id=$1 AND session_id=$2",
             vec![
                 resource_id(machine_id)?.into(),

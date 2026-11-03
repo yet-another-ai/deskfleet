@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use crate::{ControlStore, Error, Result, now_ms, one, resource_id, sql};
 use sea_orm::{ConnectionTrait, TransactionTrait};
-use serde_json::Value;
+use serde_json::{Value, json};
+
+use super::event_storage;
 
 fn sequence(value: &Value) -> Result<i64> {
     value
@@ -82,11 +84,12 @@ impl ControlStore {
         }
         let mut previous = BTreeMap::new();
         if !events.is_empty() {
+            // Look up by sequence so unencoded event strings never enter JSONB.
             for row in tx.query_all_raw(sql(
-                "SELECT e.seq,e.record FROM cp_events e JOIN jsonb_array_elements($3::jsonb) AS incoming(record) ON e.seq=(incoming.record->>'seq')::bigint WHERE e.registration_id=$1 AND e.session_id=$2",
-                vec![machine.into(),session_id.into(),Value::Array(events.clone()).into()],
+                "SELECT e.seq,COALESCE(e.record_original,e.record::text) AS record FROM cp_events e JOIN jsonb_array_elements_text($3::jsonb) AS incoming(seq) ON e.seq=incoming.seq::bigint WHERE e.registration_id=$1 AND e.session_id=$2",
+                vec![machine.into(),session_id.into(),json!(event_sequences).into()],
             )).await? {
-                previous.insert(row.try_get::<i64>("", "seq")?, row.try_get::<Value>("", "record")?);
+                previous.insert(row.try_get::<i64>("", "seq")?, serde_json::from_str::<Value>(&row.try_get::<String>("", "record")?)?);
             }
         }
         let mut insertions = Vec::new();
@@ -108,9 +111,10 @@ impl ControlStore {
         }
         let terminal_seq = crate::search::terminal_sequence(&insertions);
         if !insertions.is_empty() {
+            let stored: Vec<Value> = insertions.into_iter().map(event_storage::encode).collect();
             tx.execute_raw(sql(
-                "INSERT INTO cp_events(registration_id,session_id,seq,record) SELECT $1,$2,(event->>'seq')::bigint,event FROM jsonb_array_elements($3::jsonb) event",
-                vec![machine.into(),session_id.into(),Value::Array(insertions).into()],
+                "INSERT INTO cp_events(registration_id,session_id,seq,record,record_original) SELECT $1,$2,(event->'record'->>'seq')::bigint,event->'record',event->>'original' FROM jsonb_array_elements($3::jsonb) event",
+                vec![machine.into(),session_id.into(),Value::Array(stored).into()],
             )).await?;
         }
         if bound >= current_snapshot_seq && !commands.is_empty() {

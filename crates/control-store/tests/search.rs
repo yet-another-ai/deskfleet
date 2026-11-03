@@ -196,6 +196,39 @@ async fn streaming_is_unindexed_until_contiguous_completion_and_replays_do_not_r
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn nul_messages_preserve_history_and_search_without_joining_words() {
+    let f = Fixture::new().await;
+    let message = event(1, "before\0after");
+    let completed = terminal(2, "completed");
+    f.store
+        .sync_history(
+            &f.machine,
+            "1",
+            snapshot("1", 2, false),
+            vec![message.clone(), completed.clone()],
+            vec![],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        f.store.events(&f.machine, "1", 0, 10).await.unwrap(),
+        json!({"events":[message,completed],"lastEventSeq":"2"})
+    );
+    let result = f.search("after").await;
+    assert_eq!(result["results"].as_array().unwrap().len(), 1);
+    assert_eq!(result["results"][0]["entryId"], "message-1");
+    assert_eq!(
+        f.sql("SELECT to_jsonb(content) AS value FROM cp_search_documents WHERE resource_id='1' AND entry_id='message-1' AND block_no=0")
+            .await,
+        json!("before\u{fffd}after")
+    );
+    assert_eq!(f.search("beforeafter").await["results"], json!([]));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn unicode_blocks_and_message_ids_preserve_cross_chunk_matches_and_anchors() {
     let f = Fixture::new().await;
     let mut first = event(1, &"中".repeat(4000));
