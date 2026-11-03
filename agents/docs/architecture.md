@@ -197,10 +197,18 @@ saved desktop panel widths or open states.
 Horizontal swipes from the content edges select adjacent views. Swipes in the
 content body retain their content-specific behavior. The viewport returns to its
 current view at either end of the list or after a canceled gesture.
+While window navigation is enabled, each edge strip cancels the default
+single-touch `touchstart` behavior through a non-passive listener. This reserves
+the gesture for window navigation before Safari starts its back or forward
+navigation. The content body retains native touch behavior.
 Opened views stay mounted during view changes, which preserve drafts, scroll
 positions, and terminal connections. Explicit terminal closure still ends its
 shell. Mobile touch surfaces disable browser pinch and double-tap zoom while
-retaining native scrolling.
+retaining native scrolling. The Web viewport sets `maximum-scale=1.0` to prevent
+Safari from zooming when an input receives focus, without changing input font
+sizes. WebKit applies this limit to focus zoom separately from manual pinch zoom
+([viewport properties](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariHTMLRef/Articles/MetaTags.html),
+[focus zoom implementation](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm)).
 
 Settings moves section navigation above its content below 768 CSS pixels;
 the same narrow layout puts account controls above the no-machine or no-team

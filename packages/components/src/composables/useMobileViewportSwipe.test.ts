@@ -6,6 +6,7 @@ import { useMobileViewportSwipe } from "./useMobileViewportSwipe.ts"
 let wrapper: VueWrapper
 let swipe: ReturnType<typeof useMobileViewportSwipe>
 let index: Ref<number>
+let enabled: Ref<boolean>
 let reducedMotion: Ref<boolean>
 let frames: Map<number, FrameRequestCallback>
 let frameId: number
@@ -20,6 +21,7 @@ beforeEach(() => {
   })
   vi.spyOn(window, "cancelAnimationFrame").mockImplementation(id => { frames.delete(id) })
   index = ref(0)
+  enabled = ref(true)
   reducedMotion = ref(false)
   wrapper = mount(defineComponent({
     setup() {
@@ -28,7 +30,7 @@ beforeEach(() => {
       const right = ref<HTMLElement | null>(null)
       swipe = useMobileViewportSwipe({
         viewport, left, right, index: () => index.value, count: () => 2,
-        enabled: () => true, reducedMotion: () => reducedMotion.value,
+        enabled: () => enabled.value, reducedMotion: () => reducedMotion.value,
         select: value => { index.value = value }, reveal: () => {},
       })
       return () => h("div", { ref: viewport }, [h("div", { ref: left, "data-edge": "left" }), h("div", { ref: right, "data-edge": "right" })])
@@ -57,6 +59,39 @@ async function pointer(edge: "left" | "right", type: string, x: number) {
   wrapper.get(`[data-edge="${edge}"]`).element.dispatchEvent(event)
   await nextTick()
 }
+
+function touchStart(target: Element, count = 1): TouchEvent {
+  const event = new TouchEvent("touchstart", {
+    bubbles: true, cancelable: true,
+    touches: Array.from({ length: count }, (_, identifier) => new Touch({ identifier, target })),
+  })
+  target.dispatchEvent(event)
+  return event
+}
+
+test.each(["left", "right"] as const)("the %s edge reserves touch navigation before movement", async edge => {
+  index.value = edge === "left" ? 1 : 0
+  const start = edge === "left" ? 10 : 380
+  const end = edge === "left" ? 180 : 200
+  await pointer(edge, "pointerdown", start)
+  expect(touchStart(wrapper.get(`[data-edge="${edge}"]`).element).defaultPrevented).toBe(true)
+  await tick(100)
+  await pointer(edge, "pointermove", end)
+  await pointer(edge, "pointerup", end)
+  expect(index.value).toBe(edge === "left" ? 0 : 1)
+})
+
+test("disabled edges and the content body retain native touch behavior", () => {
+  expect(touchStart(wrapper.element).defaultPrevented).toBe(false)
+  enabled.value = false
+  for (const edge of wrapper.findAll("[data-edge]")) {
+    expect(touchStart(edge.element).defaultPrevented).toBe(false)
+  }
+})
+
+test("additional touches retain their default touch behavior", () => {
+  expect(touchStart(wrapper.get('[data-edge="left"]').element, 2).defaultPrevented).toBe(false)
+})
 
 test("release keeps the rendered position and capture release does not cancel settling", async () => {
   await pointer("right", "pointerdown", 380)
