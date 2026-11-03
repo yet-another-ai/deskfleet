@@ -41,6 +41,13 @@ same transaction as insertion. Active limits are 16 per login, 64 per user,
 user per minute and 240 per registration per minute. HTTP returns 429 on
 saturation. WebRTC grants reserve capacity before requesting TURN credentials;
 provisioning failure revokes the reservation. Local grants use the same quotas.
+During provisioning, the persisted expiry is a two-minute reservation lease,
+started after admission locks are acquired. This covers the daemon RPC's full
+60-second timeout plus time for routing and final authorization/activation.
+Only successful provisioning plus final authorization activates the immutable
+grant's full expiry, immediately before returning it. A cancelled request or
+crashed process therefore cannot hold unissued capacity for the full grant
+lifetime; an expired reservation cannot be activated or returned later.
 
 The daemon admits at most 64 active/creating/closing peers per registration and
 128 across registrations, including unclaimed local peers. A registration may
