@@ -66,6 +66,16 @@ test("native factory opens exactly four channels before the initial offer and ro
   expect(f.peer.close).toHaveBeenCalledOnce()
 })
 
+test("native Mux forwards the forced-relay policy and TURN credentials to the native peer", async () => {
+  const f = fixture()
+  const transport = await nativeMuxPeer([{ urls: "turn:127.0.0.1:3478", username: "fixture", credential: "secret" }], f.events, { relayOnly: true })
+  expect(native.createPeer).toHaveBeenCalledExactlyOnceWith({
+    relayOnly: true,
+    iceServers: [{ urls: ["turn:127.0.0.1:3478"], username: "fixture", credential: "secret" }],
+  })
+  await transport.close()
+})
+
 test("transient native backpressure retries one frame without creating another peer", async () => {
   vi.useFakeTimers()
   const f = fixture(), transport = await nativeMuxPeer([], f.events)

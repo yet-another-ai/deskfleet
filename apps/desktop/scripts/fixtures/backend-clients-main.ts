@@ -5,6 +5,8 @@ import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { installCentralAccount } from "../../src/main/central-account.ts"
 import { installLocalChannels } from "../../src/main/local-channels.ts"
+import { installMuxChannels } from "../../src/main/mux-channels.ts"
+import { nativeMuxPeer } from "../../src/main/mux-peer.ts"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
 import { LocalAgentController } from "../../src/main/local-agent-controller.ts"
@@ -294,6 +296,7 @@ void app.whenReady().then(async () => {
   let controller: LocalAgentController | undefined
   let keepAwake: KeepAwakeController | undefined
   let localChannels: ReturnType<typeof installLocalChannels> | undefined
+  let muxChannels: ReturnType<typeof installMuxChannels> | undefined
   if (context.mode === "electron") {
     installDesktopMediaIpc()
     controller = new LocalAgentController(join(context.profileDirectory, "settings.json"), createLocalAgentRuntime({ directory: context.daemonDirectory }), publishLocalAgentState)
@@ -309,6 +312,8 @@ void app.whenReady().then(async () => {
       await authenticateWindow(browser, context, true)
     } })
     localChannels = installLocalChannels(central)
+    muxChannels = installMuxChannels(central, (iceServers, events) =>
+      nativeMuxPeer(iceServers, events, { relayOnly: context.forceRelay }))
     // This fixture exercises signed-in clients; smoke-startup covers first-run setup.
     const onboardingPath = join(context.profileDirectory, "onboarding.json")
     await writeFile(onboardingPath, JSON.stringify({ step: "complete" }))
@@ -329,7 +334,7 @@ void app.whenReady().then(async () => {
   if (context.mode === "electron") { attachDesktopMedia(window); attachSettings(window) }
   window.webContents.on("console-message", event => { if (event.level === "error") process.stderr.write(`${event.message}\n`) })
   window.webContents.on("render-process-gone", (_event, details) => { process.send?.({ error: `Renderer exited: ${details.reason}` }); app.exit(1) })
-  // Force TURN at the native browser boundary, leaving the app's signaling and ICE servers untouched.
+  // Force browser TURN here; the Electron main Mux factory applies the same policy above.
   await window.loadURL("about:blank")
   window.webContents.debugger.attach("1.3")
   await window.webContents.debugger.sendCommand("Page.enable")
@@ -360,7 +365,7 @@ void app.whenReady().then(async () => {
   window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" })
   await window.webContents.executeJavaScript(`(async()=>{const end=Date.now()+20000;while(!document.querySelector('.xterm-rows')?.textContent.includes(${JSON.stringify(terminalTitle)})){if(Date.now()>end)throw new Error('Terminal PTY output did not return: '+document.body.innerText);await new Promise(r=>setTimeout(r,25));}if(window.__deskfleetRtcGuard.forbiddenAttempts)throw new Error('Local interaction attempted WebRTC');})()`)
   process.send?.({ phase: "online", result })
-  const exit = () => { void Promise.all([localChannels?.close(), controller?.close()]).finally(() => { keepAwake?.close(); app.exit(0) }) }
+  const exit = () => { void Promise.all([localChannels?.close(), muxChannels?.close(), controller?.close()]).finally(() => { keepAwake?.close(); app.exit(0) }) }
   process.on("message", message => {
     if (message && typeof message === "object" && "offline" in message) {
       void window.webContents.executeJavaScript(`(${exercise.toString()})(${JSON.stringify(context)},true)`).then(result => process.send?.({ result }), error => process.send?.({ error: String(error) }))

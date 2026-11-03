@@ -5,8 +5,10 @@ import { MUX_LABELS, type MuxLane } from "@deskfleet/client/mux/protocol"
 const lanes = new Map<string, MuxLane>(Object.entries(MUX_LABELS).map(([lane, label]) => [label, lane as MuxLane]))
 
 /** Main owns one native peer for all remote data consumers in the same authenticated scope. */
-export const nativeMuxPeer: MuxPeerFactory = async (iceServers, events) => {
-  const peer = await createPeer({ iceServers: iceServers.map(server => ({
+export async function nativeMuxPeer(
+  iceServers: Parameters<MuxPeerFactory>[0], events: Parameters<MuxPeerFactory>[1], options: { relayOnly?: boolean } = {},
+): ReturnType<MuxPeerFactory> {
+  const peer = await createPeer({ ...options, iceServers: iceServers.map(server => ({
     urls: typeof server.urls === "string" ? [server.urls] : server.urls,
     username: server.username, credential: server.credential,
   })) })

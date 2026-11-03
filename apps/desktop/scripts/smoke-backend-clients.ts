@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { once } from "node:events"
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { copyFile, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { createRequire } from "node:module"
 import type { AddressInfo } from "node:net"
@@ -123,6 +123,8 @@ try {
   const define = { "import.meta.env.VITE_DESKFLEET_SERVER_URL": JSON.stringify(fixture.backend) }
   await buildWeb({ root: join(root, "apps/web"), configFile: join(root, "apps/web/vite.config.ts"), define, build: { outDir: webDirectory, emptyOutDir: true } })
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/backend-clients-main.ts")], outfile: join(directory, "client.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24", define })
+  // The bundled native Mux loader resolves its addon beside the fixture entry.
+  await copyFile(join(root, "crates/node/deskfleet.node"), join(directory, "deskfleet.node"))
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/local-channels-renderer.ts")], outfile: join(directory, "local-probe.js"), bundle: true, platform: "browser", format: "iife", globalName: "localChannelSmoke", target: "chrome140" })
   const team = await request<{ id: string }>("/teams", { name: `Clients ${randomUUID()}` }); teamId = team.id
   const registrationTarget = { serverUrl: fixture.backend, teamId: team.id }
