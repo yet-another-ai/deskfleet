@@ -5,6 +5,7 @@ import { resolveAppLocale } from "@deskfleet/client/i18n"
 import HomeDesk from "./HomeDesk.vue"
 import ProductShowcase from "./ProductShowcase.vue"
 import HomeValues from "./HomeValues.vue"
+import HomeNetwork from "./HomeNetwork.vue"
 import HomeInstall from "./HomeInstall.vue"
 import "./home.css"
 const { lang } = useData()
@@ -16,6 +17,7 @@ const locale = computed(() => resolveAppLocale([lang.value]))
     <HomeDesk :locale="locale" />
     <ProductShowcase :locale="locale" />
     <HomeValues :locale="locale" />
+    <HomeNetwork :locale="locale" />
     <HomeInstall :locale="locale" />
   </main>
 </template>

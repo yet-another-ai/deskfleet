@@ -80,6 +80,18 @@ the repository layout links to its source, and the machine and data cards
 illustrate what stays local and what is never used for training. English,
 Simplified Chinese, and Japanese content share those components.
 
+The hosted relay section (`#network`) precedes installation. Its WebGL globe
+loads ECharts GL only as it approaches the viewport, with a bundled Natural Earth
+land texture, colored from the shared theme tokens. City and provider details
+appear in node tooltips; the section itself shows a short provider introduction.
+ECharts GL 2 requires ECharts 5, so the website pins that compatible pair
+independently of the application's charts. Rotation and trails run automatically,
+pausing off screen, in a hidden tab, or under reduced-motion preferences. The four
+yetanother.ai relay cities and representative Cloudflare Anycast locations live in
+`relay-network.ts`; its source links document coverage, including the exclusion
+of mainland China from Cloudflare TURN. Pairwise arcs illustrate connectivity,
+not measured traffic or routes between relays.
+
 Embedded demos keep their application layout inside the preview window even on
 mobile pages. Their compact drawer mode is disabled so app panels cannot portal
 over the website navigation or installation controls. The demo runtime keeps its
