@@ -33,6 +33,7 @@ import {
   registerRendererScheme,
 } from "./renderer-protocol.ts"
 import { createTray } from "./tray.ts"
+import { UpdateSettingsController } from "./update-settings.ts"
 import { installUpdates } from "./updates.ts"
 import { installWindowsDesktopService } from "./windows-desktop-service.ts"
 import { hideMainWindow, showMainWindow } from "./windows.ts"
@@ -90,7 +91,6 @@ function start(): void {
     const notificationSettings = new NotificationSettingsController(join(app.getPath("userData"), "notifications.json"))
     const notifications = new DesktopNotifications(notificationSettings, show)
     const notificationMonitor = new TaskNotificationMonitor(central, notification => notifications.notify(notification), console.error)
-    installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(desktopDaemonDirectory()))
     if (process.platform === "win32") app.setAppUserModelId("io.github.yet-another-ai.deskfleet")
     void notificationMonitor.start().catch(console.error)
     // The hosted daemon outlives windows but not the app. Exit once it has
@@ -108,6 +108,8 @@ function start(): void {
       return closing
     }
     const updates = await installUpdates(lifecycle, closeServices)
+    const updateSettings = new UpdateSettingsController(join(userData, "updates.json"), enabled => updates.setAutoDownload(enabled))
+    installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(desktopDaemonDirectory()), updateSettings)
     app.on("will-quit", (event) => {
       updates.close()
       // Let the updater's own quit/relaunch finish once the same shutdown barrier
@@ -120,6 +122,7 @@ function start(): void {
       )
     })
     try { keepAwake.get() } catch (error) { console.error(error) }
+    try { updateSettings.get() } catch (error) { console.error(error) }
     await localAgent.initialize()
     try { await onboarding.get() } catch (error) { console.error(error) }
     if (lifecycle.quitting) return

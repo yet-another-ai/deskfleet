@@ -252,9 +252,13 @@ never replace assets on an existing published release.
 
 The Electron main process checks for updates on startup and every 30 minutes.
 Settings → Updates shows the installed version and can trigger a check on demand.
-An available update appears at the bottom left; clicking it downloads the update,
-stops the embedded daemon, then installs and restarts the app. Automatic checks
-do not download or install, and ordinary app exit does not install an update.
+**Settings → Preferences → Automatically download updates** is enabled by default
+and saved in `updates.json` under Electron's `userData` directory. When enabled,
+discovered updates download in the background and stop at the confirmation state;
+clicking **Update and restart** stops the embedded daemon, then installs and
+restarts the app. When disabled, clicking **Update and restart** downloads the
+update first before installing and restarting. Ordinary app exit does not install
+an update.
 Windows uses NSIS, macOS uses the signed update ZIP, and Linux requires running
 the AppImage. Development runs do not check for updates.
 

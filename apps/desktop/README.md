@@ -209,8 +209,9 @@ Settings routes (`meta.fullWindow`) replace the sidebar and Changes panel with
 two panels: the sections on the left and the selected section on the right.
 Section links replace their history entry, so **Back to app** or Escape returns
 to the page Settings opened from. **Preferences → This computer** contains
-**Launch at startup**, **Keep Awake**, and **Worktree root directory** alongside
-the local Agent startup preference, run state, and retry.
+**Launch at startup**, **Keep Awake**, **Automatically download updates**, and
+**Worktree root directory** alongside the local Agent startup preference, run
+state, and retry.
 
 The **Changes** panel inspects the Session's actual directories on the local
 daemon, grouping files by checkout and staged, unstaged, or untracked state,

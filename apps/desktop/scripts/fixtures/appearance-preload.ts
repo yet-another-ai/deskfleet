@@ -10,5 +10,6 @@ api.terminal.list = async () => []
 api.settings.get = async () => ({ enabled: false, status: "stopped" })
 api.settings.getLaunchAtStartup = async () => ({ available: false, enabled: false })
 api.settings.getKeepAwake = async () => ({ enabled: false })
+api.settings.getAutoDownloadUpdates = async () => ({ enabled: true })
 api.settings.getWorktreeRoot = async () => ({ root: null, defaultRoot: "/smoke/worktrees" })
 if (isMainRendererUrl(globalThis.location.href)) contextBridge.exposeInMainWorld("deskfleet", api)

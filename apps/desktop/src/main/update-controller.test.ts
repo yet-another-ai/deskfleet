@@ -15,7 +15,7 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function setup() {
+function setup(autoDownload = false) {
   const driver = {
     check: vi.fn<UpdateDriver["check"]>().mockResolvedValue("0.2.0"),
     download: vi.fn<UpdateDriver["download"]>().mockResolvedValue(),
@@ -24,15 +24,35 @@ function setup() {
   }
   const publish = vi.fn<(state: UpdateState) => void>()
   const beforeInstall = vi.fn<() => Promise<void>>().mockResolvedValue()
-  const controller = new UpdateController(driver, publish, beforeInstall)
+  const controller = new UpdateController(driver, publish, beforeInstall, undefined, autoDownload)
   controllers.push(controller)
   return { controller, driver, publish, beforeInstall }
 }
 
-test("startup checks immediately and every thirty minutes without downloading", async () => {
+test("automatically downloads updates by default and waits for install confirmation before restarting", async () => {
   vi.useFakeTimers()
-  const { controller, driver } = setup()
+  const { controller, driver, beforeInstall, publish } = setup(true)
   controller.start()
+  controller.start()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(driver.check).toHaveBeenCalledTimes(1)
+  expect(driver.download).toHaveBeenCalledTimes(1)
+  expect(controller.get()).toEqual({ status: "downloaded", version: "0.2.0", percent: 100 })
+  expect(publish).toHaveBeenLastCalledWith({ status: "downloaded", version: "0.2.0", percent: 100 })
+  expect(beforeInstall).not.toHaveBeenCalled()
+  expect(driver.install).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL)
+  expect(driver.check).toHaveBeenCalledTimes(1)
+  await controller.install()
+  expect(driver.download).toHaveBeenCalledTimes(1)
+  expect(beforeInstall).toHaveBeenCalledOnce()
+  expect(driver.install).toHaveBeenCalledOnce()
+  expect(controller.get()).toEqual({ status: "installing", version: "0.2.0", percent: 100 })
+})
+
+test("disabling automatic download checks immediately and every thirty minutes without downloading until enabled or clicked", async () => {
+  vi.useFakeTimers()
+  const { controller, driver, beforeInstall } = setup(false)
   controller.start()
   await vi.advanceTimersByTimeAsync(0)
   expect(driver.check).toHaveBeenCalledTimes(1)
@@ -43,6 +63,34 @@ test("startup checks immediately and every thirty minutes without downloading", 
   expect(driver.check).toHaveBeenCalledTimes(2)
   expect(driver.download).not.toHaveBeenCalled()
   expect(driver.install).not.toHaveBeenCalled()
+  controller.setAutoDownload(true)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(driver.download).toHaveBeenCalledOnce()
+  expect(controller.get()).toEqual({ status: "downloaded", version: "0.2.0", percent: 100 })
+  expect(beforeInstall).not.toHaveBeenCalled()
+  expect(driver.install).not.toHaveBeenCalled()
+})
+
+test("failed background auto-download keeps the update available without surfacing an install error and joins in-flight downloads on click", async () => {
+  vi.useFakeTimers()
+  const { controller, driver, beforeInstall } = setup(true)
+  driver.download.mockRejectedValueOnce(new Error("Download interrupted"))
+  controller.start()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(driver.download).toHaveBeenCalledTimes(1)
+  expect(controller.get()).toEqual({ status: "available", version: "0.2.0" })
+  const downloading = deferred<void>()
+  driver.download.mockReturnValueOnce(downloading.promise)
+  await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL)
+  expect(driver.download).toHaveBeenCalledTimes(2)
+  expect(controller.get()).toEqual({ status: "downloading", version: "0.2.0", percent: 0 })
+  const install = controller.install()
+  expect(driver.download).toHaveBeenCalledTimes(2)
+  expect(beforeInstall).not.toHaveBeenCalled()
+  downloading.resolve()
+  await install
+  expect(beforeInstall).toHaveBeenCalledOnce()
+  expect(driver.install).toHaveBeenCalledOnce()
 })
 
 test("unsupported builds do not start timers or allow installation", async () => {
@@ -63,7 +111,7 @@ test("manual checks share an in-flight check and keep the installed version in s
     check: vi.fn(() => checking.promise), download: vi.fn(), install: vi.fn(), close: vi.fn(),
   }
   const publish = vi.fn()
-  const controller = new UpdateController(driver, publish, vi.fn(), "0.1.0")
+  const controller = new UpdateController(driver, publish, vi.fn(), "0.1.0", false)
   controllers.push(controller)
   expect(controller.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
   const first = controller.check()

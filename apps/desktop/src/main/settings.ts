@@ -6,6 +6,7 @@ import { getLaunchAtStartup, setLaunchAtStartup } from "./launch-at-startup.ts"
 import type { KeepAwakeController } from "./keep-awake.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"
 import { validateNotificationSettings, type NotificationSettingsController } from "./notification-settings.ts"
+import type { UpdateSettingsController } from "./update-settings.ts"
 import type { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 import { t } from "./i18n.ts"
 
@@ -23,7 +24,13 @@ export function publishLocalAgentState(state: LocalAgentState): void {
   }
 }
 
-export function installSettings(controller: LocalAgentController, keepAwake: KeepAwakeController, notifications: NotificationSettingsController, worktrees: WorktreeRootSettingsController): void {
+export function installSettings(
+  controller: LocalAgentController,
+  keepAwake: KeepAwakeController,
+  notifications: NotificationSettingsController,
+  worktrees: WorktreeRootSettingsController,
+  updates?: Pick<UpdateSettingsController, "get" | "setEnabled">,
+): void {
   ipcMain.handle(SETTINGS_CHANNEL, async (event, method: unknown, enabled: unknown) => {
     if (!renderers.has(event.sender) || !isDesktopMediaSender(event)) {
       throw new Error("Settings IPC is restricted to the main renderer")
@@ -42,6 +49,13 @@ export function installSettings(controller: LocalAgentController, keepAwake: Kee
         case "setKeepAwake":
           if (typeof enabled !== "boolean") throw new Error("Keep Awake setting must be a boolean")
           return { ok: true, value: keepAwake.setEnabled(enabled) }
+        case "getAutoDownloadUpdates":
+          if (!updates) throw new Error("Automatic update settings are unavailable")
+          return { ok: true, value: updates.get() }
+        case "setAutoDownloadUpdates":
+          if (typeof enabled !== "boolean") throw new Error("Automatic update setting must be a boolean")
+          if (!updates) throw new Error("Automatic update settings are unavailable")
+          return { ok: true, value: updates.setEnabled(enabled) }
         case "getWorktreeRoot": return { ok: true, value: await worktrees.get() }
         case "setWorktreeRoot":
           if (enabled !== null && typeof enabled !== "string") throw new Error("Worktree root must be an absolute path or null")
