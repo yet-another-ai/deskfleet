@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n"
 import type { AccountAuthentication } from "@deskfleet/client/account-security"
 import type { AccountUser } from "@deskfleet/client/central"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
+import { setErrorReportingUser } from "../../services/error-reporting.ts"
 import UiButton from "../common/UiButton.vue"
 import AuthLayout from "./AuthLayout.vue"
 
@@ -19,7 +20,7 @@ async function confirm(): Promise<void> {
   if (pending.value || !props.token) return
   pending.value = true
   error.value = undefined
-  try { await props.account.confirmEmail(props.token); changed.value = true }
+  try { await props.account.confirmEmail(props.token); setErrorReportingUser(); changed.value = true }
   catch (reason) { error.value = failureMessage(reason) }
   finally { pending.value = false }
 }

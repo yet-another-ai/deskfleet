@@ -5,7 +5,7 @@ import { i18n } from "./i18n/index.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
 import { nativeDragPolicy } from "./plugins/native-drag.ts"
 import { installAnalytics } from "./plugins/analytics.ts"
-import { installErrorReporting, shutdownErrorReporting } from "./services/error-reporting.ts"
+import { installErrorReporting, installErrorReportingAccount, shutdownErrorReporting } from "./services/error-reporting.ts"
 import { resolvePreviewKind } from "./services/preview.ts"
 import "./styles.css"
 
@@ -26,6 +26,8 @@ export async function mountDeskfleet(target: string | Element = "#root") {
       : { code: content, mode: "window", source: { sessionId: params.get("sessionId") || undefined, entryId: params.get("entryId") || undefined, diagramId: params.get("diagramId") || undefined } }
     const app = createApp(root, props)
     installErrorReporting(app)
+    const central = getClient().central
+    if (central) installErrorReportingAccount(app, central)
     app.onUnmount(() => { disposePinia(state); void shutdownErrorReporting() })
     app.use(nativeDragPolicy).use(vaporInteropPlugin).use(state).use((await import("./router/index.ts")).router).use(i18n).mount(target)
     return app

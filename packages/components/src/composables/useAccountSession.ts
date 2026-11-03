@@ -242,7 +242,12 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     connected, notice, dialog, reload,
     refreshMachines,
     async signIn() { await central.login(); await reload() },
-    async signOut() { machineDestination = undefined; await central.logout(); await reload() },
+    async signOut() {
+      machineDestination = undefined
+      await central.logout()
+      account.value = { serverUrl: account.value.serverUrl, siteAdmin: false }
+      await reload()
+    },
     selectTeam,
     selectMachine(id) { machineDestination = undefined; if (machines.value.some(value => value.id === id)) machineId.value = id },
     openMachineRoute, takeMachineDestination, openSession, takeSessionDestination,

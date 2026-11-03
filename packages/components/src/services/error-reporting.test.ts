@@ -1,8 +1,9 @@
 import { createApp, h } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { captureEvent, getClient, init, type ErrorEvent } from "@sentry/vue"
+import type { AccountState, CentralApi } from "@deskfleet/client/central"
 import { centralRequestFailure } from "@deskfleet/client/request-diagnostics"
-import { captureCentralRequestError, initializeErrorReporting, installErrorReporting, shutdownErrorReporting } from "./error-reporting.ts"
+import { captureCentralRequestError, initializeErrorReporting, installErrorReporting, installErrorReportingAccount, setErrorReportingUser, shutdownErrorReporting } from "./error-reporting.ts"
 
 // Exercise the real SDK and Vue error handler; replace only outbound delivery.
 type Options = NonNullable<Parameters<typeof init>[0]>
@@ -49,11 +50,85 @@ test.each([undefined, "", "  ", "invalid", "https://sentry.example.com/42"])("do
   const handler = vi.fn()
   app.config.errorHandler = handler
   initializeErrorReporting("web")
+  setErrorReportingUser({ id: "user-1", email: "ada@example.test" })
   captureCentralRequestError(requestFailure())
   installErrorReporting(app)
+  const central = { status: vi.fn(), onEvent: vi.fn() }
+  installErrorReportingAccount(app, central)
+  expect(central.status).not.toHaveBeenCalled()
+  expect(central.onEvent).not.toHaveBeenCalled()
   expect(init).not.toHaveBeenCalled()
   expect(transport.send).not.toHaveBeenCalled()
   expect(app.config.errorHandler).toBe(handler)
+})
+
+test.each(["web", "desktop"] as const)("%s reports follow the authenticated ID and email through account changes and sign-out", async platform => {
+  initializeErrorReporting(platform)
+  captureEvent({ message: "before sign-in" })
+  setErrorReportingUser({ id: "user-1", email: "ada@example.test" })
+  captureEvent({ message: "signed in" })
+  setErrorReportingUser({ id: "user-1", email: "new@example.test" })
+  captureEvent({ message: "email changed" })
+  setErrorReportingUser({ id: "user-2", email: null })
+  captureEvent({ message: "another account without email" })
+  setErrorReportingUser()
+  captureEvent({ message: "signed out" })
+  await getClient()?.flush(1000)
+  expect(events().map(event => event.user)).toEqual([
+    undefined,
+    { id: "user-1", email: "ada@example.test" },
+    { id: "user-1", email: "new@example.test" },
+    { id: "user-2" },
+    undefined,
+  ])
+})
+
+test("standalone previews refresh identity and ignore account responses superseded by sign-out or teardown", async () => {
+  initializeErrorReporting("desktop")
+  const app = createApp({ render: () => null })
+  let account: AccountState = { serverUrl: "https://fleet.example", siteAdmin: false, user: { id: "user-1", name: "Ada", email: "ada@example.test" } }
+  let notify!: Parameters<CentralApi["onEvent"]>[0]
+  const stop = vi.fn()
+  const central = {
+    status: vi.fn(async () => account),
+    onEvent: (listener: typeof notify) => { notify = listener; return stop },
+  }
+  installErrorReportingAccount(app, central)
+  apps.push(app)
+  app.mount(document.createElement("div"))
+  await Promise.resolve()
+  captureEvent({ message: "preview signed in" })
+
+  account = { ...account, user: { ...account.user!, email: "new@example.test" } }
+  notify({ type: "connection", connected: true })
+  await Promise.resolve()
+  captureEvent({ message: "preview email refreshed" })
+
+  const pending = Promise.withResolvers<AccountState>()
+  central.status.mockReturnValueOnce(pending.promise)
+  notify({ type: "accountChanged" })
+  account = { serverUrl: account.serverUrl, siteAdmin: false }
+  notify({ type: "accountChanged" })
+  await Promise.resolve()
+  pending.resolve({ ...account, user: { id: "old-account", name: "Old" } })
+  await Promise.resolve()
+  captureEvent({ message: "preview signed out" })
+
+  const late = Promise.withResolvers<AccountState>()
+  central.status.mockReturnValueOnce(late.promise)
+  notify({ type: "accountChanged" })
+  apps.pop()!.unmount()
+  expect(stop).toHaveBeenCalledTimes(1)
+  late.resolve({ ...account, user: { id: "late-account", name: "Late" } })
+  await Promise.resolve()
+  captureEvent({ message: "preview disposed" })
+  await getClient()?.flush(1000)
+  expect(events().map(event => event.user)).toEqual([
+    { id: "user-1", email: "ada@example.test" },
+    { id: "user-1", email: "new@example.test" },
+    undefined,
+    undefined,
+  ])
 })
 
 test("reports desktop OS and runtime versions for errors without a machine identity", async () => {
@@ -72,11 +147,13 @@ test("reports desktop OS and runtime versions for errors without a machine ident
 
 test("reports handled central transport failures with bounded diagnostics and deduplicates the same rejection", async () => {
   initializeErrorReporting("desktop")
+  setErrorReportingUser({ id: "user-1", email: "ada@example.test" })
   const error = requestFailure()
   captureCentralRequestError(error)
   await getClient()?.flush(1000)
   expect(events()).toHaveLength(1)
   expect(events()[0]).toMatchObject({
+    user: { id: "user-1", email: "ada@example.test" },
     exception: { values: [{ type: "TypeError", value: "fetch failed" }] },
     tags: { platform: "desktop", "central.method": "POST", "central.route": "/api/teams/:teamId/machines/:machineId/rpc", "central.rpc_method": "_deskfleet/agent/configuration", "central.cause_code": "ENOTFOUND" },
     contexts: { central_request: {
@@ -120,6 +197,7 @@ test("retains consecutive failures with the same stack but distinct RPC methods 
 test("captures real Vue errors from multiple apps through one client without props", async () => {
   initializeErrorReporting("desktop")
   initializeErrorReporting("desktop")
+  setErrorReportingUser({ id: "user-1", email: "ada@example.test" })
   const original = vi.fn()
   for (const name of ["Root", "MachineSurface"]) {
     const app = createApp({ name, props: ["secret"], render() { throw new Error(`${name} failed`) } }, { secret: "private-prop" })
@@ -134,6 +212,7 @@ test("captures real Vue errors from multiple apps through one client without pro
   expect(original).toHaveBeenCalledTimes(2)
   expect(events().map(event => event.exception?.values?.[0]?.value)).toEqual(["Root failed", "MachineSurface failed"])
   for (const event of events()) {
+    expect(event.user).toEqual({ id: "user-1", email: "ada@example.test" })
     expect(event).toMatchObject({ environment: "staging", release: "deskfleet@0.2.1", tags: { platform: "desktop" } })
     expect(event.contexts?.vue).toBeDefined()
   }
@@ -143,6 +222,7 @@ test("captures real Vue errors from multiple apps through one client without pro
   captureEvent({ message: "root still active" })
   await getClient()?.flush(1000)
   expect(events()).toHaveLength(3)
+  expect(events()[2]?.user).toEqual({ id: "user-1", email: "ada@example.test" })
 })
 
 test("captures uncaught errors and unhandled rejections with the SDK global handlers", async () => {
@@ -174,19 +254,20 @@ test.each(["web", "desktop"] as const)("filters browser noise while retaining ap
   expect(events().map(event => event.exception?.values?.[0]?.value)).toEqual(messages)
 })
 
-test("omits request, identity, breadcrumbs, arbitrary payloads and stack URL queries", async () => {
+test("retains only user ID and email while omitting request data, breadcrumbs, payloads and stack URL queries", async () => {
   initializeErrorReporting("web")
   captureEvent({
     exception: { values: [{ type: "Error", value: "diagnostic message", stacktrace: { frames: [
       { filename: "https://app.example.com/assets/app.js?token=private#private", lineno: 12 },
     ] } }] },
     request: { url: "https://app.example.com/auth/reset?token=private", headers: { Authorization: "private" } },
-    user: { email: "private@example.com" },
+    user: { id: "user-1", email: "ada@example.test", username: "private", ip_address: "private", data: { secret: "private" } },
     breadcrumbs: [{ message: "private" }],
     extra: { payload: "private" },
   })
   await getClient()?.flush(1000)
   expect(events()).toHaveLength(1)
+  expect(events()[0]?.user).toEqual({ id: "user-1", email: "ada@example.test" })
   expect(events()[0]?.exception?.values?.[0]?.stacktrace?.frames?.[0]).toMatchObject({ filename: "https://app.example.com/assets/app.js", lineno: 12 })
   expect(JSON.stringify(events())).not.toContain("private")
   expect(getClient()?.getOptions().dataCollection?.userInfo).toBe(false)
@@ -204,7 +285,12 @@ test("uses the Vite environment default, keeps optional release unset and closes
   app.mount(element)
   expect(element.textContent).toBe("usable")
   const previous = getClient()
+  setErrorReportingUser({ id: "user-1", email: "ada@example.test" })
   await shutdownErrorReporting()
   expect(previous?.getOptions().enabled).toBe(false)
   expect(transport.send).not.toHaveBeenCalled()
+  initializeErrorReporting("web")
+  captureEvent({ message: "fresh document" })
+  await getClient()?.flush(1000)
+  expect(events()[0]?.user).toBeUndefined()
 })

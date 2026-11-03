@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n"
 import { accountAuthentication } from "@deskfleet/client/account-security"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
+import { useErrorReportingUser } from "../../composables/useErrorReportingUser.ts"
 import UiButton from "../common/UiButton.vue"
 import AccountSecurity from "./AccountSecurity.vue"
 import AuthLayout from "./AuthLayout.vue"
@@ -36,6 +37,7 @@ const { state, isLoading, error, executeImmediate: reload } = useAsyncState(asyn
   const [config, status] = await Promise.all([account.config(), props.api.status()])
   return { config, user: status.user }
 }, undefined, { resetOnExecute: false })
+useErrorReportingUser(() => state.value?.user)
 // Registration and recovery open in another tab during desktop approval; returning here picks up that sign-in.
 useEventListener(window, "focus", () => { if (["/auth/desktop", "/auth/github-app"].includes(route) && !state.value?.user) void reload() })
 

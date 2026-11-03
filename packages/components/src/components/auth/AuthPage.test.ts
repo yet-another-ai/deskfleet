@@ -2,10 +2,13 @@ import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-uti
 import { afterEach, expect, test, vi } from "vitest"
 import { HttpError, type HttpCentralClient } from "@deskfleet/client/http-central"
 import { i18n } from "../../i18n/index.ts"
+import { setErrorReportingUser } from "../../services/error-reporting.ts"
 import AuthPage from "./AuthPage.vue"
 
+vi.mock("../../services/error-reporting.ts", () => ({ setErrorReportingUser: vi.fn() }))
+
 let view: VueWrapper | undefined
-afterEach(() => { view?.unmount(); sessionStorage.clear(); history.replaceState(null, "", "/"); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
+afterEach(() => { view?.unmount(); sessionStorage.clear(); history.replaceState(null, "", "/"); vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 const recentRequired = () => new HttpError(403, "Confirm your password or Passkey to continue.", undefined, "recent_authentication_required")
 const dialog = () => new DOMWrapper(document.body).find('[role="dialog"]')
 const button = (root: { findAll(selector: string): DOMWrapper<Element>[] }, label: string) => root.findAll("button").find(value => value.text() === label)!
@@ -87,19 +90,22 @@ test("signing out hides the previous account while refreshing", async () => {
     return new Promise(resolve => { finishRefresh = resolve })
   }, { id: "u1", name: "Ada", email: "ada@example.test" })
   await flushPromises()
+  expect(setErrorReportingUser).toHaveBeenLastCalledWith({ id: "u1", email: "ada@example.test" })
   await button(view!, i18n.global.t("auth.differentAccount")).trigger("click")
   await view!.vm.$nextTick()
+  expect(setErrorReportingUser).toHaveBeenLastCalledWith(undefined)
   expect(view!.text()).toContain(i18n.global.t("auth.loading"))
   expect(view!.text()).not.toContain("ada@example.test")
   finishRefresh!({ registrationEnabled: true })
   await flushPromises()
 })
 
-test("focus refresh detects a sign-in in another tab", async () => {
+test("focus refresh detects account changes and keeps error reporting identity in sync", async () => {
   history.replaceState(null, "", "/auth/desktop?attempt=native-attempt")
   let user: object | undefined
-  const api = { request: vi.fn(async () => ({ registrationEnabled: true })), status: async () => ({ user }), logout: vi.fn(async () => {}) } as unknown as HttpCentralClient
+  const api = { request: vi.fn(async () => ({ registrationEnabled: true })), status: async () => ({ user }), logout: vi.fn(async () => { user = undefined }) } as unknown as HttpCentralClient
   view = mount(AuthPage, { props: { api }, global: { plugins: [i18n] }, attachTo: document.body })
+  expect(setErrorReportingUser).toHaveBeenLastCalledWith(undefined)
   await flushPromises()
   expect(view!.find('input[type="email"]').exists()).toBe(true)
   user = { id: "u1", name: "Ada", email: "ada@example.test" }
@@ -107,6 +113,18 @@ test("focus refresh detects a sign-in in another tab", async () => {
   await flushPromises()
   expect(view!.find('input[type="email"]').exists()).toBe(false)
   expect(view!.text()).toContain("ada@example.test")
+  expect(setErrorReportingUser).toHaveBeenLastCalledWith({ id: "u1", email: "ada@example.test" })
+  await button(view!, i18n.global.t("auth.differentAccount")).trigger("click")
+  await flushPromises()
+  expect(setErrorReportingUser).toHaveBeenLastCalledWith(undefined)
+  user = { id: "u2", name: "Grace", email: "grace@example.test" }
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(view!.text()).toContain("grace@example.test")
+  expect(setErrorReportingUser).toHaveBeenLastCalledWith({ id: "u2", email: "grace@example.test" })
+  view.unmount()
+  view = undefined
+  expect(setErrorReportingUser).toHaveBeenLastCalledWith()
 })
 
 test("desktop approval confirms recent authentication in a dialog and keeps its attempt", async () => {
@@ -190,9 +208,11 @@ test.each(oauthProviders)("$provider sign-in restores an email verification toke
   view!.unmount()
   const next = mountAt("/auth/email/verify", async () => ({ registrationEnabled: true, [`${provider}Enabled`]: true }), { id: "u1", name: "Ada", email: "ada@example.test" })
   await flushPromises()
+  expect(setErrorReportingUser).toHaveBeenLastCalledWith({ id: "u1", email: "ada@example.test" })
   await view!.get("form").trigger("submit"); await flushPromises()
   expect(next).toHaveBeenCalledWith("POST", "/api/auth/email/verify", { token: "secret" })
   expect(sessionStorage.getItem("deskfleet-email-verify-token")).toBeNull()
+  expect(setErrorReportingUser).toHaveBeenLastCalledWith()
 })
 
 test.each([true, false])("Google sign-in is shown only when configured: %s", async googleEnabled => {
