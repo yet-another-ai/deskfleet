@@ -1,5 +1,5 @@
 use crate::policies::{MachineAction, MachinePolicy, authorize};
-use crate::{ControlStore, Result, json_rows, now_ms, one, resource_id, sql};
+use crate::{ControlStore, Error, Result, json_rows, now_ms, one, resource_id, sql};
 use deskfleet_protocol::control::PeerAuthorization;
 use sea_orm::{ConnectionTrait, TransactionTrait};
 
@@ -10,9 +10,29 @@ impl ControlStore {
         login_id: &str,
         expires: i64,
     ) -> Result<()> {
-        let tx = self.db.begin().await?;
         let machine_id = resource_id(&auth.target_machine.id)?;
         let team_id = resource_id(&auth.team_id)?;
+        // These committed windows also charge failed create/close attempts.
+        // Consume them before opening the grant transaction, never holding a
+        // pooled connection while waiting for another one.
+        if !self
+            .auth_rate_limit(
+                &format!("peer-issue-user:{}", auth.actor.user_id),
+                60,
+                60_000,
+            )
+            .await?
+            || !self
+                .auth_rate_limit(
+                    &format!("peer-issue-registration:{team_id}:{machine_id}"),
+                    240,
+                    60_000,
+                )
+                .await?
+        {
+            return Err(Error::Limited("peer issuance rate exceeded"));
+        }
+        let tx = self.db.begin().await?;
         // Lock FK parents before membership/login rows: revocation locks those
         // parents first, and INSERT otherwise acquires their FK locks last.
         one(
@@ -31,6 +51,7 @@ impl ControlStore {
         let registration_id: i64 = membership.try_get("", "registration_id")?;
         let role = membership.try_get::<String>("", "role")?.parse()?;
         authorize(&MachinePolicy::new(Some(role)), MachineAction::Connect)?;
+        crate::peer_admission::reserve(&tx, auth, login_id, team_id, registration_id).await?;
         tx.execute_raw(sql("INSERT INTO cp_peers(id,registration_id,team_id,user_id,login_session_id,grant_json,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7)",vec![auth.peer_id.clone().into(),registration_id.into(),team_id.into(),auth.actor.user_id.clone().into(),login_id.into(),serde_json::to_value(auth)?.into(),expires.into()])).await?;
         tx.commit().await?;
         Ok(())

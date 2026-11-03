@@ -71,6 +71,19 @@ function fixture(closeGate?: Promise<void>, closeError?: Error) {
   return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, negotiation, forwardingDeadlines, gitListeners, closeStarted, closeCalls: () => closeCalls, advance: (ms: number) => { now += ms }, expired: () => { now += 86_400_001 }, closed: () => closed }
 }
 
+test("unclaimed local peers are capped and a closed claim retains replay protection", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const prepare = (id: string) => f.peers.prepareLocal({
+    peerId: id, authorization: { ...grant(), peerId: id, transport: "local" }, token: "x".repeat(32),
+  })
+  for (let i = 0; i < 16; i++) prepare(`local-${i}`)
+  assert.throws(() => prepare("overflow"), /claim capacity/)
+  await f.peers.close("local-0")
+  assert.throws(() => prepare("local-0"), /new peer/)
+  prepare("replacement")
+  assert.deepEqual(f.negotiation, [])
+})
+
 test("ports require their own action and enable native forwarding before negotiation", async context => {
   const f = fixture(); context.after(() => f.peers.closeAll())
   const authorization: PeerAuthorization = { ...grant(), purpose: "ports", actions: ["ports:forward"] }

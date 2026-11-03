@@ -6,7 +6,7 @@ impl ControlStore {
     /// Remove at most `limit` expired rows from each short-lived identity table.
     /// The server's shared maintenance lease coalesces passes across replicas.
     /// Locked ceremonies are skipped so maintenance cannot delay authentication.
-    /// Login sessions and peer grants remain available for acknowledged cleanup.
+    /// Peer grants retain a day after expiry for acknowledged cleanup.
     ///
     /// # Errors
     /// Returns an error when an expiration query fails.
@@ -20,6 +20,7 @@ impl ControlStore {
             ("cp_login_codes", "expires_at", now),
             ("cp_identity_challenges", "expires_at", now),
             ("cp_invites", "expires_at", now),
+            ("cp_peers", "expires_at", now - 86_400_000),
         ] {
             // Identifiers are fixed above; ctid is only used within this statement.
             let statement = format!(

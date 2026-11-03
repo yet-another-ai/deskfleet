@@ -146,8 +146,9 @@ requests. A database claim permits one pass across API replicas every 30 seconds
 the server allows 20 seconds for a pass. Each identity table and the routing inbox
 use deletion batches of at most 1,000 eligible rows, skipping locked rows.
 Expired API-node deletion locks the parent before cascading to its routes and
-messages, matching lease renewal's lock order. Login sessions, peer grants, and
-durable history remain available to their existing consumers. Machine lists
+messages, matching lease renewal's lock order. Login sessions and durable history
+remain available to their existing consumers. Peer grants retain a 24-hour cleanup
+window after expiry before bounded deletion. Machine lists
 resolve presence in one query against current node leases and revocation state.
 
 Instances use the existing database configuration; process identities are

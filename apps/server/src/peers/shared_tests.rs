@@ -307,6 +307,78 @@ async fn signaling_budget_upgrade_revokes_only_oversized_negotiations() {
 
 #[actix_web::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn peer_admission_serializes_replicas_and_retains_cleanup_receipts() {
+    let fixture = Fixture::new().await;
+    let first = fixture.peer().await;
+    let template = fixture.a.store.peer(&first, &fixture.login).await.unwrap();
+    let mut requests = Vec::new();
+    let expires = now_ms() + 60_000;
+    for index in 0..32 {
+        let store = if index % 2 == 0 {
+            fixture.a.store.clone()
+        } else {
+            fixture.b.store.clone()
+        };
+        let mut grant = template.clone();
+        grant.peer_id = uuid::Uuid::new_v4().to_string();
+        let login = fixture.login.clone();
+        requests.push(actix_web::rt::spawn(async move {
+            store.save_peer(&grant, &login, expires).await
+        }));
+    }
+    let mut accepted = 1;
+    for request in requests {
+        match request.await.unwrap() {
+            Ok(()) => accepted += 1,
+            Err(deskfleet_control_store::Error::Limited(_)) => {}
+            Err(error) => panic!("unexpected admission failure: {error}"),
+        }
+    }
+    assert_eq!(accepted, 16);
+    fixture.a.store.revoke_peer(&first).await.unwrap();
+    let mut replacement = template.clone();
+    replacement.peer_id = uuid::Uuid::new_v4().to_string();
+    fixture
+        .b
+        .store
+        .save_peer(&replacement, &fixture.login, expires)
+        .await
+        .unwrap();
+    // Recently expired/revoked grants remain addressable for acknowledged close.
+    fixture.a.store.prune_auth_records(1000).await.unwrap();
+    assert!(
+        fixture
+            .a
+            .store
+            .peer_for_close(&first, &fixture.login)
+            .await
+            .is_ok()
+    );
+    fixture
+        .a
+        .store
+        .database()
+        .execute_unprepared("UPDATE cp_peers SET expires_at=0")
+        .await
+        .unwrap();
+    fixture.a.store.prune_auth_records(1).await.unwrap();
+    let row = fixture
+        .a
+        .store
+        .database()
+        .query_one_raw(sea_orm::Statement::from_string(
+            sea_orm::DbBackend::Postgres,
+            "SELECT count(*) AS count FROM cp_peers",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<i64>("", "count").unwrap(), 16);
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn signaling_byte_budgets_hold_across_concurrent_writers() {
     let fixture = Fixture::new().await;
     let peer = fixture.peer().await;

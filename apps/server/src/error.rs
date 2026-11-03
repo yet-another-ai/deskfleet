@@ -72,6 +72,9 @@ impl From<deskfleet_control_store::Error> for ApiError {
             Error::NotFound => Self::new(StatusCode::NOT_FOUND, "not_found", "resource not found"),
             Error::Invalid(message) => Self::bad(message),
             Error::Conflict(message) => Self::new(StatusCode::CONFLICT, "conflict", message),
+            Error::Limited(message) => {
+                Self::new(StatusCode::TOO_MANY_REQUESTS, "rate_limited", message)
+            }
             Error::Database(error) => {
                 log_database_error(&error);
                 Self::internal()

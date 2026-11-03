@@ -29,6 +29,27 @@ The registration budget survives reconnects. Error text is limited to 2 KiB;
 events to 24 KiB and their complete wire messages to 32 KiB. Other control
 messages retain their existing limits.
 
+## Peer allocation budgets
+
+Grant admission is serialized across API replicas by user and Team, within the
+same transaction as insertion. Active limits are 16 per login, 64 per user,
+64 per Machine registration, 256 per Team, and 32 per purpose per registration
+(8 for desktop). Issuance attempts also consume shared fixed windows of 60 per
+user per minute and 240 per registration per minute. HTTP returns 429 on
+saturation. WebRTC grants reserve capacity before requesting TURN credentials;
+provisioning failure revokes the reservation. Local grants use the same quotas.
+
+The daemon admits at most 64 active/creating/closing peers per registration and
+128 across registrations, including unclaimed local peers. A registration may
+have at most 16 unclaimed local peers. Native creation has its own 128-peer cap.
+Replay records remain until grant expiry, capped at 4,096 per registration and
+16,384 per daemon; saturation rejects new grants rather than evicting valid
+records. Closing keeps its allocation charged until cleanup settles.
+
+Expired grants remain available for acknowledged close for 24 hours after
+expiry, then maintenance deletes at most 1,000 per pass, cascading negotiation
+and ICE snapshots. This bounds retention without changing live grant lifetime.
+
 ## Trust model
 
 The central service is trusted to authenticate users and enrolled machines,

@@ -7,6 +7,7 @@ mod history;
 mod identity;
 mod machines;
 mod maintenance;
+mod peer_admission;
 mod peer_negotiations;
 mod peers;
 pub mod policies;
@@ -53,6 +54,8 @@ pub enum Error {
     Invalid(&'static str),
     #[error("{0}")]
     Conflict(&'static str),
+    #[error("{0}")]
+    Limited(&'static str),
     #[error("stored record is invalid")]
     Json(#[from] serde_json::Error),
 }

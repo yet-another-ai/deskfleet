@@ -9,6 +9,7 @@ export class PeerSessions {
     if (this.#closed) throw new Error("Peer sessions are closed")
     if (!id) throw new Error("Peer session ID must not be empty")
     if (this.#peers.has(id)) throw new Error(`Peer session already exists: ${id}`)
+    if (this.#peers.size >= 128) throw new Error("Native peer capacity exceeded")
     const pending = createPeer(config)
     this.#peers.set(id, pending)
     try {

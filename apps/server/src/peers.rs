@@ -40,6 +40,8 @@ pub async fn create(
 ) -> Result<web::Json<Value>> {
     let (authorization, a, expires) = create_grant(&req, &s, &b, PeerTransport::Webrtc).await?;
     let id = &authorization.peer_id;
+    s.store.save_peer(&authorization, &a.id, expires).await?;
+    let result = async {
     // A Team's own server replaces the site relay and never consumes allowance.
     let team_turn = s.store.team_turn_server(&b.team_id).await?;
     let relay_denied_reason = match team_turn {
@@ -56,12 +58,18 @@ pub async fn create(
                 .await?,
         );
     }
-    s.store.save_peer(&authorization, &a.id, expires).await?;
     s.store.save_peer_relay_decision(id, relay_allowed).await?;
     let ice_servers = s.store.save_peer_ice_servers(id, &ice_servers).await?;
-    Ok(web::Json(
+    authorize(&req, &s, id).await?;
+    Ok::<_, ApiError>(web::Json(
         json!({"peerId":id,"authorization":authorization,"iceServers":ice_servers,"relayAllowed":relay_allowed,"relayDeniedReason":relay_denied_reason}),
     ))
+    }.await;
+    if result.is_err() {
+        let peers = s.store.revoke_peer(id).await?;
+        s.hub.revoke(peers, "peer_creation_failed").await?;
+    }
+    result
 }
 
 async fn create_grant(
