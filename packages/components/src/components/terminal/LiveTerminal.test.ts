@@ -73,6 +73,24 @@ test("renders byte output and acknowledges only when xterm consumed it; leaving 
   expect(fixture.terminals.hangup).not.toHaveBeenCalled()
 })
 
+test("keeps replaying until the post-ready resize enables interactive stdin", async () => {
+  const fixture = setup()
+  const resize = deferred<null>()
+  vi.mocked(fixture.terminals.resize).mockReturnValueOnce(resize.promise)
+  fixture.resolve()
+  await flushPromises()
+  fixture.emit({ kind: "ready", sessionId: "terminal-1" }, () => {})
+  await flushPromises()
+  expect(fixture.terminals.resize).toHaveBeenCalledWith("terminal-1", 100, 30)
+  expect(fixture.wrapper.get("[data-surface]").attributes("data-interactive")).toBe("false")
+  expect(fixture.connection()).toEqual(["replaying", "Restoring terminal history…"])
+  resize.resolve(null)
+  await flushPromises()
+  expect(fixture.wrapper.get("[data-surface]").attributes("data-interactive")).toBe("true")
+  expect(fixture.connection()?.[0]).toBe("connected")
+  fixture.wrapper.unmount()
+})
+
 test("a transport error disables input and is reported as the connection state", async () => {
   const fixture = setup()
   fixture.resolve()

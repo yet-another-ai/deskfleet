@@ -59,6 +59,11 @@ const connection = computed((): [TerminalConnection, string] => {
   if (attached.value && !replayed.value) return ["replaying", t("terminal.replaying")]
   if (sessionStatus.value === "interrupted") return ["ended", t(agentOwned.value ? "terminal.agentInterrupted" : "terminal.interrupted")]
   if (sessionStatus.value === "exited") return ["ended", exitCode.value === undefined ? t("terminal.ended") : t("terminal.exited", { code: exitCode.value })]
+  // Writable shells stay on "replaying" until activate() finishes the resize RPC and
+  // enables stdin. Reporting "connected" earlier drops keystrokes with no local echo.
+  if (attached.value && !readonly.value && !interactive.value && sessionStatus.value === "running") {
+    return ["replaying", t("terminal.replaying")]
+  }
   return attached.value ? ["connected", t("terminal.connected")] : ["disconnected", t("terminal.disconnected")]
 })
 const { start: scheduleResize, stop: cancelResize } = useTimeoutFn(() => {
