@@ -63,9 +63,10 @@ fsmonitor; diffs disable external commands and text conversion, and checkouts
 disable all discovered filter drivers. Only HTTPS, SSH, and local-file transports
 are allowed. Private remotes use trusted host system/global credentials and SSH
 configuration, never repository-selected credential or SSH helpers.
-Policy preflight, submodule inspection, and the final command share the caller's
-timeout budget. Local `~` and `~user` remote paths use Git's own home expansion
-before inspecting their metadata.
+Fetch does not recurse into submodules, whose remote targets have not been
+inspected. Policy preflight, submodule inspection, and the final command share
+the caller's timeout budget. Local `~` and `~user` remote paths use Git's own
+home expansion before inspecting their metadata.
 
 Repository-local and enabled worktree config allow unrelated tool metadata and
 other unknown keys. The wrapper rejects known executable helpers, includes,

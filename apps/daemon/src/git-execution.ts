@@ -61,6 +61,7 @@ function prohibited(key: string): boolean {
     || /^credential\.(.+\.)?helper$/u.test(key)
     || /^filter\..+\.(clean|smudge|process|required)$/u.test(key)
     || /^hook\..+\.(command|event)$/u.test(key)
+    || /^gpg\.(?:(?:.+\.)?program|ssh\.defaultkeycommand)$/u.test(key)
     || /^http\.(.+\.)?(proxy|proxyauthmethod|proxysslcert|proxysslkey|proxysslcertpasswordprotected|proxysslcerttype|proxysslkeytype|proxysslcainfo|proxysslverify|sslverify|sslcert|sslkey|sslcertpasswordprotected|sslcerttype|sslkeytype|sslcainfo|sslcapath|sslbackend|pinnedpubkey|extraheader|cookiefile)$/u.test(key)
     || /^url\..+\.(insteadof|pushinsteadof)$/u.test(key)
     || /^core\.(fsmonitor|hookspath|sshcommand|gitproxy|askpass|alternaterefscommand)$/u.test(key)
@@ -175,5 +176,8 @@ export async function executeGit(args: string[], options: Options = {}): Promise
   }
   const invocation = args.slice()
   if (command === "diff") invocation.splice(3, 0, "--no-ext-diff", "--no-textconv")
+  // A per-submodule fetch setting can override submodule.recurse=false. Avoid
+  // fetching targets that have not passed the remote policy inspection above.
+  if (command === "fetch") invocation.splice(invocation.indexOf("--", 3), 0, "--no-recurse-submodules")
   return execute([...flags, ...invocation], options)
 }
