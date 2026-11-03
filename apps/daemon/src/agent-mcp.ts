@@ -3,13 +3,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net"
 import type { McpServer } from "@agentclientprotocol/sdk/unstable"
 import { DESKFLEET_TOOLS } from "@deskfleet/mcp/tools"
-import { adapterProcess, AUV_MCP_ARGUMENT, DESKFLEET_MCP_ARGUMENT } from "./agents/adapter-host.ts"
+import { adapterProcess, DESKFLEET_MCP_ARGUMENT } from "./agents/adapter-host.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 
 export interface AgentMcpScope { sessionId: string; workspaceId?: string }
 export interface AgentMcpLease { servers: McpServer[]; close(): void }
 export interface AgentMcpOptions {
-  auvPath?: string
   servers?(): McpServer[]
   authorize(actor: AgentActor, scope: AgentMcpScope): Promise<void>
   dispatch(method: string, params: Record<string, unknown>, actor: AgentActor, scope: AgentMcpScope): Promise<unknown>
@@ -46,14 +45,9 @@ export class AgentMcp {
   }
 
   lease(sessionId: string, workspaceId: string | undefined, actor: AgentActor): AgentMcpLease {
-    const auvLaunch = this.#options.auvPath ? adapterProcess(AUV_MCP_ARGUMENT) : undefined
-    const auvEnv = Object.entries(auvLaunch?.env ?? {}).flatMap(([name, value]) => value === undefined ? [] : [{ name, value }])
-    const auvServer: McpServer[] = this.#options.auvPath && auvLaunch ? [{ name: "auv", command: auvLaunch.command, args: auvLaunch.args ?? [], env: [
-      ...auvEnv, { name: "DESKFLEET_AUV_PATH", value: this.#options.auvPath },
-    ] }] : []
     // Local development fixtures have no centrally authenticated user to delegate.
     if (actor.kind !== "user" || !actor.userId || !actor.deviceId) {
-      return { servers: [...auvServer, ...this.#options.servers?.() ?? []], close() {} }
+      return { servers: [...this.#options.servers?.() ?? []], close() {} }
     }
     if (!this.#endpoint) throw new Error("Agent MCP is unavailable")
     const token = randomBytes(32).toString("hex")
@@ -65,7 +59,6 @@ export class AgentMcp {
         { name: "deskfleet", command: launch.command, args: launch.args ?? [], env: [
           ...env, { name: "DESKFLEET_MCP_ENDPOINT", value: this.#endpoint }, { name: "DESKFLEET_MCP_TOKEN", value: token },
         ] },
-        ...auvServer,
         ...this.#options.servers?.() ?? [],
       ],
       close: () => { this.#grants.delete(token) },
