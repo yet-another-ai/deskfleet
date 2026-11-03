@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi, CentralEvent } from "@deskfleet/client/central"
 import type { VideoCodec } from "@deskfleet/client/desktop-media"
+import { PEER_DISCONNECT_GRACE_MS, PEER_SETUP_TIMEOUT_MS } from "@deskfleet/client/peer-lifecycle"
 import { openNativeDesktopSession, type ViewerCommand, type ViewerEvent } from "./native-desktop-session.ts"
 
 const closing: (() => Promise<void>)[] = []
@@ -374,6 +375,68 @@ test("revocation during capture startup does not wait for the start RPC", async 
   await expect(session.ready).rejects.toThrow("Access revoked")
   expect(f.child.close).toHaveBeenCalledOnce()
   starting.reject(Object.assign(new Error("late encoder failure"), { reason: "encoder" }))
+  await Promise.resolve()
+  expect(f.spawn).toHaveBeenCalledOnce()
+})
+
+test.each(["local", "remote"])("%s disconnect grace during capture startup preserves encoder fallback", async side => {
+  vi.useFakeTimers()
+  const f = fixture({ viewerCodecs: ["av1", "h265", "h264"] })
+  const starting = deferred<void>()
+  f.central.startPeer.mockReturnValueOnce(starting.promise)
+  const session = f.open()
+  await vi.waitFor(() => expect(f.spawn).toHaveBeenCalledOnce())
+  f.receive({ type: "offer", sdp: "av1" }); f.receive({ type: "connected" })
+  await vi.waitFor(() => expect(f.central.startPeer).toHaveBeenCalledOnce())
+  if (side === "local") f.receive({ type: "disconnected" })
+  else f.emit({ type: "peerEvent", peerId: "peer", event: { kind: "stateChanged", state: "disconnected" } as never })
+  await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.child.close).not.toHaveBeenCalled()
+  expect(f.spawn).toHaveBeenCalledOnce()
+  starting.reject(Object.assign(new Error("AV1 encoder unavailable"), { reason: "encoder" }))
+  await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith(expect.objectContaining({ codec: "h265" })))
+  f.receive({ type: "offer", sdp: "h265" }); f.receive({ type: "connected" })
+  await session.ready
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.central.closePeer).toHaveBeenCalledOnce()
+})
+
+test.each(["local", "remote"])("%s expired grace stays terminal when capture startup succeeds", async side => {
+  vi.useFakeTimers()
+  const f = fixture({ viewerCodecs: ["av1", "h265", "h264"] })
+  const starting = deferred<void>()
+  f.central.startPeer.mockReturnValueOnce(starting.promise)
+  const session = f.open()
+  await vi.waitFor(() => expect(f.spawn).toHaveBeenCalledOnce())
+  f.receive({ type: "offer", sdp: "offer" }); f.receive({ type: "connected" })
+  await vi.waitFor(() => expect(f.central.startPeer).toHaveBeenCalledOnce())
+  if (side === "local") f.receive({ type: "disconnected" })
+  else f.emit({ type: "peerEvent", peerId: "peer", event: { kind: "stateChanged", state: "disconnected" } as never })
+  await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
+  starting.resolve()
+  await expect(session.ready).rejects.toThrow("connection lost")
+  expect(f.spawn).toHaveBeenCalledOnce()
+  expect(f.child.close).toHaveBeenCalledOnce()
+})
+
+test("the startup deadline still closes a disconnected peer when capture startup never settles", async () => {
+  vi.useFakeTimers()
+  const f = fixture({ viewerCodecs: ["av1", "h265", "h264"] })
+  const starting = deferred<void>()
+  f.central.startPeer.mockReturnValueOnce(starting.promise)
+  const session = f.open()
+  await vi.waitFor(() => expect(f.spawn).toHaveBeenCalledOnce())
+  f.receive({ type: "offer", sdp: "offer" }); f.receive({ type: "connected" })
+  await vi.waitFor(() => expect(f.central.startPeer).toHaveBeenCalledOnce())
+  f.receive({ type: "disconnected" })
+  await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
+  expect(f.child.close).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS - PEER_DISCONNECT_GRACE_MS)
+  await expect(session.ready).rejects.toThrow("timed out")
+  expect(f.child.close).toHaveBeenCalledOnce()
+  expect(f.central.closePeer).toHaveBeenCalledOnce()
+  starting.reject(Object.assign(new Error("late encoder error"), { reason: "encoder" }))
   await Promise.resolve()
   expect(f.spawn).toHaveBeenCalledOnce()
 })

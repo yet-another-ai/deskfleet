@@ -88,8 +88,8 @@ function openAttempt(
   let localSending = Promise.resolve()
   let expires: ReturnType<typeof setTimeout> | undefined
   let inputTimeout: ReturnType<typeof setTimeout> | undefined
-  const localDisconnects = createPeerDisconnectGuard(() => fail(new Error("Native desktop connection lost")))
-  const remoteDisconnects = createPeerDisconnectGuard(() => fail(new Error("Remote desktop connection lost")))
+  const localDisconnects = createPeerDisconnectGuard(() => transportFailed(new Error("Native desktop connection lost")))
+  const remoteDisconnects = createPeerDisconnectGuard(() => transportFailed(new Error("Remote desktop connection lost")))
   const localCandidates: IceCandidate[] = [], remoteCandidates: IceCandidate[] = []
   let resolveReady!: () => void, rejectReady!: (error: Error) => void
   const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })

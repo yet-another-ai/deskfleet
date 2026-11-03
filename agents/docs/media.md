@@ -471,9 +471,10 @@ or decoder startup failure tries the next common codec, using a new native
 process and grant after both the previous viewer and remote peer have closed.
 Authorization, signaling, input, and transport failures do not trigger codec
 fallback. Unavailable codec extensions or hardware never imply support.
-While the capture-start RPC is pending, a peer closure or resulting native
-transport error waits for that RPC's result: encoder startup may close the peer
-before returning its classified failure. A successful RPC still surfaces any
+While the capture-start RPC is pending, a peer closure, expired local or remote
+disconnect grace, or resulting native transport error waits for that RPC's result:
+encoder startup may close the peer before returning its classified failure.
+A successful RPC still surfaces any
 pending transport failure. Revocation, expiry, and explicit window closure
 remain immediate, and the existing startup deadline bounds the wait.
 
