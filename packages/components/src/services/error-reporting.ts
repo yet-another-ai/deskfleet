@@ -1,43 +1,19 @@
-import { attachErrorHandler, browserApiErrorsIntegration, captureException, dedupeIntegration, eventFiltersIntegration, globalHandlersIntegration, init, setUser, type ErrorEvent, type Event, type EventHint } from "@sentry/vue"
+import { attachErrorHandler, browserApiErrorsIntegration, captureException, dedupeIntegration, eventFiltersIntegration, globalHandlersIntegration, init, setUser, type ErrorEvent } from "@sentry/vue"
 import type { App } from "vue"
+import { useEventListener } from "@vueuse/core"
 import type { AccountUser, CentralApi } from "@deskfleet/client/central"
 import type { DesktopErrorReportingContext } from "@deskfleet/client/error-reporting-context"
 import { CentralRequestError } from "@deskfleet/client/request-diagnostics"
 import { parseSentryDsn } from "@deskfleet/client/sentry-config"
+import { prepareCentralRequest } from "./central-request-event.ts"
+import { CentralRequestReports } from "./central-request-reports.ts"
 
 // One SDK per document, including the independently mounted MachineSurface apps.
 let client: ReturnType<typeof init>
 const installed = new WeakSet<App>()
-
-function prepareCentralRequest(event: Event, hint: EventHint): Event | null {
-  const error = hint.originalException
-  if (!(error instanceof CentralRequestError)) return event
-  const { method, route, rpcMethod, elapsedMs, causes, kind, phase, status, transport } = error.diagnostics
-  if (kind === "cancelled") return null
-  const codes = [...new Set(causes.flatMap(cause => cause.code ? [cause.code] : []))].sort()
-  const failure = kind === "http" ? `HTTP ${status}` : codes.join(",") || kind
-  const exception = event.exception?.values?.at(-1)
-  if (exception) {
-    // Change the report, not the Error that the UI receives.
-    exception.type = "CentralRequestError"
-    exception.value = `${method} ${route}${rpcMethod ? ` (${rpcMethod})` : ""} — ${failure}`
-  }
-  // Generated stacks differ between platform builds. Keep them as evidence,
-  // but group transport failures by the operation and cause alone.
-  event.fingerprint = ["central-request", transport, method, route, rpcMethod ?? "", kind, phase, failure]
-  event.tags = { ...event.tags,
-    "central.transport": transport, "central.method": method, "central.route": route,
-    "central.failure_kind": kind, "central.phase": phase,
-    ...(status !== undefined ? { "central.status": String(status) } : {}),
-    ...(rpcMethod ? { "central.rpc_method": rpcMethod } : {}),
-    ...(codes[0] ? { "central.cause_code": codes[0] } : {}),
-  }
-  event.contexts = { ...event.contexts, central_request: {
-    method, route, rpc_method: rpcMethod, elapsed_ms: elapsedMs, transport, kind, phase, status,
-    causes: causes.map(cause => cause.code ? `${cause.name}: ${cause.code}` : cause.name),
-  } }
-  return event
-}
+let requestReports: CentralRequestReports | undefined
+let stopPagehide: (() => void) | undefined
+let reportingUserKey: string | undefined
 
 function prepareError(event: ErrorEvent): ErrorEvent {
   // Authentication URLs and application state are not error-reporting context.
@@ -61,6 +37,7 @@ function prepareError(event: ErrorEvent): ErrorEvent {
 export function initializeErrorReporting(platform: "web" | "desktop", context?: DesktopErrorReportingContext): void {
   const configuration = parseSentryDsn(import.meta.env.VITE_SENTRY_DSN)
   if (client || !configuration) return
+  const dedupe = dedupeIntegration()
   client = init({
     dsn: configuration.dsn,
     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT?.trim() || import.meta.env.MODE,
@@ -80,17 +57,30 @@ export function initializeErrorReporting(platform: "web" | "desktop", context?: 
     // Explicit error-only integrations omit URL, DOM, console and session collection.
     defaultIntegrations: false,
     integrations: [eventFiltersIntegration(), browserApiErrorsIntegration(), globalHandlersIntegration(),
-      { name: "CentralRequests", processEvent: prepareCentralRequest }, dedupeIntegration()],
+      { name: "CentralRequests", processEvent: prepareCentralRequest },
+      // Consecutive distinct requests must not disappear in SDK deduplication.
+      // CentralRequestReports owns repetition; the SDK still guards Error identity.
+      { ...dedupe, processEvent: (event, hint, sdk) => hint.originalException instanceof CentralRequestError
+        ? event : dedupe.processEvent!(event, hint, sdk) }],
     dataCollection: { userInfo: false, cookies: false, httpHeaders: false, httpBodies: [], urlQueryParams: false },
     maxBreadcrumbs: 0,
     sendClientReports: false,
     beforeSend: prepareError,
   })
+  requestReports = new CentralRequestReports((error, repetition) => captureException(error, {
+    tags: { "central.report_type": repetition.summary ? "summary" : "occurrence" },
+    contexts: { request_repetition: { ...repetition } },
+  }))
+  if (typeof window !== "undefined") stopPagehide = useEventListener(window, "pagehide", () => requestReports?.flush())
 }
 
 /** Bind the authenticated account without collecting other profile fields. */
 export function setErrorReportingUser(user?: Pick<AccountUser, "id" | "email">): void {
   if (!client) return
+  const key = user ? JSON.stringify([user.id, user.email ?? ""]) : undefined
+  // Summaries belong to the identity active when their failures occurred.
+  if (key !== reportingUserKey) requestReports?.flush()
+  reportingUserKey = key
   setUser(user ? { id: user.id, ...(user.email ? { email: user.email } : {}) } : null)
 }
 
@@ -100,7 +90,7 @@ export function captureCentralRequestError(error: unknown): void {
   // Expected HTTP rejections belong to their UI handlers. Unhandled ones still
   // reach the global integration with the same diagnostics.
   if (error.diagnostics.kind === "cancelled" || error.diagnostics.kind === "http" && error.diagnostics.status! < 500 && error.diagnostics.status !== 429) return
-  captureException(error)
+  requestReports?.capture(error)
 }
 
 /** Attach each Vue app without starting another SDK or collecting component props. */
@@ -132,6 +122,10 @@ export function installErrorReportingAccount(app: App, central: Pick<CentralApi,
 }
 
 export async function shutdownErrorReporting(): Promise<void> {
+  stopPagehide?.()
+  stopPagehide = undefined
+  requestReports?.flush()
+  requestReports = undefined
   const previous = client
   setErrorReportingUser()
   client = undefined

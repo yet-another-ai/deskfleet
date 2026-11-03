@@ -4,6 +4,7 @@ import { captureEvent, getClient, init, type ErrorEvent } from "@sentry/vue"
 import type { AccountState, CentralApi } from "@deskfleet/client/central"
 import { centralRequestFailure } from "@deskfleet/client/request-diagnostics"
 import { browserClient } from "@deskfleet/client/browser"
+import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { captureCentralRequestError, initializeErrorReporting, installErrorReporting, installErrorReportingAccount, setErrorReportingUser, shutdownErrorReporting } from "./error-reporting.ts"
 
@@ -28,18 +29,25 @@ beforeEach(() => {
 })
 afterEach(async () => {
   for (const app of apps.splice(0)) app.unmount()
+  vi.useRealTimers()
   await shutdownErrorReporting()
   vi.clearAllMocks()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
 })
 
+async function flushSdk(): Promise<void> {
+  const pending = getClient()?.flush(1000)
+  if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(10)
+  await pending
+}
+
 function events(): ErrorEvent[] {
   return transport.send.mock.calls.flatMap(([envelope]) => envelope[1]
     .filter(([header]) => header.type === "event").map(([, event]) => event as ErrorEvent))
 }
 
-function requestFailure(rpcMethod = "_deskfleet/agent/configuration", code = "ENOTFOUND", requestTransport: "node_fetch" | "browser_fetch" = "node_fetch"): Error {
+function requestFailure(rpcMethod = "_deskfleet/agent/configuration", code = "ENOTFOUND", requestTransport: "node_fetch" | "browser_fetch" = "node_fetch") {
   return centralRequestFailure(new TypeError("fetch failed", {
     cause: Object.assign(new Error("getaddrinfo ENOTFOUND private-host"), { code }),
   }), {
@@ -142,7 +150,7 @@ test("reports desktop OS and runtime versions for errors without a machine ident
     electronVersion: "45.0.0", nodeVersion: "24.0.0", chromeVersion: "152.0.0.0",
   })
   captureEvent({ message: "desktop failure" })
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events()[0]?.contexts).toMatchObject({
     os: { name: "macOS", version: "15.6" }, device: { arch: "arm64" }, app: { app_version: "0.2.2" },
     runtime: { name: "Electron", version: "45.0.0" }, node: { name: "Node.js", version: "24.0.0" },
@@ -156,7 +164,7 @@ test("reports handled central transport failures with bounded diagnostics and de
   setErrorReportingUser({ id: "user-1", email: "ada@example.test" })
   const error = requestFailure()
   captureCentralRequestError(error)
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events()).toHaveLength(1)
   expect(events()[0]).toMatchObject({
     user: { id: "user-1", email: "ada@example.test" },
@@ -171,14 +179,14 @@ test("reports handled central transport failures with bounded diagnostics and de
   expect(error.message).toBe("fetch failed")
   expect(JSON.stringify(events())).not.toContain("private")
   globalThis.onunhandledrejection?.call(window, { reason: error } as PromiseRejectionEvent)
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events()).toHaveLength(1)
 })
 
 test("leaves ordinary errors to their existing handlers", async () => {
   initializeErrorReporting("desktop")
   captureCentralRequestError(new Error("Provider rejected the model"))
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events()).toHaveLength(0)
 })
 
@@ -193,7 +201,7 @@ test("retains consecutive failures with the same stack but distinct RPC methods 
     const error = requestFailure(method, code)
     error.stack = "TypeError: fetch failed\n    at HttpCentralClient.request (https://app.example/assets/main.js:10:20)"
     captureCentralRequestError(error)
-    await getClient()?.flush(1000)
+    await flushSdk()
   }
   expect(events()).toHaveLength(3)
   expect(events().map(event => event.fingerprint)).toEqual(requests.map(([method, code]) => [
@@ -207,7 +215,7 @@ test("groups the same operation across generated platform stacks while retaining
     const error = requestFailure()
     error.stack = `TypeError: fetch failed\n    at HttpCentralClient.request (app:///${bundle}.js:10:20)`
     captureCentralRequestError(error)
-    await getClient()?.flush(1000)
+    await flushSdk()
   }
   expect(events()).toHaveLength(2)
   expect(events()[0]?.fingerprint).toEqual(events()[1]?.fingerprint)
@@ -218,7 +226,7 @@ test("groups the same operation across generated platform stacks while retaining
 test("enriches an unhandled central rejection with the same operation identity", async () => {
   initializeErrorReporting("web")
   globalThis.onunhandledrejection?.call(window, { reason: requestFailure(undefined, undefined, "browser_fetch") } as PromiseRejectionEvent)
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events()[0]?.fingerprint).toEqual([
     "central-request", "browser_fetch", "POST", "/api/teams/:teamId/machines/:machineId/rpc", "_deskfleet/agent/configuration", "network", "fetch", "ENOTFOUND",
   ])
@@ -235,7 +243,7 @@ test("the Web adapter reports handled HTTP and decoding failures with bounded di
   try {
     await adapter.central!.teams().catch(() => {})
     await adapter.central!.teams().catch(() => {})
-    await getClient()?.flush(1000)
+    await flushSdk()
     expect(events()).toHaveLength(2)
     expect(events().map(event => event.exception?.values?.[0]?.value)).toEqual(["GET /api/teams — HTTP 503", "GET /api/teams — decode"])
     expect(events()[0]?.contexts?.central_request).toMatchObject({ transport: "browser_fetch", kind: "http", status: 503 })
@@ -253,9 +261,70 @@ test("caller cancellation is ignored while deadlines still report a timeout", as
     captureCentralRequestError(error)
     globalThis.onunhandledrejection?.call(window, { reason: error } as PromiseRejectionEvent)
   }
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events()).toHaveLength(1)
   expect(events()[0]?.tags?.["central.failure_kind"]).toBe("timeout")
+})
+
+test("background summaries reach the real SDK and user requests keep every occurrence", async () => {
+  vi.useFakeTimers()
+  initializeErrorReporting("web")
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false)
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => { throw new TypeError("Failed to fetch") }))
+  const adapter = await browserClient("https://fleet.example", captureCentralRequestError)
+  const automatic = withCentralRequestTrigger(adapter.central!, "background")
+  const user = withCentralRequestTrigger(automatic, "user")
+  try {
+    for (let index = 0; index < 3; index++) await automatic.teams().catch(() => {})
+    await flushSdk()
+    expect(events()).toHaveLength(1)
+    expect(events()[0]?.contexts?.central_request).toMatchObject({ trigger: "background", online: false, visibility: "hidden" })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await flushSdk()
+    expect(events()).toHaveLength(2)
+    expect(events()[1]?.contexts?.request_repetition).toEqual({ occurrences: 2, window_ms: 60_000, summary: true })
+    expect(events()[1]?.fingerprint).toEqual(events()[0]?.fingerprint)
+    for (let index = 0; index < 2; index++) await user.teams().catch(() => {})
+    await flushSdk()
+    expect(events().filter(event => event.tags?.["central.trigger"] === "user")).toHaveLength(2)
+  } finally { (adapter.central as HttpCentralClient).dispose() }
+})
+
+test.each(["pagehide", "shutdown"])("flushes background occurrence counts on %s", async lifecycle => {
+  vi.useFakeTimers()
+  initializeErrorReporting("desktop")
+  for (let index = 0; index < 3; index++) {
+    const error = requestFailure()
+    error.diagnostics.trigger = "background"
+    captureCentralRequestError(error)
+  }
+  if (lifecycle === "pagehide") window.dispatchEvent(new Event("pagehide"))
+  else {
+    const closing = shutdownErrorReporting()
+    await vi.advanceTimersByTimeAsync(10)
+    await closing
+  }
+  await flushSdk()
+  expect(events().map(event => event.contexts?.request_repetition?.occurrences)).toEqual([1, 2])
+})
+
+test("background summaries stay with their original account across identity changes", async () => {
+  initializeErrorReporting("web")
+  setErrorReportingUser({ id: "first", email: "first@example.test" })
+  for (let index = 0; index < 3; index++) {
+    const error = requestFailure()
+    error.diagnostics.trigger = "background"
+    captureCentralRequestError(error)
+  }
+  setErrorReportingUser({ id: "second", email: "second@example.test" })
+  const error = requestFailure()
+  error.diagnostics.trigger = "background"
+  captureCentralRequestError(error)
+  await flushSdk()
+  expect(events().map(event => [event.user?.id, event.contexts?.request_repetition?.occurrences])).toEqual([
+    ["first", 1], ["first", 2], ["second", 1],
+  ])
 })
 
 test("captures real Vue errors from multiple apps through one client without props", async () => {
@@ -284,7 +353,7 @@ test("captures real Vue errors from multiple apps through one client without pro
   // Unmounting a machine surface must not close the document's client.
   apps.pop()!.unmount()
   captureEvent({ message: "root still active" })
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events()).toHaveLength(3)
   expect(events()[2]?.user).toEqual({ id: "user-1", email: "ada@example.test" })
 })
@@ -303,7 +372,7 @@ test.each(["web", "desktop"] as const)("filters browser noise while retaining ap
   for (const message of ["Script error.", "ResizeObserver loop completed with undelivered notifications."]) {
     globalThis.onerror?.call(window, message, "", 0, 0)
   }
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events()).toHaveLength(0)
 
   const messages = [
@@ -314,7 +383,7 @@ test.each(["web", "desktop"] as const)("filters browser noise while retaining ap
   for (const message of messages) {
     globalThis.onerror?.call(window, message, "https://app.example.com/assets/index.js", 10, 20, new Error(message))
   }
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events().map(event => event.exception?.values?.[0]?.value)).toEqual(messages)
 })
 
@@ -329,7 +398,7 @@ test("retains only user ID and email while omitting request data, breadcrumbs, p
     breadcrumbs: [{ message: "private" }],
     extra: { payload: "private" },
   })
-  await getClient()?.flush(1000)
+  await flushSdk()
   expect(events()).toHaveLength(1)
   expect(events()[0]?.user).toEqual({ id: "user-1", email: "ada@example.test" })
   expect(events()[0]?.exception?.values?.[0]?.stacktrace?.frames?.[0]).toMatchObject({ filename: "https://app.example.com/assets/app.js", lineno: 12 })

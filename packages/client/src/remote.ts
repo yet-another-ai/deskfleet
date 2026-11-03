@@ -1,3 +1,4 @@
+import { withCentralRequestTrigger } from "./reporting-central.ts"
 import { relayFailureMessage, type RelayDeniedReason } from "./relay.ts"
 import { observePeerGrant, type PeerConnectionTelemetry } from "./peer-telemetry.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
@@ -19,8 +20,12 @@ const management = new Set<string>([
   "_deskfleet/git/branches",
 ])
 
+const managementReads = new Set<string>(["_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/command/get", "_deskfleet/git/branches"])
+
 /** One opened machine owns this adapter until its account/Team scope is released. */
 export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine, options: { local?: boolean } = {}): { api: DeskfleetDesktopApi; refreshCatalog(): void; updateMachine(value: Machine): void; setLocal(local: boolean): void; dispose(): void } {
+  const user = withCentralRequestTrigger(central, "user")
+  const automatic = withCentralRequestTrigger(central, "background")
   let local = options.local === true && host.platform !== "web"
   const localChannels = new Map<string, DataChannel>()
   let muxUnsupported = false
@@ -131,6 +136,12 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     onEvent(listener: (event: DesktopEvent) => void) { events.add(listener); return () => { events.delete(listener) } },
   })
   const rpc = <T>(method: string, params: unknown = {}) => central.rpc<T>(machine.teamId, machine.id, method, params)
+  const userRpc = <T>(method: string, params: unknown = {}) => user.rpc<T>(machine.teamId, machine.id, method, params)
+  const control = <M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]) => {
+    if (!management.has(method) || local && method === "_deskfleet/git/branches") return undefined
+    const api = method === "_deskfleet/session/read" ? automatic : managementReads.has(method) ? central : user
+    return api.rpc<AgentMethods[M]["result"]>(machine.teamId, machine.id, method, params)
+  }
   const api: DeskfleetDesktopApi = {
     ...host,
     target: { id: machine.id, local, lastSeen: machine.lastSeenAt ?? undefined },
@@ -140,25 +151,25 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         name = snapshot.machineName
         return snapshot
       },
-      createWorkspace: (name, directories) => rpc("workspaceCreate", { name, directories }),
-      updateWorkspace: (workspaceId, name, directories) => rpc("workspaceUpdate", { workspaceId, name, directories }),
-      deleteWorkspace: workspaceId => rpc("workspaceDelete", { workspaceId }),
+      createWorkspace: (name, directories) => userRpc("workspaceCreate", { name, directories }),
+      updateWorkspace: (workspaceId, name, directories) => userRpc("workspaceUpdate", { workspaceId, name, directories }),
+      deleteWorkspace: workspaceId => userRpc("workspaceDelete", { workspaceId }),
       onChanged: listener => { catalogEvents.add(listener); return () => { catalogEvents.delete(listener) } },
     },
     filesystem: { listDirectories: path => rpc("directoryList", path === undefined ? {} : { path }) },
     system: { status: () => rpc("systemStatus") },
     providers: {
       display: async () => (await central.catalog(machine.teamId, machine.id)).providers ?? { providers: [] },
-      list: () => rpc("providerList"), create: provider => rpc("providerCreate", { provider }),
-      update: (providerId, changes) => rpc("providerUpdate", { providerId, changes }),
-      remove: providerId => rpc("providerRemove", { providerId }), test: provider => rpc("providerTest", { provider }),
-      probe: provider => rpc("providerProbe", { provider }),
-      install: provider => rpc("providerInstall", { provider }), login: provider => rpc("providerLogin", { provider }),
+      list: () => rpc("providerList"), create: provider => userRpc("providerCreate", { provider }),
+      update: (providerId, changes) => userRpc("providerUpdate", { providerId, changes }),
+      remove: providerId => userRpc("providerRemove", { providerId }), test: provider => userRpc("providerTest", { provider }),
+      probe: provider => userRpc("providerProbe", { provider }),
+      install: provider => userRpc("providerInstall", { provider }), login: provider => userRpc("providerLogin", { provider }),
       onChanged: listener => { providerEvents.add(listener); return () => { providerEvents.delete(listener) } },
     },
     agent: {
       ...signaling("agent"),
-      control: <M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]) => management.has(method) && !(local && method === "_deskfleet/git/branches") ? rpc<AgentMethods[M]["result"]>(method, params) : undefined,
+      control,
       history: {
         available: () => online,
         list: async () => (await central.sessions(machine.teamId, machine.id)).map(snapshot => ({ ...snapshot.session,
@@ -171,7 +182,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     terminal: {
       ...signaling("terminal"), list: async () => online ? (knownTerminals = await rpc("terminalList")) : knownTerminals,
       multiplexed: !local && !!messageChannel("terminal"),
-      dial: options => rpc("terminalDial", options), hangup: terminalId => rpc("terminalHangup", { terminalId }),
+      dial: options => userRpc("terminalDial", options), hangup: terminalId => userRpc("terminalHangup", { terminalId }),
       onSessionEvent: () => () => {},
     },
     desktop: {

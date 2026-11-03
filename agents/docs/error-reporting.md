@@ -82,7 +82,8 @@ remote machine.
 
 Central API failures carry the HTTP method, an allowlisted route template,
 the allowlisted machine RPC method when applicable, elapsed milliseconds, and a
-bounded summary of error names and network/TLS error codes from nested causes
+bounded summary of error names, network/TLS error codes, and allowlisted system
+calls (`connect`, `read`, `write`, `getaddrinfo`, `getnameinfo`, `shutdown`) from nested causes
 and aggregate connection failures. The transport captures the request's caller
 stack before awaiting fetch; local filenames in the serialized stack are reduced
 to `app:///` basenames. Hostnames, resource IDs, query strings, headers, request
@@ -117,6 +118,41 @@ excluded from both paths, while deadlines still report as timeouts. HTTP status,
 codes, and recovery reasons remain on the existing Web `HttpError`; desktop keeps
 its existing displayed error shape and carries HTTP status in diagnostic context.
 This reporting path does not retry requests or change proxy/network selection.
+
+### Request attribution and background repetition
+
+`withCentralRequestTrigger` creates immutable API views with `user`, `background`,
+or `unknown` attribution; concurrent requests do not share mutable trigger state.
+Automatic account/startup/reconnect loads, GitHub status polling, pinned-session
+metadata, scheduled-task polling, and session-read acknowledgements opt into
+`background`. Account actions, machine/workspace/provider/session mutations,
+terminal actions, and manual scheduled-task refreshes opt into `user`. Calls that
+can serve both automatic and interactive reads keep `unknown`; a GET or RPC name
+alone does not establish that a request runs in the background.
+
+Only handled background network/timeouts, HTTP 429, and HTTP 5xx are collapsed.
+The first error is sent immediately. Matching failures within the next minute
+increment a counter; a timer sends their summary even if the burst has stopped.
+The key is the same bounded operation/cause fingerprint used for issue grouping,
+without machine, team, or session IDs. Each renderer owns at most 128 active
+buckets; eviction, `pagehide`, and SDK shutdown flush pending counts. Account
+identity changes flush pending summaries before binding the new identity. No request
+retry or UI error is suppressed. Browser termination and network loss can still
+prevent best-effort delivery.
+
+Events carry `request_repetition.occurrences` (1 for an individual event; the
+number of suppressed repeats for a summary), `window_ms`, and `summary`.
+`central.report_type` distinguishes `occurrence` and `summary`. Sum the occurrence
+field to count handled failures; Sentry's event count now counts reports, not
+requests. Unhandled errors bypass this reduction. User/unknown requests and
+decoding failures are individually reported, including consecutive identical
+stacks. Sentry's same-Error guard still prevents a captured rejection from being
+reported again by its global handler.
+
+`central.trigger`, `central.online`, and `central.visibility` are searchable tags.
+The renderer samples the browser's online boolean and visible/hidden state when
+the operation fails; these are hints, not proof of server reachability. No IP,
+hostname, proxy URL, network name, or raw socket data is collected.
 
 The integration does not enable tracing, profiling, session replay, or log
 capture. It does not attach component props, breadcrumbs, other profile fields, or

@@ -1,3 +1,4 @@
+import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import { useDocumentVisibility, useEventBus, useIntervalFn, useWindowFocus } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { computed, hasInjectionContext, onScopeDispose, ref, shallowRef, watch } from "vue"
@@ -16,6 +17,7 @@ const refreshInterval = 60_000
 /** Git identity comes from the machine catalog; only GitHub status is polled. */
 export const usePullRequestsStore = defineStore("pull-requests", () => {
   const account = hasInjectionContext() ? useAccountSession() : undefined
+  const automatic = account && withCentralRequestTrigger(account.central, "background")
   const fleet = useFleetStore()
   const visibility = useDocumentVisibility()
   const focused = useWindowFocus()
@@ -76,7 +78,7 @@ export const usePullRequestsStore = defineStore("pull-requests", () => {
     const current = generation
     const request = (async () => {
       try {
-        const value = await account.central.githubSettings()
+        const value = await automatic!.githubSettings()
         if (current === generation && !disposed) {
           settings.value = value
           if (!authorized.value) results.value = {}
@@ -103,7 +105,7 @@ export const usePullRequestsStore = defineStore("pull-requests", () => {
     const request = (async () => {
       do {
         catalogDirty.delete(machineId)
-        const { snapshot } = await account.central.catalog(account.teamId.value!, machineId)
+        const { snapshot } = await automatic!.catalog(account.teamId.value!, machineId)
         if (current !== generation || disposed || !account.machines.value.some(machine => machine.id === machineId)) return
         if (!catalogDirty.has(machineId)) catalogs.value = { ...catalogs.value, [machineId]: snapshot }
       } while (catalogDirty.has(machineId) && active.value)
@@ -121,7 +123,7 @@ export const usePullRequestsStore = defineStore("pull-requests", () => {
     const current = generation
     const [owner, repo] = branch.repository.split("/") as [string, string]
     const headOwner = branch.headRepository.split("/")[0]!
-    const request = account.central.githubPullRequest({ owner, repo, branch: branch.branch, headOwner }).then(({ pullRequest }) => {
+    const request = automatic!.githubPullRequest({ owner, repo, branch: branch.branch, headOwner }).then(({ pullRequest }) => {
       if (current === generation && !disposed && authorized.value) results.value = { ...results.value, [key]: { pullRequest, checkedAt: Date.now() } }
     }).catch(() => {
       if (current === generation && !disposed) results.value = { ...results.value, [key]: { pullRequest: null, checkedAt: Date.now() } }

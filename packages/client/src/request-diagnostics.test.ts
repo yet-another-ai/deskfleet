@@ -2,7 +2,7 @@ import { expect, test } from "vitest"
 import { CentralRequestError, centralRequestFailure, deserializeCentralRequestError, serializeCentralRequestError } from "./request-diagnostics.ts"
 
 test("summarizes nested network and aggregate causes without their addresses or messages", () => {
-  const denied = Object.assign(new Error("connect ECONNREFUSED 192.0.2.10:443"), { code: "ECONNREFUSED", address: "192.0.2.10" })
+  const denied = Object.assign(new Error("connect ECONNREFUSED 192.0.2.10:443"), { code: "ECONNREFUSED", syscall: "connect", address: "192.0.2.10" })
   const timeout = Object.assign(new Error("connect to private.fleet.example timed out"), { code: "ETIMEDOUT" })
   const cause = new TypeError("fetch failed", { cause: new AggregateError([denied, timeout], "private host") })
   const error = centralRequestFailure(cause, {
@@ -16,14 +16,14 @@ test("summarizes nested network and aggregate causes without their addresses or 
   expect(error.diagnostics).toEqual({
     method: "POST", route: "/api/teams/:teamId/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", elapsedMs: 13,
     kind: "timeout", transport: "node_fetch", phase: "fetch",
-    causes: [{ name: "TypeError" }, { name: "AggregateError" }, { name: "Error", code: "ECONNREFUSED" }, { name: "Error", code: "ETIMEDOUT" }],
+    causes: [{ name: "TypeError" }, { name: "AggregateError" }, { name: "Error", code: "ECONNREFUSED", syscall: "connect" }, { name: "Error", code: "ETIMEDOUT" }],
   })
   const serialized = JSON.stringify(serializeCentralRequestError(error))
   for (const secret of ["192.0.2.10", "private", "secret"]) expect(serialized).not.toContain(secret)
 })
 
 test("unknown routes, methods and cause properties cannot become diagnostic values", () => {
-  const cause = Object.assign(new Error("fetch failed"), { name: "private-user", code: "private-key" })
+  const cause = Object.assign(new Error("fetch failed"), { name: "private-user", code: "private-key", syscall: "private-host" })
   const error = centralRequestFailure(cause, {
     method: "private-method", path: "/api/private-workspace/private-file?token=secret", body: { method: "private-rpc" }, elapsedMs: 2,
   })

@@ -1,3 +1,4 @@
+import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import { snapshotIsWorking } from "../services/agent-conversation.ts"
 import { useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
@@ -27,6 +28,7 @@ const key = (machineId: string, sessionId: string) => JSON.stringify([machineId,
 /** Personal device preferences; central machine IDs qualify machine-local Session IDs. */
 export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
   const account = hasInjectionContext() ? useAccountSession() : undefined
+  const automatic = account && withCentralRequestTrigger(account.central, "background")
   const fleet = useFleetStore()
   const agents = useAgentSessionsStore()
   const scope = computed(() => {
@@ -88,7 +90,7 @@ export const usePinnedSessionsStore = defineStore("pinned-sessions", () => {
     if (!account || !selected) return
     await Promise.all(items.value.filter(item => !item.loaded).map(async item => {
       try {
-        const { snapshot } = await account.central.session(account.teamId.value!, item.machineId, item.sessionId)
+        const { snapshot } = await automatic!.session(account.teamId.value!, item.machineId, item.sessionId)
         if (disposed || selected !== scope.value || current !== revision || !isPinned(item.machineId, item.sessionId)) return
         metadata.value[key(item.machineId, item.sessionId)] = {
           working: snapshotIsWorking(snapshot), title: snapshot.session.title, archiveState: snapshot.session.archiveState, context: snapshot.session.context,

@@ -2,16 +2,20 @@ import type { DesktopErrorReason } from "./desktop-media.ts"
 
 export type RequestFailureKind = "network" | "timeout" | "cancelled" | "http" | "decode"
 export type RequestTransport = "node_fetch" | "browser_fetch"
+export type RequestTrigger = "user" | "background" | "unknown"
 export interface CentralRequestDiagnostics {
   method: string
   route: string
   rpcMethod?: string
   elapsedMs: number
-  causes: Array<{ name: string; code?: string }>
+  causes: Array<{ name: string; code?: string; syscall?: string }>
   kind: RequestFailureKind
   transport: RequestTransport
   phase: "fetch" | "response_body"
   status?: number
+  trigger?: RequestTrigger
+  online?: boolean
+  visibility?: "visible" | "hidden"
 }
 
 export interface SerializedCentralRequestError {
@@ -66,6 +70,7 @@ const errorCodes = new Set([
   "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_SOCKET", "UND_ERR_CONNECT",
   "UND_ERR_DESTROYED", "UND_ERR_ABORTED",
 ])
+const syscalls = new Set(["connect", "read", "write", "getaddrinfo", "getnameinfo", "shutdown"])
 
 function errorName(value: unknown): string {
   return typeof value === "string" && errorNames.has(value) ? value : "Error"
@@ -79,9 +84,10 @@ function causesOf(error: unknown): CentralRequestDiagnostics["causes"] {
     const next = pending.shift()
     if (!next || typeof next !== "object" || seen.has(next)) continue
     seen.add(next)
-    const value = next as { name?: unknown; code?: unknown; cause?: unknown }
+    const value = next as { name?: unknown; code?: unknown; syscall?: unknown; cause?: unknown }
     const code = typeof value.code === "string" && errorCodes.has(value.code) ? value.code : undefined
-    causes.push({ name: errorName(value.name), ...(code && { code }) })
+    const syscall = typeof value.syscall === "string" && syscalls.has(value.syscall) ? value.syscall : undefined
+    causes.push({ name: errorName(value.name), ...(code && { code }), ...(syscall && { syscall }) })
     if (value.cause) pending.push(value.cause)
     if (next instanceof AggregateError) pending.push(...next.errors.slice(0, 8))
   }
