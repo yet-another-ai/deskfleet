@@ -147,6 +147,8 @@ void app.whenReady().then(async () => {
   assert.equal(downloads, 2)
   progress!(37)
   assert.equal((await inspect(local, "正在下载 37%")).disabled, true)
+  const fill = await local.webContents.executeJavaScript(`document.querySelector('[data-app-update] button').style.backgroundImage`) as string
+  assert.equal(fill, "linear-gradient(to right, var(--ui-color-action-hover) 37%, transparent 37%)", "Download button background must trace progress")
   await click()
   assert.equal(downloads, 2, "Disabled progress button must not start another download")
   await screenshot(local, "updates-downloading-zh-dark")
