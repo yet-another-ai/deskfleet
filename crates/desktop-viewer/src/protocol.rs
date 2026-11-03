@@ -2,7 +2,7 @@
 
 use std::io::{self, Write};
 
-use deskfleet_native::rtc::{IceCandidate, IceServer};
+use deskfleet_native::rtc::{IceCandidate, IceServer, VideoCodec};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -15,6 +15,9 @@ pub(crate) enum Command {
         #[serde(rename = "relayOnly")]
         relay_only: bool,
         control: bool,
+        codec: Codec,
+        width: u32,
+        height: u32,
     },
     Answer {
         sdp: String,
@@ -23,6 +26,32 @@ pub(crate) enum Command {
         candidate: Candidate,
     },
     Close,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Codec {
+    H264,
+    H265,
+    Av1,
+}
+impl From<Codec> for VideoCodec {
+    fn from(value: Codec) -> Self {
+        match value {
+            Codec::H264 => Self::H264,
+            Codec::H265 => Self::H265,
+            Codec::Av1 => Self::Av1,
+        }
+    }
+}
+impl From<VideoCodec> for Codec {
+    fn from(value: VideoCodec) -> Self {
+        match value {
+            VideoCodec::H264 => Self::H264,
+            VideoCodec::H265 => Self::H265,
+            VideoCodec::Av1 => Self::Av1,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

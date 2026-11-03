@@ -11,11 +11,61 @@ use std::time::Duration;
 use crate::capture::packed_bgra;
 use crate::ffi::{self, Api};
 use crate::pipeline::{Object, Pipeline};
-use crate::{Error, Result};
+use crate::{Codec, Error, Result};
 
 const MAX_INPUT_BYTES: u64 = 1024 * 1024;
 const MAX_INPUT_PACKETS: u64 = 256;
-const HARDWARE_DECODERS: &[&str] = &["vah264dec", "nvh264dec", "vaapih264dec"];
+fn factories(codec: Codec, software: bool) -> &'static [&'static str] {
+    match (codec, software) {
+        (Codec::H264, false) => &["vah264dec", "nvh264dec", "vaapih264dec"],
+        (Codec::H265, false) => &["vah265dec", "nvh265dec", "vaapih265dec"],
+        (Codec::Av1, false) => &["vaav1dec", "nvav1dec"],
+        (Codec::H264, true) => &["avdec_h264"],
+        (Codec::H265, true) => &["avdec_h265"],
+        (Codec::Av1, true) => &["av1dec", "dav1ddec", "avdec_av1"],
+    }
+}
+
+fn software() -> Result<bool> {
+    match std::env::var("DESKFLEET_VIEWER_DECODER").as_deref() {
+        Ok("auto") | Err(std::env::VarError::NotPresent) => Ok(false),
+        Ok("software") => Ok(true),
+        _ => Err(Error::Unavailable(
+            "DESKFLEET_VIEWER_DECODER must be auto or software".into(),
+        )),
+    }
+}
+
+pub fn supported_decoder_codecs() -> Result<Vec<Codec>> {
+    let api = ffi::api()?;
+    let software = software()?;
+    Ok(Codec::ALL
+        .into_iter()
+        .filter(|codec| {
+            [
+                "appsrc",
+                "appsink",
+                "rtpjitterbuffer",
+                "videoconvert",
+                codec.parser(),
+                depay(*codec),
+            ]
+            .into_iter()
+            .all(|factory| api.has_factory(factory))
+                && factories(*codec, software)
+                    .iter()
+                    .any(|factory| api.has_factory(factory))
+        })
+        .collect())
+}
+
+fn depay(codec: Codec) -> &'static str {
+    match codec {
+        Codec::H264 => "rtph264depay",
+        Codec::H265 => "rtph265depay",
+        Codec::Av1 => "rtpav1depay",
+    }
+}
 
 /// Tightly packed RGBA pixels, owned independently of the decoder surface pool.
 #[derive(Debug)]
@@ -25,7 +75,7 @@ pub struct DecodedFrame {
     pub pixels: Vec<u8>,
 }
 
-/// One H.264 RTP receive/decode pipeline, created and polled on its owning worker.
+/// One negotiated RTP receive/decode pipeline, polled on its owning worker.
 ///
 /// The jitterbuffer owns packet reordering and the depayloader waits for a
 /// keyframe after loss. Decoded samples are never clock-paced: the native
@@ -45,24 +95,15 @@ impl RtpVideoDecoder {
     /// `DESKFLEET_VIEWER_DECODER=software` explicitly selects the libav decoder
     /// for diagnostics. Hardware failures never silently select software.
     pub fn new(payload_type: u8) -> Result<Self> {
-        let preference = match std::env::var("DESKFLEET_VIEWER_DECODER") {
-            Ok(value) => value,
-            Err(std::env::VarError::NotPresent) => "auto".into(),
-            Err(error) => return Err(Error::Unavailable(error.to_string())),
-        };
-        let candidates = match preference.as_str() {
-            "auto" => HARDWARE_DECODERS,
-            "software" => &["avdec_h264"],
-            _ => {
-                return Err(Error::Unavailable(
-                    "DESKFLEET_VIEWER_DECODER must be auto or software".into(),
-                ));
-            }
-        };
+        Self::with_codec(payload_type, Codec::H264)
+    }
+
+    pub fn with_codec(payload_type: u8, codec: Codec) -> Result<Self> {
+        let candidates = factories(codec, software()?);
         let api = ffi::api()?;
         let mut errors = Vec::new();
         for &factory in candidates.iter().filter(|name| api.has_factory(name)) {
-            match Self::with_factory(payload_type, factory) {
+            match Self::with_codec_factory(payload_type, codec, factory) {
                 Ok(decoder) => {
                     tracing::info!(factory, "native viewer decoder started");
                     return Ok(decoder);
@@ -72,18 +113,23 @@ impl RtpVideoDecoder {
         }
         if errors.is_empty() {
             Err(Error::Unavailable(format!(
-                "no {preference} H.264 decoder is installed"
+                "no selected {codec:?} decoder is installed"
             )))
         } else {
             Err(Error::Pipeline(errors.join("; ")))
         }
     }
 
+    #[cfg(test)]
     fn with_factory(payload_type: u8, factory: &'static str) -> Result<Self> {
+        Self::with_codec_factory(payload_type, Codec::H264, factory)
+    }
+
+    fn with_codec_factory(payload_type: u8, codec: Codec, factory: &'static str) -> Result<Self> {
         if payload_type > 127 {
             return Err(Error::Pipeline("invalid RTP payload type".into()));
         }
-        let pipeline = Pipeline::new(&description(payload_type, factory))?;
+        let pipeline = Pipeline::new(&codec_description(payload_type, codec, factory))?;
         let input = pipeline.child(c"input")?;
         let probe = KeyframeProbe::new(&input)?;
         Ok(Self {
@@ -179,7 +225,7 @@ impl RtpVideoDecoder {
     }
 }
 
-fn description(payload_type: u8, factory: &str) -> String {
+fn codec_description(payload_type: u8, codec: Codec, factory: &str) -> String {
     // The small RTP reorder window handles packet jitter, not presentation PTS.
     // No queue or clock-synchronizing sink is added after decoding. An explicit
     // AU capsfilter makes wait-for-keyframe apply to complete H.264 pictures.
@@ -187,18 +233,26 @@ fn description(payload_type: u8, factory: &str) -> String {
         // DeskFleet negotiates constrained baseline and sends no reordered
         // pictures. Flush the decoded picture immediately, including when the
         // desktop goes idle after a single update rather than filling the DPB.
-        "vah264dec" | "nvh264dec" => "compliance=flexible",
-        "vaapih264dec" => "low-latency=true",
-        "avdec_h264" => "max-threads=1",
+        "vah264dec" | "nvh264dec" | "vah265dec" | "nvh265dec" => "compliance=flexible",
+        "vaapih264dec" | "vaapih265dec" => "low-latency=true",
+        "avdec_h264" | "avdec_h265" | "avdec_av1" => "max-threads=1",
         _ => "",
     };
+    let encoding = match codec {
+        Codec::H264 => "H264",
+        Codec::H265 => "H265",
+        Codec::Av1 => "AV1",
+    };
+    let depay = depay(codec);
+    let caps = codec.output_caps();
+    let parser = codec.parser();
+    let recovery = "request-keyframe=true wait-for-keyframe=true";
     format!(
         "appsrc name=input is-live=true format=time do-timestamp=true block=false \
          max-bytes={MAX_INPUT_BYTES} max-buffers={MAX_INPUT_PACKETS} \
-         caps=application/x-rtp,media=video,encoding-name=H264,clock-rate=90000,payload={payload_type} ! \
+         caps=application/x-rtp,media=video,encoding-name={encoding},clock-rate=90000,payload={payload_type} ! \
          rtpjitterbuffer latency=10 faststart-min-packets=1 do-lost=true drop-on-latency=true ! \
-         rtph264depay request-keyframe=true wait-for-keyframe=true ! \
-         video/x-h264,stream-format=byte-stream,alignment=au ! h264parse ! \
+         {depay} {recovery} ! {parser} ! {caps} ! \
          {factory} name=decoder {settings} ! videoconvert ! video/x-raw,format=RGBA ! \
          appsink name=frames sync=false max-buffers=1 drop=false \
          enable-last-sample=false wait-on-eos=false"

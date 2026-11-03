@@ -122,6 +122,18 @@ test("opens the selected display in an independent native window without a brows
   expect(mock.api.start).not.toHaveBeenCalled()
 })
 
+test.each(["av1", "h265"] as const)("native window remains available for a %s-only display", async codec => {
+  await enableNativeViewer()
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  mock.api.capabilities.mockResolvedValueOnce({ displays: [{ id: 1, width: 1920, height: 1080, refreshRateHz: 60, codecs: [codec] }], audio: false })
+  const wrapper = await mountDesktop()
+  expect(wrapper.get("[data-native-desktop]").attributes("disabled")).toBeUndefined()
+  await wrapper.get("[data-native-desktop]").trigger("click")
+  await flushPromises()
+  expect(openNative).toHaveBeenCalledWith({ displayId: 1, control: false })
+})
+
 test("native startup failures remain visible and allow retry", async () => {
   await enableNativeViewer()
   platformClient.desktop.openNative = vi.fn(async () => { throw new Error("No hardware decoder") })

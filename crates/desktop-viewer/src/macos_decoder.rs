@@ -1,4 +1,4 @@
-//! Worker-owned VideoToolbox H.264 decoding. Synchronous, non-temporal decoding
+//! Worker-owned VideoToolbox H.264/HEVC/AV1 decoding. Synchronous, non-temporal decoding
 //! emits each picture before returning, including the final picture while idle.
 
 #![allow(unsafe_code)]
@@ -23,9 +23,26 @@ use objc2_video_toolbox::{
     kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder,
 };
 
-use crate::{Error, Frame, h264::Assembler};
+use crate::{Error, Frame, rtp_video::Assembler};
+use deskfleet_native::rtc::VideoCodec;
 
+#[path = "macos_decoder/buffers.rs"]
 mod buffers;
+#[path = "macos_decoder/formats.rs"]
+mod formats;
+
+pub(crate) fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
+    let software = std::env::var("DESKFLEET_VIEWER_DECODER").as_deref() == Ok("software");
+    Ok([VideoCodec::Av1, VideoCodec::H265, VideoCodec::H264]
+        .into_iter()
+        .filter(|codec| {
+            // SAFETY: Pure capability query; it does not create a session.
+            (unsafe {
+                objc2_video_toolbox::VTIsHardwareDecodeSupported(formats::codec_type(*codec))
+            }) || (software && *codec != VideoCodec::Av1)
+        })
+        .collect())
+}
 #[cfg(test)]
 mod tests;
 
@@ -57,15 +74,20 @@ struct Session {
 }
 
 impl RtpVideoDecoder {
+    #[cfg(test)]
     pub fn new(payload_type: u8) -> Result<Self, Error> {
+        Self::with_codec(payload_type, VideoCodec::H264)
+    }
+
+    pub fn with_codec(payload_type: u8, codec: VideoCodec) -> Result<Self, Error> {
         let hardware = match std::env::var("DESKFLEET_VIEWER_DECODER").as_deref() {
             Ok("auto") | Err(std::env::VarError::NotPresent) => true,
             Ok("software") => false,
             _ => return Err("DESKFLEET_VIEWER_DECODER must be auto or software".into()),
         };
         Ok(Self(RefCell::new(Decoder {
-            assembler: Assembler::new(payload_type),
-            parameters: buffers::Parameters::default(),
+            assembler: Assembler::for_codec(payload_type, codec),
+            parameters: buffers::Parameters::new(codec),
             session: None,
             hardware,
             request: false,

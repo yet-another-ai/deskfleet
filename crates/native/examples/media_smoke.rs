@@ -61,11 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "av1" => VideoCodec::Av1,
         _ => return Err("DESKFLEET_SMOKE_CODEC must be h264, h265 or av1".into()),
     };
-    if (capture && hardware) || (!hardware && codec != VideoCodec::H264) {
-        return Err(
-            "select either capture or hardware smoke; codec selection requires hardware smoke"
-                .into(),
-        );
+    if capture && hardware {
+        return Err("select either capture or hardware smoke".into());
     }
     let peer = Arc::new(
         Peer::new(PeerConfig {
@@ -87,7 +84,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     // Every sample is a complete SPS/PPS/IDR access unit, so repeating it is valid.
-    let frame = Bytes::from_static(include_bytes!("fixtures/red-64x64.h264"));
+    let frame = Bytes::from_static(match codec {
+        VideoCodec::H264 => include_bytes!("fixtures/red-64x64.h264"),
+        VideoCodec::H265 => include_bytes!("fixtures/red-64x64.h265"),
+        VideoCodec::Av1 => include_bytes!("fixtures/red-64x64.av1"),
+    });
     let mut ticks = tokio::time::interval(Duration::from_millis(100));
     let mut connected = false;
     let mut desktop = None;
@@ -134,6 +135,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if state == PeerState::Failed {
                             return Err("native peer connection failed".into());
                         }
+                    }
+                    Some(PeerEvent::DataChannelOpen { label }) if label == "deskfleet-input" => {
+                        // Protocol fixture only: acknowledge readiness without attaching
+                        // an OS controller or injecting any keyboard/pointer input.
+                        peer.send_text(&label, r#"{"type":"ready"}"#).await?;
+                    }
+                    Some(PeerEvent::Data { label, data, is_string }) if label == "deskfleet-input" => {
+                        if !is_string { return Err("binary desktop input".into()); }
+                        let _: deskfleet_input::InputEvent = serde_json::from_slice(&data)?;
                     }
                     Some(PeerEvent::Data { label, data, is_string }) => {
                         if is_string {

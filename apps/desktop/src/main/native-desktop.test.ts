@@ -36,7 +36,7 @@ function fixture() {
   const central = {
     onEvent: vi.fn(() => () => {}),
     machines: vi.fn(async () => [{ id: "machine", name: "Workstation" }]),
-    rpc: vi.fn(async () => ({ displays: [{ id: 7, codecs: ["h264"] }] })),
+    rpc: vi.fn(async () => ({ displays: [{ id: 7, width: 1920, height: 1080, codecs: ["h264"] }] })),
     createPeer: vi.fn(async () => ({ peerId: "peer", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [] })),
     offerPeer: vi.fn(async () => ({ sdp: "answer" })),
     candidatePeer: vi.fn(async () => {}), startPeer: vi.fn(async () => {}), closePeer: vi.fn(async () => {}),
@@ -48,7 +48,13 @@ function fixture() {
         receive({ type: "offer", sdp: "offer" })
         receive({ type: "connected" })
       })
+      if (command.type === "answer") queueMicrotask(() => {
+        receive({ type: "answerApplied" })
+        receive({ type: "inputReady" })
+        receive({ type: "videoReady" })
+      })
     })
+    queueMicrotask(() => receive({ type: "capabilities", codecs: ["h264"] }))
     return viewer
   })
   const host = installNativeDesktop(central as unknown as CentralApi)

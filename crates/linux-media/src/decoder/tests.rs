@@ -2,6 +2,33 @@ use std::time::Instant;
 
 use super::*;
 
+#[test]
+fn negotiated_codec_selects_matching_rtp_caps_parser_and_decoder() {
+    for (codec, factory, encoding, depayloader, parser) in [
+        (
+            Codec::H264,
+            "vah264dec",
+            "H264",
+            "rtph264depay",
+            "h264parse",
+        ),
+        (
+            Codec::H265,
+            "vah265dec",
+            "H265",
+            "rtph265depay",
+            "h265parse",
+        ),
+        (Codec::Av1, "vaav1dec", "AV1", "rtpav1depay", "av1parse"),
+    ] {
+        let pipeline = codec_description(104, codec, factory);
+        assert!(pipeline.contains(&format!("encoding-name={encoding}")));
+        assert!(pipeline.contains(depayloader) && pipeline.contains(parser));
+        assert!(pipeline.contains("sync=false max-buffers=1 drop=false"));
+        assert!(factories(codec, false).contains(&factory));
+    }
+}
+
 fn red_frame_packets(timestamp: u32, sequence: &mut u16) -> Vec<Vec<u8>> {
     let encoded = include_bytes!("../../../native/examples/fixtures/red-64x64.h264");
     packetize(encoded, timestamp, sequence)

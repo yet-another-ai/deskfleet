@@ -19,6 +19,7 @@ use objc2_core_video::{
 };
 
 use crate::{Error, Frame};
+use deskfleet_native::rtc::VideoCodec;
 
 pub(super) const INVALID_TIME: CMTime = CMTime {
     value: 0,
@@ -35,10 +36,18 @@ pub(super) fn check(status: i32, operation: &str) -> Result<(), Error> {
     }
 }
 
-#[derive(Default)]
 pub(super) struct Parameters {
+    codec: VideoCodec,
+    vps: Vec<u8>,
     sps: Vec<u8>,
     pps: Vec<u8>,
+    av1: Option<crate::av1_config::Config>,
+}
+
+impl Default for Parameters {
+    fn default() -> Self {
+        Self::new(VideoCodec::H264)
+    }
 }
 
 pub(super) struct Picture {
@@ -49,6 +58,16 @@ pub(super) struct Picture {
 }
 
 impl Parameters {
+    pub fn new(codec: VideoCodec) -> Self {
+        Self {
+            codec,
+            vps: Vec::new(),
+            sps: Vec::new(),
+            pps: Vec::new(),
+            av1: None,
+        }
+    }
+
     pub fn picture(&mut self, bytes: &[u8]) -> Result<Picture, Error> {
         let mut picture = Picture {
             avcc: Vec::with_capacity(bytes.len()),
@@ -56,10 +75,28 @@ impl Parameters {
             has_slice: false,
             idr: false,
         };
+        if self.codec == VideoCodec::Av1 {
+            if let Some(config) = crate::av1_config::sequence(bytes)? {
+                picture.changed = self.av1.as_ref().is_none_or(|old| old.av1c != config.av1c);
+                self.av1 = Some(config);
+                picture.idr = true;
+            }
+            picture.has_slice = true;
+            picture.avcc.extend_from_slice(bytes);
+            return Ok(picture);
+        }
         for nal in nals(bytes)? {
-            let kind = nal[0] & 31;
+            let hevc = self.codec == VideoCodec::H265;
+            if hevc && nal.len() < 2 {
+                return Err("truncated HEVC NAL".into());
+            }
+            let kind = if hevc {
+                (nal[0] >> 1) & 63
+            } else {
+                nal[0] & 31
+            };
             match kind {
-                7 | 8 => {
+                7 | 8 if !hevc => {
                     let stored = if kind == 7 {
                         &mut self.sps
                     } else {
@@ -70,9 +107,28 @@ impl Parameters {
                         picture.changed = true;
                     }
                 }
+                32..=34 if hevc => {
+                    let stored = match kind {
+                        32 => &mut self.vps,
+                        33 => &mut self.sps,
+                        _ => &mut self.pps,
+                    };
+                    if stored != nal {
+                        *stored = nal.to_vec();
+                        picture.changed = true;
+                    }
+                }
                 _ => {
-                    picture.has_slice |= kind == 1 || kind == 5;
-                    picture.idr |= kind == 5;
+                    picture.has_slice |= if hevc {
+                        kind <= 31
+                    } else {
+                        kind == 1 || kind == 5
+                    };
+                    picture.idr |= if hevc {
+                        (16..=21).contains(&kind)
+                    } else {
+                        kind == 5
+                    };
                     picture.avcc.extend(u32::try_from(nal.len())?.to_be_bytes());
                     picture.avcc.extend_from_slice(nal);
                 }
@@ -82,6 +138,12 @@ impl Parameters {
     }
 
     pub fn format(&self) -> Result<CFRetained<CMFormatDescription>, Error> {
+        if self.codec == VideoCodec::Av1 {
+            return super::formats::av1(self.av1.as_ref().ok_or("missing AV1 sequence header")?);
+        }
+        if self.codec == VideoCodec::H265 {
+            return super::formats::hevc(&self.vps, &self.sps, &self.pps);
+        }
         if self.sps.is_empty() || self.pps.is_empty() {
             return Err("H.264 format requires SPS and PPS".into());
         }

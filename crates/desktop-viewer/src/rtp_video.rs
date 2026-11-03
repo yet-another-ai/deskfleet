@@ -1,5 +1,9 @@
-//! Bounded RFC 6184 packetization-mode 1 receiver for the Windows/macOS decoders.
+//! Bounded H.264, HEVC and AV1 RTP assembly for Windows/macOS decoders.
 
+use bytes::Bytes;
+use deskfleet_native::rtc::VideoCodec;
+use rtc::rtp::codec::av1::Av1Depacketizer;
+use rtc::rtp::packetizer::Depacketizer;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -19,6 +23,7 @@ pub(crate) struct AccessUnit {
 }
 
 pub(crate) struct Assembler {
+    codec: VideoCodec,
     payload_type: u8,
     ssrc: Option<u32>,
     next: Option<u16>,
@@ -34,11 +39,21 @@ pub(crate) struct Assembler {
     request: bool,
     sps: Vec<u8>,
     pps: Vec<u8>,
+    vps: Vec<u8>,
+    fragment_second: u8,
+    av1: Av1Depacketizer,
+    av1_fragment_bytes: usize,
 }
 
 impl Assembler {
+    #[cfg(test)]
     pub fn new(payload_type: u8) -> Self {
+        Self::for_codec(payload_type, VideoCodec::H264)
+    }
+
+    pub fn for_codec(payload_type: u8, codec: VideoCodec) -> Self {
         Self {
+            codec,
             payload_type,
             ssrc: None,
             next: None,
@@ -54,18 +69,22 @@ impl Assembler {
             request: true,
             sps: Vec::new(),
             pps: Vec::new(),
+            vps: Vec::new(),
+            fragment_second: 0,
+            av1: Av1Depacketizer::new(),
+            av1_fragment_bytes: 0,
         }
     }
 
     /// A full reorder window backpressures the producer until poll declares loss.
     pub fn push(&mut self, data: &[u8]) -> Result<bool, &'static str> {
         if data.len() < 12 || data[0] >> 6 != 2 || data[1] & 127 != self.payload_type {
-            return Err("invalid H.264 RTP header");
+            return Err("invalid video RTP header");
         }
         let seq = u16::from_be_bytes([data[2], data[3]]);
         let ssrc = u32::from_be_bytes(data[8..12].try_into().expect("fixed slice"));
         if self.ssrc.is_some_and(|old| old != ssrc) {
-            return Err("H.264 RTP SSRC changed");
+            return Err("video RTP SSRC changed");
         }
         self.ssrc = Some(ssrc);
         let next = *self.next.get_or_insert(seq);
@@ -124,6 +143,8 @@ impl Assembler {
         self.idr = false;
         self.waiting = true;
         self.request = true;
+        self.av1 = Av1Depacketizer::new();
+        self.av1_fragment_bytes = 0;
     }
 
     pub fn poll(&mut self, now: Instant) -> Option<AccessUnit> {
@@ -174,12 +195,22 @@ impl Assembler {
                 continue;
             }
             let bytes = if self.waiting {
-                if self.sps.is_empty() || self.pps.is_empty() {
+                if self.codec != VideoCodec::Av1
+                    && (self.sps.is_empty()
+                        || self.pps.is_empty()
+                        || (self.codec == VideoCodec::H265 && self.vps.is_empty()))
+                {
                     self.request = true;
                     continue;
                 }
                 self.waiting = false;
-                [self.sps.as_slice(), self.pps.as_slice(), bytes.as_slice()].concat()
+                [
+                    self.vps.as_slice(),
+                    self.sps.as_slice(),
+                    self.pps.as_slice(),
+                    bytes.as_slice(),
+                ]
+                .concat()
             } else {
                 bytes
             };
@@ -209,6 +240,11 @@ impl Assembler {
     }
 
     fn append(&mut self, payload: &[u8]) -> Result<(), ()> {
+        match self.codec {
+            VideoCodec::H265 => return self.hevc(payload),
+            VideoCodec::Av1 => return self.av1(payload),
+            VideoCodec::H264 => {}
+        }
         if payload[0] & 128 != 0 {
             return Err(());
         }
@@ -260,6 +296,116 @@ impl Assembler {
             }
             _ => Err(()),
         }
+    }
+
+    fn hevc_nal(&mut self, nal: &[u8]) -> Result<(), ()> {
+        if nal.len() < 2 || nal[0] & 128 != 0 || nal[1] & 7 == 0 {
+            return Err(());
+        }
+        let kind = (nal[0] >> 1) & 63;
+        if kind >= 48 {
+            return Err(());
+        }
+        self.idr |= (16..=21).contains(&kind);
+        let annex = [b"\0\0\0\x01".as_slice(), nal].concat();
+        match kind {
+            32 => self.vps = annex.clone(),
+            33 => self.sps = annex.clone(),
+            34 => self.pps = annex.clone(),
+            _ => {}
+        }
+        self.bytes.extend_from_slice(&annex);
+        Ok(())
+    }
+
+    // RFC 7798, without DONL (not negotiated by DeskFleet).
+    fn hevc(&mut self, payload: &[u8]) -> Result<(), ()> {
+        if payload.len() < 2 || payload[0] & 128 != 0 || payload[1] & 7 == 0 {
+            return Err(());
+        }
+        match (payload[0] >> 1) & 63 {
+            0..=47 if !self.fragment => self.hevc_nal(payload),
+            48 if !self.fragment => {
+                let mut offset = 2;
+                while offset < payload.len() {
+                    let length = payload.get(offset..offset + 2).ok_or(())?;
+                    let length = usize::from(u16::from_be_bytes([length[0], length[1]]));
+                    offset += 2;
+                    self.hevc_nal(payload.get(offset..offset + length).ok_or(())?)?;
+                    offset += length;
+                }
+                Ok(())
+            }
+            49 if payload.len() > 3 => {
+                let kind = payload[2] & 63;
+                let start = payload[2] & 128 != 0;
+                let end = payload[2] & 64 != 0;
+                let header = (payload[0] & 129) | (kind << 1);
+                if kind >= 48 || start && end {
+                    return Err(());
+                }
+                if start {
+                    if self.fragment {
+                        return Err(());
+                    }
+                    self.fragment = true;
+                    self.fragment_header = header;
+                    self.fragment_second = payload[1];
+                    self.fragment_start = self.bytes.len();
+                    self.bytes
+                        .extend_from_slice(&[0, 0, 0, 1, header, payload[1]]);
+                } else if !self.fragment
+                    || self.fragment_header != header
+                    || self.fragment_second != payload[1]
+                {
+                    return Err(());
+                }
+                self.bytes.extend_from_slice(&payload[3..]);
+                if end {
+                    self.fragment = false;
+                    self.idr |= (16..=21).contains(&kind);
+                    let nal = self.bytes[self.fragment_start..].to_vec();
+                    match kind {
+                        32 => self.vps = nal,
+                        33 => self.sps = nal,
+                        34 => self.pps = nal,
+                        _ => {}
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(()),
+        }
+    }
+
+    fn av1(&mut self, payload: &[u8]) -> Result<(), ()> {
+        // Z must continue an existing OBU; Y keeps the last OBU fragmented.
+        if payload.len() < 2 || payload[0] & 7 != 0 {
+            return Err(());
+        }
+        let continuation = payload[0] & 128 != 0;
+        let new_sequence = payload[0] & 8 != 0;
+        if continuation != self.fragment || continuation && new_sequence {
+            return Err(());
+        }
+        self.av1_fragment_bytes = self
+            .av1_fragment_bytes
+            .checked_add(payload.len())
+            .ok_or(())?;
+        if self.av1_fragment_bytes > MAX_PICTURE {
+            return Err(());
+        }
+        let bytes = self
+            .av1
+            .depacketize(&Bytes::copy_from_slice(payload))
+            .map_err(|_| ())?;
+        self.bytes.extend_from_slice(&bytes);
+        self.idr |= new_sequence;
+        self.fragment = payload[0] & 64 != 0;
+        if !self.fragment {
+            self.av1_fragment_bytes = 0;
+        }
+        Ok(())
     }
 }
 

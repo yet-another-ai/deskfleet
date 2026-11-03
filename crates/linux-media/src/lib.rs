@@ -18,7 +18,7 @@ mod pipeline;
 
 pub use capture::{Capture, VideoFrame};
 pub use codec::Codec;
-pub use decoder::{DecodedFrame, RtpVideoDecoder};
+pub use decoder::{DecodedFrame, RtpVideoDecoder, supported_decoder_codecs};
 pub use encoder::{EncodedFrame, Encoder, EncoderSettings};
 
 /// Failure to load the optional runtime or operate a media pipeline.

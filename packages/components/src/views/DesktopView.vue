@@ -68,7 +68,7 @@ const canConnect = computed(() => props.visible && local.value && !loading.value
   && fleet.localDesktopTarget.online && displayId.value !== null && chosenCodec.value !== null)
 const canOpenNative = computed(() => showNative.value && props.visible && local.value
   && !loading.value && !active.value && !nativeOpening.value && fleet.localDesktopTarget.online
-  && capabilities.value?.displays.some(display => display.id === displayId.value && display.codecs.includes("h264")))
+  && capabilities.value?.displays.some(display => display.id === displayId.value && display.codecs.some(codec => ["h264", "h265", "av1"].includes(codec))))
 
 async function refresh(): Promise<void> {
   const generation = ++discoveryGeneration

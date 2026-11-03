@@ -1,4 +1,4 @@
-//! Thread-owned Media Foundation H.264/D3D11 decoder. No playback clock or EOS
+//! Thread-owned Media Foundation H.264/HEVC/AV1 D3D11 decoder. No playback clock or EOS
 //! flushing: output is polled even while the remote desktop is idle.
 
 #![allow(unsafe_code)]
@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use deskfleet_native::rtc::VideoCodec;
 use windows::Win32::{
     Graphics::{Direct3D::D3D_DRIVER_TYPE_HARDWARE, Direct3D11::*},
     Media::MediaFoundation::*,
@@ -20,12 +21,23 @@ use windows::core::{GUID, Interface};
 
 use crate::{
     Error, Frame,
-    h264::{AccessUnit, Assembler},
+    rtp_video::{AccessUnit, Assembler},
 };
 
 // wmcodecdsp.h: the system decoder supports synchronous ProcessInput/Output,
 // D3D11 acceleration and dynamic output-type negotiation from in-band SPS/PPS.
 const H264_DECODER: GUID = GUID::from_u128(0x62ce7e72_4c71_4d20_b15d_452831a87d9d);
+#[path = "windows_codecs.rs"]
+mod codecs;
+use codecs::{activate, subtype};
+
+pub(crate) fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
+    let _runtime = Runtime::new()?;
+    Ok([VideoCodec::Av1, VideoCodec::H265, VideoCodec::H264]
+        .into_iter()
+        .filter(|codec| activate(*codec).is_ok())
+        .collect())
+}
 
 struct Runtime(PhantomData<Rc<()>>);
 impl Runtime {
@@ -59,6 +71,7 @@ impl Drop for Runtime {
 pub(crate) struct RtpVideoDecoder(RefCell<Decoder>);
 
 struct Decoder {
+    video: VideoCodec,
     transform: IMFTransform,
     _manager: Option<IMFDXGIDeviceManager>,
     _device: Option<ID3D11Device>,
@@ -74,7 +87,17 @@ struct Decoder {
 }
 
 impl RtpVideoDecoder {
+    #[cfg(test)]
     pub fn new(payload_type: u8) -> Result<Self, Error> {
+        Self::with_codec(payload_type, VideoCodec::H264, 64, 64)
+    }
+
+    pub fn with_codec(
+        payload_type: u8,
+        video: VideoCodec,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, Error> {
         let hardware = match std::env::var("DESKFLEET_VIEWER_DECODER").as_deref() {
             Ok("auto") | Err(std::env::VarError::NotPresent) => true,
             Ok("software") => false,
@@ -84,11 +107,20 @@ impl RtpVideoDecoder {
         // SAFETY: The calling thread owns COM/MF and retains every returned
         // interface. Stream zero is the system decoder's documented stream ID.
         let (transform, manager, device) = unsafe {
-            let transform: IMFTransform =
-                CoCreateInstance(&H264_DECODER, None, CLSCTX_INPROC_SERVER)?;
-            let codec: ICodecAPI = transform.cast()?;
-            // Microsoft's H.264 decoder requires VT_UI4 for this property.
-            codec.SetValue(&CODECAPI_AVLowLatencyMode, &VARIANT::from(1_u32))?;
+            let transform = activate(video)?;
+            if video == VideoCodec::H264 {
+                let codec: ICodecAPI = transform.cast()?;
+                // Microsoft's H.264 decoder requires VT_UI4 for this property.
+                codec.SetValue(&CODECAPI_AVLowLatencyMode, &VARIANT::from(1_u32))?;
+            } else {
+                transform.GetAttributes()?.SetUINT32(&MF_LOW_LATENCY, 1)?;
+                transform
+                    .GetAttributes()?
+                    .SetUINT32(&CODECAPI_AVLowLatencyMode, 1)?;
+                if let Ok(codec) = transform.cast::<ICodecAPI>() {
+                    codec.SetValue(&CODECAPI_AVLowLatencyMode, &VARIANT::from(true))?;
+                }
+            }
             let (manager, device) = if hardware {
                 let mut device = None;
                 D3D11CreateDevice(
@@ -119,20 +151,30 @@ impl RtpVideoDecoder {
             };
             let input = MFCreateMediaType()?;
             input.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)?;
-            input.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_H264)?;
+            input.SetGUID(&MF_MT_SUBTYPE, &subtype(video))?;
+            if video == VideoCodec::H265 {
+                transform
+                    .GetAttributes()?
+                    .SetUINT32(&MF_NALU_LENGTH_SET, 1)?;
+            }
+            input.SetUINT64(
+                &MF_MT_FRAME_SIZE,
+                (u64::from(width) << 32) | u64::from(height),
+            )?;
             // Constrained baseline from DeskFleet has no FMO/ASO. Require DXVA
             // instead of silently accepting system-memory software output.
-            if hardware {
+            if hardware && video == VideoCodec::H264 {
                 input.SetUINT32(&MF_MT_VIDEO_H264_NO_FMOASO, 1)?;
             }
             transform.SetInputType(0, &input, 0)?;
             (transform, manager, device)
         };
         let mut decoder = Decoder {
+            video,
             transform,
             _manager: manager,
             _device: device,
-            assembler: Assembler::new(payload_type),
+            assembler: Assembler::for_codec(payload_type, video),
             pending: None,
             size: (0, 0),
             hardware,
@@ -248,6 +290,12 @@ impl Decoder {
             buffer.SetCurrentLength(length)?;
             let sample = MFCreateSample()?;
             sample.AddBuffer(&buffer)?;
+            if self.video == VideoCodec::H265 {
+                sample.SetBlob(
+                    &MF_NALU_LENGTH_INFORMATION,
+                    &codecs::nal_lengths(&unit.bytes)?,
+                )?;
+            }
             sample.SetSampleTime(i64::try_from(u128::from(ticks) * 10_000_000 / 90_000)?)?;
             match self.transform.ProcessInput(0, &sample, 0) {
                 Ok(()) => {
@@ -395,6 +443,38 @@ fn nv12_rgba(input: &[u8], width: usize, height: usize, bt709: bool, full_range:
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "requires HEVC and AV1 decoder extensions and compatible hardware"]
+    fn runtime_decodes_hevc_and_av1_idle_keyframes() {
+        for (codec, bytes) in [
+            (
+                VideoCodec::H265,
+                include_bytes!("../../native/examples/fixtures/red-64x64.h265").as_slice(),
+            ),
+            (
+                VideoCodec::Av1,
+                include_bytes!("../../native/examples/fixtures/red-64x64.av1").as_slice(),
+            ),
+        ] {
+            let decoder = RtpVideoDecoder::with_codec(96, codec, 64, 64).unwrap();
+            decoder.0.borrow_mut().pending = Some(AccessUnit {
+                bytes: bytes.to_vec(),
+                timestamp: 0,
+            });
+            let frame = decoder
+                .next_frame(Duration::from_secs(3))
+                .unwrap()
+                .unwrap_or_else(|| panic!("{codec:?} idle keyframe"));
+            assert_eq!((frame.width, frame.height), (64, 64));
+            for pixel in frame.pixels.as_chunks::<4>().0 {
+                assert!(
+                    pixel[0] > 230 && pixel[1] < 20 && pixel[2] < 20,
+                    "{codec:?}: {pixel:?}"
+                );
+            }
+            decoder.stop().unwrap();
+        }
+    }
     #[test]
     #[ignore = "requires Windows Media Foundation and a hardware H.264 decoder (or explicit software diagnostic)"]
     fn runtime_delivers_one_idle_idr_without_eos() {
