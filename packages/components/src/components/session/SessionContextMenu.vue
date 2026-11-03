@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Archive, ArchiveRestore, Pencil, Pin, PinOff } from "@lucide/vue"
+import { Archive, ArchiveRestore, Mail, Pencil, Pin, PinOff } from "@lucide/vue"
 import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot, ContextMenuTrigger, DialogTitle } from "reka-ui"
 import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
+import { sessionCanMarkUnread } from "../../services/agent-conversation.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
@@ -17,9 +18,10 @@ const fleet = useFleetStore()
 const pins = usePinnedSessionsStore()
 const machineId = computed(() => props.machineId ?? fleet.targetId)
 const pinned = computed(() => pins.isPinned(machineId.value, props.sessionId))
+const canMarkUnread = computed(() => sessionCanMarkUnread(agents.sessions[props.sessionId]))
 const trigger = useTemplateRef<InstanceType<typeof ContextMenuTrigger>>("trigger")
 const open = ref(false)
-const dialog = ref<"rename" | "archive" | "restore">()
+const dialog = ref<"rename" | "archive" | "restore" | "unread">()
 const pending = ref(false)
 const error = ref<string>()
 const confirmationQuestion = computed(() => {
@@ -48,6 +50,20 @@ function choose(action: "rename" | "archive" | "restore"): void {
   error.value = undefined
   dialog.value = action
 }
+async function markUnread(): Promise<void> {
+  if (pending.value || props.disabled || !canMarkUnread.value) return
+  open.value = false
+  focusRow()
+  pending.value = true
+  error.value = undefined
+  try {
+    await agents.markUnread(props.sessionId)
+    dialog.value = undefined
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : String(reason)
+    dialog.value = "unread"
+  } finally { pending.value = false }
+}
 function togglePin(): void {
   open.value = false
   if (pinned.value) pins.unpin(machineId.value, props.sessionId)
@@ -72,6 +88,7 @@ async function confirm(): Promise<void> {
     <ContextMenuPortal>
       <ContextMenuContent :aria-label="t('agent.sessionActions')" :collision-padding="8" class="ui-menu z-50 flex w-44 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
         <ContextMenuItem v-if="archiveState !== 'archived'" as="button" type="button" class="ui-menu-item" @select="togglePin"><component :is="pinned ? PinOff : Pin" :size="14" aria-hidden="true" />{{ t(pinned ? 'agent.unpin' : 'agent.pin') }}</ContextMenuItem>
+        <ContextMenuItem v-if="canMarkUnread" as="button" type="button" class="ui-menu-item" :disabled="disabled || pending" @select="markUnread"><Mail :size="14" aria-hidden="true" />{{ t('agent.markUnread') }}</ContextMenuItem>
         <ContextMenuItem as="button" type="button" class="ui-menu-item" :disabled="disabled || !archiveState" @select="choose('rename')"><Pencil :size="14" aria-hidden="true" />{{ t('agent.rename') }}</ContextMenuItem>
         <ContextMenuItem v-if="archiveState === 'archived'" as="button" type="button" class="ui-menu-item" :disabled="disabled || !context" @select="choose('restore')"><ArchiveRestore :size="14" aria-hidden="true" />{{ t('agent.restore') }}</ContextMenuItem>
         <ContextMenuItem v-else as="button" type="button" class="ui-menu-item" :disabled="disabled || !archiveState || !context" @select="choose('archive')"><Archive :size="14" aria-hidden="true" />{{ t(archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive') }}</ContextMenuItem>
@@ -79,6 +96,14 @@ async function confirm(): Promise<void> {
     </ContextMenuPortal>
   </ContextMenuRoot>
   <RenameSessionDialog v-if="dialog === 'rename'" :title="title" :disabled="disabled" :confirm="value => agents.rename(sessionId, value)" @close="dialog = undefined" />
+  <UiDialog v-else-if="dialog === 'unread'" class="w-[24rem]" :prevent-close="pending" @close="dialog = undefined">
+    <DialogTitle class="ui-dialog-title">{{ t('agent.markUnread') }}</DialogTitle>
+    <p v-if="error" role="alert" class="mb-0 mt-3 text-sm text-ui-danger">{{ error }}</p>
+    <div class="ui-dialog-actions">
+      <UiButton type="button" :disabled="pending" @click="dialog = undefined">{{ t('catalog.cancel') }}</UiButton>
+      <UiButton variant="primary" type="button" :disabled="pending || disabled || !canMarkUnread" @click="markUnread">{{ t('agent.markUnread') }}</UiButton>
+    </div>
+  </UiDialog>
   <UiDialog v-else-if="dialog" class="w-[24rem]" :prevent-close="pending" @close="dialog = undefined">
     <DialogTitle class="ui-dialog-title">{{ t(dialog === 'restore' ? 'agent.restore' : 'agent.archive') }}</DialogTitle>
     <p class="m-0 mt-3 text-sm leading-relaxed">{{ t(confirmationQuestion) }}</p>

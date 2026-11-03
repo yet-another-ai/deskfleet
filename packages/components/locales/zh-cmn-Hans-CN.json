@@ -1050,6 +1050,7 @@
     "copyFailed": "无法复制消息，请重试。",
     "working": "工作中",
     "unread": "未读结果",
+    "markUnread": "标为未读",
     "workingFor": "已工作 {duration}",
     "worked": "已完成",
     "workedFor": "工作了 {duration}",

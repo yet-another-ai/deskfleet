@@ -99,6 +99,54 @@ test("late history for a previous route or retained machine cannot mark it read"
   expect(service.markRead).toHaveBeenCalledTimes(1)
 })
 
+test("an explicit unread mark for the displayed completion is kept until the conversation is opened again", async () => {
+  service.views["30"]!.snapshot!.session.lastReadSeq = "5"
+  service.views["31"]!.snapshot!.session.lastReadSeq = "7"
+  const { sessionId } = setup()
+  await flushPromises()
+  expect(service.markRead).not.toHaveBeenCalled()
+  service.views["30"]!.snapshot!.session.lastReadSeq = "4"
+  await nextTick()
+  expect(service.markRead).not.toHaveBeenCalled()
+  sessionId.value = "31"
+  await nextTick()
+  expect(service.markRead).not.toHaveBeenCalled()
+  sessionId.value = "30"
+  await nextTick()
+  expect(service.markRead).toHaveBeenCalledExactlyOnceWith("30", "5")
+  service.views["30"]!.snapshot!.session.lastCompletedSeq = "9"
+  service.views["30"]!.historySeq = "9"
+  await nextTick()
+  expect(service.markRead).toHaveBeenLastCalledWith("30", "9")
+})
+
+test("leaving for a session without a displayed completion opens this conversation again", async () => {
+  service.views["30"]!.snapshot!.session.lastReadSeq = "5"
+  service.views["31"]!.loading = true
+  const { sessionId } = setup()
+  await flushPromises()
+  service.views["30"]!.snapshot!.session.lastReadSeq = "4"
+  await nextTick()
+  expect(service.markRead).not.toHaveBeenCalled()
+  sessionId.value = "31"
+  await nextTick()
+  sessionId.value = "30"
+  await nextTick()
+  expect(service.markRead).toHaveBeenCalledExactlyOnceWith("30", "5")
+})
+
+test("hiding the open conversation keeps an explicit unread mark", async () => {
+  service.views["30"]!.snapshot!.session.lastReadSeq = "5"
+  setup()
+  await flushPromises()
+  service.views["30"]!.snapshot!.session.lastReadSeq = "4"
+  visibility("hidden")
+  await nextTick()
+  visibility("visible")
+  await nextTick()
+  expect(service.markRead).not.toHaveBeenCalled()
+})
+
 test("history progress does not duplicate an in-flight acknowledgement", async () => {
   const response = deferred<void>()
   service.markRead.mockReturnValueOnce(response.promise)

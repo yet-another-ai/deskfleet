@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { h } from "vue"
 import { createMemoryHistory, createRouter, RouterLink } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
+import { agentSnapshot } from "../../test/agent.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
 import SessionContextMenu from "./SessionContextMenu.vue"
@@ -94,6 +95,64 @@ test("pinning and unpinning target the clicked session without navigation or con
   expect(unpin).toHaveBeenCalledExactlyOnceWith("local-daemon", "30")
   expect(pins.isPinned("local-daemon", "30")).toBe(false)
   expect(router.currentRoute.value.params.sessionId).toBe("31")
+})
+
+test("marking a read session unread sends the shared rewind without navigating", async () => {
+  const { router, row } = await render()
+  const agents = useAgentSessionsStore()
+  agents.sessions["30"] = { ...agentSnapshot().session, title: "Investigate failing checks", lastCompletedSeq: "6", lastReadSeq: "8" }
+  const markUnread = vi.spyOn(agents, "markUnread").mockResolvedValue()
+  await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Pin session", "Mark as unread", "Rename session", "Archive session"])
+  await item("Mark as unread").trigger("click"); await flushPromises()
+  expect(markUnread).toHaveBeenCalledExactlyOnceWith("30")
+  expect(page().find('[role="menu"]').exists()).toBe(false)
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  expect(router.currentRoute.value.params.sessionId).toBe("31")
+})
+
+test("an unread or unfinished session omits the mark-unread action", async () => {
+  const { row } = await render()
+  const agents = useAgentSessionsStore()
+  agents.sessions["30"] = { ...agentSnapshot().session, lastCompletedSeq: "6", lastReadSeq: "5" }
+  await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).not.toContain("Mark as unread")
+  await page().get('[role="menu"]').trigger("keydown", { key: "Escape" }); await flushPromises()
+  agents.sessions["30"] = { ...agentSnapshot().session }
+  await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).not.toContain("Mark as unread")
+})
+
+test("archived read sessions can be marked unread and offline sessions keep the action disabled", async () => {
+  const { row } = await render(false, true, "archived")
+  const agents = useAgentSessionsStore()
+  agents.sessions["30"] = { ...agentSnapshot().session, archiveState: "archived", lastCompletedSeq: "4", lastReadSeq: "4" }
+  const markUnread = vi.spyOn(agents, "markUnread").mockResolvedValue()
+  await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Mark as unread", "Rename session", "Restore session"])
+  const action = item("Mark as unread")
+  expect(action.attributes("data-disabled")).toBeDefined()
+  await action.trigger("click"); await flushPromises()
+  expect(markUnread).not.toHaveBeenCalled()
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+})
+
+test("a failed unread mark stays in a dialog and retries the same session", async () => {
+  const { row } = await render()
+  const agents = useAgentSessionsStore()
+  agents.sessions["30"] = { ...agentSnapshot().session, lastCompletedSeq: "6", lastReadSeq: "6" }
+  const markUnread = vi.spyOn(agents, "markUnread").mockRejectedValueOnce(new Error("Connection lost"))
+  await row.trigger("contextmenu", { button: 2 }); await flushPromises()
+  await item("Mark as unread").trigger("click"); await flushPromises()
+  const dialog = page().get('[role="dialog"]')
+  expect(dialog.get('[role="alert"]').text()).toBe("Connection lost")
+  markUnread.mockResolvedValueOnce()
+  await dialog.get(".ui-button-primary").trigger("click"); await flushPromises()
+  expect(markUnread).toHaveBeenCalledTimes(2)
+  expect(markUnread).toHaveBeenNthCalledWith(1, "30")
+  expect(markUnread).toHaveBeenNthCalledWith(2, "30")
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
 })
 
 test.each([false, true])("archiving removes the pin action from an open menu (pinned: %s)", async pinned => {

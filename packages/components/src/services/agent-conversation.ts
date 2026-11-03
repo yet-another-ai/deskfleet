@@ -6,6 +6,14 @@ export function sessionIsUnread(session: Pick<AgentSessionRecord, "lastCompleted
   return BigInt(session?.lastCompletedSeq ?? "0") > BigInt(session?.lastReadSeq ?? "0")
 }
 
+/** A read completion can be marked unread when its sequence is positive. */
+export function sessionCanMarkUnread(session: Pick<AgentSessionRecord, "lastCompletedSeq" | "lastReadSeq"> | undefined): boolean {
+  try {
+    const completed = session?.lastCompletedSeq
+    return !!completed && BigInt(completed) > 0n && !sessionIsUnread(session)
+  } catch { return false }
+}
+
 type Content = AgentInput["content"]
 export interface AgentTerminalOutput {
   terminalId: string

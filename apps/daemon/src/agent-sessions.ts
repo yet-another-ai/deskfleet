@@ -433,6 +433,7 @@ export class AgentSessions {
       if (method === "_deskfleet/session/fork") return await this.#fork(command)
       if (method === "_deskfleet/session/rename") return await this.#rename(command)
       if (method === "_deskfleet/session/read") return await this.#markRead(command)
+      if (method === "_deskfleet/session/unread") return await this.#markUnread(command)
       await this.journal.saveCommand(command)
       const sessionId = command.sessionId!
       const session = await this.journal.session(sessionId)
@@ -517,6 +518,28 @@ export class AgentSessions {
         ...(advanced ? { session } : {}),
         command: { ...command, status: "completed", result, completedAt: timestamp() },
         ...(advanced ? { events: [this.journal.event(sessionId, "session", session, { commandId: command.id })] } : {}),
+      })
+      return result
+    })
+  }
+
+  async #markUnread(command: AgentCommand): Promise<AgentSnapshot> {
+    if (command.actor.kind !== "user" || !command.actor.userId) throw new Error("Only a person can mark a Session as unread")
+    const sessionId = command.sessionId!
+    return this.journal.serial(sessionId, async () => {
+      const snapshot = await this.journal.read(sessionId)
+      if (this.#closed) throw new Error("Agent service is stopping")
+      if (snapshot.session.lifecycle === "deleting") throw new Error("Session deletion is in progress")
+      const completed = snapshot.session.lastCompletedSeq
+      if (!completed || !/^(?:[1-9][0-9]*)$/u.test(completed)) throw new Error("This Session has no completed result to mark unread")
+      const mark = BigInt(completed) <= BigInt(snapshot.session.lastReadSeq ?? "0")
+      const session = mark ? { ...snapshot.session, lastReadSeq: String(BigInt(completed) - 1n),
+        lastEventSeq: String(BigInt(snapshot.session.lastEventSeq) + 1n) } : snapshot.session
+      const result = { ...snapshot, session }
+      await this.journal.commit(snapshot, {
+        ...(mark ? { session } : {}),
+        command: { ...command, status: "completed", result, completedAt: timestamp() },
+        ...(mark ? { events: [this.journal.event(sessionId, "session", session, { commandId: command.id })] } : {}),
       })
       return result
     })

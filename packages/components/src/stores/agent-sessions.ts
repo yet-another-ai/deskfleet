@@ -545,7 +545,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const pending = operations.value[operationId]
     if (!pending) return
     const received = (result: unknown): unknown => {
-      if (pending.method === "_deskfleet/session/fork" || pending.method === "_deskfleet/session/rename" || pending.method === "_deskfleet/session/read") snapshotReceived(result as AgentSnapshot)
+      if (pending.method === "_deskfleet/session/fork" || pending.method === "_deskfleet/session/rename" || pending.method === "_deskfleet/session/read" || pending.method === "_deskfleet/session/unread") snapshotReceived(result as AgentSnapshot)
       completeOperation(operationId)
       return result
     }
@@ -692,6 +692,19 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
     snapshotReceived(await mutation("_deskfleet/session/read", { sessionId, throughSeq }))
   }
+  async function markUnread(sessionId: string): Promise<void> {
+    const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/unread" && operation.sessionId === sessionId)
+    if (pending) {
+      if (!pending.error) return
+      delete pending.error
+      try {
+        snapshotReceived(await call("_deskfleet/session/unread", { sessionId, operationId: pending.operationId }))
+        completeOperation(pending.operationId)
+      } catch (reason) { pending.error = messageOf(reason); throw reason }
+      return
+    }
+    snapshotReceived(await mutation("_deskfleet/session/unread", { sessionId }))
+  }
   async function rename(sessionId: string, title: string): Promise<void> {
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/rename"
       && operation.sessionId === sessionId && operation.params.title === title)
@@ -755,5 +768,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

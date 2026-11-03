@@ -145,6 +145,24 @@ test("opening again retries a failed read acknowledgement with the same operatio
   expect(store.sessions["30"]?.lastReadSeq).toBe("1")
 })
 
+test("marking a session unread rewinds the shared watermark and retries a lost response", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const snapshot = agentSnapshot()
+  snapshot.session = { ...snapshot.session, lastCompletedSeq: "4", lastReadSeq: "3", lastEventSeq: "8" }
+  mock.call.mockRejectedValueOnce(new Error("Connection lost"))
+  await expect(store.markUnread("30")).rejects.toThrow("Connection lost")
+  const pending = Object.values(store.operations)[0]!
+  expect(pending.method).toBe("_deskfleet/session/unread")
+  mock.call.mockResolvedValueOnce(snapshot)
+  await store.markUnread("30")
+  const calls = mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/unread")
+  expect(calls).toHaveLength(2)
+  expect(calls[1]).toEqual(calls[0])
+  expect(store.sessions["30"]).toMatchObject({ lastCompletedSeq: "4", lastReadSeq: "3", lastEventSeq: "8" })
+  expect(store.views["30"]?.snapshot?.session.lastReadSeq).toBe("3")
+  expect(store.operations[pending.operationId]).toBeUndefined()
+})
+
 test.each([
   { workspaceId: "20", context: "worktree" as const, scope: "workspace" },
   { workspaceId: undefined, context: "directory" as const, scope: "machine" },
